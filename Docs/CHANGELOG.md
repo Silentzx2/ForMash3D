@@ -14,6 +14,7 @@ All notable changes, architectural updates, and feature implementations for ForM
 - **Bug 2 - `torch.float8_e8m0fnu` AttributeError**: Added compatibility shim in `backend/core/config.py` that patches `torch.float8_e8m0fnu` and `torch.float8_e5m2` when missing (torch 2.8.0 compatibility). Pinned `transformers==4.43.2` and `diffusers==0.24.0` in `backend/requirements.txt` to avoid FP8 integration errors.
 - **Bug 3 - `diffusers`/`transformers` circular import (`PreTrainedModel`)**: Fixed by pinning compatible `transformers` and `diffusers` versions. The `finegrained_fp8.py` integration in newer transformers references `torch.float8_e8m0fnu` which doesn't exist in torch 2.8.0.
 - **Bug 4 - `open3d.io.read_triangle_mesh()` PosixPath type error**: Fixed in `backend/thirdparty/TripoSF/inference.py` by converting `mesh_path` to `str()` before passing to `o3d.io.read_triangle_mesh()`. Also fixed in `backend/adapters/triposf_adapter.py` to pass `str(temp_gt_path)`.
+- **Bug 5 - Setup Script & Environment Manager Orchestration**: Restored clean architecture where `scripts/setup.sh` does not create or activate Python environments, delegating all environment creation to `backend/scripts/install.sh`. In `install.sh`, `choose_env_manager` now directly prompts the user for Conda vs venv (defaulting to venv) and includes graceful fallback from Conda to venv when Conda environment creation is blocked by the host platform.
 
 ### 🚀 Premium SaaS Polish, Three.js Studio Environment Engine & DCC Bridge (2026-09-26)
 - **Specular Lighting & Button Shine System**:

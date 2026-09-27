@@ -360,8 +360,8 @@ create_directories(){
   log "Project runtime directories are ready."
 }
 
-# wheels downloading 
-download_and_install_release_wheels() {
+# wheels downloading
+download_release_wheels() {
     local WHEELS_DIR="${1:-$PROJECT_ROOT/backend/thirdparty/wheels}"
     local API="https://api.github.com/repos/Silentzx2/ForMash3D/releases/tags/Wheels"
 
@@ -389,37 +389,20 @@ download_and_install_release_wheels() {
             }
         done
 
-    echo "→ Installing wheels..."
+    echo "✓ All wheels downloaded to $WHEELS_DIR"
+}
 
-    while IFS= read -r -d '' WHEEL; do
-        echo "→ Installing: $(basename "$WHEEL")"
-        uv pip install "$WHEEL" || return 1
-    done < <(find "$WHEELS_DIR" -type f -name "*.whl" -print0)
-
-    echo "✓ All wheels downloaded and installed"
+# Compatibility alias
+download_and_install_release_wheels() {
+    download_release_wheels "$@"
 }
 
 build_deps () {
   # ── Fast build toolchain ────────────────────────────────────────────────────
-  # ninja + parallel build env vars make every from-source wheel (flash-attn,
-  # nvdiffrast, nvdiffrec, flex_gemm, cubvh, bpy-renderer) build at full speed.
-  # Without ninja, setuptools/CMake builds fall back to a single slow serial job.
-  # ponytail: MAX_JOBS/CMAKE_BUILD_PARALLEL_LEVEL are the two knobs that actually
-  # parallelize; CMAKE_GENERATOR=Ninja is what makes them usable on CUDA builds.
-  echo "[INFO] Installing fast build toolchain (ninja, setuptools, wheel, cython, scikit-build-core, pybind11)..."
-  uv pip install ninja setuptools wheel cython packaging setuptools-scm scikit-build-core pybind11
-  if [ $? -eq 0 ]; then
-      echo "[SUCCESS] Build toolchain installed"
-  else
-      echo "[WARN] Build toolchain install had warnings; continuing..."
-  fi
-
   # System-level ninja (apt) as a fallback: the pip `ninja` package only lands a
   # binary in the active env's bin/, so if a downstream subprocess runs with a
   # different PATH (e.g. TRELLIS.2's bare `pip`), `ninja` may not resolve. The
   # apt package puts a native binary in /usr/bin/ninja — always on PATH.
-  # ponytail: pip `ninja` + apt `ninja-build` are redundant by design; the apt
-  # one is the reliable path, the pip one is the cheap parallelism knob.
   if ! command -v ninja >/dev/null 2>&1; then
       echo "[INFO] ninja not on PATH — installing ninja-build via apt..."
       sudo apt-get update -qq 2>/dev/null || true
@@ -482,8 +465,8 @@ printf "${WHITE}${BOLD}Setup overview${NC}\n"
 printf "  This setup prepares the existing project in this order:\n"
 printf "  01. Environment check\n"
 printf "  02. Create runtime/storage directories\n"
-printf "  03. Install frontend dependencies\n"
-printf "  04. Prepare backend Python environment\n"
+printf "  03. Download prebuilt release wheels\n"
+printf "  04. Install frontend dependencies\n"
 printf "  05. Run backend/scripts/install.sh\n\n"
 
 
@@ -493,21 +476,10 @@ _sanitize_apt_cuda_sources
 setup_cuda_124
 ensure_bun_or_npm
 ensure_uv
-
-# Create Python 3.10 venv so uv pip can install packages
-ENV_DIR="$PROJECT_ROOT/3daigc-api"
-if [[ ! -d "$ENV_DIR" ]]; then
-  log "Creating Python 3.10 virtual environment..."
-  python3.10 -m venv "$ENV_DIR" || fail "Failed to create venv"
-fi
-source "$ENV_DIR/bin/activate" || fail "Failed to activate venv"
-export UV_PYTHON="$(python -c 'import sys; print(sys.executable)')"
-log "UV_PYTHON set to: $UV_PYTHON"
-
-download_and_install_release_wheels
 ensure_redis
 create_directories
 
+download_release_wheels
 build_deps
 install_frontend_deps
 

@@ -76,29 +76,27 @@ echo "The installation may take a while, please wait..."
 echo ""
 
 choose_env_manager() {
-  local default="${FORMASH3D_ENV_MANAGER:-${AI_STUDIO_ENV_MANAGER:-venv}}"
+  local default="venv"
   local choice=""
-  if [[ -n "${FORMASH3D_ENV_MANAGER:-}" ]]; then
-    choice="${FORMASH3D_ENV_MANAGER}"
-  elif [[ -n "${AI_STUDIO_ENV_MANAGER:-}" ]]; then
-    choice="${AI_STUDIO_ENV_MANAGER}"
+
+  # Prompt user directly
+  if [ -e /dev/tty ]; then
+    read -r -p "Select environment manager [conda|venv] (default: ${default}): " choice < /dev/tty || choice=""
   else
-    read -r -p "Select environment manager [conda|venv] (default: ${default}): " choice
-    choice="${choice:-${default}}"
+    read -r -p "Select environment manager [conda|venv] (default: ${default}): " choice || choice=""
   fi
+
+  choice="${choice:-${default}}"
   case "${choice}" in
-    conda|venv)
-      ENV_MANAGER="${choice}"
-      export FORMASH3D_ENV_MANAGER="${ENV_MANAGER}"
-      export AI_STUDIO_ENV_MANAGER="${ENV_MANAGER}"
-      ;;
+    conda|Conda|CONDA) ENV_MANAGER="conda" ;;
+    venv|Venv|VENV) ENV_MANAGER="venv" ;;
     *)
       echo "[WARN] Invalid choice '${choice}'. Falling back to ${default}."
       ENV_MANAGER="${default}"
-      export FORMASH3D_ENV_MANAGER="${ENV_MANAGER}"
-      export AI_STUDIO_ENV_MANAGER="${ENV_MANAGER}"
       ;;
   esac
+  export FORMASH3D_ENV_MANAGER="${ENV_MANAGER}"
+  export AI_STUDIO_ENV_MANAGER="${ENV_MANAGER}"
   echo "[INFO] Using environment manager: ${ENV_MANAGER}"
   echo "[INFO] Target environment: 3daigc-api (Python 3.10)"
 }
@@ -125,12 +123,11 @@ if [[ "${ENV_MANAGER}" == "conda" ]]; then
     MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
     INSTALLER="/tmp/miniconda-installer.sh"
     if curl -fsSL "$MINICONDA_URL" -o "$INSTALLER"; then
-      bash "$INSTALLER" -b -u -p "$CONDA_HOME" || exit 1
+      bash "$INSTALLER" -b -u -p "$CONDA_HOME" || true
       rm -f "$INSTALLER"
     else
-      echo "[ERROR] Could not download Miniconda installer"
+      echo "[WARN] Could not download Miniconda installer; will fallback to venv."
       rm -f "$INSTALLER"
-      exit 1
     fi
     export PATH="$CONDA_HOME/bin:$PATH"
     if [[ -f "$CONDA_HOME/etc/profile.d/conda.sh" ]]; then
@@ -138,27 +135,53 @@ if [[ "${ENV_MANAGER}" == "conda" ]]; then
       source "$CONDA_HOME/etc/profile.d/conda.sh"
     fi
   fi
-  command -v conda >/dev/null 2>&1 || { echo "[ERROR] Conda is not available after install."; exit 1; }
-  echo "[INFO] Conda: $(conda --version)"
-  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true
-  conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true
-  eval "$(conda shell.bash hook 2>/dev/null || true)"
-  if ! conda info --envs | awk '{print $1}' | grep -qx "$ENV_NAME"; then
-    echo "[INFO] Creating conda env '$ENV_NAME' with Python 3.10..."
-    conda create -n "$ENV_NAME" python=3.10 -y || exit 1
+
+  if command -v conda >/dev/null 2>&1; then
+    echo "[INFO] Conda: $(conda --version 2>&1)"
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main 2>/dev/null || true
+    conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r 2>/dev/null || true
+    eval "$(conda shell.bash hook 2>/dev/null || true)"
+
+    if [[ "${CONDA_DEFAULT_ENV:-}" == "$ENV_NAME" ]]; then
+      echo "[INFO] Conda environment '$ENV_NAME' is already active."
+    elif conda info --envs 2>/dev/null | awk '{print $1}' | grep -qx "$ENV_NAME"; then
+      echo "[INFO] Activating existing conda environment '$ENV_NAME'..."
+      conda activate "$ENV_NAME" 2>/dev/null || source activate "$ENV_NAME" 2>/dev/null || true
+    else
+      echo "[INFO] Creating conda env '$ENV_NAME' with Python 3.10..."
+      if conda create -n "$ENV_NAME" python=3.10 -y 2>/dev/null; then
+        conda activate "$ENV_NAME" 2>/dev/null || source activate "$ENV_NAME" 2>/dev/null || true
+      else
+        echo "[WARN] Conda env creation is restricted or failed. Falling back to venv..."
+        ENV_MANAGER="venv"
+      fi
+    fi
+
+    # Verify if conda activation succeeded
+    if [[ "${ENV_MANAGER}" == "conda" ]]; then
+      CONDA_PY_VER="$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "")"
+      if [[ "$CONDA_PY_VER" != "3.10" && "${CONDA_DEFAULT_ENV:-}" != "$ENV_NAME" ]]; then
+        echo "[WARN] Conda environment '$ENV_NAME' not activated (Python version is '$CONDA_PY_VER'). Falling back to venv..."
+        ENV_MANAGER="venv"
+      fi
+    fi
+  else
+    echo "[WARN] Conda not available. Falling back to venv..."
+    ENV_MANAGER="venv"
   fi
-  conda activate "$ENV_NAME" || exit 1
-else
+fi
+
+if [[ "${ENV_MANAGER}" == "venv" ]]; then
   ENV_DIR="$PROJECT_ROOT/3daigc-api"
   if [[ ! -d "$ENV_DIR" && -d "$PROJECT_ROOT/.venv" && -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
     ENV_DIR="$PROJECT_ROOT/.venv"
   fi
   if [[ ! -d "$ENV_DIR" ]]; then
     echo "[INFO] Creating Python 3.10 virtual environment at $ENV_DIR..."
-    if command -v uv >/dev/null 2>&1; then
-      uv venv "$ENV_DIR" --python 3.10 || exit 1
-    elif command -v python3.10 >/dev/null 2>&1; then
+    if command -v python3.10 >/dev/null 2>&1; then
       python3.10 -m venv "$ENV_DIR" || exit 1
+    elif command -v uv >/dev/null 2>&1; then
+      uv venv "$ENV_DIR" --python 3.10 --seed 2>/dev/null || uv venv "$ENV_DIR" --python 3.10 || exit 1
     else
       python3 -m venv "$ENV_DIR" || exit 1
     fi
@@ -195,8 +218,8 @@ persist_env_config
 
 if ! python -c "import uv" >/dev/null 2>&1; then
   echo "[INFO] Installing uv into active environment..."
-  python -m pip install --upgrade pip
-  python -m pip install uv
+  python -m pip install --upgrade pip 2>/dev/null || true
+  python -m pip install uv 2>/dev/null || $UV_PIP install uv 2>/dev/null || true
 fi
 
 echo "[INFO] Installing build toolchain in conda env (scikit-build-core, pybind11, ninja, setuptools, wheel, cython)..."
