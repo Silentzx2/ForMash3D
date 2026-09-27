@@ -438,3 +438,4 @@ test_outputs/
 # some wheels are too large to put there 
 assets/wheels/flash_attn*
 assets/wheels/torch*
+thirdparty/wheels
