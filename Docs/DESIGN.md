@@ -1,5 +1,11 @@
 # UI Design System & Component Reference
 
+> **Design Version**: 0.1.0
+> **Last Updated**: September 2026
+> **Design System**: Studio Gold (`#FFCC00`, `48 100% 50%`) on Matte Black (`#080808`)
+
+---
+
 ## 1. Design Tokens (`app/globals.css`)
 
 All colors and surfaces in ForMash 3D use HSL CSS variable design tokens. Direct hex color literals in UI code are strictly disallowed.
@@ -30,7 +36,53 @@ All colors and surfaces in ForMash 3D use HSL CSS variable design tokens. Direct
 
 ---
 
-## 2. Motion Presets (`lib/motion.ts`)
+## 2. Design System Architecture
+
+```mermaid
+flowchart TB
+    classDef token fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef layer fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    classDef comp fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef pattern fill:#0f172a,stroke:#f97316,stroke-width:2px,color:#fff
+
+    TOKENS["Design Tokens<br/>app/globals.css"]:::token
+    TOKENS --> HSL["HSL CSS Variables<br/>--surface-0 through --surface-4<br/>--primary #FFCC00<br/>--muted-foreground"]
+    TOKENS --> MOTION["Motion Presets<br/>MOTION_FAST/BASE/SLOW<br/>MOTION_SPRING/SPRING_SNAPPY"]
+    TOKENS --> TYPO["Typography Scale<br/>Font: Inter, JetBrains Mono<br/>Sizes: xs → 4xl"]
+
+    subgraph LAY["Presentation Layers"]
+        direction TB
+        L1["Layout Layer<br/>WorkspaceShell, Providers"]:::layer
+        L2["Component Layer<br/>UI primitives, Feature panels"]:::layer
+        L3["Viewport Layer<br/>Three.js / R3F"]:::layer
+    end
+
+    subgraph COMPS["Component Categories"]
+        direction TB
+        C1["Navigation<br/>TopHeader, LeftNav Rail"]:::comp
+        C2["Panels<br/>GeneratePanel, TexturePanel<br/>RemeshPanel, EditPanel"]:::comp
+        C3["Viewport<br/>MeshViewer, ModelInspector"]:::comp
+        C4["Controls<br/>Sliders, Toggles, Buttons"]:::comp
+        C5["Feedback<br/>Toasts, Skeletons, Progress"]:::comp
+    end
+
+    subgraph PAT["Design Patterns"]
+        direction TB
+        P1["Glassmorphism<br/>.glass-panel, .glass-card"]:::pattern
+        P2["Specular Shine<br/>.btn-lighting-shine"]:::pattern
+        P3["Responsive<br/>Desktop / Tablet / Mobile"]:::pattern
+        P4["Dynamic Import<br/>next/dynamic + ssr:false"]:::pattern
+        P5["HSL-Only<br/>No hex literals in code"]:::pattern
+    end
+
+    TOKENS --> LAY
+    LAY --> COMPS
+    COMPS --> PAT
+```
+
+---
+
+## 3. Motion Presets (`lib/motion.ts`)
 
 Universal motion specifications compatible with `motion/react`:
 
@@ -42,7 +94,7 @@ Universal motion specifications compatible with `motion/react`:
 
 ---
 
-## 3. UI Components
+## 4. UI Components
 
 ### Existing UI Primitives
 - `components/premium/*`: `GlassCard`, `NeonButton`, `Badge`, `StatusDot`, `MetricCard`, `ProgressBar`, `Spinner`.
@@ -52,9 +104,47 @@ Universal motion specifications compatible with `motion/react`:
 - `components/ui/skeleton.tsx`: Loading skeleton with shimmer animation.
 - `components/Providers.tsx`: Root providers (Theme, Toast, etc.).
 
+### Paint-v2-1 Texture Panel Components
+- `TexturePanel.tsx`: PBR texture controls, systemStats display, VRAM status
+- `GeneratePanel.tsx`: Model selector, FlashVDM toggle, VRAM stats
+- `systemStats`: Real-time GPU/VRAM telemetry in texture panel
+
 ---
 
-## 4. Workspace Layout Architecture
+## 5. Paint-v2-1 Texture Pipeline Flow
+
+```mermaid
+flowchart TD
+    classDef input fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef process fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef output fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
+    classDef guard fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
+
+    IN["Input: source.glb<br/>Untouched Master Mesh"]:::input
+    IN --> SHAPE["Stage 1: Shape Generation<br/>Hunyuan3D-Shape-v2-1"]:::process
+    SHAPE --> MESH["Raw Mesh Output"]:::output
+    MESH --> PAINT["Stage 2: Paint Pipeline<br/>hunyuan3d_paint_v21_image_mesh_painting"]:::process
+    PAINT --> RES["RealESRGAN x4+<br/>Super-Resolution"]:::process
+    RES --> PBR["DifferentiableRenderer<br/>PBR Validation"]:::process
+    PBR --> VRAM{"VRAM Check<br/>~21GB Required?"}:::guard
+    VRAM -->|Yes| OK["✅ PBR Texture Ready<br/>texture.glb"]:::output
+    VRAM -->|No| LOW["⚠️ Reduce Views<br/>or Resolution"]:::guard
+    OK --> CONFIG["Configurable Parameters<br/>Resolution: 512/768<br/>Max Views: 6-12<br/>PBR State: Tracked"]:::process
+    CONFIG --> EXPORT["Export: texture.glb<br/>PBR Materials"]:::output
+
+    style IN fill:#1e293b
+    style SHAPE fill:#0f172a
+    style PAINT fill:#0f172a
+    style RES fill:#0f172a
+    style PBR fill:#0f172a
+    style VRAM fill:#0f172a
+    style OK fill:#1e293b
+    style EXPORT fill:#1e293b
+```
+
+---
+
+## 6. Workspace Layout Architecture
 
 The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main application layout:
 
@@ -84,7 +174,7 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 5. Rendering Performance & SSR Architecture
+## 7. Rendering Performance & SSR Architecture
 
 - **Client Boundaries**: Heavy interactive pages use `'use client'` directive (e.g., `app/workspace/page.tsx`, `app/animation/page.tsx`).
 - **Dynamic Imports**: 3D viewport uses `next/dynamic` with `ssr: false` and loading skeleton.
@@ -92,7 +182,7 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 6. Workspace Route Mapping
+## 8. Workspace Route Mapping
 
 | Route | Main Nav | Active Tool | Panel |
 |---|---|---|---|
@@ -110,7 +200,7 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 7. Keyboard Shortcuts
+## 9. Keyboard Shortcuts
 
 | Shortcut | Action |
 |---|---|
@@ -127,7 +217,7 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 8. Unified CSS Variable Theme & Studio Standards
+## 10. Unified CSS Variable Theme & Studio Standards
 
 - **Canonical CSS Surface Tokens**: All studios (3D Generation, Animation, and Rigging) strictly depend on global CSS design tokens defined in `app/globals.css`:
   - Canvas & Viewport Base: `bg-[hsl(var(--surface-0))]`
@@ -148,7 +238,7 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 9. Specular Lighting, Button Shine & DCC Bridge Integration
+## 11. Specular Lighting, Button Shine & DCC Bridge Integration
 
 - **Button Specular Sweep (`.btn-lighting-shine`)**:
   - Implements an interactive lighting shine animation (`btn-specular-sweep`) across primary generation buttons (3D Generation, PBR Texturing, Retopology, Segmentation, Motion, and Export).
@@ -162,4 +252,35 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 - **DCC Live Bridge (`DccBridgeModal.tsx`)**:
   - Out-of-the-box bridge support for Blender 4.x/5.x, Unreal Engine 5 (Remote Control API), Unity Editor, and Autodesk Maya.
   - Features local daemon health checking, custom port binding, pipeline toggle flags, and 1-click Python ingestion scripts.
+
+---
+
+## 12. Component Interaction Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant Page as Next.js Page
+    participant Panel as Feature Panel
+    participant Store as Zustand Store
+    participant API as apiClient.ts
+    participant Backend as FastAPI :7842
+    participant Scheduler as VRAM Scheduler
+    participant Adapter as Model Adapter
+
+    User->>Page: Interact with UI
+    Page->>Panel: Render component
+    Panel->>Store: Update state
+    Store->>API: POST request
+    API->>Backend: REST / SSE
+    Backend->>Scheduler: Submit job
+    Scheduler->>Adapter: Run inference
+    Adapter-->>Scheduler: Output
+    Scheduler-->>Backend: Job complete
+    Backend-->>API: SSE / JSON response
+    API-->>Store: Update state
+    Store-->>Panel: Re-render
+    Panel-->>User: Show results
+```
 

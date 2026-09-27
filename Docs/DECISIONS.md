@@ -1,0 +1,252 @@
+# Architecture Decisions — ForMash 3D
+
+> **Version**: 0.1.0
+> **Last Updated**: September 2026
+
+---
+
+## ADR-001: Lazy Adapter Loading
+
+**Decision**: All model adapters use lazy imports inside `_load_model()` to prevent cascading import failures.
+
+**Reason**: Optional heavy packages (`accelerate`, `cv2`, `yacs`, `box`) should not prevent other models from loading. When a model's dependencies are missing, only that model should fail, not the entire system.
+
+**Consequences**:
+- Adapters import cleanly even when optional dependencies are missing
+- `__getattr__` in `backend/adapters/__init__.py` handles lazy loading
+- System remains functional with partial model availability
+
+---
+
+## ADR-002: VRAM-Aware Scheduling
+
+**Decision**: Strict GPU mutual exclusion with 1GB safety margin (`VRAM_SAFETY_MARGIN_MB=1024`).
+
+**Reason**: Prevents OOM crashes during concurrent inference on shared GPUs. The scheduler tracks VRAM usage and enforces mutual exclusion so only one job uses the GPU at a time.
+
+**Consequences**:
+- No concurrent GPU inference
+- Jobs queue when GPU is busy
+- 1GB free margin prevents OOM kills
+- `AUTO_UNLOAD_AFTER_JOB=true` frees VRAM between jobs
+
+---
+
+## ADR-003: Source Asset Immutability
+
+**Decision**: `source.glb` is preserved byte-for-byte as an untouched master archive.
+
+**Reason**: Enables reproducibility and rollback to original geometry. All downstream processing (decimation, LOD, collision) operates on copies, never the original.
+
+**Consequences**:
+- `source.glb` is never modified after generation
+- All derived assets reference `source.glb` as the origin
+- Users can always regenerate from the original mesh
+
+---
+
+## ADR-004: Local-First Architecture
+
+**Decision**: All processing runs locally; no cloud dependencies.
+
+**Reason**: Privacy, offline capability, and cost control. Users retain full ownership of their 3D assets and data.
+
+**Consequences**:
+- No API keys or cloud services required
+- All models run on local GPU/CPU
+- Data never leaves the user's machine
+- Optional Redis for multi-worker queue (still local)
+
+---
+
+## ADR-005: Zustand for Client State
+
+**Decision**: Zustand stores for global client state instead of Redux or Context API.
+
+**Reason**: Minimal boilerplate, fast selectors, easy middleware integration. Zustand's lightweight API fits the project's needs without the overhead of Redux.
+
+**Consequences**:
+- `useAppStore.ts`, `useViewerStore.ts`, `useAnimationStore.ts`, `useRiggingStore.ts`, `useUIStore.ts`
+- Easy to add new state properties
+- TanStack Query handles server state separately
+
+---
+
+## ADR-006: Next.js App Router
+
+**Decision**: Next.js 16 App Router with server components.
+
+**Reason**: Built-in data fetching, layouts, and API proxy routes. The App Router provides a cleaner file-based routing system compared to Pages Router.
+
+**Consequences**:
+- `app/` directory structure with `page.tsx`, `layout.tsx`
+- Server components for static content
+- Client components for interactive UI
+- API proxy routes in `app/api/`
+
+---
+
+## ADR-007: Bun as Frontend Package Manager
+
+**Decision**: Bun as authoritative frontend package manager.
+
+**Reason**: Faster than npm/yarn, compatible with npm ecosystem. Bun's built-in test runner, bundler, and package manager reduce toolchain complexity.
+
+**Consequences**:
+- `bun install` instead of `npm install`
+- `bun run dev` instead of `npm run dev`
+- `bun run build` instead of `npm run build`
+- `bun run lint` instead of `npm run lint`
+
+---
+
+## ADR-008: Conda for Python Environment
+
+**Decision**: Conda env `3daigc-api` for Python 3.10 + PyTorch 2.6.0 + CUDA 12.4.
+
+**Reason**: Reproducible GPU environment, easy dependency management. Conda handles CUDA toolkit dependencies better than pip alone.
+
+**Consequences**:
+- `conda activate 3daigc-api` required for backend
+- Python 3.10 pinned for PyTorch 2.6.0 compatibility
+- CUDA 12.4 wheels installed from PyTorch index
+- `backend/requirements.txt` for project dependencies
+
+---
+
+## ADR-009: FastAPI for Backend
+
+**Decision**: FastAPI as the backend framework.
+
+**Reason**: Async support, automatic OpenAPI docs, Pydantic V2 validation, high throughput. FastAPI's async capabilities are essential for the VRAM-aware scheduler.
+
+**Consequences**:
+- Pydantic V2 for request/response models
+- Automatic Swagger UI at `/docs`
+- Async endpoints for non-blocking I/O
+- SSE streaming for generation progress
+
+---
+
+## ADR-010: Redis for Multi-Worker Queue
+
+**Decision**: Redis 7 as optional message broker for multi-worker mode.
+
+**Reason**: Enables distributed job processing across multiple workers. Redis provides fast pub/sub and queue operations.
+
+**Consequences**:
+- Single-worker mode: embedded scheduler, no Redis needed
+- Multi-worker mode: Redis-backed `RedisJobQueue`
+- Redis FileStore for cross-worker metadata sharing
+- Bounded 20-connection pool for Redis
+
+---
+
+## ADR-011: meshoptimizer for Decimation
+
+**Decision**: Use meshoptimizer library for SIMD-accelerated mesh decimation.
+
+**Reason**: High-performance, well-maintained library with SIMD optimizations. Supports target polycount reduction while preserving topology.
+
+**Consequences**:
+- `meshoptimizer` dependency in `backend/requirements.txt`
+- SIMD-accelerated decimation for fast processing
+- Target polycount control (15K, 35K, 60K, 100K)
+
+---
+
+## ADR-012: xatlas for UV Unwrapping
+
+**Decision**: Use xatlas library for conformal UV unwrapping.
+
+**Reason**: High-quality conformal parameterization, fast, well-maintained. Produces minimal UV distortion.
+
+**Consequences**:
+- `xatlas` dependency
+- Conformal UV mapping with minimal distortion
+- PartUV adapter wraps xatlas functionality
+
+---
+
+## ADR-013: Three.js + React Three Fiber for 3D Viewport
+
+**Decision**: Three.js with React Three Fiber (R3F) for the 3D viewport.
+
+**Reason**: R3F provides React integration for Three.js, enabling declarative 3D scene construction. Combined with Drei for helpers, it provides a complete 3D visualization solution.
+
+**Consequences**:
+- `@react-three/fiber` and `@react-three/drei` dependencies
+- `MeshViewer.tsx` as the main 3D viewport component
+- Orbit controls, wireframe mode, matcap shading
+- Studio environment controls (lighting, backdrop, grid)
+
+---
+
+## ADR-014: Tailwind CSS v4 for Styling
+
+**Decision**: Tailwind CSS v4 with HSL design tokens.
+
+**Reason**: Utility-first CSS framework with excellent developer experience. v4 provides new features and better performance. HSL tokens enable consistent theming.
+
+**Consequences**:
+- `tailwind.config.ts` with custom theme extensions
+- CSS variables in `app/globals.css` for all design tokens
+- No direct hex color literals in UI code
+- Studio gold (`#FFCC00`) as primary accent
+
+---
+
+## ADR-015: Hunyuan3D-Paint-v2-1 Pipeline
+
+**Decision**: Integrate Hunyuan3D-Paint-v2-1 with RealESRGAN x4+ and DifferentiableRenderer.
+
+**Reason**: Official Tencent pipeline for high-quality PBR texture synthesis. RealESRGAN provides super-resolution, DifferentiableRenderer validates PBR materials.
+
+**Consequences**:
+- `backend/adapters/hunyuan3d_paint_v21.py` adapter
+- Shape→Paint automatic chaining
+- Configurable texture resolution (512/768), max views (6-12)
+- VRAM-aware scheduling (~21GB requirement)
+- Dockerfile includes Paint DifferentiableRenderer build
+
+---
+
+## ADR-016: ORJSON for Fast Serialization
+
+**Decision**: Use `orjson` for JSON serialization with graceful fallback to standard `JSONResponse`.
+
+**Reason**: `orjson` is 10-20x faster than the standard `json` module. Critical for high-throughput API responses.
+
+**Consequences**:
+- `ORJSONResponse` used in `main_singleworker.py` and `main_multiworker.py`
+- Fallback to `JSONResponse` when `orjson` is not installed
+- `orjson>=3.9.0` in `backend/requirements.txt`
+
+---
+
+## ADR-017: SSE for Generation Progress
+
+**Decision**: Use Server-Sent Events (SSE) for real-time generation progress streaming.
+
+**Reason**: SSE provides efficient one-way streaming from server to client. Better than polling for real-time updates.
+
+**Consequences**:
+- Frontend subscribes to `/api/v1/mesh-generation/status/{job_id}`
+- Event types: `queued`, `processing`, `progress`, `completed`, `failed`, `cancelled`
+- Progress values from 0.0 to 1.0
+- Stage text updates (loading_model, generating, completed)
+
+---
+
+## ADR-018: Model IDs with Version Suffixes
+
+**Decision**: Use explicit versioned model IDs (`hunyuan3d_shape_v21_*`, `hunyuan3d_paint_v21_*`, `hunyuan3d_dit_v2_mini_turbo_*`).
+
+**Reason**: Clear identification of model versions, prevents confusion between legacy and current models. Enables smooth migration paths.
+
+**Consequences**:
+- `hunyuan3d_shape_v21_image_to_raw_mesh`
+- `hunyuan3d_shape_v21_image_to_textured_mesh`
+- `hunyuan3d_paint_v21_image_mesh_painting`
+- `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh`
+- Legacy IDs (`hunyuan3dv21_*`) still registered but deprecated

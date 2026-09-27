@@ -523,12 +523,19 @@ lsof -ti :7842 | xargs -r kill -9
 
 - [Product Vision & Architectural North Star](Docs/PRODUCT_VISION.md)
 - [Third-Party Model Licenses & Attribution](Docs/MODEL_LICENSES.md)
-- [System Architecture & Blueprint](Docs/architecture.md)
+- [System Architecture & Blueprint](Docs/SYSTEM-BLUEPRINT.md)
 - [Complete REST API Documentation](Docs/api-documentation.md)
 - [3D Quality Pipeline Specification](Docs/3D_QUALITY_PIPELINE.md)
 - [Game-Ready Asset Specification](Docs/GAME_READY_SPEC.md)
 - [Developer & Testing Guide](Docs/developer-guide.md)
 - [Setup & Deployment Guide](Docs/setup-guide.md)
+- [Product Requirements](Docs/PRD.md)
+- [Architecture Decisions](Docs/DECISIONS.md)
+- [Design System](Docs/DESIGN.md)
+- [Project Memory](Docs/MEMORY.md)
+- [Security Policy](Docs/SECURITY.md)
+- [Change Log](Docs/CHANGELOG.md)
+- [Task List](Docs/TASKS.md)
 
 ---
 

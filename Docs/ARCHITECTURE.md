@@ -1,7 +1,7 @@
-# ForMash 3D — System & Runtime Architecture
+# Architecture — ForMash 3D
 
-> **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)  
-> **Last Verified**: September 2026  
+> **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
+> **Last Verified**: September 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
@@ -9,6 +9,7 @@
 ## 1. Architectural Mission & Overview
 
 ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architected around a clean separation of concerns:
+
 - **Presentation Layer**: Next.js 16 frontend with interactive Three.js 3D viewport, studio workspace tooling, and model management.
 - **API Gateway**: FastAPI backend (Python 3.10, Conda env `3daigc-api`) with VRAM-aware multiprocess scheduler, request validation, rate limiting, and static file delivery.
 - **Model Adapters**: Python adapters for each AI model (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer). The Paint-v2-1 pipeline supports Shape→Paint automatic chaining with configurable texture resolution (512/768), max view counts (6-12), PBR state tracking, and VRAM-aware scheduling.
@@ -133,6 +134,13 @@ Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the main ForM
 | **Auto Unload** | Scheduler | `AUTO_UNLOAD_AFTER_JOB=true` | Frees VRAM between jobs |
 | **Connection Reuse** | Frontend | Axios singleton (`services/apiClient.ts`) | Eliminates per-request overhead |
 | **SSE Streaming** | API Gateway | Server-Sent Events for progress | Real-time feedback without polling |
+| **Tensor Core Acceleration** | Backend | `torch.backends.cuda.matmul.allow_tf32 = True` | 3x-8x matmul speedup on Ampere/Ada/Hopper |
+| **Inference Mode** | Backend | `torch.inference_mode()` | Eliminates autograd graph tracking overhead |
+| **ORJSON Serialization** | Backend | `ORJSONResponse` with fallback | 10x-20x faster JSON serialization |
+| **GZip Compression** | Backend | `GZipMiddleware(minimum_size=1000)` | 75-85% response size reduction |
+| **Browser Caching** | Backend | `Cache-Control` headers | Reduces repeated asset downloads |
+| **Code-Splitting** | Frontend | `next/dynamic` with skeleton fallbacks | Reduced initial bundle size |
+| **Font Optimization** | Frontend | `next/font/google` with `display: 'swap'` | Eliminates CLS and render blocking |
 
 ---
 
@@ -167,8 +175,6 @@ sequenceDiagram
 
 ## 5. Storage Directory Organization
 
-All user assets and generation outputs are stored under `backend/storage/`:
-
 ```mermaid
 flowchart LR
     classDef dir fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
@@ -197,7 +203,7 @@ flowchart LR
 
 ### 6.1 Installation (`backend/scripts/install.sh`)
 
-The install script (`backend/scripts/install.sh`) creates the Conda env `3daigc-api` (Python 3.10) and installs:
+The install script creates the Conda env `3daigc-api` (Python 3.10) and installs:
 - PyTorch 2.6.0 + CUDA 12.4 (from `https://download.pytorch.org/whl/cu124`)
 - All thirdparty model dependencies (TRELLIS.2, PartField, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, UniRig, PartPacker, PartUV, P3-SAM, FastMesh, UltraShape, VoxHammer)
 - Main project dependencies (from `backend/requirements.txt`)
@@ -231,26 +237,15 @@ flowchart LR
 cd backend && conda activate 3daigc-api
 uvicorn api.main_singleworker:app --workers 1 --port 7842
 ```
-- Embedded VRAM-aware scheduler
-- No external broker required
-- Best for single-GPU deployments
 
 **Multi-Worker Mode** (Redis Queue):
 ```bash
-# Terminal 1: Start Redis
 redis-server
-
-# Terminal 2: Start scheduler service
 conda activate 3daigc-api
 python backend/scripts/scheduler_service.py
-
-# Terminal 3: Start API workers
 cd backend && conda activate 3daigc-api
 uvicorn api.main_multiworker:app --workers 4 --port 7842
 ```
-- Redis-backed job queue (`RedisJobQueue`)
-- Multiple uvicorn workers
-- Redis FileStore for cross-worker metadata sharing
 
 ### 6.3 Shutdown (`scripts/stop.sh`)
 - Gracefully terminates Next.js, Uvicorn, and Redis processes.
@@ -259,22 +254,171 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ---
 
-## 7. Verification & Self-Checks
+## 7. API Endpoints
 
-The backend exposes a health endpoint for runtime verification:
+### System & Health
+- `GET /health`: Health check with timestamp and status.
+- `GET /api/v1/system/health`: Extended system health.
+- `GET /api/v1/system/info`: Host hardware specs, OS, RAM, GPU telemetry.
+- `GET /api/v1/system/models`: Model registry with VRAM budgets and weights status.
+- `GET /api/v1/system/jobs/history`: Job history with search and status filtering.
+
+### File Upload & Storage
+- `POST /api/v1/file-upload/image`: Upload reference image.
+- `POST /api/v1/file-upload/mesh`: Upload base mesh for post-processing.
+- `GET /api/v1/file-upload/download/{file_id}`: Stream stored file.
+
+### Mesh Generation & Processing
+- `POST /api/v1/mesh-generation/image-to-raw-mesh`: Geometry synthesis from image.
+- `POST /api/v1/mesh-generation/image-to-textured-mesh`: Full PBR geometry + texture from image.
+- `POST /api/v1/mesh-generation/text-to-raw-mesh`: Geometry synthesis from text.
+- `POST /api/v1/mesh-generation/image-mesh-painting`: Paint textures onto mesh (Hunyuan3D-Paint-v2-1).
+- `GET /api/v1/mesh-generation/status/{job_id}`: Real-time generation job status.
+- `POST /api/v1/mesh-generation/cancel/{job_id}`: Cancel a running job.
+- `POST /api/v1/mesh-generation/cost-estimate`: Estimate VRAM and time cost.
+
+### Mesh Editing, Rigging, Segmentation, Retopology, UV
+- `POST /api/v1/mesh-editing/text-edit`: Edit mesh with text prompt.
+- `POST /api/v1/mesh-editing/image-edit`: Edit mesh with image reference.
+- `POST /api/v1/auto-rigging/generate-rig`: Generate skeletal rig with UniRig.
+- `POST /api/v1/mesh-segmentation/segment-mesh`: Decompose mesh into parts.
+- `POST /api/v1/mesh-retopology/retopology-mesh`: Retopologize dense mesh.
+- `POST /api/v1/mesh-uv-unwrapping/unwrap-mesh`: Generate UV atlas.
+
+### Motion Generation
+- `POST /api/v1/motion-generation/generate-motion`: Synthesize 3D human motion from text.
+- `GET /api/v1/motion-generation/checkpoints`: Query installed ARDY checkpoints.
+
+---
+
+## 8. Model Catalog
+
+| Model Architecture | Registered Adapters | Category / Tasks | VRAM Budget |
+|---|---|---|---|
+| **Hunyuan3D-Shape-v2-1** | `hunyuan3d_shape_v21_image_to_raw_mesh`, `hunyuan3d_shape_v21_image_to_textured_mesh` | Raw & Textured Mesh | 10–29 GB |
+| **Hunyuan3D-Paint-v2-1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB |
+| **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB |
+| **Hunyuan3D-2.1 (Legacy)** | `hunyuan3dv21_image_to_raw_mesh`, `hunyuan3dv21_image_to_textured_mesh`, `hunyuan3dv21_image_mesh_painting` | Raw & Textured Mesh | 8–19.5 GB |
+| **TRELLIS** | `trellis_text_to_textured_mesh`, `trellis_image_to_textured_mesh`, `trellis_text_mesh_painting`, `trellis_image_mesh_painting` | Text/Image to Mesh, Mesh Painting | 11.5 GB |
+| **TRELLIS.2** | `trellis2_image_to_textured_mesh`, `trellis2_image_mesh_painting` | Structured 3D & Painting | 23.5 GB |
+| **TripoSR** | `triposr_image_to_raw_mesh` | Single-Image to Mesh | 6 GB |
+| **TripoSG** | `triposg_image_to_raw_mesh` | Image & Scribble to Mesh | 8 GB |
+| **TripoSF** | `triposf_image_to_raw_mesh` | SparseFlex Mesh | 12 GB |
+| **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB |
+| **PartPacker** | `partpacker_image_to_raw_mesh` | Part-Level Image to Mesh | 10 GB |
+| **UltraShape** | `ultrashape_image_to_raw_mesh` | Arbitrary-Topology Mesh | 26.6 GB |
+| **PartField** | `partfield_mesh_segmentation` | Mesh Segmentation | 4 GB |
+| **P3-SAM** | `p3sam_mesh_segmentation` | High-Precision Segmentation | 60 GB |
+| **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB |
+| **FastMesh** | `fastmesh_v1k_retopology`, `fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB |
+| **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB |
+| **VoxHammer** | `voxhammer_text_mesh_editing`, `voxhammer_image_mesh_editing` | Text/Image Mesh Editing | 40 GB |
+
+---
+
+## 9. Third-Party Source Repositories
+
+Each model integration has its own third-party source directory under `backend/thirdparty/`:
+
+```
+backend/thirdparty/
+├── hunyuan3d-shape-v2-1/    # Hunyuan3D-Shape-v2-1 (3.3B shape)
+├── hunyuan3d-paint-v2-1/    # Hunyuan3D-Paint-v2-1 (2B PBR texture, RealESRGAN, DifferentiableRenderer)
+├── hunyuan3d-dit-v2-mini-turbo/  # Hunyuan3D-DiT-v2-mini-Turbo (0.6B)
+├── TRELLIS/
+├── TRELLIS.2/
+├── PartField/
+├── PartPacker/
+├── PartUV/
+├── FastMesh/
+├── UltraShape/
+├── UniRig/
+├── VoxHammer/
+├── TripoSR/
+├── TripoSG/
+├── TripoSF/
+├── ardy/
+└── wheels/
+```
+
+---
+
+## 10. Configuration Files
+
+### system.yaml (`backend/config/system.yaml`)
+```yaml
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null
+
+security:
+  rate_limit_per_minute: 60
+  cors_origins: ["*"]
+  api_key_required: false
+
+environment: "production"
+debug: false
+
+user_auth_enabled: false
+```
+
+### models.yaml (`backend/config/models.yaml`)
+Each feature maps model IDs to configurations with `vram_requirement`, `supported_inputs`, `supported_outputs`, `model_path`, `enabled`, and `max_workers`.
+
+---
+
+## 11. Verification & Self-Checks
+
 ```bash
+# Health check
 curl -s http://localhost:7842/health | jq .
-# {"status": "healthy", "timestamp": ..., "version": "0.1.0"}
-```
 
-The frontend TypeScript types can be checked with:
-```bash
+# TypeScript type check
 npx tsc --noEmit
-```
 
-The production frontend build can be verified with:
-```bash
+# Frontend build test
 bun run build
+
+# Python syntax check
+python3 -m compileall backend/api backend/core backend/adapters
+
+# Shell script syntax check
+bash -n backend/scripts/install.sh
 ```
 
-> **Note**: An automated `backend/tests/test_backend_e2e.py` test script referenced in earlier documentation does not currently exist. The health endpoint and TypeScript compiler provide the available self-check mechanisms.
+---
+
+## 12. Design Decisions
+
+### ADR-001: Lazy Adapter Loading
+**Decision**: All model adapters use lazy imports inside `_load_model()` to prevent cascading import failures.
+**Reason**: Optional heavy packages (`accelerate`, `cv2`, `yacs`) should not prevent other models from loading.
+
+### ADR-002: VRAM-Aware Scheduling
+**Decision**: Strict GPU mutual exclusion with 1GB safety margin.
+**Reason**: Prevents OOM crashes during concurrent inference on shared GPUs.
+
+### ADR-003: Source Asset Immutability
+**Decision**: `source.glb` is preserved byte-for-byte as an untouched master archive.
+**Reason**: Enables reproducibility and rollback to original geometry.
+
+### ADR-004: Local-First Architecture
+**Decision**: All processing runs locally; no cloud dependencies.
+**Reason**: Privacy, offline capability, and cost control.
+
+### ADR-005: Zustand for Client State
+**Decision**: Zustand stores for global client state instead of Redux or Context.
+**Reason**: Minimal boilerplate, fast selectors, easy middleware integration.
+
+### ADR-006: Next.js App Router
+**Decision**: Next.js 16 App Router with server components.
+**Reason**: Built-in data fetching, layouts, and API proxy routes.
+
+### ADR-007: Bun as Frontend Package Manager
+**Decision**: Bun as authoritative frontend package manager.
+**Reason**: Faster than npm/yarn, compatible with npm ecosystem.
+
+### ADR-008: Conda for Python Environment
+**Decision**: Conda env `3daigc-api` for Python 3.10 + PyTorch 2.6.0 + CUDA 12.4.
+**Reason**: Reproducible GPU environment, easy dependency management.
