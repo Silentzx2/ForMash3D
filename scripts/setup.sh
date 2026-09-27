@@ -493,6 +493,17 @@ _sanitize_apt_cuda_sources
 setup_cuda_124
 ensure_bun_or_npm
 ensure_uv
+
+# Create Python 3.10 venv so uv pip can install packages
+ENV_DIR="$PROJECT_ROOT/3daigc-api"
+if [[ ! -d "$ENV_DIR" ]]; then
+  log "Creating Python 3.10 virtual environment..."
+  python3.10 -m venv "$ENV_DIR" || fail "Failed to create venv"
+fi
+source "$ENV_DIR/bin/activate" || fail "Failed to activate venv"
+export UV_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+log "UV_PYTHON set to: $UV_PYTHON"
+
 download_and_install_release_wheels
 ensure_redis
 create_directories

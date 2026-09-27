@@ -751,7 +751,7 @@ print_info "========================================"
 # Check if hf is available
 if ! command -v hf &> /dev/null; then
     print_error "hf is not installed. Please install it first:"
-    print_error "uv pip install huggingface_hub"
+    print_error "uv pip --python ${UV_PYTHON:-python3.10} install huggingface_hub"
     exit 1
 fi
 

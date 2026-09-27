@@ -76,7 +76,7 @@ echo "The installation may take a while, please wait..."
 echo ""
 
 choose_env_manager() {
-  local default="${FORMASH3D_ENV_MANAGER:-${AI_STUDIO_ENV_MANAGER:-conda}}"
+  local default="${FORMASH3D_ENV_MANAGER:-${AI_STUDIO_ENV_MANAGER:-venv}}"
   local choice=""
   if [[ -n "${FORMASH3D_ENV_MANAGER:-}" ]]; then
     choice="${FORMASH3D_ENV_MANAGER}"
@@ -170,6 +170,7 @@ fi
 echo "[INFO] Using environment manager: $ENV_MANAGER"
 echo "[INFO] Active environment: $(python -c 'import sys; print(sys.executable)')"
 ACTIVE_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+export UV_PYTHON="$ACTIVE_PYTHON"
 
 # Persist environment manager and Python binary to .env
 persist_env_config() {
@@ -178,7 +179,7 @@ persist_env_config() {
     cp "$PROJECT_ROOT/.env.example" "$env_file"
   fi
   if [[ -f "$env_file" ]]; then
-    for pair in "FORMASH3D_ENV_MANAGER=${ENV_MANAGER}" "AI_STUDIO_ENV_MANAGER=${ENV_MANAGER}" "PYTHON_EXEC=${ACTIVE_PYTHON}"; do
+    for pair in "FORMASH3D_ENV_MANAGER=${ENV_MANAGER}" "AI_STUDIO_ENV_MANAGER=${ENV_MANAGER}" "PYTHON_EXEC=${ACTIVE_PYTHON}" "UV_PYTHON=${ACTIVE_PYTHON}"; do
       local k="${pair%%=*}"
       local v="${pair#*=}"
       if grep -q "^${k}=" "$env_file"; then
