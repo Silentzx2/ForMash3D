@@ -2,7 +2,7 @@
 
 
 import { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { HeartPulse, CheckCircle, XCircle, AlertTriangle, RefreshCw } from 'lucide-react';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { Badge } from '@/components/premium/Badge';

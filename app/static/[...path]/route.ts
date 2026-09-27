@@ -62,15 +62,15 @@ async function tryServeFromDisk(fullPath: string): Promise<NextResponse | null> 
   for (const candidate of candidates) {
     try {
       if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
-        const fileBuffer = await fs.promises.readFile(candidate);
+        const blob = await fs.openAsBlob(candidate);
         const headers = new Headers();
         headers.set('Content-Type', getMimeType(candidate));
-        headers.set('Content-Length', fileBuffer.length.toString());
+        headers.set('Content-Length', blob.size.toString());
         headers.set('Accept-Ranges', 'bytes');
         headers.set('Cache-Control', 'public, max-age=3600');
         headers.set('X-Content-Type-Options', 'nosniff');
         headers.set('Access-Control-Allow-Origin', '*');
-        return new NextResponse(fileBuffer, { status: 200, headers });
+        return new NextResponse(blob.stream() as any, { status: 200, headers });
       }
     } catch {
       // Continue to next candidate

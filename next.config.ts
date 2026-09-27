@@ -8,7 +8,14 @@ const nextConfig: NextConfig = {
     optimizePackageImports: [
       'lucide-react',
       'three',
-      'framer-motion',
+      'recharts',
+      '@tanstack/react-query',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-popover',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-tabs',
+      '@radix-ui/react-tooltip',
+      'motion',
     ],
   },
   typescript: {

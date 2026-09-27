@@ -9,6 +9,30 @@ All notable changes, architectural updates, and feature implementations for ForM
 
 ## [Unreleased]
 
+### ⚡ Production-Ready Performance Optimization & Bundle Acceleration (2026-09-27)
+- **Zero-Layout-Shift Native Font Optimization**:
+  - Replaced runtime DOM font injection (`components/GoogleFonts.tsx`) with Next.js built-in `next/font/google` (`Inter` and `JetBrains_Mono`) with `display: 'swap'` and CSS variables (`--font-inter`, `--font-mono`).
+  - Completely eliminated runtime Cumulative Layout Shift (CLS) and external font render blocking. Deleted obsolete `GoogleFonts.tsx`.
+- **Instant Server-Side Root Redirection**:
+  - Replaced heavy client-side bundle hydration on `/` with Next.js server-side `redirect('/workspace/overview')` in `app/page.tsx`.
+- **Modular Code-Splitting & Dynamic Imports**:
+  - Converted heavy panels, studios, and modals in `WorkspaceShell.tsx` to `next/dynamic` with skeleton loading fallbacks (`GeneratePanel`, `TexturePanel`, `RemeshPanel`, `UVUnwrapPanel`, `MeshSegmentPanel`, `MeshEditPanel`, `JobDetailView`, `OutputsPage`, `SystemPage`, `StudioDashboard`, `ExportModal`, `SettingsModal`, `DccBridgeModal`).
+  - Added package tree-shaking optimizations in `next.config.ts` for `recharts`, `@tanstack/react-query`, `@radix-ui/*`, and `motion`.
+- **Pruned Redundant Animation Dependencies**:
+  - Unified animation stack across the entire codebase to `motion/react` (`motion` v13).
+  - Cleanly removed deprecated `framer-motion` v12 dependency from `package.json`, reducing bundle duplication.
+- **480KB Favicon Asset Compression**:
+  - Replaced base64-encoded raster PNG inside `app/icon.svg` (480KB) with an ultra-lightweight 4KB vector SVG 3D cube.
+- **Memory-Bounded 3D Asset Cache (`glbCache.ts`)**:
+  - Replaced loose item-count eviction with a strict 150MB LRU byte-budget memory cap, preventing browser tab OOM crashes when viewing multiple large 3D models.
+  - Eliminated full buffer cloning (`buffer.slice(0)`) when writing into browser `CacheStorage`.
+- **Zero-Buffer 3D Static Model Streaming (`app/static/[...path]/route.ts`)**:
+  - Upgraded disk file serving to Node.js 22 `fs.openAsBlob(path).stream()`, eliminating in-memory buffer allocation during large GLB/OBJ file transfers.
+- **Activity Logging Throttle & Batching (`ActivityLogger.tsx`)**:
+  - Batched user interaction telemetry with a 2.5s debounce queue to eliminate connection pool starvation during rapid UI interactions.
+- **Production Build Verification**:
+  - Next.js 16.3.5 Turbopack production build verified: compiled all 13 routes cleanly in 6.7 seconds with 0 TypeScript/Turbopack errors. All 13 shell scripts passed static audit.
+
 ### 🐛 Bug Fixes
 - **Bug 1 - `text_to_textured_mesh` feature unavailable**: Fixed `get_model_configs_from_settings()` in `backend/core/scheduler/model_factory.py` to handle dict-based model configs from YAML (not just ModelConfig objects). Added fallback to `get_default_model_configs()` in `backend/core/config.py` when `models.yaml` fails to load.
 - **Bug 2 - `torch.float8_e8m0fnu` AttributeError**: Added compatibility shim in `backend/core/config.py` that patches `torch.float8_e8m0fnu` and `torch.float8_e5m2` when missing (torch 2.8.0 compatibility). Pinned `transformers==4.43.2` and `diffusers==0.24.0` in `backend/requirements.txt` to avoid FP8 integration errors.

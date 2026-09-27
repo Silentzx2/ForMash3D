@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Settings, Key, Save, Trash2, Cpu, HardDrive, Server, Wifi, RefreshCw,
   Settings2, Sparkles, LayoutGrid, Download, Keyboard, Bell, SlidersHorizontal,

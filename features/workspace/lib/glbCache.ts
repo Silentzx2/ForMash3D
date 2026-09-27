@@ -8,6 +8,9 @@
 
 const CACHE_NAME = 'formash-3d-models-v1';
 const glbBufferCache = new Map<string, ArrayBuffer>();
+const MAX_CACHE_BYTES = 150 * 1024 * 1024; // 150MB maximum in-memory budget
+const MAX_CACHE_ITEMS = 12; // Cap item count
+let currentCacheBytes = 0;
 
 export function getCachedGLB(url: string): ArrayBuffer | undefined {
   if (!url || url.startsWith('blob:') || url.startsWith('data:')) return undefined;
@@ -17,12 +20,24 @@ export function getCachedGLB(url: string): ArrayBuffer | undefined {
 export function setCachedGLB(url: string, buffer: ArrayBuffer): void {
   if (!url || url.startsWith('blob:') || url.startsWith('data:')) return;
 
-  // Evict oldest in-memory item if cache exceeds 40 items to bound RAM usage
-  if (glbBufferCache.size > 40) {
+  const itemBytes = buffer.byteLength;
+  // If a single model exceeds the budget, don't keep it in L1 RAM (it can still live in L2 disk cache)
+  if (itemBytes > MAX_CACHE_BYTES) return;
+
+  // Evict oldest items if item count or memory budget exceeded
+  while (
+    (glbBufferCache.size >= MAX_CACHE_ITEMS || currentCacheBytes + itemBytes > MAX_CACHE_BYTES) &&
+    glbBufferCache.size > 0
+  ) {
     const firstKey = glbBufferCache.keys().next().value;
-    if (firstKey) glbBufferCache.delete(firstKey);
+    if (!firstKey) break;
+    const oldBuf = glbBufferCache.get(firstKey);
+    if (oldBuf) currentCacheBytes -= oldBuf.byteLength;
+    glbBufferCache.delete(firstKey);
   }
+
   glbBufferCache.set(url, buffer);
+  currentCacheBytes += itemBytes;
 
   // Asynchronously persist into L2 disk CacheStorage (HTTP/HTTPS/origin paths only)
   if (typeof window !== 'undefined' && 'caches' in window && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/'))) {
@@ -32,7 +47,8 @@ export function setCachedGLB(url: string, buffer: ArrayBuffer): void {
           'Content-Type': 'model/gltf-binary',
           'Content-Length': buffer.byteLength.toString(),
         });
-        const response = new Response(buffer.slice(0), { headers });
+        // Avoid buffer.slice(0) memory copy; Response accepts ArrayBufferView/ArrayBuffer directly
+        const response = new Response(buffer, { headers });
         cache.put(url, response).catch(() => {});
       }).catch(() => {});
     } catch {}

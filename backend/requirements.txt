@@ -1,18 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
 --extra-index-url https://mirrors.aliyun.com/pypi/simple
 
-# ── Core dependencies (pinned for torch 2.8.0 compatibility) ──────────
-# torch 2.8.0+cu128 does NOT have torch.float8_e8m0fnu
-# transformers must be <4.44 to avoid finegrained_fp8 import error
-# diffusers must match transformers version
-torch==2.8.0
-torchvision==0.23.0
-torchaudio==2.8.0
+# ── Core dependencies (CUDA 12.4 + Torch 2.6.0 baseline) ──────────
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+torchaudio==2.6.0+cu124
 
-# transformers/diffusers version pinning to avoid torch.float8_e8m0fnu
-# and PreTrainedModel circular import issues
+# transformers/diffusers version pinning compatible with diffusers 0.24.0
 transformers==4.43.2
 diffusers==0.24.0
-huggingface_hub>=0.24.0
+huggingface_hub>=0.20.0,<0.26.0
 
 # Core FastAPI and web server dependencies
 fastapi==0.104.1

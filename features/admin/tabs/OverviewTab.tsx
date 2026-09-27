@@ -2,7 +2,7 @@
 
 
 import { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import {
   Cpu, HardDrive, Zap, Activity, Box,
   XCircle, Server,

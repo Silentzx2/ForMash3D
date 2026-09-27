@@ -1,9 +1,5 @@
-'use client';
-
-import React from 'react';
-import { WorkspaceShell } from '@/features/workspace/WorkspaceShell';
-
+import { redirect } from 'next/navigation';
 
 export default function HomePage() {
-  return <WorkspaceShell />;
+  redirect('/workspace/overview');
 }

@@ -16,17 +16,44 @@ const MeshViewer = dynamic(() => import('./Viewport/MeshViewer').then(mod => mod
 
 import { MOTION_FAST, MOTION_SPRING } from '@/lib/motion';
 
-import { GeneratePanel } from './Panels/GeneratePanel';
-import { TexturePanel } from './Panels/TexturePanel';
-import { RemeshPanel } from './Panels/RemeshPanel';
-import { SecondaryPanel } from './Panels/SecondaryPanels';
-import { UVUnwrapPanel } from './Panels/UVUnwrapPanel';
-import { MeshSegmentPanel } from './Panels/MeshSegmentPanel';
-import { MeshEditPanel } from './Panels/MeshEditPanel';
-import { JobDetailView } from './Jobs/JobDetailView';
-import { ViewportToolOverlay } from './Viewport/ViewportToolOverlay';
+// Dynamic imports for tool panels (loaded on-demand when tool selected)
+const GeneratePanel = dynamic(() => import('./Panels/GeneratePanel').then(mod => mod.GeneratePanel), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const TexturePanel = dynamic(() => import('./Panels/TexturePanel').then(mod => mod.TexturePanel), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const RemeshPanel = dynamic(() => import('./Panels/RemeshPanel').then(mod => mod.RemeshPanel), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const SecondaryPanel = dynamic(() => import('./Panels/SecondaryPanels').then(mod => mod.SecondaryPanel), {
+  ssr: false,
+});
+const UVUnwrapPanel = dynamic(() => import('./Panels/UVUnwrapPanel').then(mod => mod.UVUnwrapPanel), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const MeshSegmentPanel = dynamic(() => import('./Panels/MeshSegmentPanel').then(mod => mod.MeshSegmentPanel), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const MeshEditPanel = dynamic(() => import('./Panels/MeshEditPanel').then(mod => mod.MeshEditPanel), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const JobDetailView = dynamic(() => import('./Jobs/JobDetailView').then(mod => mod.JobDetailView), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const ViewportToolOverlay = dynamic(() => import('./Viewport/ViewportToolOverlay').then(mod => mod.ViewportToolOverlay), {
+  ssr: false,
+});
 
 import { RightWorkspacePanel } from './RightPanel/RightWorkspacePanel';
+
 const AnimationStudio = dynamic(() => import('./Animation/AnimationStudio').then(mod => mod.AnimationStudio), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
@@ -36,13 +63,28 @@ const RiggingStudio = dynamic(() => import('./Rigging/RiggingStudio').then(mod =
   loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
 });
 
-import { OutputsPage } from './Dashboard/OutputsPage';
-import { SystemPage } from './Dashboard/SystemPage';
-import { StudioDashboard } from './Dashboard/StudioDashboard';
+const OutputsPage = dynamic(() => import('./Dashboard/OutputsPage').then(mod => mod.OutputsPage), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const SystemPage = dynamic(() => import('./Dashboard/SystemPage').then(mod => mod.SystemPage), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const StudioDashboard = dynamic(() => import('./Dashboard/StudioDashboard').then(mod => mod.StudioDashboard), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
 
-import { ExportModal } from './Modals/ExportModal';
-import { SettingsModal } from './Modals/SettingsModal';
-import { DccBridgeModal } from './Modals/DccBridgeModal';
+const ExportModal = dynamic(() => import('./Modals/ExportModal').then(mod => mod.ExportModal), {
+  ssr: false,
+});
+const SettingsModal = dynamic(() => import('./Modals/SettingsModal').then(mod => mod.SettingsModal), {
+  ssr: false,
+});
+const DccBridgeModal = dynamic(() => import('./Modals/DccBridgeModal').then(mod => mod.DccBridgeModal), {
+  ssr: false,
+});
 import { FolderOpen, Sliders, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Menu, X } from 'lucide-react';
 import type { ToolType } from './types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
@@ -261,12 +303,7 @@ export const WorkspaceShell: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [isLeftPanelOpen, isRightPanelOpen, setIsRightPanelOpen]);
 
-  // Redirect / to /workspace/overview
-  useEffect(() => {
-    if (pathname === '/') {
-      router.replace('/workspace/overview');
-    }
-  }, [pathname, router]);
+
 
   const renderToolPanel = () => {
     switch (activeTool) {

@@ -14,6 +14,19 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set +a
 fi
 
+# Test whether a wheel file exists and is a valid non-corrupted zip/wheel
+_wheel_is_valid() {
+    local whl="$1"
+    [ -f "$whl" ] || return 1
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -tqq "$whl" >/dev/null 2>&1
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c "import zipfile, sys; zipfile.ZipFile(sys.argv[1]).testzip()" "$whl" >/dev/null 2>&1
+    else
+        [ -s "$whl" ]
+    fi
+}
+
 # Retry a command up to N times with a delay between attempts.
 # Usage: _retry 3 5 <command> [args...]
 _retry() {
@@ -597,8 +610,8 @@ else
 fi
 
 echo "[INFO] Installing huggingface_hub for model downloading..."
-# for downloading models 
-$UV_PIP install --find-links="$WHEEL_DIR" huggingface_hub
+# for downloading models (pinned <0.26.0 for diffusers compatibility)
+$UV_PIP install --find-links="$WHEEL_DIR" "huggingface_hub>=0.20.0,<0.26.0"
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] huggingface_hub installed"
 else

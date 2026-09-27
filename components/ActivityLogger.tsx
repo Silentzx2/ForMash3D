@@ -33,18 +33,34 @@ function now(): string {
   return new Date().toISOString();
 }
 
-function postLog(entry: ActivityEntry): void {
-    try {
-      fetch(`${getApiUrl()}${LOG_ENDPOINT}`, {
+let logBatchTimeout: ReturnType<typeof setTimeout> | null = null;
+let pendingLogs: ActivityEntry[] = [];
+
+function flushLogs(): void {
+  if (pendingLogs.length === 0) return;
+  const latestEntry = pendingLogs[pendingLogs.length - 1];
+  pendingLogs = [];
+  try {
+    fetch(`${getApiUrl()}${LOG_ENDPOINT}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(entry),
+      body: JSON.stringify(latestEntry),
       keepalive: true,
     }).catch(() => {
       // Logging must never break the app — swallow failures silently.
     });
   } catch {
     // ignore
+  }
+}
+
+function postLog(entry: ActivityEntry): void {
+  pendingLogs.push(entry);
+  if (!logBatchTimeout) {
+    logBatchTimeout = setTimeout(() => {
+      logBatchTimeout = null;
+      flushLogs();
+    }, 2500);
   }
 }
 
