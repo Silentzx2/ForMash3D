@@ -111,7 +111,7 @@ The setup script (`scripts/setup.sh`) orchestrates the full installation in orde
 
 The `download_and_install_release_wheels()` function inside `scripts/setup.sh` is the single source of truth for wheel installation — it fetches all `.whl` files from the `ForMash3D/releases/tag/Wheels` GitHub Release and installs them into the environment.
 
-Third-party source code is included directly in `backend/thirdparty/` as part of the main repository. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime.
+Third-party source code is included directly in `backend/thirdparty/` as part of the main repository, cloned from `https://github.com/Silentzx2/ForMash3D-thirdparty`. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime.
 
 ### Method 2: Manual Installation
 
@@ -148,7 +148,7 @@ uvicorn api.main_singleworker:app --reload --port 7842
 bun run dev
 ```
 
-Third-party source code is included directly in `backend/thirdparty/` as part of the main repository. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime. The `download_and_install_release_wheels()` function in `scripts/setup.sh` is the single source of truth for wheel installation.
+Third-party source code is included directly in `backend/thirdparty/` as part of the main repository, cloned from `https://github.com/Silentzx2/ForMash3D-thirdparty`. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime. The `download_and_install_release_wheels()` function in `scripts/setup.sh` is the single source of truth for wheel installation.
 
 ### Access Points After Startup
 

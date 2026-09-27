@@ -29,7 +29,7 @@ ForMash 3D provides support for Google Colab environments. The Colab scripts aut
 !bash backend/scripts/install.sh --no-start
 ```
 
-Third-party source code is included directly in `backend/thirdparty/` as part of the main repository. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime.
+Third-party source code is included directly in `backend/thirdparty/` as part of the main repository, cloned from `https://github.com/Silentzx2/ForMash3D-thirdparty`. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime.
 
 ### Cell 2: Start Services
 ```python

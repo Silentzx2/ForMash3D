@@ -250,7 +250,7 @@ The model registry is dynamically configured via `backend/config/models.yaml`, p
 
 ### Clone & Setup
 
-Clone the ForMash3D repository. Third-party model source code is included directly in `backend/thirdparty/` as part of the main repository:
+Clone the ForMash3D repository. Third-party model source code is included directly in `backend/thirdparty/` as part of the main repository, cloned from `https://github.com/Silentzx2/ForMash3D-thirdparty`:
 
 ```bash
 git clone https://github.com/Silentzx2/ForMash3D.git

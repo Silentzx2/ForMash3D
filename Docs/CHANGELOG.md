@@ -4,6 +4,9 @@ All notable changes, architectural updates, and feature implementations for ForM
 
 ---
 
+### 🔧 Third-Party Source Code Migration
+- **ForMash3D-thirdparty Repository**: Cloned `https://github.com/Silentzx2/ForMash3D-thirdparty` into `backend/thirdparty/`. All third-party model source code (TRELLIS, TRELLIS.2, TripoSF, TripoSG, TripoSR, UltraShape, UniRig, VoxHammer, FastMesh, Hunyuan3D-2.1, Hunyuan3DPart, PartField, PartPacker, PartUV, ardy) is now tracked as part of the main ForMash3D repository. The `wheels/` directory is excluded via `backend/.gitignore`.
+
 ## [Unreleased]
 
 ### 🐛 Bug Fixes

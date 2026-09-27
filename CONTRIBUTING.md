@@ -30,7 +30,7 @@ ForMash 3D is an early, experimental, pre-alpha project that has been heavily AI
 
 ### 1. Clone the Repository
 
-ForMash 3D includes third-party model source code directly in `backend/thirdparty/` as part of the main repository:
+ForMash 3D includes third-party model source code directly in `backend/thirdparty/` as part of the main repository, cloned from `https://github.com/Silentzx2/ForMash3D-thirdparty`:
 
 ```bash
 git clone https://github.com/Silentzx2/ForMash3D.git
