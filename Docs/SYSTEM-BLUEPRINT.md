@@ -3,6 +3,7 @@
 > **System Version**: 0.1.0 (FastAPI + Next.js 16, Python 3.10)
 > **Target Deployments**: Single-GPU Linux / Cloud GPU / Local Workstations
 > **Last Verified**: September 2026
+> **Design Tokens**: Studio Gold `#FFCC00` (`48 100% 50%`) on Matte Black `#080808`
 
 ---
 
@@ -20,21 +21,75 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 
 ```mermaid
 graph TD
-    UI["Next.js 16 Frontend<br/>Three.js / React Three Fiber :3000"]
-    API["FastAPI Gateway :7842<br/>Routers: system, generation,<br/>editing, rigging, segmentation"]
-    SCHED["VRAM-Aware Scheduler"]
-    ADAPTERS["Model Adapters<br/>TRELLIS · Hunyuan3D ·<br/>PartPacker · UltraShape<br/>PartField · UniRig · FastMesh"]
-    REDIS["Redis :6379<br/>Job Queue (multi-worker)"]
-    STORAGE["Persistent Storage<br/>backend/storage/models/[job_id]"]
+    classDef client fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef gateway fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    classDef scheduler fill:#1e293b,stroke:#f97316,stroke-width:2px,color:#fff
+    classDef adapters fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef storage fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
+    classDef queue fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
 
-    UI -->|REST / SSE| API
-    API --> SCHED
-    SCHED --> ADAPTERS
-    ADAPTERS -->|Raw Mesh| STORAGE
-    STORAGE -->|Static Delivery| API
-    API -->|Viewport Render| UI
+    subgraph Client["🌐 Next.js 16 Frontend :3000"]
+        direction TB
+        UI["React 19 + TypeScript + R3F"]:::client
+        STATE["Zustand Global State"]:::client
+        QUERY["TanStack Query"]:::client
+    end
 
-    API -.->|Job Queue| REDIS
+    subgraph Gateway["⚡ FastAPI Gateway :7842"]
+        direction TB
+        API["Routers: system, generation,<br/>editing, rigging, segmentation"]:::gateway
+        SCHED["VRAM-Aware Scheduler"]:::scheduler
+    end
+
+    subgraph S["🎮 VRAM-Aware Scheduler"]
+        direction TB
+        GPU_LOCK["GPU Mutual Exclusion"]:::scheduler
+        MONITOR["GPU Monitor<br/>VRAM / Temp"]:::scheduler
+        SAFETY["VRAM Safety Buffer<br/>1GB Free Margin"]:::scheduler
+        AUTO_UNLOAD["Auto-Unload After Job"]:::scheduler
+    end
+
+    subgraph Adapters["🧠 Model Adapters"]
+        direction TB
+        TRELLIS["TRELLIS<br/>FlexiCubes PBR"]:::adapters
+        HUNY["Hunyuan3D<br/>Shape + Paint"]:::adapters
+        TRIPO["TripoSR/SG/SF"]:::adapters
+        PP["PartPacker"]:::adapters
+        US["UltraShape"]:::adapters
+        PF["PartField"]:::adapters
+        UR["UniRig"]:::adapters
+        FM["FastMesh"]:::adapters
+        VH["VoxHammer"]:::adapters
+    end
+
+    subgraph Storage["💾 Persistent Storage"]
+        direction TB
+        LOCAL["Local Filesystem<br/>backend/storage/models/[job_id]/"]:::storage
+        REDIS_STORE["Redis FileStore<br/>Cross-Worker Metadata"]:::storage
+    end
+
+    subgraph Queue["📦 Redis 7 :6379"]
+        direction TB
+        JOB_QUEUE["Job Queue<br/>(multi-worker)"]:::queue
+    end
+
+    Client -- "REST / SSE / WS" --> Gateway
+    Gateway --> SCHED
+    SCHED --> GPU_LOCK
+    SCHED --> MONITOR
+    SCHED --> SAFETY
+    SCHED --> AUTO_UNLOAD
+    SCHED --> Adapters
+    Adapters -->|Raw Mesh| Storage
+    Storage -- "Static Delivery" --> Client
+    Gateway -.->|Job Queue| Queue
+
+    style Client fill:#1e293b
+    style Gateway fill:#0f172a
+    style S fill:#1e293b
+    style Adapters fill:#0f172a
+    style Storage fill:#0f172a
+    style Queue fill:#0f172a
 ```
 
 ---
@@ -68,9 +123,42 @@ sequenceDiagram
 
 ---
 
-## 3. High-Throughput & Low-Latency Performance Architecture
+## 3. Paint-v2-1 Pipeline Flow
 
-### 3.1 VRAM-Aware Scheduling
+```mermaid
+flowchart TD
+    classDef input fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef process fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef output fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
+    classDef guard fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
+
+    IN["📥 Input: source.glb<br/>Untouched Master Mesh"]:::input
+    IN --> SHAPE["🔧 Stage 1: Shape Generation<br/>Hunyuan3D-Shape-v2-1"]:::process
+    SHAPE --> MESH["🧱 Raw Mesh Output"]:::output
+    MESH --> PAINT["🎨 Stage 2: Paint Pipeline<br/>hunyuan3d_paint_v21_image_mesh_painting"]:::process
+    PAINT --> RES["🔍 RealESRGAN x4+<br/>Super-Resolution"]:::process
+    RES --> PBR["📐 DifferentiableRenderer<br/>PBR Validation"]:::process
+    PBR --> VRAM{"⚡ VRAM Check<br/>~21GB Required?"}:::guard
+    VRAM -->|✅ Yes| OK["✅ PBR Texture Ready<br/>texture.glb"]:::output
+    VRAM -->|⚠️ No| LOW["⚠️ Reduce Views<br/>or Resolution"]:::guard
+    OK --> CONFIG["⚙️ Configurable Parameters<br/>Resolution: 512/768<br/>Max Views: 6-12<br/>PBR State: Tracked"]:::process
+    CONFIG --> EXPORT["📦 Export: texture.glb<br/>PBR Materials"]:::output
+
+    style IN fill:#1e293b
+    style SHAPE fill:#0f172a
+    style PAINT fill:#0f172a
+    style RES fill:#0f172a
+    style PBR fill:#0f172a
+    style VRAM fill:#0f172a
+    style OK fill:#1e293b
+    style EXPORT fill:#1e293b
+```
+
+---
+
+## 4. High-Throughput & Low-Latency Performance Architecture
+
+### 4.1 VRAM-Aware Scheduling
 
 | Optimization | Mechanism | Impact |
 |---|---|---|
@@ -79,17 +167,40 @@ sequenceDiagram
 | **VRAM Safety Buffer** | `memory_buffer=1024` (1GB free) + `VRAM_SAFETY_MARGIN_MB=1024` | Prevents OOM on loaded models |
 | **Auto Unload** | `AUTO_UNLOAD_AFTER_JOB=true` | Frees VRAM between jobs |
 
-### 3.2 API Performance
+### 4.2 API Performance
 
 | Optimization | Mechanism | Impact |
 |---|---|---|
 | **Request Timing** | `X-Process-Time` response header on every request | Latency visibility |
 | **Connection Reuse** | Frontend uses axios singleton (`services/apiClient.ts`) | Eliminates per-request overhead |
 | **SSE Streaming** | Server-Sent Events for generation progress | Real-time feedback without polling |
+| **ORJSON Serialization** | `ORJSONResponse` with graceful fallback | 10-20x faster JSON |
+| **GZip Compression** | `GZipMiddleware(minimum_size=1000)` | 75-85% response size reduction |
+
+### 4.3 VRAM Requirements by Model
+
+| Model | VRAM Required | Quality | Speed |
+|---|---|---|---|
+| TRELLIS | 11.5 GB | High quality | ~60 seconds |
+| TRELLIS.2 | 23 GB | Highest quality | ~60 seconds |
+| Hunyuan3D-Shape-v2-1 | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
+| Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
+| Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
+| TripoSR | 6 GB | Ultra-fast raw mesh | ~2-5 seconds |
+| TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
+| ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
+| PartPacker | 10 GB | Fast | ~60 seconds |
+| UltraShape | 26.6 GB | Highest fidelity | ~30 seconds |
+| PartField | 4 GB | Segmentation | ~15 seconds |
+| P3-SAM | 60 GB | High-precision segmentation | ~15 seconds |
+| UniRig | 9 GB | Auto-rigging | ~20 seconds |
+| FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
+| FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
+| VoxHammer | 40 GB | Mesh editing | ~20 seconds |
 
 ---
 
-## 4. Multi-Format Asset Packaging & Delivery
+## 5. Multi-Format Asset Packaging & Delivery
 
 Generated assets are packaged for delivery via the API. The following formats are supported for export:
 
@@ -124,7 +235,7 @@ Project_Export_<job_id>.zip
 
 ---
 
-## 5. Deployment Modes
+## 6. Deployment Modes
 
 ### Single-Worker (Default)
 
@@ -159,7 +270,7 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ---
 
-## 6. Verification & Health Check
+## 7. Verification & Health Check
 
 The backend exposes a health endpoint for runtime verification:
 ```bash

@@ -48,11 +48,20 @@ ForMash 3D is in active development. The core architecture is complete with all 
 - All adapters import cleanly (verified by test suite)
 
 ### Documentation
-- README.md updated with Paint-v2-1 info
-- CHANGELOG.md with full audit entries
-- architecture.md, developer-guide.md, api-documentation.md, setup-guide.md updated
-- PRD.md, ARCHITECTURE.md, DESIGN.md, TASKS.md, DECISIONS.md, MEMORY.md, TEST_PLAN.md, SECURITY.md created
-- RULES.md created from AGENTS.md
+- README.md fully updated with Paint-v2-1 info, model catalog, and documentation index
+- CHANGELOG.md with last 3 changes only (Paint Audit, Third-Party Migration, Workspace Layout)
+- ARCHITECTURE.md, PRD.md, DESIGN.md, TASKS.md, DECISIONS.md, MEMORY.md, SECURITY.md, SYSTEM-BLUEPRINT.md created in `Docs/`
+- RULES.md created from AGENTS.md with extended ForMash3D-specific rules
+- All docs in `Docs/` directory (uppercase)
+- `docs/` (lowercase) directory removed
+- `backup/` directory deleted
+- `TEST_PLAN.md` deleted
+
+### Git & Commits
+- All changes committed and pushed to `main`
+- `TODO_AUDIT.md` excluded from git commits
+- 625+ files committed in single commit
+- Commit `c704632` pushed to `main`
 
 ## Current Task
 
@@ -82,12 +91,23 @@ TASK-001: Complete documentation and verification
 
 ## Next Step
 
-1. Fix Dockerfile to include Paint DifferentiableRenderer build step
-2. If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference with `max_num_view=6, resolution=512` and `max_num_view=12, resolution=768`
-3. Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
-4. Verify `backend/scripts/download_models.sh` correctly copies RealESRGAN to thirdparty location
-5. Implement `backend/tests/test_backend_e2e.py`
-6. Update `Docs/CHANGELOG.md` and any other docs to reflect the new Paint-v2-1 pipeline
+### Critical
+1. Fix `backend/Dockerfile` to include Paint DifferentiableRenderer build step
+2. Verify `runTextureGeneration` dependency array includes `generationSettings.maxNumView`, `generationSettings.resolution`, `generationSettings.generatePBR`
+3. Add `supportsFlashVDM` to `isTexturePaintingModel` if needed
+4. Verify `TexturePanel.tsx` `getTextureStatusInfo` checks VRAM status
+
+### Testing
+5. If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference
+6. Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
+7. Implement `backend/tests/test_backend_e2e.py`
+8. Run `npx tsc --noEmit` and `python3 -m compileall` for verification
+
+### Features
+9. Cloudflare tunneling for remote access
+10. DCC Bridge (Blender, Unreal, Unity, Maya)
+11. Advanced animation studio with timeline
+12. CI/CD pipeline with GitHub Actions
 
 ## Environment
 

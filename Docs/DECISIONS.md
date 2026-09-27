@@ -250,3 +250,95 @@
 - `hunyuan3d_paint_v21_image_mesh_painting`
 - `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh`
 - Legacy IDs (`hunyuan3dv21_*`) still registered but deprecated
+
+---
+
+## ADR-019: Paint-v2-1 Pipeline Architecture
+
+**Decision**: Integrate Hunyuan3D-Paint-v2-1 with RealESRGAN x4+ and DifferentiableRenderer as a separate pipeline from Shape generation.
+
+**Reason**: The Paint-v2-1 pipeline requires a different set of dependencies (RealESRGAN_x4plus.pth, DifferentiableRenderer native modules) and VRAM budget (~21GB) compared to shape generation. Separating it allows independent configuration and scheduling.
+
+**Consequences**:
+- `backend/adapters/hunyuan3d_paint_v21.py` adapter with `_resolve_realesrgan_path()`, `get_vram_status()`, `_verify_pbr_output()`
+- Shape→Paint automatic chaining support
+- Configurable texture resolution (512/768), max views (6-12)
+- VRAM-aware scheduling with ~21GB requirement
+- Dockerfile needs separate Paint DifferentiableRenderer build step
+
+---
+
+## ADR-020: Third-Party Source Code in Main Repository
+
+**Decision**: All third-party model source code is tracked as part of the main ForMash3D repository in `backend/thirdparty/`.
+
+**Reason**: Simplifies deployment and eliminates external dependencies. The `wheels/` directory is excluded via `.gitignore` to keep the repository size manageable.
+
+**Consequences**:
+- `backend/thirdparty/` contains all model source code
+- `backend/thirdparty/wheels/` excluded via `.gitignore`
+- `backend/scripts/download_models.sh` handles wheel downloads
+- 1080+ third-party Python files scanned for bare `except:` clauses
+- Upstream code should not be modified
+
+---
+
+## ADR-021: Documentation in `Docs/` Directory
+
+**Decision**: All project documentation lives in `Docs/` (uppercase) directory.
+
+**Reason**: Consistent naming convention across the project. The `docs/` (lowercase) directory was removed to avoid confusion. All references updated to `Docs/`.
+
+**Consequences**:
+- `Docs/PRD.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, etc.
+- `Docs/CHANGELOG.md` keeps only last 3 changes
+- `Docs/TASKS.md` with clear completed/future format
+- `Docs/RULES.md` with mandatory doc update policy
+- After every code change, all relevant .md files must be updated
+
+---
+
+## ADR-022: Studio Gold Design System
+
+**Decision**: Use Studio Gold (`#FFCC00`, `48 100% 50%`) as the primary accent color on Matte Black (`#080808`) backdrop.
+
+**Reason**: High-contrast, visually distinctive, and professional. Studio Gold provides excellent readability and brand identity. All colors use HSL CSS variables, no hex literals in code.
+
+**Consequences**:
+- `app/globals.css` with HSL design tokens
+- `--primary: 48 100% 50%` as Studio Gold
+- `--surface-0` through `--surface-4` for surface hierarchy
+- `next/font/google` for font optimization
+- `motion/react` for consistent animations
+
+---
+
+## ADR-023: Bun as Frontend Package Manager
+
+**Decision**: Bun is the authoritative frontend package manager.
+
+**Reason**: Faster than npm/yarn, compatible with npm ecosystem. Bun's built-in test runner, bundler, and package manager reduce toolchain complexity.
+
+**Consequences**:
+- `bun install` instead of `npm install`
+- `bun run dev` instead of `npm run dev`
+- `bun run build` instead of `npm run build`
+- `bun run lint` instead of `npm run lint`
+- `bun run tsc` for TypeScript checking
+
+---
+
+## ADR-024: VRAM Safety Margin
+
+**Decision**: `VRAM_SAFETY_MARGIN_MB=1024` keeps 1GB free margin on GPU.
+
+**Reason**: Prevents OOM crashes during inference. The scheduler tracks VRAM usage and enforces mutual exclusion so only one job uses the GPU at a time.
+
+**Consequences**:
+- 1GB free margin after each job
+- `AUTO_UNLOAD_AFTER_JOB=true` frees VRAM between jobs
+- GPU mutual exclusion prevents concurrent inference
+- `MAX_VRAM_MB=0` enables auto-detection
+- Hunyuan3D-Paint-v2-1 requires ~21GB VRAM
+- Hunyuan3D-Shape-v2-1 requires 10-29GB VRAM
+- Hunyuan3D-DiT-v2-mini-Turbo requires ~6GB VRAM
