@@ -16,7 +16,8 @@ Before deploying any model commercially or redistributing model weights, you mus
 
 ## Third-Party Model Catalog & Licensing Matrix
 
-| Model / Submodule | Primary Research Author / Institution | Upstream Repository | Code License | Checkpoint / Weight License | Commercial Use Permitted? |
+| Model | Primary Research Author / Institution | Upstream Repository | Code License | Checkpoint / Weight License | Commercial Use Permitted? |
+|---|---|---|---|---|---|
 |---|---|---|---|---|---|
 | **TRELLIS** | Microsoft / Jeffrey Xiang | [microsoft/TRELLIS](https://github.com/microsoft/TRELLIS) | MIT | Research / Non-Commercial (Hugging Face) | Check upstream license |
 | **TRELLIS.2** | Jeffrey Xiang | [JeffreyXiang/TRELLIS.2](https://github.com/JeffreyXiang/TRELLIS.2) | MIT / Apache-2.0 | Research / Community | Check upstream license |
@@ -42,37 +43,37 @@ Before deploying any model commercially or redistributing model weights, you mus
 ### 1. TRELLIS & TRELLIS.2
 - **Authors**: Jeffrey Xiang, Microsoft Research
 - **Inference Location**: `backend/adapters/trellis_adapter.py`, `backend/adapters/trellis2_adapter.py`
-- **Submodule Location**: `backend/thirdparty/TRELLIS`, `backend/thirdparty/TRELLIS.2`
+- **Repository Location**: `backend/thirdparty/TRELLIS`, `backend/thirdparty/TRELLIS.2`
 - **Integration Note**: Utilizes integration forks maintained by FishWoWater (`FishWoWater/TRELLIS`) adapted for headless API service execution.
 - **License**: Code is MIT. Pretrained checkpoints from Hugging Face (`JeffreyXiang/TRELLIS-image-large`) must be reviewed for commercial redistribution rules.
 
 ### 2. Hunyuan3D-2.1 & Hunyuan3D-Part
 - **Authors**: Tencent Hunyuan Team
 - **Inference Location**: `backend/adapters/hunyuan3dv21_adapter.py`
-- **Submodule Location**: `backend/thirdparty/Hunyuan3D-2.1`, `backend/thirdparty/Hunyuan3DPart`
+- **Repository Location**: `backend/thirdparty/Hunyuan3D-2.1`, `backend/thirdparty/Hunyuan3DPart`
 - **License**: Distributed under the Tencent Hunyuan Community License. Requires acceptance of Tencent terms for commercial products with active user thresholds. Gated weights on Hugging Face (`tencent/Hunyuan3D-2`).
 
 ### 3. TripoSR, TripoSG, TripoSF
 - **Authors**: VAST-AI Research, Stability AI
 - **Inference Location**: `backend/adapters/triposr_adapter.py`, `backend/adapters/triposg_adapter.py`, `backend/adapters/triposf_adapter.py`
-- **Submodule Location**: `backend/thirdparty/TripoSR`, `backend/thirdparty/TripoSG`, `backend/thirdparty/TripoSF`
+- **Repository Location**: `backend/thirdparty/TripoSR`, `backend/thirdparty/TripoSG`, `backend/thirdparty/TripoSF`
 - **Identity Notice**: `TripoSR`, `TripoSG`, and `TripoSF` are upstream technical model identifiers created by VAST-AI Research. They are not ForMash 3D brands or trademarks.
 - **License**: TripoSR code is MIT. TripoSG and TripoSF check upstream Hugging Face model cards for weight licensing.
 
 ### 4. PartPacker, PartField, ARDY (NVIDIA Research)
 - **Authors**: NVIDIA Research
-- **Submodule Location**: `backend/thirdparty/PartPacker`, `backend/thirdparty/PartField`, `backend/thirdparty/ardy`
+- **Repository Location**: `backend/thirdparty/PartPacker`, `backend/thirdparty/PartField`, `backend/thirdparty/ardy`
 - **License**: NVIDIA research licenses are typically restricted to non-commercial, academic research, and personal evaluation. Commercial deployment requires prior permission from NVIDIA.
 
 ### 5. UniRig
 - **Authors**: VAST-AI Research
 - **Inference Location**: `backend/adapters/unirig_adapter.py`
-- **Submodule Location**: `backend/thirdparty/UniRig`
+- **Repository Location**: `backend/thirdparty/UniRig`
 - **License**: Apache-2.0 / MIT. Automated armature generation for bipedal 3D meshes.
 
 ### 6. PartUV & UltraShape
 - **Authors**: CUHK Shenzhen (PartUV), PKU-YuanGroup (UltraShape)
-- **Submodule Location**: `backend/thirdparty/PartUV`, `backend/thirdparty/UltraShape`
+- **Repository Location**: `backend/thirdparty/PartUV`, `backend/thirdparty/UltraShape`
 - **License**: Academic research and evaluation licenses.
 
 ---

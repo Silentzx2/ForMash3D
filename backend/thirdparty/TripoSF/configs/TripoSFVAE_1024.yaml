@@ -1,0 +1,49 @@
+weight: ckpts/pretrained_TripoSFVAE_256i1024o.safetensors
+
+resolution: 256 # 1024 // 4
+sample_points_num: 819_200 
+pruning: false
+use_normals: true
+
+local_pc_encoder_cls: triposf.modules.pointclouds.pointnet.LocalPoolPointnet
+local_pc_encoder:
+  in_channels: 6 # 3 + 3
+  out_channels: 1024
+  hidden_dim: 256
+  scatter_type: mean
+  n_blocks: 5
+
+encoder_cls: triposf.models.triposf_vae.encoder.TripoSFVAEEncoder
+encoder:
+  resolution: ${resolution}
+  in_channels: 1024
+  model_channels: 768
+  latent_channels: 8
+  num_blocks: 12
+  num_heads: 12
+  num_head_channels: 64
+  mlp_ratio: 4
+  attn_mode: swin
+  window_size: 8
+  pe_mode: ape
+  use_fp16: false
+  use_checkpoint: true
+  qk_rms_norm: false
+
+decoder_cls: triposf.models.triposf_vae.decoder.TripoSFVAEDecoder
+decoder:
+  resolution: ${resolution}
+  model_channels: 768
+  latent_channels: 8
+  num_blocks: 12
+  num_heads: 12
+  num_head_channels: 64
+  mlp_ratio: 4
+  attn_mode: swin
+  window_size: 8
+  pe_mode: ape
+  use_fp16: false
+  use_checkpoint: true
+  qk_rms_norm: false
+  representation_config:
+    use_color: false

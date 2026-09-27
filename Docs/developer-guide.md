@@ -192,7 +192,7 @@ The frontend's `apiClient.ts` validates responses and handles errors.
 
 ### 3.2 Pretrained Directory Structure
 
-Models are stored under `backend/pretrained/`. A symlink at the project root (`pretrained -> backend/pretrained`) preserves compatibility with existing code and third-party submodules. Adapters resolve paths relative to `os.getcwd()`, so the project root remains the base when the backend is started from there:
+Models are stored under `backend/pretrained/`. A symlink at the project root (`pretrained -> backend/pretrained`) preserves compatibility with existing code. Adapters resolve paths relative to `os.getcwd()`, so the project root remains the base when the backend is started from there:
 
 ```
 backend/pretrained/
@@ -351,10 +351,10 @@ bun run build
 
 ## 7. Service Orchestration Scripts
 
-- **`backend/scripts/install.sh`**: Full system setup (Conda env `3daigc-api` Python 3.10, CUDA 12.4, PyTorch 2.6.0, all thirdparty model dependencies, main project dependencies). The primary setup script.
+- **`scripts/setup.sh`**: System-level setup (Node.js, Bun, system libraries). Calls `download_and_install_release_wheels()` to fetch prebuilt wheels from the ForMash3D GitHub Release (`ForMash3D/releases/tag/Wheels`) into `backend/thirdparty/wheels/`, then delegates to `backend/scripts/install.sh`.
+- **`backend/scripts/install.sh`**: Backend Python environment setup (Conda env `3daigc-api` Python 3.10, CUDA 12.4, PyTorch 2.6.0, all thirdparty model dependencies, main project dependencies). Uses `--find-links="$WHEEL_DIR"` to install from the prebuilt wheelhouse. The primary setup script.
 - **`backend/scripts/run_server.sh`**: Multi-worker deployment launcher (starts scheduler service + 4 uvicorn workers).
 - **`manager.sh`** (repo root): Interactive service management menu (setup/status/start/stop/restart/logs/clean/cloudflare/models).
-- **`scripts/setup.sh`**: System-level setup (Node.js, Bun, system libraries).
 - **`scripts/start.sh` / `scripts/stop.sh` / `scripts/restart.sh`**: Service lifecycle management.
 - **`scripts/colab.sh`**: Google Colab launcher.
 - **`backend/scripts/download_models.sh`**: Model download script using `hf`. Supports `-m` (model selection), `-v` (verify), `-f` (force), `--list`.
@@ -396,7 +396,7 @@ text_to_textured_mesh:
     vram_requirement: 11776  # MB
     supported_inputs: ["text"]
     supported_outputs: ["glb", "obj"]
-    model_path: "thirdparty/TRELLIS"
+    model_path: "backend/thirdparty/TRELLIS"
     enabled: true
     max_workers: 1
 ```

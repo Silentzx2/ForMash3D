@@ -24,11 +24,12 @@ ForMash 3D provides support for Google Colab environments. The Colab scripts aut
 
 ### Cell 1: Environment Setup
 ```python
-!git clone --recurse-submodules https://github.com/Silentzx2/ForMash3D.git /content/ForMash3D
+!git clone https://github.com/Silentzx2/ForMash3D.git /content/ForMash3D
 %cd /content/ForMash3D
-!git submodule update --init --recursive
 !bash backend/scripts/install.sh --no-start
 ```
+
+Third-party source code is included directly in `backend/thirdparty/` as part of the main repository. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime.
 
 ### Cell 2: Start Services
 ```python

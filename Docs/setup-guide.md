@@ -93,39 +93,39 @@
 ### Method 1: Using Setup Script (Recommended)
 
 ```bash
-# Clone the repository recursively with submodules
-git clone --recurse-submodules https://github.com/Silentzx2/ForMash3D.git
+# Clone the repository
+git clone https://github.com/Silentzx2/ForMash3D.git
 cd ForMash3D
-git submodule update --init --recursive
 
-# Make scripts executable
-chmod +x backend/scripts/*.sh manager.sh
-
-# Run automated setup
-./backend/scripts/install.sh
+# Run the full setup (handles wheels, deps, and backend)
+./scripts/setup.sh
 
 # Start all services
 ./manager.sh
 ```
 
-The setup script (`backend/scripts/install.sh`) installs:
-- Conda environment `3daigc-api` with Python 3.10
-- PyTorch 2.6.0 + CUDA 12.4 (from `https://download.pytorch.org/whl/cu124`)
-- All thirdparty model dependencies (TRELLIS.2, PartField, Hunyuan3D-2.1, UniRig, PartPacker, PartUV, P3-SAM, FastMesh, UltraShape, VoxHammer)
-- Main project dependencies (from `backend/requirements.txt`)
-- Node.js 20 + Bun
-- Optional: Blender, Redis
+The setup script (`scripts/setup.sh`) orchestrates the full installation in order:
+1. Downloads and installs prebuilt wheels from the ForMash3D GitHub Release (`backend/thirdparty/wheels/`)
+2. Installs system dependencies (CUDA 12.4, Redis, Bun)
+3. Delegates to `backend/scripts/install.sh` for Python environment and package installation
+
+The `download_and_install_release_wheels()` function inside `scripts/setup.sh` is the single source of truth for wheel installation — it fetches all `.whl` files from the `ForMash3D/releases/tag/Wheels` GitHub Release and installs them into the environment.
+
+Third-party source code is included directly in `backend/thirdparty/` as part of the main repository. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime.
 
 ### Method 2: Manual Installation
 
 ```bash
-# 1. Clone and enter project (with submodules)
-git clone --recurse-submodules https://github.com/Silentzx2/ForMash3D.git
+# 1. Clone and enter project
+git clone https://github.com/Silentzx2/ForMash3D.git
 cd ForMash3D
-git submodule update --init --recursive
 
-# 2. Install Python dependencies
-# 2. Install Python dependencies
+# 2. Download prebuilt wheels from GitHub Release
+# This is handled automatically by scripts/setup.sh which calls
+# download_and_install_release_wheels() — the single source of truth
+# for wheel installation from ForMash3D/releases/tag/Wheels
+
+# 3. Install Python dependencies
 # Virtual environment (recommended):
 python3.10 -m venv ../.venv && source ../.venv/bin/activate
 # Or Conda: conda create -n 3daigc-api python=3.10 -y && conda activate 3daigc-api
@@ -147,6 +147,8 @@ uvicorn api.main_singleworker:app --reload --port 7842
 # 6. Start frontend (new terminal)
 bun run dev
 ```
+
+Third-party source code is included directly in `backend/thirdparty/` as part of the main repository. Wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime. The `download_and_install_release_wheels()` function in `scripts/setup.sh` is the single source of truth for wheel installation.
 
 ### Access Points After Startup
 

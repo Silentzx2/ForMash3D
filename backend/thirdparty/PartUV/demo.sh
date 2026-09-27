@@ -1,0 +1,1 @@
+python demo/partuv_demo.py --mesh_path meshes/max-planck.obj --save_visuals

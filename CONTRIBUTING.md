@@ -22,26 +22,22 @@ ForMash 3D is an early, experimental, pre-alpha project that has been heavily AI
 - **Node Runtime & Package Manager**: [Bun](https://bun.sh/) (authoritative frontend package manager)
 - **Python**: Python 3.10 (managed via Conda with environment name `3daigc-api`)
 - **GPU (Required for Inference)**: NVIDIA GPU with CUDA 12.4 capability.
-- **Git**: Git with submodule support (`git >= 2.25`)
+- **Git**: Git
 
 ---
 
 ## 📦 Getting Started: Clone & Setup
 
-### 1. Clone the Repository (with Submodules)
+### 1. Clone the Repository
 
-ForMash 3D depends on the `ForMash3D-ThirdParty` repository as a submodule under `backend/thirdparty`. Always clone recursively:
+ForMash 3D includes third-party model source code directly in `backend/thirdparty/` as part of the main repository:
 
 ```bash
-git clone --recurse-submodules https://github.com/Silentzx2/ForMash3D.git
+git clone https://github.com/Silentzx2/ForMash3D.git
 cd ForMash3D
 ```
 
-If you previously cloned without `--recurse-submodules`, initialize them manually:
-
-```bash
-git submodule update --init --recursive
-```
+Third-party wheels are stored in `backend/thirdparty/wheels/` and are automatically downloaded from the ForMash3D GitHub Release at runtime.
 
 ### 2. Configure Environment
 

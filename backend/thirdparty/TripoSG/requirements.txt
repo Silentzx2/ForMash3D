@@ -1,0 +1,16 @@
+# Requires Python 3.10 and PyTorch 2.6.0+cu124 (present in active .venv)
+numpy>=1.26.4,<2.0.0
+diffusers==0.30.3
+transformers>=4.44.0,<=4.46.3
+einops
+huggingface_hub>=0.25.0,<=0.28.1
+opencv-python
+trimesh
+omegaconf
+scikit-image
+peft
+jaxtyping
+typeguard
+# Prebuilt wheel (in ../wheels/diso-0.1.4-cp310-cp310-linux_x86_64.whl) or source compile:
+diso
+pymeshlab>=2023.12.post3 # Added for face reduction

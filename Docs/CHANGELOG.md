@@ -96,7 +96,7 @@ All notable changes, architectural updates, and feature implementations for ForM
   - Added authoritative `Jobs` entry to the main workspace left navigation rail (`features/workspace/Navigation/LeftNavigation.tsx`) with hotkey shortcut `⌘3`, linking directly to `/workspace/jobs`.
   - Consolidated Admin `JobsTab.tsx`: eliminated artificial 50% progress bars in favor of truthful status badges, removed non-functional fake "Try Repair" button and toast, added canonical inspector header banner, and preserved deep-linking to `/workspace/jobs?id={id}`.
 - **Model Registry Documentation Alignment**: Reconciled documentation in `README.md` to reflect all 23 discrete registered model adapters configured across 15 neural architectures.
-- **Submodule Synchronization**: Synchronized `backend/thirdparty` submodule pointer to `9d596b0` incorporating CUDA 12.4 + PyTorch 2.6 runtime compatibility patches, updated `torchmcubes` wheel, `wheels/manifest.json`, and TripoSR/TripoSG pipeline improvements.
+- **Wheelhouse & Runtime Updates**: Updated `backend/thirdparty/wheels/` with CUDA 12.4 + PyTorch 2.6 runtime compatibility patches, updated `torchmcubes` wheel, `wheels/manifest.json`, and TripoSR/TripoSG pipeline improvements. Third-party source code is now part of the main repository; wheels are downloaded from the ForMash3D GitHub Release at runtime.
 - **Unit & Shell Test Suite**: Added `backend/tests/test_fix_plan_verification.py` verifying TripoSR/TripoSG error handling, output validation, worker liveness, real dead worker future resolution via callback tracking, and immediate failure propagation on model load errors; extended `scripts/test_env_resolution.sh` with automated installer apt-failure verification.
 
 ### 🔧 Backend Environment Discovery & Startup Resilience
@@ -109,8 +109,7 @@ All notable changes, architectural updates, and feature implementations for ForM
 
 ### 🏷️ Project Rebrand to ForMash 3D & Repository Migration
 - **Project Rebrand**: Executed complete first-party rebrand from AI Studio to **ForMash 3D** (short technical identifier: `ForMash3D`) across UI components, browser titles, metadata, app icons, webmanifest, local caches, storage keys, CLI scripts, and backend FastAPI documentation.
-- **Repository & Submodule Migration**: Updated canonical repository origin to `https://github.com/Silentzx2/ForMash3D.git` and submodule remote to `https://github.com/Silentzx2/ForMash3D-ThirdParty.git`.
-- **Submodule Update**: Fast-forwarded `backend/thirdparty` submodule to latest upstream commit (`e617f28`) with bundled prebuilt CUDA wheels and static banner asset.
+- **Repository Migration**: Updated canonical repository origin to `https://github.com/Silentzx2/ForMash3D.git`. Third-party source code is now included directly in `backend/thirdparty/` as part of the main repository; wheels are stored in `backend/thirdparty/wheels/` and downloaded from the ForMash3D GitHub Release at runtime.
 - **Static Asset Migration**: Switched project banner from external hosted image to local static asset `assets/banner.png`.
 - **Backward Compatibility**: Preserved fallback support for legacy environment variables (`FORMASH3D_*` with `AI_STUDIO_*` fallback).
 - **Attribution & Licensing**: Preserved all upstream third-party attributions, licenses, and model architectures (`3DAIGC-API`, `TripoSR`/`SG`/`SF`, `TRELLIS`, `Hunyuan3D`, `PartField`, `UniRig`, `ARDY`, `PartPacker`, `UltraShape`).

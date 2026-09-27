@@ -1,0 +1,14 @@
+TripoSF
+Copyright (c) 2025 VAST-AI-Research and contributors
+
+This project includes code from the following open source projects:
+
+TRELLIS
+Copyright (c) Microsoft Corporation
+License: MIT
+Source: https://github.com/Microsoft/TRELLIS
+
+FlexiCubes
+Copyright (c) 2023, NVIDIA CORPORATION & AFFILIATES
+License: Nvidia Source Code License
+Source: https://github.com/MaxtirError/FlexiCubes

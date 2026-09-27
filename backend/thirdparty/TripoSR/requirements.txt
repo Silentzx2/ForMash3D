@@ -1,0 +1,15 @@
+# Requires Python 3.10 and PyTorch 2.6.0+cu124 (present in active .venv)
+numpy>=1.26.4,<2.0.0
+omegaconf==2.3.0
+Pillow>=10.1.0
+einops==0.7.0
+# Prebuilt wheel (torchmcubes-*.whl) or source compile via git+https://github.com/tatsy/torchmcubes.git:
+torchmcubes>=0.1.0
+transformers>=4.35.0
+trimesh>=4.0.5
+rembg
+huggingface-hub
+imageio[ffmpeg]
+gradio
+xatlas>=0.0.9
+moderngl>=5.10.0

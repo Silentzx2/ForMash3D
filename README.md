@@ -61,7 +61,7 @@
 - [🛠️ Technology Stack](#️-technology-stack)
 - [📦 Installation & Quick Start](#-installation--quick-start)
   - [Prerequisites](#prerequisites)
-  - [Clone with Submodules](#clone-with-submodules)
+  - [Clone & Setup](#clone--setup)
   - [Environment Setup](#environment-setup)
   - [Manual Development Setup](#manual-development-setup)
   - [Model Weights & Downloads](#model-weights--downloads)
@@ -248,20 +248,16 @@ The model registry is dynamically configured via `backend/config/models.yaml`, p
 - **Python**: Python 3.10 (via Conda environment `3daigc-api`)
 - **Disk Space**: At least 50 GB free disk space (models and cache require significant storage)
 
-### Clone with Submodules
+### Clone & Setup
 
-ForMash 3D manages third-party model source trees via a Git submodule in `backend/thirdparty`. Always clone recursively:
+Clone the ForMash3D repository. Third-party model source code is included directly in `backend/thirdparty/` as part of the main repository:
 
 ```bash
-git clone --recurse-submodules https://github.com/Silentzx2/ForMash3D.git
+git clone https://github.com/Silentzx2/ForMash3D.git
 cd ForMash3D
 ```
 
-If you previously cloned without `--recurse-submodules`, initialize the submodule manually:
-
-```bash
-git submodule update --init --recursive
-```
+Third-party wheels are stored in `backend/thirdparty/wheels/` and are automatically downloaded from the ForMash3D GitHub Release at runtime.
 
 ### Environment Setup
 
@@ -479,7 +475,7 @@ ForMash3D/
 │   ├── adapters/                      # Python model adapters (TRELLIS, Hunyuan, etc.)
 │   ├── config/                        # models.yaml & system.yaml
 │   ├── scripts/                       # install.sh, download_models.sh
-│   ├── thirdparty/                    # Submodule: external 3D AI source trees
+│   ├── thirdparty/                    # Third-party model source code & wheels (part of main repo)
 │   └── requirements.txt               # Backend Python dependencies
 │
 ├── scripts/                           # Setup and lifecycle management scripts

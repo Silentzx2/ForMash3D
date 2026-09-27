@@ -360,6 +360,45 @@ create_directories(){
   log "Project runtime directories are ready."
 }
 
+# wheels downloading 
+download_and_install_release_wheels() {
+    local WHEELS_DIR="${1:-$PROJECT_ROOT/backend/thirdparty/wheels}"
+    local API="https://api.github.com/repos/Silentzx2/ForMash3D/releases/tags/Wheels"
+
+    mkdir -p "$WHEELS_DIR" || return 1
+
+    echo "→ Downloading wheels to: $WHEELS_DIR"
+
+    curl -fsSL "$API" |
+        jq -r '.assets[] | select(.name | endswith(".whl")) |
+               [.name, .browser_download_url] | @tsv' |
+        while IFS=$'\t' read -r NAME URL; do
+
+            local FILE="$WHEELS_DIR/$NAME"
+
+            if [[ -f "$FILE" && -s "$FILE" ]]; then
+                echo "✓ Exists: $NAME"
+                continue
+            fi
+
+            echo "↓ Downloading: $NAME"
+            curl -fL --retry 3 -o "$FILE" "$URL" || {
+                echo "✗ Failed: $NAME"
+                rm -f "$FILE"
+                return 1
+            }
+        done
+
+    echo "→ Installing wheels..."
+
+    while IFS= read -r -d '' WHEEL; do
+        echo "→ Installing: $(basename "$WHEEL")"
+        uv pip install "$WHEEL" || return 1
+    done < <(find "$WHEELS_DIR" -type f -name "*.whl" -print0)
+
+    echo "✓ All wheels downloaded and installed"
+}
+
 build_deps () {
   # ── Fast build toolchain ────────────────────────────────────────────────────
   # ninja + parallel build env vars make every from-source wheel (flash-attn,
@@ -426,31 +465,6 @@ install_backend(){
   log "Backend dependency installation completed."
 }
 
-update_thirdparty(){
-  section "Updating Third-Party Submodules"
-  log "Initializing third-party submodules..."
-  git -C "$PROJECT_ROOT/backend" submodule update --init --recursive
-
-  if command -v git-lfs >/dev/null 2>&1 || git lfs version >/dev/null 2>&1; then
-    log "Pulling Git LFS objects for thirdparty..."
-    git -C "$PROJECT_ROOT/backend/thirdparty" lfs pull || true
-  else
-    warn "Git LFS not available — skipping LFS object download."
-    warn "Install git-lfs and run: git -C backend/thirdparty lfs pull"
-  fi
-
-  WHEEL_DIR="$PROJECT_ROOT/backend/thirdparty/wheels"
-  if [ ! -d "$WHEEL_DIR" ]; then
-    warn "Wheelhouse directory not found: $WHEEL_DIR"
-    warn "The ThirdParty submodule may not include prebuilt wheels."
-    warn "Create it manually or ensure the submodule URL contains the wheels/ directory."
-  else
-    log "Wheelhouse ready: $WHEEL_DIR ($(ls -1 "$WHEEL_DIR" | wc -l) wheels)"
-  fi
-
-  log "Third-party repositories are ready."
-}
-
 summary(){
   section "Setup Complete"
   printf "${WHITE}${BOLD}  ForMash 3D is prepared.${NC}\n\n"
@@ -470,8 +484,7 @@ printf "  01. Environment check\n"
 printf "  02. Create runtime/storage directories\n"
 printf "  03. Install frontend dependencies\n"
 printf "  04. Prepare backend Python environment\n"
-printf "  05. Update third-party submodules and wheels\n"
-printf "  06. Run backend/scripts/install.sh\n\n"
+printf "  05. Run backend/scripts/install.sh\n\n"
 
 
 require_commands
@@ -480,13 +493,12 @@ _sanitize_apt_cuda_sources
 setup_cuda_124
 ensure_bun_or_npm
 ensure_uv
+download_and_install_release_wheels
 ensure_redis
 create_directories
 
 build_deps
 install_frontend_deps
-
-update_thirdparty
 
 install_backend
 summary

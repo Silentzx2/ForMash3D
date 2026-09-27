@@ -60,17 +60,6 @@ check_nvidia_runtime() {
     print_success "NVIDIA runtime is working"
 }
 
-# Initialize git submodules
-init_submodules() {
-    print_status "Initializing git submodules..."
-    if [ -f ".gitmodules" ]; then
-        git submodule update --init --recursive
-        print_success "Git submodules initialized"
-    else
-        print_warning "No .gitmodules file found, skipping submodule initialization"
-    fi
-}
-
 # Create necessary directories
 create_directories() {
     print_status "Creating necessary directories..."
@@ -116,7 +105,6 @@ main() {
     check_nvidia_runtime
     
     # Setup
-    init_submodules
     create_directories
     
     # Build

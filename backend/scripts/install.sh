@@ -14,52 +14,6 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set +a
 fi
 
-
-# Let pip-based third-party setup scripts also see the local wheelhouse.
-if [ -d "$WHEEL_DIR" ]; then
-    export PIP_FIND_LINKS="$WHEEL_DIR"
-    echo "[INFO] Local wheelhouse enabled: $WHEEL_DIR"
-else
-    echo "[WARN] Local wheelhouse not found: $WHEEL_DIR"
-    echo "[WARN] Ensure clone_thirdparty.sh has been run to populate backend/thirdparty/wheels/"
-fi
-
-# If the wheelhouse lives inside a git repo with LFS-tracked wheels, ensure
-# the real binary objects are materialized instead of LFS pointer stubs.
-_ensure_lfs_wheels() {
-    local whl_dir="$1"
-    [ -d "$whl_dir" ] || return 0
-    local gitdir
-    gitdir="$(git -C "$whl_dir" rev-parse --show-toplevel 2>/dev/null || true)"
-    [ -n "$gitdir" ] || return 0
-    if [ -f "$gitdir/.gitattributes" ] && grep -q "filter=lfs" "$gitdir/.gitattributes" 2>/dev/null; then
-        echo "[INFO] Detected Git LFS-tracked wheelhouse; ensuring LFS objects are present..."
-        if ! git lfs version >/dev/null 2>&1; then
-            echo "[INFO] Git LFS not found; attempting auto-install..."
-            if command -v apt-get >/dev/null 2>&1; then
-                sudo apt-get update -qq 2>/dev/null || true
-                sudo apt-get install -y --no-install-recommends git-lfs 2>/dev/null || true
-            fi
-            if ! git lfs version >/dev/null 2>&1; then
-                echo "[WARN] Git LFS install did not succeed; continuing without LFS objects."
-                echo "[WARN] Install git-lfs manually and rerun, or run: git -C \"$gitdir\" lfs pull"
-                return 0
-            fi
-        fi
-        git -C "$gitdir" lfs install --local >/dev/null 2>&1 || true
-        git -C "$gitdir" lfs pull || true
-    fi
-}
-
-_ensure_lfs_wheels "$WHEEL_DIR"
-
-# Validate that a wheel file is a real zip archive (not an LFS pointer stub).
-_wheel_is_valid() {
-    local whl="$1"
-    [ -f "$whl" ] || return 1
-    unzip -tqq "$whl" >/dev/null 2>&1
-}
-
 # Retry a command up to N times with a delay between attempts.
 # Usage: _retry 3 5 <command> [args...]
 _retry() {
@@ -262,14 +216,12 @@ else
     exit 1
 fi
 
-# ── Disable build isolation ─────────────────────────────────────────────────
+# Disable build isolation ─────────────────────────────────────────────────
 # flash-attn, nvdiffrec_render, nvdiffrast and friends import torch in their
 # setup.py/pyproject at *metadata* time. Under build isolation pip spins up a
 # clean env with NO torch, so "Getting requirements to build wheel" dies with
 # "No available output" and the whole install aborts. Reusing the active env
 # (where torch 2.6.0 + cu124 is already installed) makes those builds work.
-# This survives re-clones of thirdparty repos since it's an env var, not a file
-# edit inside them.
 export PIP_NO_BUILD_ISOLATION=1
 export UV_NO_BUILD_ISOLATION=1
 echo "[INFO] Build isolation: disabled (PIP_NO_BUILD_ISOLATION=1)"
@@ -311,25 +263,25 @@ fi
 
 # nvdiffrast
 if ! install_local_wheel "nvdiffrast-*.whl" "nvdiffrast"; then
-    mkdir -p /tmp/extensions
-    rm -rf /tmp/extensions/nvdiffrast
-    _retry 3 5 git clone -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/extensions/nvdiffrast
+mkdir -p /tmp/extensions
+rm -rf /tmp/extensions/nvdiffrast
+_retry 3 5 git clone -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git /tmp/extensions/nvdiffrast
     $UV_PIP install /tmp/extensions/nvdiffrast --no-build-isolation
 fi
 
 # nvdiffrec
 if ! install_local_wheel "nvdiffrec_render-*.whl" "nvdiffrec"; then
-    mkdir -p /tmp/extensions
-    rm -rf /tmp/extensions/nvdiffrec
-    _retry 3 5 git clone -b renderutils https://github.com/JeffreyXiang/nvdiffrec.git /tmp/extensions/nvdiffrec
+mkdir -p /tmp/extensions
+rm -rf /tmp/extensions/nvdiffrec
+_retry 3 5 git clone -b renderutils https://github.com/JeffreyXiang/nvdiffrec.git /tmp/extensions/nvdiffrec
     $UV_PIP install /tmp/extensions/nvdiffrec --no-build-isolation
 fi
 
 # CuMesh
 if ! install_local_wheel "cumesh-*.whl" "CuMesh"; then
-    mkdir -p /tmp/extensions
-    rm -rf /tmp/extensions/CuMesh
-    _retry 3 5 git clone https://github.com/JeffreyXiang/CuMesh.git /tmp/extensions/CuMesh --recursive
+mkdir -p /tmp/extensions
+rm -rf /tmp/extensions/CuMesh
+_retry 3 5 git clone https://github.com/JeffreyXiang/CuMesh.git /tmp/extensions/CuMesh --recursive
     $UV_PIP install /tmp/extensions/CuMesh --no-build-isolation
 fi
 
@@ -344,9 +296,9 @@ fi
 
 # o-voxel
 if ! install_local_wheel "o_voxel-*.whl" "o-voxel"; then
-    mkdir -p /tmp/extensions
-    rm -rf /tmp/extensions/o-voxel
-    cp -r o-voxel /tmp/extensions/o-voxel
+mkdir -p /tmp/extensions
+rm -rf /tmp/extensions/o-voxel
+cp -r o-voxel /tmp/extensions/o-voxel
     $UV_PIP install /tmp/extensions/o-voxel --no-build-isolation
 fi
 
@@ -362,7 +314,7 @@ fi
 echo "[INFO] Installing TRELLIS(v1) requirements on top of TRELLIS.2..."
 $UV_PIP install --find-links="$WHEEL_DIR" pymeshfix igraph 
 if ! install_local_wheel "diff_gaussian_rasterization-*.whl" "diff-gaussian-rasterization"; then
-    _retry 3 5 git clone https://github.com/autonomousvision/mip-splatting.git /tmp/extensions/mip-splatting
+_retry 3 5 git clone https://github.com/autonomousvision/mip-splatting.git /tmp/extensions/mip-splatting
     $UV_PIP install /tmp/extensions/mip-splatting/submodules/diff-gaussian-rasterization/
 fi
 
@@ -429,7 +381,7 @@ echo "[INFO] Building differentiable renderer for Hunyuan3D 2.1..."
 cd ../..
 cd hy3dpaint/DifferentiableRenderer
 if ! install_local_wheel "hy3d_mesh_inpaint_processor-*.whl" "Hunyuan3D mesh inpaint processor"; then
-    bash compile_mesh_painter.sh
+bash compile_mesh_painter.sh
 fi
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] Hunyuan3D 2.1 differentiable renderer built successfully"

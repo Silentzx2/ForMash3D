@@ -118,7 +118,7 @@ Located at `backend/storage/`:
 
 ### 2.5 Local Wheelhouse
 
-Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the ThirdParty git submodule). The install script (`backend/scripts/install.sh`) checks the local wheelhouse before building/downloading dependencies, falling back to PyPI/index/Git when no compatible wheel exists. The wheelhouse is populated by the `backend/thirdparty` submodule and requires no network download.
+Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the main ForMash3D repository). The `download_and_install_release_wheels()` function in `scripts/setup.sh` fetches all `.whl` files from the `ForMash3D/releases/tag/Wheels` GitHub Release and installs them. The install script (`backend/scripts/install.sh`) uses `--find-links="$WHEEL_DIR"` to prefer local prebuilt wheels when installing dependencies, falling back to PyPI/index/Git when no compatible wheel exists. Wheels are automatically downloaded from the ForMash3D GitHub Release at runtime into `backend/thirdparty/wheels/`.
 
 ---
 

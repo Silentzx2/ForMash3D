@@ -163,7 +163,7 @@ ForMash3D/
 │   ├── adapters/                      # Model adapters
 │   ├── config/                        # YAML configs
 │   ├── scripts/                       # install.sh, run_server.sh, etc.
-│   ├── thirdparty/                    # 11 git-submodule model repos
+│   ├── thirdparty/                    # Third-party model source code & wheels (part of main repo)
 │   ├── requirements.txt
 │   └── requirements-test.txt
 │
