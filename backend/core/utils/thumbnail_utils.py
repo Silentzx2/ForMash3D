@@ -207,7 +207,7 @@ class MeshThumbnailGenerator:
             # Draw basic mesh info
             try:
                 font = ImageFont.load_default()
-            except:
+            except Exception:
                 font = None
 
             text_lines = [

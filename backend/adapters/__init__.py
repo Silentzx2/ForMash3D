@@ -21,7 +21,14 @@ from typing import Any
 _ADAPTER_MAP = {
     # FastMesh
     "FastMeshRetopologyAdapter": ("fastmesh_adapter", "FastMeshRetopologyAdapter"),
-    # Hunyuan3D 2.1
+    # Hunyuan3D Shape v2-1
+    "Hunyuan3DShapeV21ImageToRawMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToRawMeshAdapter"),
+    "Hunyuan3DShapeV21ImageToTexturedMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToTexturedMeshAdapter"),
+    # Hunyuan3D Paint v2-1
+    "Hunyuan3DPaintV21ImageMeshPaintingAdapter": ("hunyuan3d_paint_v21", "Hunyuan3DPaintV21ImageMeshPaintingAdapter"),
+    # Hunyuan3D DiT v2 Mini Turbo
+    "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter": ("hunyuan3d_dit_v2_mini_turbo", "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter"),
+    # Hunyuan3D 2.1 legacy
     "Hunyuan3DV21ImageToMeshAdapterCommon": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageToMeshAdapterCommon"),
     "Hunyuan3DV21ImageToRawMeshAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageToRawMeshAdapter"),
     "Hunyuan3DV21ImageToTexturedMeshAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageToTexturedMeshAdapter"),

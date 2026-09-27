@@ -32,6 +32,7 @@ interface DiscoveredTextureModel {
   status: string;
   vram_required_mb: number;
   low_vram_supported: boolean;
+  supports_flashvdm?: boolean;
 }
 
 function formatTextureModel(id: string): DiscoveredTextureModel {
@@ -47,6 +48,7 @@ function formatTextureModel(id: string): DiscoveredTextureModel {
     status: 'ready',
     vram_required_mb: def?.vramMb || 11776,
     low_vram_supported: def?.lowVramSupported ?? (isTrellis || isHunyuan),
+    supports_flashvdm: def?.supportsFlashVDM ?? id.includes('dit_v2_mini_turbo'),
   };
 }
 
@@ -60,6 +62,7 @@ export const TexturePanel: React.FC = () => {
     currentAsset,
     assets,
     selectAsset,
+    systemStats,
   } = useWorkspace();
 
   // Tab State: 'texture' (essential primary view) | 'maps' (PBR channels & resolution) | 'settings' (advanced & reference)
@@ -90,7 +93,7 @@ export const TexturePanel: React.FC = () => {
     const defaults = [
       'trellis_image_mesh_painting',
       'trellis2_image_mesh_painting',
-      'hunyuan3dv21_image_mesh_painting',
+      'hunyuan3d_paint_v21_image_mesh_painting',
       'trellis_text_mesh_painting',
     ];
     const finalIds = combined.length > 0 ? combined : defaults;
@@ -126,6 +129,25 @@ export const TexturePanel: React.FC = () => {
 
   const activeTextureModel = textureCapableModels.find(m => m.id === textureSettings.modelId) || textureCapableModels[0];
   const supportsLowVram = Boolean(activeTextureModel?.low_vram_supported);
+
+  // VRAM eligibility check
+  const getVRAMStatus = () => {
+    const selected = textureCapableModels.find(m => m.id === textureSettings.modelId);
+    if (!selected) return null;
+    const vramRequired = selected.vram_required_mb || 0;
+    const vramAvailable = systemStats.vramTotalGb ? systemStats.vramTotalGb * 1024 : null;
+    if (vramAvailable && vramRequired > 0) {
+      return {
+        sufficient: vramAvailable >= vramRequired,
+        required_mb: vramRequired,
+        available_mb: vramAvailable,
+        label: vramAvailable >= vramRequired ? 'VRAM OK' : 'Insufficient VRAM',
+        tone: vramAvailable >= vramRequired ? 'ok' as const : 'warn' as const,
+      };
+    }
+    return null;
+  };
+  const vramStatus = getVRAMStatus();
 
   // Status pill logic — shows what's wrong with the selected texture model
   const getTextureStatusInfo = () => {
@@ -237,12 +259,24 @@ export const TexturePanel: React.FC = () => {
             <Sparkles className="w-3.5 h-3.5 text-primary" />
             <span>Texture Studio</span>
           </span>
-          {textureStatusInfo && (
-            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[9px] font-bold">
-              <AlertTriangle className="w-2.5 h-2.5" />
-              {textureStatusInfo.label}
-            </span>
-          )}
+{textureStatusInfo && (
+             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[9px] font-bold">
+               <AlertTriangle className="w-2.5 h-2.5" />
+               {textureStatusInfo.label}
+             </span>
+           )}
+           {vramStatus && !vramStatus.sufficient && (
+             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-red-500/15 border border-red-500/30 text-red-300 text-[9px] font-bold">
+               <AlertTriangle className="w-2.5 h-2.5" />
+               {vramStatus.label} ({Math.round(vramStatus.required_mb / 1024)}GB needed)
+             </span>
+           )}
+           {vramStatus && vramStatus.sufficient && (
+             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[9px] font-bold">
+               <Check className="w-2.5 h-2.5" />
+               VRAM OK ({Math.round(vramStatus.available_mb / 1024)}GB)
+             </span>
+           )}
         </div>
 
         {/* 3-Tab Segmented Header */}
@@ -519,6 +553,73 @@ export const TexturePanel: React.FC = () => {
                     }`}
                   />
                 </button>
+              </div>
+            )}
+
+            {isTexturePaintingModel(textureSettings.modelId) && (
+              <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-200 font-medium">Max Views</span>
+                  <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
+                    {textureSettings.maxNumView ?? 6}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={6}
+                  max={12}
+                  step={1}
+                  value={textureSettings.maxNumView ?? 6}
+                  onChange={(e) => {
+                    setTextureSettings(prev => ({ ...prev, maxNumView: parseInt(e.target.value, 10) }));
+                  }}
+                  className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
+                />
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-200 font-medium">Texture Resolution</span>
+                    <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
+                      {textureSettings.paintResolution ?? 512}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    {[512, 768].map((res) => (
+                      <button
+                        key={res}
+                        type="button"
+                        onClick={() => setTextureSettings(prev => ({ ...prev, paintResolution: res as 512 | 768 }))}
+                        className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          (textureSettings.paintResolution ?? 512) === res
+                            ? 'bg-primary text-black font-black'
+                            : 'bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.06]'
+                        }`}
+                      >
+                        {res}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
+                  <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
+                    <Package className="w-3.5 h-3.5 text-primary" />
+                    <span>PBR Texture</span>
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(textureSettings.generatePBR)}
+                    onClick={() => setTextureSettings(prev => ({ ...prev, generatePBR: !prev.generatePBR }))}
+                    className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
+                      textureSettings.generatePBR ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                    }`}
+                  >
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                        textureSettings.generatePBR ? 'translate-x-3.5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             )}
 

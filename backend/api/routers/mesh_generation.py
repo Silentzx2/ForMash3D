@@ -780,6 +780,7 @@ async def image_mesh_painting(
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
+                "resolution": mesh_request.texture_resolution,
                 **(mesh_request.model_parameters or {}),
             },
             model_preference=mesh_request.model_preference,

@@ -226,6 +226,7 @@ export interface TextureSettings {
   mode: 'ai' | 'manual';
   style: 'realistic' | 'game' | 'stylized' | 'anime';
   resolution: '1K' | '2K' | '4K' | '8K';
+  paintResolution?: 512 | 768;
   referenceImage: string | null;
   prompt: string;
   modelId: string;
@@ -238,6 +239,8 @@ export interface TextureSettings {
     height: boolean;
   };
   lowVram?: boolean;
+  maxNumView?: number;
+  generatePBR?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -285,6 +288,11 @@ export interface GenerationSettings {
     back?: string | null;
     left?: string | null;
   };
+  enableFlashVDM?: boolean;
+  lowVramMode?: 'auto' | 'normal' | 'low';
+  maxNumView?: number;
+  resolution?: number;
+  paintResolution?: 512 | 768;
 }
 
 

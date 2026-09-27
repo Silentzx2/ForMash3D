@@ -12,6 +12,7 @@ import {
   Plus,
   ChevronDown,
   Check,
+  Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
@@ -94,6 +95,7 @@ interface DiscoveredModel {
   supports: { texture_generation: boolean };
   shape_vram_mb: number;
   texture_vram_mb: number;
+  supports_flashvdm?: boolean;
 }
 
 function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
@@ -102,6 +104,7 @@ function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
   const vram = def?.vramMb || 11776;
   const isTrellis = id.includes('trellis');
   const isHunyuan = id.includes('hunyuan');
+  const supportsFlashVDM = def?.supportsFlashVDM ?? id.includes('dit_v2_mini_turbo');
 
   let cleanLabel = def?.name || id;
   if (id === 'trellis_image_to_textured_mesh') cleanLabel = 'TRELLIS (PBR Textured Mesh)';
@@ -109,8 +112,9 @@ function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
   else if (id === 'triposr_image_to_raw_mesh') cleanLabel = 'TripoSR (Ultra-Fast Geometry)';
   else if (id === 'triposg_image_to_raw_mesh') cleanLabel = 'TripoSG (Fast Feed-Forward Geometry)';
   else if (id === 'triposf_image_to_raw_mesh') cleanLabel = 'TripoSF (High-Density Neural Raw Mesh)';
-  else if (id === 'hunyuan3dv21_image_to_textured_mesh') cleanLabel = 'Hunyuan3D 2.1 (PBR Production Mesh)';
-  else if (id === 'hunyuan3dv21_image_to_raw_mesh') cleanLabel = 'Hunyuan3D 2.1 (Raw Geometry)';
+else if (id === 'hunyuan3d_shape_v21_image_to_textured_mesh') cleanLabel = 'Hunyuan3D-Shape-v2-1 (PBR Production Mesh)';
+  else if (id === 'hunyuan3d_shape_v21_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-Shape-v2-1 (Raw Geometry)';
+  else if (id === 'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-DiT-v2-mini-Turbo (Low-VRAM Geometry)';
   else if (id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
   else if (id === 'partpacker_image_to_raw_mesh') cleanLabel = 'PartPacker (Modular Mesh)';
   else if (id === 'ultrashape_image_to_raw_mesh') cleanLabel = 'UltraShape (High-Poly Geometry)';
@@ -128,6 +132,7 @@ function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
     supports: { texture_generation: isTextured },
     shape_vram_mb: Math.round(vram * 0.6),
     texture_vram_mb: vram,
+    supports_flashvdm: supportsFlashVDM,
   };
 }
 
@@ -179,8 +184,9 @@ export const GeneratePanel: React.FC = () => {
         'trellis_image_to_textured_mesh',
         'triposr_image_to_raw_mesh',
         'triposg_image_to_raw_mesh',
-        'hunyuan3dv21_image_to_textured_mesh',
-        'hunyuan3dv21_image_to_raw_mesh',
+        'hunyuan3d_shape_v21_image_to_textured_mesh',
+        'hunyuan3d_shape_v21_image_to_raw_mesh',
+        'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
         'triposf_image_to_raw_mesh',
       ];
       ids = combined.length > 0 ? combined : defaults;
@@ -286,6 +292,7 @@ export const GeneratePanel: React.FC = () => {
 
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
+  const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
 
   const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
 
@@ -938,6 +945,36 @@ export const GeneratePanel: React.FC = () => {
                     }`} />
                   </div>
                 </button>
+
+                {/* FlashVDM Toggle - only visible for FlashVDM-compatible models */}
+                {isFlashVDMModel && (
+                  <button
+                    type="button"
+                    onClick={() => setGenerationSettings(prev => ({
+                      ...prev,
+                      enableFlashVDM: !prev.enableFlashVDM,
+                    }))}
+                    className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
+                      Boolean(generationSettings.enableFlashVDM)
+                        ? 'bg-amber-500/10 border-amber-500/30 text-white'
+                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
+                    }`}
+                  >
+                    <div className="flex flex-col min-w-0 pr-1">
+                      <span className="text-[11px] font-bold text-white leading-tight">FlashVDM</span>
+                      <span className="text-[9px] text-zinc-400">
+                        {Boolean(generationSettings.enableFlashVDM) ? 'Enabled' : 'Disabled'}
+                      </span>
+                    </div>
+                    <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
+                      Boolean(generationSettings.enableFlashVDM) ? 'bg-amber-500' : 'bg-zinc-700'
+                    }`}>
+                      <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                        Boolean(generationSettings.enableFlashVDM) ? 'left-4' : 'left-0.5 bg-zinc-300'
+                      }`} />
+                    </div>
+                  </button>
+                )}
 
                 {/* Low VRAM Toggle */}
                 <button

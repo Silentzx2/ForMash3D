@@ -23,6 +23,7 @@ export interface ModelDefinition {
   lowVramSupported: boolean;
   lowVramMb?: number;
   supportsTexture: boolean;
+  supportsFlashVDM?: boolean;
   supportedInputs: string[];
   supportedOutputs: string[];
   modelPath: string;
@@ -86,40 +87,56 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     description: 'Ultra-high-definition image-to-3D pipeline with 2K texture baking and crisp geometry.',
   },
   {
-    id: 'hunyuan3dv21_image_to_textured_mesh',
-    name: 'Hunyuan3D 2.1 (Image → Textured 3D)',
+    id: 'hunyuan3d_shape_v21_image_to_textured_mesh',
+    name: 'Hunyuan3D-Shape-v2-1 (Image → Textured 3D)',
     category: 'mesh_generation',
     feature: 'image_to_textured_mesh',
     featureLabel: 'Image to Textured 3D',
-    vramMb: 19456,
-    lowVramSupported: true,
-    lowVramMb: 8192,
+    vramMb: 29000,
+    lowVramSupported: false,
     supportsTexture: true,
     supportedInputs: ['image'],
     supportedOutputs: ['glb', 'obj'],
     modelPath: 'backend/pretrained/tencent/Hunyuan3D-2.1',
     enabled: true,
     status: 'available',
-    description: 'State-of-the-art geometry and PBR texture synthesis from Tencent Hunyuan3D 2.1.',
+    description: '3.3B shape model generating high-quality mesh with PBR texture via chaining with Paint-v2-1.',
   },
 
-  // ── MESH GENERATION (Image to Raw Geometry) ──────────────────────────────
+  // ── MESH GENERATION (Image to Raw Geometry) ──────────────────────────
   {
-    id: 'hunyuan3dv21_image_to_raw_mesh',
-    name: 'Hunyuan3D 2.1 (Image → Raw Geometry)',
+    id: 'hunyuan3d_shape_v21_image_to_raw_mesh',
+    name: 'Hunyuan3D-Shape-v2-1 (Image → Raw Geometry)',
     category: 'mesh_generation',
     feature: 'image_to_raw_mesh',
     featureLabel: 'Image to Geometry',
-    vramMb: 8192,
-    lowVramSupported: true,
-    lowVramMb: 4096,
+    vramMb: 10240,
+    lowVramSupported: false,
     supportsTexture: false,
     supportedInputs: ['image'],
     supportedOutputs: ['glb', 'obj'],
     modelPath: 'backend/pretrained/tencent/Hunyuan3D-2.1',
     enabled: true,
     status: 'available',
-    description: 'Fast single-image reconstruction focused purely on watertight surface geometry.',
+    description: '3.3B shape model for high-quality single-image to watertight mesh generation.',
+  },
+  {
+    id: 'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
+    name: 'Hunyuan3D-DiT-v2-mini-Turbo (Image → Raw Geometry)',
+    category: 'mesh_generation',
+    feature: 'image_to_raw_mesh',
+    featureLabel: 'Image to Geometry',
+    vramMb: 6144,
+    lowVramSupported: true,
+    lowVramMb: 4096,
+    supportsTexture: false,
+    supportsFlashVDM: true,
+    supportedInputs: ['image'],
+    supportedOutputs: ['glb', 'obj'],
+    modelPath: 'backend/pretrained/tencent/Hunyuan3D-2mini',
+    enabled: true,
+    status: 'available',
+    description: '0.6B step-distilled low-VRAM shape model with Turbo/FlashVDM path for fast, resource-efficient generation.',
   },
   {
     id: 'partpacker_image_to_raw_mesh',
@@ -255,20 +272,20 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     description: 'High-resolution PBR texture map baking from multi-view image projections.',
   },
   {
-    id: 'hunyuan3dv21_image_mesh_painting',
-    name: 'Hunyuan3D 2.1 (Multi-Modal Paint)',
+    id: 'hunyuan3d_paint_v21_image_mesh_painting',
+    name: 'Hunyuan3D-Paint-v2-1 (PBR Texture)',
     category: 'texture_painting',
     feature: 'image_mesh_painting',
     featureLabel: 'Image Mesh Painting',
-    vramMb: 12288,
-    lowVramSupported: true,
+    vramMb: 21504,
+    lowVramSupported: false,
     supportsTexture: true,
     supportedInputs: ['mesh', 'text', 'image'],
     supportedOutputs: ['glb', 'obj'],
     modelPath: 'backend/pretrained/tencent/Hunyuan3D-2.1',
     enabled: true,
     status: 'available',
-    description: 'Advanced texture transfer and normal/roughness generation combining image and text guidance.',
+    description: '2B PBR texture checkpoint for multi-view texture generation with native rendering/baking path.',
   },
 
   // ── RETOPOLOGY / REMESH ──────────────────────────────────────────────────

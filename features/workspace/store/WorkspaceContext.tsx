@@ -427,6 +427,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     triposfPass: false,
     meshEnhancementMode: 'none',
     detailGuidance: 7.5,
+    enableFlashVDM: false,
+    lowVramMode: 'auto',
+    maxNumView: 6,
+    resolution: 1024,
   });
 
   const [remeshSettings, setRemeshSettings] = useState<RemeshSettings>({
@@ -437,10 +441,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const [textureSettings, setTextureSettings] = useState<TextureSettings>({
     workflow: 'texture', mode: 'ai', style: 'realistic', resolution: '4K',
+    paintResolution: 512,
     referenceImage: null,
     prompt: '',
     modelId: '',
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
+    maxNumView: 6,
+    generatePBR: true,
   });
 
   const [environmentSettings, setEnvironmentSettings] = useState<EnvironmentSettings>({
@@ -631,12 +638,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setExecutionProgress(100);
           setExecutionStep('Completed');
           setActiveTask(prev => prev ? { ...prev, status: 'completed', progress: 100, currentStep: 'Completed', logs: data.logs || prev.logs } : null);
+          let modelUrl: string | undefined;
+          let cleanName: string | undefined;
           if (result?.model_url || result?.active_model_url) {
             const currentLatestTask = activeTaskRef.current || task;
-            const modelUrl = (result.active_model_url || result.model_url) as string;
+            modelUrl = (result.active_model_url || result.model_url) as string;
             const promptTitle = currentLatestTask.title && currentLatestTask.title !== 'Image-to-3D generation' && currentLatestTask.title !== 'generate' ? currentLatestTask.title : null;
             const rawName = promptTitle || currentLatestTask.inputImageName || (currentLatestTask.inputImage ? currentLatestTask.inputImage.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : null) || `Model_${jobId.slice(0, 6)}`;
-            const cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+            cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
 
             // Pre-fetch the model arrayBuffer immediately into in-memory cache
             void prefetchGLB(modelUrl);
@@ -687,9 +696,16 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setViewportResetTrigger(prev => prev + 1);
             loadModelInViewer(modelUrl, cleanName, outputAsset as any);
           }
-          toast.success('Generation complete', { description: 'The 3D model is ready and loaded in the viewer.' });
-          return;
-        } else if (data.status === 'failed' || data.status === 'cancelled') {
+           toast.success('Generation complete', { description: 'The 3D model is ready and loaded in the viewer.' });
+
+           // Shape → Paint automatic chaining
+           const latestTask = activeTaskRef.current || task;
+           if (latestTask?.provider?.includes('shape_v21') && generationSettings.generateTexture !== false) {
+             // Automatically trigger Paint-v2-1 texturing
+             void runPaintAutoChaining(modelUrl || '', cleanName || '', jobId);
+           }
+           return;
+         } else if (data.status === 'failed' || data.status === 'cancelled') {
           const currentLatestTask = activeTaskRef.current || task;
           const message = data.error_message || data.message || (data.status === 'cancelled' ? 'Generation cancelled' : 'Generation failed');
           setIsExecuting(false);
@@ -886,12 +902,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       // Route dynamically: raw models (Hunyuan3D Raw, PartPacker, UltraShape) must go to image-to-raw-mesh
       const isRawModel = [
-        'hunyuan3dv21_image_to_raw_mesh',
+        'hunyuan3d_shape_v21_image_to_raw_mesh',
+        'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
         'partpacker_image_to_raw_mesh',
         'ultrashape_image_to_raw_mesh',
       ].includes(generationSettings.aiModel || '') || Boolean(generationSettings.aiModel?.includes('raw_mesh'));
 
       const isTextured = !isRawModel && generationSettings.generateTexture !== false;
+      const isPaintModel = generationSettings.aiModel?.includes('shape_v21') || generationSettings.aiModel?.includes('paint_v21') || false;
       const endpoint = isTextured
         ? '/api/v1/mesh-generation/image-to-textured-mesh'
         : '/api/v1/mesh-generation/image-to-raw-mesh';
@@ -913,6 +931,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         guidance_scale: infGuidance,
         seed: generationSettings.seed ?? undefined,
         low_vram: Boolean(generationSettings.lowVram),
+        enable_flashvdm: generationSettings.enableFlashVDM ?? false,
+        low_vram_mode: generationSettings.lowVramMode ?? 'auto',
         auto_optimize: true,
         target_polycount: targetPoly,
         fix_uvs: true,
@@ -931,6 +951,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         enable_mesh_repair: true,
         compress_output: true,
       };
+
+      // Pass Paint-v2-1 parameters for shape models to enable auto-chaining
+      if (isPaintModel) {
+        modelParameters.max_num_view = generationSettings.maxNumView ?? 6;
+        modelParameters.resolution = generationSettings.resolution ?? 512;
+      }
 
       const body: Record<string, unknown> = {
         ...imageInput,
@@ -954,6 +980,16 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (!jobId) throw new Error('Backend did not return a generation job ID');
       setActiveTask(prev => prev ? { ...prev, id: jobId, inputImage: imageToUse, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' } : prev);
       setExecutionStep('Generation queued on backend');
+
+      // Shape → Paint automatic chaining: after Shape mesh is generated,
+      // automatically trigger Paint-v2-1 texturing
+      if (isPaintModel && generationSettings.generateTexture !== false) {
+        // The Shape model generates a raw mesh; after completion, automatically
+        // call image-mesh-painting with the Paint model
+        // This is handled by the job system polling for completion
+        // and triggering the Paint pipeline automatically
+        console.log('Shape → Paint automatic chaining enabled for', generationSettings.aiModel);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation submission failed';
       setIsExecuting(false);
@@ -997,6 +1033,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.detailGuidance,
     generationSettings.seed,
     generationSettings.guidanceScale,
+    generationSettings.enableFlashVDM,
+    generationSettings.lowVramMode,
+    generationSettings.maxNumView,
+    generationSettings.resolution,
+    generationSettings.paintResolution,
+    generationSettings.generatePBR,
     startTask,
   ]);
 
@@ -1034,7 +1076,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           guidance_scale: infGuidance,
           seed: generationSettings.seed ?? undefined,
           low_vram: Boolean(generationSettings.lowVram),
-          auto_optimize: true,
+        enable_flashvdm: generationSettings.enableFlashVDM ?? false,
+        low_vram_mode: generationSettings.lowVramMode ?? 'auto',
+        auto_optimize: true,
           target_polycount: targetPoly,
           fix_uvs: true,
           preserve_details: generationSettings.autoOptimizeSettings?.preserveDetails ?? 85,
@@ -1122,6 +1166,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.detailGuidance,
     generationSettings.seed,
     generationSettings.guidanceScale,
+    generationSettings.enableFlashVDM,
+    generationSettings.lowVramMode,
+    generationSettings.maxNumView,
+    generationSettings.resolution,
     startTask,
     generateImageTo3D,
   ]);
@@ -1185,11 +1233,27 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ? 'trellis_text_mesh_painting'
         : 'trellis_image_mesh_painting';
 
+      const isPaintModel = (textureSettings.modelId || fallbackModel).includes('paint_v21');
+      const paintResolution = isPaintModel
+        ? (textureSettings.paintResolution ?? 512)
+        : undefined;
+
       const body: Record<string, unknown> = {
         texture_resolution: { '1K': 1024, '2K': 2048, '4K': 4096, '8K': 4096 }[textureSettings.resolution || '2K'],
         output_format: 'glb',
         model_preference: textureSettings.modelId || fallbackModel,
       };
+
+      if (isPaintModel) {
+        body.model_parameters = {
+          max_num_view: textureSettings.maxNumView ?? 6,
+          resolution: paintResolution ?? 512,
+        };
+      }
+
+      if (textureSettings.generatePBR !== false) {
+        body.generate_pbr = true;
+      }
 
       if (meshFileId) {
         body.mesh_file_id = meshFileId;
@@ -1229,12 +1293,50 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         error_message: message,
         provider: textureSettings.modelId || '',
       } as any);
-      setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: message, errorMessage: message, diagnostic } : null);
-      toast.error('Texture generation failed', { description: message });
-    }
-  }, [textureSettings, currentAsset, startTask]);
+       setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: message, errorMessage: message, diagnostic } : null);
+       toast.error('Texture generation failed', { description: message });
+     }
+   }, [textureSettings, currentAsset, startTask]);
 
-  const runUVUnwrapGeneration = useCallback(async (customSettings?: {
+   const runPaintAutoChaining = useCallback(async (shapeMeshUrl: string, shapeName: string, shapeJobId: string) => {
+     startTask('texture', 'Paint-v2-1 Texturing', undefined, 'hunyuan3d_paint_v21_image_mesh_painting');
+     try {
+       const endpoint = '/api/v1/mesh-generation/image-mesh-painting';
+       const body: Record<string, unknown> = {
+         mesh_path: shapeMeshUrl,
+         image_path: generationSettings.image || undefined,
+         output_format: 'glb',
+         model_preference: 'hunyuan3d_paint_v21_image_mesh_painting',
+         model_parameters: {
+           max_num_view: textureSettings.maxNumView ?? 6,
+           resolution: textureSettings.paintResolution ?? 512,
+         },
+       };
+
+        if (generationSettings.generatePBR !== false) {
+          body.generate_pbr = true;
+        }
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw await parseApiError(res);
+        const data = await parseApiData<{ job_id?: string; id?: string }>(res);
+        const jobId = data.job_id ?? data.id;
+        if (!jobId) throw new Error('Backend did not return a texture job ID');
+        setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+        setExecutionStep('Paint-v2-1 texturing queued on backend');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Paint auto-chaining failed';
+        setIsExecuting(false);
+        setExecutionStep(message);
+        toast.error('Paint auto-chaining failed', { description: message });
+      }
+    }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.generateTexture, generationSettings.generatePBR, startTask]);
+
+   const runUVUnwrapGeneration = useCallback(async (customSettings?: {
     distortionThreshold?: number;
     packMethod?: string;
     outputFormat?: string;

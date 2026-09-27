@@ -71,7 +71,9 @@
 |-------|---------------|---------|-------|
 | **TRELLIS** | 11.5 GB | High quality | ~60 seconds |
 | **TRELLIS.2** | 23 GB | Highest quality | ~60 seconds |
-| **Hunyuan3D-2.1** | 8 GB (shape) / 16 GB (shape+texture) | High quality | ~90 seconds |
+| **Hunyuan3D-Shape-v2-1** | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
+| **Hunyuan3D-Paint-v2-1** | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
+| **Hunyuan3D-DiT-v2-mini-Turbo** | ~6 GB | Low-resource shape | ~30 seconds |
 | **TripoSR** | 6 GB | Ultra-fast raw mesh | ~2-5 seconds |
 | **TripoSG** | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
 | **ARDY** | 8 GB | Motion AI & Animation | ~10-25 seconds |

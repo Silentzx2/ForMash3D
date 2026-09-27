@@ -37,8 +37,9 @@ ForMash3D/
 └── backend/
     └── thirdparty/
         ├── FastMesh/
-        ├── Hunyuan3D-2.1/
-        ├── Hunyuan3DPart/
+        ├── hunyuan3d-shape-v2-1/
+        ├── hunyuan3d-paint-v2-1/
+        ├── hunyuan3d-dit-v2-mini-turbo/
         ├── PartField/
         ├── PartPacker/
         ├── PartUV/
@@ -54,8 +55,7 @@ ForMash3D/
         └── wheels/
 ```
 
-
-The main backend treats this repository as a **single Git submodule** at `backend/thirdparty`.
+The main backend treats this repository as a **plain source directory** at `backend/thirdparty`. No Git submodules are used. Each model integration is independently managed and can be updated separately.
 
 ---
 
@@ -99,21 +99,22 @@ Main ForMash3D Repo
 
 | Directory | Source Repository | Primary Role |
 |---|---|---|
+| `hunyuan3d-shape-v2-1/` | https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1 | 3.3B shape generation |
+| `hunyuan3d-paint-v2-1/` | https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1 | 2B PBR texture generation |
+| `hunyuan3d-dit-v2-mini-turbo/` | https://github.com/Tencent-Hunyuan/Hunyuan3D-2 | 0.6B low-VRAM shape generation |
 | `TRELLIS/` | https://github.com/FishWoWater/TRELLIS | Structured 3D generation and mesh reconstruction |
 | `TRELLIS.2/` | https://github.com/FishWoWater/TRELLIS.2 | Higher-quality 3D generation / downstream processing |
-| `Hunyuan3D-2.1/` | https://github.com/FishWoWater/Hunyuan3D-2.1 | Shape and texture generation |
-| `Hunyuan3DPart/` | https://github.com/FishWoWater/Hunyuan3D-Part | Part-aware 3D processing |
-| `UniRig/` | https://github.com/FishWoWater/UniRig | Automatic rigging and animation preparation |
-| `FastMesh/` | https://github.com/FishWoWater/FastMesh | Fast mesh processing / reconstruction |
-| `PartUV/` | https://github.com/FishWoWater/PartUV | UV and surface processing |
 | `PartField/` | https://github.com/nv-tlabs/PartField | Part-aware 3D understanding |
 | `PartPacker/` | https://github.com/NVlabs/PartPacker | Part-level geometry processing |
+| `PartUV/` | https://github.com/FishWoWater/PartUV | UV and surface processing |
 | `UltraShape/` | https://github.com/PKU-YuanGroup/UltraShape-1.0 | Shape refinement / reconstruction |
 | `VoxHammer/` | https://github.com/FishWoWater/VoxHammer | 3D editing and voxel-based processing |
 | `TripoSF/` | https://github.com/VAST-AI-Research/TripoSF | High-resolution sparse voxel 3D shape generation |
 | `TripoSG/` | https://github.com/VAST-AI-Research/TripoSG | Rectified flow image-to-3D shape generation |
 | `TripoSR/` | https://github.com/VAST-AI-Research/TripoSR | Fast feedforward single-image 3D reconstruction |
 | `ardy/` | https://github.com/NVlabs/ardy | Autoregressive diffusion for interactive motion generation |
+| `UniRig/` | https://github.com/FishWoWater/UniRig | Automatic rigging and animation preparation |
+| `FastMesh/` | https://github.com/FishWoWater/FastMesh | Fast mesh processing / reconstruction |
 
 ---
 
@@ -128,8 +129,8 @@ Several model directories use FishWoWater-maintained repositories:
 ```text
 FishWoWater/TRELLIS
 FishWoWater/TRELLIS.2
-FishWoWater/Hunyuan3D-2.1
-FishWoWater/Hunyuan3D-Part
+Tencent-Hunyuan/Hunyuan3D-2.1
+Tencent-Hunyuan/Hunyuan3D-2
 FishWoWater/UniRig
 FishWoWater/FastMesh
 FishWoWater/PartUV
@@ -154,7 +155,7 @@ VAST-AI-Research/TripoSR
 NVlabs/ardy
 ```
 
-The exact repository revision consumed by ForMash3D is determined by the version stored in this dependency bundle and by the parent backend's submodule pointer.
+The exact repository revision consumed by ForMash3D is determined by the version stored in this dependency bundle.
 
 ---
 
@@ -164,8 +165,9 @@ The exact repository revision consumed by ForMash3D is determined by the version
 ForMash3D-ThirdParty/
 │
 ├── FastMesh/
-├── Hunyuan3D-2.1/
-├── Hunyuan3DPart/
+├── hunyuan3d-shape-v2-1/
+├── hunyuan3d-paint-v2-1/
+├── hunyuan3d-dit-v2-mini-turbo/
 ├── PartField/
 ├── PartPacker/
 ├── PartUV/
@@ -181,21 +183,13 @@ ForMash3D-ThirdParty/
 └── wheels/
 ```
 
-The directories above are the model source bundle consumed by the ForMash3D backend.
-
-Large model checkpoints are intentionally treated separately from the source repository whenever possible.
+Each model integration is independently managed. No Git submodules are used. The main ForMash3D backend references `backend/thirdparty/` as a plain source directory.
 
 ---
 
 # Integration With ForMash3D
 
-The main ForMash3D backend references this repository as one Git submodule:
-
-```ini
-[submodule "thirdparty"]
-    path = backend/thirdparty
-    url = https://github.com/Silentzx2/ForMash3D-ThirdParty.git
-```
+The main ForMash3D backend references this repository as a **plain source directory** at `backend/thirdparty/`. No Git submodules are used. Each model integration is independently managed and can be updated separately.
 
 The resulting application layout is:
 
@@ -206,94 +200,9 @@ ForMash3D/
 │   ├── app/
 │   ├── scripts/
 │   ├── runtime/
-│   └── thirdparty/        <-- this repository
+│   └── thirdparty/        <-- this repository (plain directory)
 └── setup.sh
 ```
-
-This design gives two useful checkout modes.
-
----
-
-# Clone Behavior
-
-## Normal ForMash3D clone
-
-```bash
-git clone https://github.com/Silentzx2/ForMash3D.git
-```
-
-This clones the main project without initializing the `backend/thirdparty` submodule.
-
-The checkout remains lightweight.
-
-The `thirdparty` path may exist as the registered submodule path, but the model source tree is not populated until the submodule is initialized.
-
-## Recursive ForMash3D clone
-
-```bash
-git clone --recurse-submodules https://github.com/Silentzx2/ForMash3D.git
-```
-
-This initializes the backend's `thirdparty` submodule automatically and downloads the complete `ForMash3D-ThirdParty` source bundle.
-
-The resulting structure is:
-
-```text
-ForMash3D/
-└── backend/
-    └── thirdparty/
-        ├── FastMesh/
-        ├── Hunyuan3D-2.1/
-        ├── Hunyuan3DPart/
-        ├── PartField/
-        ├── PartPacker/
-        ├── PartUV/
-        ├── TRELLIS/
-        ├── TRELLIS.2/
-        ├── TripoSF/
-        ├── TripoSG/
-        ├── TripoSR/
-        ├── UltraShape/
-        ├── UniRig/
-        ├── VoxHammer/
-        ├── ardy/
-        └── wheels/
-```
-
-## Existing checkout
-
-If the ForMash3D backend was cloned normally, initialize the dependency bundle with:
-
-```bash
-git -C ./backend submodule update --init --recursive
-```
-
-This command:
-
-1. Uses `backend/.gitmodules`.
-2. Initializes the `thirdparty` submodule.
-3. Checks out the exact commit recorded by the backend repository.
-4. Recursively initializes any nested submodules if the dependency repository contains them.
-
----
-
-# Setup Script Integration
-
-The recommended setup behavior is:
-
-```bash
-# Initialize third-party model sources
-echo "Initializing third-party model sources..."
-git -C "$PROJECT_ROOT/backend" submodule update --init --recursive
-```
-
-This belongs in the setup/bootstrap path.
-
-Do **not** put `git submodule add` into the setup script.
-
-`git submodule add` is a repository-maintenance command used while configuring the backend repository.
-
-`git submodule update --init --recursive` is the setup/bootstrap command used on a fresh or existing checkout.
 
 ---
 
@@ -519,13 +428,17 @@ Used for neural 3D generation and structured mesh reconstruction. The ForMash3D 
 
 Used for newer/high-quality 3D generation workflows and as part of the broader dependency stack used by the 3D runtime.
 
-## Hunyuan3D-2.1
+## Hunyuan3D-Shape-v2-1
 
-Provides shape-generation and texture-related capabilities used in ForMash3D's 3D generation workflows.
+Provides 3.3B shape-generation capabilities used in ForMash3D's 3D generation workflows. Source: `backend/thirdparty/hunyuan3d-shape-v2-1/`.
 
-## Hunyuan3DPart
+## Hunyuan3D-Paint-v2-1
 
-Provides part-aware processing for decomposing or working with component-level 3D content.
+Provides 2B PBR texture generation capabilities used in ForMash3D's texture workflows. Source: `backend/thirdparty/hunyuan3d-paint-v2-1/`.
+
+## Hunyuan3D-DiT-v2-mini-Turbo
+
+Provides 0.6B low-VRAM shape-generation capabilities for faster, lower-resource inference. Source: `backend/thirdparty/hunyuan3d-dit-v2-mini-turbo/`.
 
 ## UniRig
 
@@ -593,7 +506,7 @@ A model update can affect:
 - backend adapters
 - generated asset compatibility
 
-When a known-good state is established, update the ForMash3D backend's submodule pointer to that exact commit.
+When a known-good state is established, update the ForMash3D backend's `backend/thirdparty/` directory to point to the tested commit.
 
 ---
 
@@ -614,30 +527,34 @@ git commit -m "Update third-party model sources"
 git push
 ```
 
-Then update the ForMash3D backend repository so its `backend/thirdparty` submodule points to the tested commit.
+Then update the ForMash3D backend repository so its `backend/thirdparty/` directory reflects the tested state.
 
 ---
 
 # Troubleshooting
 
-## Thirdparty directory is empty
+## Thirdparty directory is empty or incomplete
 
-From the ForMash3D project root:
+Populate the directory by cloning the required upstream repositories directly:
 
 ```bash
-git -C ./backend submodule update --init --recursive
+cd backend/thirdparty
+git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git hunyuan3d-shape-v2-1
+git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git hunyuan3d-paint-v2-1
+git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git hunyuan3d-dit-v2-mini-turbo
+rm -rf hunyuan3d-shape-v2-1/.git hunyuan3d-paint-v2-1/.git hunyuan3d-dit-v2-mini-turbo/.git
 ```
 
-## Check the registered submodule
+## Check the configured directory
 
 ```bash
-git -C ./backend submodule status
+ls -1 ./backend/thirdparty
 ```
 
-## Inspect the configured URL
+## Inspect the directory structure
 
 ```bash
-git -C ./backend config -f .gitmodules --get-regexp 'path|url'
+find ./backend/thirdparty -maxdepth 1 -type d | sort
 ```
 
 ## Check NVIDIA driver
@@ -737,7 +654,7 @@ When modifying a model directory:
 4. Keep CUDA/native build requirements explicit.
 5. Validate imports after native dependency changes.
 6. Run a real inference/smoke test after significant dependency changes.
-7. Update the parent ForMash3D submodule only after validation.
+7. Update the ForMash3D backend's `backend/thirdparty/` directory after validation.
 
 ---
 
@@ -797,7 +714,7 @@ https://github.com/Silentzx2/ForMash3D-ThirdParty
 ForMash3D/backend/thirdparty
 ```
 
-**Delivery mechanism:** Git submodule
+**Delivery mechanism:** Plain source directory (no submodules)
 
 **Runtime family:** NVIDIA CUDA + PyTorch
 
@@ -805,7 +722,7 @@ ForMash3D/backend/thirdparty
 
 **Weights:** Managed separately from source whenever possible
 
-**Repository type:** Public dependency bundle / submodule
+**Repository type:** Public dependency bundle
 
 ---
 
@@ -823,12 +740,6 @@ git clone https://github.com/Silentzx2/ForMash3D-ThirdParty.git
 git pull
 ```
 
-### Initialize it from ForMash3D
-
-```bash
-git -C ./backend submodule update --init --recursive
-```
-
 ### Verify model directories
 
 ```bash
@@ -839,8 +750,9 @@ Expected directories:
 
 ```text
 FastMesh
-Hunyuan3D-2.1
-Hunyuan3DPart
+hunyuan3d-dit-v2-mini-turbo
+hunyuan3d-paint-v2-1
+hunyuan3d-shape-v2-1
 PartField
 PartPacker
 PartUV

@@ -259,11 +259,11 @@ def model_worker_process(
                 # Synchronous unload for cleanup
                 try:
                     loaded_model._unload_model()
-                except:
+                except Exception:
                     pass
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-        except:
+        except Exception:
             pass
         logger.info(f"Worker {worker_id} shutdown complete")
 

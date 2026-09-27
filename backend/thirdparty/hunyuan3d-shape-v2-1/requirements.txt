@@ -1,0 +1,62 @@
+--extra-index-url https://download.pytorch.org/whl/cu124
+--extra-index-url https://mirrors.cloud.tencent.com/pypi/simple/
+--extra-index-url https://mirrors.aliyun.com/pypi/simple
+
+# Core ML/Deep Learning (PyTorch 2.6 + CUDA 12.4 baseline)
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+torchaudio==2.6.0+cu124
+transformers==4.43.2
+diffusers==0.24.0
+accelerate>=1.0.0
+huggingface-hub>=0.20.0,<0.26.0
+safetensors>=0.4.4
+
+# Scientific Computing
+numpy>=1.26.0
+scipy>=1.12.0
+einops>=0.8.0
+pandas>=2.0.0
+
+# Computer Vision & Image Processing
+opencv-python>=4.8.0
+imageio>=2.33.0
+scikit-image>=0.22.0
+rembg>=2.0.65
+realesrgan>=0.3.0
+basicsr>=1.4.2
+
+# 3D Mesh Processing
+trimesh>=4.4.0
+pymeshlab>=2023.12
+pygltflib>=1.16.3
+xatlas>=0.0.9
+open3d>=0.18.0
+
+# Configuration Management
+omegaconf>=2.3.0
+pyyaml>=6.0
+configargparse>=1.7
+
+# Web Framework (for demo)
+gradio>=5.0.0
+fastapi>=0.104.0
+uvicorn>=0.30.0
+
+# Utilities
+tqdm>=4.66.0
+psutil>=6.0.0
+
+# GPU Computing (CUDA 12.4)
+cupy-cuda124>=13.4.0
+
+# ONNX Runtime
+onnxruntime>=1.16.0
+torchmetrics>=1.7.0
+
+pydantic>=2.10.0
+
+timm
+pythreejs
+torchdiffeq
+deepspeed

@@ -780,13 +780,13 @@ class PartFieldRunner:
             point_feat = np.load(
                 f"{feature_dir}/{model_name}/part_feat_{model_name}_{view_id}.npy"
             )
-        except:
+        except Exception:
             try:
                 point_feat = np.load(
                     f"{feature_dir}/{model_name}/part_feat_{model_name}_{view_id}_batch.npy"
                 )
 
-            except:
+            except Exception:
                 logger.error("pointfeat loading error. skipping...")
                 logger.error(
                     f"{feature_dir}/{model_name}/part_feat_{model_name}_{view_id}_batch.npy"

@@ -419,39 +419,135 @@ echo "[SUCCESS] PartField installation completed"
 
 echo ""
 echo "========================================"
-echo "Installing Hunyuan3D 2.1 Dependencies"
+echo "Installing Hunyuan3D-Shape-v2-1 Dependencies"
 echo "========================================"
-### installation for hunyuan3d 2.1  ###
-echo "[INFO] Changing directory to thirdparty/Hunyuan3D-2.1..."
-cd "$THIRDPARTY_DIR/Hunyuan3D-2.1"
-echo "[INFO] Installing custom rasterizer for Hunyuan3D 2.1..."
+### installation for Hunyuan3D-Shape-v2-1 ###
+echo "[INFO] Changing directory to thirdparty/hunyuan3d-shape-v2-1..."
+cd "$THIRDPARTY_DIR/hunyuan3d-shape-v2-1"
+echo "[INFO] Installing custom rasterizer for Hunyuan3D-Shape-v2-1..."
 cd hy3dpaint/custom_rasterizer
 if ! install_local_wheel "custom_rasterizer-*.whl" "Hunyuan3D custom_rasterizer"; then
     $UV_PIP install -e . --no-build-isolation
 fi
 if [ $? -eq 0 ]; then
-    echo "[SUCCESS] Hunyuan3D 2.1 custom rasterizer installed"
+    echo "[SUCCESS] Hunyuan3D-Shape-v2-1 custom rasterizer installed"
 else
-    echo "[ERROR] Failed to install Hunyuan3D 2.1 custom rasterizer"
+    echo "[ERROR] Failed to install Hunyuan3D-Shape-v2-1 custom rasterizer"
     exit 1
 fi
 
-echo "[INFO] Building differentiable renderer for Hunyuan3D 2.1..."
-cd "$THIRDPARTY_DIR/Hunyuan3D-2.1/hy3dpaint/DifferentiableRenderer"
+echo "[INFO] Building differentiable renderer for Hunyuan3D-Shape-v2-1..."
+cd "$THIRDPARTY_DIR/hunyuan3d-shape-v2-1/hy3dpaint/DifferentiableRenderer"
 if ! install_local_wheel "hy3d_mesh_inpaint_processor-*.whl" "Hunyuan3D mesh inpaint processor"; then
 bash compile_mesh_painter.sh
 fi
 if [ $? -eq 0 ]; then
-    echo "[SUCCESS] Hunyuan3D 2.1 differentiable renderer built successfully"
+    echo "[SUCCESS] Hunyuan3D-Shape-v2-1 differentiable renderer built successfully"
 else
-    echo "[ERROR] Failed to build Hunyuan3D 2.1 differentiable renderer"
+    echo "[ERROR] Failed to build Hunyuan3D-Shape-v2-1 differentiable renderer"
     exit 1
 fi
-cd "$THIRDPARTY_DIR/Hunyuan3D-2.1"
-echo "[INFO] Installing Hunyuan3D 2.1 requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements-inference.txt --index-strategy unsafe-best-match 
-### installation for hunyuan3d 2.1 end ###
-echo "[SUCCESS] Hunyuan3D 2.1 installation completed"
+cd "$THIRDPARTY_DIR/hunyuan3d-shape-v2-1"
+echo "[INFO] Installing Hunyuan3D-Shape-v2-1 requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt --index-strategy unsafe-best-match
+### installation for Hunyuan3D-Shape-v2-1 end ###
+echo "[SUCCESS] Hunyuan3D-Shape-v2-1 installation completed"
+
+echo ""
+echo "========================================"
+echo "Installing Hunyuan3D-Paint-v2-1 Dependencies"
+echo "========================================"
+### installation for Hunyuan3D-Paint-v2-1 ###
+echo "[INFO] Changing directory to thirdparty/hunyuan3d-paint-v2-1..."
+cd "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1"
+echo "[INFO] Installing Hunyuan3D-Paint-v2-1 requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt --index-strategy unsafe-best-match
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Hunyuan3D-Paint-v2-1 requirements installed"
+else
+    echo "[ERROR] Failed to install Hunyuan3D-Paint-v2-1 requirements"
+    exit 1
+fi
+
+# Download RealESRGAN_x4plus.pth checkpoint
+echo "[INFO] Downloading RealESRGAN_x4plus.pth checkpoint..."
+mkdir -p "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/ckpt"
+if [ ! -f "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/ckpt/RealESRGAN_x4plus.pth" ]; then
+    if curl -fsSL "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" \
+        -o "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/ckpt/RealESRGAN_x4plus.pth"; then
+        echo "[SUCCESS] RealESRGAN_x4plus.pth downloaded"
+    else
+        echo "[ERROR] Failed to download RealESRGAN_x4plus.pth"
+        exit 1
+    fi
+else
+    echo "[INFO] RealESRGAN_x4plus.pth already exists"
+fi
+
+# Verify RealESRGAN checkpoint is valid (min 50MB)
+REALESRGAN_SIZE=$(stat -c%s "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/ckpt/RealESRGAN_x4plus.pth" 2>/dev/null || echo "0")
+if [ "$REALESRGAN_SIZE" -lt 50000000 ]; then
+    echo "[ERROR] RealESRGAN_x4plus.pth is too small (${REALESRGAN_SIZE} bytes), expected >50MB"
+    exit 1
+fi
+echo "[SUCCESS] RealESRGAN_x4plus.pth verified (${REALESRGAN_SIZE} bytes)"
+
+# Verify native renderer build
+if [ -f "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/DifferentiableRenderer/mesh_inpaint_processor$(python3-config --extension-suffix)" ]; then
+    echo "[SUCCESS] DifferentiableRenderer native module verified"
+else
+    echo "[WARN] DifferentiableRenderer native module not found, attempting rebuild..."
+    cd "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/DifferentiableRenderer"
+    bash compile_mesh_painter.sh
+    if [ $? -eq 0 ]; then
+        echo "[SUCCESS] DifferentiableRenderer rebuilt"
+    else
+        echo "[ERROR] Failed to build DifferentiableRenderer"
+        exit 1
+    fi
+fi
+
+# Build custom rasterizer
+echo "[INFO] Building Hunyuan3D custom rasterizer..."
+cd "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/custom_rasterizer"
+if ! install_local_wheel "custom_rasterizer-*.whl" "Hunyuan3D custom_rasterizer"; then
+    $UV_PIP install -e . --no-build-isolation
+fi
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Hunyuan3D custom rasterizer built"
+else
+    echo "[ERROR] Failed to build Hunyuan3D custom rasterizer"
+    exit 1
+fi
+
+# Build DifferentiableRenderer
+echo "[INFO] Building Hunyuan3D DifferentiableRenderer..."
+cd "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/DifferentiableRenderer"
+if ! install_local_wheel "hy3d_mesh_inpaint_processor-*.whl" "Hunyuan3D mesh inpaint processor"; then
+    bash compile_mesh_painter.sh
+fi
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Hunyuan3D DifferentiableRenderer built"
+else
+    echo "[ERROR] Failed to build Hunyuan3D DifferentiableRenderer"
+    exit 1
+fi
+
+cd "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1"
+### installation for Hunyuan3D-Paint-v2-1 end ###
+echo "[SUCCESS] Hunyuan3D-Paint-v2-1 installation completed"
+
+echo ""
+echo "========================================"
+echo "Installing Hunyuan3D-DiT-v2-mini-Turbo Dependencies"
+echo "========================================"
+### installation for Hunyuan3D-DiT-v2-mini-Turbo ###
+echo "[INFO] Changing directory to thirdparty/hunyuan3d-dit-v2-mini-turbo..."
+cd "$THIRDPARTY_DIR/hunyuan3d-dit-v2-mini-turbo"
+echo "[INFO] Installing Mini Turbo requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
+### installation for Hunyuan3D-DiT-v2-mini-Turbo end ###
+echo "[SUCCESS] Hunyuan3D-DiT-v2-mini-Turbo installation completed"
 
 echo ""
 echo "========================================"

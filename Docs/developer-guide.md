@@ -92,9 +92,12 @@ flowchart TB
     CORE --> AUTH["auth/"]:::dir
     CORE --> UTILS["utils/"]:::dir
 
-    ADAPTERS --> A1["trellis_adapter.py"]:::file
-    ADAPTERS --> A2["trellis2_adapter.py"]:::file
-    ADAPTERS --> A3["hunyuan3d_adapter_v21.py"]:::file
+ADAPTERS --> A1["trellis_adapter.py"]:::file
+ADAPTERS --> A2["trellis2_adapter.py"]:::file
+ADAPTERS --> A3["hunyuan3d_adapter_v21.py"]:::file
+ADAPTERS --> A4["hunyuan3d_paint_v21.py"]:::file
+ADAPTERS --> A5["hunyuan3d_shape_v21.py"]:::file
+ADAPTERS --> A6["hunyuan3d_dit_v2_mini_turbo.py"]:::file
     ADAPTERS --> A4["partpacker_adapter.py"]:::file
     ADAPTERS --> A5["ultrashape_adapter.py"]:::file
     ADAPTERS --> A6["partfield_adapter.py"]:::file
@@ -173,17 +176,18 @@ The frontend's `apiClient.ts` validates responses and handles errors.
 | Category | Model | Input | Output | VRAM | Notes |
 |----------|-------|-------|--------|------|-------|
 | Text/Image to 3D | TRELLIS image-large | Text/Image | Textured Mesh | 12GB | Medium-quality, geometry & texture |
-| Text/Image to 3D | Hunyuan3D-2.1 | Image | Raw Mesh | 8GB | Fast, medium quality, geometry only |
-| Text/Image to 3D | Hunyuan3D-2.1 | Image | Textured Mesh | 19GB | Medium-quality, geometry & texture |
+| Text/Image to 3D | Hunyuan3D-Shape-v2-1 | Image | Raw Mesh | 10GB | 3.3B shape model, official 2.1 pipeline |
+| Text/Image to 3D | Hunyuan3D-Shape-v2-1 | Image | Textured Mesh | 29GB | Shape + Paint v2-1 chaining |
+| Text/Image to 3D | Hunyuan3D-DiT-v2-mini-Turbo | Image | Raw Mesh | 6GB | 0.6B low-VRAM shape model, Turbo path |
+| Text/Image to 3D | Hunyuan3D-Paint-v2-1 | Mesh + Image | Textured Mesh | 21GB | 2B PBR texture checkpoint, RealESRGAN x4+, DifferentiableRenderer |
 | Text/Image to 3D | TRELLIS.2-4B | Image | Textured Mesh | 24GB | High-quality textured geometry |
 | Text/Image to 3D | UltraShape | Image | Textured Mesh | 25GB | High-quality textured geometry |
 | Text/Image to 3D | PartPacker | Image | Raw Mesh | 10GB | Part-Level, geometry only |
-| Text/Image to 3D | Hunyuan3D-2.0 mini | Text/Image | Textured Mesh | 8GB | Compact Hunyuan3D variant |
 | Rigging | UniRig | Mesh | Rigged Mesh | 9GB | Automatic skeleton generation |
 | Segmentation | PartField | Mesh | Segmented Mesh | 4GB | Semantic part segmentation |
 | Segmentation | P3-SAM | Mesh | Segmented Mesh | 48GB | Semantic part segmentation |
 | Painting | TRELLIS Paint | Text/Image + Mesh | Textured Mesh | 8GB/4GB | Text/image-guided painting |
-| Painting | Hunyuan3D-2.1 Paint | Mesh + Image | Textured Mesh | 12GB | High-quality texture synthesis, PBR |
+| Painting | Hunyuan3D-Paint-v2-1 | Mesh + Image | Textured Mesh | 21GB | High-quality PBR texture synthesis |
 | Retopology | FastMesh v1k | Dense Mesh | Low Poly Mesh | 16GB | Fast artist mesh generation |
 | Retopology | FastMesh v4k | Dense Mesh | Low Poly Mesh | 24GB | Fast artist mesh generation |
 | UV Unwrapping | PartUV | Mesh | Mesh w/ UV | 7GB | Part-Based UV Unwrapping |
@@ -219,6 +223,31 @@ backend/pretrained/
 ├── misc/
 │   └── RealESRGAN_x4plus.pth
 └── dinov2-giant/
+```
+
+### 3.3 Third-Party Source Repositories
+
+Each model integration has its own third-party source directory under `backend/thirdparty/`:
+
+```
+backend/thirdparty/
+├── hunyuan3d-shape-v2-1/    # Hunyuan3D-Shape-v2-1 (3.3B shape)
+├── hunyuan3d-paint-v2-1/    # Hunyuan3D-Paint-v2-1 (2B PBR texture, RealESRGAN, DifferentiableRenderer)
+├── hunyuan3d-dit-v2-mini-turbo/  # Hunyuan3D-DiT-v2-mini-Turbo (0.6B)
+├── TRELLIS/
+├── TRELLIS.2/
+├── PartField/
+├── PartPacker/
+├── PartUV/
+├── FastMesh/
+├── UltraShape/
+├── UniRig/
+├── VoxHammer/
+├── TripoSR/
+├── TripoSG/
+├── TripoSF/
+├── ardy/
+└── wheels/
 ```
 
 ### 3.3 Model Download

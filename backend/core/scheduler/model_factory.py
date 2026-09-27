@@ -51,6 +51,23 @@ class ModelFactory:
             "class": "Trellis2ImageMeshPaintingAdapter",
         },
         # Hunyuan3D adapters
+        "hunyuan3d_shape_v21_image_to_raw_mesh": {
+            "module": "adapters.hunyuan3d_shape_v21",
+            "class": "Hunyuan3DShapeV21ImageToRawMeshAdapter",
+        },
+        "hunyuan3d_shape_v21_image_to_textured_mesh": {
+            "module": "adapters.hunyuan3d_shape_v21",
+            "class": "Hunyuan3DShapeV21ImageToTexturedMeshAdapter",
+        },
+        "hunyuan3d_paint_v21_image_mesh_painting": {
+            "module": "adapters.hunyuan3d_paint_v21",
+            "class": "Hunyuan3DPaintV21ImageMeshPaintingAdapter",
+        },
+        "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
+            "module": "adapters.hunyuan3d_dit_v2_mini_turbo",
+            "class": "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter",
+        },
+        # Hunyuan3D legacy adapters (deprecated)
         "hunyuan3dv21_image_to_raw_mesh": {
             "module": "adapters.hunyuan3d_adapter_v21",
             "class": "Hunyuan3DV21ImageToRawMeshAdapter",
@@ -428,7 +445,33 @@ def get_default_model_configs() -> Dict[str, Dict[str, Any]]:
         }
     )
 
-    # Hunyuan3D2.1 models
+    # Hunyuan3D Shape v2-1 models
+    configs.update(
+        {
+            "hunyuan3d_shape_v21_image_to_raw_mesh": ModelFactory.create_model_config(
+                model_id="hunyuan3d_shape_v21_image_to_raw_mesh",
+                feature_type="image_to_raw_mesh",
+                vram_requirement=10240,
+            ),
+            "hunyuan3d_shape_v21_image_to_textured_mesh": ModelFactory.create_model_config(
+                model_id="hunyuan3d_shape_v21_image_to_textured_mesh",
+                feature_type="image_to_textured_mesh",
+                vram_requirement=29000,
+            ),
+            "hunyuan3d_paint_v21_image_mesh_painting": ModelFactory.create_model_config(
+                model_id="hunyuan3d_paint_v21_image_mesh_painting",
+                feature_type="image_mesh_painting",
+                vram_requirement=21504,
+            ),
+            "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": ModelFactory.create_model_config(
+                model_id="hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+                feature_type="image_to_raw_mesh",
+                vram_requirement=6144,
+            ),
+        }
+    )
+
+    # Hunyuan3D2.1 legacy models
     configs.update(
         {
             "hunyuan3dv21_image_to_raw_mesh": ModelFactory.create_model_config(

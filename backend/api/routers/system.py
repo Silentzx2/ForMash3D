@@ -221,8 +221,18 @@ def _is_model_weights_available(model_id: str) -> bool:
         if not p.exists():
             continue
         if "hunyuan" in model_id:
-            hy = p / "tencent" / "Hunyuan3D-2.1"
-            if hy.exists() and any(hy.iterdir()):
+            hunyuan_dirs = [p / "tencent" / "Hunyuan3D-2.1", p / "thirdparty" / "hunyuan3d-shape-v2-1", p / "thirdparty" / "hunyuan3d-dit-v2-mini-turbo", p / "thirdparty" / "hunyuan3d-paint-v2-1"]
+            if any(d.exists() and any(d.iterdir()) for d in hunyuan_dirs):
+                # For Paint model, also verify RealESRGAN checkpoint exists
+                if "paint_v21" in model_id:
+                    realesrgan_path = p / "thirdparty" / "hunyuan3d-paint-v2-1" / "hy3dpaint" / "ckpt" / "RealESRGAN_x4plus.pth"
+                    if realesrgan_path.exists() and realesrgan_path.stat().st_size > 50000000:
+                        return True
+                    # Also check pretrained/misc location
+                    realesrgan_misc = p / "pretrained" / "misc" / "RealESRGAN_x4plus.pth"
+                    if realesrgan_misc.exists() and realesrgan_misc.stat().st_size > 50000000:
+                        return True
+                    return False
                 return True
         elif "triposf" in model_id:
             sf1 = p / "TripoSF" / "pretrained_TripoSFVAE_256i1024o.safetensors"

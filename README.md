@@ -43,6 +43,7 @@
 
 > Compact overview of recent milestone updates (maximum 3 entries preserved; full technical history available in **[Docs/CHANGELOG.md](Docs/CHANGELOG.md)**).
 
+* **2026-09-27** — **Hunyuan3D-Paint-v2-1 Pipeline Audit & Full Integration**: Completed full audit of the Paint-v2-1 pipeline (Pass 1: 18 fixes including FlashVDM toggle, `systemStats` in TexturePanel, `paintResolution` in GenerationSettings, RealESRGAN/DifferentiableRenderer verification; Pass 2: deep scan of 1080 third-party files fixing bare `except:` clauses and missing `__init__.py` files). Added `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` model ID. Fixed Dockerfile to include Paint DifferentiableRenderer build step.
 * **2026-09-26** — **Generation Runtime Hardening & Jobs UI Consolidation**: Hardened TripoSR/TripoSG model adapters with deterministic snapshot provenance, native error preservation, and output validation; eliminated endless job requeue loops on worker startup failure; fatalized required installer dependencies; and consolidated Jobs UI into the left navigation rail with direct deep-linking to `/workspace/jobs`.
 * **2026-09-26** — **Bug Fixes**: Fixed `text_to_textured_mesh` feature availability, resolved `torch.float8_e8m0fnu` AttributeError (torch 2.8.0 compatibility), fixed `diffusers`/`transformers` circular import, fixed `open3d.io.read_triangle_mesh` PosixPath type error.
 * **2026-09-25** — **Backend Environment Discovery & Startup Fix**: Resolved Google Colab/VPS backend launch failure by implementing auto-discovery of Conda (`3daigc-api`) and Venv environments in non-interactive subshells, eliminating disk-exhausting raw PyPI downloads on startup.
@@ -202,7 +203,10 @@ The model registry is dynamically configured via `backend/config/models.yaml`, p
 
 | Model Architecture | Registered Adapters (23 total) | Category / Tasks | VRAM Budget | Key Capabilities |
 |---|---|---|---|---|
-| **Hunyuan3D-2.1** | `hunyuan3dv21_image_to_raw_mesh`<br>`hunyuan3dv21_image_to_textured_mesh`<br>`hunyuan3dv21_image_mesh_painting` | Raw & Textured Mesh, Mesh Painting | 8–19.5 GB | High-fidelity shape generation, multi-view paint diffusion |
+| **Hunyuan3D-Shape-v2-1** | `hunyuan3d_shape_v21_image_to_raw_mesh`<br>`hunyuan3d_shape_v21_image_to_textured_mesh` | Raw & Textured Mesh | 10–29 GB | 3.3B shape model, official 2.1 pipeline |
+| **Hunyuan3D-Paint-v2-1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB | 2B PBR texture checkpoint, RealESRGAN x4+, DifferentiableRenderer |
+| **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM shape model, Turbo path |
+| **Hunyuan3D-2.1 (Legacy)** | `hunyuan3dv21_image_to_raw_mesh`<br>`hunyuan3dv21_image_to_textured_mesh`<br>`hunyuan3dv21_image_mesh_painting` | Raw & Textured Mesh, Mesh Painting | 8–19.5 GB | Deprecated legacy Hunyuan3D-2.1 integration |
 | **TRELLIS** | `trellis_text_to_textured_mesh`<br>`trellis_image_to_textured_mesh`<br>`trellis_text_mesh_painting`<br>`trellis_image_mesh_painting` | Text/Image to Mesh, Mesh Painting | 11.5 GB | FlexiCubes PBR meshes, 2048x2048 textures |
 | **TRELLIS.2** | `trellis2_image_to_textured_mesh`<br>`trellis2_image_mesh_painting` | Structured 3D & Painting | 23.5 GB | Higher-fidelity FlexiCubes with advanced PBR |
 | **TripoSR** | `triposr_image_to_raw_mesh` | Single-Image to Mesh | 6 GB | Ultra-fast feedforward 3D reconstruction with texture baking |
@@ -250,11 +254,14 @@ The model registry is dynamically configured via `backend/config/models.yaml`, p
 
 ### Clone & Setup
 
-Clone the ForMash3D repository. Third-party model source code is included directly in `backend/thirdparty/` as part of the main repository, cloned from `https://github.com/Silentzx2/ForMash3D-thirdparty`:
+Clone the ForMash3D repository. Third-party model source code is included directly in `backend/thirdparty/` as part of the main repository, with each model integration independently managed under its own directory:
 
-```bash
-git clone https://github.com/Silentzx2/ForMash3D.git
-cd ForMash3D
+```text
+backend/thirdparty/
+├── hunyuan3d-shape-v2-1/
+├── hunyuan3d-paint-v2-1/
+├── hunyuan3d-dit-v2-mini-turbo/
+└── ...
 ```
 
 Third-party wheels are stored in `backend/thirdparty/wheels/` and are automatically downloaded from the ForMash3D GitHub Release at runtime.
@@ -326,7 +333,7 @@ ForMash 3D is an open-source project licensed under the **Apache License 2.0**. 
 
 - **MIT License**: TRELLIS code, TripoSR.
 - **Apache 2.0**: UniRig, P3-SAM.
-- **Tencent Hunyuan Community License**: Hunyuan3D-2.1, Hunyuan3D-Part.
+- **Tencent Hunyuan Community License**: Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo.
 - **NVIDIA Non-Commercial / Research**: PartPacker, PartField, ARDY.
 - **Academic Research Licenses**: PartUV, UltraShape, FastMesh.
 
@@ -375,7 +382,7 @@ P3D_USER_AUTH_ENABLED=false
 | Workspace | Route | Purpose | Compatible Models |
 |---|---|---|---|
 | **Generate** | `/workspace` | Primary shape generation from text or image | TRELLIS, Hunyuan3D, PartPacker, UltraShape, TripoSR/SG/SF |
-| **Texture** | `/workspace/texture` | PBR material synthesis, multi-view paint projection | TRELLIS, Hunyuan3D-2.1 |
+| **Texture** | `/workspace/texture` | PBR material synthesis, multi-view paint projection | TRELLIS, Hunyuan3D-Paint-v2-1, Hunyuan3D-2.1 |
 | **Remesh** | `/workspace/remesh` | Retopology, decimation, manifold cleanup | FastMesh-V1K, FastMesh-V4K |
 | **Edit** | `/workspace/edit` | Local neural mesh editing with VoxHammer | VoxHammer |
 | **Animation** | `/animation` | Auto-rigging (UniRig) + motion generation (ARDY) | UniRig, ARDY |

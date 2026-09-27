@@ -23,15 +23,23 @@ text_mesh_painting:
     max_workers: 1
 
 # image-conditioned geometry generation
-image_to_raw_mesh:    
-  hunyuan3dv21_image_to_raw_mesh:
-    vram_requirement: 8192  # MB
+image_to_raw_mesh:
+  hunyuan3d_shape_v21_image_to_raw_mesh:
+    vram_requirement: 10240  # MB (3.3B shape model)
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
     enabled: true
     max_workers: 1
-    
+
+  hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
+    vram_requirement: 6144  # MB (0.6B mini turbo model)
+    supported_inputs: ["image"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/tencent/Hunyuan3D-2mini"
+    enabled: true
+    max_workers: 1
+
   partpacker_image_to_raw_mesh:
     vram_requirement: 10240  # MB
     supported_inputs: ["image"]
@@ -39,7 +47,7 @@ image_to_raw_mesh:
     model_path: "backend/pretrained/PartPacker"
     enabled: true
     max_workers: 1
-  
+
   ultrashape_image_to_raw_mesh:
     vram_requirement: 26640  # MB (20GB: 8GB Hunyuan + 12GB UltraShape)
     supported_inputs: ["image"]
@@ -90,8 +98,8 @@ image_to_textured_mesh:
     enabled: true
     max_workers: 1
 
-  hunyuan3dv21_image_to_textured_mesh:
-    vram_requirement: 19456  # MB
+  hunyuan3d_shape_v21_image_to_textured_mesh:
+    vram_requirement: 29000  # MB (shape + paint combined)
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
@@ -116,8 +124,8 @@ image_mesh_painting:
     enabled: true
     max_workers: 1
 
-  hunyuan3dv21_image_mesh_painting:
-    vram_requirement: 12288  # MB
+  hunyuan3d_paint_v21_image_mesh_painting:
+    vram_requirement: 21504  # MB (2B PBR texture checkpoint)
     supported_inputs: ["mesh", "text", "image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"

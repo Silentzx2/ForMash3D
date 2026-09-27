@@ -21,8 +21,9 @@ Before deploying any model commercially or redistributing model weights, you mus
 |---|---|---|---|---|---|
 | **TRELLIS** | Microsoft / Jeffrey Xiang | [microsoft/TRELLIS](https://github.com/microsoft/TRELLIS) | MIT | Research / Non-Commercial (Hugging Face) | Check upstream license |
 | **TRELLIS.2** | Jeffrey Xiang | [JeffreyXiang/TRELLIS.2](https://github.com/JeffreyXiang/TRELLIS.2) | MIT / Apache-2.0 | Research / Community | Check upstream license |
-| **Hunyuan3D-2.1** | Tencent Hunyuan Team | [Tencent/Hunyuan3D-2](https://github.com/Tencent/Hunyuan3D-2) | Tencent Hunyuan Community License | Tencent Hunyuan Terms | Conditional (Requires agreement to Tencent terms) |
-| **Hunyuan3D-Part** | Tencent Hunyuan Team | [Tencent/Hunyuan3D-Part](https://github.com/Tencent/Hunyuan3D-2) | Tencent Hunyuan Community License | Tencent Hunyuan Terms | Conditional |
+| **Hunyuan3D-Shape-v2-1** | Tencent Hunyuan Team | [Tencent-Hunyuan/Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | Tencent Hunyuan Community License | Tencent Hunyuan Terms | Conditional (Requires agreement to Tencent terms) |
+| **Hunyuan3D-Paint-v2-1** | Tencent Hunyuan Team | [Tencent-Hunyuan/Hunyuan3D-2.1](https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1) | Tencent Hunyuan Community License | Tencent Hunyuan Terms | Conditional |
+| **Hunyuan3D-DiT-v2-mini-Turbo** | Tencent Hunyuan Team | [Tencent-Hunyuan/Hunyuan3D-2](https://github.com/Tencent-Hunyuan/Hunyuan3D-2) | Tencent Hunyuan Community License | Tencent Hunyuan Terms | Conditional |
 | **TripoSR** | VAST-AI Research & Stability AI | [VAST-AI-Research/TripoSR](https://github.com/VAST-AI-Research/TripoSR) | MIT | MIT / Stability AI Terms | Yes (Subject to MIT & Stability AI terms) |
 | **TripoSG** | VAST-AI Research | [VAST-AI-Research/TripoSG](https://github.com/VAST-AI-Research/TripoSG) | Apache-2.0 / MIT | Research / Gated HF Checkpoint | Check upstream model card |
 | **TripoSF** | VAST-AI Research (SparseFlex VAE) | [VAST-AI-Research/TripoSF](https://github.com/VAST-AI-Research/TripoSF) | Apache-2.0 / MIT | Research Checkpoint | Check upstream model card |
@@ -47,11 +48,11 @@ Before deploying any model commercially or redistributing model weights, you mus
 - **Integration Note**: Utilizes integration forks maintained by FishWoWater (`FishWoWater/TRELLIS`) adapted for headless API service execution.
 - **License**: Code is MIT. Pretrained checkpoints from Hugging Face (`JeffreyXiang/TRELLIS-image-large`) must be reviewed for commercial redistribution rules.
 
-### 2. Hunyuan3D-2.1 & Hunyuan3D-Part
+### 2. Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, and Hunyuan3D-DiT-v2-mini-Turbo
 - **Authors**: Tencent Hunyuan Team
-- **Inference Location**: `backend/adapters/hunyuan3dv21_adapter.py`
-- **Repository Location**: `backend/thirdparty/Hunyuan3D-2.1`, `backend/thirdparty/Hunyuan3DPart`
-- **License**: Distributed under the Tencent Hunyuan Community License. Requires acceptance of Tencent terms for commercial products with active user thresholds. Gated weights on Hugging Face (`tencent/Hunyuan3D-2`).
+- **Inference Location**: `backend/adapters/hunyuan3d_shape_v21.py`, `backend/adapters/hunyuan3d_dit_v2_mini_turbo.py`
+- **Repository Location**: `backend/thirdparty/hunyuan3d-shape-v2-1`, `backend/thirdparty/hunyuan3d-paint-v2-1`, `backend/thirdparty/hunyuan3d-dit-v2-mini-turbo`
+- **License**: Distributed under the Tencent Hunyuan Community License. Requires acceptance of Tencent terms for commercial products with active user thresholds. Gated weights on Hugging Face (`tencent/Hunyuan3D-2.1`, `tencent/Hunyuan3D-2mini`).
 
 ### 3. TripoSR, TripoSG, TripoSF
 - **Authors**: VAST-AI Research, Stability AI

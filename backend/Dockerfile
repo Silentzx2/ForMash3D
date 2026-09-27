@@ -106,6 +106,12 @@ RUN bash compile_mesh_painter.sh
 WORKDIR /app/thirdparty/Hunyuan3D-2.1
 RUN pip install -r requirements-inference.txt
 
+# Build differentiable renderer for Hunyuan3D-Paint-v2-1
+WORKDIR /app/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/custom_rasterizer
+RUN pip install -e . --no-build-isolation
+WORKDIR /app/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/DifferentiableRenderer
+RUN bash compile_mesh_painter.sh
+
 # Install UniRig dependencies
 WORKDIR /app/thirdparty/UniRig
 RUN pip install spconv-cu120 pyrender fast-simplification python-box timm

@@ -281,7 +281,7 @@ Content-Type: application/json
 {
   "image_file_id": "img_abc123",
   "output_format": "glb",
-  "model_preference": "hunyuan3dv21_image_to_raw_mesh",
+  "model_preference": "hunyuan3d_shape_v21_image_to_raw_mesh",
   "model_parameters": {}
 }
 ```
@@ -319,7 +319,7 @@ Content-Type: application/json
 
 ### Image Mesh Painting
 
-Paint textures onto an existing mesh using an image reference.
+Paint textures onto an existing mesh using an image reference. Supports Hunyuan3D-Paint-v2-1 with configurable texture resolution (512/768), max view counts (6-12), and PBR state tracking.
 
 ```http
 POST /api/v1/mesh-generation/image-mesh-painting
@@ -328,7 +328,28 @@ Content-Type: application/json
 {
   "mesh_file_id": "mesh_abc123",
   "image_file_id": "img_abc123",
-  "model_preference": "trellis_image_mesh_painting"
+  "model_preference": "hunyuan3d_paint_v21_image_mesh_painting",
+  "model_parameters": {
+    "resolution": 512,
+    "max_num_view": 6,
+    "generate_pbr": true
+  }
+}
+```
+
+### Image-to-Textured Mesh (Hunyuan3D-Shape-v2-1)
+
+Generate a textured 3D mesh from an uploaded image using the Hunyuan3D-Shape-v2-1 pipeline. Supports automatic Shape→Paint chaining.
+
+```http
+POST /api/v1/mesh-generation/image-to-textured-mesh
+Content-Type: application/json
+
+{
+  "image_file_id": "img_abc123",
+  "output_format": "glb",
+  "model_preference": "hunyuan3d_shape_v21_image_to_textured_mesh",
+  "model_parameters": {}
 }
 ```
 
@@ -388,10 +409,10 @@ GET /api/v1/mesh-generation/models
 {
   "text_to_raw_mesh": ["trellis_text_to_raw_mesh"],
   "text_to_textured_mesh": ["trellis_text_to_textured_mesh"],
-  "image_to_raw_mesh": ["hunyuan3dv21_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh"],
-  "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh", "hunyuan3dv21_image_to_textured_mesh"],
+  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh"],
+  "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh", "hunyuan3d_shape_v21_image_to_textured_mesh"],
   "text_mesh_painting": ["trellis_text_mesh_painting"],
-  "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3dv21_image_mesh_painting"],
+  "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],
   "mesh_segmentation": ["partfield_mesh_segmentation", "p3sam_mesh_segmentation"],
   "auto_rig": ["unirig_auto_rig"],
   "motion_generation": ["ardy_motion_generation"],
