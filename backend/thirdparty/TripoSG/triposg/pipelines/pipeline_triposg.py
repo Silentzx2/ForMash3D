@@ -10,7 +10,13 @@ import torch
 import trimesh
 from diffusers.image_processor import PipelineImageInput
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
-from diffusers.schedulers import FlowMatchEulerDiscreteScheduler  
+try:
+    from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
+except ImportError:
+    try:
+        from diffusers import FlowMatchEulerDiscreteScheduler
+    except ImportError:
+        FlowMatchEulerDiscreteScheduler = Any
 from diffusers.utils import logging
 from diffusers.utils.torch_utils import randn_tensor
 from transformers import (

@@ -1,10 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  ExternalLink,
   Clock,
-  Play,
   CheckCircle2,
   XCircle,
   AlertCircle,
@@ -23,6 +21,10 @@ import {
   ArrowRight,
   Copy,
   Check,
+  RefreshCw,
+  Search,
+  Filter,
+  ExternalLink,
 } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { getApiClient } from '@/services/apiClient';
@@ -39,536 +41,465 @@ interface JobDetailViewProps {
   onBack?: () => void;
 }
 
+interface RealJobItem {
+  id: string;
+  job_id?: string;
+  status: string;
+  feature?: string;
+  model_preference?: string;
+  progress?: number;
+  stage?: string;
+  created_at?: string;
+  completed_at?: string;
+  error?: string;
+  error_message?: string;
+  result?: any;
+  inputs?: any;
+  parameters?: any;
+}
+
 export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, onBack }) => {
   const { currentAsset, activeTask, setCurrentAsset, navigateToTool } = useWorkspace();
 
-  const jobId = propJobId || (activeTask?.id ? activeTask.id.slice(0, 8).toUpperCase() : '8F42A1');
-  const [activeTab, setActiveTab] = useState<'Result' | 'Parts' | 'Wireframe'>('Result');
-  const [autoScroll, setAutoScroll] = useState(true);
+  const [jobsList, setJobsList] = useState<RealJobItem[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string>(propJobId || activeTask?.id || '');
+  const [selectedJob, setSelectedJob] = useState<RealJobItem | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [listFilter, setListFilter] = useState<'all' | 'running' | 'completed' | 'failed'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState(false);
   const [isRawJsonOpen, setIsRawJsonOpen] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
 
-  // Job data state
-  const [jobData, setJobData] = useState({
-    id: jobId,
-    operation: 'Mesh Segmentation',
-    model: 'PartField (v1.0)',
-    status: 'Running' as 'Running' | 'Completed' | 'Failed',
-    priority: 'Normal',
-    user: 'you',
-    jobType: 'Workspace Job',
-    startedAt: '22 Sep 2026, 14:32',
-    runningDuration: '12m 24s',
-    currentStage: 'Running part segmentation on GPU',
-    currentStep: 3,
-    totalSteps: 5,
-    progress: 62,
-    telemetry: {
-      gpu: 'RTX 3050',
-      gpuUtil: 68,
-      vramUsed: 4.2,
-      vramTotal: 6.0,
-      ramUsed: 6.8,
-      ramTotal: 16.0,
-      eta: '~ 7 minutes',
-      totalEstimated: 'Total: 19 minutes',
-    },
-    inputMesh: {
-      name: currentAsset?.name || 'knight_character.glb',
-      format: 'GLB',
-      size: currentAsset?.fileSize || '12.4 MB',
-      vertices: currentAsset?.vertices || 248864,
-      faces: currentAsset?.faces || 496231,
-      materials: 8,
-      bounds: '0.42 × 0.36 × 0.50 m',
-    },
-    parameters: {
-      'Target Parts': 8,
-      'Method': 'Semantic',
-      'Hierarchical': 'true',
-      'Algorithm': 'v1 (Default)',
-      'Colorize Parts': 'true',
-      'Generate Labels': 'true',
-      'Keep Original': 'false',
-      'Output Format': 'GLB',
-    },
-    outputMesh: {
-      name: 'knight_segments.glb',
-      format: 'GLB',
-      size: '18.6 MB',
-      vertices: 248864,
-      faces: 496231,
-      parts: 8,
-      generatedAt: '22 Sep 2026, 14:49',
-    },
-    steps: [
-      { id: 1, name: 'Validate Input', duration: '2s', status: 'completed' },
-      { id: 2, name: 'Load Model', duration: '18s', status: 'completed' },
-      { id: 3, name: 'Segment Mesh', duration: '12m 24s', status: 'active' },
-      { id: 4, name: 'Post Process', duration: 'Waiting', status: 'waiting' },
-      { id: 5, name: 'Save Output', duration: 'Waiting', status: 'waiting' },
-    ],
-    logs: [
-      '[14:32:11] [INFO] Job started: 8F42A1',
-      '[14:32:12] [INFO] Loading input asset: knight_character.glb',
-      '[14:32:14] [INFO] Input validation passed',
-      '[14:32:16] [INFO] Loading model: PartField (v1.0)',
-      '[14:32:20] [INFO] Model loaded successfully (4.2s)',
-      '[14:32:22] [INFO] Preprocessing mesh geometry...',
-      '[14:32:24] [INFO] Running segmentation (target parts: 8, method: semantic)',
-      '[14:34:11] [INFO] GPU inference in progress... (42%)',
-      '[14:36:03] [INFO] GPU inference in progress... (62%)',
-      '[14:36:56] [INFO] Generating part labels...',
-    ],
-  });
-
-  // Pull real job state if available from backend
-  useEffect(() => {
-    let mounted = true;
-    const fetchRealJob = async () => {
-      try {
-        const client = getApiClient();
-        const res = await client.getJobStatus(jobId);
-        if (res && mounted) {
-          setJobData(prev => ({
-            ...prev,
-            status: res.status === 'completed' ? 'Completed' : res.status === 'failed' ? 'Failed' : 'Running',
-            progress: (res as any).progress ?? prev.progress,
-            currentStage: (res as any).stage || (res as any).message || prev.currentStage,
-          }));
-        }
-      } catch {
-        // Fall back to current state
+  // 1. Fetch real jobs list from backend
+  const fetchJobs = useCallback(async () => {
+    try {
+      const client = getApiClient();
+      const res = await client.getJobsHistory({ limit: 50 });
+      const jobs = (res?.jobs || []).map((j: any) => ({
+        id: j.job_id || j.id,
+        ...j,
+      }));
+      setJobsList(jobs);
+      if (!selectedJobId && jobs.length > 0) {
+        setSelectedJobId(jobs[0].id);
       }
-    };
-    fetchRealJob();
-    return () => { mounted = false; };
-  }, [jobId]);
+    } catch (err) {
+      console.warn('Could not fetch jobs history:', err);
+    }
+  }, [selectedJobId]);
+
+  useEffect(() => {
+    fetchJobs();
+    const interval = setInterval(() => {
+      fetchJobs();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [fetchJobs]);
+
+  // 2. Fetch specific selected job details
+  const fetchSelectedJobDetails = useCallback(async (id: string) => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const client = getApiClient();
+      const res = await client.getJobStatus(id);
+      if (res) {
+        setSelectedJob({
+          id,
+          status: res.status,
+          progress: (res as any).progress ?? (res.status === 'completed' ? 100 : res.status === 'failed' ? 0 : 25),
+          stage: (res as any).stage || (res as any).message || res.status,
+          feature: (res as any).feature || (res as any).type,
+          model_preference: (res as any).model_preference || (res as any).model,
+          created_at: (res as any).created_at,
+          completed_at: (res as any).completed_at,
+          error: (res as any).error || (res as any).error_message,
+          result: res.result,
+          inputs: (res as any).inputs,
+          parameters: (res as any).parameters || (res as any).inputs?.model_parameters,
+        });
+      }
+    } catch (err) {
+      console.warn(`Could not fetch details for job ${id}:`, err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedJobId) {
+      fetchSelectedJobDetails(selectedJobId);
+    }
+  }, [selectedJobId, fetchSelectedJobDetails]);
 
   const handleCopyId = () => {
-    navigator.clipboard.writeText(jobData.id);
+    if (!selectedJobId) return;
+    navigator.clipboard.writeText(selectedJobId);
     setCopiedId(true);
     toast.success('Job ID copied to clipboard');
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  const handleUseResult = () => {
-    toast.success('Result chained to next workflow');
-    navigateToTool('animation');
+  const handleCancelOrDeleteJob = async () => {
+    if (!selectedJobId) return;
+    try {
+      await getApiClient().deleteJob(selectedJobId);
+      toast.success('Job deleted from queue');
+      fetchJobs();
+    } catch (e: any) {
+      toast.error('Failed to delete job', { description: e?.message });
+    }
   };
 
-  const handleCancelJob = () => {
-    toast.info('Cancel request sent to scheduler');
+  const handleLoadResultToViewport = () => {
+    if (!selectedJob) return;
+    const downloadUrl = `/api/v1/system/jobs/${selectedJob.id}/download`;
+    setCurrentAsset({
+      id: selectedJob.id,
+      name: `${selectedJob.feature || 'Generated_Mesh'}_${selectedJob.id.slice(0, 6)}.glb`,
+      category: 'mesh',
+      thumbnail: '',
+      meshType: 'textured',
+      source: {
+        viewUrl: downloadUrl,
+        localUrl: downloadUrl,
+        filename: `${selectedJob.feature || 'Generated_Mesh'}_${selectedJob.id.slice(0, 6)}.glb`,
+        subfolder: '',
+        type: 'model',
+      },
+    } as any);
+    toast.success('Loaded 3D result into active viewport');
+    if (onBack) onBack();
   };
 
-  const handleRetryJob = () => {
-    toast.info('Retrying job with same parameters...');
-  };
+  const filteredJobs = jobsList.filter((j) => {
+    const matchesFilter =
+      listFilter === 'all'
+        ? true
+        : listFilter === 'running'
+        ? j.status === 'processing' || j.status === 'running' || j.status === 'queued'
+        : j.status === listFilter;
+    const matchesSearch =
+      !searchQuery.trim() ||
+      j.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (j.feature || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (j.model_preference || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesFilter && matchesSearch;
+  });
+
+  const isCompleted = selectedJob?.status === 'completed';
+  const isFailed = selectedJob?.status === 'failed';
+  const isRunning = selectedJob?.status === 'processing' || selectedJob?.status === 'running' || selectedJob?.status === 'queued';
 
   return (
-    <div id="job-detail-view" className="flex flex-col h-full w-full bg-[hsl(var(--surface-0))] text-white overflow-y-auto scrollbar-thin select-none">
-      {/* Top Main Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[hsl(var(--surface-1))]">
+    <div id="job-detail-view" className="flex flex-col h-full w-full bg-[hsl(var(--surface-0))] text-white overflow-hidden select-none">
+      {/* Top Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
-            <Box className="w-5 h-5" />
+          <div className="w-8 h-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
+            <Box className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold text-white tracking-wide">Job Details</h1>
+              <h1 className="text-sm font-bold text-white tracking-wide">Jobs & Execution Pipeline</h1>
               {onBack && (
                 <button
                   onClick={onBack}
                   className="text-xs text-zinc-400 hover:text-white px-2 py-0.5 rounded bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer"
                 >
-                  ← Back to List
+                  ← Back to Workspace
                 </button>
               )}
             </div>
-            <p className="text-xs text-zinc-400">Track, inspect and manage AI execution jobs</p>
+            <p className="text-[11px] text-zinc-400">Real-time GPU queue, model execution telemetry & outputs</p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchJobs}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] hover:border-white/[0.16] text-xs text-zinc-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Refresh</span>
+          </button>
         </div>
       </div>
 
-      {/* 3-Column Layout Matching REF/JOB_DETAIL/design.png */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 p-5 flex-1 items-start">
-        {/* LEFT COLUMN: Metadata, Input Asset, Parameters (3 cols) */}
-        <div className="lg:col-span-3 space-y-4">
-          {/* Job ID Card */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold font-mono text-white">Job #{jobData.id}</span>
+      {/* Main Content Layout: Left Queue Sidebar + Right Job Details */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Jobs List Sidebar */}
+        <div className="w-80 border-r border-white/[0.08] bg-[hsl(var(--surface-1))]/50 flex flex-col flex-shrink-0">
+          <div className="p-3 border-b border-white/[0.06] space-y-2">
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search job ID or model..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-primary"
+              />
+            </div>
+
+            {/* Filter pills */}
+            <div className="flex items-center gap-1">
+              {(['all', 'running', 'completed', 'failed'] as const).map((f) => (
                 <button
-                  type="button"
-                  onClick={handleCopyId}
-                  className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
-                  title="Copy Job ID"
+                  key={f}
+                  onClick={() => setListFilter(f)}
+                  className={`flex-1 py-1 rounded text-[10px] font-bold capitalize transition-colors cursor-pointer ${
+                    listFilter === f
+                      ? 'bg-primary text-black font-extrabold'
+                      : 'text-zinc-400 hover:text-white bg-[hsl(var(--surface-0))]'
+                  }`}
                 >
-                  {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  {f}
                 </button>
-              </div>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/15 text-primary border border-primary/30 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                {jobData.status}
-              </span>
-            </div>
-
-            <div className="text-[11px] text-zinc-400 space-y-0.5 border-b border-white/[0.04] pb-2.5">
-              <div>Started {jobData.startedAt}</div>
-              <div>Running for {jobData.runningDuration}</div>
-            </div>
-
-            <div className="text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Operation</span>
-                <span className="font-semibold text-white">{jobData.operation}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Model</span>
-                <span className="font-semibold text-white">{jobData.model}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Priority</span>
-                <span className="font-semibold text-white">{jobData.priority}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">User</span>
-                <span className="font-semibold text-white">{jobData.user}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Job Type</span>
-                <span className="font-semibold text-white">{jobData.jobType}</span>
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* Input Asset Card */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-white">
-              <Box className="w-4 h-4 text-primary" />
-              <span>Input Asset</span>
-            </div>
-
-            <div className="flex items-center gap-3 p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
-              <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-2))] flex items-center justify-center flex-shrink-0">
-                <Box className="w-5 h-5 text-zinc-400" />
+          {/* List items */}
+          <div className="flex-1 overflow-y-auto divide-y divide-white/[0.04]">
+            {filteredJobs.length === 0 ? (
+              <div className="p-6 text-center text-xs text-zinc-500 space-y-1">
+                <Box className="w-6 h-6 text-zinc-600 mx-auto mb-2 opacity-50" />
+                <p>No jobs found</p>
+                <p className="text-[10px]">Generate a 3D model to see jobs here</p>
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold text-white truncate">{jobData.inputMesh.name}</div>
-                <div className="text-[10px] text-zinc-400 font-mono">
-                  {jobData.inputMesh.format} • {jobData.inputMesh.size}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-white/[0.04] space-y-1.5 text-[11px]">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Mesh Information</div>
-              <div className="flex justify-between"><span className="text-zinc-400">Vertices</span><span className="font-mono text-white">{jobData.inputMesh.vertices.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Faces</span><span className="font-mono text-white">{jobData.inputMesh.faces.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Materials</span><span className="font-mono text-white">{jobData.inputMesh.materials}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Bounds</span><span className="font-mono text-white">{jobData.inputMesh.bounds}</span></div>
-            </div>
-          </div>
-
-          {/* Parameters Card */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
-            <div className="flex items-center justify-between text-xs font-bold text-white">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-primary" />
-                <span>Parameters</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsRawJsonOpen(!isRawJsonOpen)}
-                className="text-[10px] text-primary hover:underline font-mono cursor-pointer"
-              >
-                View JSON {isRawJsonOpen ? '▲' : '▼'}
-              </button>
-            </div>
-
-            {isRawJsonOpen ? (
-              <pre className="p-2.5 rounded bg-[hsl(var(--surface-0))] text-[10px] font-mono text-emerald-400 overflow-x-auto border border-white/[0.04]">
-                {JSON.stringify(jobData.parameters, null, 2)}
-              </pre>
             ) : (
-              <div className="space-y-1.5 text-[11px]">
-                {Object.entries(jobData.parameters).map(([key, val]) => (
-                  <div key={key} className="flex items-center justify-between">
-                    <span className="text-zinc-400">{key}</span>
-                    <span className="font-mono text-white font-medium">{String(val)}</span>
-                  </div>
-                ))}
-              </div>
+              filteredJobs.map((j) => {
+                const isSel = j.id === selectedJobId;
+                const isRun = j.status === 'processing' || j.status === 'running' || j.status === 'queued';
+                const isDone = j.status === 'completed';
+                const isErr = j.status === 'failed';
+                return (
+                  <button
+                    key={j.id}
+                    onClick={() => setSelectedJobId(j.id)}
+                    className={`w-full text-left p-3 transition-colors cursor-pointer flex flex-col gap-1 ${
+                      isSel ? 'bg-primary/10 border-l-2 border-primary' : 'hover:bg-white/[0.03]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-xs font-bold text-white truncate max-w-[170px]">
+                        {j.id.slice(0, 12)}...
+                      </span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider ${
+                          isDone
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : isRun
+                            ? 'bg-primary/20 text-primary animate-pulse'
+                            : isErr
+                            ? 'bg-rose-500/20 text-rose-300'
+                            : 'bg-zinc-800 text-zinc-400'
+                        }`}
+                      >
+                        {j.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-300 truncate">
+                      {j.feature || '3D Model Generation'}
+                    </div>
+                    <div className="text-[10px] text-zinc-500 flex items-center justify-between">
+                      <span className="truncate">{j.model_preference || 'Standard'}</span>
+                      {j.created_at && (
+                        <span>{new Date(j.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
 
-        {/* MIDDLE COLUMN: Stepper Pipeline, Hardware Telemetry, Live Logs, Intermediate Results (6 cols) */}
-        <div className="lg:col-span-6 space-y-4">
-          {/* Processing Pipeline Stepper Card */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                <Activity className="w-4 h-4 text-primary" />
-                <span>Processing Pipeline</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-zinc-400">Step {jobData.currentStep} of {jobData.totalSteps}</span>
-                <span className="text-xs font-bold font-mono text-black bg-primary px-1.5 py-0.5 rounded">
-                  {jobData.progress}%
-                </span>
-              </div>
+        {/* Right Job Details View */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {!selectedJob ? (
+            <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-2">
+              <Box className="w-10 h-10 stroke-[1.5] text-zinc-600" />
+              <p className="text-xs">Select a job from the list to view its real parameters and output</p>
             </div>
+          ) : (
+            <div className="max-w-5xl mx-auto space-y-5">
+              {/* Header Card */}
+              <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold font-mono text-white">Job ID: {selectedJob.id}</span>
+                    <button
+                      onClick={handleCopyId}
+                      className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                    >
+                      {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    Operation: <span className="text-white font-medium">{selectedJob.feature || '3D Mesh Synthesis'}</span> • Engine: <span className="text-primary font-medium">{selectedJob.model_preference || 'Auto'}</span>
+                  </div>
+                </div>
 
-            <div className="text-[11px] text-zinc-400">
-              Current stage: <span className="text-white font-medium">{jobData.currentStage}</span>
-            </div>
-
-            {/* Stepper node track */}
-            <div className="flex items-center justify-between pt-2 px-1 relative">
-              <div className="absolute top-5 left-6 right-6 h-[2px] bg-white/[0.08] -z-0" />
-              {jobData.steps.map((st) => (
-                <div key={st.id} className="flex flex-col items-center gap-1.5 z-10">
-                  <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border transition-all ${
-                      st.status === 'completed'
-                        ? 'bg-primary border-primary text-black shadow-md'
-                        : st.status === 'active'
-                        ? 'bg-[hsl(var(--surface-0))] border-primary text-primary ring-4 ring-primary/20'
-                        : 'bg-[hsl(var(--surface-0))] border-white/[0.1] text-zinc-600'
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                      isCompleted
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                        : isRunning
+                        ? 'bg-primary/20 text-primary border border-primary/30 animate-pulse'
+                        : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                     }`}
                   >
-                    {st.status === 'completed' ? (
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    ) : st.status === 'active' ? (
-                      <Box className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <span>{st.id}</span>
-                    )}
+                    <span className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-400' : isRunning ? 'bg-primary' : 'bg-rose-400'}`} />
+                    {selectedJob.status}
+                  </span>
+
+                  <button
+                    onClick={handleCancelOrDeleteJob}
+                    className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/[0.06] transition-colors cursor-pointer"
+                    title="Delete Job"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Progress & Error Diagnostics */}
+              {isRunning && (
+                <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-300 font-medium flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                      <span>{selectedJob.stage || 'GPU Synthesis active...'}</span>
+                    </span>
+                    <span className="font-mono font-bold text-primary">{Math.round(selectedJob.progress || 15)}%</span>
                   </div>
-                  <div className="text-center">
-                    <div className="text-[10px] font-bold text-white whitespace-nowrap">{st.name}</div>
-                    <div className="text-[9px] text-zinc-400">{st.duration}</div>
+                  <div className="w-full h-2 rounded-full bg-black/50 overflow-hidden border border-white/[0.06]">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-400 via-primary to-emerald-400 transition-all duration-300 rounded-full"
+                      style={{ width: `${Math.max(6, Math.min(100, selectedJob.progress || 15))}%` }}
+                    />
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
 
-            {/* Progress bar */}
-            <div className="w-full bg-[hsl(var(--surface-0))] h-2 rounded-full overflow-hidden border border-white/[0.06]">
-              <div
-                className="bg-primary h-full rounded-full transition-all duration-300"
-                style={{ width: `${jobData.progress}%` }}
-              />
-            </div>
-
-            {/* Hardware Telemetry 4-Column Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-white/[0.04]">
-              <div className="p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
-                <div className="flex items-center gap-1 text-[10px] text-zinc-400">
-                  <Cpu className="w-3 h-3 text-primary" />
-                  <span>GPU</span>
+              {isFailed && (
+                <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Generation Error Diagnostics</span>
+                  </div>
+                  <p className="text-xs text-rose-200 font-mono bg-black/40 p-2.5 rounded-lg border border-rose-500/20 whitespace-pre-wrap">
+                    {selectedJob.error || 'The worker encountered an unhandled exception during synthesis.'}
+                  </p>
                 </div>
-                <div className="text-xs font-bold text-white mt-1">{jobData.telemetry.gpu}</div>
-                <div className="text-[10px] text-primary font-mono">{jobData.telemetry.gpuUtil}% Utilization</div>
-              </div>
+              )}
 
-              <div className="p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
-                <div className="flex items-center gap-1 text-[10px] text-zinc-400">
-                  <Activity className="w-3 h-3 text-primary" />
-                  <span>VRAM</span>
+              {/* Output Actions & Details Card */}
+              {isCompleted && (
+                <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="space-y-1 text-left w-full sm:w-auto">
+                    <div className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>3D Mesh Generation Succeeded</span>
+                    </div>
+                    <p className="text-[11px] text-zinc-300">The GLB asset is compiled and available for preview and export.</p>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={handleLoadResultToViewport}
+                      className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-primary hover:brightness-105 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Load into Viewport</span>
+                    </button>
+                    <a
+                      href={`/api/v1/system/jobs/${selectedJob.id}/download`}
+                      download
+                      className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-white/[0.12] text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-white/[0.08] transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download GLB</span>
+                    </a>
+                  </div>
                 </div>
-                <div className="text-xs font-bold text-white mt-1 font-mono">{jobData.telemetry.vramUsed} / {jobData.telemetry.vramTotal} GB</div>
-                <div className="w-full bg-zinc-800 h-1 rounded-full mt-1.5">
-                  <div className="bg-primary h-full rounded-full" style={{ width: `${(jobData.telemetry.vramUsed / jobData.telemetry.vramTotal) * 100}%` }} />
+              )}
+
+              {/* Two Column Grid: Parameters & Telemetry */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Parameters Card */}
+                <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-white">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-primary" />
+                      <span>Job Parameters</span>
+                    </div>
+                    <button
+                      onClick={() => setIsRawJsonOpen(!isRawJsonOpen)}
+                      className="text-[10px] text-primary hover:underline font-mono cursor-pointer"
+                    >
+                      {isRawJsonOpen ? 'Table View' : 'Raw JSON'}
+                    </button>
+                  </div>
+
+                  {isRawJsonOpen ? (
+                    <pre className="p-3 rounded-lg bg-[hsl(var(--surface-0))] text-[10px] font-mono text-emerald-400 overflow-x-auto border border-white/[0.04] max-h-56">
+                      {JSON.stringify(selectedJob.parameters || selectedJob.inputs || {}, null, 2)}
+                    </pre>
+                  ) : (
+                    <div className="space-y-1.5 text-[11px] divide-y divide-white/[0.04]">
+                      <div className="flex justify-between py-1"><span className="text-zinc-400">Created At</span><span className="font-mono text-white">{selectedJob.created_at ? new Date(selectedJob.created_at).toLocaleString() : 'N/A'}</span></div>
+                      <div className="flex justify-between py-1"><span className="text-zinc-400">Completed At</span><span className="font-mono text-white">{selectedJob.completed_at ? new Date(selectedJob.completed_at).toLocaleString() : 'In Progress'}</span></div>
+                      <div className="flex justify-between py-1"><span className="text-zinc-400">Output Format</span><span className="font-mono text-white uppercase">GLB</span></div>
+                      {selectedJob.parameters && typeof selectedJob.parameters === 'object' && Object.entries(selectedJob.parameters).slice(0, 6).map(([k, v]) => (
+                        <div key={k} className="flex justify-between py-1">
+                          <span className="text-zinc-400 truncate max-w-[140px]">{k}</span>
+                          <span className="font-mono text-white truncate max-w-[180px]">{String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Input Asset & Telemetry */}
+                <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <Activity className="w-4 h-4 text-primary" />
+                    <span>Input Asset & Pipeline Details</span>
+                  </div>
+
+                  <div className="flex items-center gap-3 p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
+                    <div className="w-12 h-12 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.06] flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <img
+                        src={`/api/v1/system/jobs/${selectedJob.id}/input`}
+                        alt="Input"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
+                      <Box className="w-5 h-5 text-zinc-500" />
+                    </div>
+                    <div className="min-w-0 flex-1 text-xs">
+                      <div className="font-bold text-white truncate">Input Reference</div>
+                      <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                        Status: <span className="text-emerald-400">{selectedJob.status}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-white/[0.04] space-y-1.5 text-[11px]">
+                    <div className="flex justify-between"><span className="text-zinc-400">Queue Mode</span><span className="font-mono text-white">Multi-Worker Async</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">Engine Protocol</span><span className="font-mono text-white">{selectedJob.feature || 'Mesh Generation'}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">Target Pipeline</span><span className="font-mono text-white">{selectedJob.model_preference || 'Standard'}</span></div>
+                  </div>
                 </div>
               </div>
-
-              <div className="p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
-                <div className="flex items-center gap-1 text-[10px] text-zinc-400">
-                  <HardDrive className="w-3 h-3 text-primary" />
-                  <span>RAM</span>
-                </div>
-                <div className="text-xs font-bold text-white mt-1 font-mono">{jobData.telemetry.ramUsed} / {jobData.telemetry.ramTotal} GB</div>
-                <div className="w-full bg-zinc-800 h-1 rounded-full mt-1.5">
-                  <div className="bg-primary h-full rounded-full" style={{ width: `${(jobData.telemetry.ramUsed / jobData.telemetry.ramTotal) * 100}%` }} />
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
-                <div className="flex items-center gap-1 text-[10px] text-zinc-400">
-                  <Clock className="w-3 h-3 text-primary" />
-                  <span>ETA</span>
-                </div>
-                <div className="text-xs font-bold text-white mt-1">{jobData.telemetry.eta}</div>
-                <div className="text-[10px] text-zinc-400">{jobData.telemetry.totalEstimated}</div>
-              </div>
             </div>
-          </div>
-
-          {/* Live Logs Card */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                <Terminal className="w-4 h-4 text-primary" />
-                <span>Live Logs</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer">
-                  <span>Auto Scroll</span>
-                  <input
-                    type="checkbox"
-                    checked={autoScroll}
-                    onChange={(e) => setAutoScroll(e.target.checked)}
-                    className="accent-primary cursor-pointer"
-                  />
-                </label>
-                <button
-                  type="button"
-                  onClick={() => toast.info('Logs cleared in view')}
-                  className="text-[11px] text-zinc-400 hover:text-white px-2 py-0.5 rounded bg-[hsl(var(--surface-0))] border border-white/[0.08] cursor-pointer"
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toast.success('Logs downloaded')}
-                  className="text-[11px] text-zinc-400 hover:text-white px-2 py-0.5 rounded bg-[hsl(var(--surface-0))] border border-white/[0.08] cursor-pointer flex items-center gap-1"
-                >
-                  <Download className="w-3 h-3" />
-                  <span>Download</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-lg bg-[hsl(var(--surface-0))] font-mono text-[11px] text-zinc-300 h-44 overflow-y-auto space-y-1 border border-white/[0.04]">
-              {jobData.logs.map((line, idx) => (
-                <div key={idx} className="leading-relaxed">
-                  <span className="text-zinc-500">{line.slice(0, 10)}</span>{' '}
-                  <span className="text-primary font-semibold">{line.slice(11, 17)}</span>{' '}
-                  <span className="text-zinc-200">{line.slice(18)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN: Output Preview & Information & Actions (3 cols) */}
-        <div className="lg:col-span-3 space-y-4">
-          {/* Output Preview Card */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-white">
-                <Sparkles className="w-4 h-4 text-primary" />
-                <span>Output Preview</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => toast.info('Toggled fullscreen preview')}
-                className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* 3D Viewport window */}
-            <div className="h-64 w-full rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.06] overflow-hidden relative">
-              <MeshViewer />
-            </div>
-
-            {/* Mode switcher tabs */}
-            <div className="flex gap-1 p-1 bg-[hsl(var(--surface-0))] rounded-lg border border-white/[0.06]">
-              {(['Result', 'Parts', 'Wireframe'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                    activeTab === tab
-                      ? 'bg-primary text-black shadow-sm'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Output Information */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold text-white">
-              <Box className="w-4 h-4 text-primary" />
-              <span>Output Information</span>
-            </div>
-
-            <div className="space-y-1.5 text-[11px]">
-              <div className="flex justify-between"><span className="text-zinc-400">File Name</span><span className="font-mono text-white font-medium">{jobData.outputMesh.name}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Format</span><span className="font-mono text-white">{jobData.outputMesh.format}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">File Size</span><span className="font-mono text-white">{jobData.outputMesh.size}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Vertices</span><span className="font-mono text-white">{jobData.outputMesh.vertices.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Faces</span><span className="font-mono text-white">{jobData.outputMesh.faces.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-zinc-400">Parts</span><span className="font-mono text-white">{jobData.outputMesh.parts}</span></div>
-            </div>
-
-            <div className="pt-2 space-y-2">
-              <button
-                type="button"
-                onClick={() => toast.success('Downloading output GLB...')}
-                className="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md"
-              >
-                <Download className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Download GLB File</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Actions Grid Card */}
-          <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
-            <div className="text-xs font-bold text-white">Actions</div>
-            <div className="grid grid-cols-4 gap-2">
-              <button
-                type="button"
-                onClick={handleCancelJob}
-                title="Cancel Job"
-                className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/10 border border-white/[0.06] hover:border-rose-500/30 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
-              >
-                <XCircle className="w-4 h-4" />
-                <span className="text-[9px] font-semibold">Cancel</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleRetryJob}
-                title="Retry Job"
-                className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-white/[0.06] border border-white/[0.06] text-zinc-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <RotateCcw className="w-4 h-4" />
-                <span className="text-[9px] font-semibold">Retry</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleUseResult}
-                title="Use Result in downstream tool"
-                className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-primary/15 border border-white/[0.06] hover:border-primary/40 text-zinc-400 hover:text-primary transition-colors cursor-pointer"
-              >
-                <ArrowRight className="w-4 h-4" />
-                <span className="text-[9px] font-semibold">Use Result</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => toast.info('Job history removed')}
-                title="Delete Job"
-                className="flex flex-col items-center justify-center gap-1 p-2 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/10 border border-white/[0.06] hover:border-rose-500/30 text-zinc-400 hover:text-rose-400 transition-colors cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span className="text-[9px] font-semibold">Delete</span>
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

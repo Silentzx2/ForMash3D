@@ -1,4 +1,5 @@
 import logging
+import time
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
@@ -55,6 +56,8 @@ class BaseModel(ABC):
         if self.status == ModelStatus.LOADED:
             return True
 
+        start_time = time.time()
+        logger.info(f"[GPU LOAD START] model={self.model_id} gpu={gpu_id}")
         try:
             self.status = ModelStatus.LOADING
             self.gpu_id = gpu_id
@@ -66,12 +69,13 @@ class BaseModel(ABC):
             # Load model
             self.model = self._load_model()
             self.status = ModelStatus.LOADED
-            logger.info(f"Successfully loaded model {self.model_id} on GPU {gpu_id}")
+            elapsed = time.time() - start_time
+            logger.info(f"[GPU LOAD SUCCESS] model={self.model_id} gpu={gpu_id} elapsed={elapsed:.2f}s")
             return True
 
         except Exception as e:
             self.status = ModelStatus.ERROR
-            logger.error(f"Failed to load model {self.model_id}: {str(e)}")
+            logger.error(f"[GPU LOAD FAILED] model={self.model_id} gpu={gpu_id}: {e}", exc_info=True)
             raise Exception(f"Failed to load model {self.model_id}: {str(e)}")
 
     def unload(self) -> bool:
@@ -79,6 +83,8 @@ class BaseModel(ABC):
         if self.status == ModelStatus.UNLOADED:
             return True
 
+        start_time = time.time()
+        logger.info(f"[GPU UNLOAD START] model={self.model_id}")
         try:
             self._unload_model()
             self.model = None
@@ -89,12 +95,13 @@ class BaseModel(ABC):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            logger.info(f"Successfully unloaded model {self.model_id}")
+            elapsed = time.time() - start_time
+            logger.info(f"[GPU UNLOAD SUCCESS] model={self.model_id} elapsed={elapsed:.2f}s")
             return True
 
         except Exception as e:
             self.status = ModelStatus.ERROR
-            logger.error(f"Failed to unload model {self.model_id}: {str(e)}")
+            logger.error(f"[GPU UNLOAD FAILED] model={self.model_id}: {e}", exc_info=True)
             raise Exception(f"Failed to unload model {self.model_id}: {str(e)}")
 
     def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
@@ -104,13 +111,17 @@ class BaseModel(ABC):
                 f"Model {self.model_id} is not loaded, its status {self.status}"
             )
 
+        start_time = time.time()
+        logger.info(f"[MODEL INFERENCE START] model={self.model_id}")
         try:
             self.status = ModelStatus.PROCESSING
-            logger.info(f"Processing with model {self.model_id}")
-
             result = self._process_request(inputs)
+            elapsed = time.time() - start_time
+            logger.info(f"[MODEL INFERENCE SUCCESS] model={self.model_id} elapsed={elapsed:.2f}s")
             return result
-
+        except Exception as e:
+            logger.error(f"[MODEL INFERENCE FAILED] model={self.model_id}: {e}", exc_info=True)
+            raise
         finally:
             # Reset status to loaded after processing
             self.status = ModelStatus.LOADED

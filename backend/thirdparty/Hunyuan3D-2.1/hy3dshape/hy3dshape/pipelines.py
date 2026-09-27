@@ -166,14 +166,25 @@ class Hunyuan3DDiTPipeline:
                 ckpt[model_name][new_key] = value
         else:
             ckpt = torch.load(ckpt_path, map_location='cpu', weights_only=True)
-        # load model
+        # load model with sequential memory deallocation to prevent CPU RAM OOM spikes
         model = instantiate_from_config(config['model'])
-        model.load_state_dict(ckpt['model'])
+        if 'model' in ckpt:
+            model.load_state_dict(ckpt.pop('model'))
+        model = model.to(dtype=dtype)
+
         vae = instantiate_from_config(config['vae'])
-        vae.load_state_dict(ckpt['vae'], strict=False)
+        if 'vae' in ckpt:
+            vae.load_state_dict(ckpt.pop('vae'), strict=False)
+        vae = vae.to(dtype=dtype)
+
         conditioner = instantiate_from_config(config['conditioner'])
         if 'conditioner' in ckpt:
-            conditioner.load_state_dict(ckpt['conditioner'])
+            conditioner.load_state_dict(ckpt.pop('conditioner'))
+        conditioner = conditioner.to(dtype=dtype)
+
+        del ckpt
+        import gc
+        gc.collect()
         image_processor = instantiate_from_config(config['image_processor'])
         scheduler = instantiate_from_config(config['scheduler'])
 

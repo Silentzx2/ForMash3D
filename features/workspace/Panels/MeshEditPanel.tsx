@@ -20,9 +20,11 @@ import {
   Sliders,
   Image as ImageIcon,
   Zap,
+  Loader2,
 } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { createUploadedMeshAsset } from '../types';
+import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { toast } from 'sonner';
 
 export const MeshEditPanel: React.FC = () => {
@@ -63,6 +65,7 @@ export const MeshEditPanel: React.FC = () => {
   const imageInputRef = React.useRef<HTMLInputElement>(null);
 
   const isRunning = isExecuting && (activeTask?.type === 'edit');
+  const hasTargetMesh = Boolean(currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.source?.fileId);
 
   const handleStartTextEdit = async () => {
     if (!targetPrompt.trim()) {
@@ -124,101 +127,104 @@ export const MeshEditPanel: React.FC = () => {
     if (file) setCurrentAsset(createUploadedMeshAsset(file));
   };
 
+  const canExecute = inputTab === 'text'
+    ? (hasTargetMesh && Boolean(targetPrompt.trim()))
+    : (hasTargetMesh && Boolean(referenceImage));
+
   return (
-    <div id="panel-mesh-edit" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white overflow-y-auto scrollbar-thin select-none">
-      {/* Top Header Tabs: Edit with Text / Edit with Image */}
-      <div className="p-3 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
-        <div className="flex gap-1 p-1 bg-[hsl(var(--surface-0))] rounded-xl border border-white/[0.08]">
+    <div id="panel-mesh-edit" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white select-none overflow-x-hidden overflow-y-hidden">
+      {/* Top Header Tabs: Text Sculpt vs Image Sculpt */}
+      <div className="px-3 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
+        <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] rounded-lg border border-white/[0.06]">
           {(['text', 'image'] as const).map((tab) => (
             <button
               key={tab}
               type="button"
               id={`tab-edit-${tab}`}
               onClick={() => setInputTab(tab)}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-extrabold capitalize transition-all cursor-pointer ${
+              className={`flex-1 py-1 px-2 rounded-md text-xs font-bold transition-all cursor-pointer ${
                 inputTab === tab
                   ? 'bg-primary text-black shadow-sm'
                   : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
               }`}
             >
-              {tab === 'text' ? 'Edit with Text' : 'Edit with Image'}
+              {tab === 'text' ? 'Text Sculpt' : 'Image Sculpt'}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="p-3 space-y-4 flex-1">
-        {/* 1. Select Input Mesh */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-primary text-black font-black text-[11px] flex items-center justify-center">
-              1
+      {/* Main Scrollable Body */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-2.5 py-2.5 space-y-2.5 scrollbar-none pr-1.5">
+        {/* 1. Target Input Mesh */}
+        <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <Box className="w-3.5 h-3.5 text-primary" />
+              <span>Target Mesh</span>
             </span>
-            <div>
-              <div className="text-xs font-bold text-white">Select Input Mesh</div>
-              <div className="text-[10px] text-zinc-400">Choose a mesh from your assets or upload a new one</div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setShowAssetPicker(!showAssetPicker)}
+                className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <FolderOpen className="w-3 h-3 text-primary" />
+                <span>Assets</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".glb,.gltf,.obj,.ply,.stl"
+                onChange={handleUploadNewMesh}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+              >
+                <Upload className="w-3 h-3 text-primary" />
+                <span>Upload</span>
+              </button>
             </div>
           </div>
 
           {currentAsset ? (
-            <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] relative group">
+            <div className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] relative group flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0 pr-2">
+                <div className="w-7 h-7 rounded bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center flex-shrink-0">
+                  <Box className="w-4 h-4 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate max-w-[170px]">{currentAsset.name || 'mesh.glb'}</div>
+                  <div className="text-[9.5px] text-zinc-400">
+                    {currentAsset.faces ? `${Math.round(currentAsset.faces / 1000)}K faces` : '3D Mesh'}
+                  </div>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setCurrentAsset(null as any)}
-                className="absolute top-2 right-2 p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
+                className="p-1 rounded-md text-zinc-400 hover:text-rose-400 hover:bg-white/[0.06] transition-colors cursor-pointer"
                 title="Remove selected mesh"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center flex-shrink-0">
-                  <Box className="w-5 h-5 text-primary" />
-                </div>
-                <div className="min-w-0 flex-1 pr-6">
-                  <div className="text-xs font-bold text-white truncate">{currentAsset.name || 'knight_character.glb'}</div>
-                  <div className="text-[10px] text-zinc-400 mt-0.5">
-                    GLB · {currentAsset.fileSize || '12.4 MB'} · {currentAsset.faces ? `${Math.round(currentAsset.faces / 1000)}K` : '248K'} faces
-                  </div>
-                </div>
-              </div>
             </div>
           ) : (
-            <div className="p-4 rounded-xl border border-dashed border-white/[0.15] bg-[hsl(var(--surface-0))] text-center space-y-1">
-              <Box className="w-6 h-6 text-zinc-500 mx-auto" />
+            <div 
+              onClick={() => fileInputRef.current?.click()}
+              className="py-2.5 px-3 rounded-lg border border-dashed border-white/[0.12] bg-[hsl(var(--surface-1))]/50 hover:bg-[hsl(var(--surface-1))] text-center cursor-pointer transition-colors"
+            >
               <div className="text-xs font-semibold text-zinc-300">No mesh selected</div>
-              <div className="text-[10px] text-zinc-500">Pick from assets below or upload a GLB/OBJ</div>
+              <div className="text-[9.5px] text-zinc-500">Pick from Assets or click to upload GLB / OBJ</div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setShowAssetPicker(!showAssetPicker)}
-              className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-primary" />
-              <span>From Assets</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".glb,.gltf,.obj,.ply,.stl"
-              onChange={handleUploadNewMesh}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5 text-primary" />
-              <span>Upload New</span>
-            </button>
-          </div>
-
           {showAssetPicker && (
-            <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.1] max-h-40 overflow-y-auto space-y-1">
-              <div className="text-[10px] font-bold text-zinc-400 px-1">Recent 3D Assets</div>
+            <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.12] max-h-36 overflow-y-auto space-y-0.5">
+              <div className="text-[9.5px] font-bold text-zinc-400 px-1 py-0.5">Pick 3D Asset</div>
               {assets.filter(a => a.category === 'mesh' || a.source?.viewUrl || a.source?.localUrl).map((a) => (
                 <button
                   key={a.id}
@@ -227,9 +233,9 @@ export const MeshEditPanel: React.FC = () => {
                     setCurrentAsset(a);
                     setShowAssetPicker(false);
                   }}
-                  className="w-full text-left p-1.5 rounded-lg hover:bg-[hsl(var(--surface-2))] flex items-center justify-between text-xs text-zinc-300 hover:text-white cursor-pointer"
+                  className="w-full text-left px-2 py-1 rounded hover:bg-[hsl(var(--surface-2))] flex items-center justify-between text-xs text-zinc-300 hover:text-white cursor-pointer"
                 >
-                  <span className="truncate max-w-[160px]">{a.name}</span>
+                  <span className="truncate max-w-[170px]">{a.name}</span>
                   <span className="text-[9px] font-mono text-zinc-500">{a.faces ? `${Math.round(a.faces / 1000)}k` : '3D'}</span>
                 </button>
               ))}
@@ -237,23 +243,17 @@ export const MeshEditPanel: React.FC = () => {
           )}
         </div>
 
-        {/* 2. Edit Mode */}
-        <div className="space-y-2 pt-2 border-t border-white/[0.06]">
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-primary text-black font-black text-[11px] flex items-center justify-center">
-              2
-            </span>
-            <div>
-              <div className="text-xs font-bold text-white">Edit Mode</div>
-              <div className="text-[10px] text-zinc-400">Choose geometry alteration method</div>
-            </div>
+        {/* 2. Edit Mode Selection */}
+        <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Edit Mode</span>
+            <span className="text-[10px] font-mono text-primary font-bold uppercase">{editMode}</span>
           </div>
-
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {[
-              { id: 'add', label: 'Add / Modify', desc: 'Add new details or change existing surface geometry', icon: PlusSquare },
-              { id: 'remove', label: 'Remove', desc: 'Prune unwanted elements and hollow cavity sections', icon: MinusSquare },
-              { id: 'replace', label: 'Replace', desc: 'Swap target region with freshly sculpted geometry', icon: RefreshCw },
+              { id: 'add', label: 'Add / Modify', icon: PlusSquare },
+              { id: 'remove', label: 'Remove', icon: MinusSquare },
+              { id: 'replace', label: 'Replace', icon: RefreshCw },
             ].map((m) => {
               const Icon = m.icon;
               const isActive = editMode === m.id;
@@ -262,36 +262,36 @@ export const MeshEditPanel: React.FC = () => {
                   key={m.id}
                   type="button"
                   onClick={() => setEditMode(m.id as any)}
-                  className={`p-2 rounded-xl border text-left flex flex-col justify-between h-24 transition-all cursor-pointer ${
+                  className={`py-2 px-1 rounded-lg border text-center flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     isActive
-                      ? 'bg-[hsl(var(--surface-2))] border-primary text-white shadow-md'
-                      : 'bg-[hsl(var(--surface-0))] border-white/[0.06] text-zinc-400 hover:text-zinc-200 hover:border-white/[0.12]'
+                      ? 'bg-primary text-black font-bold shadow-sm border-primary'
+                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-primary' : 'text-zinc-500'}`} />
-                  <div>
-                    <div className="text-[11px] font-bold leading-tight">{m.label}</div>
-                    <div className="text-[8px] text-zinc-500 line-clamp-2 mt-0.5 leading-snug">{m.desc}</div>
-                  </div>
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-black' : 'text-zinc-400'}`} />
+                  <span className="text-[10px] font-bold leading-tight">{m.label}</span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {/* 3. Selection Tools */}
-        <div className="space-y-2.5 pt-2 border-t border-white/[0.06]">
-          <div className="flex items-center gap-2">
-            <span className="w-5 h-5 rounded-full bg-primary text-black font-black text-[11px] flex items-center justify-center">
-              3
-            </span>
-            <div>
-              <div className="text-xs font-bold text-white">Selection Mask</div>
-              <div className="text-[10px] text-zinc-400">Define the 3D bounding volume to edit</div>
-            </div>
+        {/* 3. Selection Mask & Gizmo */}
+        <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Selection Mask</span>
+            <button
+              type="button"
+              onClick={() => setShowManipulator(!showManipulator)}
+              className="flex items-center gap-1.5 text-[10px] text-zinc-400 hover:text-white cursor-pointer"
+            >
+              <span>3D Gizmo</span>
+              <div className={`w-7 h-4 rounded-full transition-colors relative ${showManipulator ? 'bg-primary' : 'bg-zinc-700'}`}>
+                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-black transition-transform ${showManipulator ? 'left-3.5' : 'left-0.5 bg-zinc-300'}`} />
+              </div>
+            </button>
           </div>
-
-          <div className="grid grid-cols-4 gap-1.5">
+          <div className="grid grid-cols-4 gap-1">
             {[
               { id: 'box', label: 'Box', icon: BoxSelect },
               { id: 'sphere', label: 'Sphere', icon: CircleDot },
@@ -305,95 +305,66 @@ export const MeshEditPanel: React.FC = () => {
                   key={t.id}
                   type="button"
                   onClick={() => setSelectionTool(t.id as any)}
-                  className={`py-2 px-1 rounded-xl border text-center flex flex-col items-center gap-1 transition-all cursor-pointer ${
+                  className={`py-1.5 px-1 rounded-lg border text-center flex flex-col items-center gap-0.5 transition-all cursor-pointer ${
                     isActive
-                      ? 'bg-[hsl(var(--surface-2))] border-primary text-primary shadow-sm'
-                      : 'bg-[hsl(var(--surface-0))] border-white/[0.06] text-zinc-400 hover:text-white'
+                      ? 'bg-[hsl(var(--surface-2))] border-primary text-primary font-bold shadow-sm'
+                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 hover:text-white'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
-                  <span className="text-[10px] font-bold">{t.label}</span>
+                  <Icon className="w-3.5 h-3.5" />
+                  <span className="text-[9.5px] font-medium">{t.label}</span>
                 </button>
               );
             })}
           </div>
-
-          <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
-            <div>
-              <div className="text-xs font-semibold text-white">Show 3D Gizmo Manipulator</div>
-              <div className="text-[9px] text-zinc-500">Transform bounding box in viewport</div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowManipulator(!showManipulator)}
-              className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 cursor-pointer ${
-                showManipulator ? 'bg-primary' : 'bg-[hsl(var(--surface-3))]'
-              }`}
-            >
-              <span
-                className={`absolute top-0.5 w-4 h-4 rounded-full transition-transform ${
-                  showManipulator ? 'left-4.5 bg-black' : 'left-0.5 bg-zinc-400'
-                }`}
-              />
-            </button>
-          </div>
         </div>
 
-        {/* ========================================================================= */}
-        {/* SUBSECTION: TEXT GUIDED EDITING                                           */}
-        {/* ========================================================================= */}
+        {/* 4. Guidance Inputs (Text vs Image) */}
         {inputTab === 'text' && (
-          <div className="space-y-3 pt-2 border-t border-white/[0.06]">
-            <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-primary text-black font-black text-[11px] flex items-center justify-center">
-                4
-              </span>
-              <div>
-                <div className="text-xs font-bold text-white">Sculpt Guidance Prompts</div>
-              </div>
+          <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Sculpt Guidance</span>
+              <span className="font-mono text-zinc-500 text-[10px]">{targetPrompt.length}/500</span>
             </div>
 
             <div className="space-y-1">
-              <label className="text-[10px] text-zinc-400">Current / Source Description (optional)</label>
+              <textarea
+                rows={2.5}
+                value={targetPrompt}
+                maxLength={500}
+                onChange={(e) => setTargetPrompt(e.target.value)}
+                placeholder="e.g. Add leather cape on the back and lion crest armor"
+                className="w-full p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary resize-none"
+              />
+            </div>
+
+            {/* Optional Source Prompt */}
+            <div className="space-y-1">
+              <label className="text-[9.5px] text-zinc-400">Current Mesh Description (optional)</label>
               <input
                 type="text"
                 value={sourcePrompt}
                 onChange={(e) => setSourcePrompt(e.target.value)}
-                placeholder="e.g. A medieval knight with steel armor"
-                className="w-full h-8 px-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary"
+                placeholder="e.g. Medieval knight with steel armor"
+                className="w-full h-7 px-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] text-[11px] text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary"
               />
             </div>
 
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-[10px]">
-                <label className="text-zinc-300 font-medium">Target / Edit Prompt</label>
-                <span className="font-mono text-zinc-500">{targetPrompt.length}/500</span>
-              </div>
-              <textarea
-                rows={3}
-                value={targetPrompt}
-                maxLength={500}
-                onChange={(e) => setTargetPrompt(e.target.value)}
-                placeholder="e.g. Add a leather cape on the back and detailed shoulder armor with lion emblem"
-                className="w-full p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary resize-none"
-              />
-            </div>
-
-            {/* Advanced Settings Accordion */}
-            <div className="pt-1">
+            {/* Advanced Accordion */}
+            <div className="pt-0.5">
               <button
                 type="button"
                 onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
-                className="w-full py-1.5 flex items-center justify-between text-xs font-bold text-zinc-300 hover:text-white cursor-pointer"
+                className="w-full py-1 flex items-center justify-between text-[11px] font-bold text-zinc-400 hover:text-white cursor-pointer"
               >
                 <span>Advanced Parameters</span>
                 {isAdvancedOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
 
               {isAdvancedOpen && (
-                <div className="space-y-2.5 pt-2">
-                  <div className="space-y-1 p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.06]">
-                    <div className="flex justify-between text-[10px]">
+                <div className="space-y-2 pt-1.5">
+                  <div className="space-y-0.5 p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                    <div className="flex justify-between text-[9.5px]">
                       <span className="text-zinc-400">Edit Strength</span>
                       <span className="font-mono text-primary font-bold">{editStrength.toFixed(2)}</span>
                     </div>
@@ -404,12 +375,12 @@ export const MeshEditPanel: React.FC = () => {
                       step={0.05}
                       value={editStrength}
                       onChange={(e) => setEditStrength(parseFloat(e.target.value))}
-                      className="w-full accent-primary"
+                      className="w-full accent-primary h-1"
                     />
                   </div>
 
-                  <div className="space-y-1 p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.06]">
-                    <div className="flex justify-between text-[10px]">
+                  <div className="space-y-0.5 p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                    <div className="flex justify-between text-[9.5px]">
                       <span className="text-zinc-400">Geometry Fidelity</span>
                       <span className="font-mono text-primary font-bold">{fidelity.toFixed(2)}</span>
                     </div>
@@ -420,12 +391,12 @@ export const MeshEditPanel: React.FC = () => {
                       step={0.05}
                       value={fidelity}
                       onChange={(e) => setFidelity(parseFloat(e.target.value))}
-                      className="w-full accent-primary"
+                      className="w-full accent-primary h-1"
                     />
                   </div>
 
-                  <div className="space-y-1 p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.06]">
-                    <div className="flex justify-between text-[10px]">
+                  <div className="space-y-0.5 p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                    <div className="flex justify-between text-[9.5px]">
                       <span className="text-zinc-400">Guidance Scale</span>
                       <span className="font-mono text-primary font-bold">{guidanceScale.toFixed(1)}</span>
                     </div>
@@ -436,45 +407,30 @@ export const MeshEditPanel: React.FC = () => {
                       step={0.5}
                       value={guidanceScale}
                       onChange={(e) => setGuidanceScale(parseFloat(e.target.value))}
-                      className="w-full accent-primary"
+                      className="w-full accent-primary h-1"
                     />
                   </div>
                 </div>
               )}
             </div>
-
-            {/* Action Button */}
-            <div className="pt-2">
-              <button
-                type="button"
-                id="btn-generate-edit"
-                onClick={handleStartTextEdit}
-                disabled={isRunning || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
-                className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>{isRunning ? 'Editing Mesh...' : 'Generate Text-Guided Edit'}</span>
-              </button>
-            </div>
           </div>
         )}
 
-        {/* ========================================================================= */}
-        {/* SUBSECTION: IMAGE GUIDED EDITING                                          */}
-        {/* ========================================================================= */}
         {inputTab === 'image' && (
-          <div className="space-y-3.5 pt-2 border-t border-white/[0.06]">
-            <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-full bg-primary text-black font-black text-[11px] flex items-center justify-center">
-                4
-              </span>
-              <div>
-                <div className="text-xs font-bold text-white">Reference Image Guidance</div>
-                <div className="text-[10px] text-zinc-400">Upload visual reference to guide the sculpt edit</div>
-              </div>
+          <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Reference Guidance</span>
+              {referenceImage && (
+                <button
+                  type="button"
+                  onClick={() => setReferenceImage(null)}
+                  className="text-rose-400 text-[10px] hover:underline cursor-pointer"
+                >
+                  Clear Image
+                </button>
+              )}
             </div>
 
-            {/* Image Dropzone / Preview */}
             <input
               ref={imageInputRef}
               type="file"
@@ -484,38 +440,30 @@ export const MeshEditPanel: React.FC = () => {
             />
 
             {referenceImage ? (
-              <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] relative group flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setReferenceImage(null)}
-                  className="absolute top-2 right-2 p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
-                  title="Remove reference image"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-                <div className="w-14 h-14 rounded-lg overflow-hidden border border-white/[0.1] bg-black flex-shrink-0">
+              <div className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded overflow-hidden border border-white/[0.1] bg-black flex-shrink-0">
                   <img src={referenceImage.url} alt="Reference" className="w-full h-full object-cover" />
                 </div>
-                <div className="min-w-0 flex-1 pr-6">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs font-bold text-white truncate">{referenceImage.name}</div>
-                  <div className="text-[10px] text-zinc-400 mt-0.5">{referenceImage.size} · Reference Active</div>
+                  <div className="text-[9.5px] text-zinc-400">{referenceImage.size} · Active Reference</div>
                 </div>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => imageInputRef.current?.click()}
-                className="w-full p-4 rounded-xl border border-dashed border-white/[0.15] bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] text-center space-y-1 transition-colors cursor-pointer block"
+                className="w-full py-3 px-2 rounded-lg border border-dashed border-white/[0.12] bg-[hsl(var(--surface-1))]/50 hover:bg-[hsl(var(--surface-1))] text-center cursor-pointer transition-colors block"
               >
-                <ImageIcon className="w-6 h-6 text-primary mx-auto" />
+                <ImageIcon className="w-4 h-4 text-primary mx-auto mb-1" />
                 <div className="text-xs font-semibold text-zinc-200">Upload Reference Image</div>
-                <div className="text-[10px] text-zinc-500">PNG, JPG or WEBP reference for shape alignment</div>
+                <div className="text-[9.5px] text-zinc-500">PNG, JPG or WEBP for shape alignment</div>
               </button>
             )}
 
             {/* Projection Mode */}
-            <div className="space-y-1.5 p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
-              <label className="text-[11px] font-semibold text-zinc-200">Projection Alignment</label>
+            <div className="space-y-1">
+              <label className="text-[10px] font-semibold text-zinc-300">Projection Alignment</label>
               <div className="grid grid-cols-3 gap-1 p-0.5 bg-[hsl(var(--surface-1))] rounded-lg border border-white/[0.06]">
                 {[
                   { id: 'front', label: 'Front Ortho' },
@@ -526,7 +474,7 @@ export const MeshEditPanel: React.FC = () => {
                     key={mode.id}
                     type="button"
                     onClick={() => setProjectionMode(mode.id as any)}
-                    className={`py-1.5 text-[10px] font-bold rounded transition-all cursor-pointer ${
+                    className={`py-1 text-[9.5px] font-bold rounded transition-all cursor-pointer ${
                       projectionMode === mode.id
                         ? 'bg-primary text-black'
                         : 'text-zinc-400 hover:text-white'
@@ -539,9 +487,9 @@ export const MeshEditPanel: React.FC = () => {
             </div>
 
             {/* Image Strength */}
-            <div className="space-y-1.5 p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="font-semibold text-zinc-200">Image Influence Strength</span>
+            <div className="space-y-0.5 p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="font-semibold text-zinc-300">Influence Strength</span>
                 <span className="font-mono text-primary font-bold">{(imageStrength * 100).toFixed(0)}%</span>
               </div>
               <input
@@ -551,52 +499,77 @@ export const MeshEditPanel: React.FC = () => {
                 step={0.05}
                 value={imageStrength}
                 onChange={(e) => setImageStrength(parseFloat(e.target.value))}
-                className="w-full accent-primary cursor-pointer"
-              />
-            </div>
-
-            {/* Supplementary Prompt */}
-            <div className="space-y-1">
-              <label className="text-[10px] text-zinc-400">Supplementary Guidance (optional)</label>
-              <input
-                type="text"
-                value={imageSupplementaryPrompt}
-                onChange={(e) => setImageSupplementaryPrompt(e.target.value)}
-                placeholder="e.g. Keep existing armor color, only sculpt lion crest"
-                className="w-full h-8 px-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-primary"
+                className="w-full accent-primary h-1 cursor-pointer"
               />
             </div>
 
             {/* Preserve Texture Toggle */}
-            <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
-              <div>
-                <div className="text-[11px] font-semibold text-zinc-200">Preserve Mesh Base Texture</div>
-                <div className="text-[9px] text-zinc-500">Retain original albedo and diffuse map colors</div>
-              </div>
+            <div className="flex items-center justify-between p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+              <span className="text-[10.5px] font-medium text-zinc-300">Preserve Mesh Base Texture</span>
               <button
                 type="button"
                 onClick={() => setPreserveOriginalTexture(!preserveOriginalTexture)}
-                className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 cursor-pointer ${
-                  preserveOriginalTexture ? 'bg-primary' : 'bg-[hsl(var(--surface-3))]'
+                className={`w-7 h-4 rounded-full transition-colors relative flex-shrink-0 cursor-pointer ${
+                  preserveOriginalTexture ? 'bg-primary' : 'bg-zinc-700'
                 }`}
               >
-                <span className={`absolute top-0.5 w-4 h-4 rounded-full transition-transform ${preserveOriginalTexture ? 'left-4.5 bg-black' : 'left-0.5 bg-zinc-400'}`} />
+                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-black transition-transform ${preserveOriginalTexture ? 'left-3.5' : 'left-0.5 bg-zinc-300'}`} />
               </button>
             </div>
-
-            {/* Action */}
-            <button
-              type="button"
-              id="btn-generate-image-edit"
-              onClick={handleStartImageEdit}
-              disabled={isRunning || !referenceImage || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
-              className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{isRunning ? 'Editing Mesh with Image...' : 'Generate Image-Guided Edit'}</span>
-            </button>
           </div>
         )}
+      </div>
+
+      {/* Bottom Sticky Action Footer */}
+      <div className="p-2.5 border-t border-white/[0.08] bg-[hsl(var(--surface-1))] relative z-20 flex-shrink-0 space-y-1.5 overflow-x-hidden">
+        {/* Pre-flight Configuration Summary Bar */}
+        <div className="flex items-center justify-between text-[9.5px] font-mono text-zinc-400 px-0.5 pb-0.5">
+          <div className="flex items-center gap-1.5 truncate min-w-0">
+            <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-200 font-semibold truncate max-w-[130px]">
+              {currentAsset?.name || 'No Target Mesh'}
+            </span>
+            <span>•</span>
+            <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
+              {editMode}
+            </span>
+          </div>
+          <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex-shrink-0 uppercase">
+            {inputTab === 'text' ? 'TEXT' : 'IMAGE'}
+          </span>
+        </div>
+
+        {/* Sticky Action Button */}
+        <ShimmerButton
+          id={inputTab === 'text' ? 'btn-generate-edit' : 'btn-generate-image-edit'}
+          onClick={inputTab === 'text' ? handleStartTextEdit : handleStartImageEdit}
+          disabled={isRunning || !canExecute}
+          shimmerColor="hsl(var(--neon-amber))"
+          shimmerSize="0.1em"
+          shimmerDuration="2.5s"
+          borderRadius="12px"
+          background={
+            isRunning
+              ? "hsl(var(--surface-2))"
+              : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
+          }
+          className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+            isRunning 
+              ? 'text-primary border border-primary/30' 
+              : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
+          }`}
+        >
+          {isRunning ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+              <span>Editing 3D Mesh...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
+              <span>{inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
+            </>
+          )}
+        </ShimmerButton>
       </div>
     </div>
   );

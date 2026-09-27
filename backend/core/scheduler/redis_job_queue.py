@@ -142,6 +142,10 @@ class RedisJobQueue:
         # Mark as processing
         await self.redis.sadd(self.processing_set_key, job_id)
         job_data["status"] = _status_to_str(JobStatus.PROCESSING)
+        job_data["started_at"] = datetime.utcnow().isoformat()
+        job_data["progress"] = 0.15
+        job_data["stage"] = "loading_model"
+        job_data["message"] = "Loading model on GPU..."
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         
         # Reconstruct JobRequest (job_id is auto-generated, so we set it after)
@@ -192,6 +196,9 @@ class RedisJobQueue:
             job_data = json.loads(job_data_str)
             job_data["status"] = _status_to_str(JobStatus.COMPLETED)
             job_data["completed_at"] = datetime.utcnow().isoformat()
+            job_data["progress"] = 1.0
+            job_data["stage"] = "completed"
+            job_data["message"] = "Generation completed successfully"
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         
         # Store result
@@ -215,6 +222,22 @@ class RedisJobQueue:
             job_data["status"] = _status_to_str(JobStatus.FAILED)
             job_data["error"] = error
             job_data["failed_at"] = datetime.utcnow().isoformat()
+            job_data["stage"] = "failed"
+            job_data["message"] = error
+            await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+
+    async def update_job_progress(self, job_id: str, progress: float, stage: Optional[str] = None, message: Optional[str] = None):
+        """Update job progress and stage"""
+        if not self.redis:
+            return
+        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+        if job_data_str:
+            job_data = json.loads(job_data_str)
+            job_data["progress"] = min(1.0, max(0.0, float(progress)))
+            if stage:
+                job_data["stage"] = stage
+            if message:
+                job_data["message"] = message
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
     async def get_job(self, job_id: str) -> Optional[Dict]:
@@ -233,6 +256,27 @@ class RedisJobQueue:
             job_data["inputs"] = json.loads(job_data["inputs"])
         if "metadata" in job_data and isinstance(job_data["metadata"], str):
             job_data["metadata"] = json.loads(job_data["metadata"])
+
+        # Dynamic progress calculation while processing so UI progress bar updates live
+        if job_data.get("status") == _status_to_str(JobStatus.PROCESSING):
+            if "progress" not in job_data or float(job_data.get("progress", 0.0)) < 0.15:
+                job_data["progress"] = 0.15
+                job_data["stage"] = "loading_model"
+                job_data["message"] = "Loading model on GPU..."
+
+            started_at_str = job_data.get("started_at")
+            if started_at_str:
+                try:
+                    elapsed = (datetime.utcnow() - datetime.fromisoformat(started_at_str)).total_seconds()
+                    # Progress curves smoothly from 15% up to 92% based on elapsed seconds
+                    dynamic_prog = min(0.92, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.77)
+                    if dynamic_prog > float(job_data.get("progress", 0.0)):
+                        job_data["progress"] = round(dynamic_prog, 2)
+                    if elapsed > 2.5 and job_data.get("stage") == "loading_model":
+                        job_data["stage"] = "generating"
+                        job_data["message"] = "Synthesizing 3D mesh on GPU..."
+                except Exception:
+                    pass
         
         # Get result if completed
         if job_data["status"] == _status_to_str(JobStatus.COMPLETED):
@@ -295,6 +339,9 @@ class RedisJobQueue:
             job_data["status"] = _status_to_str(JobStatus.PROCESSING)
             job_data["model_id"] = model_id
             job_data["started_at"] = datetime.utcnow().isoformat()
+            job_data["progress"] = 0.25
+            job_data["stage"] = "loading_model"
+            job_data["message"] = f"Loading model {model_id} on GPU..."
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
     async def cancel_job(self, job_id: str) -> bool:

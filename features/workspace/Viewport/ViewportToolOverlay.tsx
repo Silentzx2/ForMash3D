@@ -38,7 +38,6 @@ export const ViewportToolOverlay: React.FC = () => {
   const [uvGalleryTab, setUvGalleryTab] = useState<'Preview' | 'Part View' | 'Island View' | '3D / UV Split'>('Preview');
   const [segmentGalleryTab, setSegmentGalleryTab] = useState<'Preview' | 'Part Hierarchy' | 'Statistics' | 'Logs'>('Preview');
   const [segmentIsolatedPart, setSegmentIsolatedPart] = useState('Head');
-  const [editCompareTab, setEditCompareTab] = useState<'Original' | 'Edited Result' | 'Side by Side'>('Edited Result');
   const [cameraPreset, setCameraPreset] = useState<'Perspective' | 'Front' | 'Side' | 'Top'>('Perspective');
 
   if (activeTool !== 'uv' && activeTool !== 'segment' && activeTool !== 'edit') {
@@ -281,69 +280,9 @@ export const ViewportToolOverlay: React.FC = () => {
           </div>
         )}
 
-        {/* MESH EDIT COMPARISON BOTTOM CARD */}
-        {activeTool === 'edit' && (
-          <div className="w-full bg-[hsl(var(--surface-1))]/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-3 shadow-2xl space-y-2.5">
-            {/* Compare Tabs */}
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
-              <div className="flex gap-1">
-                {(['Original', 'Edited Result', 'Side by Side'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setEditCompareTab(tab)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      editCompareTab === tab
-                        ? 'bg-primary text-black shadow-sm'
-                        : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Edit Completed</span>
-                <span className="text-[10px] text-zinc-400 font-normal">(2 minutes 14 seconds)</span>
-              </div>
-            </div>
-
-            {/* Comparison Details and Chaining */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] w-full sm:w-auto">
-                <div>
-                  <span className="text-zinc-400 block text-[10px]">Model</span>
-                  <span className="font-semibold text-white">VoxHammer</span>
-                </div>
-                <div>
-                  <span className="text-zinc-400 block text-[10px]">Vertices</span>
-                  <span className="font-mono text-white">312,442</span>
-                </div>
-                <div>
-                  <span className="text-zinc-400 block text-[10px]">Faces</span>
-                  <span className="font-mono text-white">624,881</span>
-                </div>
-                <div>
-                  <span className="text-zinc-400 block text-[10px]">File Size</span>
-                  <span className="font-mono text-primary">18.6 MB</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <button
-                  type="button"
-                  onClick={() => handleUseResultChaining('animation')}
-                  className="px-4 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
-                >
-                  <span>Use in Rigging</span>
-                  <ArrowRight className="w-3.5 h-3.5 stroke-[2.5]" />
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* ponytail: Removed static MESH EDIT COMPARISON BOTTOM CARD — hardcoded dummy data
+           that permanently blocked the viewport bottom HUD (camera/shading/export).
+           If a real comparison UI is needed later, render it conditionally after an edit completes. */}
       </div>
     </div>
   );

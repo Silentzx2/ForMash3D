@@ -397,7 +397,7 @@ export const WorkspaceShell: React.FC = () => {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -15 }}
                     transition={MOTION_FAST}
-                    className="absolute inset-x-2 top-2 bottom-2 md:inset-auto md:left-2 md:top-2 md:bottom-2 md:w-[280px] lg:w-[320px] max-w-[420px] md:max-w-[calc(100vw-5rem)] bg-[hsl(var(--surface-1))] border border-white/[0.1] rounded-2xl md:rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] flex flex-col z-20 overflow-hidden"
+                    className="absolute inset-x-2 top-2 bottom-2 md:inset-auto md:left-2 md:top-2 md:bottom-2 md:w-[320px] lg:w-[360px] max-w-[420px] md:max-w-[calc(100vw-5rem)] bg-[hsl(var(--surface-1))] border border-white/[0.1] rounded-2xl md:rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.6)] flex flex-col z-20 overflow-hidden overflow-x-hidden"
                   >
                 {/* Mobile panel header with close button */}
                 <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.08] bg-[hsl(var(--surface-0))] md:hidden flex-shrink-0">

@@ -6,9 +6,7 @@ import {
   Sparkles,
   Box,
   Loader2,
-  Layers,
   Shield,
-  Zap,
   Activity,
   CheckCircle2,
   Terminal,
@@ -32,8 +30,6 @@ export const RemeshPanel: React.FC = () => {
     setRightPanelMode,
   } = useWorkspace();
 
-  // Tab State: 'budget' (primary zero-scroll view) | 'topology' (advanced constraints & preservation)
-  const [panelTab, setPanelTab] = useState<'budget' | 'topology'>('budget');
   const [meshDropdownOpen, setMeshDropdownOpen] = useState(false);
 
   const remeshProgress = activeTask?.progress ?? 0;
@@ -79,43 +75,11 @@ export const RemeshPanel: React.FC = () => {
           </span>
         </div>
 
-        {/* 2-Tab Segmented Header */}
-        <div className="grid grid-cols-2 p-1 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
-          <button
-            type="button"
-            onClick={() => setPanelTab('budget')}
-            className={`py-1.5 px-2 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              panelTab === 'budget'
-                ? 'bg-primary text-black shadow-sm'
-                : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
-            }`}
-          >
-            <Zap className="w-3 h-3" />
-            <span>Poly Budget</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setPanelTab('topology')}
-            className={`py-1.5 px-2 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              panelTab === 'topology'
-                ? 'bg-primary text-black shadow-sm'
-                : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
-            }`}
-          >
-            <Layers className="w-3 h-3" />
-            <span>Topology &amp; Shape</span>
-          </button>
-        </div>
       </div>
 
       {/* Main Body */}
-      <div className="flex-1 overflow-y-auto px-2.5 py-2.5 pb-12 space-y-2.5 scrollbar-thin scrollbar-thumb-zinc-700/60 scrollbar-track-transparent pr-1.5">
-        
-        {/* ========================================================================= */}
-        {/* TAB 1: BUDGET (Primary zero-scroll view)                                  */}
-        {/* ========================================================================= */}
-        {panelTab === 'budget' && (
-          <div className="space-y-2.5">
+      <div className="flex-1 overflow-y-auto px-2 py-2 pb-2 space-y-2 scrollbar-none pr-1">
+        <div className="space-y-2">
             {/* Target 3D Mesh Selector Card */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
               <div className="flex items-center justify-between">
@@ -201,32 +165,6 @@ export const RemeshPanel: React.FC = () => {
               )}
             </div>
 
-            {/* Workflow Mode: Auto Remesh | Manual Remesh */}
-            <div className="grid grid-cols-2 p-0.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08]">
-              <button
-                type="button"
-                onClick={() => setRemeshSettings(prev => ({ ...prev, tab: 'auto' }))}
-                className={`py-1.5 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
-                  remeshSettings.tab === 'auto'
-                    ? 'bg-primary text-black shadow-sm'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Auto Remesh
-              </button>
-              <button
-                type="button"
-                onClick={() => setRemeshSettings(prev => ({ ...prev, tab: 'manual' }))}
-                className={`py-1.5 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
-                  remeshSettings.tab === 'manual'
-                    ? 'bg-primary text-black shadow-sm'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                Manual Remesh
-              </button>
-            </div>
-
             {/* Target Face Count Section */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
               <div className="flex items-center justify-between">
@@ -293,7 +231,7 @@ export const RemeshPanel: React.FC = () => {
                       : 'text-zinc-400 hover:text-white'
                   }`}
                 >
-                  Adaptive
+                  Adaptive Quads
                 </button>
                 <button
                   type="button"
@@ -304,22 +242,15 @@ export const RemeshPanel: React.FC = () => {
                       : 'text-zinc-400 hover:text-white'
                   }`}
                 >
-                  Uniform
+                  Uniform Quads
                 </button>
               </div>
             </div>
 
-            {/* Quick jump link to Topology tab */}
-            <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-[9px] text-zinc-400 font-medium">
-              <span>Constraints &amp; Features:</span>
-              <button
-                type="button"
-                onClick={() => setPanelTab('topology')}
-                className="hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
-              >
-                <span>Shape, UVs &amp; Edge Protection</span>
-                <span>&rarr;</span>
-              </button>
+            {/* Auto Feature Protection Banner */}
+            <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.06] text-[9.5px] text-zinc-400 flex items-center gap-1.5">
+              <Shield className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+              <span>Auto-Feature Protection: Sharp creases, UV seams, and shape curvature are preserved automatically.</span>
             </div>
 
             {/* Live OpenX Clay Pipeline Tracker when remeshing is active */}
@@ -426,175 +357,6 @@ export const RemeshPanel: React.FC = () => {
               )}
             </div>
           </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* TAB 2: TOPOLOGY (Shape constraints, edge preservation, precision sliders) */}
-        {/* ========================================================================= */}
-        {panelTab === 'topology' && (
-          <div className="space-y-2.5">
-            {/* Preserve Feature Checkboxes */}
-            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
-              <span className="font-bold text-white uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                <Shield className="w-3 h-3 text-primary" />
-                <span>Feature Constraints</span>
-              </span>
-
-              <div className="grid grid-cols-3 gap-1">
-                {/* Shape */}
-                <button
-                  type="button"
-                  onClick={() => setRemeshSettings(prev => ({ ...prev, preserveShape: !prev.preserveShape }))}
-                  className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
-                    remeshSettings.preserveShape
-                      ? 'bg-[hsl(var(--surface-1))] border-primary text-white'
-                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                    remeshSettings.preserveShape ? 'bg-primary border-primary text-black' : 'border-white/[0.15]'
-                  }`}>
-                    {remeshSettings.preserveShape && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                  </div>
-                  <span className="font-bold text-[10px]">Shape</span>
-                </button>
-
-                {/* Sharp Edges */}
-                <button
-                  type="button"
-                  onClick={() => setRemeshSettings(prev => ({ ...prev, preserveSharpEdges: !prev.preserveSharpEdges }))}
-                  className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
-                    remeshSettings.preserveSharpEdges
-                      ? 'bg-[hsl(var(--surface-1))] border-primary text-white'
-                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                    remeshSettings.preserveSharpEdges ? 'bg-primary border-primary text-black' : 'border-white/[0.15]'
-                  }`}>
-                    {remeshSettings.preserveSharpEdges && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                  </div>
-                  <span className="font-bold text-[10px] truncate">Edges</span>
-                </button>
-
-                {/* UVs */}
-                <button
-                  type="button"
-                  onClick={() => setRemeshSettings(prev => ({ ...prev, preserveUVs: !prev.preserveUVs }))}
-                  className={`flex items-center gap-1.5 p-1.5 rounded-lg border text-left transition-colors cursor-pointer ${
-                    remeshSettings.preserveUVs
-                      ? 'bg-[hsl(var(--surface-1))] border-primary text-white'
-                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
-                    remeshSettings.preserveUVs ? 'bg-primary border-primary text-black' : 'border-white/[0.15]'
-                  }`}>
-                    {remeshSettings.preserveUVs && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                  </div>
-                  <span className="font-bold text-[10px]">UVs</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Sliders: Detail Preservation, Boundary Protection, Voxel Size */}
-            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
-              <span className="font-bold text-white uppercase tracking-wider text-[10px]">Precision Tuning</span>
-
-              {/* Detail Preservation */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-zinc-300 text-[10px]">
-                  <span>Detail Preservation</span>
-                  <span className="font-mono text-primary font-bold">{remeshSettings.detailPreservation.toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={remeshSettings.detailPreservation}
-                  onChange={(e) => setRemeshSettings(prev => ({ ...prev, detailPreservation: parseFloat(e.target.value) }))}
-                  className="w-full accent-primary cursor-pointer h-1.5 rounded-full bg-[hsl(var(--surface-2))]"
-                />
-              </div>
-
-              {/* Boundary Protection */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-zinc-300 text-[10px]">
-                  <span>Boundary Protection</span>
-                  <span className="font-mono text-primary font-bold">{remeshSettings.boundaryProtection.toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={remeshSettings.boundaryProtection}
-                  onChange={(e) => setRemeshSettings(prev => ({ ...prev, boundaryProtection: parseFloat(e.target.value) }))}
-                  className="w-full accent-primary cursor-pointer h-1.5 rounded-full bg-[hsl(var(--surface-2))]"
-                />
-              </div>
-
-              {/* Voxel Size */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-zinc-300 text-[10px]">
-                  <span>Voxel Remesh Size</span>
-                  <span className="font-mono text-primary font-bold">{remeshSettings.voxelSize.toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  min="0.01"
-                  max="0.5"
-                  step="0.01"
-                  value={remeshSettings.voxelSize}
-                  onChange={(e) => setRemeshSettings(prev => ({ ...prev, voxelSize: parseFloat(e.target.value) }))}
-                  className="w-full accent-primary cursor-pointer h-1.5 rounded-full bg-[hsl(var(--surface-2))]"
-                />
-              </div>
-            </div>
-
-            {/* PartUV Parameterization & Unwrapping */}
-            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-white uppercase tracking-wider text-[10px]">PartUV Parameterization</span>
-                <span className="font-mono text-[9px] text-emerald-400 font-bold">Ready</span>
-              </div>
-              <p className="text-[9px] text-zinc-400">
-                Generate distortion-free, non-overlapping UV coordinates using part-based unwrapping and Blender packing.
-              </p>
-              <button
-                type="button"
-                onClick={() => void runUVUnwrapGeneration()}
-                disabled={isExecuting || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
-                className="w-full py-2 rounded-lg bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <Layers className="w-3.5 h-3.5" />
-                <span>UNWRAP UVS (PARTUV)</span>
-              </button>
-            </div>
-
-            {/* Engine Info Box */}
-            <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-[9px] text-zinc-400 space-y-1">
-              <div className="flex items-center justify-between">
-                <span>Retopology Model</span>
-                <span className="text-zinc-200 font-mono">FastMesh-V1K / V4K</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>UV Unwrapping</span>
-                <span className="text-zinc-200 font-mono">PartUV (Blender Pack)</span>
-              </div>
-            </div>
-
-            {/* Back Button */}
-            <button
-              type="button"
-              onClick={() => setPanelTab('budget')}
-              className="w-full py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] text-white font-bold text-[10px] transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <span>&larr; Back to Poly Budget</span>
-            </button>
-          </div>
-        )}
 
       </div>
     </div>

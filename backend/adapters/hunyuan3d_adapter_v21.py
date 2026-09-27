@@ -120,6 +120,12 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 self.pipeline_shapegen = (
                     Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path))
                 )
+                try:
+                    if hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
+                        self.pipeline_shapegen.enable_model_cpu_offload()
+                        logger.info("Enabled model CPU offload for Hunyuan3D shapegen pipeline")
+                except Exception as offload_err:
+                    logger.warning(f"Could not enable CPU offload for Hunyuan3D shapegen: {offload_err}")
                 loaded_models["shapegen"] = self.pipeline_shapegen
 
                 # Load background remover
@@ -269,7 +275,13 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
 
             # Shape generation only
             logger.info("Generating 3D shape...")
-            mesh_result = self.pipeline_shapegen(image=image)[0]
+            octree_res = inputs.get("octree_resolution", 256)
+            num_steps = inputs.get("num_inference_steps", 35 if inputs.get("low_vram") else 50)
+            mesh_result = self.pipeline_shapegen(
+                image=image,
+                octree_resolution=octree_res,
+                num_inference_steps=num_steps,
+            )[0]
 
             # Generate output path
             base_name = f"{self.model_id}_{image_path.stem}"

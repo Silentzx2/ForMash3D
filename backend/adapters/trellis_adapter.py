@@ -85,6 +85,17 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 if k in os.environ and not os.environ[k].strip():
                     os.environ.pop(k, None)
 
+            # Auto-configure attention backend for pre-Ampere GPUs (T4, V100, RTX 20xx)
+            if "ATTN_BACKEND" not in os.environ and torch.cuda.is_available():
+                try:
+                    major, _ = torch.cuda.get_device_capability()
+                    if major < 8:
+                        logger.info(f"GPU compute capability {major}.x < 8.0 (pre-Ampere): defaulting TRELLIS to ATTN_BACKEND=sdpa")
+                        os.environ["ATTN_BACKEND"] = "sdpa"
+                        os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
+                except Exception:
+                    pass
+
             # Import TRELLIS modules
             from trellis.pipelines import TrellisTextTo3DPipeline
             from trellis.utils import postprocessing_utils
@@ -155,12 +166,17 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             mesh_path = inputs.get("mesh_path", "")
             texture_text_prompt = inputs.get("texture_text_prompt", "")
             seed = inputs.get("seed", 42)
-            texture_resolution = inputs.get("texture_resolution", 1024)
-            # Postprocessing-related parameters
-            simplify = inputs.get("simplify", 0.95)
+            texture_resolution = inputs.get("texture_resolution", 2048)
+            num_steps = inputs.get("num_inference_steps", 25)
+            target_polycount = inputs.get("target_polycount", None)
+            simplify = inputs.get("simplify", None)
             texture_bake_mode = inputs.get("texture_bake_mode", "fast")
+            guidance = inputs.get("guidance_scale", 7.5)
 
-            logger.info(f"Generating mesh with TRELLIS for prompt: '{text_prompt}'")
+            ss_steps = max(20, min(50, int(num_steps)))
+            slat_steps = max(20, min(50, int(num_steps)))
+
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, res={texture_resolution})")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
@@ -184,7 +200,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 outputs = self.pipeline.run_variant(
                     input_mesh,
                     prompt=text_prompt,
-                    slat_sampler_params={"steps": 12, "cfg_strength": 3},
+                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
                     formats=["gaussian"],
                 )
                 # get ready for later texturing
@@ -194,17 +210,25 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 outputs = self.pipeline.run(
                     text_prompt,
                     texture_prompt=texture_text_prompt,
-                    sparse_structure_sampler_params={"steps": 12, "cfg_strength": 7.5},
-                    slat_sampler_params={"steps": 12, "cfg_strength": 3},
+                    sparse_structure_sampler_params={"steps": ss_steps, "cfg_strength": guidance},
+                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
                     seed=seed,
                     formats=["gaussian", "mesh"],
                 )
                 mesh = None
 
+            candidate_mesh = mesh or outputs["mesh"][0]
+            if simplify is None:
+                if target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
+                    simplify = max(0.0, min(0.85, 1.0 - (float(target_polycount) / float(len(candidate_mesh.faces)))))
+                else:
+                    # Studio fidelity default: preserve sharp high-resolution geometry
+                    simplify = 0.05
+
             # Extract mesh from Gaussian representation
             mesh = self.postprocessing_utils.to_trimesh(
                 outputs["gaussian"][0],
-                mesh or outputs["mesh"][0],
+                candidate_mesh,
                 simplify=simplify,
                 texture_size=texture_resolution,
                 texture_bake_mode=texture_bake_mode,
@@ -383,6 +407,17 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 if k in os.environ and not os.environ[k].strip():
                     os.environ.pop(k, None)
 
+            # Auto-configure attention backend for pre-Ampere GPUs (T4, V100, RTX 20xx)
+            if "ATTN_BACKEND" not in os.environ and torch.cuda.is_available():
+                try:
+                    major, _ = torch.cuda.get_device_capability()
+                    if major < 8:
+                        logger.info(f"GPU compute capability {major}.x < 8.0 (pre-Ampere): defaulting TRELLIS to ATTN_BACKEND=sdpa")
+                        os.environ["ATTN_BACKEND"] = "sdpa"
+                        os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
+                except Exception:
+                    pass
+
             # Import TRELLIS modules
             from trellis.pipelines import TrellisImageTo3DPipeline
             from trellis.utils import postprocessing_utils
@@ -468,12 +503,18 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             # Extract parameters
             image_path = inputs["image_path"]
             seed = inputs.get("seed", 42)
-            texture_resolution = inputs.get("texture_resolution", 1024)
+            texture_resolution = inputs.get("texture_resolution", 2048)
+            num_steps = inputs.get("num_inference_steps", 25)
+            target_polycount = inputs.get("target_polycount", None)
             mesh_path = inputs.get("mesh_path", None)
-            simplify = inputs.get("simplify", 0.95)
+            simplify = inputs.get("simplify", None)
             tex_bake_mode = inputs.get("texture_bake_mode", "fast")
+            guidance = inputs.get("guidance_scale", 7.5)
 
-            logger.info(f"Generating mesh with TRELLIS for image path: '{image_path}'")
+            ss_steps = max(20, min(50, int(num_steps)))
+            slat_steps = max(20, min(50, int(num_steps)))
+
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (steps={ss_steps}, res={texture_resolution})")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
@@ -499,7 +540,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     input_mesh,
                     Image.open(image_path),
                     seed=seed,
-                    slat_sampler_params={"steps": 12, "cfg_strength": 3},
+                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
                     formats=["gaussian"],
                 )
                 # get ready for later texturing
@@ -508,17 +549,25 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 outputs = self.pipeline.run(
                     Image.open(image_path),
                     preprocess_image=True,
-                    sparse_structure_sampler_params={"steps": 12, "cfg_strength": 7.5},
-                    slat_sampler_params={"steps": 12, "cfg_strength": 3},
+                    sparse_structure_sampler_params={"steps": ss_steps, "cfg_strength": guidance},
+                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
                     seed=seed,
                     formats=["gaussian", "mesh"],
                 )
                 mesh = None
 
+            candidate_mesh = mesh or outputs["mesh"][0]
+            if simplify is None:
+                if target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
+                    simplify = max(0.0, min(0.85, 1.0 - (float(target_polycount) / float(len(candidate_mesh.faces)))))
+                else:
+                    # Studio fidelity default: preserve sharp high-resolution geometry
+                    simplify = 0.05
+
             # Extract mesh from Gaussian representation
             mesh = self.postprocessing_utils.to_trimesh(
                 outputs["gaussian"][0],
-                mesh or outputs["mesh"][0],
+                candidate_mesh,
                 simplify=simplify,
                 texture_size=texture_resolution,
                 texture_bake_mode=tex_bake_mode,

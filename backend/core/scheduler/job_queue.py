@@ -178,6 +178,7 @@ class JobRequest:
         self.status = JobStatus.PROCESSING
         self.started_at = datetime.utcnow()
         self.assigned_model = model_id
+        self.progress = 0.25
 
     def mark_completed(self, result: Dict[str, Any]):
         """Mark job as completed"""
@@ -489,7 +490,13 @@ class JobQueue:
         async with self._cache_lock:
             # Check processing jobs first
             if job_id in self._processing_cache:
-                return self._processing_cache[job_id]
+                job = self._processing_cache[job_id]
+                if job.started_at:
+                    elapsed = (datetime.utcnow() - job.started_at).total_seconds()
+                    dynamic_prog = min(0.92, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.77)
+                    if dynamic_prog > job.progress:
+                        job.progress = round(dynamic_prog, 2)
+                return job
 
             # Check completed jobs
             if job_id in self._completed_cache:

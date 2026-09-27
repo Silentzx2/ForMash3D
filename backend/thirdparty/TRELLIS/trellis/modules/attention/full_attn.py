@@ -112,12 +112,29 @@ def scaled_dot_product_attention(*args, **kwargs):
             k, v = kv.unbind(dim=2)
         out = xops.memory_efficient_attention(q, k, v)
     elif BACKEND == 'flash_attn':
-        if num_all_args == 1:
-            out = flash_attn.flash_attn_qkvpacked_func(qkv)
-        elif num_all_args == 2:
-            out = flash_attn.flash_attn_kvpacked_func(q, kv)
-        elif num_all_args == 3:
-            out = flash_attn.flash_attn_func(q, k, v)
+        try:
+            if num_all_args == 1:
+                out = flash_attn.flash_attn_qkvpacked_func(qkv)
+            elif num_all_args == 2:
+                out = flash_attn.flash_attn_kvpacked_func(q, kv)
+            elif num_all_args == 3:
+                out = flash_attn.flash_attn_func(q, k, v)
+        except RuntimeError as e:
+            if "Ampere" in str(e) or "not supported" in str(e).lower():
+                from torch.nn.functional import scaled_dot_product_attention as sdpa_fallback
+                if num_all_args == 1:
+                    q_s, k_s, v_s = qkv.unbind(dim=2)
+                elif num_all_args == 2:
+                    q_s = q
+                    k_s, v_s = kv.unbind(dim=2)
+                else:
+                    q_s, k_s, v_s = q, k, v
+                q_s = q_s.permute(0, 2, 1, 3)
+                k_s = k_s.permute(0, 2, 1, 3)
+                v_s = v_s.permute(0, 2, 1, 3)
+                out = sdpa_fallback(q_s, k_s, v_s).permute(0, 2, 1, 3)
+            else:
+                raise
     elif BACKEND == 'sdpa':
         if num_all_args == 1:
             q, k, v = qkv.unbind(dim=2)

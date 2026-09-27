@@ -103,6 +103,11 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         """Load TripoSF VAE model from repository code."""
         try:
             self._ensure_triposf_in_path()
+            if torch.cuda.is_available():
+                major, _ = torch.cuda.get_device_capability()
+                if major < 8:
+                    os.environ["ATTN_BACKEND"] = "sdpa"
+                    os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
             logger.info(f"Loading TripoSF model from {self.triposf_root}")
 
             config_path = self.triposf_root / "configs" / "TripoSFVAE_1024.yaml"

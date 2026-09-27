@@ -203,6 +203,54 @@ async def get_model_parameters(
         )
 
 
+def _is_model_weights_available(model_id: str) -> bool:
+    """Check if model checkpoint/weights exist locally or can be auto-downloaded on demand."""
+    hf_auto_models = {
+        "trellis_image_to_textured_mesh",
+        "trellis_text_to_textured_mesh",
+        "triposr_image_to_raw_mesh",
+        "triposg_image_to_raw_mesh",
+    }
+    if model_id in hf_auto_models:
+        return True
+
+    cwd = Path(os.getcwd())
+    dirs_to_check = [cwd / "pretrained", cwd / "backend" / "pretrained"]
+
+    for p in dirs_to_check:
+        if not p.exists():
+            continue
+        if "hunyuan" in model_id:
+            hy = p / "tencent" / "Hunyuan3D-2.1"
+            if hy.exists() and any(hy.iterdir()):
+                return True
+        elif "triposf" in model_id:
+            sf1 = p / "TripoSF" / "pretrained_TripoSFVAE_256i1024o.safetensors"
+            sf2 = p / "TripoSF" / "vae" / "pretrained_TripoSFVAE_256i1024o.safetensors"
+            if sf1.exists() or sf2.exists():
+                return True
+        elif "partfield" in model_id:
+            pf = p / "PartField"
+            if pf.exists() and any(pf.iterdir()):
+                return True
+        elif "ultrashape" in model_id:
+            if (p / "UltraShape" / "ultrashape_v1.pt").exists():
+                return True
+        elif "partpacker" in model_id:
+            pp = p / "partpacker"
+            if pp.exists() and any(pp.iterdir()):
+                return True
+        elif "trellis2" in model_id:
+            t2 = p / "TRELLIS.2-4B"
+            if t2.exists() and any(t2.iterdir()):
+                return True
+        elif "unirig" in model_id:
+            ur = p / "unirig"
+            if ur.exists() and any(ur.iterdir()):
+                return True
+    return False
+
+
 @router.get("/models", summary="List available models")
 async def list_models(
     feature: Optional[str] = None,
@@ -212,10 +260,18 @@ async def list_models(
     """List available models, optionally filtered by feature"""
 
     available_models = settings.list_available_models()
+    weights_status = {}
+    for feat, mlist in available_models.items():
+        for mid in mlist:
+            weights_status[mid] = _is_model_weights_available(mid)
 
     if feature:
         if feature in available_models:
-            return {"feature": feature, "models": available_models[feature]}
+            return {
+                "feature": feature, 
+                "models": available_models[feature],
+                "weights_status": {mid: weights_status[mid] for mid in available_models[feature]},
+            }
         else:
             raise HTTPException(
                 status_code=404, detail=f"Feature '{feature}' not found"
@@ -223,6 +279,7 @@ async def list_models(
 
     return {
         "available_models": available_models,
+        "weights_status": weights_status,
         "total_features": len(available_models),
         "total_models": sum(len(models) for models in available_models.values()),
     }

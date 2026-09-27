@@ -81,9 +81,6 @@ export const AnimationLeftPanel: React.FC = () => {
 
   const [isSectionOpen, setIsSectionOpen] = useState(true);
   const [samplesCount, setSamplesCount] = useState(1);
-  const [selectedVideoName, setSelectedVideoName] = useState<string | null>(null);
-  const [isExtractingVideo, setIsExtractingVideo] = useState(false);
-  const videoInputRef = useRef<HTMLInputElement>(null);
 
   const characterCount = motionAiPrompt.length;
   const maxChars = 500;
@@ -205,8 +202,6 @@ export const AnimationLeftPanel: React.FC = () => {
             <h2 className="text-xs font-black tracking-wider uppercase text-white truncate">
               {activeMode === 'editing'
                 ? 'Pose & Bone Editor'
-                : activeMode === 'video_to_motion'
-                ? 'Motion from Video'
                 : activeMode === 'retarget'
                 ? 'Skeleton Retargeting'
                 : 'Motion Generation'}
@@ -403,90 +398,6 @@ export const AnimationLeftPanel: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </div>
-          ) : activeMode === 'video_to_motion' ? (
-            /* 2. VIDEO TO MOTION EXTRACTION MODE */
-            <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
-                  <Upload className="w-3.5 h-3.5 text-primary" />
-                  <span>Reference Video</span>
-                </label>
-                <div
-                  onClick={() => videoInputRef.current?.click()}
-                  className="p-6 border-2 border-dashed border-white/[0.12] hover:border-primary/50 bg-[hsl(var(--surface-0))] rounded-xl flex flex-col items-center justify-center text-center cursor-pointer transition-colors"
-                >
-                  <Film className="w-8 h-8 text-primary/80 mb-2" />
-                  <span className="text-xs font-bold text-white">
-                    {selectedVideoName || 'Click or Drag Video to Upload'}
-                  </span>
-                  <span className="text-[10px] text-zinc-400 mt-1">MP4, MOV, WebM (up to 100MB)</span>
-                  <input
-                    ref={videoInputRef}
-                    type="file"
-                    accept="video/mp4,video/quicktime,video/webm"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        setSelectedVideoName(file.name);
-                        toast.success(`Loaded "${file.name}" for motion extraction`);
-                      }
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-zinc-200">Extraction Model</label>
-                <select
-                  defaultValue="densepose"
-                  className="w-full py-2 px-3 bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-primary transition-colors cursor-pointer"
-                >
-                  <option value="densepose">ARDY Video-to-Motion (DensePose 3D)</option>
-                  <option value="mediapipe">MediaPipe + UniRig Armature Filter</option>
-                  <option value="dwpose">DWPose Kinematic Alignment</option>
-                </select>
-              </div>
-
-              <button
-                onClick={() => {
-                  if (!selectedVideoName) {
-                    toast.error('Please upload a reference video first');
-                    return;
-                  }
-                  setIsExtractingVideo(true);
-                  setTimeout(() => {
-                    setIsExtractingVideo(false);
-                    const newClip: AnimationClipItem = {
-                      id: `video-extract-${Date.now()}`,
-                      name: `Extracted from ${selectedVideoName.slice(0, 16)}`,
-                      category: 'Custom',
-                      duration: 3.5,
-                      fps: 24,
-                      keyframesCount: 84,
-                      isBuiltin: false,
-                    };
-                    addAnimation(newClip);
-                    setCurrentAnimationId(newClip.id);
-                    toast.success('Motion extracted from video successfully!');
-                  }, 2500);
-                }}
-                disabled={isExtractingVideo}
-                className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-extrabold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isExtractingVideo ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-black" />
-                    <span>Tracking Video Keypoints...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 fill-current" />
-                    <span>Extract Motion from Video</span>
-                  </>
-                )}
-              </button>
             </div>
           ) : activeMode === 'retarget' ? (
             /* 3. SKELETON RETARGETING MODE */

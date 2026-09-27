@@ -56,6 +56,16 @@ from .routers import (
 
 logger = logging.getLogger(__name__)
 
+
+class PollingEndpointFilter(logging.Filter):
+    """Filter out routine successful polling requests from access logs"""
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not (
+            ("GET /api/v1/system/jobs/" in msg or "GET /health" in msg or "GET /api/v1/system/status" in msg)
+            and (" 200" in msg or " 304" in msg)
+        )
+
 # Global variables for shared resources
 redis_job_queue = None
 auth_service = None
@@ -98,6 +108,7 @@ async def lifespan(app: FastAPI):
 
         # Setup logging
         setup_logging(settings.logging)
+        logging.getLogger("uvicorn.access").addFilter(PollingEndpointFilter())
 
         # Create necessary directories
         # create_directories(settings.storage)
@@ -241,19 +252,36 @@ async def add_process_time_header(request: Request, call_next):
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """Log all requests"""
+    """Log requests with suppression of routine successful status polling"""
     start_time = time.time()
+    path = request.url.path
+    is_poll = path.startswith(("/health", "/api/v1/system/jobs", "/api/v1/system/status"))
 
-    logger.info(f"Request: {request.method} {request.url}")
+    if not is_poll:
+        logger.info(f"Request: {request.method} {request.url}")
 
     response = await call_next(request)
 
     process_time = time.time() - start_time
-    logger.info(
-        f"Response: {response.status_code} - "
-        f"{request.method} {request.url} - "
-        f"Time: {process_time:.3f}s"
-    )
+    if is_poll:
+        if response.status_code >= 400:
+            logger.warning(
+                f"Polling issue: {response.status_code} - "
+                f"{request.method} {path} - "
+                f"Time: {process_time:.3f}s"
+            )
+        else:
+            logger.debug(
+                f"Response: {response.status_code} - "
+                f"{request.method} {path} - "
+                f"Time: {process_time:.3f}s"
+            )
+    else:
+        logger.info(
+            f"Response: {response.status_code} - "
+            f"{request.method} {request.url} - "
+            f"Time: {process_time:.3f}s"
+        )
 
     return response
 

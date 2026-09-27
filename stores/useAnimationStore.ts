@@ -343,7 +343,7 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   setCameraPreset: (cameraPreset) => set({ cameraPreset }),
 
   displayOptions: {
-    showSkeleton: true,
+    showSkeleton: false,
     showGrid: true,
     showGround: true,
     showIKTargets: false,

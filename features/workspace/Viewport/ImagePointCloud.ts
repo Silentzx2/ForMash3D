@@ -472,76 +472,87 @@ export function createFallbackPointCloud(_prompt?: string): THREE.Group {
   const group = new THREE.Group();
   group.name = 'generationPointCloud';
 
+  // 1. Dual Polyhedral Neural Synthesis Core (Icosahedron + Octahedron Lattice)
+  const icoGeo = new THREE.IcosahedronGeometry(0.72, 1);
+  const icoWireMat = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+  });
+  const icoMesh = new THREE.Mesh(icoGeo, icoWireMat);
+  icoMesh.name = 'coreIcoMesh';
+  group.add(icoMesh);
+
+  const octGeo = new THREE.OctahedronGeometry(0.42, 0);
+  const octWireMat = new THREE.MeshBasicMaterial({
+    color: 0xf59e0b,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.85,
+    blending: THREE.AdditiveBlending,
+  });
+  const octMesh = new THREE.Mesh(octGeo, octWireMat);
+  octMesh.name = 'coreOctMesh';
+  group.add(octMesh);
+
+  // 2. Dual Gyroscopic Orbital Rings
+  const ringGeo1 = new THREE.TorusGeometry(1.15, 0.012, 16, 64);
+  const ringMat1 = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.AdditiveBlending,
+  });
+  const orbitalRing1 = new THREE.Mesh(ringGeo1, ringMat1);
+  orbitalRing1.name = 'orbitalRing1';
+  orbitalRing1.rotation.x = Math.PI / 4;
+  group.add(orbitalRing1);
+
+  const ringGeo2 = new THREE.TorusGeometry(1.35, 0.012, 16, 64);
+  const ringMat2 = new THREE.MeshBasicMaterial({
+    color: 0xf59e0b,
+    transparent: true,
+    opacity: 0.45,
+    blending: THREE.AdditiveBlending,
+  });
+  const orbitalRing2 = new THREE.Mesh(ringGeo2, ringMat2);
+  orbitalRing2.name = 'orbitalRing2';
+  orbitalRing2.rotation.y = Math.PI / 3;
+  group.add(orbitalRing2);
+
+  // 3. Ambient Neural Particle Nebula
+  const particleCount = 420;
   const positions: number[] = [];
   const colors: number[] = [];
-  const wireframePositions: number[] = [];
-  const totalPoints = 5600;
+  for (let i = 0; i < particleCount; i++) {
+    const u = Math.random();
+    const v = Math.random();
+    const theta = u * 2.0 * Math.PI;
+    const phi = Math.acos(2.0 * v - 1.0);
+    const r = 0.5 + Math.random() * 0.95;
+    const px = r * Math.sin(phi) * Math.cos(theta);
+    const py = r * Math.sin(phi) * Math.sin(theta);
+    const pz = r * Math.cos(phi);
 
-  // Generate a volumetric 3D humanoid / creature silhouette in 360°
-  for (let i = 0; i < totalPoints; i++) {
-    const section = Math.random();
-    let x = 0, y = 0, z = 0;
-    let r = 0.9, g = 0.85, b = 0.45;
-
-    if (section < 0.25) {
-      // Head (Ellipsoid)
-      const u = Math.random();
-      const v = Math.random();
-      const theta = u * 2 * Math.PI;
-      const phi = Math.acos(2 * v - 1);
-      const rad = Math.cbrt(Math.random()) * 0.35;
-      x = rad * Math.sin(phi) * Math.cos(theta);
-      y = rad * Math.cos(phi) + 0.85;
-      z = rad * Math.sin(phi) * Math.sin(theta);
-      r = 0.98; g = 0.95; b = 0.6;
-    } else if (section < 0.65) {
-      // Torso / Body (3D Cylinder/Taper)
-      const u = Math.random() * 2 * Math.PI;
-      const t = Math.random();
-      y = (t - 0.5) * 1.1 + 0.2;
-      const rad = (0.42 - t * 0.08) * Math.sqrt(Math.random());
-      x = rad * Math.cos(u) * 1.15;
-      z = rad * Math.sin(u) * 0.85;
-      r = 0.92; g = 0.82; b = 0.25;
-    } else {
-      // Limbs / Legs (Dual 3D columns)
-      const isLeft = Math.random() > 0.5;
-      const cx = isLeft ? -0.26 : 0.26;
-      const u = Math.random() * 2 * Math.PI;
-      const t = Math.random();
-      y = -0.35 - t * 0.75;
-      const rad = 0.14 * Math.sqrt(Math.random());
-      x = cx + rad * Math.cos(u);
-      z = rad * Math.sin(u);
-      r = 0.85; g = 0.75; b = 0.35;
-    }
-
-    positions.push(x, y, z);
-    colors.push(r, g, b);
+    positions.push(px, py, pz);
+    // Cyan to warm amber neural energy gradient
+    const mix = Math.random();
+    colors.push(
+      0.22 + mix * 0.74,
+      0.74 + mix * 0.15,
+      0.97 - mix * 0.85
+    );
   }
 
-  // 3D Horizontal Contour Rings
-  const ringHeights = [1.1, 0.85, 0.6, 0.35, 0.1, -0.15, -0.4, -0.7, -1.0];
-  for (let hIdx = 0; hIdx < ringHeights.length; hIdx++) {
-    const ry = ringHeights[hIdx];
-    const segments = 24;
-    const ringRadius = ry > 0.7 ? 0.35 : (ry > -0.3 ? 0.45 : 0.28);
-    for (let s = 0; s < segments; s++) {
-      const theta1 = (s / segments) * Math.PI * 2;
-      const theta2 = ((s + 1) / segments) * Math.PI * 2;
-      wireframePositions.push(ringRadius * Math.cos(theta1), ry, ringRadius * 0.85 * Math.sin(theta1));
-      wireframePositions.push(ringRadius * Math.cos(theta2), ry, ringRadius * 0.85 * Math.sin(theta2));
-    }
-  }
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.center();
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  pGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
   const pTex = getParticleTexture();
-  const material = new THREE.PointsMaterial({
-    size: 0.04,
+  const pMat = new THREE.PointsMaterial({
+    size: 0.045,
     vertexColors: true,
     ...(pTex ? { map: pTex } : {}),
     transparent: true,
@@ -549,44 +560,25 @@ export function createFallbackPointCloud(_prompt?: string): THREE.Group {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   });
+  const pField = new THREE.Points(pGeo, pMat);
+  group.add(pField);
 
-  const points = new THREE.Points(geometry, material);
-  group.add(points);
-
-  const wireGeometry = new THREE.BufferGeometry();
-  wireGeometry.setAttribute('position', new THREE.Float32BufferAttribute(wireframePositions, 3));
-  wireGeometry.center();
-  const wireMaterial = new THREE.LineBasicMaterial({
-    color: 0xebd024,
+  // 4. Holographic Horizontal Laser Scan Ring
+  const scanRingGeo = new THREE.RingGeometry(0.85, 1.45, 48);
+  const scanRingMat = new THREE.MeshBasicMaterial({
+    color: 0x38bdf8,
     transparent: true,
-    opacity: 0.35,
+    opacity: 0.22,
+    side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
   });
-  const wireframe = new THREE.LineSegments(wireGeometry, wireMaterial);
-  group.add(wireframe);
-
-  // Holographic Scan Ring
-  const ringSegments = 40;
-  const ringPositions: number[] = [];
-  const ringRadius = 1.35;
-  for (let i = 0; i <= ringSegments; i++) {
-    const theta = (i / ringSegments) * Math.PI * 2;
-    ringPositions.push(ringRadius * Math.cos(theta), 0, ringRadius * Math.sin(theta));
-  }
-  const scanRingGeo = new THREE.BufferGeometry();
-  scanRingGeo.setAttribute('position', new THREE.Float32BufferAttribute(ringPositions, 3));
-  const scanRingMat = new THREE.LineBasicMaterial({
-    color: 0x60a5fa,
-    transparent: true,
-    opacity: 0.75,
-    blending: THREE.AdditiveBlending,
-  });
-  const scanRing = new THREE.LineLoop(scanRingGeo, scanRingMat);
+  const scanRing = new THREE.Mesh(scanRingGeo, scanRingMat);
   scanRing.name = 'blueprintScanRing';
-  scanRing.position.y = 0.2;
+  scanRing.rotation.x = Math.PI / 2;
+  scanRing.position.y = 0.0;
   group.add(scanRing);
 
-  group.position.y = 0.25;
+  group.position.y = 0.1;
   return group;
 }
 

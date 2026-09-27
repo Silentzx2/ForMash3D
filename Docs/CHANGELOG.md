@@ -9,6 +9,100 @@ All notable changes, architectural updates, and feature implementations for ForM
 
 ## [Unreleased]
 
+### 🎨 Workspace Layout & Studio Controls Polish (2026-09-27)
+- **Edit Panel Zero-Scroll Structure & Sticky Footer (`features/workspace/Panels/MeshEditPanel.tsx`)**:
+  - Restructured `MeshEditPanel` to eliminate excessive scrolling and dead space: transformed the root into `overflow-hidden` with a scrollable content area (`scrollbar-none`) and a dedicated bottom sticky action footer (`ShimmerButton`).
+  - Compacted Input Mesh card (with inline asset picker and file upload triggers), Edit Mode grid (`h-14` compact buttons), 3D Gizmo toggle, and sculpt guidance inputs. The action button (`GENERATE TEXT SCULPT` / `GENERATE IMAGE SCULPT`) is now permanently accessible at the bottom of the viewport.
+- **Fixed Viewport Bottom Overlay Blocking Edit Controls (`features/workspace/Viewport/ViewportToolOverlay.tsx`)**:
+  - Removed the static "Mesh Edit Comparison" bottom card overlay that permanently covered the MeshViewer HUD (camera presets, shading mode, wireframe toggle, and Export button) whenever the Edit tool was active.
+  - The card contained hardcoded dummy data ("VoxHammer", "312,442 verts", "2 minutes 14 seconds") and was not driven by real edit results. Cleaned up associated dead state (`editCompareTab`) and unused imports.
+- **Generate Panel Model Selector Relocation & Sleek Dropdown (`features/workspace/Panels/GeneratePanel.tsx`)**:
+  - Relocated the AI 3D Engine Selector below the reference image / multiview input card, establishing an intuitive top-to-bottom pipeline flow (Reference Image -> AI Engine -> Mesh Settings -> Generate).
+  - Redesigned the model selection dropdown with sleek glassmorphism, crisp badges (`PBR Texture` vs `Raw Mesh`), VRAM specifications, emerald readiness indicators, and responsive contrast.
+- **Restored Low VRAM & PBR Texture Toggles (`features/workspace/Panels/GeneratePanel.tsx`)**:
+  - Re-introduced the **Generate PBR Texture** toggle switch (`generationSettings.generateTexture`) and **Low VRAM Mode** toggle switch (`generationSettings.lowVram`) cleanly inside the AI 3D Engine card.
+  - Updated pre-flight configuration footer badge to dynamically reflect `PBR TEXTURED` vs `GEOMETRY ONLY`.
+  - Preserved user toggle states during generation requests without unconditional overrides.
+- **Right Workspace Panel Inspector Tabs Reorganization (`features/workspace/RightPanel/RightWorkspacePanel.tsx`)**:
+  - Removed the static "Console" tab button from the top navigation bar.
+  - Swapped tab order so **Assets** is now primary, followed by **Properties**.
+  - Retained automated dynamic execution display (`<LiveExecutionPanel />`) with an active `● Running` badge indicator when background tasks are processing.
+
+### 💎 Automatic High-Quality Mesh Pipeline & Studio UI Simplification (2026-09-27)
+- **Root Cause Fix for Low-Quality/Blocky Mesh Generation (`backend/adapters/trellis_adapter.py`, `triposg_adapter.py`)**:
+  - Eliminated hardcoded decimation in Trellis (`simplify = 0.95` which discarded 95% of geometry regardless of requested detail).
+  - Implemented dynamic simplification scale keyed to target polycount (defaulting to 0.05 / 95% geometry retention instead of severe decimations).
+  - Raised default Trellis diffusion steps to `max(20, min(50, num_steps))` and texture map bake resolution to 2048 (with 4096 support in ultra mode).
+  - Bound `target_polycount` dynamically to TripoSG (`faces = target_polycount`).
+- **Workspace Context Default Payload Upgrades (`features/workspace/store/WorkspaceContext.tsx`)**:
+  - Upgraded default mesh quality to `high`, target polycount to `60,000 tris`, and detail preservation to `85%`.
+  - Automatically injected studio parameters (`octree_resolution: 512`, `num_inference_steps: 50`, `guidance_scale: 7.5`, `fix_uvs: true`, `enable_mesh_repair: true`, `texture_resolution: 2048`) into `generateImageTo3D` and `generate3DModel` payloads.
+- **Left Navigation Zero-Scroll Layout Optimization (`LeftNavigation.tsx`)**:
+  - Compacted desktop tool button dimensions to `48×34px`, reduced gaps and margins, and removed vertical scrolling (`overflow-hidden`). All 8 creation tools and 3 workspace views now fit on screen without requiring any scrolling.
+- **Pure Image & Multiview 3D Mesh Generation & Zero-Scroll Fit (`GeneratePanel.tsx`)**:
+  - Removed all prompt-to-mesh generation artifacts: large prompt textarea, AI Enhance button, prompt inspiration presets, quick style chips, 2D sketchpad canvas, and negative prompt inputs.
+  - Simplified input mode switcher to two clear options: **Single Image** and **Multiview Set**.
+  - **Clean AI Model Selector Card**: Added a sleek, high-visibility AI Model Selector featuring active status dot, VRAM requirements, and an instant dropdown to easily switch between verified mesh models (TRELLIS, Hunyuan3D 2.1, TripoSR, TripoSG).
+  - **Slight Size Increase for High Legibility**: Expanded panel container width to `320px/360px`, increased dropzone to `h-24` (with `w-8 h-8` upload icon), enlarged multiview slots to `h-20`, and adjusted fonts and buttons (`text-xs font-bold`) so everything is clear, prominent, and readable.
+  - **Complete Horizontal Scroll Elimination**: Enforced `overflow-x-hidden` across the app shell, tool panel root, and internal containers; truncated long model text labels to ensure zero unwanted horizontal scrollbars.
+  - **Streamlined Mesh Settings**: Reduced the mesh settings panel to strictly **Target Polycount** (15K, 35K, 60K, 100K chips + slider) and **Topology Mode** (▲ Triangles / ■ Clean Quads).
+- **Animation Studio Streamlining (`AnimationStudio.tsx`, `AnimationLeftPanel.tsx`)**:
+  - Retained AI Text-to-Motion generation while completely removing the reference video extraction workflow (`video_to_motion`), eliminating video upload dropzones and keypoint tracking dependencies.
+
+### 🚀 Stability & Model Pipeline Upgrades: TripoSG, TripoSF, Hunyuan3D-2.1, Futuristic 3D HUD & Real Jobs Console (2026-09-27)
+- **TripoSG Diffusers Compatibility (`backend/thirdparty/TripoSG/triposg/pipelines/pipeline_triposg.py`, `pipeline_triposg_scribble.py`)**:
+  - Fixed `ImportError: cannot import name 'FlowMatchEulerDiscreteScheduler' from 'diffusers.schedulers'` on varying Diffusers environments.
+  - Added safe fallback mechanism (`diffusers.schedulers` -> `diffusers` -> `Any`), enabling seamless execution across Diffusers versions.
+- **TripoSF Pre-Ampere GPU Compatibility & SDPA Fallback (`triposf/modules/sparse/attention/windowed_attn.py`, `triposf/modules/sparse/__init__.py`, `triposf_adapter.py`)**:
+  - Fixed `RuntimeError: FlashAttention only supports Ampere GPUs or newer` during TripoSF sparse windowed attention.
+  - Implemented PyTorch native `scaled_dot_product_attention` block-diagonal helpers (`_sdpa_qkvpacked` & `_sdpa_varlen_qkvpacked`) for variable length sparse sequences.
+  - Added hardware compute capability auto-detection (`major < 8`) and safe `try/except` fallback in `windowed_attn.py` and `triposf_adapter.py`.
+- **Hunyuan3D-2.1 Memory Optimization & Linux OOM Crash Fix (`hy3dshape/hy3dshape/pipelines.py`, `hunyuan3d_adapter_v21.py`)**:
+  - Fixed backend crash and HTTP 530 origin error caused by RAM spikes triggering the Linux OOM killer during Hunyuan3D 2.1 loading.
+  - Optimized `from_single_file` checkpoint loading: sequentially popped module weights from `ckpt` dictionary instead of duplicating 8GB weights in CPU RAM, called `del ckpt` and `gc.collect()`.
+  - Enabled `pipeline.enable_model_cpu_offload()` in low-VRAM mode, offloading components between inference steps.
+  - Set default `octree_resolution=256` in shape generation to match official Gradio settings, preventing multi-gigabyte marching cubes memory spikes.
+- **Futuristic 3D Neural Synthesis Core & Complete Blueprint Removal (`ImagePointCloud.ts`, `MeshViewer.tsx`)**:
+  - Removed the fake humanoid / monster silhouette and concentric wireframe rings completely from the codebase.
+  - Replaced it with a sleek, futuristic 3D Holographic AI Neural Synthesis Core (dual rotating polyhedral lattice with icosahedron/octahedron, dual gyroscopic orbital rings, luminous ambient particle swarm, and horizontal scanning plane).
+  - Ensured `skeletonHelperRef.current.visible = false` and existing meshes are hidden during generation, eliminating unwanted armature artifacts.
+  - Replaced basic progress text with a high-tech glassmorphic HUD card featuring glowing pulse indicators, model badge, dynamic progress bar, and cancellation support.
+- **Real Backend Data Binding for Jobs Console (`JobDetailView.tsx`)**:
+  - Completely removed hardcoded mock data (`PartField`, `knight_character.glb`, `8F42A1`).
+  - Integrated real live jobs queue and history from `GET /api/v1/system/jobs/history` with search and status filtering (`all`, `running`, `completed`, `failed`).
+  - Added full live detail inspection from `GET /api/v1/system/jobs/{job_id}`, including real parameters, timestamps, error diagnostics, input image preview, direct GLB download, and "Load into Viewport" button.
+- **Model Selector Formatting & Available Weights Filter (`system.py`, `GeneratePanel.tsx`)**:
+  - Added `weights_status` map to `GET /api/v1/system/models`, verifying local file existence in `pretrained/` and on-demand HuggingFace hub availability.
+  - Formatted model labels cleanly into clear names without repetitive technical suffixes (e.g. "TRELLIS (PBR Textured Mesh)", "TripoSR (Ultra-Fast Geometry)", "Hunyuan3D 2.1 (PBR Production Mesh)").
+  - Added logic in `GeneratePanel.tsx` to automatically filter the model selector to models with verified available weights.
+
+### 🐛 Runtime Bug Fixes: Pre-Ampere Attention, Viewport Placeholders, Mesh Orientation & Live Progress (2026-09-27)
+- **Bug 1: TRELLIS FlashAttention Pre-Ampere GPU Compatibility**:
+  - Fixed `RuntimeError: FlashAttention only supports Ampere GPUs or newer` on Turing/Volta/Pascal GPUs (e.g. Google Colab Tesla T4, V100, RTX 2080).
+  - Added hardware compute capability auto-detection in `trellis/modules/attention/__init__.py` and `trellis_adapter.py` that gracefully routes pre-Ampere GPUs (compute capability < 8.0) to native PyTorch `sdpa`.
+  - Added safe runtime `try/except` fallback to `torch.nn.functional.scaled_dot_product_attention` in `trellis/modules/attention/full_attn.py` so model inference never crashes on older GPU architectures.
+- **Bug 2: Removal of All Unwanted Viewport Placeholders**:
+  - Removed procedural cyber drone sphere and dodecahedron models (`coreGeo = new THREE.SphereGeometry` / `baseGeo = new THREE.DodecahedronGeometry`) in `features/workspace/Viewport/MeshViewer.tsx` that previously appeared as a dark ball mesh before generation.
+  - Set default `showSkeleton: false` in `stores/useAnimationStore.ts` and restricted `isRiggingActive` in `MeshViewer.tsx` to explicitly require active rigging/animation mode, completely eliminating the standing skeleton armature overlay from the standard 3D studio.
+- **Bug 3: Upright Mesh Orientation & GPU Progress Bar**:
+  - Fixed horizontal/lying-down mesh generation in `backend/adapters/triposr_adapter.py` by applying `to_gradio_3d_orientation(mesh)`, rotating extracted meshes from NeRF coordinates to standard upright Y-up / 3D space.
+  - Implemented dynamic progress and stage estimation in `backend/core/scheduler/redis_job_queue.py` and `job_queue.py` (`loading_model` at 25% -> `generating` at 50-85% -> `completed` at 100%).
+  - Enhanced the 3D Generation & GPU Loading progress overlay in `MeshViewer.tsx` with live stage text, animated pulse indicator, and percentage tracking.
+
+### 📜 Logging Overhaul & High-Frequency Polling De-Spamming (2026-09-27)
+- **Class-Level Model Discovery Cache (`backend/api/dependencies.py`)**:
+  - Cached `_cached_model_registry` and `_cached_model_features` across `SchedulerAdapter` instances.
+  - Eliminated repeating `Loaded 23 models from settings for multi-worker mode` log spam and redundant YAML re-parsing on every 2-second client status poll.
+- **Polling Log Noise Suppression & Uvicorn Log Filtering (`backend/api/main_multiworker.py`, `backend/api/main_singleworker.py`)**:
+  - Added `PollingEndpointFilter` to the `uvicorn.access` logger to suppress routine `200 OK` access lines for `/api/v1/system/jobs/*`, `/health`, and `/api/v1/system/status`.
+  - Updated `log_requests` HTTP middleware to route successful polling requests (<400) to `DEBUG` level while keeping non-200 anomalies at `WARNING` and all standard mutation requests at `INFO`.
+- **Multiprocess Worker Logging & Traceback Capture (`backend/core/scheduler/multiprocess_scheduler.py`)**:
+  - Re-initialized logging via `setup_logging(worker_settings.logging)` inside spawned worker processes (`model_worker_process`), ensuring child processes properly direct GPU loading and execution logs to `logs/app.log`, `logs/scheduler.log`, and `logs/error.log`.
+  - Replaced repetitive dumps of large raw `result` dictionaries with concise, structured status indicators (`[GENERATION START]`, `[GENERATION SUCCESS]`, `[GENERATION FAILED]`, and `[JOB COMPLETE]`).
+- **BaseModel Telemetry & Full Error Context (`backend/core/models/base.py`)**:
+  - Added millisecond-accurate timing and structured log banners (`[GPU LOAD START]`, `[GPU LOAD SUCCESS]`, `[GPU LOAD FAILED]`, `[MODEL INFERENCE START]`, `[MODEL INFERENCE SUCCESS]`) in `load()`, `unload()`, and `process()`.
+  - Attached `exc_info=True` to all model loading and inference failure handlers so the full Python traceback is recorded in `logs/error.log` without loss.
+
 ### ⚡ Production-Ready Performance Optimization & Bundle Acceleration (2026-09-27)
 - **Zero-Layout-Shift Native Font Optimization**:
   - Replaced runtime DOM font injection (`components/GoogleFonts.tsx`) with Next.js built-in `next/font/google` (`Inter` and `JetBrains_Mono`) with `display: 'swap'` and CSS variables (`--font-inter`, `--font-mono`).

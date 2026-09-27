@@ -30,9 +30,37 @@ from .. import DEBUG, ATTN
 if ATTN == 'xformers':
     import xformers.ops as xops
 elif ATTN == 'flash_attn':
-    import flash_attn
+    try:
+        import flash_attn
+    except ImportError:
+        flash_attn = None
+elif ATTN == 'sdpa':
+    pass
 else:
     raise ValueError(f"Unknown attention module: {ATTN}")
+
+def _sdpa_qkvpacked(qkv_feats):
+    # qkv_feats: [B, N, 3, H, C]
+    q, k, v = qkv_feats.unbind(dim=2)
+    q = q.transpose(1, 2)
+    k = k.transpose(1, 2)
+    v = v.transpose(1, 2)
+    out = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+    return out.transpose(1, 2)
+
+def _sdpa_varlen_qkvpacked(qkv_feats, seq_lens):
+    # qkv_feats: [M, 3, H, C]
+    splits = torch.split(qkv_feats, seq_lens, dim=0)
+    outs = []
+    for chunk in splits:
+        q, k, v = chunk.unbind(dim=1)
+        q = q.transpose(0, 1).unsqueeze(0)
+        k = k.transpose(0, 1).unsqueeze(0)
+        v = v.transpose(0, 1).unsqueeze(0)
+        o = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+        o = o.squeeze(0).transpose(0, 1)
+        outs.append(o)
+    return torch.cat(outs, dim=0)
 
 
 __all__ = [
@@ -132,7 +160,17 @@ def sparse_windowed_scaled_dot_product_self_attention(
             q, k, v = qkv_feats.unbind(dim=2)                       # [B, N, H, C]
             out = xops.memory_efficient_attention(q, k, v)          # [B, N, H, C]
         elif ATTN == 'flash_attn':
-            out = flash_attn.flash_attn_qkvpacked_func(qkv_feats)   # [B, N, H, C]
+            try:
+                if flash_attn is None:
+                    raise RuntimeError("flash_attn not installed")
+                out = flash_attn.flash_attn_qkvpacked_func(qkv_feats)   # [B, N, H, C]
+            except (RuntimeError, Exception) as e:
+                if "Ampere" in str(e) or "not supported" in str(e) or flash_attn is None:
+                    out = _sdpa_qkvpacked(qkv_feats)
+                else:
+                    raise
+        elif ATTN == 'sdpa':
+            out = _sdpa_qkvpacked(qkv_feats)
         else:
             raise ValueError(f"Unknown attention module: {ATTN}")
         out = out.reshape(B * N, H, C)                              # [M, H, C]
@@ -145,9 +183,21 @@ def sparse_windowed_scaled_dot_product_self_attention(
             mask = xops.fmha.BlockDiagonalMask.from_seqlens(seq_lens)
             out = xops.memory_efficient_attention(q, k, v, mask)[0] # [M, H, C]
         elif ATTN == 'flash_attn':
-            cu_seqlens = torch.cat([torch.tensor([0]), torch.cumsum(torch.tensor(seq_lens), dim=0)], dim=0) \
-                        .to(qkv.device).int()
-            out = flash_attn.flash_attn_varlen_qkvpacked_func(qkv_feats, cu_seqlens, max(seq_lens)) # [M, H, C]
+            try:
+                if flash_attn is None:
+                    raise RuntimeError("flash_attn not installed")
+                cu_seqlens = torch.cat([torch.tensor([0]), torch.cumsum(torch.tensor(seq_lens), dim=0)], dim=0) \
+                            .to(qkv.device).int()
+                out = flash_attn.flash_attn_varlen_qkvpacked_func(qkv_feats, cu_seqlens, max(seq_lens)) # [M, H, C]
+            except (RuntimeError, Exception) as e:
+                if "Ampere" in str(e) or "not supported" in str(e) or flash_attn is None:
+                    out = _sdpa_varlen_qkvpacked(qkv_feats, seq_lens)
+                else:
+                    raise
+        elif ATTN == 'sdpa':
+            out = _sdpa_varlen_qkvpacked(qkv_feats, seq_lens)
+        else:
+            raise ValueError(f"Unknown attention module: {ATTN}")
 
     out = out[bwd_indices]      # [T, H, C]
 

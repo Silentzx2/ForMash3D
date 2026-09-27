@@ -210,7 +210,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             seed = int(inputs.get("seed", 42))
             steps = int(inputs.get("num_inference_steps", self.num_inference_steps))
             guidance = float(inputs.get("guidance_scale", self.guidance_scale))
-            faces = int(inputs.get("faces", -1))
+            faces = int(inputs.get("target_polycount", inputs.get("faces", -1)))
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
 

@@ -590,6 +590,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     executionProgress,
     executionStep,
     cancelExecution,
+    activeTask,
     generationSettings,
     textureSettings,
     activeTool,
@@ -865,7 +866,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   useEffect(() => {
     if (skeletonHelperRef.current) {
       skeletonHelperRef.current.visible =
-        animActiveMode === 'rigging' || animInspectorTab === 'rigging' || animDisplayOptions.showSkeleton;
+        (animActiveMode === 'rigging' || animInspectorTab === 'rigging') && animDisplayOptions.showSkeleton;
     }
     if (gridHelperRef.current) {
       gridHelperRef.current.visible = (animActiveMode === 'rigging' || animInspectorTab === 'rigging')
@@ -1078,8 +1079,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     rigGroup.clear();
 
     const isRiggingActive =
-      animActiveMode === 'rigging' ||
-      animInspectorTab === 'rigging' ||
+      (animActiveMode === 'rigging' || animInspectorTab === 'rigging') &&
       animDisplayOptions.showSkeleton;
 
     rigGroup.visible = isRiggingActive;
@@ -1593,11 +1593,25 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
       const pointCloudActive = Boolean(pointCloudGroup && pointCloudGroup.visible && pointCloudGroup.children.length > 0);
       if (pointCloudActive) {
-        pointCloudGroup.rotation.y += delta * 0.28;
+        const t = timer.getElapsed();
+        pointCloudGroup.rotation.y += delta * 0.35;
+        const ring1 = pointCloudGroup.getObjectByName('orbitalRing1');
+        if (ring1) ring1.rotation.z += delta * 0.75;
+        const ring2 = pointCloudGroup.getObjectByName('orbitalRing2');
+        if (ring2) ring2.rotation.y += delta * 0.55;
+        const ico = pointCloudGroup.getObjectByName('coreIcoMesh');
+        if (ico) {
+          ico.rotation.x += delta * 0.45;
+          ico.rotation.y += delta * 0.35;
+        }
+        const oct = pointCloudGroup.getObjectByName('coreOctMesh');
+        if (oct) {
+          oct.rotation.y -= delta * 0.7;
+          oct.rotation.z += delta * 0.4;
+        }
         const scanRing = pointCloudGroup.getObjectByName('blueprintScanRing');
         if (scanRing) {
-          const t = timer.getElapsed();
-          scanRing.position.y = Math.sin(t * 1.6) * 1.1 + 0.25;
+          scanRing.position.y = Math.sin(t * 1.6) * 0.75;
         }
       }
 
@@ -1711,13 +1725,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       return;
     }
 
-    // Hide real mesh group while generation point cloud is displayed
+    // Hide real mesh group and any skeleton helpers while generation is active
     if (meshGroup) {
       meshGroup.visible = false;
     }
+    if (skeletonHelperRef.current) {
+      skeletonHelperRef.current.visible = false;
+    }
 
     let isMounted = true;
-    const refImage = generationSettings?.image || textureSettings?.referenceImage;
 
     const buildPoints = async () => {
       if (pointCloudRef.current) {
@@ -1726,16 +1742,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         pointCloudRef.current = null;
       }
 
-      let points: THREE.Object3D;
-      if (refImage) {
-        try {
-          points = await createPointCloudFromImage(refImage);
-        } catch {
-          points = createFallbackPointCloud();
-        }
-      } else {
-        points = createFallbackPointCloud();
-      }
+      // Sleek AI Neural Holographic Core
+      const points = createFallbackPointCloud();
 
       if (!isMounted) {
         disposePointCloud(points);
@@ -1787,73 +1795,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
 
     if (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl) {
-      if (currentAsset) {
-        // Procedural high-detail 3D hero model for sample & generated assets without remote URLs
-        const modelGroup = new THREE.Group();
-        const isDrone = currentAsset.id.includes('drone') || currentAsset.name.toLowerCase().includes('drone');
-
-        if (isDrone) {
-          // Cyber Drone Scout
-          const coreGeo = new THREE.SphereGeometry(0.75, 32, 24);
-          const coreMat = new THREE.MeshStandardMaterial({
-            color: 0x222630,
-            metalness: 0.85,
-            roughness: 0.2,
-          });
-          const coreMesh = new THREE.Mesh(coreGeo, coreMat);
-          coreMesh.castShadow = true;
-          coreMesh.receiveShadow = true;
-          modelGroup.add(coreMesh);
-
-          const ringGeo = new THREE.TorusGeometry(1.2, 0.07, 16, 64);
-          const ringMat = new THREE.MeshStandardMaterial({
-            color: 0xF5C542,
-            metalness: 0.9,
-            roughness: 0.15,
-          });
-          const ringMesh = new THREE.Mesh(ringGeo, ringMat);
-          ringMesh.rotation.x = Math.PI / 2;
-          ringMesh.castShadow = true;
-          modelGroup.add(ringMesh);
-
-          for (let i = 0; i < 4; i++) {
-            const angle = (i * Math.PI) / 2 + Math.PI / 4;
-            const podGeo = new THREE.CylinderGeometry(0.12, 0.18, 0.45, 16);
-            const podMat = new THREE.MeshStandardMaterial({ color: 0x3d4454, metalness: 0.7, roughness: 0.3 });
-            const podMesh = new THREE.Mesh(podGeo, podMat);
-            podMesh.position.set(Math.cos(angle) * 1.1, 0.1, Math.sin(angle) * 1.1);
-            podMesh.castShadow = true;
-            modelGroup.add(podMesh);
-          }
-        } else {
-          // Mech Sentinel Compound Sculpt
-          const baseGeo = new THREE.DodecahedronGeometry(0.85, 1);
-          const baseMat = new THREE.MeshStandardMaterial({
-            color: 0x272b36,
-            metalness: 0.8,
-            roughness: 0.25,
-          });
-          const baseMesh = new THREE.Mesh(baseGeo, baseMat);
-          baseMesh.castShadow = true;
-          baseMesh.receiveShadow = true;
-          modelGroup.add(baseMesh);
-
-          const accentGeo = new THREE.TorusKnotGeometry(0.48, 0.12, 64, 16, 2, 3);
-          const accentMat = new THREE.MeshStandardMaterial({
-            color: 0xF5C542,
-            metalness: 0.85,
-            roughness: 0.15,
-          });
-          const accentMesh = new THREE.Mesh(accentGeo, accentMat);
-          accentMesh.position.y = 0.05;
-          accentMesh.castShadow = true;
-          modelGroup.add(accentMesh);
-        }
-
-        group.add(modelGroup);
-        frameCamera(modelGroup);
-        computeMeshStats(modelGroup);
-      }
       setIsLoading(false);
       return;
     }
@@ -2606,34 +2547,53 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         </div>
       )}
 
-      {/* Clean Minimalist 3D Generation Progress Overlay */}
-      {(isExecuting || debugBlueprint) && (
-        <div className="absolute bottom-16 sm:bottom-20 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center pointer-events-auto max-w-sm w-full px-4 text-center select-none animate-in fade-in duration-200">
-          <div className="flex items-center justify-between w-full mb-1.5 px-1 text-xs">
-            <span className="font-semibold text-zinc-200 truncate pr-2">
-              {isExecuting ? (executionStep || 'Synthesizing 3D mesh...') : 'Preview mode'}
-            </span>
-            <span className="font-mono font-bold text-primary flex-shrink-0">
-              {Math.round(isExecuting ? (executionProgress || 15) : 48)}%
-            </span>
-          </div>
+      {/* Futuristic Glassmorphic 3D Generation & GPU Loading Progress Overlay */}
+      {(isExecuting || debugBlueprint || activeTask?.status === 'running' || activeTask?.status === 'queued') && (
+        <div className="absolute bottom-14 sm:bottom-18 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center pointer-events-auto max-w-md w-full px-4 text-center select-none animate-in fade-in zoom-in-95 duration-300">
+          <div className="w-full bg-[hsl(var(--surface-1))]/90 backdrop-blur-xl border border-white/[0.12] rounded-2xl p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.65)] space-y-2">
+            <div className="flex items-center justify-between text-xs border-b border-white/[0.06] pb-2">
+              <span className="flex items-center gap-2 font-bold text-white text-[11px] tracking-wide uppercase">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
+                </span>
+                <span>AI Neural Synthesis</span>
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-zinc-300 font-mono">
+                {activeTask?.provider || generationSettings.aiModel || '3D Engine'}
+              </span>
+            </div>
 
-          {/* Minimalist Slim Progress Bar */}
-          <div className="w-full h-1.5 rounded-full bg-zinc-900/90 border border-white/[0.08] overflow-hidden mb-2 shadow-sm backdrop-blur-sm">
-            <div 
-              className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${Math.max(4, Math.min(100, isExecuting ? (executionProgress || 15) : 48))}%` }}
-            />
-          </div>
+            <div className="flex items-center justify-between text-xs px-0.5">
+              <span className="text-zinc-200 truncate pr-2 text-left text-[11px] font-medium flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-primary flex-shrink-0 animate-pulse" />
+                <span className="truncate">{executionStep || activeTask?.currentStep || 'Synthesizing 3D mesh representation...'}</span>
+              </span>
+              <span className="font-mono font-black text-xs text-primary flex-shrink-0">
+                {Math.round(executionProgress || activeTask?.progress || 15)}%
+              </span>
+            </div>
 
-          <div className="flex items-center justify-between w-full px-1 text-[11px] text-zinc-400">
-            <span>Orbit with mouse to inspect</span>
-            <button
-              onClick={isExecuting ? cancelExecution : () => setDebugBlueprint(false)}
-              className="text-zinc-500 hover:text-rose-400 transition-colors cursor-pointer"
-            >
-              {isExecuting ? 'Cancel' : 'Close'}
-            </button>
+            {/* Glowing Gradient Progress Bar */}
+            <div className="w-full h-2 rounded-full bg-black/60 border border-white/[0.08] overflow-hidden shadow-inner">
+              <div 
+                className="h-full bg-gradient-to-r from-amber-400 via-primary to-emerald-400 rounded-full transition-all duration-300 ease-out shadow-[0_0_12px_rgba(255,204,0,0.5)]"
+                style={{ width: `${Math.max(6, Math.min(100, executionProgress || activeTask?.progress || 15))}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-zinc-400 px-0.5 pt-0.5">
+              <span className="flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span>GPU Acceleration Active</span>
+              </span>
+              <button
+                onClick={isExecuting ? cancelExecution : () => setDebugBlueprint(false)}
+                className="text-zinc-500 hover:text-rose-400 font-medium transition-colors cursor-pointer"
+              >
+                {isExecuting ? 'Cancel Generation' : 'Dismiss'}
+              </button>
+            </div>
           </div>
         </div>
       )}

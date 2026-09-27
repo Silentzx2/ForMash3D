@@ -44,8 +44,17 @@ def __from_env():
         BACKEND = env_sparse_backend
     if env_sparse_debug is not None:
         DEBUG = env_sparse_debug == '1'
-    if env_sparse_attn is not None and env_sparse_attn in ['xformers', 'flash_attn']:
+    if env_sparse_attn is not None and env_sparse_attn in ['xformers', 'flash_attn', 'sdpa']:
         ATTN = env_sparse_attn
+    else:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                major, _ = torch.cuda.get_device_capability()
+                if major < 8:
+                    ATTN = 'sdpa'
+        except Exception:
+            pass
         
     print(f"[SPARSE] Backend: {BACKEND}, Attention: {ATTN}")
         

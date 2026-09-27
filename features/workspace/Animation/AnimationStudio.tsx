@@ -9,7 +9,6 @@ import {
   Sparkles,
   Layers,
   Film,
-  Video,
   Edit3,
   GitBranch,
   FolderOpen,
@@ -59,7 +58,6 @@ export const AnimationStudio: React.FC = () => {
 
   const modePills = [
     { id: 'text_to_motion', label: 'Text to Motion' },
-    { id: 'video_to_motion', label: 'Motion from Video' },
     { id: 'editing', label: 'Motion Editing' },
     { id: 'retarget', label: 'Retarget / Apply' },
     { id: 'library', label: 'Motion Library' },

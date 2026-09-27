@@ -18,18 +18,29 @@ class SchedulerAdapter:
     In multi-worker mode: wraps the Redis job queue and loads model info from settings
     """
     
+    _cached_model_registry: Optional[Dict[str, Any]] = None
+    _cached_model_features: Optional[Dict[str, Any]] = None
+
     def __init__(self, scheduler=None, job_queue=None, settings=None):
         self._scheduler = scheduler
         self._job_queue = job_queue
         self._settings = settings or get_settings()
         self._mode = "single_worker" if scheduler else "multi_worker"
         
-        # In multi-worker mode, build model registry from settings
-        self._model_features = {}  # feature -> [model_ids]
-        self._model_registry = {}  # model_id -> config
-        
+        # In multi-worker mode, build or reuse model registry from settings
         if not scheduler and settings:
-            self._load_model_info_from_settings()
+            if SchedulerAdapter._cached_model_registry is not None:
+                self._model_registry = SchedulerAdapter._cached_model_registry
+                self._model_features = SchedulerAdapter._cached_model_features
+            else:
+                self._model_features = {}  # feature -> [model_ids]
+                self._model_registry = {}  # model_id -> config
+                self._load_model_info_from_settings()
+                SchedulerAdapter._cached_model_registry = self._model_registry
+                SchedulerAdapter._cached_model_features = self._model_features
+        else:
+            self._model_features = {}
+            self._model_registry = {}
     
     def _load_model_info_from_settings(self):
         """Load model information from settings (for multi-worker mode)"""

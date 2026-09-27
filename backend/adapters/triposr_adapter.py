@@ -172,7 +172,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
             # Preprocess image
-            from tsr.utils import remove_background, resize_foreground
+            from tsr.utils import remove_background, resize_foreground, to_gradio_3d_orientation
 
             raw_image = Image.open(image_path).convert("RGB")
             if no_remove_bg:
@@ -207,6 +207,15 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             mesh = meshes[0]
+            # Rotate from TripoSR NeRF space to standard upright Y-up / 3D space
+            try:
+                mesh = to_gradio_3d_orientation(mesh)
+            except Exception as orient_err:
+                logger.warning(f"to_gradio_3d_orientation failed ({orient_err}), falling back to trimesh rotation")
+                import trimesh.transformations
+                mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
+                mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+
             texture_requested = bake_texture
             texture_bake_succeeded = False
 

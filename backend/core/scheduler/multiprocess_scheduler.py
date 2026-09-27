@@ -121,6 +121,11 @@ def model_worker_process(
     gpu_id = worker_config.gpu_id
 
     try:
+        # Re-initialize logging in spawned worker process so logs are routed to logs/*.log files
+        from core.config import get_settings, setup_logging
+        worker_settings = get_settings()
+        setup_logging(worker_settings.logging)
+
         # Set up process environment
         logger.info(f"Starting worker process {worker_id} on GPU {gpu_id}")
         # At the very beginning we try to login huggingface for the download of some special models
@@ -228,15 +233,13 @@ def model_worker_process(
                         processing_job,
                         gpu_id,
                     )
+                    status_str = "SUCCESS" if result.get("success") else "FAILED"
                     logger.info(
-                        f"Worker {worker_id} processed job {job_request.job_id}, result: {result}"
+                        f"Worker {worker_id} finished job {job_request.job_id} [status={status_str}]"
                     )
 
                     # Send result back
                     response_queue.put((result_callback_id, result))
-                    logger.info(
-                        f"Worker {worker_id} sent result for job {job_request.job_id}"
-                    )
 
                 except queue.Empty:
                     continue
@@ -398,10 +401,15 @@ def _process_job_in_worker(
 
         # Mark as processing
         processing_job = job_id
+        start_time = time.time()
+        logger.info(f"[GENERATION START] job_id={job_id} model={model_id} feature={job_request.feature}")
 
         # Process job with inference mode for zero autograd tracking overhead
         with torch.inference_mode():
             result = loaded_model._process_request(job_request.inputs)
+
+        elapsed = time.time() - start_time
+        logger.info(f"[GENERATION SUCCESS] job_id={job_id} model={model_id} elapsed={elapsed:.2f}s")
 
         return (
             {
@@ -417,7 +425,7 @@ def _process_job_in_worker(
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
-        logger.error(f"❌ Error processing job {job_request.job_id} on model {model_config.get('model_id')}:\n{tb}")
+        logger.error(f"[GENERATION FAILED] job_id={job_request.job_id} model={model_config.get('model_id')}: {e}\n{tb}")
         return (
             {"success": False, "error": f"{str(e)}\n{tb}", "job_id": job_request.job_id},
             loaded_model,
@@ -980,17 +988,16 @@ class MultiprocessModelScheduler:
     async def _handle_job_result(self, job_id: str, result_future: asyncio.Future):
         """Handle job result asynchronously without blocking the main processing loop"""
         try:
-            logger.info(f"Waiting for result for job {job_id}")
             result = await asyncio.wait_for(result_future, timeout=600.0)
-            logger.info(f"Received result for job {job_id}: {result}")
 
             # Update job status through JobQueue
             if result.get("success"):
                 await self.job_queue.complete_job(job_id, result.get("result"))
-                logger.info(f"Job {job_id} completed successfully")
+                logger.info(f"[JOB COMPLETE] job_id={job_id} status=success")
             else:
-                await self.job_queue.fail_job(job_id, result.get("error", "Unknown error"))
-                logger.info(f"Job {job_id} failed: {result.get('error')}")
+                err_msg = result.get("error", "Unknown error")
+                await self.job_queue.fail_job(job_id, err_msg)
+                logger.error(f"[JOB FAILED] job_id={job_id} error={err_msg}")
 
         except asyncio.TimeoutError:
             logger.error(f"Job {job_id} timed out waiting for worker result (600s)")
@@ -1424,8 +1431,9 @@ class MultiprocessModelScheduler:
                 for worker_id, response_queue in self.worker_response_queues.items():
                     try:
                         callback_id, result = response_queue.get_nowait()
+                        success = bool(result.get("success")) if isinstance(result, dict) else False
                         logger.info(
-                            f"Received response from worker {worker_id}: callback_id={callback_id}, result={result}"
+                            f"Worker {worker_id} response received: callback_id={callback_id} success={success}"
                         )
 
                         # Find corresponding future and mark worker as available
@@ -1435,7 +1443,7 @@ class MultiprocessModelScheduler:
 
                                 # Mark worker as available again
                                 self._mark_worker_available(worker_id)
-                                logger.info(f"Marked worker {worker_id} as available")
+                                logger.debug(f"Marked worker {worker_id} as available")
 
                                 # Set result in event loop
                                 if self.main_event_loop and not future.done():
@@ -1443,7 +1451,7 @@ class MultiprocessModelScheduler:
                                         self.main_event_loop.call_soon_threadsafe(
                                             future.set_result, result
                                         )
-                                        logger.info(
+                                        logger.debug(
                                             f"Set future result for callback {callback_id}"
                                         )
                                     except asyncio.InvalidStateError:

@@ -417,11 +417,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     mode: 'image-to-3d',
     image: null,
     aiModel: '', meshQuality: 'high', textureQuality: 'high',
-    quadTopology: false, topologyMode: 'adaptive', seed: 42891, guidanceScale: 7.5, removeBackground: true,
+    quadTopology: false, topologyMode: 'triangle', seed: 42891, guidanceScale: 7.5, removeBackground: true,
     lowVram: false,
     vramMode: 'auto',
     autoOptimize: true,
-    autoOptimizeSettings: { targetPolycount: 60000, fixUVs: true, preserveDetails: 75 },
+    autoOptimizeSettings: { targetPolycount: 60000, fixUVs: true, preserveDetails: 85 },
     generateTexture: true,
     detailPass: false,
     triposfPass: false,
@@ -878,9 +878,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName);
 
     const currentQuality = generationSettings.meshQuality || 'high';
-    const octreeRes = { low: 256, medium: 384, high: 512, ultra: 640 }[currentQuality];
-    const infSteps = { low: 20, medium: 35, high: 50, ultra: 75 }[currentQuality];
-    const infGuidance = generationSettings.guidanceScale ?? { low: 4.5, medium: 5.5, high: 7.0, ultra: 8.0 }[currentQuality];
+    // Studio Ultra-HD pipeline: auto-tune to high-resolution voxel grid and diffusion steps
+    const octreeRes = currentQuality === 'ultra' ? 640 : 512;
+    const infSteps = currentQuality === 'ultra' ? 75 : 50;
+    const infGuidance = generationSettings.guidanceScale ?? 7.5;
 
     try {
       // Route dynamically: raw models (Hunyuan3D Raw, PartPacker, UltraShape) must go to image-to-raw-mesh
@@ -905,18 +906,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         throw new Error('No usable image input. Please upload an image first.');
       }
 
+      const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 60000;
       const modelParameters: Record<string, unknown> = {
         octree_resolution: octreeRes,
         num_inference_steps: infSteps,
         guidance_scale: infGuidance,
         seed: generationSettings.seed ?? undefined,
         low_vram: Boolean(generationSettings.lowVram),
-        auto_optimize: Boolean(generationSettings.autoOptimize),
-        target_polycount: generationSettings.autoOptimizeSettings?.targetPolycount ?? 30000,
-        fix_uvs: generationSettings.autoOptimizeSettings?.fixUVs ?? true,
-        preserve_details: generationSettings.preserveDetails ?? generationSettings.autoOptimizeSettings?.preserveDetails ?? 75,
-        repair_uvs: generationSettings.repairUVs !== false,
-        topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'adaptive'),
+        auto_optimize: true,
+        target_polycount: targetPoly,
+        fix_uvs: true,
+        preserve_details: generationSettings.autoOptimizeSettings?.preserveDetails ?? 85,
+        repair_uvs: true,
+        topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
         detail_pass: Boolean(generationSettings.detailPass),
         detail_guidance: generationSettings.detailGuidance ?? 7.5,
         triposf_pass: Boolean(generationSettings.triposfPass),
@@ -938,7 +940,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
 
       if (isTextured) {
-        body.texture_resolution = { low: 1024, medium: 1024, high: 2048, ultra: 4096 }[currentQuality];
+        body.texture_resolution = currentQuality === 'ultra' ? 4096 : 2048;
       }
 
       const res = await fetch(endpoint, {
@@ -1010,9 +1012,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
 
       const currentQuality = generationSettings.meshQuality || 'high';
-      const octreeRes = { low: 256, medium: 384, high: 512, ultra: 640 }[currentQuality];
-      const infSteps = { low: 20, medium: 35, high: 50, ultra: 75 }[currentQuality];
-      const infGuidance = generationSettings.guidanceScale ?? { low: 4.5, medium: 5.5, high: 7.0, ultra: 8.0 }[currentQuality];
+      const octreeRes = currentQuality === 'ultra' ? 640 : 512;
+      const infSteps = currentQuality === 'ultra' ? 75 : 50;
+      const infGuidance = generationSettings.guidanceScale ?? 7.5;
 
       try {
         // ponytail: map UI generation settings to the real 3DAIGC-API contract.
@@ -1025,18 +1027,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         const endpoint = '/api/v1/mesh-generation/text-to-textured-mesh';
 
+        const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 60000;
         const modelParameters: Record<string, unknown> = {
           octree_resolution: octreeRes,
           num_inference_steps: infSteps,
           guidance_scale: infGuidance,
           seed: generationSettings.seed ?? undefined,
           low_vram: Boolean(generationSettings.lowVram),
-          auto_optimize: Boolean(generationSettings.autoOptimize),
-          target_polycount: generationSettings.autoOptimizeSettings?.targetPolycount ?? 30000,
-          fix_uvs: generationSettings.autoOptimizeSettings?.fixUVs ?? true,
-          preserve_details: generationSettings.preserveDetails ?? generationSettings.autoOptimizeSettings?.preserveDetails ?? 75,
-          repair_uvs: generationSettings.repairUVs !== false,
-          topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'adaptive'),
+          auto_optimize: true,
+          target_polycount: targetPoly,
+          fix_uvs: true,
+          preserve_details: generationSettings.autoOptimizeSettings?.preserveDetails ?? 85,
+          repair_uvs: true,
+          topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
           detail_pass: Boolean(generationSettings.detailPass),
           detail_guidance: generationSettings.detailGuidance ?? 7.5,
           triposf_pass: Boolean(generationSettings.triposfPass),
@@ -1058,7 +1061,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
 
         if (isTextured) {
-          body.texture_resolution = { low: 1024, medium: 1024, high: 2048, ultra: 4096 }[currentQuality];
+          body.texture_resolution = currentQuality === 'ultra' ? 4096 : 2048;
         }
 
         const res = await fetch(endpoint, {

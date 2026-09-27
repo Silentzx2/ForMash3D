@@ -57,12 +57,11 @@ export const RightWorkspacePanel: React.FC = () => {
       {/* Top Segmented Header (Clean Technical Inspector Navigation) */}
       <div className="h-10 px-2.5 flex items-center justify-between border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
         <div className="flex-1 min-w-0 mr-2">
-            <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] border border-white/[0.06] rounded-lg">
-              {([
+          <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] border border-white/[0.06] rounded-lg">
+            {([
+              { id: 'assets', label: 'Assets', icon: FolderOpen },
                 { id: 'properties', label: 'Properties', icon: Sliders },
-                { id: 'prompt', label: isRunning ? 'Executing' : 'Console', icon: Activity, badge: isRunning ? '●' : undefined },
-                { id: 'assets', label: 'Assets', icon: FolderOpen },
-              ] as Array<{ id: string; label: string; icon: any; badge?: string }>).map((tab) => {
+              ] as Array<{ id: string; label: string; icon: any }>).map((tab) => {
                 const Icon = tab.icon;
                 const isActive = currentActiveTab === tab.id;
                 return (
@@ -76,10 +75,23 @@ export const RightWorkspacePanel: React.FC = () => {
                   >
                     <Icon className="w-3.5 h-3.5" />
                     <span>{tab.label}</span>
-                    {tab.badge && <span className="text-[9px] text-primary">{tab.badge}</span>}
                   </button>
                 );
               })}
+              {isRunning && (
+                <button
+                  type="button"
+                  onClick={() => setRightPanelMode('prompt')}
+                  className={`relative flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                    rightPanelMode === 'prompt'
+                      ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/40'
+                      : 'text-zinc-400 hover:text-emerald-300'
+                  }`}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Running</span>
+                </button>
+              )}
             </div>
           </div>
 
