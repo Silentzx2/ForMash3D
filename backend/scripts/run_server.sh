@@ -95,6 +95,8 @@ fi
 
 # Set environment variables
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+export PYTHONUNBUFFERED="1"
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 
 # Essential configuration parameters
 export P3D_USER_AUTH_ENABLED="$USER_AUTH_ENABLED"
@@ -366,6 +368,7 @@ echo "🌐 Starting FastAPI with $API_WORKERS workers ($PYTHON_BIN -m uvicorn)..
     --host "$API_HOST" \
     --port "$API_PORT" \
     --workers "$API_WORKERS" \
+    --timeout-keep-alive 65 \
     --log-level "$LOG_LEVEL" \
     > logs/api.log 2>&1 &
 API_PID=$!

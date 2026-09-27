@@ -89,8 +89,8 @@ async def system_status(
 ):
     """Get detailed system status including GPU information"""
 
-    # Basic system metrics
-    cpu_percent = psutil.cpu_percent(interval=1)
+    # Basic system metrics (non-blocking delta calculation)
+    cpu_percent = psutil.cpu_percent(interval=None)
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
 
@@ -306,45 +306,39 @@ async def get_logs(
                 "logs": [],
             }
 
-        # Read log file
+        # Read log file with fast reverse block seeking
         log_entries = []
         try:
-            with open(main_log_file, "r", encoding="utf-8") as f:
-                # Read last 'lines' number of lines efficiently
-                file_lines = f.readlines()
-                recent_lines = (
-                    file_lines[-lines:] if len(file_lines) > lines else file_lines
-                )
+            recent_lines = _tail_file_lines(main_log_file, lines)
+            for line in recent_lines:
+                line = line.strip()
+                if not line:
+                    continue
 
-                for line in recent_lines:
-                    line = line.strip()
-                    if not line:
-                        continue
+                # Parse log entry
+                log_entry = _parse_log_line(line)
 
-                    # Parse log entry
-                    log_entry = _parse_log_line(line)
+                # Apply filters
+                if level and log_entry.get("level") != level.upper():
+                    continue
 
-                    # Apply filters
-                    if level and log_entry.get("level") != level.upper():
-                        continue
+                if logger_name and logger_name not in log_entry.get("logger", ""):
+                    continue
 
-                    if logger_name and logger_name not in log_entry.get("logger", ""):
-                        continue
+                if since:
+                    try:
+                        from datetime import datetime
 
-                    if since:
-                        try:
-                            from datetime import datetime
+                        entry_time = datetime.fromisoformat(
+                            log_entry.get("timestamp", "")
+                        )
+                        since_time = datetime.fromisoformat(since)
+                        if entry_time < since_time:
+                            continue
+                    except (ValueError, TypeError):
+                        pass  # Skip time filtering if parsing fails
 
-                            entry_time = datetime.fromisoformat(
-                                log_entry.get("timestamp", "")
-                            )
-                            since_time = datetime.fromisoformat(since)
-                            if entry_time < since_time:
-                                continue
-                        except (ValueError, TypeError):
-                            pass  # Skip time filtering if parsing fails
-
-                    log_entries.append(log_entry)
+                log_entries.append(log_entry)
 
         except Exception as e:
             return {
@@ -369,6 +363,30 @@ async def get_logs(
     except Exception as e:
         logger.error(f"Error retrieving logs: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
+
+def _tail_file_lines(file_path: Path, max_lines: int) -> list:
+    """Efficiently read the last N lines from a file without loading the entire file into memory."""
+    if not file_path.exists():
+        return []
+    file_size = file_path.stat().st_size
+    if file_size == 0:
+        return []
+
+    # Read from end of file based on estimated line length (~200b per log line)
+    buffer_size = min(file_size, max(4096, max_lines * 512))
+    try:
+        with open(file_path, "rb") as f:
+            f.seek(max(0, file_size - buffer_size))
+            data = f.read().decode("utf-8", errors="replace")
+            lines = data.splitlines()
+            if len(lines) >= max_lines or buffer_size >= file_size:
+                return lines[-max_lines:]
+            # If log lines were unusually long and we got fewer lines than requested, read entire file
+            f.seek(0)
+            return f.read().decode("utf-8", errors="replace").splitlines()[-max_lines:]
+    except Exception:
+        return []
 
 
 def _parse_log_line(line: str) -> dict:
@@ -481,16 +499,11 @@ async def get_log_file(
 
         log_entries = []
         try:
-            with open(log_file, "r", encoding="utf-8") as f:
-                file_lines = f.readlines()
-                recent_lines = (
-                    file_lines[-lines:] if len(file_lines) > lines else file_lines
-                )
-
-                for line in recent_lines:
-                    line = line.strip()
-                    if line:
-                        log_entries.append(_parse_log_line(line))
+            recent_lines = _tail_file_lines(log_file, lines)
+            for line in recent_lines:
+                line = line.strip()
+                if line:
+                    log_entries.append(_parse_log_line(line))
 
         except Exception as e:
             raise HTTPException(
@@ -509,9 +522,7 @@ async def get_log_file(
                 "size_mb": round(stat.st_size / (1024 * 1024), 2),
                 "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
                 "lines_requested": lines,
-                "total_lines_in_file": len(file_lines)
-                if "file_lines" in locals()
-                else 0,
+                "total_lines_returned": len(log_entries),
             },
         }
 
@@ -1088,6 +1099,7 @@ async def download_job_result(
                         "generation_time", "unknown"
                     ),
                     "X-File-Size": str(os.path.getsize(output_path)),
+                    "Cache-Control": "public, max-age=86400, immutable",
                 },
             )
 
@@ -1208,6 +1220,7 @@ async def download_job_thumbnail(
                         )
                     ),
                     "X-File-Size": str(os.path.getsize(thumbnail_path)),
+                    "Cache-Control": "public, max-age=604800, immutable",
                 },
             )
 
@@ -1317,6 +1330,7 @@ async def download_job_input(
                 headers={
                     "X-Job-ID": job_id,
                     "X-File-Size": str(os.path.getsize(input_image_path)),
+                    "Cache-Control": "public, max-age=604800, immutable",
                 },
             )
 

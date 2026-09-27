@@ -137,6 +137,13 @@ def model_worker_process(
         # Set CUDA device first thing
         if torch.cuda.is_available():
             torch.cuda.set_device(gpu_id)
+            # Enable TF32 and benchmark for Tensor Core acceleration
+            try:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                torch.backends.cudnn.benchmark = True
+            except Exception:
+                pass
             # Warm up CUDA context
             dummy = torch.zeros(1, device=f"cuda:{gpu_id}")
             del dummy
@@ -391,8 +398,9 @@ def _process_job_in_worker(
         # Mark as processing
         processing_job = job_id
 
-        # Process job
-        result = loaded_model._process_request(job_request.inputs)
+        # Process job with inference mode for zero autograd tracking overhead
+        with torch.inference_mode():
+            result = loaded_model._process_request(job_request.inputs)
 
         return (
             {

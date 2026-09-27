@@ -18,6 +18,15 @@ if not hasattr(torch, "float8_e5m2"):
     except Exception:
         pass
 
+# ── High-Performance PyTorch Tensor Core & cuDNN Tuning ──
+if torch.cuda.is_available():
+    try:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
+    except Exception:
+        pass
+
 import yaml
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict

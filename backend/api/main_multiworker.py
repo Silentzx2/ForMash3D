@@ -25,8 +25,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+
+try:
+    from fastapi.responses import ORJSONResponse
+    FastAPIResponse = ORJSONResponse
+except ImportError:
+    FastAPIResponse = JSONResponse
 
 from core.config import get_settings, setup_logging #, create_directories
 from core.file_store import FileStore
@@ -209,13 +216,15 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    default_response_class=FastAPIResponse,
     lifespan=lifespan,
 )
 
-# Configure CORS and security middleware
+# Configure CORS, GZip and security middleware
 settings = get_settings()
 configure_cors(app, settings)
 configure_security(app, settings)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # Add middleware
