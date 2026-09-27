@@ -41,6 +41,11 @@ psutil==5.9.6
 trimesh==4.6.12
 open3d==0.18.0
 numpy==1.24.3
+scikit-image>=0.21.0
+accelerate>=0.28.0
+opencv-python-headless>=4.8.0
+yacs>=0.1.8
+python-box>=7.0.0
 
 # Development and testing
 pytest==9.0.3

@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.unirig_utils import InferenceConfig, UniRigInferenceEngine
 from core.models.base import ModelStatus
 from core.models.rig_models import AutoRigModel
 from core.utils.file_utils import OutputPathGenerator
@@ -55,22 +54,24 @@ class UniRigAdapter(AutoRigModel):
 
         self.unirig_root = Path(unirig_root)
         self.device = device
-        self.inference_engine: Optional[UniRigInferenceEngine] = None
+        self.inference_engine: Optional[Any] = None
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
-
-        # Verify UniRig installation
-        if not self.unirig_root.exists():
-            raise FileNotFoundError(f"UniRig not found at: {self.unirig_root}")
 
     def _load_model(self):
         """Load UniRig inference engine."""
         try:
             logger.info(f"Loading UniRig model from {self.unirig_root}")
 
+            # Verify UniRig installation
+            if not self.unirig_root.exists():
+                raise FileNotFoundError(f"UniRig not found at: {self.unirig_root}")
+
             # Add UniRig to Python path
             if str(self.unirig_root) not in sys.path:
                 sys.path.insert(0, str(self.unirig_root))
+
+            from utils.unirig_utils import InferenceConfig, UniRigInferenceEngine
 
             # Create inference configuration
             config = InferenceConfig(

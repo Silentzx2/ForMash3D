@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.trellis2_utils import Trellis2Runner
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
 from core.utils.thumbnail_utils import generate_mesh_thumbnail
@@ -60,7 +59,7 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
         
         self.trellis2_root = Path(trellis2_root)
         self.model_path = Path(model_path)
-        self.runner: Optional[Trellis2Runner] = None
+        self.runner: Optional[Any] = None
         self.mesh_processor = MeshProcessor()
     
     def _load_model(self):
@@ -74,6 +73,7 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                     os.environ.pop(k, None)
 
             # Initialize TRELLIS.2 runner
+            from utils.trellis2_utils import Trellis2Runner
             self.runner = Trellis2Runner(
                 trellis2_root=str(self.trellis2_root),
                 model_cache_dir=str(self.model_path),
@@ -325,7 +325,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         
         self.trellis2_root = Path(trellis2_root)
         self.model_path = Path(model_path)
-        self.runner: Optional[Trellis2Runner] = None
+        self.runner: Optional[Any] = None
         self.mesh_processor = MeshProcessor()
     
     def _load_model(self):
@@ -334,6 +334,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
             logger.info(f"Loading TRELLIS.2 texturing pipeline from {self.trellis2_root}")
             
             # Initialize TRELLIS.2 runner
+            from utils.trellis2_utils import Trellis2Runner
             self.runner = Trellis2Runner(
                 trellis2_root=str(self.trellis2_root),
                 model_cache_dir=str(self.model_path),

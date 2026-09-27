@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.partfield_utils import PartFieldRunner
 from core.models.base import ModelStatus
 from core.models.segment_models import MeshSegmentationModel
 from core.utils.file_utils import OutputPathGenerator
@@ -49,7 +48,7 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
         )
 
         self.partfield_root = Path(partfield_root)
-        self.partfield_runner: Optional[PartFieldRunner] = None
+        self.partfield_runner: Optional[Any] = None
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(
             base_output_dir="exp_results"
@@ -81,6 +80,7 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
                         break
 
             # Initialize PartField runner
+            from utils.partfield_utils import PartFieldRunner
             self.partfield_runner = PartFieldRunner(
                 config_file=self.config_file,
                 continue_ckpt=self.continue_ckpt,

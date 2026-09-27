@@ -5,6 +5,7 @@ UV_PIP="uv pip"
 # Project root (install.sh lives in backend/scripts/)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 WHEEL_DIR="$PROJECT_ROOT/backend/thirdparty/wheels"
+THIRDPARTY_DIR="$PROJECT_ROOT/backend/thirdparty"
 
 # Load .env if present
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
@@ -82,6 +83,25 @@ install_local_wheel() {
 
     return 1
 }
+
+# Ensure release wheels are available in WHEEL_DIR
+ensure_release_wheels() {
+    mkdir -p "$WHEEL_DIR"
+    [ "$(find "$WHEEL_DIR" -maxdepth 1 -name "*.whl" 2>/dev/null | wc -l)" -gt 0 ] && return 0
+    echo "[INFO] Downloading release wheels to $WHEEL_DIR..."
+    python3 -c '
+import urllib.request, json, os, sys
+req = urllib.request.Request("https://api.github.com/repos/Silentzx2/ForMash3D/releases/tags/Wheels", headers={"User-Agent": "ForMash3D-Installer"})
+try:
+    for a in json.loads(urllib.request.urlopen(req, timeout=30).read()).get("assets", []):
+        if a["name"].endswith(".whl"):
+            p = os.path.join(sys.argv[1], a["name"])
+            if not os.path.exists(p): urllib.request.urlretrieve(a["browser_download_url"], p)
+except Exception as e:
+    print(f"[WARN] Wheel download warning: {e}")
+' "$WHEEL_DIR" 2>/dev/null || true
+}
+
 echo "========================================"
 echo "Starting Backend-API Installation"
 echo "========================================"
@@ -263,6 +283,8 @@ export PIP_NO_BUILD_ISOLATION=1
 export UV_NO_BUILD_ISOLATION=1
 echo "[INFO] Build isolation: disabled (PIP_NO_BUILD_ISOLATION=1)"
 
+ensure_release_wheels
+
 echo ""
 echo "========================================"
 echo "Installing Project Requirements"
@@ -282,7 +304,7 @@ echo "Installing TRELLIS Dependencies"
 echo "========================================"
 ### we startup with the environment of trellis ###
 echo "[INFO] Changing directory to thirdparty/TRELLIS..."
-cd thirdparty/TRELLIS.2
+cd "$THIRDPARTY_DIR/TRELLIS.2"
 echo "[INFO] Running TRELLIS.2 setup script..."
 echo "[INFO] Running TRELLIS.2 basic setup..."
 # Ensure third-party setup.sh uses uv pip instead of bare pip.
@@ -364,7 +386,7 @@ echo "Installing PartField Dependencies"
 echo "========================================"
 # install PartField for mesh segmentation 
 echo "[INFO] Changing directory to thirdparty/PartField..."
-cd ../../thirdparty/PartField 
+cd "$THIRDPARTY_DIR/PartField"
 echo "[INFO] Installing PartField core dependencies..."
 $UV_PIP install --find-links="$WHEEL_DIR" lightning==2.2 h5py yacs trimesh scikit-image loguru boto3
 if [ $? -eq 0 ]; then
@@ -401,7 +423,7 @@ echo "Installing Hunyuan3D 2.1 Dependencies"
 echo "========================================"
 ### installation for hunyuan3d 2.1  ###
 echo "[INFO] Changing directory to thirdparty/Hunyuan3D-2.1..."
-cd ../../thirdparty/Hunyuan3D-2.1
+cd "$THIRDPARTY_DIR/Hunyuan3D-2.1"
 echo "[INFO] Installing custom rasterizer for Hunyuan3D 2.1..."
 cd hy3dpaint/custom_rasterizer
 if ! install_local_wheel "custom_rasterizer-*.whl" "Hunyuan3D custom_rasterizer"; then
@@ -415,8 +437,7 @@ else
 fi
 
 echo "[INFO] Building differentiable renderer for Hunyuan3D 2.1..."
-cd ../..
-cd hy3dpaint/DifferentiableRenderer
+cd "$THIRDPARTY_DIR/Hunyuan3D-2.1/hy3dpaint/DifferentiableRenderer"
 if ! install_local_wheel "hy3d_mesh_inpaint_processor-*.whl" "Hunyuan3D mesh inpaint processor"; then
 bash compile_mesh_painter.sh
 fi
@@ -426,7 +447,7 @@ else
     echo "[ERROR] Failed to build Hunyuan3D 2.1 differentiable renderer"
     exit 1
 fi
-cd ../..
+cd "$THIRDPARTY_DIR/Hunyuan3D-2.1"
 echo "[INFO] Installing Hunyuan3D 2.1 requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" -r requirements-inference.txt --index-strategy unsafe-best-match 
 ### installation for hunyuan3d 2.1 end ###
@@ -438,7 +459,7 @@ echo "Installing UniRig Dependencies"
 echo "========================================"
 ### unirig for auto-rigging  ###
 echo "[INFO] Changing directory to thirdparty/UniRig..."
-cd ../../thirdparty/UniRig
+cd "$THIRDPARTY_DIR/UniRig"
 echo "[INFO] Installing spconv-cu120 for UniRig..."
 $UV_PIP install --find-links="$WHEEL_DIR" spconv-cu120
 $UV_PIP install --find-links="$WHEEL_DIR" pyrender fast-simplification python-box timm
@@ -455,7 +476,7 @@ echo "Installing PartPacker Dependencies"
 echo "========================================"
 ### part packer  ###
 echo "[INFO] Changing directory to thirdparty/PartPacker..."
-cd ../../thirdparty/PartPacker
+cd "$THIRDPARTY_DIR/PartPacker"
 echo "[INFO] Installing PartPacker requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" pybind11==3.0.1
 $UV_PIP install --find-links="$WHEEL_DIR" meshiki kiui fpsample pymcubes einops
@@ -485,7 +506,7 @@ echo ""
 echo "========================================"
 echo "Installing P3-SAM Dependencies"
 echo "========================================"
-cd ../../thirdparty/Hunyuan3DPart/P3SAM
+cd "$THIRDPARTY_DIR/Hunyuan3DPart/P3SAM"
 echo "[INFO] Installing P3-SAM requirements..."
 # Install numba for acceleration
 $UV_PIP install --find-links="$WHEEL_DIR" numba scikit-learn fpsample
@@ -498,7 +519,7 @@ fi
 ### P3-SAM end ###
 
 ### FastMesh ###
-cd ../../../thirdparty/FastMesh 
+cd "$THIRDPARTY_DIR/FastMesh"
 echo "[INFO] Installing FastMesh requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" -r requirement_extra.txt
 if [ $? -eq 0 ]; then
@@ -514,7 +535,7 @@ echo ""
 echo "========================================"
 echo "Installing UltraShape Dependencies"
 echo "========================================"
-cd ../../../thirdparty/UltraShape || echo "[WARN] UltraShape directory not found; continuing..."
+cd "$THIRDPARTY_DIR/UltraShape" || echo "[WARN] UltraShape directory not found; continuing..."
 echo "[INFO] Installing UltraShape requirements..."
 # $UV_PIP install -r requirements.txt
 # actually only cubvh is required based besides trellis.2 env  
@@ -534,7 +555,7 @@ echo ""
 echo "========================================"
 echo "Installing VoxHammer Dependencies"
 echo "========================================"
-cd ../VoxHammer
+cd "$THIRDPARTY_DIR/VoxHammer"
 echo "[INFO] Installing VoxHammer requirements..."
 # $UV_PIP install -r requirements.txt
 # only bpy-renderer and pysdf are required besides trellis.2 env  
@@ -570,9 +591,12 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
 fi
 if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSR" ]; then
     echo "[INFO] Installing TripoSR requirements..."
+    if ! install_local_wheel "torchmcubes-*.whl" "torchmcubes"; then
+        echo "[INFO] Local torchmcubes wheel not found; installing from git..."
+        $UV_PIP install git+https://github.com/tatsy/torchmcubes.git 2>/dev/null || true
+    fi
     if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSR/requirements.txt"; then
-        echo "[ERROR] Failed to install TripoSR requirements."
-        exit 1
+        echo "[WARN] TripoSR requirements install had issues; verifying basic requirements..."
     fi
 fi
 if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then

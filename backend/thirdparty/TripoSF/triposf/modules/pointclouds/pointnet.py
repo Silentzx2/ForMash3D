@@ -27,7 +27,13 @@ import torch
 import torch.nn as nn
 import copy
 from torch import Tensor
-from torch_scatter import scatter_mean
+try:
+    from torch_scatter import scatter_mean
+except (ImportError, OSError):
+    def scatter_mean(src: Tensor, index: Tensor, dim: int = -1, out=None, dim_size=None) -> Tensor:
+        idx = index.expand_as(src) if index.dim() < src.dim() else index
+        res = (out.zero_() if out is not None else torch.zeros(list(src.shape[:-1]) + [dim_size or int(index.max()) + 1], device=src.device)).scatter_add_(dim, idx, src)
+        return res / torch.zeros_like(res).scatter_add_(dim, idx, torch.ones_like(src)).clamp_(min=1)
 
 def scale_tensor(
     dat, inp_scale=None, tgt_scale=None

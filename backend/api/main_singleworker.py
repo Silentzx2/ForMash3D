@@ -19,6 +19,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 try:
+    import orjson
     from fastapi.responses import ORJSONResponse
     FastAPIResponse = ORJSONResponse
 except ImportError:

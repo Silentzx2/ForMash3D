@@ -55,6 +55,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
+import core.config  # Initialize PyTorch compatibility shims & settings in worker processes
 from ..models.base import BaseModel
 from .gpu_monitor import GPUMonitor
 from .job_queue import JobQueue, JobRequest

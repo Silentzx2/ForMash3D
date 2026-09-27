@@ -361,6 +361,8 @@ async def process_file_input(
 
     try:
         if file_path:
+            from core.utils.file_utils import resolve_server_file_path
+            file_path = resolve_server_file_path(file_path)
             # Validate existing file path
             if not Path(file_path).exists():
                 raise HTTPException(

@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.fastmesh_utils import FastMeshRunner
 from core.models.base import ModelStatus
 from core.models.retopo_models import MeshRetopologyModel
 from core.utils.file_utils import OutputPathGenerator
@@ -71,6 +70,8 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
             # Add FastMesh to Python path
             if str(self.fastmesh_root) not in sys.path:
                 sys.path.insert(0, str(self.fastmesh_root))
+
+            from utils.fastmesh_utils import FastMeshRunner
 
             # Initialize FastMesh runner
             self.fastmesh_runner = FastMeshRunner(

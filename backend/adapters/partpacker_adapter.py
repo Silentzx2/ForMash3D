@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.partpacker_utils import PartPackerRunner
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
 from core.utils.file_utils import OutputPathGenerator
@@ -61,6 +60,8 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
             # Add PartPacker to Python path
             if str(self.partpacker_root) not in sys.path:
                 sys.path.insert(0, str(self.partpacker_root))
+
+            from utils.partpacker_utils import PartPackerRunner
 
             # Initialize PartPacker runner
             self.partpacker_runner = PartPackerRunner(

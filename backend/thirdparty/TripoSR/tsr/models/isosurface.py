@@ -5,8 +5,15 @@ import torch
 import torch.nn as nn
 try:
     from torchmcubes import marching_cubes
-except ImportError:
-    marching_cubes = None
+except (ImportError, OSError):
+    try:
+        from skimage.measure import marching_cubes as ski_mc
+        def marching_cubes(level, isovalue=0.0):
+            arr = level.detach().cpu().numpy()
+            v, f, _, _ = ski_mc(arr, level=isovalue)
+            return torch.from_numpy(v.copy().astype(np.float32)), torch.from_numpy(f.copy().astype(np.int64))
+    except Exception:
+        marching_cubes = None
 
 
 class IsosurfaceHelper(nn.Module):
@@ -45,15 +52,11 @@ class MarchingCubeHelper(IsosurfaceHelper):
         level: torch.FloatTensor,
     ) -> Tuple[torch.FloatTensor, torch.LongTensor]:
         if self.mc_func is None:
-            raise ImportError(
-                "torchmcubes is not installed. Please install torchmcubes from the wheels directory."
-            )
+            raise ImportError("marching cubes implementation unavailable")
         level = -level.view(self.resolution, self.resolution, self.resolution)
         try:
             v_pos, t_pos_idx = self.mc_func(level.detach(), 0.0)
-        except (AttributeError, RuntimeError):
-            print("torchmcubes CUDA execution failed or not compiled with CUDA support, use CPU version instead.")
+        except Exception:
             v_pos, t_pos_idx = self.mc_func(level.detach().cpu(), 0.0)
-        v_pos = v_pos[..., [2, 1, 0]]
-        v_pos = v_pos / (self.resolution - 1.0)
+        v_pos = v_pos[..., [2, 1, 0]] / (self.resolution - 1.0)
         return v_pos.to(level.device), t_pos_idx.to(level.device)

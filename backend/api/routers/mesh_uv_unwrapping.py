@@ -163,6 +163,11 @@ async def unwrap_mesh(
         else:
             mesh_file_path = request.mesh_path
 
+        # Resolve server path if URL or relative path was provided
+        if mesh_file_path:
+            from core.utils.file_utils import resolve_server_file_path
+            mesh_file_path = resolve_server_file_path(mesh_file_path)
+
         # Validate mesh file exists
         if not mesh_file_path:
             raise HTTPException(

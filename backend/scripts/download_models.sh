@@ -49,6 +49,8 @@ print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Check for Hugging Face Token in environment
 HF_TOKEN="${HUGGINGFACE_TOKEN:-${HF_TOKEN:-}}"
+# Strip quotes and whitespace to avoid 401 on empty/quoted tokens
+HF_TOKEN="$(echo "$HF_TOKEN" | tr -d '\"'\'' ')"
 HF_EXTRA_ARGS=()
 
 if [ -n "$HF_TOKEN" ]; then
@@ -57,6 +59,7 @@ if [ -n "$HF_TOKEN" ]; then
     export HF_TOKEN="$HF_TOKEN"
     export HUGGINGFACE_TOKEN="$HF_TOKEN"
 else
+    unset HF_TOKEN HUGGINGFACE_TOKEN
     print_info "ℹ️ No Hugging Face token found in .env. Proceeding with anonymous/public downloads."
 fi
 
