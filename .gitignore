@@ -62,10 +62,6 @@ build/
 tsconfig.tsbuildinfo
 
 ai-dev*.tar
-backend/third_party/*
-# Provider-local venvs and weights (managed per-provider, not tracked)
-third_party/*/.venv/
-third_party/*/weights/
 .runtime_cache/
 storage/
 next-env.d.ts
