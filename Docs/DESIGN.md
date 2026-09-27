@@ -34,6 +34,12 @@ All colors and surfaces in ForMash 3D use HSL CSS variable design tokens. Direct
 | Semantic Destructive | `0 72% 56%` | `#EF4444` / `rose-500` | Errors, deletion modals, fatal logs |
 | Semantic Info | — | `#3B82F6` / `sky-400` | Info notices, informative tooltips |
 
+### Color Palette Visual Reference
+
+![ForMash 3D Design Colors](../../assets/colors.jpeg)
+
+> The `assets/colors.jpeg` image shows the complete color palette used across the ForMash 3D UI, including Studio Gold (`#FFCC00`), Matte Black (`#080808`), and all HSL design tokens.
+
 ---
 
 ## 2. Design System Architecture
