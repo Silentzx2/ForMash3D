@@ -378,3 +378,23 @@
 **Consequences**:
 - The global dependency baseline remains unchanged.
 - TripoSG's declared compatibility is restored deterministically by the installer.
+
+## ADR-028: TripoSR Output Axis for ForMash3D
+
+**Decision**: Convert TripoSR's upstream output to Y-up after its existing display-orientation transform.
+
+**Reason**: TripoSR's bundled orientation helper targets its Gradio display coordinate system, while the ForMash3D Three.js viewport uses Y-up. The supplied output dimensions showed the generated asset's Z extent exceeding Y, matching the observed side-lying presentation.
+
+**Consequences**:
+- TripoSR outputs are exported in the viewport's Y-up convention.
+- No automatic orientation heuristic is added for unrelated models.
+
+## ADR-029: Pin TRELLIS to the Mip-Splatting Rasterizer Implementation
+
+**Decision**: Do not allow a generic local `diff_gaussian_rasterization` wheel to override TRELLIS's bundled mip-splatting renderer.
+
+**Reason**: TRELLIS passes `kernel_size` and `subpixel_offset` to `GaussianRasterizationSettings`; the runtime supplied a renderer without those fields, causing postprocessing to fail.
+
+**Consequences**:
+- The installer removes the generic package and installs the expected mip-splatting submodule.
+- The application code remains aligned with the renderer API it was written for.

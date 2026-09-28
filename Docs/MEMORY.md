@@ -1,3 +1,9 @@
+## 2026-09-28 Runtime Findings — TripoSR Axis and TRELLIS Rasterizer Compatibility
+
+- The uploaded TripoSR screenshot is consistent with a coordinate-system mismatch: the generated asset's Z dimension is larger than Y while the ForMash3D viewport treats Y as up. The TripoSR adapter now applies one additional X-axis -90° rotation after the upstream Gradio orientation so exported meshes are Y-up in the ForMash3D viewport.
+- TRELLIS postprocessing failed after successful sampling because `GaussianRasterizationSettings` rejected `kernel_size`. The installer was allowing a generic local `diff_gaussian_rasterization` wheel to override the mip-splatting renderer expected by the bundled TRELLIS code. The installer now removes that generic package and installs the renderer directly from the mip-splatting source.
+- These fixes are source-level; fresh Colab validation is still required.
+
 ## 2026-09-28 Colab Runtime Findings — Attention Backend and Tripo Dependencies
 
 - TRELLIS reached sampling, then failed because the pre-Ampere adapter selection requested SDPA while bundled sparse attention still routed to FlashAttention. Full, serialized, and windowed sparse attention now have direct PyTorch SDPA paths.

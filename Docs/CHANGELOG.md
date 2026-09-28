@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-09-28 — 3D Orientation & TRELLIS Renderer Compatibility
+- Corrected TripoSR Z-up output to the ForMash3D Y-up viewport convention.
+- Prevented an incompatible generic diff-gaussian-rasterization wheel from overriding TRELLIS's required mip-splatting renderer.
+- Fresh GPU validation remains required.
+
 ## 2026-09-28 — Pre-Ampere Attention & Model Dependency Hardening
 - Added PyTorch SDPA support to bundled TRELLIS sparse full, serialized, and windowed attention.
 - Completed TripoSF SDPA support where its runtime already selected that backend.

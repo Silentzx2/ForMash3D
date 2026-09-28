@@ -212,6 +212,16 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
+            if device == "cuda":
+                total_vram_mb = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)
+                if total_vram_mb < 16384:
+                    pruning = True
+                    sample_points_num = min(sample_points_num, 655_360)
+                    logger.info(
+                        "TripoSF low-VRAM profile enabled: pruning=True, sample_points_num=%s",
+                        sample_points_num,
+                    )
+
             from inference import normalize_mesh, load_quantized_mesh_original
 
             # 1. Obtain coarse mesh if starting from an image
