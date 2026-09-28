@@ -70,7 +70,7 @@ def set_debug(debug: bool):
     global DEBUG
     DEBUG = debug
 
-def set_attn(attn: Literal['xformers', 'flash_attn']):
+def set_attn(attn: Literal['xformers', 'flash_attn', 'sdpa']):
     global ATTN
     ATTN = attn
     

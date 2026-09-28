@@ -717,12 +717,23 @@ echo "Installing Project Dependencies"
 echo "========================================"
 ### for this project (fastapi / uvicorn relevant etc.)  ###
 echo "[INFO] Installing main project requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt 
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] Main project requirements installed"
 else
     echo "[ERROR] Failed to install main project requirements"
     exit 1
+fi
+
+# TripoSG declares a newer diffusers/transformers pair than the global project baseline.
+# Re-apply its model-specific requirements after the baseline install so compatibility is not silently overwritten.
+if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
+    echo "[INFO] Re-applying TripoSG model-specific requirements after project baseline..."
+    if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSG/requirements.txt"; then
+        echo "[ERROR] Failed to re-apply TripoSG requirements."
+        exit 1
+    fi
+    echo "[SUCCESS] TripoSG model-specific dependency versions restored"
 fi
 
 echo "[INFO] Installing test requirements..."

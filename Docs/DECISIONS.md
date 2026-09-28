@@ -357,3 +357,24 @@
 - `hunyuan3d_paint_v21_image_mesh_painting` remains independently callable.
 - Workspace texture generation uses the generated job file ID plus the original image input for Shape-v2-1 or Mini Turbo → Paint handoff.
 - The removed direct Shape textured ID is not exposed through the model registry or GeneratePanel.
+
+## ADR-014: Explicit SDPA Fallback for Pre-Ampere Sparse Attention
+
+**Decision**: When an adapter selects SDPA for a pre-Ampere GPU, bundled TRELLIS and TripoSF sparse attention execute PyTorch scaled-dot-product attention directly.
+
+**Reason**: The adapter selected SDPA, but bundled sparse modules did not consistently implement that backend, causing runtime failures.
+
+**Consequences**:
+- Full, serialized, and windowed sparse attention have an explicit SDPA implementation where required.
+- No new runtime dependency is introduced.
+- FlashAttention remains the explicit path on supported GPUs.
+
+## ADR-015: Model-Specific Dependency Overrides After the Global Baseline
+
+**Decision**: Re-apply model-specific requirements after the global backend baseline when a model pins different compatible versions.
+
+**Reason**: TripoSG requires diffusers 0.30.3 while the global baseline pins 0.24.0; installation order previously overwrote the model requirement.
+
+**Consequences**:
+- The global dependency baseline remains unchanged.
+- TripoSG's declared compatibility is restored deterministically by the installer.
