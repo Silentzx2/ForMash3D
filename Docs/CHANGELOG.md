@@ -4,6 +4,12 @@ All notable changes, architectural updates, and feature implementations for ForM
 
 ## [Unreleased]
 
+### 🔧 Colab Runtime & Model Selection Fixes (2026-09-28)
+- Removed the stale P3-SAM installer dependency on `backend/thirdparty/Hunyuan3DPart/P3SAM`; the installer now handles the current `P3-SAM` checkout layout without failing on a missing legacy path.
+- Pinned Hunyuan shared runtime NumPy/CuPy versions to `numpy==1.26.4` and `cupy-cuda12x==13.4.0` to prevent the observed CuPy/NumPy ABI import failure.
+- Stopped GeneratePanel from silently overriding an explicit model selection with TRELLIS.
+
+
 ### 🔧 Deep Runtime Contract Audit (2026-09-28)
 - Removed the non-functional direct `hunyuan3d_shape_v21_image_to_textured_mesh` registry/UI path; canonical Hunyuan texture generation is Shape-v2-1 or Mini Turbo raw mesh → optional Paint.
 - Fixed Shape→Paint handoff to use the generated job `file_id` plus the original upload `image_file_id` or `image_base64`.
