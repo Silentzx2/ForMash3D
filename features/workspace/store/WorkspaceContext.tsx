@@ -590,168 +590,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setViewportResetTrigger(prev => prev + 1);
   }, []);
 
-  useEffect(() => {
-    const task = activeTaskRef.current;
-    if (!task || task.status === 'completed' || task.status === 'failed' || task.status === 'interrupted') return;
-    const jobId = task.id;
-    const isBackendJob = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId);
-    if (!isBackendJob) return;
-
-    let stopped = false;
-    let timerId: number | null = null;
-
-    const scheduleNext = (intervalMs: number) => {
-      if (stopped) return;
-      if (timerId) window.clearTimeout(timerId);
-      timerId = window.setTimeout(() => void poll(), intervalMs);
-    };
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' });
-        if (!res.ok) throw await parseApiError(res);
-        const raw = await parseApiData<BackendJobPayload>(res);
-        if (stopped) return;
-
-        // Normalize backend job contract to the UI's expected shape:
-        // - backend progress is 0..1 fraction, UI wants 0..100
-        // - backend result.mesh_url → UI result.model_url / active_model_url
-        // - backend result.thumbnail_url stays as thumbnail_url (rewritten to proxy path)
-        // - backend error → UI error_message
-        const data = normalizeBackendJob(raw);
-        const result = data.result;
-
-        const progress = Math.max(0, Math.min(100, Number(data.progress ?? 0)));
-        setExecutionProgress(progress);
-        const currentMsg = data.message || data.stage || 'Processing';
-        setExecutionStep(currentMsg);
-        setActiveTask(prev => prev ? {
-          ...prev,
-          progress,
-          currentStep: currentMsg,
-          stage: data.stage || prev.stage,
-          logs: data.logs || prev.logs,
-        } : null);
-
-        if (data.status === 'completed') {
-          setIsExecuting(false);
-          setExecutionProgress(100);
-          setExecutionStep('Completed');
-          setActiveTask(prev => prev ? { ...prev, status: 'completed', progress: 100, currentStep: 'Completed', logs: data.logs || prev.logs } : null);
-          let modelUrl: string | undefined;
-          let cleanName: string | undefined;
-          if (result?.model_url || result?.active_model_url) {
-            const currentLatestTask = activeTaskRef.current || task;
-            modelUrl = (result.active_model_url || result.model_url) as string;
-            const promptTitle = currentLatestTask.title && currentLatestTask.title !== 'Image-to-3D generation' && currentLatestTask.title !== 'generate' ? currentLatestTask.title : null;
-            const rawName = promptTitle || currentLatestTask.inputImageName || (currentLatestTask.inputImage ? currentLatestTask.inputImage.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : null) || `Model_${jobId.slice(0, 6)}`;
-            cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-
-            // Pre-fetch the model arrayBuffer immediately into in-memory cache
-            void prefetchGLB(modelUrl);
-
-            const qaReport = (result as any).qa_report;
-            const qaScore = qaReport?.game_ready_score ?? (qaReport?.score ? Math.round(qaReport.score * 100) : undefined);
-            const qaStatus = qaReport?.status ?? (qaScore !== undefined ? (qaScore >= 80 ? 'pass' : qaScore >= 50 ? 'warn' : 'fail') : undefined);
-            const qaWarnings = qaReport?.warnings ?? [];
-
-            const outputAsset = normalizeModelAsset({
-              id: jobId,
-              name: cleanName,
-              category: 'generation',
-              thumbnail: result.thumbnail_url || '',
-              polygon_count: result.polygon_count,
-              vertex_count: result.vertex_count,
-              faces: result.polygon_count ?? 0,
-              vertices: result.vertex_count ?? 0,
-              triangles: result.polygon_count ?? 0,
-              statsAvailable: ((result.polygon_count ?? 0) > 0 || (result.vertex_count ?? 0) > 0),
-              source: { filename: `${jobId}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
-              topology: (result.topology as any) || 'Triangle',
-              format: 'GLB',
-              dimensions: result.dimensions,
-              boundingBox: result.bounding_box,
-              objectCount: result.object_count,
-              componentCount: result.component_count,
-              materialCount: result.material_count,
-              meshDetails: result.mesh_details,
-              postprocessStatus: result.postprocess_status || data.status,
-              dateCreated: new Date().toISOString().split('T')[0],
-              tags: ['AI Generated'],
-              meshType: 'custom',
-              artifacts: {
-                source: (result as any).source_model_url,
-                gameReady: (result as any).game_ready_url,
-                lods: (result as any).lod_urls,
-                collision: (result as any).collision_url,
-                qaReport,
-                pbrMaps: (result as any).pbr_maps,
-              },
-              qaScore,
-              qaStatus,
-              qaWarnings,
-            });
-            addAsset(outputAsset);
-            setSelectedAssetId(outputAsset.id);
-            setViewportResetTrigger(prev => prev + 1);
-            loadModelInViewer(modelUrl, cleanName, outputAsset as any);
-          }
-           toast.success('Generation complete', { description: 'The 3D model is ready and loaded in the viewer.' });
-
-           // Shape → Paint automatic chaining
-           const latestTask = activeTaskRef.current || task;
-           if (
-             (latestTask?.provider?.includes('shape_v21') || latestTask?.provider?.includes('dit_v2_mini_turbo')) &&
-             generationSettings.generateTexture !== false
-           ) {
-             // Automatically trigger Paint-v2-1 texturing
-             void runPaintAutoChaining(
-               typeof data.result?.file_id === 'string' ? data.result.file_id : undefined,
-             );
-           }
-           return;
-         } else if (data.status === 'failed' || data.status === 'cancelled') {
-          const currentLatestTask = activeTaskRef.current || task;
-          const message = data.error_message || data.message || (data.status === 'cancelled' ? 'Generation cancelled' : 'Generation failed');
-          setIsExecuting(false);
-          setExecutionStep(message);
-          const diagnostic = data.status === 'failed' ? diagnoseJobError({
-            id: jobId,
-            status: 'failed',
-            error: message,
-            error_message: message,
-            provider: currentLatestTask.provider || '',
-          } as any) : null;
-          setActiveTask(prev => prev ? {
-            ...prev,
-            status: data.status === 'cancelled' ? 'interrupted' : 'failed',
-            currentStep: message,
-            errorMessage: message,
-            diagnostic,
-            progress,
-            logs: data.logs || prev.logs,
-          } : null);
-          if (data.status === 'failed') toast.error('Generation failed', { description: message });
-          return;
-        }
-
-        // Adaptive polling: 500ms when in active generation/texturing, 1000ms otherwise
-        const nextInterval = (progress >= 50 || data.stage === 'generating' || data.stage === 'texturing' || data.stage === 'optimizing') ? 500 : 1000;
-        scheduleNext(nextInterval);
-      } catch (error) {
-        if (stopped) return;
-        if (error instanceof Error) setExecutionStep(`Syncing job status… ${error.message}`);
-        scheduleNext(1500);
-      }
-    };
-
-    void poll();
-    return () => {
-      stopped = true;
-      if (timerId) window.clearTimeout(timerId);
-    };
-  }, [activeTask?.id, activeTask?.status, addAsset, runPaintAutoChaining, generationSettings.generateTexture]);
-
   const selectAsset = useCallback((id: string) => {
     setSelectedAssetId(id);
     // Increment viewport trigger to force MeshViewer reload
@@ -1352,6 +1190,168 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         toast.error('Paint auto-chaining failed', { description: message });
       }
     }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.imageFileId, generationSettings.generateTexture, generationSettings.generatePBR, startTask]);
+
+  useEffect(() => {
+    const task = activeTaskRef.current;
+    if (!task || task.status === 'completed' || task.status === 'failed' || task.status === 'interrupted') return;
+    const jobId = task.id;
+    const isBackendJob = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId);
+    if (!isBackendJob) return;
+
+    let stopped = false;
+    let timerId: number | null = null;
+
+    const scheduleNext = (intervalMs: number) => {
+      if (stopped) return;
+      if (timerId) window.clearTimeout(timerId);
+      timerId = window.setTimeout(() => void poll(), intervalMs);
+    };
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' });
+        if (!res.ok) throw await parseApiError(res);
+        const raw = await parseApiData<BackendJobPayload>(res);
+        if (stopped) return;
+
+        // Normalize backend job contract to the UI's expected shape:
+        // - backend progress is 0..1 fraction, UI wants 0..100
+        // - backend result.mesh_url → UI result.model_url / active_model_url
+        // - backend result.thumbnail_url stays as thumbnail_url (rewritten to proxy path)
+        // - backend error → UI error_message
+        const data = normalizeBackendJob(raw);
+        const result = data.result;
+
+        const progress = Math.max(0, Math.min(100, Number(data.progress ?? 0)));
+        setExecutionProgress(progress);
+        const currentMsg = data.message || data.stage || 'Processing';
+        setExecutionStep(currentMsg);
+        setActiveTask(prev => prev ? {
+          ...prev,
+          progress,
+          currentStep: currentMsg,
+          stage: data.stage || prev.stage,
+          logs: data.logs || prev.logs,
+        } : null);
+
+        if (data.status === 'completed') {
+          setIsExecuting(false);
+          setExecutionProgress(100);
+          setExecutionStep('Completed');
+          setActiveTask(prev => prev ? { ...prev, status: 'completed', progress: 100, currentStep: 'Completed', logs: data.logs || prev.logs } : null);
+          let modelUrl: string | undefined;
+          let cleanName: string | undefined;
+          if (result?.model_url || result?.active_model_url) {
+            const currentLatestTask = activeTaskRef.current || task;
+            modelUrl = (result.active_model_url || result.model_url) as string;
+            const promptTitle = currentLatestTask.title && currentLatestTask.title !== 'Image-to-3D generation' && currentLatestTask.title !== 'generate' ? currentLatestTask.title : null;
+            const rawName = promptTitle || currentLatestTask.inputImageName || (currentLatestTask.inputImage ? currentLatestTask.inputImage.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : null) || `Model_${jobId.slice(0, 6)}`;
+            cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+
+            // Pre-fetch the model arrayBuffer immediately into in-memory cache
+            void prefetchGLB(modelUrl);
+
+            const qaReport = (result as any).qa_report;
+            const qaScore = qaReport?.game_ready_score ?? (qaReport?.score ? Math.round(qaReport.score * 100) : undefined);
+            const qaStatus = qaReport?.status ?? (qaScore !== undefined ? (qaScore >= 80 ? 'pass' : qaScore >= 50 ? 'warn' : 'fail') : undefined);
+            const qaWarnings = qaReport?.warnings ?? [];
+
+            const outputAsset = normalizeModelAsset({
+              id: jobId,
+              name: cleanName,
+              category: 'generation',
+              thumbnail: result.thumbnail_url || '',
+              polygon_count: result.polygon_count,
+              vertex_count: result.vertex_count,
+              faces: result.polygon_count ?? 0,
+              vertices: result.vertex_count ?? 0,
+              triangles: result.polygon_count ?? 0,
+              statsAvailable: ((result.polygon_count ?? 0) > 0 || (result.vertex_count ?? 0) > 0),
+              source: { filename: `${jobId}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
+              topology: (result.topology as any) || 'Triangle',
+              format: 'GLB',
+              dimensions: result.dimensions,
+              boundingBox: result.bounding_box,
+              objectCount: result.object_count,
+              componentCount: result.component_count,
+              materialCount: result.material_count,
+              meshDetails: result.mesh_details,
+              postprocessStatus: result.postprocess_status || data.status,
+              dateCreated: new Date().toISOString().split('T')[0],
+              tags: ['AI Generated'],
+              meshType: 'custom',
+              artifacts: {
+                source: (result as any).source_model_url,
+                gameReady: (result as any).game_ready_url,
+                lods: (result as any).lod_urls,
+                collision: (result as any).collision_url,
+                qaReport,
+                pbrMaps: (result as any).pbr_maps,
+              },
+              qaScore,
+              qaStatus,
+              qaWarnings,
+            });
+            addAsset(outputAsset);
+            setSelectedAssetId(outputAsset.id);
+            setViewportResetTrigger(prev => prev + 1);
+            loadModelInViewer(modelUrl, cleanName, outputAsset as any);
+          }
+           toast.success('Generation complete', { description: 'The 3D model is ready and loaded in the viewer.' });
+
+           // Shape → Paint automatic chaining
+           const latestTask = activeTaskRef.current || task;
+           if (
+             (latestTask?.provider?.includes('shape_v21') || latestTask?.provider?.includes('dit_v2_mini_turbo')) &&
+             generationSettings.generateTexture !== false
+           ) {
+             // Automatically trigger Paint-v2-1 texturing
+             void runPaintAutoChaining(
+               typeof data.result?.file_id === 'string' ? data.result.file_id : undefined,
+             );
+           }
+           return;
+         } else if (data.status === 'failed' || data.status === 'cancelled') {
+          const currentLatestTask = activeTaskRef.current || task;
+          const message = data.error_message || data.message || (data.status === 'cancelled' ? 'Generation cancelled' : 'Generation failed');
+          setIsExecuting(false);
+          setExecutionStep(message);
+          const diagnostic = data.status === 'failed' ? diagnoseJobError({
+            id: jobId,
+            status: 'failed',
+            error: message,
+            error_message: message,
+            provider: currentLatestTask.provider || '',
+          } as any) : null;
+          setActiveTask(prev => prev ? {
+            ...prev,
+            status: data.status === 'cancelled' ? 'interrupted' : 'failed',
+            currentStep: message,
+            errorMessage: message,
+            diagnostic,
+            progress,
+            logs: data.logs || prev.logs,
+          } : null);
+          if (data.status === 'failed') toast.error('Generation failed', { description: message });
+          return;
+        }
+
+        // Adaptive polling: 500ms when in active generation/texturing, 1000ms otherwise
+        const nextInterval = (progress >= 50 || data.stage === 'generating' || data.stage === 'texturing' || data.stage === 'optimizing') ? 500 : 1000;
+        scheduleNext(nextInterval);
+      } catch (error) {
+        if (stopped) return;
+        if (error instanceof Error) setExecutionStep(`Syncing job status… ${error.message}`);
+        scheduleNext(1500);
+      }
+    };
+
+    void poll();
+    return () => {
+      stopped = true;
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [activeTask?.id, activeTask?.status, addAsset, runPaintAutoChaining, generationSettings.generateTexture]);
 
    const runUVUnwrapGeneration = useCallback(async (customSettings?: {
     distortionThreshold?: number;
