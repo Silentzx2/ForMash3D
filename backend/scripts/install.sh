@@ -370,12 +370,17 @@ else
 fi
 
 echo "[INFO] Installing TRELLIS(v1) requirements on top of TRELLIS.2..."
-$UV_PIP install --find-links="$WHEEL_DIR" pymeshfix igraph 
-$UV_PIP uninstall -y diff-gaussian-rasterization >/dev/null 2>&1 || true
-mkdir -p /tmp/extensions
-rm -rf /tmp/extensions/mip-splatting
-_retry 3 5 git clone https://github.com/autonomousvision/mip-splatting.git /tmp/extensions/mip-splatting
-$UV_PIP install /tmp/extensions/mip-splatting/submodules/diff-gaussian-rasterization/
+$UV_PIP install --find-links="$WHEEL_DIR" pymeshfix igraph
+
+# Prefer the validated TRELLIS-compatible Mip-Splatting wheel already cached/downloaded in WHEEL_DIR.
+# Fall back to the existing source-build path only when no valid local wheel is available.
+if ! install_local_wheel "diff_gaussian_rasterization-*.whl" "TRELLIS diff-gaussian-rasterization"; then
+    echo "[INFO] No valid local TRELLIS rasterizer wheel; building Mip-Splatting renderer from source..."
+    mkdir -p /tmp/extensions
+    rm -rf /tmp/extensions/mip-splatting
+    _retry 3 5 git clone https://github.com/autonomousvision/mip-splatting.git /tmp/extensions/mip-splatting
+    $UV_PIP install /tmp/extensions/mip-splatting/submodules/diff-gaussian-rasterization/ --no-build-isolation
+fi
 
 # for systems with glibc < 2.29 , you may need to build kaolin from source manually
 echo "[NOTE] For systems with glibc < 2.29, you may need to build kaolin from source manually"

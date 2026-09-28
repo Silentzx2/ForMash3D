@@ -3,6 +3,7 @@
 ## 2026-09-28 — 3D Orientation & TRELLIS Renderer Compatibility
 - Corrected TripoSR Z-up output to the ForMash3D Y-up viewport convention.
 - Prevented an incompatible generic diff-gaussian-rasterization wheel from overriding TRELLIS's required mip-splatting renderer.
+- TRELLIS installation now prefers a valid `diff_gaussian_rasterization` wheel from `backend/thirdparty/wheels/` and only builds Mip-Splatting from source when no usable local wheel is available.
 - Fresh GPU validation remains required.
 
 ## 2026-09-28 — Pre-Ampere Attention & Model Dependency Hardening

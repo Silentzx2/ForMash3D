@@ -396,5 +396,6 @@
 **Reason**: TRELLIS passes `kernel_size` and `subpixel_offset` to `GaussianRasterizationSettings`; the runtime supplied a renderer without those fields, causing postprocessing to fail.
 
 **Consequences**:
-- The installer removes the generic package and installs the expected mip-splatting submodule.
+- The installer prefers a valid prebuilt `diff_gaussian_rasterization` wheel from `backend/thirdparty/wheels/`.
+- The installer falls back to the expected Mip-Splatting submodule source build only when no usable local wheel is available.
 - The application code remains aligned with the renderer API it was written for.
