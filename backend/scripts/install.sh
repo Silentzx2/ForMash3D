@@ -559,7 +559,7 @@ echo "========================================"
 ### unirig for auto-rigging  ###
 echo "[INFO] Changing directory to thirdparty/UniRig..."
 cd "$THIRDPARTY_DIR/UniRig"
-echo "[INFO] Installing spconv-cu120 for UniRig..."
+echo "[INFO] Installing spconv-cu124 for UniRig..."
 $UV_PIP install --find-links="$WHEEL_DIR" spconv-cu124
 $UV_PIP install --find-links="$WHEEL_DIR" pyrender fast-simplification python-box timm
 if [ $? -eq 0 ]; then
