@@ -215,6 +215,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             prompt = str(inputs.get("prompt", "")).strip()
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
+            use_flash_decoder = device == "cuda" and torch.cuda.get_device_capability()[0] >= 8
 
             if is_scribble and prompt:
                 # Run scribble pipeline
@@ -255,6 +256,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     generator=generator,
                     num_inference_steps=steps,
                     guidance_scale=guidance,
+                    use_flash_decoder=use_flash_decoder,
                 ).samples[0]
                 mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))
 

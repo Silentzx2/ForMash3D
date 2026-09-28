@@ -174,9 +174,10 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             # Preprocess image
             from tsr.utils import remove_background, resize_foreground, to_gradio_3d_orientation
 
-            raw_image = Image.open(image_path).convert("RGB")
+            # Preserve an existing alpha channel so pre-matted uploads are not background-removed twice.
+            raw_image = Image.open(image_path).convert("RGBA")
             if no_remove_bg:
-                proc_image = np.array(raw_image)
+                proc_image = np.array(raw_image.convert("RGB"))
             else:
                 try:
                     import rembg
@@ -212,9 +213,11 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 mesh = to_gradio_3d_orientation(mesh)
             except Exception as orient_err:
                 logger.warning(f"to_gradio_3d_orientation failed ({orient_err}), falling back to trimesh rotation")
-                import trimesh.transformations
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+
+            # TripoSR's upstream display orientation is Z-up; ForMash3D's viewport is Y-up.
+            mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
 
             texture_requested = bake_texture
             texture_bake_succeeded = False

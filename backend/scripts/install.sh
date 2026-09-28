@@ -371,10 +371,11 @@ fi
 
 echo "[INFO] Installing TRELLIS(v1) requirements on top of TRELLIS.2..."
 $UV_PIP install --find-links="$WHEEL_DIR" pymeshfix igraph 
-if ! install_local_wheel "diff_gaussian_rasterization-*.whl" "diff-gaussian-rasterization"; then
+$UV_PIP uninstall -y diff-gaussian-rasterization >/dev/null 2>&1 || true
+mkdir -p /tmp/extensions
+rm -rf /tmp/extensions/mip-splatting
 _retry 3 5 git clone https://github.com/autonomousvision/mip-splatting.git /tmp/extensions/mip-splatting
-    $UV_PIP install /tmp/extensions/mip-splatting/submodules/diff-gaussian-rasterization/
-fi
+$UV_PIP install /tmp/extensions/mip-splatting/submodules/diff-gaussian-rasterization/
 
 # for systems with glibc < 2.29 , you may need to build kaolin from source manually
 echo "[NOTE] For systems with glibc < 2.29, you may need to build kaolin from source manually"
