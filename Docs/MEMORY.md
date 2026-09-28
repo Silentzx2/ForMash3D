@@ -1,3 +1,11 @@
+## 2026-09-28 Colab Runtime Findings — Attention Backend and Tripo Dependencies
+
+- TRELLIS reached sampling, then failed because the pre-Ampere adapter selection requested SDPA while bundled sparse attention still routed to FlashAttention. Full, serialized, and windowed sparse attention now have direct PyTorch SDPA paths.
+- TripoSF accepted SDPA at the sparse-environment layer, but full/serialized attention imports rejected it. Those modules now accept SDPA and execute segmented attention through PyTorch SDPA.
+- TripoSG declares diffusers 0.30.3 while the global baseline pins 0.24.0; the installer now re-applies TripoSG requirements after the global baseline.
+- The supplied viewport screenshot was reviewed for the rough/tilted TripoSG result. No model-specific rotation or quality transform was found in the adapter path, and no arbitrary geometry fix was added without a reproducible runtime cause.
+- GPU inference was not rerun after these changes; fresh Colab validation is still required.
+
 # Project Memory — ForMash 3D
 
 > **Version**: 0.1.0

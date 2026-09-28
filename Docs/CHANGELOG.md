@@ -1,3 +1,11 @@
+# Changelog
+
+## 2026-09-28 — Pre-Ampere Attention & Model Dependency Hardening
+- Added PyTorch SDPA support to bundled TRELLIS sparse full, serialized, and windowed attention.
+- Completed TripoSF SDPA support where its runtime already selected that backend.
+- Fixed installer ordering so TripoSG's declared diffusers 0.30.3 / transformer compatibility is restored after the global baseline.
+- Static verification remains required; GPU inference still needs a fresh Colab run.
+
 # ForMash 3D — Changelog
 
 All notable changes, architectural updates, and feature implementations for ForMash 3D are documented in this file.
