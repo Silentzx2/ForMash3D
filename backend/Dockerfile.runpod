@@ -90,18 +90,25 @@ RUN pip install /app/assets/wheels/torch_scatter-2.1.2+pt26cu124-cp310-cp310-lin
 RUN pip install /app/assets/wheels/torch_sparse-0.6.18+pt26cu124-cp310-cp310-linux_x86_64.whl --no-deps
 RUN pip install /app/assets/wheels/torch_cluster-1.6.3+pt26cu124-cp310-cp310-linux_x86_64.whl --no-deps
 
-# Install Hunyuan3D 2.1 dependencies
-WORKDIR /app/thirdparty/Hunyuan3D-2.1
-RUN cd hy3dpaint/custom_rasterizer && pip install -e . --no-build-isolation
-WORKDIR /app/thirdparty/Hunyuan3D-2.1/hy3dpaint/DifferentiableRenderer
-RUN pip install pybind11==3.0.1
+# Install Hunyuan3D unified runtime dependencies
+WORKDIR /app/thirdparty
+RUN pip install -r hunyuan-requirements.txt
+
+# Build Hunyuan3D-Shape-v2-1 native components
+WORKDIR /app/thirdparty/hunyuan3d-shape-v2-1/hy3dpaint/custom_rasterizer
+RUN pip install -e . --no-build-isolation
+WORKDIR /app/thirdparty/hunyuan3d-shape-v2-1/hy3dpaint/DifferentiableRenderer
 RUN bash compile_mesh_painter.sh
-WORKDIR /app/thirdparty/Hunyuan3D-2.1
-RUN pip install -r requirements-inference.txt
+
+# Build Hunyuan3D-Paint-v2-1 native components
+WORKDIR /app/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/custom_rasterizer
+RUN pip install -e . --no-build-isolation
+WORKDIR /app/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/DifferentiableRenderer
+RUN bash compile_mesh_painter.sh
 
 # Install UniRig dependencies
 WORKDIR /app/thirdparty/UniRig
-RUN pip install spconv-cu120 pyrender fast-simplification python-box timm
+RUN pip install spconv-cu124 pyrender fast-simplification python-box timm
 
 # Install PartPacker dependencies
 WORKDIR /app/thirdparty/PartPacker
@@ -132,7 +139,6 @@ RUN pip install pysdf sentencepiece
 WORKDIR /app
 RUN pip install -r requirements.txt
 RUN pip install -r requirements-test.txt
-RUN pip install huggingface_hub vtk pyvista numpy==1.24.3
 
 # Create necessary directories
 RUN mkdir -p /app/uploads /app/data /app/logs /app/outputs
