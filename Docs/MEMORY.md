@@ -89,6 +89,20 @@ TASK-001: Complete documentation and verification
 
 6. **Colab scripts incomplete**: Only `scripts/colab.sh` exists. `colab_start.sh`, `colab_stop.sh`, etc. referenced in docs do not exist.
 
+7. ~~**`cupy-cuda124` package not found on PyPI**: Fixed by replacing `cupy-cuda124>=13.4.0` with `cupy-cuda12x>=13.4.0` in all three Hunyuan3D requirements.txt files (shape-v2-1, paint-v2-1, dit-v2-mini-turbo).~~ (Resolved)
+
+8. ~~**`basicsr>=1.4.2` has no wheels for Python 3.10**: Fixed by changing to `basicsr>=1.3.3.3` in both Hunyuan3D requirements.txt files.~~ (Resolved)
+
+9. ~~**`spconv-cu120` for UniRig and `torch==2.4.0+cu118` for VoxHammer**: Fixed to use `spconv-cu124` and `torch==2.6.0+cu124` respectively.~~ (Resolved)
+
+10. **Prebuilt wheels not found by install.sh**: Added copy step in `ensure_release_wheels()` to copy wheels from `backend/assets/wheels/` to `backend/thirdparty/wheels/`. (Resolved)
+
+11. **Hunyuan model dependency deduplication**: Removed `torch==2.6.0+cu124`, `torchvision==0.21.0+cu124`, `torchaudio==2.6.0+cu124`, `--extra-index-url https://download.pytorch.org/whl/cu124`, and `deepspeed` from all three Hunyuan model requirements.txt files. `backend/requirements.txt` and `install.sh` are the single source of truth for global runtime dependencies. `deepspeed` is a training-only dependency not used in inference. (Resolved)
+
+12. **Hunyuan unified dependency structure**: Created `backend/thirdparty/hunyuan-requirements.txt` as the single unified dependency file for all 3 Hunyuan models. Removed three model-specific `requirements.txt` files from model directories. Updated `install.sh` to install `hunyuan-requirements.txt` once instead of three separate installs. Added `safetensors>=0.4.4` and `tqdm>=4.66.0` (verified as imported by model code). Fixed `basicsr>=1.4.2` → `basicsr>=1.3.3.3` (Python 3.10 wheel compatibility). Zero overlap between `backend/requirements.txt` and `hunyuan-requirements.txt`. (Resolved)
+
+## Next Step
+
 ## Next Step
 
 ### Critical

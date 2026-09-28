@@ -419,6 +419,21 @@ echo "[SUCCESS] PartField installation completed"
 
 echo ""
 echo "========================================"
+echo "Installing Hunyuan3D Unified Dependencies"
+echo "========================================"
+### unified Hunyuan dependencies — installed once for all 3 models ###
+echo "[INFO] Installing hunyuan-requirements.txt (shared by Shape v2.1, Paint v2.1, DiT v2 Mini Turbo)..."
+cd "$PROJECT_ROOT/backend/thirdparty"
+$UV_PIP install --find-links="$WHEEL_DIR" -r hunyuan-requirements.txt --index-strategy unsafe-best-match
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Hunyuan unified dependencies installed"
+else
+    echo "[ERROR] Failed to install Hunyuan unified dependencies"
+    exit 1
+fi
+
+echo ""
+echo "========================================"
 echo "Installing Hunyuan3D-Shape-v2-1 Dependencies"
 echo "========================================"
 ### installation for Hunyuan3D-Shape-v2-1 ###
@@ -448,8 +463,6 @@ else
     exit 1
 fi
 cd "$THIRDPARTY_DIR/hunyuan3d-shape-v2-1"
-echo "[INFO] Installing Hunyuan3D-Shape-v2-1 requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt --index-strategy unsafe-best-match
 ### installation for Hunyuan3D-Shape-v2-1 end ###
 echo "[SUCCESS] Hunyuan3D-Shape-v2-1 installation completed"
 
@@ -460,15 +473,6 @@ echo "========================================"
 ### installation for Hunyuan3D-Paint-v2-1 ###
 echo "[INFO] Changing directory to thirdparty/hunyuan3d-paint-v2-1..."
 cd "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1"
-echo "[INFO] Installing Hunyuan3D-Paint-v2-1 requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt --index-strategy unsafe-best-match
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] Hunyuan3D-Paint-v2-1 requirements installed"
-else
-    echo "[ERROR] Failed to install Hunyuan3D-Paint-v2-1 requirements"
-    exit 1
-fi
-
 # Download RealESRGAN_x4plus.pth checkpoint
 echo "[INFO] Downloading RealESRGAN_x4plus.pth checkpoint..."
 mkdir -p "$THIRDPARTY_DIR/hunyuan3d-paint-v2-1/hy3dpaint/ckpt"
@@ -544,9 +548,8 @@ echo "========================================"
 ### installation for Hunyuan3D-DiT-v2-mini-Turbo ###
 echo "[INFO] Changing directory to thirdparty/hunyuan3d-dit-v2-mini-turbo..."
 cd "$THIRDPARTY_DIR/hunyuan3d-dit-v2-mini-turbo"
-echo "[INFO] Installing Mini Turbo requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
 ### installation for Hunyuan3D-DiT-v2-mini-Turbo end ###
+echo "[SUCCESS] Hunyuan3D-DiT-v2-mini-Turbo uses shared hunyuan-requirements.txt — no additional install needed"
 echo "[SUCCESS] Hunyuan3D-DiT-v2-mini-Turbo installation completed"
 
 echo ""

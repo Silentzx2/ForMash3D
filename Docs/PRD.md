@@ -322,7 +322,6 @@ ForMash3D/
 │   ├── config/                        # models.yaml, system.yaml
 │   ├── scripts/                       # install.sh, download_models.sh
 │   ├── thirdparty/                    # Third-party source code
-│   └── requirements.txt
 ├── scripts/                           # Setup and lifecycle scripts
 ├── docs/                              # Technical documentation
 ├── backend/storage/                   # Generated assets

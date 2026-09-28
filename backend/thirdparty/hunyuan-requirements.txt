@@ -1,0 +1,71 @@
+--extra-index-url https://mirrors.cloud.tencent.com/pypi/simple/
+--extra-index-url https://mirrors.aliyun.com/pypi/simple
+
+# ═══════════════════════════════════════════════════════════════
+# HUNYUAN SHARED — Dependencies used by all 3 Hunyuan models
+# Shape v2.1, Paint v2.1, and DiT v2 Mini Turbo
+# ═══════════════════════════════════════════════════════════════
+# NOTE: torch, torchvision, torchaudio are installed centrally
+# by backend/requirements.txt + install.sh line 268.
+# NOTE: transformers, diffusers, huggingface_hub, fastapi, uvicorn,
+# pydantic, PyYAML, psutil, trimesh, open3d, numpy, scikit-image,
+# accelerate, opencv-python-headless, realesrgan are owned by
+# backend/requirements.txt and installed centrally.
+
+# Scientific Computing
+scipy>=1.12.0
+einops>=0.8.0
+pandas>=2.0.0
+tqdm>=4.66.0
+safetensors>=0.4.4
+
+# Computer Vision & Image Processing
+imageio>=2.33.0
+rembg>=2.0.65
+
+# 3D Mesh Processing
+pymeshlab>=2023.12
+pygltflib>=1.16.3
+xatlas>=0.0.9
+
+# Configuration Management
+omegaconf>=2.3.0
+configargparse>=1.7
+
+# Utilities
+timm
+torchdiffeq
+
+# GPU Computing (CUDA 12.4)
+cupy-cuda12x>=13.4.0
+
+# ONNX Runtime
+onnxruntime>=1.16.0
+
+# OpenCV (full package, distinct from opencv-python-headless in backend/requirements.txt)
+opencv-python>=4.8.0
+
+# ═══════════════════════════════════════════════════════════════
+# SHAPE v2.1 — Additional dependencies for Hunyuan3D-Shape-v2-1
+# ═══════════════════════════════════════════════════════════════
+
+# PBR Texture & Super-Resolution
+basicsr>=1.3.3.3
+
+# Metrics & Rendering
+torchmetrics>=1.7.0
+pythreejs
+
+# Web Framework (for demo)
+gradio>=5.0.0
+
+# ═══════════════════════════════════════════════════════════════
+# PAINT v2.1 — Additional dependencies for Hunyuan3D-Paint-v2-1
+# Identical to Shape v2.1 (Paint pipeline requires the same extras)
+# ═══════════════════════════════════════════════════════════════
+# (No additional packages beyond Shape v2.1 — see SHAPE v2.1 section)
+
+# ═══════════════════════════════════════════════════════════════
+# MINI TURBO — Additional dependencies for Hunyuan3D-DiT-v2-mini-Turbo
+# No additional packages beyond SHARED (DiT is a lightweight model)
+# ═══════════════════════════════════════════════════════════════
