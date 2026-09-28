@@ -23,7 +23,6 @@ _ADAPTER_MAP = {
     "FastMeshRetopologyAdapter": ("fastmesh_adapter", "FastMeshRetopologyAdapter"),
     # Hunyuan3D Shape v2-1
     "Hunyuan3DShapeV21ImageToRawMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToRawMeshAdapter"),
-    "Hunyuan3DShapeV21ImageToTexturedMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToTexturedMeshAdapter"),
     # Hunyuan3D Paint v2-1
     "Hunyuan3DPaintV21ImageMeshPaintingAdapter": ("hunyuan3d_paint_v21", "Hunyuan3DPaintV21ImageMeshPaintingAdapter"),
     # Hunyuan3D DiT v2 Mini Turbo

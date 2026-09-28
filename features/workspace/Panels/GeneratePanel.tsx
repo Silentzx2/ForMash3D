@@ -112,7 +112,6 @@ function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
   else if (id === 'triposr_image_to_raw_mesh') cleanLabel = 'TripoSR (Ultra-Fast Geometry)';
   else if (id === 'triposg_image_to_raw_mesh') cleanLabel = 'TripoSG (Fast Feed-Forward Geometry)';
   else if (id === 'triposf_image_to_raw_mesh') cleanLabel = 'TripoSF (High-Density Neural Raw Mesh)';
-else if (id === 'hunyuan3d_shape_v21_image_to_textured_mesh') cleanLabel = 'Hunyuan3D-Shape-v2-1 (PBR Production Mesh)';
   else if (id === 'hunyuan3d_shape_v21_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-Shape-v2-1 (Raw Geometry)';
   else if (id === 'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-DiT-v2-mini-Turbo (Low-VRAM Geometry)';
   else if (id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
@@ -184,7 +183,6 @@ export const GeneratePanel: React.FC = () => {
         'trellis_image_to_textured_mesh',
         'triposr_image_to_raw_mesh',
         'triposg_image_to_raw_mesh',
-        'hunyuan3d_shape_v21_image_to_textured_mesh',
         'hunyuan3d_shape_v21_image_to_raw_mesh',
         'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
         'triposf_image_to_raw_mesh',

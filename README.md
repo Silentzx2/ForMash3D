@@ -199,11 +199,11 @@ flowchart TB
 
 ## 🤖 Supported Model Catalog
 
-The model registry is dynamically configured via `backend/config/models.yaml`, providing **23 discrete model configurations** across 15 neural architectures:
+The model registry is dynamically configured via `backend/config/models.yaml`, providing **23 discrete model configurations** across 18 model architectures. Hunyuan3D-Shape-v2-1 and Hunyuan3D-DiT-v2-mini-Turbo expose raw geometry; when texture generation is enabled, the Workspace automatically chains the generated mesh into Hunyuan3D-Paint-v2-1.
 
 | Model Architecture | Registered Adapters (23 total) | Category / Tasks | VRAM Budget | Key Capabilities |
 |---|---|---|---|---|
-| **Hunyuan3D-Shape-v2-1** | `hunyuan3d_shape_v21_image_to_raw_mesh`<br>`hunyuan3d_shape_v21_image_to_textured_mesh` | Raw & Textured Mesh | 10–29 GB | 3.3B shape model, official 2.1 pipeline |
+| **Hunyuan3D-Shape-v2-1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline |
 | **Hunyuan3D-Paint-v2-1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB | 2B PBR texture checkpoint, RealESRGAN x4+, DifferentiableRenderer |
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM shape model, Turbo path |
 | **Hunyuan3D-2.1 (Legacy)** | `hunyuan3dv21_image_to_raw_mesh`<br>`hunyuan3dv21_image_to_textured_mesh`<br>`hunyuan3dv21_image_mesh_painting` | Raw & Textured Mesh, Mesh Painting | 8–19.5 GB | Deprecated legacy Hunyuan3D-2.1 integration |

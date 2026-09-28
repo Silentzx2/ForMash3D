@@ -86,23 +86,6 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     status: 'available',
     description: 'Ultra-high-definition image-to-3D pipeline with 2K texture baking and crisp geometry.',
   },
-  {
-    id: 'hunyuan3d_shape_v21_image_to_textured_mesh',
-    name: 'Hunyuan3D-Shape-v2-1 (Image → Textured 3D)',
-    category: 'mesh_generation',
-    feature: 'image_to_textured_mesh',
-    featureLabel: 'Image to Textured 3D',
-    vramMb: 29000,
-    lowVramSupported: false,
-    supportsTexture: true,
-    supportedInputs: ['image'],
-    supportedOutputs: ['glb', 'obj'],
-    modelPath: 'backend/pretrained/tencent/Hunyuan3D-2.1',
-    enabled: true,
-    status: 'available',
-    description: '3.3B shape model generating high-quality mesh with PBR texture via chaining with Paint-v2-1.',
-  },
-
   // ── MESH GENERATION (Image to Raw Geometry) ──────────────────────────
   {
     id: 'hunyuan3d_shape_v21_image_to_raw_mesh',
@@ -129,7 +112,7 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     vramMb: 6144,
     lowVramSupported: true,
     lowVramMb: 4096,
-    supportsTexture: false,
+    supportsTexture: true,
     supportsFlashVDM: true,
     supportedInputs: ['image'],
     supportedOutputs: ['glb', 'obj'],

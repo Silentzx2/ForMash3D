@@ -9,7 +9,7 @@
 ## ✅ Completed
 
 ### Backend
-- [x] All 15 model adapters implemented and registered in `backend/adapters/__init__.py`
+- [x] Current model adapter registry implemented and lazily loaded from `backend/adapters/__init__.py`
 - [x] 23 model configurations in `backend/config/models.yaml`
 - [x] VRAM-aware multiprocess scheduler with GPU mutual exclusion
 - [x] Redis job queue for multi-worker mode
@@ -25,7 +25,19 @@
 - [x] FlashVDM toggle button
 - [x] Dockerfile Paint DifferentiableRenderer build fix
 - [x] All bare `except:` clauses fixed in project code
-- [x] All adapters import cleanly (verified by test suite)
+- [x] Current adapters import cleanly (verified by test suite)
+
+### Runtime Contract Audit
+- [x] Remove non-functional direct Hunyuan Shape textured model registration
+- [x] Fix Shape/Mini Turbo → Paint generated mesh file-ID handoff
+- [x] Fix Shape/Mini Turbo → Paint reference image input handoff
+- [x] Fix invalid mesh-generation API model defaults
+- [x] Normalize Admin Jobs progress from backend fraction to UI percentage
+- [x] Fix partial release-wheel cache detection
+- [x] Align environment defaults with documented Conda runtime
+- [x] Correct Docker helper API port output
+- [x] Make verification scripts exercise FastAPI lifespan
+- [x] Fix dead RGB/background-removal branches in project-owned Hunyuan helpers
 
 ### Frontend
 - [x] Next.js 16 App Router with all routes
@@ -63,7 +75,7 @@
 - [x] TRELLIS FlashAttention pre-Ampere GPU compatibility
 
 ### Git & Commits
-- [x] All changes committed and pushed to `main`
+- [x] Previous audit changes committed to `main`
 - [x] `TODO_AUDIT.md` excluded from git commits
 - [x] 625+ files committed in single commit
 
@@ -72,7 +84,6 @@
 ## 🔜 Future Work
 
 ### Critical
-- [ ] Fix `backend/Dockerfile` to include Paint DifferentiableRenderer build step
 - [ ] Verify `runTextureGeneration` dependency array includes `generationSettings.maxNumView`, `generationSettings.resolution`, `generationSettings.generatePBR`
 - [ ] Add `supportsFlashVDM` to `isTexturePaintingModel` if needed
 - [ ] Verify `TexturePanel.tsx` `getTextureStatusInfo` checks VRAM status

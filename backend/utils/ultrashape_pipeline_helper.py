@@ -280,9 +280,11 @@ class UltraShapeInferenceHelper:
         try:
             # Step 1: Generate coarse mesh using Hunyuan3D-2.1
             logger.info("Step 1: Generating coarse mesh with Hunyuan3D-2.1...")
-            image = Image.open(image_path).convert("RGBA")
+            image = Image.open(image_path)
             if image.mode == "RGB":
                 image = hunyuan_bg_remover(image)
+            else:
+                image = image.convert("RGBA")
             
             coarse_mesh = hunyuan_pipeline(image=image)[0]
             

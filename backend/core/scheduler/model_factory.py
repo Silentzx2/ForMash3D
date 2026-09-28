@@ -55,10 +55,6 @@ class ModelFactory:
             "module": "adapters.hunyuan3d_shape_v21",
             "class": "Hunyuan3DShapeV21ImageToRawMeshAdapter",
         },
-        "hunyuan3d_shape_v21_image_to_textured_mesh": {
-            "module": "adapters.hunyuan3d_shape_v21",
-            "class": "Hunyuan3DShapeV21ImageToTexturedMeshAdapter",
-        },
         "hunyuan3d_paint_v21_image_mesh_painting": {
             "module": "adapters.hunyuan3d_paint_v21",
             "class": "Hunyuan3DPaintV21ImageMeshPaintingAdapter",
@@ -452,11 +448,6 @@ def get_default_model_configs() -> Dict[str, Dict[str, Any]]:
                 model_id="hunyuan3d_shape_v21_image_to_raw_mesh",
                 feature_type="image_to_raw_mesh",
                 vram_requirement=10240,
-            ),
-            "hunyuan3d_shape_v21_image_to_textured_mesh": ModelFactory.create_model_config(
-                model_id="hunyuan3d_shape_v21_image_to_textured_mesh",
-                feature_type="image_to_textured_mesh",
-                vram_requirement=29000,
             ),
             "hunyuan3d_paint_v21_image_mesh_painting": ModelFactory.create_model_config(
                 model_id="hunyuan3d_paint_v21_image_mesh_painting",

@@ -342,3 +342,18 @@
 - Hunyuan3D-Paint-v2-1 requires ~21GB VRAM
 - Hunyuan3D-Shape-v2-1 requires 10-29GB VRAM
 - Hunyuan3D-DiT-v2-mini-Turbo requires ~6GB VRAM
+
+
+---
+
+## ADR-021: Canonical Hunyuan Shape→Paint Workflow
+
+**Decision**: Treat Hunyuan3D-Shape-v2-1 as the raw-mesh stage and Hunyuan3D-Paint-v2-1 as the optional texture stage. Do not register a separate direct Shape textured model ID.
+
+**Reason**: Shape and Paint are separate model checkpoints with independent VRAM and lifecycle requirements. The existing scheduler and Workspace already support the two-stage flow, allowing Shape to finish and expose a generated file ID before Paint is scheduled.
+
+**Consequences**:
+- `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` are the current Hunyuan shape-generation IDs.
+- `hunyuan3d_paint_v21_image_mesh_painting` remains independently callable.
+- Workspace texture generation uses the generated job file ID plus the original image input for Shape-v2-1 or Mini Turbo → Paint handoff.
+- The removed direct Shape textured ID is not exposed through the model registry or GeneratePanel.

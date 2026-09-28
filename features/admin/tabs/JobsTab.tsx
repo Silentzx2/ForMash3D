@@ -46,7 +46,7 @@ export function JobsTab() {
         id: j.job_id ?? j.id,
         status: j.status === 'processing' ? 'generating' : j.status,
         type: j.feature ?? 'generation',
-        progress: typeof j.progress === 'number' ? j.progress : j.status === 'completed' ? 100 : j.status === 'failed' ? 0 : undefined,
+        progress: typeof j.progress === 'number' ? Math.round(Math.max(0, Math.min(1, j.progress)) * 100) : j.status === 'completed' ? 100 : j.status === 'failed' ? 0 : undefined,
         created_at: j.created_at,
         completed_at: j.completed_at,
         error: j.error,

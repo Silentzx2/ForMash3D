@@ -149,47 +149,48 @@ def check_upload_download_contract():
     print("  ✓ FileUploadResponse schema has file_id, url, and metadata fields.")
 
 def check_upload_lifecycle_live():
-    print("[5/5] Running live asset upload, download, and delete lifecycle...")
-    # Image upload & download
-    img = Image.new("RGB", (64, 64), color="blue")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    img_content = buf.getvalue()
+    with client:
+        print("[5/5] Running live asset upload, download, and delete lifecycle...")
+        # Image upload & download
+        img = Image.new("RGB", (64, 64), color="blue")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        img_content = buf.getvalue()
 
-    res = client.post(
-        "/api/v1/file-upload/image",
-        files={"file": ("test_cube.png", io.BytesIO(img_content), "image/png")}
-    )
-    assert res.status_code == 200, f"Image upload failed: {res.status_code}, {res.text}"
-    img_data = res.json()
-    img_file_id = img_data.get("file_id")
-    img_url = img_data.get("url")
-    assert img_file_id and img_url, "Missing image file_id or url in response"
+        res = client.post(
+            "/api/v1/file-upload/image",
+            files={"file": ("test_cube.png", io.BytesIO(img_content), "image/png")}
+        )
+        assert res.status_code == 200, f"Image upload failed: {res.status_code}, {res.text}"
+        img_data = res.json()
+        img_file_id = img_data.get("file_id")
+        img_url = img_data.get("url")
+        assert img_file_id and img_url, "Missing image file_id or url in response"
 
-    res_dl = client.get(img_url)
-    assert res_dl.status_code == 200, f"Image download failed: {res_dl.status_code}"
-    assert len(res_dl.content) == len(img_content), "Downloaded image content mismatch"
+        res_dl = client.get(img_url)
+        assert res_dl.status_code == 200, f"Image download failed: {res_dl.status_code}"
+        assert len(res_dl.content) == len(img_content), "Downloaded image content mismatch"
 
-    # Mesh upload & download
-    obj_content = b"v 0.0 0.0 0.0\nv 1.0 0.0 0.0\nv 0.0 1.0 0.0\nf 1 2 3\n"
-    res_mesh = client.post(
-        "/api/v1/file-upload/mesh",
-        files={"file": ("triangle.obj", io.BytesIO(obj_content), "application/octet-stream")}
-    )
-    assert res_mesh.status_code == 200, f"Mesh upload failed: {res_mesh.status_code}, {res_mesh.text}"
-    mesh_data = res_mesh.json()
-    mesh_file_id = mesh_data.get("file_id")
-    mesh_url = mesh_data.get("url")
-    assert mesh_file_id and mesh_url, "Missing mesh file_id or url in response"
+        # Mesh upload & download
+        obj_content = b"v 0.0 0.0 0.0\nv 1.0 0.0 0.0\nv 0.0 1.0 0.0\nf 1 2 3\n"
+        res_mesh = client.post(
+            "/api/v1/file-upload/mesh",
+            files={"file": ("triangle.obj", io.BytesIO(obj_content), "application/octet-stream")}
+        )
+        assert res_mesh.status_code == 200, f"Mesh upload failed: {res_mesh.status_code}, {res_mesh.text}"
+        mesh_data = res_mesh.json()
+        mesh_file_id = mesh_data.get("file_id")
+        mesh_url = mesh_data.get("url")
+        assert mesh_file_id and mesh_url, "Missing mesh file_id or url in response"
 
-    res_mesh_dl = client.get(mesh_url)
-    assert res_mesh_dl.status_code == 200, f"Mesh download failed: {res_mesh_dl.status_code}"
-    assert res_mesh_dl.content == obj_content, "Mesh download content mismatch"
+        res_mesh_dl = client.get(mesh_url)
+        assert res_mesh_dl.status_code == 200, f"Mesh download failed: {res_mesh_dl.status_code}"
+        assert res_mesh_dl.content == obj_content, "Mesh download content mismatch"
 
-    # Cleanup
-    client.delete(f"/api/v1/file-upload/{img_file_id}")
-    client.delete(f"/api/v1/file-upload/{mesh_file_id}")
-    print("  ✓ Full upload -> verify URL -> download -> delete lifecycle verified.")
+        # Cleanup
+        client.delete(f"/api/v1/file-upload/{img_file_id}")
+        client.delete(f"/api/v1/file-upload/{mesh_file_id}")
+        print("  ✓ Full upload -> verify URL -> download -> delete lifecycle verified.")
 
 if __name__ == "__main__":
     try:
