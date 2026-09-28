@@ -2,13 +2,13 @@
 --extra-index-url https://mirrors.aliyun.com/pypi/simple
 
 # ── Core dependencies (CUDA 12.4 + Torch 2.6.0 baseline) ──────────
-torch==2.6.0+cu124
+torch==2.13.0
 torchvision==0.21.0+cu124
 torchaudio==2.6.0+cu124
 
 # transformers/diffusers version pinning compatible with diffusers 0.24.0
-transformers==4.43.2
-diffusers==0.24.0
+transformers==5.10.1
+diffusers==0.38.0
 huggingface_hub>=0.20.0,<0.26.0
 
 # Core FastAPI and web server dependencies
