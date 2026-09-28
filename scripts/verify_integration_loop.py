@@ -114,43 +114,44 @@ def test_adapters_and_factory():
     print("  ✅ All 4 adapters (TripoSR, TripoSG, TripoSF, ARDY) instantiate correctly with valid parameter schemas and format support.")
 
 def test_fastapi_endpoints():
-    print("[4/5] Testing FastAPI endpoints with TestClient...")
     from fastapi.testclient import TestClient
     from backend.api.main_multiworker import app
-    
-    client = TestClient(app)
-    
-    # 1. Health
-    r = client.get("/health")
-    assert r.status_code == 200, f"/health failed: {r.status_code}"
-    
-    # 2. System Models
-    r = client.get("/api/v1/system/models")
-    assert r.status_code == 200
-    models_data = r.json()
-    avail = models_data.get("available_models", models_data)
-    raw_mesh_models = avail.get("image_to_raw_mesh", [])
-    assert "triposr_image_to_raw_mesh" in raw_mesh_models, f"TripoSR missing from image_to_raw_mesh: {raw_mesh_models}"
-    assert "triposg_image_to_raw_mesh" in raw_mesh_models, f"TripoSG missing from image_to_raw_mesh: {raw_mesh_models}"
-    assert "triposf_image_to_raw_mesh" in raw_mesh_models, f"TripoSF missing from image_to_raw_mesh: {raw_mesh_models}"
-    motion_models = avail.get("motion_generation", [])
-    assert "ardy_motion_generation" in motion_models, f"ARDY missing from motion_generation: {motion_models}"
-    
-    # 3. Motion generation endpoints
-    r = client.get("/api/v1/motion-generation/checkpoints")
-    assert r.status_code == 200
-    assert "ardy_lite" in r.json()["checkpoints"]
-    assert "ardy_full" in r.json()["checkpoints"]
-    
-    r = client.get("/api/v1/motion-generation/available-models")
-    assert r.status_code == 200
-    assert len(r.json()["models"]) >= 1
-    
-    r = client.get("/api/v1/motion-generation/supported-formats")
-    assert r.status_code == 200
-    assert "json" in r.json()["output_formats"]["mesh"]
-    
-    print("  ✅ FastAPI endpoints successfully route and validate TripoSR, TripoSG, and ARDY motion generation.")
+
+    with TestClient(app) as client:
+        print("[4/5] Testing FastAPI endpoints with TestClient..."
+        
+        
+        # 1. Health
+        r = client.get("/health")
+        assert r.status_code == 200, f"/health failed: {r.status_code}"
+        
+        # 2. System Models
+        r = client.get("/api/v1/system/models")
+        assert r.status_code == 200
+        models_data = r.json()
+        avail = models_data.get("available_models", models_data)
+        raw_mesh_models = avail.get("image_to_raw_mesh", [])
+        assert "triposr_image_to_raw_mesh" in raw_mesh_models, f"TripoSR missing from image_to_raw_mesh: {raw_mesh_models}"
+        assert "triposg_image_to_raw_mesh" in raw_mesh_models, f"TripoSG missing from image_to_raw_mesh: {raw_mesh_models}"
+        assert "triposf_image_to_raw_mesh" in raw_mesh_models, f"TripoSF missing from image_to_raw_mesh: {raw_mesh_models}"
+        motion_models = avail.get("motion_generation", [])
+        assert "ardy_motion_generation" in motion_models, f"ARDY missing from motion_generation: {motion_models}"
+        
+        # 3. Motion generation endpoints
+        r = client.get("/api/v1/motion-generation/checkpoints")
+        assert r.status_code == 200
+        assert "ardy_lite" in r.json()["checkpoints"]
+        assert "ardy_full" in r.json()["checkpoints"]
+        
+        r = client.get("/api/v1/motion-generation/available-models")
+        assert r.status_code == 200
+        assert len(r.json()["models"]) >= 1
+        
+        r = client.get("/api/v1/motion-generation/supported-formats")
+        assert r.status_code == 200
+        assert "json" in r.json()["output_formats"]["mesh"]
+        
+        print("  ✅ FastAPI endpoints successfully route and validate TripoSR, TripoSG, and ARDY motion generation.")
 
 def test_redis_connection_pool():
     print("[5/5] Testing Redis Connection Pool bounded limits...")

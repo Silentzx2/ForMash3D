@@ -36,7 +36,7 @@ Rules:
 - ForMash 3D uses Next.js 16 (App Router) + FastAPI (Python 3.10) architecture
 - Backend uses Conda env `3daigc-api` with PyTorch 2.6.0 + CUDA 12.4
 - Frontend uses Bun as package manager
-- All 15 model adapters are registered in `backend/adapters/__init__.py`
+- Current model adapters are registered lazily in `backend/adapters/__init__.py`
 - Model configurations are in `backend/config/models.yaml`
 - System configuration is in `backend/config/system.yaml`
 
@@ -139,12 +139,12 @@ Rules:
 - `next/font/google` for font optimization
 
 ### Known Issues
-- `backend/Dockerfile` needs Paint DifferentiableRenderer build step
-- `backend/tests/test_backend_e2e.py` does not exist yet
-- `POST /api/v1/project/export` endpoint does not exist
-- 94 bare `except:` clauses remain in upstream third-party code (do not modify)
-- No GPU environment available for runtime testing
-- Colab scripts are incomplete (only `scripts/colab.sh` exists)
+- No GPU environment is available for runtime testing in the current development environment; real Paint inference and Shape→Paint end-to-end execution still require GPU verification.
+- `backend/tests/test_backend_e2e.py` does not exist yet.
+- `POST /api/v1/project/export` does not exist; existing file/storage routes handle delivery.
+- Colab helper scripts remain incomplete; only `scripts/colab.sh` exists.
+- Hunyuan3D Shape texture generation uses the canonical Shape→Paint two-stage workflow; no direct Shape textured model ID is registered.
+- Third-party upstream code in `backend/thirdparty/` remains out of scope for routine bug cleanup unless explicitly required.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

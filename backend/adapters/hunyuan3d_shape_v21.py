@@ -152,9 +152,11 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
 
             logger.info(f"Generating raw mesh with Hunyuan3D-Shape-v2-1 from: {image_path}")
 
-            image = Image.open(image_path).convert("RGBA")
+            image = Image.open(image_path)
             if image.mode == "RGB":
                 image = self.bg_remover(image)
+            else:
+                image = image.convert("RGBA")
 
             logger.info("Generating 3D shape...")
             octree_res = inputs.get("octree_resolution", 256)

@@ -8,12 +8,12 @@
 
 ## Current Status
 
-ForMash 3D is in active development. The core architecture is complete with all 15 model adapters, 23 model configurations, full frontend UI, and comprehensive backend API. The Hunyuan3D-Paint-v2-1 pipeline has been fully integrated and audited.
+ForMash 3D is in active development. The core architecture is complete with 23 model configurations across the current model catalog, full frontend UI, and comprehensive backend API. The Hunyuan3D-Paint-v2-1 pipeline has been fully integrated and audited.
 
 ## Completed
 
 ### Backend
-- All 15 model adapters implemented and registered
+- Current model adapter registry implemented with lazy loading
 - VRAM-aware multiprocess scheduler with GPU mutual exclusion
 - Redis job queue for multi-worker mode
 - All API routers (system, file-upload, mesh-generation, mesh-editing, auto-rigging, segmentation, retopology, UV, motion)
@@ -58,56 +58,35 @@ ForMash 3D is in active development. The core architecture is complete with all 
 - `TEST_PLAN.md` deleted
 
 ### Git & Commits
-- All changes committed and pushed to `main`
-- `TODO_AUDIT.md` excluded from git commits
-- 625+ files committed in single commit
-- Commit `c704632` pushed to `main`
+- Previous audit history remains on `main`.
+- Current Deep Runtime Contract Audit is prepared on `fix/deep-audit-runtime-contracts`.
+- `TODO_AUDIT.md` remains excluded from git commits.
 
 ## Current Task
 
-TASK-001: Complete documentation and verification
-- Verify all docs reference `Docs/` not `docs/`
-- Verify all files are committed and pushed
-- Verify no TODO_AUDIT.md in git history
-- Run `npx tsc --noEmit` and `python3 -m compileall`
-- Run `bash -n` on all shell scripts
-- Extend all docs with flow charts and proper sections
-- Update RULES.md with doc update rules
-- Fully update README.md
+Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
+- Removed the non-functional direct Shape textured model registration.
+- Enabled the Mini Turbo → Paint optional auto-chain when texture generation is requested.
+- Fixed Shape→Paint file-ID and image-input handoff.
+- Fixed in-progress job progress normalization in Admin Jobs.
+- Fixed invalid API model defaults.
+- Fixed release-wheel partial-cache detection.
+- Aligned environment defaults with the documented Conda runtime.
+- Corrected Docker helper API port output.
+- Made verification clients exercise FastAPI lifespan startup/shutdown.
+- Corrected dead RGB/background-removal branches in project-owned Hunyuan helpers.
 
 ## Known Issues
 
-1. **Dockerfile Paint DifferentiableRenderer**: `backend/Dockerfile` builds DifferentiableRenderer for `Hunyuan3D-2.1` (shape model) but NOT for `hunyuan3d-paint-v2-1` (Paint model). `install.sh` does build it (lines 523-534), but the Dockerfile needs a corresponding Paint model build step.
-
-2. **94 bare `except:` clauses remain in upstream third-party code**: These are in the `backend/thirdparty/` directory and should not be modified. They are upstream code.
-
-3. **No GPU environment available for runtime testing**: All Paint adapter functionality, Real-ESRGAN native renderer build, real Paint inference, and Shape→Paint auto-chaining need GPU runtime verification.
-
-4. **`backend/tests/test_backend_e2e.py` does not exist**: Referenced in earlier documentation but not yet implemented.
-
-5. **`POST /api/v1/project/export` endpoint does not exist**: Asset delivery is handled through existing file upload/download and static file routes.
-
-6. **Colab scripts incomplete**: Only `scripts/colab.sh` exists. `colab_start.sh`, `colab_stop.sh`, etc. referenced in docs do not exist.
-
-7. ~~**`cupy-cuda124` package not found on PyPI**: Fixed by replacing `cupy-cuda124>=13.4.0` with `cupy-cuda12x>=13.4.0` in all three Hunyuan3D requirements.txt files (shape-v2-1, paint-v2-1, dit-v2-mini-turbo).~~ (Resolved)
-
-8. ~~**`basicsr>=1.4.2` has no wheels for Python 3.10**: Fixed by changing to `basicsr>=1.3.3.3` in both Hunyuan3D requirements.txt files.~~ (Resolved)
-
-9. ~~**`spconv-cu120` for UniRig and `torch==2.4.0+cu118` for VoxHammer**: Fixed to use `spconv-cu124` and `torch==2.6.0+cu124` respectively.~~ (Resolved)
-
-10. **Prebuilt wheels not found by install.sh**: Added copy step in `ensure_release_wheels()` to copy wheels from `backend/assets/wheels/` to `backend/thirdparty/wheels/`. (Resolved)
-
-11. **Hunyuan model dependency deduplication**: Removed `torch==2.6.0+cu124`, `torchvision==0.21.0+cu124`, `torchaudio==2.6.0+cu124`, `--extra-index-url https://download.pytorch.org/whl/cu124`, and `deepspeed` from all three Hunyuan model requirements.txt files. `backend/requirements.txt` and `install.sh` are the single source of truth for global runtime dependencies. `deepspeed` is a training-only dependency not used in inference. (Resolved)
-
-12. **Hunyuan unified dependency structure**: Created `backend/thirdparty/hunyuan-requirements.txt` as the single unified dependency file for all 3 Hunyuan models. Removed three model-specific `requirements.txt` files from model directories. Updated `install.sh` to install `hunyuan-requirements.txt` once instead of three separate installs. Added `safetensors>=0.4.4` and `tqdm>=4.66.0` (verified as imported by model code). Fixed `basicsr>=1.4.2` → `basicsr>=1.3.3.3` (Python 3.10 wheel compatibility). Zero overlap between `backend/requirements.txt` and `hunyuan-requirements.txt`. (Resolved)
-
-## Next Step
+1. **No GPU environment available for runtime testing**: Paint adapter functionality, RealESRGAN native renderer build, real Paint inference, and Shape→Paint auto-chaining still require GPU verification.
+2. **`backend/tests/test_backend_e2e.py` does not exist**: Full backend end-to-end coverage is still missing.
+3. **`POST /api/v1/project/export` does not exist**: Asset delivery is handled through existing file upload/download and storage routes.
+4. **Colab scripts incomplete**: Only `scripts/colab.sh` exists; dedicated start/stop helpers are not implemented.
 
 ## Next Step
 
 ### Critical
-1. Fix `backend/Dockerfile` to include Paint DifferentiableRenderer build step
-2. Verify `runTextureGeneration` dependency array includes `generationSettings.maxNumView`, `generationSettings.resolution`, `generationSettings.generatePBR`
+1. Verify `runTextureGeneration` dependency array includes `generationSettings.maxNumView`, `generationSettings.resolution`, `generationSettings.generatePBR`
 3. Add `supportsFlashVDM` to `isTexturePaintingModel` if needed
 4. Verify `TexturePanel.tsx` `getTextureStatusInfo` checks VRAM status
 
@@ -133,7 +112,7 @@ TASK-001: Complete documentation and verification
 
 ## Key Files
 
-- `backend/adapters/__init__.py` — All 19 model adapters registered
+- `backend/adapters/__init__.py` — Lazy model adapter registry
 - `backend/config/models.yaml` — 23 model configurations
 - `backend/config/system.yaml` — System settings
 - `backend/scripts/install.sh` — Primary setup script

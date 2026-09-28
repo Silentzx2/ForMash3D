@@ -269,9 +269,11 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             )
 
             # Load and preprocess image
-            image = Image.open(image_path).convert("RGBA")
+            image = Image.open(image_path)
             if image.mode == "RGB":
                 image = self.bg_remover(image)
+            else:
+                image = image.convert("RGBA")
 
             # Shape generation only
             logger.info("Generating 3D shape...")

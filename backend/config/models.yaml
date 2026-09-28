@@ -98,14 +98,6 @@ image_to_textured_mesh:
     enabled: true
     max_workers: 1
 
-  hunyuan3d_shape_v21_image_to_textured_mesh:
-    vram_requirement: 29000  # MB (shape + paint combined)
-    supported_inputs: ["image"]
-    supported_outputs: ["glb", "obj"]
-    model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
-    enabled: true
-    max_workers: 1
-
 # image-conditioned mesh painting
 image_mesh_painting:
   trellis_image_mesh_painting:

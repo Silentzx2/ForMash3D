@@ -700,9 +700,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
            // Shape → Paint automatic chaining
            const latestTask = activeTaskRef.current || task;
-           if (latestTask?.provider?.includes('shape_v21') && generationSettings.generateTexture !== false) {
+           if (
+             (latestTask?.provider?.includes('shape_v21') || latestTask?.provider?.includes('dit_v2_mini_turbo')) &&
+             generationSettings.generateTexture !== false
+           ) {
              // Automatically trigger Paint-v2-1 texturing
-             void runPaintAutoChaining(modelUrl || '', cleanName || '', jobId);
+             void runPaintAutoChaining(
+               typeof data.result?.file_id === 'string' ? data.result.file_id : undefined,
+             );
            }
            return;
          } else if (data.status === 'failed' || data.status === 'cancelled') {
@@ -745,7 +750,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       stopped = true;
       if (timerId) window.clearTimeout(timerId);
     };
-  }, [activeTask?.id, activeTask?.status, addAsset]);
+  }, [activeTask?.id, activeTask?.status, addAsset, runPaintAutoChaining, generationSettings.generateTexture]);
 
   const selectAsset = useCallback((id: string) => {
     setSelectedAssetId(id);
@@ -909,7 +914,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ].includes(generationSettings.aiModel || '') || Boolean(generationSettings.aiModel?.includes('raw_mesh'));
 
       const isTextured = !isRawModel && generationSettings.generateTexture !== false;
-      const isPaintModel = generationSettings.aiModel?.includes('shape_v21') || generationSettings.aiModel?.includes('paint_v21') || false;
+      const isPaintModel = generationSettings.aiModel?.includes('shape_v21') || generationSettings.aiModel?.includes('dit_v2_mini_turbo') || generationSettings.aiModel?.includes('paint_v21') || false;
       const endpoint = isTextured
         ? '/api/v1/mesh-generation/image-to-textured-mesh'
         : '/api/v1/mesh-generation/image-to-raw-mesh';
@@ -1298,13 +1303,25 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
      }
    }, [textureSettings, currentAsset, startTask]);
 
-   const runPaintAutoChaining = useCallback(async (shapeMeshUrl: string, shapeName: string, shapeJobId: string) => {
+   const runPaintAutoChaining = useCallback(async (shapeMeshFileId?: string) => {
      startTask('texture', 'Paint-v2-1 Texturing', undefined, 'hunyuan3d_paint_v21_image_mesh_painting');
      try {
+       if (!shapeMeshFileId) {
+         throw new Error('Generated mesh file ID is missing; cannot start Paint-v2-1.');
+       }
+       const imageInput = generationSettings.imageFileId
+         ? { image_file_id: generationSettings.imageFileId }
+         : typeof generationSettings.image === 'string' && generationSettings.image.startsWith('data:')
+         ? { image_base64: generationSettings.image }
+         : null;
+       if (!imageInput) {
+         throw new Error('Original generation image input is unavailable; cannot start Paint-v2-1.');
+       }
+
        const endpoint = '/api/v1/mesh-generation/image-mesh-painting';
        const body: Record<string, unknown> = {
-         mesh_path: shapeMeshUrl,
-         image_path: generationSettings.image || undefined,
+         ...imageInput,
+         mesh_file_id: shapeMeshFileId,
          output_format: 'glb',
          model_preference: 'hunyuan3d_paint_v21_image_mesh_painting',
          model_parameters: {
@@ -1334,7 +1351,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setExecutionStep(message);
         toast.error('Paint auto-chaining failed', { description: message });
       }
-    }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.generateTexture, generationSettings.generatePBR, startTask]);
+    }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.imageFileId, generationSettings.generateTexture, generationSettings.generatePBR, startTask]);
 
    const runUVUnwrapGeneration = useCallback(async (customSettings?: {
     distortionThreshold?: number;

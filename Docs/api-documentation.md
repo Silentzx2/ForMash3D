@@ -337,21 +337,9 @@ Content-Type: application/json
 }
 ```
 
-### Image-to-Textured Mesh (Hunyuan3D-Shape-v2-1)
+### Image-to-Textured Mesh
 
-Generate a textured 3D mesh from an uploaded image using the Hunyuan3D-Shape-v2-1 pipeline. Supports automatic Shape→Paint chaining.
-
-```http
-POST /api/v1/mesh-generation/image-to-textured-mesh
-Content-Type: application/json
-
-{
-  "image_file_id": "img_abc123",
-  "output_format": "glb",
-  "model_preference": "hunyuan3d_shape_v21_image_to_textured_mesh",
-  "model_parameters": {}
-}
-```
+For Hunyuan3D, texture generation is a two-stage workflow: submit Shape-v2-1 or DiT-v2-mini-Turbo through `image-to-raw-mesh`; when texture generation is enabled in the Workspace, the client automatically chains the resulting mesh into `hunyuan3d_paint_v21_image_mesh_painting`. The generic `image-to-textured-mesh` endpoint remains available for models that natively implement that feature, such as TRELLIS.
 
 ### Get Job Status
 

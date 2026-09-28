@@ -270,7 +270,8 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ### Mesh Generation & Processing
 - `POST /api/v1/mesh-generation/image-to-raw-mesh`: Geometry synthesis from image.
-- `POST /api/v1/mesh-generation/image-to-textured-mesh`: Full PBR geometry + texture from image.
+- `POST /api/v1/mesh-generation/image-to-textured-mesh`: Full PBR geometry + texture from models that natively implement the feature.
+- Hunyuan3D Shape→Paint: Shape-v2-1 or DiT-v2-mini-Turbo uses `image-to-raw-mesh`, then optionally chains into `hunyuan3d_paint_v21_image_mesh_painting` after geometry completion.
 - `POST /api/v1/mesh-generation/text-to-raw-mesh`: Geometry synthesis from text.
 - `POST /api/v1/mesh-generation/image-mesh-painting`: Paint textures onto mesh (Hunyuan3D-Paint-v2-1).
 - `GET /api/v1/mesh-generation/status/{job_id}`: Real-time generation job status.
@@ -295,7 +296,7 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 | Model Architecture | Registered Adapters | Category / Tasks | VRAM Budget |
 |---|---|---|---|
-| **Hunyuan3D-Shape-v2-1** | `hunyuan3d_shape_v21_image_to_raw_mesh`, `hunyuan3d_shape_v21_image_to_textured_mesh` | Raw & Textured Mesh | 10–29 GB |
+| **Hunyuan3D-Shape-v2-1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB |
 | **Hunyuan3D-Paint-v2-1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB |
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB |
 | **Hunyuan3D-2.1 (Legacy)** | `hunyuan3dv21_image_to_raw_mesh`, `hunyuan3dv21_image_to_textured_mesh`, `hunyuan3dv21_image_mesh_painting` | Raw & Textured Mesh | 8–19.5 GB |

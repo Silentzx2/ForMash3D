@@ -64,7 +64,7 @@ class TextToRawMeshRequest(BaseModel):
     text_prompt: str = Field(..., description="Text description for mesh generation")
     output_format: str = Field("glb", description="Output mesh format")
     model_preference: str = Field(
-        "trellis_text_to_raw_mesh", description="Model name for mesh generation"
+        ..., description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
         None, 
@@ -85,6 +85,9 @@ class TextToRawMeshRequest(BaseModel):
 class TextToTexturedMeshRequest(TextToRawMeshRequest):
     """Request for text-to-textured-mesh generation"""
 
+    model_preference: str = Field(
+        "trellis_text_to_textured_mesh", description="Model name for mesh generation"
+    )
     texture_prompt: str = Field(
         "", description="Text description for texture generation"
     )
@@ -113,7 +116,7 @@ class TextMeshPaintingRequest(BaseModel):
     )
     output_format: str = Field("glb", description="Output mesh format")
     model_preference: str = Field(
-        "trellis_text_to_textured_mesh", description="Model name for mesh generation"
+        "trellis_text_mesh_painting", description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
         None, 
@@ -161,7 +164,7 @@ class ImageToRawMeshRequest(BaseModel):
     )
     output_format: str = Field("glb", description="Output mesh format")
     model_preference: str = Field(
-        "trellis_image_to_raw_mesh", description="Model name for mesh generation"
+        "hunyuan3d_shape_v21_image_to_raw_mesh", description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
         None, 

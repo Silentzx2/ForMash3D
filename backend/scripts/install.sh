@@ -87,7 +87,6 @@ install_local_wheel() {
 # Ensure release wheels are available in WHEEL_DIR
 ensure_release_wheels() {
     mkdir -p "$WHEEL_DIR"
-    [ "$(find "$WHEEL_DIR" -maxdepth 1 -name "*.whl" 2>/dev/null | wc -l)" -gt 0 ] && return 0
     echo "[INFO] Downloading release wheels to $WHEEL_DIR..."
     python3 -c '
 import urllib.request, json, os, sys
@@ -109,7 +108,7 @@ echo "The installation may take a while, please wait..."
 echo ""
 
 choose_env_manager() {
-  local default="venv"
+  local default="conda"
   local choice=""
 
   # Prompt user directly

@@ -122,8 +122,8 @@ main() {
     echo "1. Start the service: docker-compose up -d"
     echo "2. Check status: docker-compose ps"
     echo "3. View logs: docker-compose logs -f 3daigc-api"
-    echo "4. Access API: http://localhost:8000"
-    echo "5. API docs: http://localhost:8000/docs"
+    echo "4. Access API: http://localhost:7842"
+    echo "5. API docs: http://localhost:7842/docs"
     echo ""
     echo "For more information, see DOCKER_README.md"
 }
