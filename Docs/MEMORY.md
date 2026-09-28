@@ -82,6 +82,9 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 2. **`backend/tests/test_backend_e2e.py` does not exist**: Full backend end-to-end coverage is still missing.
 3. **`POST /api/v1/project/export` does not exist**: Asset delivery is handled through existing file upload/download and storage routes.
 4. **Colab scripts incomplete**: Only `scripts/colab.sh` exists; dedicated start/stop helpers are not implemented.
+5. **P3-SAM installer path**: installer now tolerates the absent legacy `Hunyuan3DPart/P3SAM` checkout and installs P3-SAM runtime dependencies without requiring that source path.
+6. **Hunyuan runtime ABI**: Hunyuan shared dependencies pin NumPy 1.26.4 and CuPy 13.4.0 to keep the CUDA 12.4/Python 3.10 CuPy binary ABI aligned.
+7. **Workspace model selection**: GeneratePanel no longer auto-ranks TRELLIS and overwrite the user-selected model.
 
 ## Next Step
 

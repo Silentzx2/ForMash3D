@@ -37,7 +37,7 @@ timm
 torchdiffeq
 
 # GPU Computing (CUDA 12.4)
-cupy-cuda12x>=13.4.0
+cupy-cuda12x==13.4.0
 
 # ONNX Runtime
 onnxruntime>=1.16.0

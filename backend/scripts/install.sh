@@ -604,7 +604,11 @@ echo ""
 echo "========================================"
 echo "Installing P3-SAM Dependencies"
 echo "========================================"
-cd "$THIRDPARTY_DIR/Hunyuan3DPart/P3SAM"
+if [ -d "$THIRDPARTY_DIR/P3-SAM" ]; then
+    cd "$THIRDPARTY_DIR/P3-SAM"
+else
+    echo "[WARN] P3-SAM source directory not present; installing runtime dependencies from the shared environment."
+fi
 echo "[INFO] Installing P3-SAM requirements..."
 # Install numba for acceleration
 $UV_PIP install --find-links="$WHEEL_DIR" numba scikit-learn fpsample

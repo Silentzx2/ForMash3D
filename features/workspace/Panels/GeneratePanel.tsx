@@ -234,27 +234,8 @@ export const GeneratePanel: React.FC = () => {
 
   const statusInfo = getStatusInfo();
 
-  // Auto-select best high-quality model
-  useEffect(() => {
-    if (providersList.length === 0) return;
-    const best =
-      providersList.find(m => m.id === 'trellis_image_to_textured_mesh' && (m.available || m.installed)) ||
-      providersList.find(m => m.id.includes('trellis') && (m.available || m.installed)) ||
-      providersList.find(m => m.id.includes('hunyuan') && (m.available || m.installed)) ||
-      providersList.find(m => m.available || m.installed) ||
-      providersList[0];
-
-    if (best && generationSettings.aiModel !== best.id) {
-      setGenerationSettings(prev => ({
-        ...prev,
-        aiModel: best.id,
-        generateTexture: true,
-        removeBackground: true,
-        lowVram: false,
-        meshQuality: 'high',
-      }));
-    }
-  }, [providersList, generationSettings.aiModel, setGenerationSettings]);
+  // Keep the user's model selection. Only repair an invalid selection after
+  // the available-model list changes; never rank or silently replace models.
 
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
