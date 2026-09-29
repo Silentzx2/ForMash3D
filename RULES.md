@@ -140,7 +140,7 @@ Rules:
 
 ### Known Issues
 - No GPU environment is available for runtime testing in the current development environment; real Paint inference and Shape→Paint end-to-end execution still require GPU verification.
-- `backend/tests/test_backend_e2e.py` does not exist yet.
+- Dedicated post-processing runtime/fixture coverage now lives in `backend/tests/test_postprocess_e2e.py`; broader backend E2E coverage remains separate.
 - `POST /api/v1/project/export` remains intentionally unused; production asset delivery uses `GET /api/v1/system/jobs/{job_id}/download?artifact_format=...`, including on-demand ZIP snapshots.
 - Colab helper scripts remain incomplete; only `scripts/colab.sh` exists.
 - Hunyuan3D Shape texture generation uses the canonical Shape→Paint two-stage workflow; no direct Shape textured model ID is registered.

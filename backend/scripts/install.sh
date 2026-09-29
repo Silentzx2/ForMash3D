@@ -288,6 +288,8 @@ echo ""
 echo "========================================"
 echo "Installing Project Requirements"
 echo "========================================"
+ensure_blender
+
 echo "[INFO] Installing backend/requirements.txt..."
 $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt"
 if [ $? -eq 0 ]; then
@@ -730,6 +732,8 @@ else
     echo "[ERROR] Failed to install main project requirements"
     exit 1
 fi
+
+python "$PROJECT_ROOT/backend/scripts/verify_postprocess_runtime.py"
 
 # TripoSG declares a newer diffusers/transformers pair than the global project baseline.
 # Re-apply its model-specific requirements after the baseline install so compatibility is not silently overwritten.

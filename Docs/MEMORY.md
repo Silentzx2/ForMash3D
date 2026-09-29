@@ -125,7 +125,7 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 ## Known Issues
 
 1. **No GPU environment available for runtime testing**: Paint adapter functionality, RealESRGAN native renderer build, real Paint inference, and Shape→Paint auto-chaining still require GPU verification.
-2. **`backend/tests/test_backend_e2e.py` does not exist**: Full backend end-to-end coverage is still missing.
+2. **Full backend end-to-end coverage remains broader than the post-processing suite**: post-processing dependency, Blender runtime, canonical storage, and opt-in real-mesh fixture coverage now exist in `backend/tests/test_postprocess_e2e.py`.
 3. **`POST /api/v1/project/export` does not exist**: Asset delivery is handled through existing file upload/download and storage routes.
 4. **Colab scripts incomplete**: Only `scripts/colab.sh` exists; dedicated start/stop helpers are not implemented.
 5. **P3-SAM installer path**: installer now tolerates the absent legacy `Hunyuan3DPart/P3SAM` checkout and installs P3-SAM runtime dependencies without requiring that source path.
@@ -142,7 +142,7 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 ### Testing
 5. If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference
 6. Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
-7. Implement `backend/tests/test_backend_e2e.py`
+7. Broaden `backend/tests/test_backend_e2e.py` only when full backend integration coverage is required; post-processing coverage is already separated into `backend/tests/test_postprocess_e2e.py`.
 8. Run `npx tsc --noEmit` and `python3 -m compileall` for verification
 
 ### Features

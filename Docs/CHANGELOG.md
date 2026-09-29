@@ -1,3 +1,8 @@
+- 2026-09-29 — Post-Processing Validation Hardening
+- Added Blender provisioning/runtime smoke validation and a real-mesh post-processing fixture test.
+- Hardened canonical artifact path resolution and prevented invalid format fallbacks in the UI.
+- Removed the obsolete missing P3-SAM Docker workdir.
+
 ## 2026-09-29 — Production Post-Processing Integration
 - Automatically run the production mesh-finishing pipeline after successful raw mesh generation.
 - Added canonical per-generation workspaces with immutable master, game-ready formats, LODs, collision, textures, previews, and metadata.

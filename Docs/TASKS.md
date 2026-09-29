@@ -92,7 +92,7 @@
 - [ ] If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference
 - [ ] Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
 - [ ] Verify `backend/scripts/download_models.sh` correctly copies RealESRGAN to thirdparty location
-- [ ] Implement `backend/tests/test_backend_e2e.py`
+- [x] Add post-processing runtime dependency, Blender, and opt-in real-mesh fixture coverage (`backend/tests/test_postprocess_e2e.py`)
 - [ ] Run `npx tsc --noEmit` and `python3 -m compileall` for verification
 - [ ] Run `bash -n` on all shell scripts
 

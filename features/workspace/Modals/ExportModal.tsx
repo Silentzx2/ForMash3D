@@ -28,7 +28,8 @@ export const ExportModal: React.FC = () => {
 
   if (!isExportModalOpen) return null;
 
-  const assetName = currentAsset?.name || 'character.glb';
+  const assetName = currentAsset?.name || 'character';
+  const assetBaseName = assetName.replace(/\.[^.]+$/, '');
   const qaScore = currentAsset?.qaScore ?? (currentAsset?.artifacts?.qaReport as any)?.game_ready_score;
   const qaStatus = currentAsset?.qaStatus ?? (currentAsset?.artifacts?.qaReport as any)?.status;
   const qaWarnings = currentAsset?.qaWarnings ?? (currentAsset?.artifacts?.qaReport as any)?.warnings ?? [];
@@ -37,21 +38,30 @@ export const ExportModal: React.FC = () => {
     const artifacts = currentAsset?.artifacts;
     const zipUrl = artifacts?.zipUrl;
     const sourceArtifact = artifacts?.source;
-    const gameReadyUrl =
-      artifacts?.gameReadyFormats?.[exportFormat] ||
-      artifacts?.gameReady ||
-      null;
     const selectedUrl =
       packageZip || variant === 'lod_package'
         ? zipUrl
         : variant === 'source'
         ? sourceArtifact
-        : gameReadyUrl;
+        : exportFormat === 'glb'
+        ? artifacts?.gameReadyFormats?.glb || artifacts?.gameReady || null
+        : artifacts?.gameReadyFormats?.[exportFormat] || null;
 
     if (!selectedUrl) {
-      setError('This artifact is not available yet.');
+      setError(
+        variant === 'source'
+          ? 'The source master is not available yet.'
+          : `The ${exportFormat.toUpperCase()} artifact is not available yet.`,
+      );
       return;
     }
+
+    const downloadExtension =
+      packageZip || variant === 'lod_package'
+        ? 'zip'
+        : variant === 'source'
+        ? 'glb'
+        : exportFormat;
 
     setIsExporting(true);
     setError(null);
@@ -59,9 +69,7 @@ export const ExportModal: React.FC = () => {
     try {
       const link = document.createElement('a');
       link.href = selectedUrl;
-      link.download = packageZip || variant === 'lod_package'
-        ? `${assetName}.zip`
-        : `${assetName}.${exportFormat}`;
+      link.download = `${assetBaseName}.${downloadExtension}`;
       document.body.appendChild(link);
       link.click();
       link.remove();

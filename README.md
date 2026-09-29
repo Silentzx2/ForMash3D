@@ -426,6 +426,15 @@ For detailed schema specifications, see [Docs/api-documentation.md](Docs/api-doc
 # Verify API contracts and route registrations
 python3 scripts/verify_contracts.py
 
+# Verify post-processing dependencies and Blender runtime
+python3 -m pytest backend/tests/test_postprocess_e2e.py -q
+
+# Run the real mesh post-processing fixture (requires Blender + full postprocess deps)
+FORMASH_POSTPROCESS_E2E=1 python3 -m pytest backend/tests/test_postprocess_e2e.py -q
+
+# Verify the installer/runtime contract directly
+python3 backend/scripts/verify_postprocess_runtime.py
+
 # Check TypeScript types
 npx tsc --noEmit
 

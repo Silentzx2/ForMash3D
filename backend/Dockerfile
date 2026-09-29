@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y \
     libxi6 \
     libxkbcommon-dev \
     xvfb \
+    blender \
     && rm -rf /var/lib/apt/lists/*
 
 
@@ -123,7 +124,6 @@ RUN pip install meshiki kiui fpsample pymcubes einops
 RUN pip install seaborn partuv blenderproc
 
 # Install P3-SAM (Hunyuan3D-Part) dependencies
-WORKDIR /app/thirdparty/Hunyuan3DPart/P3SAM
 RUN pip install numba scikit-learn fpsample
 
 # Install FastMesh dependencies
@@ -142,6 +142,7 @@ RUN pip install pysdf sentencepiece
 # Install main project dependencies
 WORKDIR /app
 RUN pip install -r requirements.txt
+RUN python scripts/verify_postprocess_runtime.py
 RUN pip install -r requirements-test.txt
 
 # Create necessary directories

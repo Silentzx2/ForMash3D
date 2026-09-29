@@ -93,16 +93,21 @@ export const RightPropertyPanel: React.FC = () => {
   const handleExportDownload = async () => {
     const sourceUrl =
       currentAsset.artifacts?.gameReadyFormats?.[exportFormat] ||
-      currentAsset.artifacts?.gameReady ||
-      currentAsset.source?.localUrl ||
-      currentAsset.source?.viewUrl;
-    if (!sourceUrl) return;
+      (exportFormat === 'glb' ? currentAsset.artifacts?.gameReady : undefined) ||
+      (exportFormat === 'glb' ? currentAsset.source?.localUrl || currentAsset.source?.viewUrl : undefined);
+    if (!sourceUrl) {
+      toast.error('Export unavailable', {
+        description: `${exportFormat.toUpperCase()} is not available for this asset yet.`,
+      });
+      return;
+    }
 
+    const assetBaseName = currentAsset.name.replace(/\.[^.]+$/, '');
     setIsExporting(true);
     try {
       const link = document.createElement('a');
       link.href = sourceUrl;
-      link.download = `${currentAsset.name}.${exportFormat}`;
+      link.download = `${assetBaseName}.${exportFormat}`;
       document.body.appendChild(link);
       link.click();
       link.remove();

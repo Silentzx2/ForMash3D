@@ -1121,8 +1121,8 @@ async def download_job_result(
 
         if asset_root:
             asset_root_path = Path(asset_root).resolve()
-            models_root = (Path.cwd() / "backend" / "storage" / "models").resolve()
-            if models_root not in asset_root_path.parents:
+            models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+            if asset_root_path == models_root or models_root not in asset_root_path.parents:
                 raise HTTPException(status_code=400, detail="Invalid asset workspace")
 
             if canonical_format == "master":
@@ -1179,7 +1179,12 @@ async def download_job_result(
         if not output_path:
             raise HTTPException(status_code=404, detail="No output file path found in job result")
 
-        output_path = str(output_path)
+        output_path = str(Path(output_path).resolve())
+        if asset_root:
+            try:
+                Path(output_path).resolve().relative_to(models_root)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid artifact path")
         if not os.path.exists(output_path):
             raise HTTPException(status_code=404, detail=f"Output file not found: {output_path}")
 
