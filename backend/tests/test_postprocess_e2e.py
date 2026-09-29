@@ -98,7 +98,12 @@ def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch):
         "postprocess-fixture-smoke",
         {"output_mesh_path": str(raw_path)},
         {"asset_name": "fixture"},
-        {"model_id": "fixture", "feature": "image_to_raw_mesh"},
+        {
+            "model_id": "fixture",
+            "feature": "image_to_raw_mesh",
+            "physics_enabled": True,
+            "physics_config": {"collision_quality": "fast"},
+        },
     )
 
     asset_root = Path(result["asset_root"])
@@ -106,12 +111,16 @@ def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch):
     game_ready_glb = next((asset_root / "game_ready").glob("*.glb"))
     quality_report = asset_root / "metadata" / "quality_report.json"
     asset_manifest = asset_root / "metadata" / "asset.json"
+    physics_metadata = asset_root / "metadata" / "physics.json"
 
     assert master.read_bytes() == raw_bytes
     assert game_ready_glb.is_file()
     assert quality_report.is_file()
     assert asset_manifest.is_file()
     assert all((asset_root / "lods" / f"lod{i}.glb").is_file() for i in range(4))
+    assert physics_metadata.is_file()
     assert result["postprocess_status"] == "completed"
+    assert result["physics_ready"] is True
+    assert result["physics_url"].endswith("artifact_format=physics_json")
     assert result["game_ready_formats"]["glb"].endswith("artifact_format=glb")
     assert result["zip_url"].endswith("artifact_format=zip")
