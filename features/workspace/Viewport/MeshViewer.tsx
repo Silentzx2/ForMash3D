@@ -2068,9 +2068,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           frameCamera(mesh);
           computeMeshStats(mesh);
           if (!cancelled) {
-              setLoadedAssetId(currentAsset.id);
-              setModelLoadVersion((version) => version + 1);
-            }
+            setLoadedAssetId(currentAsset.id);
+            setModelLoadVersion((version) => version + 1);
+          }
         } else if (format === 'stl') {
           const response = await fetch(sourceUrl);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -2090,6 +2090,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           group.add(mesh);
           frameCamera(mesh);
           computeMeshStats(mesh);
+          if (!cancelled) {
+            setLoadedAssetId(currentAsset.id);
+            setModelLoadVersion((version) => version + 1);
+          }
         } else {
           throw new Error(`No browser preview is available for ${currentAsset.format}.`);
         }
