@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-Physics is now an opt-in post-processing and viewer capability on the review-postprocess line.
+Physics is now an opt-in post-processing metadata layer plus viewer capability on the review-postprocess line.
 
 The feature does not add a new AI generation model. Physics preparation reuses the existing post-processing collision service, while interactive browser simulation uses Rapier 3D.
 
@@ -16,7 +16,7 @@ immutable master/source.glb
 existing production post-processing
   ↓
 Physics ON?
-  ├─ OFF → no physics-specific preparation
+  ├─ OFF → keep normal collision artifact, no physics metadata
   └─ ON
       ├─ existing collision service
       ├─ metadata/physics.json
@@ -57,7 +57,7 @@ Automatic physical properties are explicitly marked as estimates. They are not t
 
 ## Collision generation
 
-The current collision service remains the source of collision geometry:
+The current collision service remains the source of collision geometry. Collision generation itself remains part of the normal post-processing contract; the Physics toggle controls physics metadata/readiness and the collision-quality budget.
 
 - Fast → convex hull
 - Balanced → CoACD decomposition with bounded search
@@ -106,7 +106,7 @@ No additional AI model is required for Physics.
 
 Rapier runs in the browser/WASM layer, so Physics does not add an inference model VRAM requirement. The existing selected 3D generation model remains subject to the project's normal VRAM budgeting and 1 GB safety margin.
 
-The browser dependency is @dimforge/rapier3d-compat 0.21.x. The compat build embeds WASM for broad bundler support.
+The browser dependency is @dimforge/rapier3d-compat 0.19.3. It is pinned for reproducible production builds; the compat build embeds WASM for broad bundler support.
 
 ## Delivery
 
@@ -125,3 +125,5 @@ A real NVIDIA/Colab inference run is still required for full production GPU vali
 ## Extension boundary
 
 Future deformable/jiggle, joints, native simulation providers, and engine-specific exporters must be added only when the current capability and runtime requirements justify them. They must not replace the provider-neutral metadata contract or mutate the immutable master asset.
+## Shape → Paint behavior
+When Hunyuan Shape/Mini Turbo automatically chains into Paint, Physics preparation is skipped for the intermediate Shape result and runs only on the final Paint output. This avoids duplicate collision work.
