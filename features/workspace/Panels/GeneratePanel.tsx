@@ -1055,6 +1055,19 @@ export const GeneratePanel: React.FC = () => {
                   </label>
 
                   <label className="space-y-1">
+                    <span className="text-[9px] font-semibold text-zinc-400">Density</span>
+                    <select value={physics.densityMode} onChange={e => updatePhysics({ densityMode: e.target.value as PhysicsSettings['densityMode'] })} className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200">
+                      <option value="auto">Auto default</option>
+                      <option value="manual">Manual kg/m³</option>
+                    </select>
+                    {physics.densityMode === 'manual' && (
+                      <input type="number" min={0.01} max={20000} step={10} value={physics.densityKgM3}
+                        onChange={e => updatePhysics({ densityKgM3: Number(e.target.value) || 1 })}
+                        className="w-full mt-1 rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200" />
+                    )}
+                  </label>
+
+                  <label className="space-y-1">
                     <span className="text-[9px] font-semibold text-zinc-400">Mass</span>
                     <select value={physics.massMode} onChange={e => updatePhysics({ massMode: e.target.value as PhysicsSettings['massMode'] })} className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200">
                       <option value="auto">Auto estimate</option>
