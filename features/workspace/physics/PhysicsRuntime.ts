@@ -37,8 +37,6 @@ export class PhysicsRuntime {
   private collisionDebugVisible = false;
   private accumulator = 0;
   private readonly fixedStep = 1 / 60;
-  private accumulator = 0;
-  private readonly fixedStep = 1 / 60;
 
   async init(
     scene: THREE.Scene,

@@ -91,6 +91,7 @@ export const RightPropertyPanel: React.FC = () => {
   };
 
   const handleExportDownload = async () => {
+    if (!currentAsset) return;
     const sourceUrl =
       currentAsset.artifacts?.gameReadyFormats?.[exportFormat] ||
       (exportFormat === 'glb' ? currentAsset.artifacts?.gameReady : undefined) ||
