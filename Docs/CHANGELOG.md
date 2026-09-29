@@ -1,3 +1,9 @@
+## 2026-09-29 — Raw-Geometry-First Generation
+- Disabled model-stage polycount decimation by default so generated meshes keep the model-native geometry for downstream post-processing.
+- TRELLIS raw generation no longer removes invisible faces or simplifies the mesh unless optimization is explicitly enabled.
+- TripoSG no longer decimates against the UI target polycount unless optimization is explicitly enabled.
+- Clarified that the GeneratePanel topology selector is a post-processing target; raw AI model output remains triangle-based where the model/extractor emits triangles.
+
 ## 2026-09-29 — Runtime Lifecycle, Tripo Input & Headless Thumbnail Hardening
 - Fixed TripoSR's runtime `trimesh` NameError in the Y-up orientation path.
 - Fixed TripoSG standard preprocessing to pass a decoded RGB image to `prepare_image()`.

@@ -183,7 +183,8 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             - seed: Optional int (default: 42)
             - num_inference_steps: Optional int (default: 50)
             - guidance_scale: Optional float (default: 7.0)
-            - faces: Optional int for mesh decimation (-1 for no decimation)
+            - faces: Optional int for post-processing decimation (-1 for no reduction)
+            - auto_optimize: Optional bool; when false, preserve the model-native mesh without decimation
             - output_format: 'glb' or 'obj' (default: 'glb')
         """
         try:
@@ -211,6 +212,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             steps = int(inputs.get("num_inference_steps", self.num_inference_steps))
             guidance = float(inputs.get("guidance_scale", self.guidance_scale))
             faces = int(inputs.get("target_polycount", inputs.get("faces", -1)))
+            auto_optimize = bool(inputs.get("auto_optimize", False))
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
 
@@ -261,7 +263,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))
 
             # Optional simplification
-            if faces > 0 and mesh.faces.shape[0] > faces:
+            if auto_optimize and faces > 0 and mesh.faces.shape[0] > faces:
                 try:
                     import pymeshlab
                     m = pymeshlab.Mesh(vertex_matrix=mesh.vertices, face_matrix=mesh.faces)

@@ -1,3 +1,9 @@
+## 2026-09-29 Raw-Geometry Quality Findings — Generation vs Post-Processing
+- The GeneratePanel was sending `target_polycount` together with `auto_optimize: true`; TripoSG and TRELLIS interpreted that as permission to decimate model output before the raw asset reached downstream tools.
+- TRELLIS also ran its visibility/hole postprocess during normal generation, which can remove low-visibility faces. Raw-generation mode now preserves the native triangle mesh and skips that destructive cleanup.
+- The topology selector does not change the AI decoder's face primitive. Raw model extraction remains triangle-based; quad conversion is a retopology/post-processing task and is kept separate from raw geometry preservation.
+- Fresh GPU validation is still required after this change.
+
 ## 2026-09-29 Runtime Findings — Colab Generation and Frontend Stability
 - TRELLIS image-to-textured-mesh reached generation success, GLB export, and scheduler completion. The subsequent thumbnail step failed in pyrender with `Cannot connect to "None"`, isolating that failure to headless thumbnail rendering.
 - TripoSR failed because `trimesh` was referenced but not imported in the orientation path.

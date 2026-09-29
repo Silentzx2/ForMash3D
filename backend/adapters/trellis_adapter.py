@@ -170,6 +170,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             num_steps = inputs.get("num_inference_steps", 25)
             target_polycount = inputs.get("target_polycount", None)
             simplify = inputs.get("simplify", None)
+            auto_optimize = bool(inputs.get("auto_optimize", False))
             texture_bake_mode = inputs.get("texture_bake_mode", "fast")
             guidance = inputs.get("guidance_scale", 7.5)
 
@@ -219,17 +220,18 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
 
             candidate_mesh = mesh or outputs["mesh"][0]
             if simplify is None:
-                if target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
+                if auto_optimize and target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
                     simplify = max(0.0, min(0.85, 1.0 - (float(target_polycount) / float(len(candidate_mesh.faces)))))
                 else:
-                    # Studio fidelity default: preserve sharp high-resolution geometry
-                    simplify = 0.05
+                    # Raw-generation mode keeps the model-native mesh intact; optimization belongs to post-processing.
+                    simplify = 0.0
 
             # Extract mesh from Gaussian representation
             mesh = self.postprocessing_utils.to_trimesh(
                 outputs["gaussian"][0],
                 candidate_mesh,
                 simplify=simplify,
+                fill_holes=bool(auto_optimize or simplify > 0),
                 texture_size=texture_resolution,
                 texture_bake_mode=texture_bake_mode,
                 forward_rot=False,
@@ -508,6 +510,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             target_polycount = inputs.get("target_polycount", None)
             mesh_path = inputs.get("mesh_path", None)
             simplify = inputs.get("simplify", None)
+            auto_optimize = bool(inputs.get("auto_optimize", False))
             tex_bake_mode = inputs.get("texture_bake_mode", "fast")
             guidance = inputs.get("guidance_scale", 7.5)
 
@@ -558,17 +561,18 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
 
             candidate_mesh = mesh or outputs["mesh"][0]
             if simplify is None:
-                if target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
+                if auto_optimize and target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
                     simplify = max(0.0, min(0.85, 1.0 - (float(target_polycount) / float(len(candidate_mesh.faces)))))
                 else:
-                    # Studio fidelity default: preserve sharp high-resolution geometry
-                    simplify = 0.05
+                    # Raw-generation mode keeps the model-native mesh intact; optimization belongs to post-processing.
+                    simplify = 0.0
 
             # Extract mesh from Gaussian representation
             mesh = self.postprocessing_utils.to_trimesh(
                 outputs["gaussian"][0],
                 candidate_mesh,
                 simplify=simplify,
+                fill_holes=bool(auto_optimize or simplify > 0),
                 texture_size=texture_resolution,
                 texture_bake_mode=tex_bake_mode,
                 forward_rot=False,
