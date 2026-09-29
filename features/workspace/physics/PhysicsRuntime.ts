@@ -116,6 +116,7 @@ export class PhysicsRuntime {
     }
 
     const body = this.world.createRigidBody(bodyDesc);
+    let colliderCount = 0;
 
     for (const points of colliderPoints) {
       const desc = rapier.ColliderDesc.convexHull(points);
@@ -127,6 +128,12 @@ export class PhysicsRuntime {
         .setFriction(Math.max(0, Math.min(2, config.friction)))
         .setRestitution(Math.max(0, Math.min(1, config.restitution)));
       this.world.createCollider(desc, body);
+      colliderCount += 1;
+    }
+
+    if (colliderCount === 0) {
+      this.world.removeRigidBody(body);
+      throw new Error('Physics collision artifact contains no valid convex collider.');
     }
 
     const debug = this.buildDebugObject(collision.scene, bodyPosition, bodyQuaternion);
