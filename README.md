@@ -542,6 +542,7 @@ lsof -ti :7842 | xargs -r kill -9
 - [Architecture Decisions](Docs/DECISIONS.md)
 - [Design System](Docs/DESIGN.md)
 - [Project Memory](Docs/MEMORY.md)
+- [Physics Runtime & Contract](Docs/PHYSICS.md)
 - [Security Policy](Docs/SECURITY.md)
 - [Change Log](Docs/CHANGELOG.md)
 - [Task List](Docs/TASKS.md)

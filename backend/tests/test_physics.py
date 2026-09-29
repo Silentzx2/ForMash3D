@@ -40,3 +40,26 @@ def test_physics_metadata_marks_estimated_properties():
     assert metadata["body"]["type"] == "dynamic"
     assert metadata["provenance"]["mass"] == "geometry_derived_estimate"
     assert metadata["capabilities"]["soft_body"] is False
+
+
+def test_normalize_physics_config_accepts_frontend_camel_case():
+    config = normalize_physics_config({
+        "bodyType": "static",
+        "massMode": "manual",
+        "massKg": 12.5,
+        "densityMode": "manual",
+        "densityKgM3": 900,
+        "friction": 0.8,
+        "restitution": 0.3,
+        "linearDamping": 0.2,
+        "angularDamping": 0.4,
+        "gravityEnabled": False,
+        "collisionQuality": "precise",
+    })
+
+    assert config["body_type"] == "static"
+    assert config["mass_mode"] == "manual"
+    assert config["mass_kg"] == 12.5
+    assert config["density_kg_m3"] == 900
+    assert config["gravity_enabled"] is False
+    assert config["collision_quality"] == "precise"

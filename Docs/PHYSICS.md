@@ -2,9 +2,9 @@
 
 ## Current implementation status
 
-Physics is now an opt-in post-processing and viewer capability on the review-postprocess line.
+Physics is an opt-in post-processing metadata layer plus viewer capability. It does not introduce a new AI generation model.
 
-The feature does not add a new AI generation model. Physics preparation reuses the existing post-processing collision service, while interactive browser simulation uses Rapier 3D.
+The existing collision pipeline remains authoritative for collision geometry. The Physics toggle controls physics readiness/metadata and the collision-quality budget. Normal post-processing still produces the collision artifact when Physics is off.
 
 ## Runtime flow
 
@@ -13,77 +13,74 @@ AI generation
   ↓
 immutable master/source.glb
   ↓
-existing production post-processing
-  ↓
-Physics ON?
-  ├─ OFF → no physics-specific preparation
-  └─ ON
-      ├─ existing collision service
-      ├─ metadata/physics.json
-      └─ Physics Ready result
-           ↓
-       Three.js viewer
-           ↓
-       Rapier rigid-body preview
+normal production post-processing
+  ├─ game-ready / LOD / collision / QA
+  └─ Physics ON?
+       ├─ no → collision stays normal, no physics metadata
+       └─ yes
+           ├─ selected collision quality
+           ├─ metadata/physics.json
+           └─ Physics Ready result
+                ↓
+            Three.js viewer
+                ↓
+            Rapier rigid-body preview
 ```
 
 ## Generation contract
 
-Primary mesh-generation requests accept:
+Mesh-generation requests accept:
 
-- physics_enabled
-- physics_config
+- `physics_enabled`
+- `physics_config`
 
-The values are carried as job metadata rather than model-specific inference parameters. This prevents provider adapters from receiving physics fields they do not understand.
+These values are carried as job metadata rather than model-specific inference parameters.
 
-The existing generateCollision frontend setting is the single generation intent flag. A second overlapping physicsEnabled flag is intentionally not maintained.
+The existing `generateCollision` frontend setting is the single generation intent flag. No second overlapping Physics enable flag is maintained.
 
-## Physics configuration
+## Controller
 
-The controller currently exposes:
+The pre-generation controller exposes:
 
 - body behaviour: auto, dynamic, static, kinematic
 - mass: automatic estimate or manual kilograms
+- density: project default or manual kg/m³
 - collision quality: fast, balanced, precise
 - friction
 - restitution / bounce
 - linear damping
 - angular damping
-- gravity participation
+- gravity
 
-Values are bounded before entering post-processing.
+All values are bounded before post-processing.
 
 Automatic physical properties are explicitly marked as estimates. They are not treated as measured physical truth.
 
-## Collision generation
+## Collision
 
-The current collision service remains the source of collision geometry:
+Existing collision generation is reused.
+
+Physics quality presets map to the existing service:
 
 - Fast → convex hull
-- Balanced → CoACD decomposition with bounded search
+- Balanced → bounded CoACD decomposition
 - Precise → higher-budget CoACD decomposition
 
-No second collision generator is introduced.
+No second collision implementation was added.
 
 ## Physics metadata
 
-Enabled jobs write metadata/physics.json.
+Physics-enabled jobs write:
 
-The metadata records:
+`metadata/physics.json`
 
-- rigid body configuration
-- mass/density
-- material response
-- collision method and statistics
-- deformable capability state
-- provenance for estimated vs user values
-- capability flags
+The metadata records rigid-body configuration, material response, collision statistics, property provenance, and capability flags.
 
 The raw master is never rewritten.
 
 ## Viewer
 
-The existing direct Three.js viewer now exposes a Physics mode when an asset is Physics Ready.
+The existing direct Three.js viewer exposes Physics mode only when an asset is marked Physics Ready.
 
 Current rigid-body controls:
 
@@ -96,32 +93,46 @@ Current rigid-body controls:
 - Slide
 - Spin
 
-The viewer loads the canonical collision artifact and converts its convex parts into Rapier convex colliders. Dynamic bodies use the collision representation rather than the high-resolution render mesh.
+The viewer waits for the selected asset's mesh load to finish before binding physics, and disposes the runtime during asset reloads.
 
-Jiggle / soft-body simulation is capability-gated and is not faked by transform animation. The current production path remains rigid-body only.
+The simulation uses the canonical collision representation; the render mesh remains the visual object that follows the rigid body.
 
-## VRAM / dependency policy
+Jiggle / soft-body behaviour is capability-gated and is not faked by transform animation. The current production path remains rigid-body only.
+
+## Shape → Paint
+
+When Hunyuan Shape/Mini Turbo automatically chains into Paint, Physics preparation is skipped on the intermediate Shape result and generated only for the final Paint output. This avoids duplicate collision work.
+
+## VRAM and dependency policy
 
 No additional AI model is required for Physics.
 
-Rapier runs in the browser/WASM layer, so Physics does not add an inference model VRAM requirement. The existing selected 3D generation model remains subject to the project's normal VRAM budgeting and 1 GB safety margin.
+Rapier runs in the browser/WASM layer, so it does not add an inference-model VRAM requirement. The normal selected generation model remains subject to ForMash3D's VRAM scheduler/budget.
 
-The browser dependency is @dimforge/rapier3d-compat 0.21.x. The compat build embeds WASM for broad bundler support.
+The browser dependency is pinned to `@dimforge/rapier3d-compat` **0.19.3** for reproducible builds. The compat build embeds WASM for broad bundler support.
 
 ## Delivery
 
-Physics metadata is available through GET /api/v1/system/jobs/{job_id}/download?artifact_format=physics_json.
+Physics metadata is available through:
 
-The existing workspace ZIP also contains the generated physics metadata and collision artifacts when they exist.
+`GET /api/v1/system/jobs/{job_id}/download?artifact_format=physics_json`
+
+The existing complete-workspace ZIP also contains physics metadata and collision artifacts when they exist.
 
 ## Testing
 
-Backend unit coverage lives in backend/tests/test_physics.py.
+Backend unit coverage:
 
-Existing post-processing E2E coverage remains in backend/tests/test_postprocess_e2e.py.
+`backend/tests/test_physics.py`
 
-A real NVIDIA/Colab inference run is still required for full production GPU validation.
+Production post-processing fixture coverage:
+
+`backend/tests/test_postprocess_e2e.py`
+
+The fixture test is opt-in because it exercises the full Blender/post-processing stack.
+
+A real NVIDIA/Colab inference run remains required for complete production GPU validation.
 
 ## Extension boundary
 
-Future deformable/jiggle, joints, native simulation providers, and engine-specific exporters must be added only when the current capability and runtime requirements justify them. They must not replace the provider-neutral metadata contract or mutate the immutable master asset.
+Future joints, deformable/jiggle runtimes, native simulation providers, and engine-specific exporters must remain capability-driven. They must not replace the provider-neutral metadata contract or mutate the immutable master asset.

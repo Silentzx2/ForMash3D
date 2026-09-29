@@ -290,14 +290,16 @@ export const GeneratePanel: React.FC = () => {
   };
 
   const updatePhysics = (updates: Partial<PhysicsSettings>) => {
-    setGenerationSettings(prev => ({
-      ...prev,
-      physics: {
-        ...physics,
-        ...(prev.physics || {}),
-        ...updates,
-      },
-    }));
+    setGenerationSettings(prev => {
+      const current = prev.physics || physics;
+      return {
+        ...prev,
+        physics: {
+          ...current,
+          ...updates,
+        },
+      };
+    });
   };
 
   const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
@@ -1029,7 +1031,7 @@ export const GeneratePanel: React.FC = () => {
               >
                 <span className="text-[11px] font-bold">Physics Ready Asset</span>
                 <span className="block text-[9px] text-zinc-400 mt-0.5">
-                  {generationSettings.generateCollision ? 'Collision + physical metadata will be generated' : 'Keep generation mesh-only'}
+                  {generationSettings.generateCollision ? 'Physics metadata + selected collision quality will be generated' : 'No Physics metadata; normal collision remains available'}
                 </span>
               </button>
 

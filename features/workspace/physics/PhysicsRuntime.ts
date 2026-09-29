@@ -37,6 +37,8 @@ export class PhysicsRuntime {
   private collisionDebugVisible = false;
   private accumulator = 0;
   private readonly fixedStep = 1 / 60;
+  private accumulator = 0;
+  private readonly fixedStep = 1 / 60;
 
   async init(
     scene: THREE.Scene,
@@ -67,31 +69,42 @@ export class PhysicsRuntime {
     floorDesc.setTranslation(sourceBox.getCenter(new THREE.Vector3()).x, floorY, sourceBox.getCenter(new THREE.Vector3()).z);
     this.floor = this.world.createCollider(floorDesc);
 
+    const bodyPosition = sourceVisual.getWorldPosition(new THREE.Vector3());
+    const bodyQuaternion = sourceVisual
+      .getWorldQuaternion(new THREE.Quaternion())
+      .normalize();
+    const inverseBodyRotation = bodyQuaternion.clone().invert();
+
     const colliderPoints: Float32Array[] = [];
-    const position = sourceVisual.getWorldPosition(new THREE.Vector3());
-    const quaternion = sourceVisual.getWorldQuaternion(new THREE.Quaternion());
-    const origin = position.clone();
     collision.scene.updateMatrixWorld(true);
     collision.scene.traverse((child) => {
       if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes.position) return;
+
       const position = child.geometry.attributes.position;
       const points = new Float32Array(position.count * 3);
-      for (let i = 0; i < position.count; i++) {
-        points[i * 3] = position.getX(i);
-        points[i * 3 + 1] = position.getY(i);
-        points[i * 3 + 2] = position.getZ(i);
-      }
-      const worldMatrix = child.matrixWorld;
-      const localPoints = new Float32Array(points.length);
       const v = new THREE.Vector3();
+
       for (let i = 0; i < position.count; i++) {
-        v.set(points[i * 3], points[i * 3 + 1], points[i * 3 + 2]).applyMatrix4(worldMatrix);
-        localPoints[i * 3] = v.x - origin.x;
-        localPoints[i * 3 + 1] = v.y - origin.y;
-        localPoints[i * 3 + 2] = v.z - origin.z;
+        v.set(
+          position.getX(i),
+          position.getY(i),
+          position.getZ(i),
+        )
+          .applyMatrix4(child.matrixWorld)
+          .sub(bodyPosition)
+          .applyQuaternion(inverseBodyRotation);
+
+        points[i * 3] = v.x;
+        points[i * 3 + 1] = v.y;
+        points[i * 3 + 2] = v.z;
       }
-      if (localPoints.length >= 12) colliderPoints.push(localPoints);
+
+      if (points.length >= 12) colliderPoints.push(points);
     });
+
+    if (!colliderPoints.length) {
+      throw new Error('Physics collision artifact contains no usable convex geometry.');
+    }
 
     const descFactory = config.bodyType === 'static'
       ? () => rapier.RigidBodyDesc.fixed()
@@ -100,35 +113,55 @@ export class PhysicsRuntime {
       : () => rapier.RigidBodyDesc.dynamic();
 
     const bodyDesc = descFactory()
-      .setTranslation(position.x, position.y, position.z)
-      .setRotation({ x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w })
+      .setTranslation(bodyPosition.x, bodyPosition.y, bodyPosition.z)
+      .setRotation({
+        x: bodyQuaternion.x,
+        y: bodyQuaternion.y,
+        z: bodyQuaternion.z,
+        w: bodyQuaternion.w,
+      })
       .setLinearDamping(Math.max(0, config.linearDamping))
       .setAngularDamping(Math.max(0, config.angularDamping));
 
-    if (config.bodyType !== 'static' && config.massMode === 'manual') {
+    if (config.bodyType !== 'static') {
+      // Backend metadata resolves both estimated and manual mass to this value.
       bodyDesc.setAdditionalMass(Math.max(0.01, config.massKg));
     }
 
     const body = this.world.createRigidBody(bodyDesc);
+    let colliderCount = 0;
 
     for (const points of colliderPoints) {
       const desc = rapier.ColliderDesc.convexHull(points);
       if (!desc) continue;
       desc
-        .setDensity(config.massMode === 'manual' ? 0 : Math.max(0.01, config.densityKgM3))
+        // Explicit body mass is authoritative; collider density must not overwrite it.
+        .setDensity(0)
         .setFriction(Math.max(0, Math.min(2, config.friction)))
         .setRestitution(Math.max(0, Math.min(1, config.restitution)));
       this.world.createCollider(desc, body);
+      colliderCount += 1;
     }
 
-    const debug = this.buildDebugObject(collision.scene);
+    if (colliderCount === 0) {
+      this.world.removeRigidBody(body);
+      throw new Error('Physics collision artifact contains no valid convex collider.');
+    }
+
+    const debug = this.buildDebugObject(
+      collision.scene,
+      bodyPosition,
+      bodyQuaternion,
+    );
+    debug.position.copy(bodyPosition);
+    debug.quaternion.copy(bodyQuaternion);
     scene.add(debug);
     this.bodies.push({
       body,
       visual: sourceVisual,
       debug,
-      initialPosition: position.clone(),
-      initialQuaternion: quaternion.clone(),
+      initialPosition: bodyPosition.clone(),
+      initialQuaternion: bodyQuaternion.clone(),
     });
 
     sourceVisual.userData.physicsRuntime = true;
@@ -136,7 +169,11 @@ export class PhysicsRuntime {
     this.setDebugVisibility(false);
   }
 
-  private buildDebugObject(source: THREE.Object3D): THREE.Object3D {
+  private buildDebugObject(
+    source: THREE.Object3D,
+    bodyPosition: THREE.Vector3,
+    bodyQuaternion: THREE.Quaternion,
+  ): THREE.Object3D {
     const group = new THREE.Group();
     const material = new THREE.LineBasicMaterial({
       color: 0xffcc00,
@@ -144,14 +181,17 @@ export class PhysicsRuntime {
       opacity: 0.9,
       depthTest: false,
     });
+    const inverseBody = new THREE.Matrix4()
+      .compose(bodyPosition, bodyQuaternion, new THREE.Vector3(1, 1, 1))
+      .invert();
+
     source.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
       const wire = new THREE.LineSegments(
         new THREE.WireframeGeometry(child.geometry),
         material,
       );
-      wire.matrixAutoUpdate = true;
-      wire.applyMatrix4(child.matrixWorld);
+      wire.applyMatrix4(inverseBody.clone().multiply(child.matrixWorld));
       group.add(wire);
     });
     return group;
@@ -183,8 +223,8 @@ export class PhysicsRuntime {
       item.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       item.visual.position.copy(item.initialPosition);
       item.visual.quaternion.copy(item.initialQuaternion);
-      item.debug.position.set(0, 0, 0);
-      item.debug.quaternion.identity();
+      item.debug.position.copy(item.initialPosition);
+      item.debug.quaternion.copy(item.initialQuaternion);
     }
   }
 
@@ -220,7 +260,7 @@ export class PhysicsRuntime {
       const r = item.body.rotation();
       item.visual.position.set(p.x, p.y, p.z);
       item.visual.quaternion.set(r.x, r.y, r.z, r.w);
-      item.debug.position.set(p.x - item.initialPosition.x, p.y - item.initialPosition.y, p.z - item.initialPosition.z);
+      item.debug.position.set(p.x, p.y, p.z);
       item.debug.quaternion.copy(item.visual.quaternion);
     }
   }
