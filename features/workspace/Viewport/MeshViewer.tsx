@@ -1736,7 +1736,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       try {
         await runtime.init(scene, group, collisionUrl, {
           bodyType: body.type || 'auto',
-          massMode: body.mass_kg ? 'manual' : 'auto',
+          massMode: metadata.provenance?.mass === 'user' ? 'manual' : 'auto',
           massKg: Number(body.mass_kg || 1),
           densityMode: 'auto',
           densityKgM3: Number(body.density_kg_m3 || 500),
@@ -1763,7 +1763,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentAsset?.id, currentAsset?.artifacts?.collision, currentAsset?.artifacts?.physicsReady, currentAsset?.artifacts?.physics, isLoading, physicsDebug]);
+  }, [currentAsset?.id, currentAsset?.artifacts?.collision, currentAsset?.artifacts?.physicsReady, currentAsset?.artifacts?.physics, isLoading]);
 
   useEffect(() => {
     physicsRuntimeRef.current?.setDebugVisibility(physicsDebug);
