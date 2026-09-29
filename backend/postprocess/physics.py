@@ -197,7 +197,6 @@ def build_physics_metadata(
             "type": body_type,
             "mass_kg": round(float(mass), 6),
             "density_kg_m3": round(float(density), 6),
-            "center_of_mass": [0.0, 0.0, 0.0],
             "gravity_enabled": normalized["gravity_enabled"],
             "linear_damping": normalized["linear_damping"],
             "angular_damping": normalized["angular_damping"],
