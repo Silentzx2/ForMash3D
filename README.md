@@ -576,3 +576,6 @@ Normal UI downloads use game_ready/. ZIP export is an on-demand snapshot of the 
 ### Runtime compatibility
 
 The main backend remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. The post-processing dependency block is explicitly marked in backend/requirements.txt. Blender-dependent tools run through BLENDER_EXECUTABLE instead of installing the incompatible upstream bpy wheel into Python 3.10.
+
+## Physics-ready assets
+ForMash3D now supports opt-in Physics preparation during mesh generation. Physics uses the existing post-processing collision pipeline and writes portable physics metadata alongside the asset workspace. Physics-ready assets can be previewed in the Three.js viewer with rigid-body controls and collider debugging. No additional AI generation model is required; browser simulation uses Rapier 3D. See `Docs/PHYSICS.md` for the current contract.
