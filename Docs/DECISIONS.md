@@ -449,3 +449,14 @@
 - PartPacker raw mode uses num_faces=-1 and TRELLIS.2 raw mode disables remeshing/decimation.
 - Post-processing remains responsible for deliberate optimization and topology changes.
 - TripoSF low-VRAM pruning remains enforced on GPUs below 16GB to avoid unsafe memory use.
+
+
+## ADR-034: Port 3DGenStudio Post-Processing Into the ForMash3D Backend
+
+**Decision**: Port the reusable 3DGenStudio mesh-finishing implementation into `backend/postprocess/` instead of recreating its algorithms. Keep ForMash3D's generation pipeline and storage architecture separate; integration adapters will call the ported tools from the existing backend job/API flow.
+
+**Reason**: The post-processing code already implements the required mesh cleanup, UV, retopology, baking, collision and QA behavior. Reusing it reduces duplicate implementation and preserves the upstream-tested behavior while allowing ForMash3D-specific orchestration and storage contracts.
+
+**Runtime boundary**: The FastAPI process uses Python 3.10 / PyTorch 2.6.0 / CUDA 12.4. Blender-dependent operations run in isolated Blender subprocesses through the existing `BLENDER_EXECUTABLE` configuration; the backend does not install or import `bpy` into its Python 3.10 environment.
+
+**License**: The upstream 3DGenStudio Community License and source commit are preserved with the port. This project currently uses the port in a private personal/internal-use scope; paid hosted/SaaS redistribution remains outside that scope.

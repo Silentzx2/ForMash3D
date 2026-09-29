@@ -1,3 +1,8 @@
+## 2026-09-29 — Post-Processing Pipeline Port
+- Ported the 3DGenStudio mesh-finishing engine into `backend/postprocess/` for Auto UV, Auto Retopo, Repair, Bake, Collision, Game-Ready inspection, Blender-isolated FBX conversion, and thumbnails.
+- Added Python 3.10-compatible post-processing dependencies under a dedicated requirements header; the core PyTorch 2.6.0 + CUDA 12.4 pins remain unchanged.
+- Preserved upstream attribution and license terms in `backend/postprocess/THIRD_PARTY_LICENSE.md`.
+
 ## 2026-09-29 — Tripo & Cross-Model Quality Pipeline Hardening
 - Fixed TripoSG preprocessing to pass the filesystem path required by upstream prepare_image().
 - Removed the duplicate TripoSR orientation transform that could leave exported meshes rotated incorrectly in the Y-up viewer.
