@@ -112,6 +112,7 @@ export class PhysicsRuntime {
       .setAngularDamping(Math.max(0, config.angularDamping));
 
     if (config.bodyType !== 'static') {
+      // The backend has already resolved estimated/manual mass into one canonical value.
       bodyDesc.setAdditionalMass(Math.max(0.01, config.massKg));
     }
 
