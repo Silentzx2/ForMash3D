@@ -459,3 +459,10 @@ Storage: backend/storage/models/<asset_name>_<job_hash>/ is the canonical worksp
 Runtime: post-processing runs outside the FastAPI event loop; Blender-only operations use BLENDER_EXECUTABLE subprocesses while the main environment remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4.
 
 Security: artifact downloads reuse existing job authorization and accept only fixed artifact selectors; arbitrary client filesystem paths are never accepted.
+
+## Physics runtime decision — 2026-09-29
+**Decision:** Reuse the existing CoACD-backed collision service for asset preparation and use `@dimforge/rapier3d-compat` for browser rigid-body preview.
+
+**Reason:** The collision pipeline already exists and should remain the single collision source. Rapier is a browser/WebAssembly runtime that fits the current direct Three.js viewer without forcing a React Three Fiber migration. No AI physics model is necessary, so the feature does not add another GPU-heavy inference dependency.
+
+**Constraints:** Keep the canonical physics representation provider-neutral; do not treat draft glTF physics extensions as the sole source of truth; do not fake soft-body/jiggle; do not add native physics engines until a tested product requirement exists.

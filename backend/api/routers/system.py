@@ -1142,6 +1142,8 @@ async def download_job_result(
                 output_path = asset_root_path / "metadata" / "job.json"
             elif canonical_format == "asset_json":
                 output_path = asset_root_path / "metadata" / "asset.json"
+            elif canonical_format == "physics_json":
+                output_path = asset_root_path / "metadata" / "physics.json"
             elif canonical_format.startswith("texture_"):
                 texture_name = canonical_format.removeprefix("texture_")
                 if texture_name not in {"base_color", "normal", "ao", "roughness", "metallic", "orm"}:

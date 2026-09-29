@@ -23,6 +23,7 @@ from PIL import Image
 from core.utils.file_utils import resolve_server_file_path
 from .config import BLENDER_EXECUTABLE
 from .meshio import load_mesh, load_mesh_vertex_normals
+from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
 from .services.auto_retopo import run_auto_retopo
 from .services.auto_uv import run_auto_uv
 from .services.bake import run_bake
@@ -223,6 +224,13 @@ def _build_result(
             if generated.get("collision")
             else None
         ),
+        "physics_url": (
+            f"{base_url}/download?artifact_format=physics_json"
+            if generated.get("physics")
+            else None
+        ),
+        "physics_ready": bool(generated.get("physics")),
+        "physics": generated.get("physics_metadata"),
         "pbr_maps": pbr_urls,
         "thumbnail_url": (
             f"{base_url}/download?artifact_format=thumbnail"
@@ -240,6 +248,7 @@ def _build_result(
             "game_ready": sorted(generated["game_ready"]),
             "lods": sorted(f"lod{idx}" for idx in generated["lods"]),
             "collision": bool(generated.get("collision")),
+            "physics": bool(generated.get("physics")),
             "textures": sorted(generated["textures"]),
             "preview": bool(generated.get("thumbnail")),
         },
@@ -451,28 +460,28 @@ def run_postprocess_job(
         lod_path.write_bytes(_export_glb(level["mesh"]))
         lods[idx] = str(lod_path)
 
-    _emit(progress, 0.88, "collision", "Generating collision proxy.")
+    physics_enabled = bool(job_metadata.get("physics_enabled", job_inputs.get("physics_enabled", False)))
+    physics_config = normalize_physics_config(job_metadata.get("physics_config") or job_inputs.get("physics_config"))
+    _emit(progress, 0.88, "collision", "Preparing physics collision proxy." if physics_enabled else "Skipping physics collision.")
     collision_path: Optional[Path] = None
-    try:
-        collision_scene, collision_stats = run_collision(
-            uv_mesh,
-            CollisionOptions(
-                method="convex_hull",
-                max_hulls=16,
-                max_hull_vertices=64,
-                input_faces=1000,
-                resolution=1000,
-                seed=0,
-            ),
-        )
-        collision_payload = collision_scene.export(file_type="glb")
-        if isinstance(collision_payload, str):
-            collision_payload = collision_payload.encode("utf-8")
-        collision_path = collision_dir / "collision.glb"
-        collision_path.write_bytes(collision_payload)
-    except Exception as exc:
-        collision_stats = {"error": str(exc)}
-        logger.warning("Collision generation skipped: %s", exc)
+    collision_stats: Dict[str, Any] = {"skipped": not physics_enabled}
+    physics_metadata: Optional[Dict[str, Any]] = None
+    if physics_enabled:
+        try:
+            collision_scene, collision_stats = run_collision(
+                uv_mesh,
+                CollisionOptions(**collision_options_for_quality(physics_config["collision_quality"])),
+            )
+            collision_payload = collision_scene.export(file_type="glb")
+            if isinstance(collision_payload, str):
+                collision_payload = collision_payload.encode("utf-8")
+            collision_path = collision_dir / "collision.glb"
+            collision_path.write_bytes(collision_payload)
+            physics_metadata = build_physics_metadata(uv_mesh, physics_config, collision_stats)
+            _write_json(metadata_dir / "physics.json", physics_metadata)
+        except Exception as exc:
+            logger.error("Physics preparation failed for %s: %s", job_id, exc, exc_info=True)
+            raise RuntimeError(f"Physics preparation failed: {exc}") from exc
 
     _emit(progress, 0.93, "preview", "Generating asset preview.")
     thumbnail_path: Optional[Path] = None
@@ -532,6 +541,7 @@ def run_postprocess_job(
             "uv": uv_stats,
             "bake": bake_stats,
             "collision": collision_stats,
+            "physics": physics_metadata,
         },
     )
 
@@ -539,6 +549,8 @@ def run_postprocess_job(
         "game_ready": game_ready,
         "lods": lods,
         "collision": str(collision_path) if collision_path else None,
+        "physics": str(metadata_dir / "physics.json") if physics_metadata else None,
+        "physics_metadata": physics_metadata,
         "textures": texture_paths,
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
     }

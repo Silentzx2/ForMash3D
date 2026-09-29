@@ -89,6 +89,9 @@ export interface ModelAsset {
     pbrMaps?: Record<string, string>;
     gameReadyFormats?: Record<string, string>;
     zipUrl?: string;
+    physicsUrl?: string;
+    physicsReady?: boolean;
+    physics?: Record<string, unknown>;
   };
   qaScore?: number;
   qaStatus?: 'pass' | 'warn' | 'fail';
@@ -251,6 +254,21 @@ export interface AutoOptimizeSettings {
   preserveDetails: number;
 }
 
+export interface PhysicsSettings {
+  bodyType: 'auto' | 'static' | 'dynamic' | 'kinematic';
+  massMode: 'auto' | 'manual';
+  massKg: number;
+  densityMode: 'auto' | 'manual';
+  densityKgM3: number;
+  friction: number;
+  restitution: number;
+  linearDamping: number;
+  angularDamping: number;
+  gravityEnabled: boolean;
+  collisionQuality: 'fast' | 'balanced' | 'precise';
+  deformation: 'off';
+}
+
 export interface GenerationSettings {
   mode: 'image-to-3d' | 'text-to-3d';
   image: string | null;
@@ -274,6 +292,7 @@ export interface GenerationSettings {
   lodPreset?: 'mobile' | 'low' | 'medium' | 'high' | 'custom';
   lodCount?: number;
   generateCollision?: boolean;
+  physics?: PhysicsSettings;
   generatePBR?: boolean;
   preserveDetails?: number;
   repairUVs?: boolean;

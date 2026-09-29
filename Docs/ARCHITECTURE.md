@@ -431,3 +431,6 @@ The production post-processing engine lives under backend/postprocess/. Successf
 Pipeline: MASTER RAW -> Repair -> Optimize -> Auto UV -> Bake -> GAME READY, with LOD, collision, preview, and QA artifacts derived from the processed mesh.
 
 The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE.
+
+## Physics layer
+Physics is an opt-in layer after the existing generation and production post-processing pipeline. The immutable master remains unchanged. When requested, the scheduler passes a provider-neutral physics intent into post-processing; the existing collision service produces the collision representation and `metadata/physics.json` records the rigid-body configuration, material response, collision statistics, provenance, and capabilities. The browser viewer uses the canonical collision artifact with Rapier while remaining on the existing direct Three.js renderer. The physics runtime is not an inference model and does not consume generation-model VRAM.

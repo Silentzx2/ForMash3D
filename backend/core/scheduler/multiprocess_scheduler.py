@@ -1022,13 +1022,16 @@ class MultiprocessModelScheduler:
             if result.get("success"):
                 final_result = result.get("result") or {}
                 if (
-                    job_request.feature in {
-                        "text_to_raw_mesh",
-                        "text_to_textured_mesh",
-                        "image_to_raw_mesh",
-                        "image_to_textured_mesh",
-                    }
-                    and final_result.get("output_mesh_path")
+                    final_result.get("output_mesh_path")
+                    and (
+                        job_request.feature in {
+                            "text_to_raw_mesh",
+                            "text_to_textured_mesh",
+                            "image_to_raw_mesh",
+                            "image_to_textured_mesh",
+                        }
+                        or bool(job_request.metadata.get("physics_enabled"))
+                    )
                 ):
                     await self.job_queue.update_job_progress(
                         job_id, 0.75, "postprocess", "Running production post-processing"
@@ -1065,6 +1068,8 @@ class MultiprocessModelScheduler:
                             {
                                 "feature": job_request.feature,
                                 "model_id": job_request.model_preference,
+                                "physics_enabled": bool(job_request.metadata.get("physics_enabled", False)),
+                                "physics_config": job_request.metadata.get("physics_config"),
                             },
                             report,
                         )

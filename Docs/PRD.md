@@ -368,3 +368,6 @@ Every successful mesh-generation job automatically enters post-processing. The r
 The canonical workspace contains master/, game_ready/, lods/, collision/, textures/, previews/, and metadata/. Only artifacts that actually succeed are written.
 
 Normal downloads target game_ready/. ZIP export is an on-demand snapshot of the entire workspace.
+
+## Physics capability
+The product now supports an optional Physics Ready generation intent. Users can enable physics preparation before generation and adjust body behaviour, mass mode, collision quality, friction, restitution, damping, and gravity. Physics-ready assets expose collision and physics metadata and can be interactively tested in the existing model viewer. The first production scope is rigid-body simulation; deformable/jiggle behaviour remains capability-gated rather than being faked.
