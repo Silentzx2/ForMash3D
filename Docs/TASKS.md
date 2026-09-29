@@ -118,3 +118,14 @@
 - Added canonical per-generation asset workspaces and protected artifact/ZIP delivery.
 - Updated UI export behavior to prefer game-ready artifacts.
 - Added post-processing dependencies under a dedicated backend/requirements.txt header.
+
+## Physics integration status
+- [x] Add opt-in Physics generation intent using the existing collision flag path
+- [x] Add pre-generation Physics controller
+- [x] Reuse existing collision service with Fast/Balanced/Precise presets
+- [x] Add canonical `physics.json` metadata and artifact delivery
+- [x] Add browser rigid-body viewer runtime and debug/test controls
+- [x] Add physics unit coverage
+- [ ] GPU/Colab end-to-end verification
+- [ ] Capability-gated soft-body/jiggle implementation when a real deformable requirement is justified
+- [ ] Target-specific physics exporters only after tested mappings exist
