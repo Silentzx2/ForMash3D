@@ -84,3 +84,16 @@ packaging
 setuptools-scm
 scikit-build-core
 pybind11
+
+# ── PostProcess dependencies (3DGenStudio mesh-processing port) ─────────────
+# Keep this block together: these are the Python 3.10-compatible runtime deps
+# used by backend/postprocess/. PyTorch/CUDA remain governed by the core pins above.
+scipy>=1.11
+scikit-image>=0.22
+pymeshlab>=2023.12
+embreex>=2.17
+manifold3d>=2.5
+coacd>=1.0
+warp-lang>=1.0
+rtree>=1.2
+matplotlib>=3.8

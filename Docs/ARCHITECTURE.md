@@ -1,7 +1,7 @@
 # Architecture — ForMash 3D
 
-> **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
-> **Last Verified**: September 2026
+> **Architecture Version**: 0.2.0 (FastAPI + Next.js 16)
+> **Last Verified**: September 29, 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
@@ -47,9 +47,8 @@ flowchart TB
     subgraph DATA["Storage Layer"]
         direction TB
         FILESTORE["Redis FileStore<br/>Cross-Worker Metadata"]:::store
-        LOCAL["Local Filesystem<br/>backend/storage/models/[job_id]/"]:::store
+        LOCAL["Canonical Asset Workspace<br/>backend/storage/models/<asset_name>_<job_hash>/"]:::store
         UPLOADS["Upload Bucket<br/>backend/storage/uploads/"]:::store
-        EXPORTS["Export Archives<br/>backend/storage/exports/"]:::store
     end
 
     subgraph OPT["Optional Services"]
@@ -114,9 +113,9 @@ Located at `backend/api/`:
 
 Located at `backend/storage/`:
 - **Uploads** (`uploads/`): User-uploaded reference images (`.png`, `.jpg`, `.webp`).
-- **Models** (`models/<job_id>/`): Generated 3D assets organized per job.
-- **Thumbnails** (`thumbnails/`): Rendered asset preview images.
-- **Exports** (`exports/`): Structured ZIP packages for engine delivery.
+- **Models** (`models/<asset_name>_<job_hash>/`): Canonical per-generation asset workspaces.
+- **Asset workspace**: `master/`, `game_ready/`, `lods/`, `collision/`, `textures/`, `previews/`, and `metadata/`.
+- **ZIP delivery**: Generated on demand from the canonical workspace; no persistent `exports/` tree is required.
 
 ### 2.5 Local Wheelhouse
 
@@ -161,11 +160,12 @@ sequenceDiagram
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
-    SCHED->>Storage: Save source.glb (Untouched Master)
-    SCHED->>Storage: Save game_ready.glb (Decimated)
-    SCHED->>Storage: Save lods/lod0..3.glb (LOD Cascade)
-    SCHED->>Storage: Save collision.glb (Convex Hull)
-    SCHED->>Storage: Save quality_report.json (QA 0-100 Score)
+    SCHED->>Storage: Preserve master/source.glb byte-for-byte
+    SCHED->>PostProcess: Repair -> Optimize -> Auto UV -> Bake -> QA
+    PostProcess->>Storage: Save game_ready/* final formats
+    PostProcess->>Storage: Save lods/lod0..3.glb
+    PostProcess->>Storage: Save collision/collision.glb
+    PostProcess->>Storage: Save textures/, previews/, metadata/quality_report.json
     SCHED-->>API: Job complete
     API-->>Frontend: Return {job_id, status: "completed", outputs}
     Frontend->>User: Render 3D model in WebGL Viewport
@@ -181,9 +181,8 @@ flowchart LR
     classDef file fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#cbd5e1
 
     ROOT["backend/storage/"]:::dir --> UPLOADS["uploads/<br/>Reference Images"]:::dir
-    ROOT --> MODELS["models/[job_id]/<br/>Generated Assets"]:::dir
+    ROOT --> MODELS["models/<asset_name>_<job_hash>/<br/>Canonical Asset Workspace"]:::dir
     ROOT --> THUMBS["thumbnails/<br/>Preview PNGs"]:::dir
-    ROOT --> EXPORTS["exports/<br/>Production ZIPs"]:::dir
 
     MODELS --> SRC["source.glb<br/>Untouched Master"]:::file
     MODELS --> GAME["game_ready.glb<br/>Engine-Optimized"]:::file
@@ -277,6 +276,7 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 - `GET /api/v1/mesh-generation/status/{job_id}`: Real-time generation job status.
 - `POST /api/v1/mesh-generation/cancel/{job_id}`: Cancel a running job.
 - `POST /api/v1/mesh-generation/cost-estimate`: Estimate VRAM and time cost.
+- `GET /api/v1/system/jobs/{job_id}/download?artifact_format=<format>`: Deliver canonical master, game-ready, LOD, collision, texture, preview, QA, or ZIP artifacts.
 
 ### Mesh Editing, Rigging, Segmentation, Retopology, UV
 - `POST /api/v1/mesh-editing/text-edit`: Edit mesh with text prompt.
@@ -423,3 +423,14 @@ bash -n backend/scripts/install.sh
 ### ADR-008: Conda for Python Environment
 **Decision**: Conda env `3daigc-api` for Python 3.10 + PyTorch 2.6.0 + CUDA 12.4.
 **Reason**: Reproducible GPU environment, easy dependency management.
+
+### 2.5 Post-Processing Engine
+
+The production post-processing engine lives under backend/postprocess/. Successful raw mesh-generation jobs run this engine before the job is marked completed.
+
+Pipeline: MASTER RAW -> Repair -> Optimize -> Auto UV -> Bake -> GAME READY, with LOD, collision, preview, and QA artifacts derived from the processed mesh.
+
+The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE.
+
+## Physics layer
+Physics is an opt-in layer after the existing generation and production post-processing pipeline. The immutable master remains unchanged. When requested, the scheduler passes a provider-neutral physics intent into post-processing; the existing collision service produces the collision representation and `metadata/physics.json` records the rigid-body configuration, material response, collision statistics, provenance, and capabilities. The browser viewer uses the canonical collision artifact with pinned Rapier 0.19.3 while remaining on the existing direct Three.js renderer. Physics preparation is skipped for intermediate Shape output in Shape→Paint auto-chaining and runs only on the final output. The physics runtime is not an inference model and does not consume generation-model VRAM.

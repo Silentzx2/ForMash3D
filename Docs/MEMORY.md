@@ -1,3 +1,11 @@
+## 2026-09-29 Production Post-Processing Integration
+- Successful mesh-generation jobs now run post-processing automatically.
+- Raw output is preserved byte-for-byte at backend/storage/models/<asset_name>_<job_hash>/master/source.glb.
+- game_ready/ is the default user-facing deliverable; LOD, collision, textures, previews, and metadata are sibling artifact groups.
+- ZIP export is generated on demand from the full canonical workspace.
+- 3DGenStudio source is ported under backend/postprocess/ with upstream attribution/license preserved.
+- Fresh GPU/end-to-end validation remains required because the current development environment has no production NVIDIA runtime.
+
 ## 2026-09-29 Tripo & Cross-Model Quality Audit
 - TripoSG was passing a PIL image into upstream prepare_image(), but that function calls os.path.isfile() and therefore requires a path-like input. This was a runtime blocker, not a model-quality issue.
 - TripoSR applied the upstream display-orientation transform and then added a second X-axis -90° rotation. The second transform could rotate the exported asset incorrectly in the Y-up Three.js viewer.
@@ -117,7 +125,7 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 ## Known Issues
 
 1. **No GPU environment available for runtime testing**: Paint adapter functionality, RealESRGAN native renderer build, real Paint inference, and Shape→Paint auto-chaining still require GPU verification.
-2. **`backend/tests/test_backend_e2e.py` does not exist**: Full backend end-to-end coverage is still missing.
+2. **Full backend end-to-end coverage remains broader than the post-processing suite**: post-processing dependency, Blender runtime, canonical storage, and opt-in real-mesh fixture coverage now exist in `backend/tests/test_postprocess_e2e.py`.
 3. **`POST /api/v1/project/export` does not exist**: Asset delivery is handled through existing file upload/download and storage routes.
 4. **Colab scripts incomplete**: Only `scripts/colab.sh` exists; dedicated start/stop helpers are not implemented.
 5. **P3-SAM installer path**: installer now tolerates the absent legacy `Hunyuan3DPart/P3SAM` checkout and installs P3-SAM runtime dependencies without requiring that source path.
@@ -134,7 +142,7 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 ### Testing
 5. If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference
 6. Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
-7. Implement `backend/tests/test_backend_e2e.py`
+7. Broaden `backend/tests/test_backend_e2e.py` only when full backend integration coverage is required; post-processing coverage is already separated into `backend/tests/test_postprocess_e2e.py`.
 8. Run `npx tsc --noEmit` and `python3 -m compileall` for verification
 
 ### Features
@@ -175,3 +183,14 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - **Bun for frontend, Conda for backend**: Separate package managers
 - **SSE for progress**: Server-Sent Events for real-time generation updates
 - **ORJSON with fallback**: Fast JSON serialization with graceful degradation
+
+## Physics integration
+- Physics is opt-in and reuses `generateCollision` as the single generation intent flag.
+- Normal post-processing still generates the collision artifact when Physics is off; Physics controls physics readiness/metadata and collision quality.
+- Enabled jobs write `metadata/physics.json` and expose `physics_json` through the protected artifact download route.
+- Frontend camelCase and API snake_case physics keys are normalized to one bounded backend contract.
+- Browser preview uses pinned Rapier `0.19.3`; no additional AI model or generation VRAM is required.
+- Viewer physics binds only after the current asset finishes loading and is disposed during reloads.
+- Auto-generated mass is now applied as the canonical rigid-body mass; collider density does not overwrite it.
+- Shape→Paint auto-chain skips physics on the intermediate Shape result and prepares it only on final output.
+- Full GPU/Colab inference validation remains outstanding.

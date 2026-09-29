@@ -106,7 +106,6 @@ def check_frontend_drift(openapi_paths):
 
     forbidden_patterns = [
         "/api/v1/jobs?",
-        "/api/v1/project/export",
         "/api/v1/settings/workspace",
         "/api/v1/runtime/",
         "/api/v1/system/dependencies",

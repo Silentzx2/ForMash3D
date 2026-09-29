@@ -431,6 +431,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     lowVramMode: 'auto',
     maxNumView: 6,
     resolution: 1024,
+    generateCollision: false,
+    physics: {
+      bodyType: 'auto',
+      massMode: 'auto',
+      massKg: 1,
+      densityMode: 'auto',
+      densityKgM3: 500,
+      friction: 0.5,
+      restitution: 0.1,
+      linearDamping: 0.05,
+      angularDamping: 0.05,
+      gravityEnabled: true,
+      collisionQuality: 'balanced',
+      deformation: 'off',
+    },
   });
 
   const [remeshSettings, setRemeshSettings] = useState<RemeshSettings>({
@@ -818,11 +833,17 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         modelParameters.resolution = generationSettings.resolution ?? 512;
       }
 
+      const physicsForThisJob =
+        Boolean(generationSettings.generateCollision) &&
+        !(isPaintModel && generationSettings.generateTexture !== false);
+
       const body: Record<string, unknown> = {
         ...imageInput,
         output_format: 'glb',
         model_preference: generationSettings.aiModel,
         model_parameters: modelParameters,
+        physics_enabled: physicsForThisJob,
+        physics_config: generationSettings.physics,
       };
 
       if (isTextured) {
@@ -884,6 +905,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.lodPreset,
     generationSettings.lodCount,
     generationSettings.generateCollision,
+    generationSettings.physics,
     generationSettings.generatePBR,
     generationSettings.preserveDetails,
     generationSettings.repairUVs,
@@ -962,6 +984,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           output_format: 'glb',
           model_preference: generationSettings.aiModel,
           model_parameters: modelParameters,
+          physics_enabled: Boolean(generationSettings.generateCollision),
+          physics_config: generationSettings.physics,
         };
 
         if (isTextured) {
@@ -1017,6 +1041,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.lodPreset,
     generationSettings.lodCount,
     generationSettings.generateCollision,
+    generationSettings.physics,
     generationSettings.generatePBR,
     generationSettings.preserveDetails,
     generationSettings.repairUVs,
@@ -1183,6 +1208,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
            max_num_view: textureSettings.maxNumView ?? 6,
            resolution: textureSettings.paintResolution ?? 512,
          },
+         physics_enabled: Boolean(generationSettings.generateCollision),
+         physics_config: generationSettings.physics,
        };
 
         if (generationSettings.generatePBR !== false) {
@@ -1206,7 +1233,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setExecutionStep(message);
         toast.error('Paint auto-chaining failed', { description: message });
       }
-    }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.imageFileId, generationSettings.generateTexture, generationSettings.generatePBR, startTask]);
+    }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.imageFileId, generationSettings.generateTexture, generationSettings.generatePBR, generationSettings.generateCollision, generationSettings.physics, startTask]);
 
   useEffect(() => {
     const task = activeTaskRef.current;
@@ -1284,7 +1311,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               vertices: result.vertex_count ?? 0,
               triangles: result.polygon_count ?? 0,
               statsAvailable: ((result.polygon_count ?? 0) > 0 || (result.vertex_count ?? 0) > 0),
-              source: { filename: `${jobId}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
+              source: { filename: `${cleanName || jobId}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
               topology: (result.topology as any) || 'Triangle',
               format: 'GLB',
               dimensions: result.dimensions,
@@ -1304,6 +1331,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 collision: (result as any).collision_url,
                 qaReport,
                 pbrMaps: (result as any).pbr_maps,
+                gameReadyFormats: (result as any).game_ready_formats,
+                zipUrl: (result as any).zip_url,
+                physicsUrl: (result as any).physics_url,
+                physicsReady: Boolean((result as any).physics_ready),
+                physics: (result as any).physics,
               },
               qaScore,
               qaStatus,

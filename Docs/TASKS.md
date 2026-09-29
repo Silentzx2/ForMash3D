@@ -51,7 +51,7 @@
 
 ### Documentation
 - [x] README.md fully updated with Paint-v2-1 info, model catalog, and documentation index
-- [x] CHANGELOG.md with last 3 changes only (Paint Audit, Third-Party Migration, Workspace Layout)
+- [x] CHANGELOG.md maintained as chronological project history
 - [x] ARCHITECTURE.md with Paint-v2-1 pipeline details and flow charts
 - [x] PRD.md with product requirements and flow charts
 - [x] DESIGN.md with UI design system, flow charts, and component reference
@@ -92,7 +92,7 @@
 - [ ] If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference
 - [ ] Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
 - [ ] Verify `backend/scripts/download_models.sh` correctly copies RealESRGAN to thirdparty location
-- [ ] Implement `backend/tests/test_backend_e2e.py`
+- [x] Add post-processing runtime dependency, Blender, and opt-in real-mesh fixture coverage (`backend/tests/test_postprocess_e2e.py`)
 - [ ] Run `npx tsc --noEmit` and `python3 -m compileall` for verification
 - [ ] Run `bash -n` on all shell scripts
 
@@ -111,3 +111,22 @@
 - [ ] Keep CHANGELOG.md to last 3 changes only
 - [ ] Keep RULES.md synchronized with actual project state
 - [ ] Keep MEMORY.md updated with current status
+
+## Completed — Production Post-Processing Integration
+- Ported the 3DGenStudio post-processing engine into backend/postprocess/.
+- Wired automatic post-processing into successful raw mesh-generation jobs.
+- Added canonical per-generation asset workspaces and protected artifact/ZIP delivery.
+- Updated UI export behavior to prefer game-ready artifacts.
+- Added post-processing dependencies under a dedicated backend/requirements.txt header.
+
+## Physics integration status
+- [x] Add opt-in Physics generation intent using the existing collision flag path
+- [x] Add pre-generation Physics controller
+- [x] Reuse existing collision service with Fast/Balanced/Precise presets
+- [x] Add canonical `physics.json` metadata and artifact delivery
+- [x] Add browser rigid-body viewer runtime and debug/test controls
+- [x] Harden physics asset-load lifecycle, canonical mass application, and lockfile reproducibility
+- [x] Add physics unit coverage
+- [ ] GPU/Colab end-to-end verification
+- [ ] Capability-gated soft-body/jiggle implementation when a real deformable requirement is justified
+- [ ] Target-specific physics exporters only after tested mappings exist

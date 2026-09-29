@@ -1,64 +1,27 @@
+- 2026-09-29 — Physics Final Audit
+- Preserved the normal collision artifact when Physics is off; Physics now controls physics readiness/metadata and collision quality.
+- Hardened camelCase/snake_case physics config handling, canonical mass application, collider coordinate transforms, async viewer binding, and pre-ready control guards.
+- Pinned Rapier to 0.19.3 and aligned Bun/npm lockfiles.
+- Extended real post-processing fixture coverage through the Physics metadata/delivery path.
+
+- 2026-09-29 — Post-Processing Validation Hardening
+- Added Blender provisioning/runtime smoke validation and a real-mesh post-processing fixture test.
+- Hardened canonical artifact path resolution and prevented invalid format fallbacks in the UI.
+- Removed the obsolete missing P3-SAM Docker workdir.
+
+## 2026-09-29 — Production Post-Processing Integration
+- Automatically run the production mesh-finishing pipeline after successful raw mesh generation.
+- Added canonical per-generation workspaces with immutable master, game-ready formats, LODs, collision, textures, previews, and metadata.
+- Added protected artifact download and on-demand complete-workspace ZIP delivery.
+- Updated Workspace exports to use canonical game-ready artifacts.
+
+## 2026-09-29 — 3DGenStudio Post-Processing Pipeline Port
+- Ported Auto UV, Auto Retopo, Repair, Bake, Collision, Game-Ready inspection, Blender-isolated conversion, thumbnails, and supporting utilities into backend/postprocess/.
+- Added the required Python 3.10-compatible post-processing dependency block.
+- Preserved upstream source attribution and Community License terms.
+
 ## 2026-09-29 — Tripo & Cross-Model Quality Pipeline Hardening
 - Fixed TripoSG preprocessing to pass the filesystem path required by upstream prepare_image().
-- Removed the duplicate TripoSR orientation transform that could leave exported meshes rotated incorrectly in the Y-up viewer.
-- Wired model-specific extraction resolution into generation requests for TripoSR, TripoSF, PartPacker, and UltraShape instead of silently falling back to lower adapter defaults.
-- Disabled PartPacker and TRELLIS.2 raw-stage face reduction/remeshing so generated geometry is preserved for later post-processing.
-- Kept existing low-VRAM safeguards in TripoSF because disabling them can exceed the configured GPU memory budget.
-
-## 2026-09-29 — Runtime Syntax Hardening
-- Fixed the `BaseModel` inference lifecycle log f-string that prevented the FastAPI multi-worker backend from importing due to a Python `SyntaxError`.
-- Verified the exact invalid nested-quote pattern exists only in `backend/core/models/base.py` before correction.
-
-## 2026-09-29 — Raw-Geometry-First Generation
-- Disabled model-stage polycount decimation by default so generated meshes keep the model-native geometry for downstream post-processing.
-- TRELLIS raw generation no longer removes invisible faces or simplifies the mesh unless optimization is explicitly enabled.
-- TripoSG no longer decimates against the UI target polycount unless optimization is explicitly enabled.
-- Clarified that the GeneratePanel topology selector is a post-processing target; raw AI model output remains triangle-based where the model/extractor emits triangles.
-
-## 2026-09-29 — Runtime Lifecycle, Tripo Input & Headless Thumbnail Hardening
-- Fixed TripoSR's runtime `trimesh` NameError in the Y-up orientation path.
-- Fixed TripoSG standard preprocessing to pass a decoded RGB image to `prepare_image()`.
-- Added shared model load/inference/unload timing and CUDA-memory telemetry.
-- Enabled deterministic post-job GPU model unload when `AUTO_UNLOAD_AFTER_JOB` is enabled.
-- Prefer EGL for headless pyrender thumbnail rendering; thumbnail failure remains non-fatal.
-
-# Changelog
-
-## 2026-09-28 — 3D Orientation & TRELLIS Renderer Compatibility
-- Corrected TripoSR Z-up output to the ForMash3D Y-up viewport convention.
-- Prevented an incompatible generic diff-gaussian-rasterization wheel from overriding TRELLIS's required mip-splatting renderer.
-- TRELLIS installation now prefers a valid `diff_gaussian_rasterization` wheel from `backend/thirdparty/wheels/` and only builds Mip-Splatting from source when no usable local wheel is available.
-- Fresh GPU validation remains required.
-
-## 2026-09-28 — Pre-Ampere Attention & Model Dependency Hardening
-- Added PyTorch SDPA support to bundled TRELLIS sparse full, serialized, and windowed attention.
-- Completed TripoSF SDPA support where its runtime already selected that backend.
-- Fixed installer ordering so TripoSG's declared diffusers 0.30.3 / transformer compatibility is restored after the global baseline.
-- Static verification remains required; GPU inference still needs a fresh Colab run.
-
-# ForMash 3D — Changelog
-
-All notable changes, architectural updates, and feature implementations for ForMash 3D are documented in this file.
-
-## [Unreleased]
-
-### 🔧 Colab Runtime & Model Selection Fixes (2026-09-28)
-- Removed the stale P3-SAM installer dependency on `backend/thirdparty/Hunyuan3DPart/P3SAM`; the installer now handles the current `P3-SAM` checkout layout without failing on a missing legacy path.
-- Pinned Hunyuan shared runtime NumPy/CuPy versions to `numpy==1.26.4` and `cupy-cuda12x==13.4.0` to prevent the observed CuPy/NumPy ABI import failure.
-- Stopped GeneratePanel from silently overriding an explicit model selection with TRELLIS.
-
-
-### 🔧 Deep Runtime Contract Audit (2026-09-28)
-- Removed the non-functional direct `hunyuan3d_shape_v21_image_to_textured_mesh` registry/UI path; canonical Hunyuan texture generation is Shape-v2-1 or Mini Turbo raw mesh → optional Paint.
-- Fixed Shape→Paint handoff to use the generated job `file_id` plus the original upload `image_file_id` or `image_base64`.
-- Fixed invalid mesh-generation request defaults, Admin Jobs progress scaling, partial release-wheel cache detection, Conda default selection, Docker helper port output, and FastAPI lifespan verification.
-- Fixed dead RGB/background-removal branches in project-owned Hunyuan adapters/helpers.
-- Updated architecture, API, task, memory, decision, and README documentation to match the current runtime contracts.
-
-### 🔧 Hunyuan Unified Dependency Structure (2026-09-28)
-- Unified Shape v2.1, Paint v2.1, and DiT v2 Mini Turbo runtime dependencies under `backend/thirdparty/hunyuan-requirements.txt`.
-- Kept global PyTorch/CUDA ownership in `backend/requirements.txt` and `install.sh`.
-
-### 🔧 CUDA 12.4 Dependency Consistency (2026-09-28)
-- Aligned UniRig and VoxHammer runtime dependencies with the project PyTorch 2.6 + CUDA 12.4 baseline.
-- Fixed local wheelhouse handling to prefer prebuilt compatible wheels before source builds.
+- Removed the duplicate TripoSR orientation transform.
+- Wired model-specific extraction resolution for TripoSR, TripoSF, PartPacker, and UltraShape.
+- Disabled PartPacker and TRELLIS.2 raw-stage face reduction/remeshing.

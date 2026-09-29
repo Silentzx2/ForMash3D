@@ -231,7 +231,7 @@ Project_Export_<job_id>.zip
     └── quality_report.json     # Topology validation score (0-100)
 ```
 
-> **Note**: The `POST /api/v1/project/export` endpoint referenced in earlier documentation does not currently exist in the running backend. Asset delivery is handled through the existing file upload/download and static file routes.
+> **Note**: Asset delivery uses GET /api/v1/system/jobs/{job_id}/download?artifact_format=.... ZIP archives are generated on demand from the canonical asset workspace.
 
 ---
 
@@ -285,3 +285,12 @@ bun run build
 ```
 
 > **Note**: An automated `backend/tests/test_backend_e2e.py` test script referenced in earlier documentation does not currently exist. The health endpoint and TypeScript compiler provide the available self-check mechanisms.
+
+## Production Asset Lifecycle — Current
+
+Generation -> master/source.glb -> repair/optimize/Auto UV/bake -> game_ready/* -> LOD/collision/textures/previews/metadata -> existing job status UI -> protected artifact download.
+
+The post-processing stage runs in asyncio.to_thread so CPU-heavy mesh operations do not block FastAPI's event loop.
+
+## Physics path
+Generation requests may carry a physics intent and provider-neutral controller values. The scheduler preserves those values as job metadata. Post-processing conditionally reuses the existing collision service and writes `metadata/physics.json`. The viewer consumes the canonical collision artifact and metadata through a pinned Rapier 0.19.3 browser adapter while the existing Three.js rendering pipeline remains unchanged. Physics binding waits for asset-load completion to prevent cross-asset state leakage.

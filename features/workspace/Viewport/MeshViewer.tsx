@@ -40,6 +40,7 @@ import { createPointCloudFromImage, createFallbackPointCloud, disposePointCloud 
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
+import { PhysicsRuntime } from '../physics/PhysicsRuntime';
 
 const disposeMaterial = (material: THREE.Material) => {
   const m = material as any;
@@ -665,6 +666,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [selectedPreset, setSelectedPreset] = useState<string | null>('studio');
   const [meshStats, setMeshStats] = useState<{ faces: number; vertices: number; triangles: number; dimensions?: { x: number; y: number; z: number } } | null>(null);
   const [debugBlueprint, setDebugBlueprint] = useState(false);
+  const physicsRuntimeRef = useRef<PhysicsRuntime | null>(null);
+  const [physicsModeOpen, setPhysicsModeOpen] = useState(false);
+  const [physicsRunning, setPhysicsRunning] = useState(false);
+  const [physicsDebug, setPhysicsDebug] = useState(false);
+  const [physicsStatus, setPhysicsStatus] = useState<string | null>(null);
+  const [modelLoadVersion, setModelLoadVersion] = useState(0);
+  const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
+  const physicsViewerReady = physicsStatus === 'Physics ready — rigid-body preview';
 
   // Close menus on outside click or Escape key
   useEffect(() => {
@@ -1617,7 +1626,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
       const animState = useAnimationStore.getState();
       const isAnimPlaying = animState.isPlaying;
-      const animationActive = Boolean(mixerRef.current) || isAnimPlaying;
+      const physicsActive = physicsRuntimeRef.current?.isRunning() ?? false;
+      if (physicsActive) {
+        physicsRuntimeRef.current?.tick(delta);
+      }
+      const animationActive = Boolean(mixerRef.current) || isAnimPlaying || physicsActive;
 
       if (animationActive && mixerRef.current) {
         mixerRef.current.update(delta);
@@ -1670,6 +1683,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+      physicsRuntimeRef.current?.dispose();
+      physicsRuntimeRef.current = null;
       transformControls.dispose();
       controls.dispose();
       renderer.dispose();
@@ -1698,10 +1713,93 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     };
   }, []);
 
-  // Update Turntable status
+  // Rebind physics only after the current asset has actually finished loading.
   useEffect(() => {
-    // handled in loop via isTurntableActive
-  }, [isTurntable]);
+    physicsRuntimeRef.current?.dispose();
+    physicsRuntimeRef.current = null;
+    setPhysicsRunning(false);
+    setPhysicsStatus(null);
+    setLoadedAssetId(null);
+  }, [currentAsset?.id]);
+
+  useEffect(() => {
+    if (!isLoading) return;
+    physicsRuntimeRef.current?.dispose();
+    physicsRuntimeRef.current = null;
+    setPhysicsRunning(false);
+    setPhysicsStatus(null);
+    setLoadedAssetId(null);
+  }, [isLoading]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const initializePhysics = async () => {
+      const group = currentMeshGroupRef.current;
+      const scene = sceneRef.current;
+      const collisionUrl = currentAsset?.artifacts?.collision;
+      if (
+        !group ||
+        !scene ||
+        isLoading ||
+        !modelLoadVersion ||
+        loadedAssetId !== currentAsset?.id ||
+        !currentAsset?.artifacts?.physicsReady ||
+        !collisionUrl
+      ) {
+        return;
+      }
+
+      const metadata = (currentAsset.artifacts?.physics || {}) as any;
+      const body = metadata.body || {};
+      const material = metadata.material || {};
+      const runtime = new PhysicsRuntime();
+      physicsRuntimeRef.current?.dispose();
+      physicsRuntimeRef.current = runtime;
+
+      try {
+        await runtime.init(scene, group, collisionUrl, {
+          bodyType: body.type || 'auto',
+          massMode: metadata.provenance?.mass === 'user' ? 'manual' : 'auto',
+          massKg: Number(body.mass_kg || 1),
+          densityMode: 'auto',
+          densityKgM3: Number(body.density_kg_m3 || 500),
+          friction: Number(material.dynamic_friction ?? 0.5),
+          restitution: Number(material.restitution ?? 0.1),
+          linearDamping: Number(body.linear_damping ?? 0.05),
+          angularDamping: Number(body.angular_damping ?? 0.05),
+          gravityEnabled: Boolean(body.gravity_enabled ?? true),
+        });
+        if (cancelled) {
+          runtime.dispose();
+          return;
+        }
+        runtime.setDebugVisibility(physicsDebug);
+        setPhysicsStatus('Physics ready — rigid-body preview');
+      } catch (error) {
+        runtime.dispose();
+        if (physicsRuntimeRef.current === runtime) physicsRuntimeRef.current = null;
+        if (!cancelled) setPhysicsStatus(error instanceof Error ? error.message : 'Physics preview initialization failed');
+      }
+    };
+
+    void initializePhysics();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentAsset?.id,
+    currentAsset?.artifacts?.collision,
+    currentAsset?.artifacts?.physicsReady,
+    currentAsset?.artifacts?.physics,
+    modelLoadVersion,
+    loadedAssetId,
+  ]);
+
+  useEffect(() => {
+    physicsRuntimeRef.current?.setDebugVisibility(physicsDebug);
+  }, [physicsDebug]);
+
 
   // Interactive 3D Point Cloud silhouette generation during AI 3D model synthesis (progressive silhouette preview)
   useEffect(() => {
@@ -1902,6 +2000,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 await rendererRef.current.compileAsync(gltf.scene, cameraRef.current);
               } catch {}
             }
+            if (!cancelled) {
+              setLoadedAssetId(currentAsset.id);
+              setModelLoadVersion((version) => version + 1);
+            }
           }
         } else if (format === 'obj') {
           // ponytail: verify response is text before parsing as OBJ
@@ -1940,6 +2042,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             group.add(object);
             frameCamera(object);
             computeMeshStats(object);
+            if (!cancelled) {
+              setLoadedAssetId(currentAsset.id);
+              setModelLoadVersion((version) => version + 1);
+            }
           }
         } else if (format === 'ply') {
           const response = await fetch(sourceUrl);
@@ -1967,6 +2073,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           group.add(mesh);
           frameCamera(mesh);
           computeMeshStats(mesh);
+          if (!cancelled) {
+            setLoadedAssetId(currentAsset.id);
+            setModelLoadVersion((version) => version + 1);
+          }
         } else if (format === 'stl') {
           const response = await fetch(sourceUrl);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -2628,6 +2738,70 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               </div>
             ) : (
               <p className="text-[10px] text-zinc-400 mt-1">Preparing high-fidelity mesh</p>
+            )}
+          </div>
+        </div>
+      )}
+
+
+      {showOverlayUI && currentAsset?.artifacts?.physicsReady && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="pointer-events-auto rounded-xl border border-white/[0.12] bg-[hsl(var(--surface-1))]/95 backdrop-blur-md shadow-2xl px-2 py-2">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPhysicsModeOpen(prev => !prev)}
+                className={physicsModeOpen ? 'px-2.5 py-1.5 rounded-lg bg-primary text-black text-[10px] font-bold' : 'px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-200 text-[10px] font-bold border border-white/[0.08]'}
+              >
+                Physics
+              </button>
+              {physicsModeOpen && (
+                <>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => {
+                      const runtime = physicsRuntimeRef.current;
+                      if (!runtime?.isReady()) return;
+                      const running = !runtime.isRunning();
+                      runtime.setRunning(running);
+                      setPhysicsRunning(running);
+                    }}
+                    className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >{physicsRunning ? 'Pause' : 'Play'}</button>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => physicsRuntimeRef.current?.isReady() && physicsRuntimeRef.current.step()}
+                    className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >Step</button>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => {
+                      const runtime = physicsRuntimeRef.current;
+                      if (!runtime?.isReady()) return;
+                      runtime.reset();
+                      setPhysicsRunning(false);
+                    }}
+                    className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
+                  >Reset</button>
+                  <button type="button" disabled={!physicsViewerReady}
+                    onClick={() => setPhysicsDebug(prev => !prev)}
+                    className={physicsDebug ? 'px-2 py-1.5 rounded-lg bg-primary/20 text-primary border border-primary/40 text-[10px] font-bold disabled:opacity-40' : 'px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-300 border border-white/[0.08] text-[10px] disabled:opacity-40'}
+                  >Colliders</button>
+                  {(['drop', 'bounce', 'slide', 'spin'] as const).map(test => (
+                    <button key={test} type="button" disabled={!physicsViewerReady}
+                      onClick={() => {
+                        const runtime = physicsRuntimeRef.current;
+                        if (!runtime?.isReady()) return;
+                        runtime.applyTest(test);
+                        setPhysicsRunning(true);
+                      }}
+                      className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-300 border border-white/[0.08] text-[10px] capitalize disabled:opacity-40 disabled:cursor-not-allowed"
+                    >{test}</button>
+                  ))}
+                </>
+              )}
+            </div>
+            {physicsModeOpen && (
+              <div className="pt-1 text-[9px] text-zinc-500 text-center">
+                {physicsStatus || 'Preparing physics runtime…'} · soft-body/jiggle is capability-gated
+              </div>
             )}
           </div>
         </div>

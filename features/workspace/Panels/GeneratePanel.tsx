@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
+import type { PhysicsSettings } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
@@ -272,6 +273,34 @@ export const GeneratePanel: React.FC = () => {
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
+
+  const physics = generationSettings.physics ?? {
+    bodyType: 'auto' as const,
+    massMode: 'auto' as const,
+    massKg: 1,
+    densityMode: 'auto' as const,
+    densityKgM3: 500,
+    friction: 0.5,
+    restitution: 0.1,
+    linearDamping: 0.05,
+    angularDamping: 0.05,
+    gravityEnabled: true,
+    collisionQuality: 'balanced' as const,
+    deformation: 'off' as const,
+  };
+
+  const updatePhysics = (updates: Partial<PhysicsSettings>) => {
+    setGenerationSettings(prev => {
+      const current = prev.physics || physics;
+      return {
+        ...prev,
+        physics: {
+          ...current,
+          ...updates,
+        },
+      };
+    });
+  };
 
   const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
 
@@ -983,6 +1012,107 @@ export const GeneratePanel: React.FC = () => {
                   </div>
                 </button>
               </div>
+            </div>
+
+
+            {/* Physics Preparation */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
+                  <Zap className="w-3.5 h-3.5 text-primary" />
+                  <span>Physics Preparation</span>
+                </div>
+                <span className="text-[9px] text-zinc-500">Post-process · no extra AI model</span>
+              </div>
+
+              <button type="button"
+                onClick={() => setGenerationSettings(prev => ({ ...prev, generateCollision: !Boolean(prev.generateCollision) }))}
+                className={generationSettings.generateCollision ? 'w-full p-2 rounded-lg border border-primary/40 bg-primary/10 text-left text-white' : 'w-full p-2 rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] text-left text-zinc-400'}
+              >
+                <span className="text-[11px] font-bold">Physics Ready Asset</span>
+                <span className="block text-[9px] text-zinc-400 mt-0.5">
+                  {generationSettings.generateCollision ? 'Physics metadata + selected collision quality will be generated' : 'No Physics metadata; normal collision remains available'}
+                </span>
+              </button>
+
+              {generationSettings.generateCollision && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-semibold text-zinc-400">Body Behaviour</span>
+                    <select value={physics.bodyType} onChange={e => updatePhysics({ bodyType: e.target.value as PhysicsSettings['bodyType'] })} className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200">
+                      <option value="auto">Auto</option>
+                      <option value="dynamic">Dynamic</option>
+                      <option value="static">Static</option>
+                      <option value="kinematic">Kinematic</option>
+                    </select>
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-semibold text-zinc-400">Collision Quality</span>
+                    <select value={physics.collisionQuality} onChange={e => updatePhysics({ collisionQuality: e.target.value as PhysicsSettings['collisionQuality'] })} className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200">
+                      <option value="fast">Fast</option>
+                      <option value="balanced">Balanced</option>
+                      <option value="precise">Precise</option>
+                    </select>
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-semibold text-zinc-400">Density</span>
+                    <select value={physics.densityMode} onChange={e => updatePhysics({ densityMode: e.target.value as PhysicsSettings['densityMode'] })} className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200">
+                      <option value="auto">Auto default</option>
+                      <option value="manual">Manual kg/m³</option>
+                    </select>
+                    {physics.densityMode === 'manual' && (
+                      <input type="number" min={0.01} max={20000} step={10} value={physics.densityKgM3}
+                        onChange={e => updatePhysics({ densityKgM3: Number(e.target.value) || 1 })}
+                        className="w-full mt-1 rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200" />
+                    )}
+                  </label>
+
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-semibold text-zinc-400">Mass</span>
+                    <select value={physics.massMode} onChange={e => updatePhysics({ massMode: e.target.value as PhysicsSettings['massMode'] })} className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200">
+                      <option value="auto">Auto estimate</option>
+                      <option value="manual">Manual kg</option>
+                    </select>
+                    {physics.massMode === 'manual' && (
+                      <input type="number" min={0.01} max={100000} step={0.1} value={physics.massKg}
+                        onChange={e => updatePhysics({ massKg: Number(e.target.value) || 0.01 })}
+                        className="w-full mt-1 rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200" />
+                    )}
+                  </label>
+
+                  {[
+                    ['friction', 'Friction', 0, 2, 0.05],
+                    ['restitution', 'Bounce', 0, 1, 0.05],
+                    ['linearDamping', 'Linear Damp', 0, 1, 0.01],
+                    ['angularDamping', 'Angular Damp', 0, 1, 0.01],
+                  ].map(([key, label, min, max, step]) => (
+                    <label key={String(key)} className="space-y-1">
+                      <div className="flex justify-between text-[9px] text-zinc-400">
+                        <span>{String(label)}</span>
+                        <span className="font-mono text-primary">{Number(physics[key as keyof PhysicsSettings]).toFixed(2)}</span>
+                      </div>
+                      <input type="range" min={Number(min)} max={Number(max)} step={Number(step)}
+                        value={Number(physics[key as keyof PhysicsSettings])}
+                        onChange={e => updatePhysics({ [key]: Number(e.target.value) } as Partial<PhysicsSettings>)}
+                        className="w-full accent-[hsl(var(--primary))]" />
+                    </label>
+                  ))}
+
+                  <button type="button"
+                    onClick={() => updatePhysics({ gravityEnabled: !physics.gravityEnabled })}
+                    className="col-span-2 px-2 py-1.5 rounded-md border border-white/[0.06] bg-[hsl(var(--surface-1))] text-[9px] font-semibold text-left text-zinc-300"
+                  >
+                    Gravity {physics.gravityEnabled ? 'enabled' : 'disabled'}
+                  </button>
+
+                  <div className="col-span-2 flex items-center justify-between rounded-md border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5">
+                    <span className="text-[9px] text-zinc-400">Jiggle / deformation</span>
+                    <span className="text-[9px] font-semibold text-zinc-500">Capability-gated</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Streamlined Mesh Settings Card (Target Polycount + Triangle / Quad Topology ONLY) */}

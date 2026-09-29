@@ -426,6 +426,15 @@ For detailed schema specifications, see [Docs/api-documentation.md](Docs/api-doc
 # Verify API contracts and route registrations
 python3 scripts/verify_contracts.py
 
+# Verify post-processing dependencies and Blender runtime
+python3 -m pytest backend/tests/test_postprocess_e2e.py -q
+
+# Run the real mesh post-processing fixture (requires Blender + full postprocess deps)
+FORMASH_POSTPROCESS_E2E=1 python3 -m pytest backend/tests/test_postprocess_e2e.py -q
+
+# Verify the installer/runtime contract directly
+python3 backend/scripts/verify_postprocess_runtime.py
+
 # Check TypeScript types
 npx tsc --noEmit
 
@@ -533,6 +542,7 @@ lsof -ti :7842 | xargs -r kill -9
 - [Architecture Decisions](Docs/DECISIONS.md)
 - [Design System](Docs/DESIGN.md)
 - [Project Memory](Docs/MEMORY.md)
+- [Physics Runtime & Contract](Docs/PHYSICS.md)
 - [Security Policy](Docs/SECURITY.md)
 - [Change Log](Docs/CHANGELOG.md)
 - [Task List](Docs/TASKS.md)
@@ -544,3 +554,29 @@ lsof -ti :7842 | xargs -r kill -9
 ForMash 3D's original source code is released under the **[Apache License 2.0](LICENSE)**.
 
 Third-party models, libraries, and checkpoints integrated or referenced by ForMash 3D are governed by their respective author and academic licenses. See **[Docs/MODEL_LICENSES.md](Docs/MODEL_LICENSES.md)** for complete third-party licensing information and attribution.
+
+## Production Post-Processing
+
+ForMash3D now separates raw generation from production asset finishing. After a successful mesh-generation job, the backend preserves the model-native output as an immutable master and automatically produces production artifacts.
+
+```text
+backend/storage/models/<asset_name>_<job_hash>/
+├── master/source.glb
+├── game_ready/
+├── lods/
+├── collision/
+├── textures/
+├── previews/
+└── metadata/
+```
+
+The post-processing engine lives in backend/postprocess/ and includes Auto UV, Auto Retopo, Repair, Optimize/LOD, PBR baking, collision generation, game-ready QA inspection, Blender-isolated FBX/GLTF conversion, and thumbnail generation.
+
+Normal UI downloads use game_ready/. ZIP export is an on-demand snapshot of the complete workspace and includes only artifacts that actually exist.
+
+### Runtime compatibility
+
+The main backend remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. The post-processing dependency block is explicitly marked in backend/requirements.txt. Blender-dependent tools run through BLENDER_EXECUTABLE instead of installing the incompatible upstream bpy wheel into Python 3.10.
+
+## Physics-ready assets
+ForMash3D now supports opt-in Physics preparation during mesh generation. Physics uses the existing post-processing collision pipeline and writes portable physics metadata alongside the asset workspace. Physics-ready assets can be previewed in the Three.js viewer with rigid-body controls and collider debugging. No additional AI generation model is required; browser simulation uses Rapier 3D. See `Docs/PHYSICS.md` for the current contract.
