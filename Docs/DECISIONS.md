@@ -411,3 +411,17 @@
 - Model load, inference, and unload timing/memory are logged through `BaseModel`.
 - Successful and failed jobs unload their model when `AUTO_UNLOAD_AFTER_JOB` is enabled.
 - Pyrender prefers EGL when `PYOPENGL_PLATFORM` is unset, and thumbnail failure remains non-fatal to generation.
+
+
+## ADR-031: Raw Geometry First, Optimization Later
+
+**Decision**: Generation endpoints preserve model-native geometry by default. Polycount reduction, visibility cleanup, and quad retopology are post-processing operations rather than part of the raw generation stage.
+
+**Reason**: The workspace was sending a target polycount with optimization enabled, and model adapters such as TRELLIS and TripoSG were reducing the generated mesh before downstream processing. This conflicts with the product requirement to retain as much native geometry and detail as possible before optimization.
+
+**Consequences**:
+- Workspace generation requests set `auto_optimize=false` for raw generation.
+- TRELLIS skips simplification and invisible-face removal in raw mode.
+- TripoSG skips target-face decimation in raw mode.
+- The existing topology selector is treated as a post-processing target; raw AI outputs may remain triangles because mesh extraction is triangle-based.
+- Quad conversion should remain in the existing retopology/post-processing path rather than adding another generation model.

@@ -1072,9 +1072,9 @@ export const GeneratePanel: React.FC = () => {
               {/* 2. Topology Selection: Triangles vs Quads */}
               <div className="space-y-1 pt-1 border-t border-white/[0.04]">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Topology Mode</span>
+                  <span className="text-zinc-200 font-medium">Topology Target</span>
                   <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'Clean Quads' : 'Triangles'}
+                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'Quads (post-process)' : 'Triangles'}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -1110,7 +1110,7 @@ export const GeneratePanel: React.FC = () => {
                         : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08]'
                     }`}
                   >
-                    <span>■ Clean Quads</span>
+                    <span>■ Quads (post-process)</span>
                   </button>
                 </div>
               </div>
