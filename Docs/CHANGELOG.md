@@ -1,3 +1,9 @@
+- 2026-09-29 — Viewport & Generation UX Hardening
+- Moved advanced Physics/Mesh generation controls into an on-demand drawer to keep the primary generation path compact and responsive.
+- Added a functional top-of-viewport Physics smoke test with canonical-runtime fallback plus a lightweight bounds-based test for ordinary loaded meshes.
+- Added an opt-in mirror inspection peek that captures at a low rate, temporarily focus-zooms the main viewer on hover/focus, and exposes an enlarged detail preview.
+- Added adaptive renderer quality for very dense meshes by lowering pixel ratio and disabling dynamic shadows above the heavy-mesh threshold.
+
 - 2026-09-29 — Generation/Post-Process/UI Integration Hardening
 - Removed mandatory texture baking from the production generation pipeline; textures now come only from model-native textured generation or the dedicated Texture page.
 - Preserved native textured model materials/UVs instead of running texture-destructive optimize/Auto UV stages.

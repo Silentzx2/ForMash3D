@@ -84,7 +84,7 @@ flowchart TB
 | **App Router** | `app/` | Next.js 16 App Router with server components, layouts, and API proxy routes |
 | **Workspace Shell** | `features/workspace/WorkspaceShell.tsx` | Main workspace UI with tabbed panels and model viewport |
 | **API Client** | `services/apiClient.ts` | Unified axios client for all FastAPI backend REST/SSE communication |
-| **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | Three.js WebGL viewport with orbit controls, wireframe mode, matcap shading |
+| **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | Three.js WebGL viewport with orbit controls, wireframe/matcap shading, physics smoke test, and opt-in mirror inspection |
 | **State Stores** | `stores/` | Zustand stores for global client state (`useAppStore`, `useViewerStore`, `useAnimationStore`, `useRiggingStore`, `useUIStore`) |
 | **Data Fetching** | hooks + TanStack Query | Server-state caching and synchronization for job status |
 

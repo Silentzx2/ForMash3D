@@ -72,7 +72,8 @@ ForMash 3D is in active development. The core architecture is complete with 23 m
 - Next.js 16 App Router with all routes
 - 3D Viewport with Three.js / R3F
 - Workspace Shell with tabbed panels
-- GeneratePanel with model selector, FlashVDM toggle, VRAM stats
+- GeneratePanel with model selector, FlashVDM toggle, VRAM stats, plus a compact Advanced Generation drawer for Physics/quality controls
+- MeshViewer includes a top quick-tool rail with Test Physics and an opt-in mirror/detail inspection peek
 - TexturePanel with PBR controls and systemStats
 - All workspace panels (Remesh, UV, Segment, Edit, Animation, Jobs)
 - Zustand stores, TanStack Query, unified apiClient

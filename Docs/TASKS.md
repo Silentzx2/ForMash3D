@@ -129,4 +129,7 @@
 - [x] Add physics unit coverage
 - [ ] GPU/Colab end-to-end verification
 - [ ] Capability-gated soft-body/jiggle implementation when a real deformable requirement is justified
+- [x] Compact Advanced Generation drawer for Physics and mesh-quality controls
+- [x] Top-of-viewport rigid-body smoke test with bounds-based fallback
+- [x] Opt-in low-rate mirror/detail inspection peek with hover/focus zoom
 - [ ] Target-specific physics exporters only after tested mappings exist

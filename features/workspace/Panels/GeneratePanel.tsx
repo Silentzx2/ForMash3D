@@ -11,7 +11,9 @@ import {
   AlertTriangle,
   Plus,
   ChevronDown,
+  ChevronUp,
   Check,
+  Settings2,
   Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -240,6 +242,7 @@ export const GeneratePanel: React.FC = () => {
 
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!modelDropdownOpen) return;
@@ -489,7 +492,7 @@ export const GeneratePanel: React.FC = () => {
   };
 
   return (
-    <div id="panel-generate-model" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden">
+    <div id="panel-generate-model" className="relative flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden">
       {/* Panel Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
@@ -1015,6 +1018,63 @@ export const GeneratePanel: React.FC = () => {
             </div>
 
 
+            {/* Advanced generation controls are opt-in so the main workflow stays compact. */}
+            <button
+              type="button"
+              onClick={() => setAdvancedSettingsOpen(true)}
+              className="w-full rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 text-left hover:border-primary/40 hover:bg-[hsl(var(--surface-2))] transition-all cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                    <Settings2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-white">Advanced Generation</div>
+                    <div className="text-[9px] text-zinc-400 truncate">
+                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 60000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+              </div>
+            </button>
+          </div>
+        </div>
+
+      <AnimatePresence>
+        {advancedSettingsOpen && (
+          <motion.div
+            className="absolute inset-0 z-40 pointer-events-none"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+              className="absolute inset-y-0 right-0 w-full max-w-[380px] bg-[hsl(var(--surface-1))] border-l border-white/[0.1] shadow-2xl flex flex-col pointer-events-auto"
+            >
+              <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Settings2 className="w-4 h-4 text-primary shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white">Advanced Generation</div>
+                    <div className="text-[9px] text-zinc-500 truncate">Physics, quality budget and topology</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdvancedSettingsOpen(false)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                  aria-label="Close advanced generation settings"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
             {/* Physics Preparation */}
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
@@ -1244,9 +1304,22 @@ export const GeneratePanel: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
+              </div>
+              </div>
+              <div className="p-2.5 border-t border-white/[0.08] shrink-0 bg-[hsl(var(--surface-1))]">
+                <button
+                  type="button"
+                  onClick={() => setAdvancedSettingsOpen(false)}
+                  className="w-full h-9 rounded-xl bg-primary text-black text-[10px] font-black tracking-wide hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  APPLY & CLOSE
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Bottom Sticky Action Footer */}
       <div className="p-2.5 border-t border-white/[0.08] bg-[hsl(var(--surface-1))] relative z-20 flex-shrink-0 space-y-2 overflow-x-hidden">
