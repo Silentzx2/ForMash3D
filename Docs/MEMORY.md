@@ -1,3 +1,7 @@
+## 2026-09-29 Runtime Syntax Finding — BaseModel Import
+- The multi-worker backend failed during startup because `backend/core/models/base.py` used double quotes inside a double-quoted f-string expression (`else "cpu"`), which is invalid Python syntax.
+- The logging expression now uses a single-quoted `cpu` literal inside the f-string expression. A fresh runtime syntax sweep is still required in Colab.
+
 ## 2026-09-29 Raw-Geometry Quality Findings — Generation vs Post-Processing
 - The GeneratePanel was sending `target_polycount` together with `auto_optimize: true`; TripoSG and TRELLIS interpreted that as permission to decimate model output before the raw asset reached downstream tools.
 - TRELLIS also ran its visibility/hole postprocess during normal generation, which can remove low-visibility faces. Raw-generation mode now preserves the native triangle mesh and skips that destructive cleanup.

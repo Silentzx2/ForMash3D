@@ -136,7 +136,7 @@ class BaseModel(ABC):
         start_time = time.time()
         logger.info(
             f"[MODEL INFERENCE START] model={self.model_id} "
-            f"gpu={self.gpu_id if self.gpu_id is not None else "cpu"}"
+            f"gpu={self.gpu_id if self.gpu_id is not None else 'cpu'}"
         )
         try:
             self.status = ModelStatus.PROCESSING

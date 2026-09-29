@@ -1,3 +1,7 @@
+## 2026-09-29 — Runtime Syntax Hardening
+- Fixed the `BaseModel` inference lifecycle log f-string that prevented the FastAPI multi-worker backend from importing due to a Python `SyntaxError`.
+- Verified the exact invalid nested-quote pattern exists only in `backend/core/models/base.py` before correction.
+
 ## 2026-09-29 — Raw-Geometry-First Generation
 - Disabled model-stage polycount decimation by default so generated meshes keep the model-native geometry for downstream post-processing.
 - TRELLIS raw generation no longer removes invisible faces or simplifies the mesh unless optimization is explicitly enabled.

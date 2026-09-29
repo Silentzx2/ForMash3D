@@ -425,3 +425,14 @@
 - TripoSG skips target-face decimation in raw mode.
 - The existing topology selector is treated as a post-processing target; raw AI outputs may remain triangles because mesh extraction is triangle-based.
 - Quad conversion should remain in the existing retopology/post-processing path rather than adding another generation model.
+
+
+## ADR-032: Keep Lifecycle Log Expressions Syntax-Safe
+
+**Decision**: Lifecycle logging expressions must avoid quote collisions inside f-string expressions and remain valid under the project's Python 3.10 runtime.
+
+**Reason**: A lifecycle telemetry change introduced a nested double-quote collision in `BaseModel`, preventing the scheduler package from importing and blocking backend startup.
+
+**Consequences**:
+- The inference lifecycle GPU label now uses a single-quoted `cpu` literal inside the f-string expression.
+- Runtime syntax verification remains part of the backend startup validation path.
