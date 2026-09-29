@@ -70,7 +70,18 @@ class BaseModel(ABC):
             self.model = self._load_model()
             self.status = ModelStatus.LOADED
             elapsed = time.time() - start_time
-            logger.info(f"[GPU LOAD SUCCESS] model={self.model_id} gpu={gpu_id} elapsed={elapsed:.2f}s")
+            memory = ""
+            if torch.cuda.is_available():
+                try:
+                    allocated = torch.cuda.memory_allocated(gpu_id) / (1024 ** 2)
+                    reserved = torch.cuda.memory_reserved(gpu_id) / (1024 ** 2)
+                    memory = f" allocated_mb={allocated:.0f} reserved_mb={reserved:.0f}"
+                except Exception:
+                    pass
+            logger.info(
+                f"[GPU LOAD SUCCESS] model={self.model_id} gpu={gpu_id} "
+                f"elapsed={elapsed:.2f}s{memory}"
+            )
             return True
 
         except Exception as e:
@@ -96,7 +107,18 @@ class BaseModel(ABC):
                 torch.cuda.empty_cache()
 
             elapsed = time.time() - start_time
-            logger.info(f"[GPU UNLOAD SUCCESS] model={self.model_id} elapsed={elapsed:.2f}s")
+            memory = ""
+            if torch.cuda.is_available() and self.gpu_id is not None:
+                try:
+                    allocated = torch.cuda.memory_allocated(self.gpu_id) / (1024 ** 2)
+                    reserved = torch.cuda.memory_reserved(self.gpu_id) / (1024 ** 2)
+                    memory = f" allocated_mb={allocated:.0f} reserved_mb={reserved:.0f}"
+                except Exception:
+                    pass
+            logger.info(
+                f"[GPU UNLOAD SUCCESS] model={self.model_id} "
+                f"elapsed={elapsed:.2f}s{memory}"
+            )
             return True
 
         except Exception as e:
@@ -112,12 +134,26 @@ class BaseModel(ABC):
             )
 
         start_time = time.time()
-        logger.info(f"[MODEL INFERENCE START] model={self.model_id}")
+        logger.info(
+            f"[MODEL INFERENCE START] model={self.model_id} "
+            f"gpu={self.gpu_id if self.gpu_id is not None else "cpu"}"
+        )
         try:
             self.status = ModelStatus.PROCESSING
             result = self._process_request(inputs)
             elapsed = time.time() - start_time
-            logger.info(f"[MODEL INFERENCE SUCCESS] model={self.model_id} elapsed={elapsed:.2f}s")
+            memory = ""
+            if torch.cuda.is_available() and self.gpu_id is not None:
+                try:
+                    allocated = torch.cuda.memory_allocated(self.gpu_id) / (1024 ** 2)
+                    reserved = torch.cuda.memory_reserved(self.gpu_id) / (1024 ** 2)
+                    memory = f" allocated_mb={allocated:.0f} reserved_mb={reserved:.0f}"
+                except Exception:
+                    pass
+            logger.info(
+                f"[MODEL INFERENCE SUCCESS] model={self.model_id} "
+                f"elapsed={elapsed:.2f}s{memory}"
+            )
             return result
         except Exception as e:
             logger.error(f"[MODEL INFERENCE FAILED] model={self.model_id}: {e}", exc_info=True)

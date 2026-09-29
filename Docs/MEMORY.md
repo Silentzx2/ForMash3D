@@ -1,3 +1,9 @@
+## 2026-09-29 Runtime Findings — Colab Generation and Frontend Stability
+- TRELLIS image-to-textured-mesh reached generation success, GLB export, and scheduler completion. The subsequent thumbnail step failed in pyrender with `Cannot connect to "None"`, isolating that failure to headless thumbnail rendering.
+- TripoSR failed because `trimesh` was referenced but not imported in the orientation path.
+- TripoSG failed before inference because the standard image preprocessing path passed a filesystem path into `prepare_image()`, which then reached a tensor-only `permute` call with a string.
+- Shared model lifecycle logs now include load, inference, unload, elapsed time, GPU id, and CUDA memory telemetry; worker jobs honor `AUTO_UNLOAD_AFTER_JOB` after success or failure.
+
 ## 2026-09-28 Runtime Findings — TripoSR Axis and TRELLIS Rasterizer Compatibility
 
 - The uploaded TripoSR screenshot is consistent with a coordinate-system mismatch: the generated asset's Z dimension is larger than Y while the ForMash3D viewport treats Y as up. The TripoSR adapter now applies one additional X-axis -90° rotation after the upstream Gradio orientation so exported meshes are Y-up in the ForMash3D viewport.

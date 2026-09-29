@@ -1,3 +1,10 @@
+## 2026-09-29 — Runtime Lifecycle, Tripo Input & Headless Thumbnail Hardening
+- Fixed TripoSR's runtime `trimesh` NameError in the Y-up orientation path.
+- Fixed TripoSG standard preprocessing to pass a decoded RGB image to `prepare_image()`.
+- Added shared model load/inference/unload timing and CUDA-memory telemetry.
+- Enabled deterministic post-job GPU model unload when `AUTO_UNLOAD_AFTER_JOB` is enabled.
+- Prefer EGL for headless pyrender thumbnail rendering; thumbnail failure remains non-fatal.
+
 # Changelog
 
 ## 2026-09-28 — 3D Orientation & TRELLIS Renderer Compatibility

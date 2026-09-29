@@ -411,6 +411,19 @@ def _process_job_in_worker(
         elapsed = time.time() - start_time
         logger.info(f"[GENERATION SUCCESS] job_id={job_id} model={model_id} elapsed={elapsed:.2f}s")
 
+        if os.environ.get("AUTO_UNLOAD_AFTER_JOB", "true").lower() in {"1", "true", "yes", "on"}:
+            try:
+                logger.info(
+                    f"[GPU UNLOAD QUEUED] job_id={job_id} model={model_id} reason=AUTO_UNLOAD_AFTER_JOB"
+                )
+                loaded_model.unload()
+                loaded_model = None
+            except Exception as unload_err:
+                logger.error(
+                    f"[GPU UNLOAD FAILED] job_id={job_id} model={model_id}: {unload_err}",
+                    exc_info=True,
+                )
+
         return (
             {
                 "success": True,
@@ -426,6 +439,20 @@ def _process_job_in_worker(
         import traceback
         tb = traceback.format_exc()
         logger.error(f"[GENERATION FAILED] job_id={job_request.job_id} model={model_config.get('model_id')}: {e}\n{tb}")
+        if loaded_model is not None and os.environ.get("AUTO_UNLOAD_AFTER_JOB", "true").lower() in {"1", "true", "yes", "on"}:
+            try:
+                logger.info(
+                    f"[GPU UNLOAD QUEUED] job_id={job_request.job_id} "
+                    f"model={model_config.get('model_id')} reason=GENERATION_FAILED"
+                )
+                loaded_model.unload()
+                loaded_model = None
+            except Exception as unload_err:
+                logger.error(
+                    f"[GPU UNLOAD FAILED] job_id={job_request.job_id} "
+                    f"model={model_config.get('model_id')}: {unload_err}",
+                    exc_info=True,
+                )
         return (
             {"success": False, "error": f"{str(e)}\n{tb}", "job_id": job_request.job_id},
             loaded_model,

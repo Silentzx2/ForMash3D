@@ -399,3 +399,15 @@
 - The installer prefers a valid prebuilt `diff_gaussian_rasterization` wheel from `backend/thirdparty/wheels/`.
 - The installer falls back to the expected Mip-Splatting submodule source build only when no usable local wheel is available.
 - The application code remains aligned with the renderer API it was written for.
+
+
+## ADR-030: Deterministic Model Unload and Headless Thumbnail Rendering
+
+**Decision**: Honor `AUTO_UNLOAD_AFTER_JOB` at the worker model lifecycle boundary and prefer EGL for pyrender thumbnails in headless Linux/Colab runtimes.
+
+**Reason**: Colab validation showed generation succeeding before headless thumbnail creation failed, while long-lived workers could retain GPU model allocations between jobs. The shared lifecycle boundary already owns load/unload behavior, so the fix stays centralized.
+
+**Consequences**:
+- Model load, inference, and unload timing/memory are logged through `BaseModel`.
+- Successful and failed jobs unload their model when `AUTO_UNLOAD_AFTER_JOB` is enabled.
+- Pyrender prefers EGL when `PYOPENGL_PLATFORM` is unset, and thumbnail failure remains non-fatal to generation.

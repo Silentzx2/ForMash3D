@@ -169,7 +169,9 @@ class MeshThumbnailGenerator:
             camera = pyrender.PerspectiveCamera(yfov=np.pi / 4.0)
             camera_node = scene.add(camera, pose=camera_pose)
 
-            # Render
+            # Render. Prefer EGL for headless Linux/Colab runtimes.
+            if not os.environ.get("PYOPENGL_PLATFORM"):
+                os.environ["PYOPENGL_PLATFORM"] = "egl"
             renderer = pyrender.OffscreenRenderer(*self.thumbnail_size)
 
             flags = pyrender.RenderFlags.RGBA
@@ -270,8 +272,6 @@ class MeshThumbnailGenerator:
         if np.linalg.norm(right) < 1e-6:
             right = np.cross(forward, [0, 1, 0])
         right = right / np.linalg.norm(right)
-        print(forward, right)
-
         up = np.cross(right, forward)
         up = up / np.linalg.norm(up)
 

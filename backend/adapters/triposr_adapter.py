@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 import torch
+import trimesh
 from PIL import Image
 
 from core.models.base import ModelStatus
