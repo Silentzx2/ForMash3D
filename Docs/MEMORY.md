@@ -186,8 +186,10 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 
 ## Physics integration
 - Physics is opt-in and reuses `generateCollision` as the single generation intent flag.
-- Existing collision service remains authoritative; no second collision generator was added.
+- Existing collision service remains authoritative; normal collision generation is preserved for all post-processed assets; no second collision generator was added.
 - Enabled jobs write `metadata/physics.json` and expose `physics_json` through the protected artifact download route.
-- Browser preview uses Rapier through `@dimforge/rapier3d-compat`; no additional AI model or generation VRAM is required.
-- Current viewer scope is rigid-body simulation plus Drop/Bounce/Slide/Spin tests and collider debug. Soft-body/jiggle is capability-gated and not faked.
+- Browser preview uses pinned Rapier `@dimforge/rapier3d-compat` 0.19.3; no additional AI model or generation VRAM is required.
+- Current viewer scope is rigid-body simulation plus Drop/Bounce/Slide/Spin tests and collider debug. Async asset loading is load-completion gated so Physics cannot bind to the previous mesh. Soft-body/jiggle is capability-gated and not faked.
 - Full GPU inference validation remains outstanding in the current development environment.
+
+- Shape→Paint auto-chain skips Physics on the intermediate Shape result and prepares Physics only on the final Paint result.
