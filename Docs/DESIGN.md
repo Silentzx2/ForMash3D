@@ -297,3 +297,6 @@ Workspace export actions treat game_ready/ as the default user-facing artifact. 
 The ZIP option snapshots the complete canonical workspace; it is not a selective package builder.
 
 Post-processing stage and progress reuse the existing job status model rather than introducing a second progress subsystem.
+
+## Physics UX
+The Generate panel contains a Physics Preparation controller using the existing `generateCollision` intent rather than introducing overlapping enable flags. The viewer exposes a Physics mode only when an asset is marked Physics Ready. The viewer distinguishes the rendered asset from the collision representation and provides Play, Pause, Step, Reset, collider debug, Drop, Bounce, Slide, and Spin controls. Estimated physical properties are presented as estimates with provenance; user values remain authoritative.
