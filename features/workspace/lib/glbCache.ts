@@ -88,7 +88,7 @@ export async function loadGLBWithProgress(
       if (matched) {
         const buf = await matched.arrayBuffer();
         if (buf && buf.byteLength > 0) {
-          glbBufferCache.set(url, buf);
+          setCachedGLB(url, buf);
           onProgress?.(buf.byteLength, buf.byteLength, 100);
           return buf;
         }
@@ -115,27 +115,25 @@ export async function loadGLBWithProgress(
 
   if (response.body && typeof ReadableStream !== 'undefined' && total > 0) {
     const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
+    let buffer = new Uint8Array(total);
     let loaded = 0;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value) {
-        chunks.push(value);
-        loaded += value.length;
-        const percent = Math.min(99, Math.round((loaded / total) * 100));
-        onProgress?.(loaded, total, percent);
+      if (!value) continue;
+      if (loaded + value.byteLength > buffer.byteLength) {
+        const next = new Uint8Array(Math.max(loaded + value.byteLength, buffer.byteLength * 2));
+        next.set(buffer.subarray(0, loaded));
+        buffer = next;
       }
+      buffer.set(value, loaded);
+      loaded += value.byteLength;
+      const percent = Math.min(99, Math.round((loaded / total) * 100));
+      onProgress?.(loaded, total, percent);
     }
 
-    const combined = new Uint8Array(loaded);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.length;
-    }
-    arrayBuffer = combined.buffer;
+    arrayBuffer = buffer.buffer.slice(0, loaded);
     onProgress?.(loaded, total, 100);
   } else {
     arrayBuffer = await response.arrayBuffer();

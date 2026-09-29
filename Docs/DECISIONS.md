@@ -473,3 +473,15 @@ Security: artifact downloads reuse existing job authorization and accept only fi
 **Decision:** The UI must render generation status, progress, cancellation, and asset statistics from real backend contracts only. Missing backend facts remain explicitly unknown instead of being replaced by sample numbers.
 
 **Consequences:** Pipeline status uses real stage logs and adaptive polling; queued cancellation calls the scheduler-backed cancel endpoint; Jobs removes fabricated progress; segmentation inspectors consume `segmentation_info`; uploaded assets no longer pretend to have fixed mesh counts. The current single-image generation backend is surfaced honestly rather than presenting the existing multiview collection UI as a supported multi-view request.
+
+## ADR-019 — Redis Control State Must Not Be Evicted
+
+Decision: Redis used for job/worker control state uses noeviction; result payloads use dedicated expiring keys.
+
+Reason: Evicting live queue state can strand GPU work. Redis EXPIRE applies to keys, not individual hash fields.
+
+## ADR-020 — Resource-Blocked Jobs Rotate
+
+Decision: A job that currently cannot acquire compatible worker/VRAM resources is requeued at the back rather than blocking the global queue head.
+
+Reason: A large or unavailable model must not block smaller jobs whose resource requirements are currently satisfiable.

@@ -1,5 +1,6 @@
 """System management and health check endpoints"""
 
+import asyncio
 import logging
 import mimetypes
 import os
@@ -761,7 +762,54 @@ async def get_jobs_history(
         if offset < 0:
             offset = 0
 
-        # Get all jobs from the database
+        db_manager = getattr(scheduler.job_queue, "db_manager", None)
+        if db_manager is not None:
+            from datetime import datetime as _dt
+
+            def parse_date(value: Optional[str]) -> Optional[_dt]:
+                if not value:
+                    return None
+                try:
+                    parsed = _dt.fromisoformat(value.replace("Z", "+00:00"))
+                    return parsed.replace(tzinfo=None)
+                except ValueError:
+                    return None
+
+            page_status = status.lower() if status else None
+            user_id = None
+            if current_user and current_user.role != UserRole.ADMIN:
+                user_id = current_user.user_id
+
+            page_jobs, total_jobs = await asyncio.to_thread(
+                db_manager.get_jobs_page,
+                status=page_status,
+                feature=feature,
+                user_id=user_id,
+                start_date=parse_date(start_date),
+                end_date=parse_date(end_date),
+                limit=limit,
+                offset=offset,
+            )
+            jobs = [job.to_dict() for job in page_jobs]
+            return {
+                "jobs": jobs,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "total": total_jobs,
+                    "has_more": offset + len(jobs) < total_jobs,
+                },
+                "filters": {
+                    "status": status,
+                    "feature": feature,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+                "timestamp": time.time(),
+            }
+
+        # Redis queue fallback: retain its current status-based API until a
+        # dedicated history sorted-set index is introduced.
         all_jobs = []
 
         # Get jobs from different statuses

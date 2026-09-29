@@ -122,3 +122,9 @@ Post-process artifact downloads reuse the existing job authorization checks. The
 ZIP files are built from the canonical asset workspace into a temporary directory and removed after the response completes. The canonical workspace never becomes an export archive directory.
 
 The immutable master/source.glb is never overwritten by post-processing.
+
+## Review Audit Hardening — Input Boundaries
+
+Server filesystem paths supplied by generation APIs are no longer treated as arbitrary host paths. resolve_server_file_path() accepts only configured roots (outputs/ and uploads/ by default), with explicit ALLOWED_INPUT_ROOTS / ALLOW_LOCAL_SERVER_PATH_INPUTS overrides for self-hosted deployments that need wider access.
+
+Multipart uploads enforce the byte limit while streaming rather than after the full file has been written. Base64 payloads are rejected using their encoded-size ceiling before allocating the decoded byte buffer.

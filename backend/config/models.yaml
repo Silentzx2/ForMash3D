@@ -155,6 +155,8 @@ auto_rig:
 mesh_retopology:
   fastmesh_v1k_retopology:
     vram_requirement: 16384  # MB
+    init_params:
+      variant: "V1K"
     supported_inputs: ["obj", "glb", "ply", "stl"]
     supported_outputs: ["obj", "glb", "ply"]
     model_path: "backend/pretrained/FastMesh-V1K"
@@ -163,6 +165,8 @@ mesh_retopology:
     
   fastmesh_v4k_retopology:
     vram_requirement: 24500  # MB
+    init_params:
+      variant: "V4K"
     supported_inputs: ["obj", "glb", "ply", "stl"]
     supported_outputs: ["obj", "glb", "ply"]
     model_path: "backend/pretrained/FastMesh-V4K"

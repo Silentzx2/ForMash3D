@@ -197,3 +197,19 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - Full GPU/Colab inference validation remains outstanding.
 
 - 2026-09-29: execution telemetry baseline now uses real backend stage logs, adaptive visibility-aware polling, truthful cancellation, and artifact-driven segmentation metadata; client-side sample mesh statistics are no longer treated as factual.
+
+## 2026-09-30 Review Audit Hardening
+
+- Redis priority/state/TTL contracts were corrected.
+- SQLite persistence no longer performs synchronous writes directly on async scheduling paths.
+- Processing jobs are recovered after restart; timeout/cancel terminate workers before finalization.
+- Client filesystem inputs and upload/base64 memory are bounded.
+- GLB L1 cache hydration and streaming now respect the existing memory budget.
+- FastMesh V1K/V4K selection is explicit.
+- GPU inference, stress testing, and remaining frontend multi-job/multiview runtime behavior still require target-environment validation.
+
+## 2026-09-30 Review Audit Second Pass
+- Raw inference completion is decoupled from production post-processing; background status is preserved on completed jobs.
+- Workspace generation state is keyed by backend job ID and additional generations are not UI-blocked by an existing active job.
+- Text batches now carry a scheduler-enforced max_parallel limit.
+- Redis progress telemetry uses hot hashes and terminal cleanup uses a completion-time index.

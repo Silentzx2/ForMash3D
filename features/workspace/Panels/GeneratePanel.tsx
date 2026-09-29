@@ -152,6 +152,13 @@ export const GeneratePanel: React.FC = () => {
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
   const [weightsStatus, setWeightsStatus] = useState<Record<string, boolean>>({});
   const [optionsLoading, setOptionsLoading] = useState(false);
+  const pendingGenerateRef = useRef(false);
+
+  useEffect(() => {
+    if (!pendingGenerateRef.current) return;
+    pendingGenerateRef.current = false;
+    void generate3DModel('image-to-3d');
+  }, [generationSettings, generate3DModel]);
 
   useEffect(() => {
     let active = true;
@@ -481,7 +488,9 @@ export const GeneratePanel: React.FC = () => {
       setTimeout(() => setNoticeMessage(null), 5000);
       return;
     }
-    // Guarantee top quality settings automatically
+    // Commit the request settings first; the effect above submits only after React
+    // has installed this exact snapshot, avoiding stale-state generation requests.
+    pendingGenerateRef.current = true;
     setGenerationSettings(prev => ({
       ...prev,
       generateTexture: prev.generateTexture !== false,
@@ -494,7 +503,6 @@ export const GeneratePanel: React.FC = () => {
         preserveDetails: 85,
       },
     }));
-    generate3DModel('image-to-3d');
   };
 
   return (
@@ -1353,7 +1361,7 @@ export const GeneratePanel: React.FC = () => {
         <ShimmerButton
           id="btn-generate-model-action"
           onClick={handleGenerate}
-          disabled={isExecuting}
+          disabled={false}
           shimmerColor="hsl(var(--neon-amber))"
           shimmerSize="0.1em"
           shimmerDuration="2.5s"
@@ -1377,7 +1385,7 @@ export const GeneratePanel: React.FC = () => {
           ) : (
             <>
               <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="tracking-wider">GENERATE 3D MODEL</span>
+              <span className="tracking-wider">{isExecuting ? 'GENERATE ANOTHER' : 'GENERATE 3D MODEL'}</span>
             </>
           )}
         </ShimmerButton>

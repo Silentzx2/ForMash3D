@@ -7,6 +7,7 @@ This adapter integrates P3-SAM for semantic part segmentation of 3D meshes.
 import logging
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -153,7 +154,7 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
             temp_base = (
                 self.path_generator.base_output_dir
                 / "temp"
-                / f"p3sam_{int(time.time())}"
+                / f"p3sam_{uuid.uuid4().hex}"
             )
             temp_base.mkdir(parents=True, exist_ok=True)
             

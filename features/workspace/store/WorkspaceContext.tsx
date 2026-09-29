@@ -83,6 +83,7 @@ interface WorkspaceContextType {
   rightPanelWidth: number;
   setRightPanelWidth: (width: number) => void;
   activeTask: ActiveTask | null;
+  jobsById: Record<string, ActiveTask>;
   dismissActiveTask: () => void;
   isExecuting: boolean;
   executionProgress: number;
@@ -416,6 +417,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [executionProgress, setExecutionProgress] = useState(0);
   const [executionStep, setExecutionStep] = useState('');
   const [activeTask, setActiveTask] = useState<ActiveTask | null>(null);
+  const [jobsById, setJobsById] = useState<Record<string, ActiveTask>>({});
+  const jobsByIdRef = useRef(jobsById);
+  jobsByIdRef.current = jobsById;
   const activeTaskRef = useRef<ActiveTask | null>(activeTask);
   activeTaskRef.current = activeTask;
 
@@ -734,11 +738,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [activeTask?.id]);
 
   const startTask = useCallback((type: ActiveTask['type'], title: string, promptId?: string, provider?: string, inputImage?: string, inputImageName?: string) => {
-    setIsExecuting(true);
-    setExecutionProgress(0);
-    setExecutionStep('Queued');
-    setActiveTask({
-      id: promptId ?? `task-${type}-${Date.now()}`,
+    const taskId = promptId ?? crypto.randomUUID();
+    const task: ActiveTask = {
+      id: taskId,
       type,
       title,
       startedAt: Date.now(),
@@ -748,7 +750,26 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       provider,
       inputImage,
       inputImageName,
+    };
+    setIsExecuting(true);
+    setExecutionProgress(0);
+    setExecutionStep('Queued');
+    setActiveTask(task);
+    setJobsById(prev => ({ ...prev, [taskId]: task }));
+    return taskId;
+  }, []);
+
+  const bindBackendJob = useCallback((localTaskId: string, jobId: string, updates: Partial<ActiveTask> = {}) => {
+    setJobsById(prev => {
+      const task = prev[localTaskId] || activeTaskRef.current;
+      if (!task) return prev;
+      const next = { ...task, ...updates, id: jobId };
+      const copy = { ...prev };
+      delete copy[localTaskId];
+      copy[jobId] = next;
+      return copy;
     });
+    setActiveTask(prev => prev && prev.id === localTaskId ? { ...prev, ...updates, id: jobId } : prev);
   }, []);
 
   const generateImageTo3D = useCallback(async (customImage?: string) => {
@@ -764,7 +785,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const imageFileName = generationSettings.imageName
       || (imageToUse ? decodeURIComponent(imageToUse.split('/').pop()?.replace(/\?.*$/, '') || '') : '')
       || modelPrompt;
-    startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName);
+    const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName);
 
     const currentQuality = generationSettings.meshQuality || 'high';
     // Studio Ultra-HD pipeline: auto-tune to high-resolution voxel grid and diffusion steps
@@ -874,7 +895,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string; status?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a generation job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, inputImage: imageToUse, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { inputImage: imageToUse, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Generation queued on backend');
 
       // Shape → Paint automatic chaining: after Shape mesh is generated,
@@ -948,7 +969,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         toast.error('Prompt required', { description: 'Please enter a text prompt to generate a 3D model.' });
         return;
       }
-      startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
+      const localTaskId = startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
 
       const currentQuality = generationSettings.meshQuality || 'high';
       const octreeRes = currentQuality === 'ultra' ? 640 : 512;
@@ -1075,7 +1096,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   ]);
 
   const runRemeshGeneration = useCallback(async () => {
-    startTask('remesh', 'Remesh / topology optimization');
+    const localTaskId = startTask('remesh', 'Remesh / topology optimization');
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1103,7 +1124,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a remesh job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Remesh queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Remesh submission failed';
@@ -1115,7 +1136,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [remeshSettings, currentAsset, startTask]);
 
   const runTextureGeneration = useCallback(async () => {
-    startTask('texture', 'Texture generation', undefined, textureSettings.modelId);
+    const localTaskId = startTask('texture', 'Texture generation', undefined, textureSettings.modelId);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1180,7 +1201,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a texture job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Texture generation queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Texture generation submission failed';
@@ -1199,7 +1220,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
    }, [textureSettings, currentAsset, startTask]);
 
    const runPaintAutoChaining = useCallback(async (shapeMeshFileId?: string) => {
-     startTask('texture', 'Paint-v2-1 Texturing', undefined, 'hunyuan3d_paint_v21_image_mesh_painting');
+     const localTaskId = startTask('texture', 'Paint-v2-1 Texturing', undefined, 'hunyuan3d_paint_v21_image_mesh_painting');
      try {
        if (!shapeMeshFileId) {
          throw new Error('Generated mesh file ID is missing; cannot start Paint-v2-1.');
@@ -1240,7 +1261,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const data = await parseApiData<{ job_id?: string; id?: string }>(res);
         const jobId = data.job_id ?? data.id;
         if (!jobId) throw new Error('Backend did not return a texture job ID');
-        setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+        bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
         setExecutionStep('Paint-v2-1 texturing queued on backend');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Paint auto-chaining failed';
@@ -1249,6 +1270,60 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         toast.error('Paint auto-chaining failed', { description: message });
       }
     }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.imageFileId, generationSettings.generateTexture, generationSettings.generatePBR, generationSettings.generateCollision, generationSettings.physics, startTask]);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer: number | null = null;
+
+    const pollOtherJobs = async () => {
+      const activeId = activeTaskRef.current?.id;
+      const ids = Object.keys(jobsByIdRef.current).filter((id) => {
+        const task = jobsByIdRef.current[id];
+        return id !== activeId &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) &&
+          task.status !== 'completed' &&
+          task.status !== 'failed' &&
+          task.status !== 'interrupted';
+      });
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' });
+          if (!res.ok) return;
+          const data = normalizeBackendJob(await res.json());
+          const status: ActiveTask['status'] =
+            data.status === 'processing' ? 'running' :
+            data.status === 'completed' ? 'completed' :
+            data.status === 'failed' ? 'failed' :
+            data.status === 'cancelled' ? 'interrupted' : 'queued';
+          setJobsById(prev => {
+            const task = prev[id];
+            return task ? {
+              ...prev,
+              [id]: {
+                ...task,
+                status,
+                progress: data.progress,
+                currentStep: data.message || data.stage || task.currentStep,
+                stage: data.stage || task.stage,
+                logs: data.logs || task.logs,
+                result: data.result,
+                errorMessage: data.error_message || task.errorMessage,
+              },
+            } : prev;
+          });
+        } catch {
+          // Active-job polling is the authoritative UI path; secondary polling is best-effort.
+        }
+      }));
+      if (!stopped) timer = window.setTimeout(() => void pollOtherJobs(), 1500);
+    };
+
+    void pollOtherJobs();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [activeTask?.id]);
 
   useEffect(() => {
     const task = activeTaskRef.current;
@@ -1485,7 +1560,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a UV unwrapping job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('UV unwrapping queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'UV unwrapping submission failed';
@@ -1540,7 +1615,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a segmentation job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Mesh segmentation queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Segmentation submission failed';
@@ -1616,7 +1691,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return an editing job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Mesh editing queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Mesh editing submission failed';
@@ -1726,9 +1801,9 @@ const queueWorkflow = useCallback(async (workflow: Record<string, unknown>, type
     refreshSystemStats]);
 
   const executionValue = useMemo(() => ({
-    activeTask, dismissActiveTask,
+    activeTask, jobsById, dismissActiveTask,
     isExecuting, executionProgress, executionStep, cancelExecution,
-  }), [activeTask, dismissActiveTask,
+  }), [activeTask, jobsById, dismissActiveTask,
     isExecuting, executionProgress, executionStep, cancelExecution]);
 
   const generationSettingsValue = useMemo(() => ({

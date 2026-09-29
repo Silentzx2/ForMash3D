@@ -9,7 +9,8 @@ result downloading.
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional
+from uuid import uuid4
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -102,6 +103,22 @@ class TextToTexturedMeshRequest(TextToRawMeshRequest):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+
+
+class BatchTextToTexturedMeshItem(BaseModel):
+    """One independent text-generation item inside a batch."""
+    text_prompt: str = Field(..., min_length=1, max_length=4000)
+    negative_prompt: Optional[str] = Field(None, max_length=4000)
+    model_preference: str = Field("trellis_text_to_textured_mesh")
+    texture_prompt: Optional[str] = Field(None, max_length=4000)
+    texture_resolution: int = Field(1024, ge=256, le=4096)
+    model_parameters: Optional[dict] = None
+
+
+class BatchTextToTexturedMeshRequest(BaseModel):
+    """Submit independent text jobs under one scheduler-owned batch."""
+    items: List[BatchTextToTexturedMeshItem] = Field(..., min_length=1, max_length=100)
+    max_parallel: int = Field(2, ge=1, le=32)
 
 
 class TextMeshPaintingRequest(BaseModel):
@@ -533,6 +550,52 @@ async def text_to_textured_mesh(
     except Exception as e:
         logger.error(f"Error scheduling text-to-textured-mesh job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
+
+
+@router.post("/text-to-textured-mesh/batch")
+async def batch_text_to_textured_mesh(
+    batch_request: BatchTextToTexturedMeshRequest,
+    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
+    current_user = Depends(get_current_user_or_none),
+):
+    """Queue multiple text-to-3D jobs; the scheduler enforces max_parallel."""
+    batch_id = uuid4().hex
+    user_id = current_user.user_id if current_user else None
+    jobs = []
+    for item in batch_request.items:
+        validate_model_preference(
+            item.model_preference, "text_to_textured_mesh", scheduler
+        )
+        job_request = JobRequest(
+            feature="text_to_textured_mesh",
+            inputs={
+                "text_prompt": item.text_prompt,
+                "negative_prompt": item.negative_prompt or "",
+                "texture_prompt": item.texture_prompt or item.text_prompt,
+                "texture_text_prompt": item.texture_prompt or item.text_prompt,
+                "output_format": "glb",
+                "texture_resolution": item.texture_resolution,
+                **(item.model_parameters or {}),
+            },
+            model_preference=item.model_preference,
+            priority=1,
+            metadata={
+                "feature_type": "text_to_textured_mesh",
+                "batch_id": batch_id,
+                "batch_max_parallel": batch_request.max_parallel,
+                "batch_size": len(batch_request.items),
+                "batch_item_index": len(jobs),
+            },
+            user_id=user_id,
+        )
+        jobs.append(await scheduler.schedule_job(job_request))
+
+    return {
+        "batch_id": batch_id,
+        "status": "queued",
+        "max_parallel": batch_request.max_parallel,
+        "job_ids": jobs,
+    }
 
 
 # Text-based mesh painting endpoint (supports both file path and base64)

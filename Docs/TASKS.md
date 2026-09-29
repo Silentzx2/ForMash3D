@@ -139,3 +139,28 @@
 - [x] Remove fabricated uploaded/segmentation/UV mesh statistics.
 - [x] Make Jobs polling visibility-aware and selected-job telemetry live.
 - [x] Make segmentation inspector artifact-driven and wire segmented GLB download.
+
+## Review Audit Hardening — 2026-09-30
+
+Completed in this pass:
+- Redis priority ordering, failure/cancellation semantics, and result TTL storage corrected.
+- Processing jobs are recovered after backend restart.
+- Scheduler timeout/cancel paths stop the owning worker before terminal state notification.
+- SQLite persistence is dispatched off the async event loop.
+- Queue metrics use the same canonical fields in single-worker and Redis modes.
+- Client-supplied filesystem inputs are restricted to configured asset roots.
+- Multipart/base64 input size limits are enforced during ingestion.
+- GLB cache hydration and streaming respect the existing L1 memory budget.
+- FastMesh V1K/V4K variants are explicit in models.yaml.
+- Verification script syntax and the frontend test command are executable.
+- Storage-side pagination is available for the SQLite-backed history path.
+
+Still runtime-gated:
+- GPU inference/load/stress validation.
+- True multiview inference remains capability-dependent; the backend accepts only explicitly supported view contracts and does not silently collapse a multi-view request.
+
+### Review Audit — Second Pass
+- [x] Raw generation completes independently from production post-processing; postprocess status is tracked separately.
+- [x] Workspace maintains independent job state by backend job ID and permits another generation while one is active.
+- [x] Text batch endpoint submits independent jobs with scheduler-enforced `max_parallel`.
+- [x] Redis progress/state hot fields no longer rewrite the full job document on every telemetry tick; terminal cleanup uses a time index.

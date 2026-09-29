@@ -41,6 +41,8 @@
 
 ## 📰 Recent Updates
 
+* **2026-09-30** — **Review audit hardening**: Corrected Redis queue ordering/state/TTL semantics, added restart recovery and actual worker termination for timeout/cancellation, moved SQLite persistence off async scheduling paths, bounded input/cache memory, made FastMesh variants explicit, and repaired verification commands.
+
 > Compact overview of recent milestone updates (maximum 3 entries preserved; full technical history available in **[Docs/CHANGELOG.md](Docs/CHANGELOG.md)**).
 
 * **2026-09-27** — **Hunyuan3D-Paint-v2-1 Pipeline Audit & Full Integration**: Completed full audit of the Paint-v2-1 pipeline (Pass 1: 18 fixes including FlashVDM toggle, `systemStats` in TexturePanel, `paintResolution` in GenerationSettings, RealESRGAN/DifferentiableRenderer verification; Pass 2: deep scan of 1080 third-party files fixing bare `except:` clauses and missing `__init__.py` files). Added `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` model ID. Fixed Dockerfile to include Paint DifferentiableRenderer build step.
@@ -581,3 +583,6 @@ The main backend remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. The post-proce
 ## Physics-ready assets
 The workspace viewer also provides a compact Test Physics inspector and an opt-in mirror/detail preview without adding a GPU generation dependency.
 ForMash3D now supports opt-in Physics preparation during mesh generation. Physics uses the existing post-processing collision pipeline and writes portable physics metadata alongside the asset workspace. Physics-ready assets can be previewed in the Three.js viewer with rigid-body controls and collider debugging. No additional AI generation model is required; browser simulation uses Rapier 3D. See `Docs/PHYSICS.md` for the current contract.
+
+
+**Review audit status — 2026-09-30:** the control plane now supports restart recovery, real worker termination for timeout/cancel, bounded Redis telemetry/storage, independent workspace job state, scheduler-limited text batches, and background production post-processing after raw generation becomes available. Target-GPU inference/stress and capability-specific multiview validation remain runtime checks.

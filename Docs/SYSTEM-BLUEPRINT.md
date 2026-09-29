@@ -1,3 +1,12 @@
+## 2026-09-30 Review Audit Runtime Contracts
+
+- Redis control-plane data uses noeviction; result payloads use dedicated TTL keys.
+- Scheduler SQLite persistence is offloaded from the async event loop.
+- Processing jobs are recovered after backend restart.
+- Timeout and cancellation terminate the owning worker before the job becomes terminal.
+- Client filesystem paths are root-restricted and upload/base64 ingestion is bounded.
+- Resource-blocked jobs rotate instead of globally blocking compatible work.
+
 # 🏛️ ForMash 3D — Complete System Architecture & Pipeline Blueprint
 
 > **System Version**: 0.1.0 (FastAPI + Next.js 16, Python 3.10)
@@ -294,3 +303,9 @@ The post-processing stage runs in asyncio.to_thread so CPU-heavy mesh operations
 
 ## Physics path
 Generation requests may carry a physics intent and provider-neutral controller values. The scheduler preserves those values as job metadata. Post-processing conditionally reuses the existing collision service and writes `metadata/physics.json`. The viewer consumes the canonical collision artifact and metadata through a pinned Rapier 0.19.3 browser adapter while the existing Three.js rendering pipeline remains unchanged. Physics binding waits for asset-load completion to prevent cross-asset state leakage.
+
+## Review Audit — Current Job Lifecycle
+
+Browser JobStore / Workspace jobs → FastAPI submit → scheduler → GPU worker → **raw result ready** → completed job becomes user-visible → background postprocess → canonical master/game-ready artifacts.
+
+Batch submissions use a scheduler-owned batch identifier and `max_parallel`; blocked batch items remain queued without consuming another worker slot.

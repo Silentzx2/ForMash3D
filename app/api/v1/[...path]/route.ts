@@ -56,7 +56,7 @@ function getBackendUrl(): string {
  */
 async function fetchWithBackendFallback(
   url: string,
-  init: RequestInit
+  init: RequestInit & { duplex?: 'half' }
 ): Promise<Response> {
   try {
     return await fetch(url, init);
@@ -158,9 +158,9 @@ export async function POST(
     if (auth) headers['authorization'] = auth;
     
     if (contentType.includes('multipart/form-data')) {
-      body = await request.formData();
+      body = request.body as BodyInit;
+      headers['content-type'] = contentType;
     } else {
-      // For JSON and other content types
       body = await request.text();
       if (contentType) headers['content-type'] = contentType;
     }
@@ -169,6 +169,7 @@ export async function POST(
       method: 'POST',
       headers,
       body: body || undefined,
+      duplex: contentType.includes('multipart/form-data') ? 'half' : undefined,
       signal: AbortSignal.timeout(600000), // 10 minutes for generation/uploads
     });
     

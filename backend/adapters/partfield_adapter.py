@@ -8,6 +8,7 @@ the PartFieldRunner from utils.
 import logging
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -156,7 +157,7 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
             temp_base = (
                 self.path_generator.base_output_dir
                 / "temp"
-                / f"partfield_{int(time.time())}"
+                / f"partfield_{uuid.uuid4().hex}"
             )
             feature_dir = temp_base / "features"
             cluster_dir = temp_base / "clustering"
