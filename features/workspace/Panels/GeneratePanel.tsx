@@ -471,8 +471,14 @@ export const GeneratePanel: React.FC = () => {
       (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
     );
     if (!hasImage) {
-      setNoticeMessage('Please upload a reference image or select a multiview set.');
+      setNoticeMessage('Please upload a reference image first.');
       setTimeout(() => setNoticeMessage(null), 4000);
+      return;
+    }
+    const multiviewCount = Object.values(generationSettings.multiviewImages || {}).filter(Boolean).length;
+    if (subAction === 'crop' && multiviewCount > 1) {
+      setNoticeMessage('The current backend generation contract is single-image. Use the Single Image tab; collected multiview files are not sent as a multi-view request.');
+      setTimeout(() => setNoticeMessage(null), 5000);
       return;
     }
     // Guarantee top quality settings automatically

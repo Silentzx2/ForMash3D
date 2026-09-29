@@ -10,6 +10,7 @@ import {
   HardDrive,
   Download,
   Trash2,
+  StopCircle,
   RotateCcw,
   Sparkles,
   Maximize2,
@@ -56,6 +57,7 @@ interface RealJobItem {
   result?: any;
   inputs?: any;
   parameters?: any;
+  logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
 }
 
 export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, onBack }) => {
@@ -89,13 +91,19 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
     }
   }, [selectedJobId]);
 
+  const hasRunningJobs = jobsList.some((job) => ['processing', 'running', 'queued'].includes(job.status));
   useEffect(() => {
-    fetchJobs();
-    const interval = setInterval(() => {
-      fetchJobs();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [fetchJobs]);
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchJobs();
+    };
+    void fetchJobs();
+    const interval = setInterval(refresh, hasRunningJobs ? 5000 : 30000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [fetchJobs, hasRunningJobs]);
 
   // 2. Fetch specific selected job details
   const fetchSelectedJobDetails = useCallback(async (id: string) => {
@@ -108,7 +116,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         setSelectedJob({
           id,
           status: res.status,
-          progress: (res as any).progress ?? (res.status === 'completed' ? 100 : res.status === 'failed' ? 0 : 25),
+          progress: Math.max(0, Math.min(100, Number((res as any).progress ?? 0) <= 1 ? Number((res as any).progress ?? 0) * 100 : Number((res as any).progress ?? 0))),
           stage: (res as any).stage || (res as any).message || res.status,
           feature: (res as any).feature || (res as any).type,
           model_preference: (res as any).model_preference || (res as any).model,
@@ -118,6 +126,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
           result: res.result,
           inputs: (res as any).inputs,
           parameters: (res as any).parameters || (res as any).inputs?.model_parameters,
+          logs: (res as any).logs || (res as any).metadata?.logs || [],
         });
       }
     } catch (err) {
@@ -127,11 +136,20 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
     }
   }, []);
 
+  const selectedJobIsRunning = selectedJob?.status === 'processing' || selectedJob?.status === 'running' || selectedJob?.status === 'queued';
   useEffect(() => {
-    if (selectedJobId) {
-      fetchSelectedJobDetails(selectedJobId);
-    }
-  }, [selectedJobId, fetchSelectedJobDetails]);
+    if (!selectedJobId) return;
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void fetchSelectedJobDetails(selectedJobId);
+    };
+    void fetchSelectedJobDetails(selectedJobId);
+    const interval = setInterval(refresh, selectedJobIsRunning ? 1200 : 30000);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [selectedJobId, selectedJobIsRunning, fetchSelectedJobDetails]);
 
   const handleCopyId = () => {
     if (!selectedJobId) return;
@@ -144,11 +162,21 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
   const handleCancelOrDeleteJob = async () => {
     if (!selectedJobId) return;
     try {
-      await getApiClient().deleteJob(selectedJobId);
-      toast.success('Job deleted from queue');
-      fetchJobs();
+      if (selectedJobIsRunning) {
+        const res = await getApiClient().cancelGenerationJob(selectedJobId);
+        if (res.cancelled) {
+          toast.success('Generation cancelled');
+          await fetchSelectedJobDetails(selectedJobId);
+        } else {
+          toast.info('Job is already running', { description: res.message });
+        }
+      } else {
+        await getApiClient().deleteJob(selectedJobId);
+        toast.success('Job deleted from history');
+        await fetchJobs();
+      }
     } catch (e: any) {
-      toast.error('Failed to delete job', { description: e?.message });
+      toast.error(selectedJobIsRunning ? 'Failed to cancel job' : 'Failed to delete job', { description: e?.message });
     }
   };
 
@@ -160,7 +188,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
       name: `${selectedJob.feature || 'Generated_Mesh'}_${selectedJob.id.slice(0, 6)}.glb`,
       category: 'mesh',
       thumbnail: '',
-      meshType: 'textured',
+      meshType: 'custom',
       source: {
         viewUrl: downloadUrl,
         localUrl: downloadUrl,
@@ -360,9 +388,9 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                   <button
                     onClick={handleCancelOrDeleteJob}
                     className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/[0.06] transition-colors cursor-pointer"
-                    title="Delete Job"
+                    title={selectedJobIsRunning ? 'Cancel Job' : 'Delete Job'}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    {selectedJobIsRunning ? <StopCircle className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
@@ -375,12 +403,12 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       <Sparkles className="w-4 h-4 text-primary animate-pulse" />
                       <span>{selectedJob.stage || 'GPU Synthesis active...'}</span>
                     </span>
-                    <span className="font-mono font-bold text-primary">{Math.round(selectedJob.progress || 15)}%</span>
+                    <span className="font-mono font-bold text-primary">{Math.round(selectedJob.progress || 0)}%</span>
                   </div>
                   <div className="w-full h-2 rounded-full bg-black/50 overflow-hidden border border-white/[0.06]">
                     <div
                       className="h-full bg-gradient-to-r from-amber-400 via-primary to-emerald-400 transition-all duration-300 rounded-full"
-                      style={{ width: `${Math.max(6, Math.min(100, selectedJob.progress || 15))}%` }}
+                      style={{ width: `${Math.max(0, Math.min(100, selectedJob.progress || 0))}%` }}
                     />
                   </div>
                 </div>

@@ -195,3 +195,5 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - Auto-generated mass is now applied as the canonical rigid-body mass; collider density does not overwrite it.
 - Shape→Paint auto-chain skips physics on the intermediate Shape result and prepares it only on final output.
 - Full GPU/Colab inference validation remains outstanding.
+
+- 2026-09-29: execution telemetry baseline now uses real backend stage logs, adaptive visibility-aware polling, truthful cancellation, and artifact-driven segmentation metadata; client-side sample mesh statistics are no longer treated as factual.

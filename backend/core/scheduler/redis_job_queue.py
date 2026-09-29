@@ -236,7 +236,7 @@ class RedisJobQueue:
         job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
         if job_data_str:
             job_data = json.loads(job_data_str)
-            job_data["status"] = _status_to_str(JobStatus.FAILED)
+            job_data["status"] = _status_to_str(JobStatus.CANCELLED)
             job_data["error"] = error
             job_data["failed_at"] = datetime.utcnow().isoformat()
             job_data["stage"] = "failed"

@@ -303,3 +303,11 @@ The Generate panel keeps Physics Preparation behind a compact Advanced Generatio
 
 ## Viewport Inspect UX
 The viewport keeps frequent actions in the center-view rail: camera, shading, wireframe, turntable, Test Physics, and Mirror. Mirror is an opt-in low-rate viewport snapshot that can be hovered or focused to temporarily zoom the main camera to the mesh for detail inspection and exposes a larger mirrored preview on desktop. Snapshot capture runs only while the feature is enabled and is throttled to roughly one frame per second.
+
+## Pipeline Execution UX — 2026-09-29
+The live execution panel is a telemetry surface, not a simulated progress animation. It renders the backend stage/message stream, global progress, completed-stage count, elapsed time, estimated remaining time, worker log timeline, and artifact readiness from the actual job result. Hidden browser tabs reduce polling activity, and log auto-scroll preserves manual inspection when the user scrolls upward.
+
+Jobs & Execution follows the same rule: active jobs refresh frequently, idle history refreshes less often, and no UI fallback invents a non-zero progress percentage.
+
+## Workspace Data Integrity
+Mesh statistics, segmentation part counts, and result metadata are rendered only when supplied by the backend. Client-side sample numbers are not treated as factual asset statistics.

@@ -286,6 +286,13 @@ class ApiClient {
     return response.data;
   }
 
+  async cancelGenerationJob(jobId: string): Promise<{ job_id: string; status: string; cancelled: boolean; message: string }> {
+    const response = await this.client.post<{ job_id: string; status: string; cancelled: boolean; message: string }>(
+      `/api/v1/mesh-generation/cancel/${encodeURIComponent(jobId)}`
+    );
+    return response.data;
+  }
+
   async deleteJob(jobId: string): Promise<BaseApiResponse> {
     const response = await this.client.delete<BaseApiResponse>(
       `/api/v1/system/jobs/${jobId}`

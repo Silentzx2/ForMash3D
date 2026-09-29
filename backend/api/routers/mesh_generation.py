@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
@@ -842,3 +842,50 @@ async def get_supported_formats():
             "image_max_resolution": [4096, 4096],
         },
     }
+
+
+@router.post("/cancel/{job_id}")
+async def cancel_mesh_generation(
+    job_id: str,
+    request: Request,
+    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
+    current_user = Depends(get_current_user_or_none),
+):
+    """Cancel a queued mesh-generation job without deleting its history record."""
+    try:
+        job_status = await scheduler.get_job_status(job_id)
+        if job_status is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        if current_user:
+            from core.auth.models import UserRole
+            job_user_id = job_status.get("user_id")
+            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
+                raise HTTPException(status_code=403, detail="Access denied to this job")
+
+        if job_status.get("status") not in {"queued", "processing", "running"}:
+            return {
+                "job_id": job_id,
+                "status": job_status.get("status"),
+                "cancelled": False,
+                "message": "Job is no longer cancellable",
+            }
+
+        cancelled = await scheduler.cancel_job(job_id)
+        if not cancelled:
+            raise HTTPException(
+                status_code=409,
+                detail="Job is already running in the worker and cannot be cancelled safely.",
+            )
+
+        return {
+            "job_id": job_id,
+            "status": "cancelled",
+            "cancelled": True,
+            "message": "Generation job cancelled",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling mesh generation job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel job: {e}")

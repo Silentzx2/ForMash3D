@@ -133,3 +133,9 @@
 - [x] Top-of-viewport rigid-body smoke test with bounds-based fallback
 - [x] Opt-in low-rate mirror/detail inspection peek with hover/focus zoom
 - [ ] Target-specific physics exporters only after tested mappings exist
+
+- [x] Make generation pipeline telemetry stage-aware, ETA-aware, and artifact-aware without fake progress.
+- [x] Fix queued-job cancellation to preserve job history and use the scheduler cancellation contract.
+- [x] Remove fabricated uploaded/segmentation/UV mesh statistics.
+- [x] Make Jobs polling visibility-aware and selected-job telemetry live.
+- [x] Make segmentation inspector artifact-driven and wire segmented GLB download.

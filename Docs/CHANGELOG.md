@@ -1,3 +1,12 @@
+- 2026-09-29 — Full Pipeline Telemetry & Workspace Audit
+- Reworked live pipeline telemetry to surface the real backend stage/message stream, execution ETA, completed-stage count, and artifact readiness without fake progress values.
+- Fixed generation cancellation so queued jobs use the dedicated cancel contract instead of deleting the job record.
+- Made Jobs detail polling visibility-aware and stopped using fabricated 15% progress.
+- Removed fabricated uploaded/segmentation/UV mesh statistics and made the Segmentation inspector derive from real backend part statistics.
+- Added real segmented-result download wiring and execution timeline telemetry.
+- Guarded the Generate page against presenting the current single-image backend as a functional multi-view request path.
+- Hardened hidden-tab polling and log rendering to reduce idle network traffic and UI jank.
+
 - 2026-09-29 — Viewport & Generation UX Hardening
 - Moved advanced Physics/Mesh generation controls into an on-demand drawer to keep the primary generation path compact and responsive.
 - Added a functional top-of-viewport Physics smoke test with canonical-runtime fallback plus a lightweight bounds-based test for ordinary loaded meshes.

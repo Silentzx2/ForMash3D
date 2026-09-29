@@ -466,3 +466,10 @@ Security: artifact downloads reuse existing job authorization and accept only fi
 **Reason:** The collision pipeline already exists and should remain the single collision source. Rapier is a browser/WebAssembly runtime that fits the current direct Three.js viewer without forcing a React Three Fiber migration. No AI physics model is necessary, so the feature does not add another GPU-heavy inference dependency.
 
 **Constraints:** Keep the canonical physics representation provider-neutral; do not treat draft glTF physics extensions as the sole source of truth; do not fake soft-body/jiggle; do not add native physics engines until a tested product requirement exists.
+
+## ADR-014: Truthful Execution Telemetry and Artifact-Driven Inspectors
+**Date:** 2026-09-29
+
+**Decision:** The UI must render generation status, progress, cancellation, and asset statistics from real backend contracts only. Missing backend facts remain explicitly unknown instead of being replaced by sample numbers.
+
+**Consequences:** Pipeline status uses real stage logs and adaptive polling; queued cancellation calls the scheduler-backed cancel endpoint; Jobs removes fabricated progress; segmentation inspectors consume `segmentation_info`; uploaded assets no longer pretend to have fixed mesh counts. The current single-image generation backend is surfaced honestly rather than presenting the existing multiview collection UI as a supported multi-view request.

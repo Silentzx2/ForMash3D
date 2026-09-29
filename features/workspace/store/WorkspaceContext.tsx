@@ -710,14 +710,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!jobId) return;
 
     try {
-      const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
-      if (!res.ok) throw await parseApiError(res);
-      const data = await parseApiData<{ status?: string }>(res);
-      if (data.status === 'cancelled' || data.status === 'deleted') {
+      const data = await getApiClient().cancelGenerationJob(jobId);
+      if (data.cancelled || data.status === 'cancelled') {
         setIsExecuting(false);
         setExecutionProgress(0);
         setExecutionStep('Execution cancelled');
-        setActiveTask(prev => prev ? { ...prev, status: 'interrupted', currentStep: 'Execution cancelled' } : null);
+        setActiveTask(prev => prev ? {
+          ...prev,
+          status: 'interrupted',
+          currentStep: 'Execution cancelled',
+          stage: 'cancelled',
+        } : null);
+      } else {
+        const message = data.message || 'Job is already running and cannot be cancelled safely.';
+        setExecutionStep(message);
+        toast.info('Generation is already running', { description: message });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to cancel generation job';
@@ -1275,14 +1282,20 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const result = data.result;
 
         const progress = Math.max(0, Math.min(100, Number(data.progress ?? 0)));
-        setExecutionProgress(progress);
+        const startedAt = activeTaskRef.current?.startedAt;
+        const elapsedSec = startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
+        const etaSec = progress > 1 && progress < 99 && elapsedSec > 2
+          ? Math.max(1, Math.round(elapsedSec * ((100 - progress) / progress)))
+          : undefined;
         const currentMsg = data.message || data.stage || 'Processing';
+        setExecutionProgress(progress);
         setExecutionStep(currentMsg);
         setActiveTask(prev => prev ? {
           ...prev,
           progress,
           currentStep: currentMsg,
           stage: data.stage || prev.stage,
+          estimatedRemainingSec: etaSec,
           logs: data.logs || prev.logs,
         } : null);
 
@@ -1327,7 +1340,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               objectCount: result.object_count,
               componentCount: result.component_count,
               materialCount: result.material_count,
-              meshDetails: result.mesh_details,
+              meshDetails: (result.mesh_details || result.segmentation_info)
+                ? {
+                    ...(result.mesh_details || {}),
+                    ...(result.segmentation_info ? { segmentation_info: result.segmentation_info } : {}),
+                  }
+                : undefined,
               postprocessStatus: result.postprocess_status || data.status,
               dateCreated: new Date().toISOString().split('T')[0],
               tags: ['AI Generated'],
@@ -1393,20 +1411,35 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           return;
         }
 
-        // Adaptive polling: 500ms when in active generation/texturing, 1000ms otherwise
-        const nextInterval = (progress >= 50 || data.stage === 'generating' || data.stage === 'texturing' || data.stage === 'optimizing') ? 500 : 1000;
-        scheduleNext(nextInterval);
+        // Keep telemetry responsive without creating a polling storm; pause aggressively while the tab is hidden.
+        if (document.visibilityState === 'hidden') {
+          scheduleNext(2500);
+        } else {
+          const fastStage = data.stage === 'generating' || data.stage === 'texturing';
+          const postStage = data.stage === 'postprocess' || data.stage === 'repair' || data.stage === 'optimize' ||
+            data.stage === 'uv' || data.stage === 'game_ready' || data.stage === 'lod' ||
+            data.stage === 'collision' || data.stage === 'qa';
+          const nextInterval = fastStage ? 700 : postStage ? 1100 : progress > 0 ? 1600 : 2200;
+          scheduleNext(nextInterval);
+        }
       } catch (error) {
         if (stopped) return;
         if (error instanceof Error) setExecutionStep(`Syncing job status… ${error.message}`);
-        scheduleNext(1500);
+        scheduleNext(document.visibilityState === 'hidden' ? 3000 : 1800);
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (!stopped && document.visibilityState === 'visible') {
+        void poll();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     void poll();
     return () => {
       stopped = true;
       if (timerId) window.clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [activeTask?.id, activeTask?.status, addAsset, runPaintAutoChaining, generationSettings.generateTexture]);
 
