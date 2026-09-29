@@ -36,6 +36,8 @@ export class PhysicsRuntime {
   private sourceVisual: THREE.Object3D | null = null;
   private sourceVisualVisible = true;
   private collisionDebugVisible = false;
+  private accumulator = 0;
+  private readonly fixedStep = 1 / 60;
 
   async init(
     scene: THREE.Scene,
@@ -81,15 +83,16 @@ export class PhysicsRuntime {
       const v = new THREE.Vector3();
       for (let i = 0; i < position.count; i++) {
         v.set(points[i * 3], points[i * 3 + 1], points[i * 3 + 2]).applyMatrix4(worldMatrix);
-        localPoints[i * 3] = v.x - sourceBox.getCenter(new THREE.Vector3()).x;
-        localPoints[i * 3 + 1] = v.y - sourceBox.getCenter(new THREE.Vector3()).y;
-        localPoints[i * 3 + 2] = v.z - sourceBox.getCenter(new THREE.Vector3()).z;
+        localPoints[i * 3] = v.x - origin.x;
+        localPoints[i * 3 + 1] = v.y - origin.y;
+        localPoints[i * 3 + 2] = v.z - origin.z;
       }
       if (localPoints.length >= 12) colliderPoints.push(localPoints);
     });
 
-    const position = sourceVisual.position.clone();
-    const quaternion = sourceVisual.quaternion.clone();
+    const position = sourceVisual.getWorldPosition(new THREE.Vector3());
+    const quaternion = sourceVisual.getWorldQuaternion(new THREE.Quaternion());
+    const origin = position.clone();
     const descFactory = config.bodyType === 'static'
       ? () => rapier.RigidBodyDesc.fixed()
       : config.bodyType === 'kinematic'
@@ -173,6 +176,7 @@ export class PhysicsRuntime {
   }
 
   reset(): void {
+    this.accumulator = 0;
     for (const item of this.bodies) {
       item.body.setTranslation(item.initialPosition, true);
       item.body.setRotation(item.initialQuaternion, true);
@@ -201,9 +205,13 @@ export class PhysicsRuntime {
     this.sync();
   }
 
-  tick(): void {
+  tick(deltaSeconds = this.fixedStep): void {
     if (!this.world || !this.running) return;
-    this.world.step();
+    this.accumulator += Math.min(0.05, Math.max(0, deltaSeconds));
+    while (this.accumulator >= this.fixedStep) {
+      this.world.step();
+      this.accumulator -= this.fixedStep;
+    }
     this.sync();
   }
 
@@ -220,6 +228,7 @@ export class PhysicsRuntime {
 
   dispose(): void {
     this.running = false;
+    this.accumulator = 0;
     for (const item of this.bodies) {
       item.debug.parent?.remove(item.debug);
       item.debug.traverse((obj) => {
