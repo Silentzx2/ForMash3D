@@ -51,7 +51,7 @@
 
 ### Documentation
 - [x] README.md fully updated with Paint-v2-1 info, model catalog, and documentation index
-- [x] CHANGELOG.md with last 3 changes only (Paint Audit, Third-Party Migration, Workspace Layout)
+- [x] CHANGELOG.md maintained as chronological project history
 - [x] ARCHITECTURE.md with Paint-v2-1 pipeline details and flow charts
 - [x] PRD.md with product requirements and flow charts
 - [x] DESIGN.md with UI design system, flow charts, and component reference
