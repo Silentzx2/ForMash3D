@@ -462,26 +462,40 @@ def run_postprocess_job(
 
     physics_enabled = bool(job_metadata.get("physics_enabled", job_inputs.get("physics_enabled", False)))
     physics_config = normalize_physics_config(job_metadata.get("physics_config") or job_inputs.get("physics_config"))
-    _emit(progress, 0.88, "collision", "Preparing physics collision proxy." if physics_enabled else "Skipping physics collision.")
+
+    # Preserve the pre-physics postprocess contract: collision is always generated.
+    # Physics ON only adds provider-neutral metadata and lets the user choose the
+    # collision budget. Physics OFF keeps the existing fast convex-hull proxy.
+    collision_quality = physics_config["collision_quality"] if physics_enabled else "fast"
+    _emit(progress, 0.88, "collision", "Generating collision proxy.")
     collision_path: Optional[Path] = None
-    collision_stats: Dict[str, Any] = {"skipped": not physics_enabled}
     physics_metadata: Optional[Dict[str, Any]] = None
-    if physics_enabled:
-        try:
-            collision_scene, collision_stats = run_collision(
-                uv_mesh,
-                CollisionOptions(**collision_options_for_quality(physics_config["collision_quality"])),
-            )
-            collision_payload = collision_scene.export(file_type="glb")
-            if isinstance(collision_payload, str):
-                collision_payload = collision_payload.encode("utf-8")
-            collision_path = collision_dir / "collision.glb"
-            collision_path.write_bytes(collision_payload)
+    collision_options = collision_options_for_quality(collision_quality)
+    if not physics_enabled:
+        collision_options = {
+            "method": "convex_hull",
+            "max_hulls": 16,
+            "max_hull_vertices": 64,
+            "input_faces": 1000,
+            "resolution": 1000,
+            "seed": 0,
+        }
+    try:
+        collision_scene, collision_stats = run_collision(
+            uv_mesh,
+            CollisionOptions(**collision_options),
+        )
+        collision_payload = collision_scene.export(file_type="glb")
+        if isinstance(collision_payload, str):
+            collision_payload = collision_payload.encode("utf-8")
+        collision_path = collision_dir / "collision.glb"
+        collision_path.write_bytes(collision_payload)
+        if physics_enabled:
             physics_metadata = build_physics_metadata(uv_mesh, physics_config, collision_stats)
             _write_json(metadata_dir / "physics.json", physics_metadata)
-        except Exception as exc:
-            logger.error("Physics preparation failed for %s: %s", job_id, exc, exc_info=True)
-            raise RuntimeError(f"Physics preparation failed: {exc}") from exc
+    except Exception as exc:
+        logger.error("Collision generation failed for %s: %s", job_id, exc, exc_info=True)
+        raise RuntimeError(f"Collision generation failed: {exc}") from exc
 
     _emit(progress, 0.93, "preview", "Generating asset preview.")
     thumbnail_path: Optional[Path] = None
