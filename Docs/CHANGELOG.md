@@ -1,3 +1,9 @@
+- 2026-09-29 — Physics Integration
+- Added opt-in Physics preparation through the existing generation collision intent.
+- Reused the existing collision pipeline and added portable physics metadata plus secure artifact delivery.
+- Added a Rapier browser rigid-body preview with collider debug, Drop/Bounce/Slide/Spin tests, and a pre-generation Physics controller.
+- Added physics unit coverage and documented the rigid-first, provider-neutral boundary.
+
 - 2026-09-29 — Post-Processing Validation Hardening
 - Added Blender provisioning/runtime smoke validation and a real-mesh post-processing fixture test.
 - Hardened canonical artifact path resolution and prevented invalid format fallbacks in the UI.
