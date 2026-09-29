@@ -291,3 +291,6 @@ bun run build
 Generation -> master/source.glb -> repair/optimize/Auto UV/bake -> game_ready/* -> LOD/collision/textures/previews/metadata -> existing job status UI -> protected artifact download.
 
 The post-processing stage runs in asyncio.to_thread so CPU-heavy mesh operations do not block FastAPI's event loop.
+
+## Physics path
+Generation requests may carry a physics intent and provider-neutral controller values. The scheduler preserves those values as job metadata. Post-processing conditionally reuses the existing collision service and writes `metadata/physics.json`. The viewer consumes the canonical collision artifact and metadata through a browser Rapier adapter while the existing Three.js rendering pipeline remains unchanged.
