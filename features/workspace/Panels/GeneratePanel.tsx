@@ -290,14 +290,16 @@ export const GeneratePanel: React.FC = () => {
   };
 
   const updatePhysics = (updates: Partial<PhysicsSettings>) => {
-    setGenerationSettings(prev => ({
-      ...prev,
-      physics: {
-        ...physics,
-        ...(prev.physics || {}),
-        ...updates,
-      },
-    }));
+    setGenerationSettings(prev => {
+      const current = prev.physics || physics;
+      return {
+        ...prev,
+        physics: {
+          ...current,
+          ...updates,
+        },
+      };
+    });
   };
 
   const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
