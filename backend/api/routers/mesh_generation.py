@@ -67,9 +67,11 @@ class TextToRawMeshRequest(BaseModel):
         ..., description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
-        None, 
+        None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
+    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -95,9 +97,11 @@ class TextToTexturedMeshRequest(TextToRawMeshRequest):
         1024, description="Texture resolution", ge=256, le=4096
     )
     model_parameters: Optional[dict] = Field(
-        None, 
+        None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
+    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
 
 
 class TextMeshPaintingRequest(BaseModel):
@@ -119,9 +123,11 @@ class TextMeshPaintingRequest(BaseModel):
         "trellis_text_mesh_painting", description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
-        None, 
+        None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
+    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
 
     @field_validator("output_format")
     @classmethod
@@ -167,9 +173,11 @@ class ImageToRawMeshRequest(BaseModel):
         "hunyuan3d_shape_v21_image_to_raw_mesh", description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
-        None, 
+        None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
+    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
 
     @field_validator("output_format")
     @classmethod
@@ -225,9 +233,11 @@ class ImageToTexturedMeshRequest(BaseModel):
         "trellis_image_to_textured_mesh", description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
-        None, 
+        None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
+    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
 
     @field_validator("output_format")
     @classmethod
@@ -279,9 +289,11 @@ class ImageMeshPaintingRequest(BaseModel):
         "trellis_image_mesh_painting", description="Model name for mesh generation"
     )
     model_parameters: Optional[dict] = Field(
-        None, 
+        None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
+    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
 
     @field_validator("output_format")
     @classmethod
@@ -446,7 +458,7 @@ async def text_to_raw_mesh(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "text_to_raw_mesh"},
+            metadata={"feature_type": "text_to_raw_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
         job_id = await scheduler.schedule_job(job_request)
@@ -502,7 +514,7 @@ async def text_to_textured_mesh(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "text_to_textured_mesh"},
+            metadata={"feature_type": "text_to_textured_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
         # logger.info("JobRequest: {}".format(job_request.to_dict()))
@@ -570,7 +582,7 @@ async def text_mesh_painting(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "text_mesh_painting"},
+            metadata={"feature_type": "text_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
 
@@ -635,7 +647,7 @@ async def image_to_raw_mesh(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "image_to_raw_mesh"},
+            metadata={"feature_type": "image_to_raw_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
 
@@ -712,7 +724,7 @@ async def image_to_textured_mesh(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "image_to_textured_mesh"},
+            metadata={"feature_type": "image_to_textured_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
 
@@ -788,7 +800,7 @@ async def image_mesh_painting(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "image_mesh_painting"},
+            metadata={"feature_type": "image_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
 
