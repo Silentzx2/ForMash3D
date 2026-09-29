@@ -183,3 +183,11 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - **Bun for frontend, Conda for backend**: Separate package managers
 - **SSE for progress**: Server-Sent Events for real-time generation updates
 - **ORJSON with fallback**: Fast JSON serialization with graceful degradation
+
+## Physics integration
+- Physics is opt-in and reuses `generateCollision` as the single generation intent flag.
+- Existing collision service remains authoritative; no second collision generator was added.
+- Enabled jobs write `metadata/physics.json` and expose `physics_json` through the protected artifact download route.
+- Browser preview uses Rapier through `@dimforge/rapier3d-compat`; no additional AI model or generation VRAM is required.
+- Current viewer scope is rigid-body simulation plus Drop/Bounce/Slide/Spin tests and collider debug. Soft-body/jiggle is capability-gated and not faked.
+- Full GPU inference validation remains outstanding in the current development environment.
