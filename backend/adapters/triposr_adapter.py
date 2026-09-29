@@ -217,9 +217,6 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
 
-            # TripoSR's upstream display orientation is Z-up; ForMash3D's viewport is Y-up.
-            mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
-
             texture_requested = bake_texture
             texture_bake_succeeded = False
 

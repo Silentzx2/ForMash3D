@@ -247,7 +247,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 from image_process import prepare_image
 
                 img_pil = prepare_image(
-                    Image.open(image_path).convert("RGB"),
+                    str(image_path),
                     bg_color=np.array([1.0, 1.0, 1.0]),
                     rmbg_net=self.rmbg_net,
                 )

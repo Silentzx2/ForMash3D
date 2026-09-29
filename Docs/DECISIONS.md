@@ -436,3 +436,16 @@
 **Consequences**:
 - The inference lifecycle GPU label now uses a single-quoted `cpu` literal inside the f-string expression.
 - Runtime syntax verification remains part of the backend startup validation path.
+
+
+## ADR-033: Model-Specific Raw Extraction Controls
+
+**Decision**: Translate the workspace quality setting into each model adapter's actual extraction parameter instead of assuming a shared octree_resolution name.
+
+**Reason**: Several adapters silently ignored the generic field and used lower defaults: TripoSR (mc_resolution), TripoSF (resolution), PartPacker (grid_resolution), and UltraShape (octree_res).
+
+**Consequences**:
+- High/Ultra generation now requests higher model-native extraction resolutions for those adapters.
+- PartPacker raw mode uses num_faces=-1 and TRELLIS.2 raw mode disables remeshing/decimation.
+- Post-processing remains responsible for deliberate optimization and topology changes.
+- TripoSF low-VRAM pruning remains enforced on GPUs below 16GB to avoid unsafe memory use.

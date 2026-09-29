@@ -1,3 +1,10 @@
+## 2026-09-29 — Tripo & Cross-Model Quality Pipeline Hardening
+- Fixed TripoSG preprocessing to pass the filesystem path required by upstream prepare_image().
+- Removed the duplicate TripoSR orientation transform that could leave exported meshes rotated incorrectly in the Y-up viewer.
+- Wired model-specific extraction resolution into generation requests for TripoSR, TripoSF, PartPacker, and UltraShape instead of silently falling back to lower adapter defaults.
+- Disabled PartPacker and TRELLIS.2 raw-stage face reduction/remeshing so generated geometry is preserved for later post-processing.
+- Kept existing low-VRAM safeguards in TripoSF because disabling them can exceed the configured GPU memory budget.
+
 ## 2026-09-29 — Runtime Syntax Hardening
 - Fixed the `BaseModel` inference lifecycle log f-string that prevented the FastAPI multi-worker backend from importing due to a Python `SyntaxError`.
 - Verified the exact invalid nested-quote pattern exists only in `backend/core/models/base.py` before correction.

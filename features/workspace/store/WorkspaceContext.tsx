@@ -795,6 +795,23 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         compress_output: true,
       };
 
+      // Model-specific extraction settings: keep generation high-resolution while reserving
+      // decimation/retopology for post-processing. Values are conservative for the configured GPU budget.
+      const extractionResolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : 256;
+      if ((generationSettings.aiModel || '').includes('triposr')) {
+        modelParameters.mc_resolution = extractionResolution;
+      } else if ((generationSettings.aiModel || '').includes('triposf')) {
+        modelParameters.resolution = extractionResolution;
+      } else if ((generationSettings.aiModel || '').includes('partpacker')) {
+        modelParameters.grid_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 448 : 384;
+        modelParameters.num_faces = -1;
+      } else if ((generationSettings.aiModel || '').includes('ultrashape')) {
+        modelParameters.octree_res = currentQuality === 'ultra' ? 640 : 512;
+      } else if ((generationSettings.aiModel || '').includes('trellis2')) {
+        modelParameters.decimation_target = -1;
+        modelParameters.remesh = false;
+      }
+
       // Pass Paint-v2-1 parameters for shape models to enable auto-chaining
       if (isPaintModel) {
         modelParameters.max_num_view = generationSettings.maxNumView ?? 6;

@@ -118,9 +118,9 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
         Args:
             inputs: Dictionary containing:
                 - image_path: Path to input image (required)
-                - decimation_target: Target number of faces (default: 1000000)
+                - decimation_target: Target number of faces for optional post-processing (default: -1)
                 - texture_size: Texture resolution (default: 4096)
-                - remesh: Whether to remesh output (default: True)
+                - remesh: Whether to remesh output (default: False)
                 - remesh_band: Remesh band parameter (default: 1)
                 - remesh_project: Remesh project parameter (default: 0)
                 - seed: Random seed for reproducibility (default: None)
@@ -138,9 +138,10 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             
             # Extract parameters
             image_path = inputs["image_path"]
-            decimation_target = inputs.get("decimation_target", 1000000)
+            auto_optimize = bool(inputs.get("auto_optimize", False))
+            decimation_target = inputs.get("decimation_target", -1 if not auto_optimize else 1000000)
             texture_size = inputs.get("texture_size", 4096)
-            remesh = inputs.get("remesh", True)
+            remesh = inputs.get("remesh", auto_optimize)
             remesh_band = inputs.get("remesh_band", 1)
             remesh_project = inputs.get("remesh_project", 0)
             seed = inputs.get("seed", None)

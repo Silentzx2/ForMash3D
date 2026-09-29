@@ -1,3 +1,11 @@
+## 2026-09-29 Tripo & Cross-Model Quality Audit
+- TripoSG was passing a PIL image into upstream prepare_image(), but that function calls os.path.isfile() and therefore requires a path-like input. This was a runtime blocker, not a model-quality issue.
+- TripoSR applied the upstream display-orientation transform and then added a second X-axis -90° rotation. The second transform could rotate the exported asset incorrectly in the Y-up Three.js viewer.
+- The shared workspace request used octree_resolution, while TripoSR expects mc_resolution, TripoSF expects resolution, PartPacker expects grid_resolution, and UltraShape expects octree_res. Those adapters were therefore falling back to lower-resolution defaults.
+- PartPacker was decimating generated geometry to 50K faces by default, and TRELLIS.2 enabled remeshing by default. Both now preserve raw output unless optimization is explicitly requested.
+- TripoSF low-VRAM pruning remains active below 16GB GPUs because removing it can exceed the memory budget; this is an explicit quality/memory trade-off, not accidental decimation.
+- Fresh GPU validation is still required after these changes.
+
 ## 2026-09-29 Runtime Syntax Finding — BaseModel Import
 - The multi-worker backend failed during startup because `backend/core/models/base.py` used double quotes inside a double-quoted f-string expression (`else "cpu"`), which is invalid Python syntax.
 - The logging expression now uses a single-quoted `cpu` literal inside the f-string expression. A fresh runtime syntax sweep is still required in Colab.
