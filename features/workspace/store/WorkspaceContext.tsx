@@ -833,12 +833,16 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         modelParameters.resolution = generationSettings.resolution ?? 512;
       }
 
+      const physicsForThisJob =
+        Boolean(generationSettings.generateCollision) &&
+        !(isPaintModel && generationSettings.generateTexture !== false);
+
       const body: Record<string, unknown> = {
         ...imageInput,
         output_format: 'glb',
         model_preference: generationSettings.aiModel,
         model_parameters: modelParameters,
-        physics_enabled: Boolean(generationSettings.generateCollision),
+        physics_enabled: physicsForThisJob,
         physics_config: generationSettings.physics,
       };
 
