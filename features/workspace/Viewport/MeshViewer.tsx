@@ -672,6 +672,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [physicsDebug, setPhysicsDebug] = useState(false);
   const [physicsStatus, setPhysicsStatus] = useState<string | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
+  const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
 
   // Close menus on outside click or Escape key
   useEffect(() => {
@@ -1717,6 +1718,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     physicsRuntimeRef.current = null;
     setPhysicsRunning(false);
     setPhysicsStatus(null);
+    setLoadedAssetId(null);
   }, [currentAsset?.id]);
 
   useEffect(() => {
@@ -1726,7 +1728,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const group = currentMeshGroupRef.current;
       const scene = sceneRef.current;
       const collisionUrl = currentAsset?.artifacts?.collision;
-      if (!group || !scene || isLoading || !modelLoadVersion || !currentAsset?.artifacts?.physicsReady || !collisionUrl) {
+      if (
+        !group ||
+        !scene ||
+        isLoading ||
+        !modelLoadVersion ||
+        loadedAssetId !== currentAsset?.id ||
+        !currentAsset?.artifacts?.physicsReady ||
+        !collisionUrl
+      ) {
         return;
       }
 
@@ -1773,6 +1783,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     currentAsset?.artifacts?.physicsReady,
     currentAsset?.artifacts?.physics,
     modelLoadVersion,
+    loadedAssetId,
   ]);
 
   useEffect(() => {
@@ -1983,7 +1994,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 await rendererRef.current.compileAsync(gltf.scene, cameraRef.current);
               } catch {}
             }
-            if (!cancelled) setModelLoadVersion((version) => version + 1);
+            if (!cancelled) {
+              setLoadedAssetId(currentAsset.id);
+              setModelLoadVersion((version) => version + 1);
+            }
           }
         } else if (format === 'obj') {
           // ponytail: verify response is text before parsing as OBJ
@@ -2022,7 +2036,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             group.add(object);
             frameCamera(object);
             computeMeshStats(object);
-            if (!cancelled) setModelLoadVersion((version) => version + 1);
+            if (!cancelled) {
+              setLoadedAssetId(currentAsset.id);
+              setModelLoadVersion((version) => version + 1);
+            }
           }
         } else if (format === 'ply') {
           const response = await fetch(sourceUrl);
@@ -2050,7 +2067,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           group.add(mesh);
           frameCamera(mesh);
           computeMeshStats(mesh);
-          if (!cancelled) setModelLoadVersion((version) => version + 1);
+          if (!cancelled) {
+              setLoadedAssetId(currentAsset.id);
+              setModelLoadVersion((version) => version + 1);
+            }
         } else if (format === 'stl') {
           const response = await fetch(sourceUrl);
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
