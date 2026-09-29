@@ -426,6 +426,9 @@ For detailed schema specifications, see [Docs/api-documentation.md](Docs/api-doc
 # Verify API contracts and route registrations
 python3 scripts/verify_contracts.py
 
+# Verify physics controller/metadata contracts
+python3 -m pytest backend/tests/test_physics.py -q
+
 # Verify post-processing dependencies and Blender runtime
 python3 -m pytest backend/tests/test_postprocess_e2e.py -q
 
