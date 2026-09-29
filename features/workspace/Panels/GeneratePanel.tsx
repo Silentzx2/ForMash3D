@@ -1031,7 +1031,7 @@ export const GeneratePanel: React.FC = () => {
               >
                 <span className="text-[11px] font-bold">Physics Ready Asset</span>
                 <span className="block text-[9px] text-zinc-400 mt-0.5">
-                  {generationSettings.generateCollision ? 'Collision + physical metadata will be generated' : 'Keep generation mesh-only'}
+                  {generationSettings.generateCollision ? 'Physics metadata + selected collision quality will be generated' : 'No Physics metadata; normal collision remains available'}
                 </span>
               </button>
 
