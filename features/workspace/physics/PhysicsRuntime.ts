@@ -34,7 +34,6 @@ export class PhysicsRuntime {
   private initialized = false;
   private running = false;
   private sourceVisual: THREE.Object3D | null = null;
-  private sourceVisualVisible = true;
   private collisionDebugVisible = false;
   private accumulator = 0;
   private readonly fixedStep = 1 / 60;
@@ -69,6 +68,10 @@ export class PhysicsRuntime {
     this.floor = this.world.createCollider(floorDesc);
 
     const colliderPoints: Float32Array[] = [];
+    const position = sourceVisual.getWorldPosition(new THREE.Vector3());
+    const quaternion = sourceVisual.getWorldQuaternion(new THREE.Quaternion());
+    const origin = position.clone();
+    collision.scene.updateMatrixWorld(true);
     collision.scene.traverse((child) => {
       if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes.position) return;
       const position = child.geometry.attributes.position;
@@ -90,9 +93,6 @@ export class PhysicsRuntime {
       if (localPoints.length >= 12) colliderPoints.push(localPoints);
     });
 
-    const position = sourceVisual.getWorldPosition(new THREE.Vector3());
-    const quaternion = sourceVisual.getWorldQuaternion(new THREE.Quaternion());
-    const origin = position.clone();
     const descFactory = config.bodyType === 'static'
       ? () => rapier.RigidBodyDesc.fixed()
       : config.bodyType === 'kinematic'
@@ -132,7 +132,6 @@ export class PhysicsRuntime {
     });
 
     sourceVisual.userData.physicsRuntime = true;
-    this.sourceVisualVisible = sourceVisual.visible;
     this.initialized = true;
     this.setDebugVisibility(false);
   }
