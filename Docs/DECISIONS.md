@@ -450,13 +450,12 @@
 - Post-processing remains responsible for deliberate optimization and topology changes.
 - TripoSF low-VRAM pruning remains enforced on GPUs below 16GB to avoid unsafe memory use.
 
+## ADR-035: Automatic Production Post-Processing After Mesh Generation
 
-## ADR-034: Port 3DGenStudio Post-Processing Into the ForMash3D Backend
+Decision: successful raw mesh-generation jobs run the production post-processing pipeline before the job is marked completed.
 
-**Decision**: Port the reusable 3DGenStudio mesh-finishing implementation into `backend/postprocess/` instead of recreating its algorithms. Keep ForMash3D's generation pipeline and storage architecture separate; integration adapters will call the ported tools from the existing backend job/API flow.
+Storage: backend/storage/models/<asset_name>_<job_hash>/ is the canonical workspace. There is no persistent export/ directory. ZIP delivery is generated on demand.
 
-**Reason**: The post-processing code already implements the required mesh cleanup, UV, retopology, baking, collision and QA behavior. Reusing it reduces duplicate implementation and preserves the upstream-tested behavior while allowing ForMash3D-specific orchestration and storage contracts.
+Runtime: post-processing runs outside the FastAPI event loop; Blender-only operations use BLENDER_EXECUTABLE subprocesses while the main environment remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4.
 
-**Runtime boundary**: The FastAPI process uses Python 3.10 / PyTorch 2.6.0 / CUDA 12.4. Blender-dependent operations run in isolated Blender subprocesses through the existing `BLENDER_EXECUTABLE` configuration; the backend does not install or import `bpy` into its Python 3.10 environment.
-
-**License**: The upstream 3DGenStudio Community License and source commit are preserved with the port. This project currently uses the port in a private personal/internal-use scope; paid hosted/SaaS redistribution remains outside that scope.
+Security: artifact downloads reuse existing job authorization and accept only fixed artifact selectors; arbitrary client filesystem paths are never accepted.

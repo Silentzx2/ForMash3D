@@ -1,3 +1,11 @@
+## 2026-09-29 Production Post-Processing Integration
+- Successful mesh-generation jobs now run post-processing automatically.
+- Raw output is preserved byte-for-byte at backend/storage/models/<asset_name>_<job_hash>/master/source.glb.
+- game_ready/ is the default user-facing deliverable; LOD, collision, textures, previews, and metadata are sibling artifact groups.
+- ZIP export is generated on demand from the full canonical workspace.
+- 3DGenStudio source is ported under backend/postprocess/ with upstream attribution/license preserved.
+- Fresh GPU/end-to-end validation remains required because the current development environment has no production NVIDIA runtime.
+
 ## 2026-09-29 Tripo & Cross-Model Quality Audit
 - TripoSG was passing a PIL image into upstream prepare_image(), but that function calls os.path.isfile() and therefore requires a path-like input. This was a runtime blocker, not a model-quality issue.
 - TripoSR applied the upstream display-orientation transform and then added a second X-axis -90° rotation. The second transform could rotate the exported asset incorrectly in the Y-up Three.js viewer.

@@ -290,3 +290,10 @@ sequenceDiagram
     Panel-->>User: Show results
 ```
 
+## Production Asset Delivery UI — 2026-09-29
+
+Workspace export actions treat game_ready/ as the default user-facing artifact. Source master is an explicit raw option.
+
+The ZIP option snapshots the complete canonical workspace; it is not a selective package builder.
+
+Post-processing stage and progress reuse the existing job status model rather than introducing a second progress subsystem.

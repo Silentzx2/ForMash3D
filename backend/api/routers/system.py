@@ -4,7 +4,10 @@ import logging
 import mimetypes
 import os
 import platform
+import shutil
+import tempfile
 import time
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -12,6 +15,7 @@ from typing import Optional
 import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
@@ -1058,6 +1062,10 @@ async def download_job_result(
     format: Optional[str] = Query(
         None, description="Response format: 'file' (default) or 'base64'"
     ),
+    artifact_format: Optional[str] = Query(
+        None,
+        description="Canonical artifact format",
+    ),
     filename: Optional[str] = Query(None, description="Custom filename for download"),
 ):
     """
@@ -1104,24 +1112,76 @@ async def download_job_result(
                 status_code=404, detail="No result available for this job"
             )
 
-        # Find the output file path - try multiple possible keys
+        # Canonical postprocessed artifacts are resolved from the job workspace.
+        # Client input is a whitelist key, never a filesystem path.
         output_path = None
-        possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
+        canonical_format = (artifact_format or "glb").strip().lower()
+        asset_root = result.get("asset_root")
+        asset_name = result.get("asset_name")
 
-        for key in possible_keys:
-            if key in result and result[key]:
-                output_path = result[key]
-                break
+        if asset_root:
+            asset_root_path = Path(asset_root).resolve()
+            models_root = (Path.cwd() / "backend" / "storage" / "models").resolve()
+            if models_root not in asset_root_path.parents:
+                raise HTTPException(status_code=400, detail="Invalid asset workspace")
+
+            if canonical_format == "master":
+                output_path = asset_root_path / "master" / "source.glb"
+            elif canonical_format in {"glb", "gltf", "fbx", "obj", "stl", "ply"}:
+                stem = asset_name or asset_root_path.name
+                output_path = asset_root_path / "game_ready" / f"{stem}.{canonical_format}"
+            elif canonical_format in {"lod0", "lod1", "lod2", "lod3"}:
+                output_path = asset_root_path / "lods" / f"{canonical_format}.glb"
+            elif canonical_format == "collision":
+                output_path = asset_root_path / "collision" / "collision.glb"
+            elif canonical_format == "thumbnail":
+                output_path = asset_root_path / "previews" / "thumbnail.png"
+            elif canonical_format == "qa_report":
+                output_path = asset_root_path / "metadata" / "quality_report.json"
+            elif canonical_format == "job_json":
+                output_path = asset_root_path / "metadata" / "job.json"
+            elif canonical_format == "asset_json":
+                output_path = asset_root_path / "metadata" / "asset.json"
+            elif canonical_format.startswith("texture_"):
+                texture_name = canonical_format.removeprefix("texture_")
+                if texture_name not in {"base_color", "normal", "ao", "roughness", "metallic", "orm"}:
+                    raise HTTPException(status_code=400, detail="Unsupported texture artifact")
+                output_path = asset_root_path / "textures" / f"{texture_name}.png"
+            elif canonical_format == "zip":
+                temp_dir = Path(tempfile.mkdtemp(prefix=f"formash3d-{job_id}-"))
+                archive_path = temp_dir / f"{asset_root_path.name}.zip"
+                try:
+                    with zipfile.ZipFile(
+                        archive_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
+                    ) as archive:
+                        for file_path in sorted(asset_root_path.rglob("*")):
+                            if file_path.is_file():
+                                archive.write(file_path, file_path.relative_to(asset_root_path.parent))
+                    return FileResponse(
+                        path=str(archive_path),
+                        filename=archive_path.name,
+                        media_type="application/zip",
+                        background=BackgroundTask(shutil.rmtree, str(temp_dir), ignore_errors=True),
+                        headers={"X-Job-ID": job_id, "Cache-Control": "no-store"},
+                    )
+                except Exception:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    raise
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported artifact format: {canonical_format}")
+        else:
+            possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
+            for key in possible_keys:
+                if key in result and result[key]:
+                    output_path = result[key]
+                    break
 
         if not output_path:
-            raise HTTPException(
-                status_code=404, detail="No output file path found in job result"
-            )
+            raise HTTPException(status_code=404, detail="No output file path found in job result")
 
+        output_path = str(output_path)
         if not os.path.exists(output_path):
-            raise HTTPException(
-                status_code=404, detail=f"Output file not found at path: {output_path}"
-            )
+            raise HTTPException(status_code=404, detail=f"Output file not found: {output_path}")
 
         # Determine the response format
         response_format = format or "file"

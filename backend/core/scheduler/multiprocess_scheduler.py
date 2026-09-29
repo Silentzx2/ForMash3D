@@ -987,7 +987,7 @@ class MultiprocessModelScheduler:
             # Create a separate task to handle the result asynchronously
             # This allows the main loop to continue processing other jobs
             asyncio.create_task(
-                self._handle_job_result(job_request.job_id, result_future)
+                self._handle_job_result(job_request, result_future)
             )
             logger.info(
                 f"Job {job_request.job_id} submitted to worker, result will be handled asynchronously"
@@ -1012,14 +1012,72 @@ class MultiprocessModelScheduler:
                 # Non-transient error - fail immediately
                 await self.job_queue.fail_job(job_request.job_id, str(e))
 
-    async def _handle_job_result(self, job_id: str, result_future: asyncio.Future):
+    async def _handle_job_result(self, job_request: JobRequest, result_future: asyncio.Future):
         """Handle job result asynchronously without blocking the main processing loop"""
+        job_id = job_request.job_id
         try:
-            result = await asyncio.wait_for(result_future, timeout=600.0)
+            result = await asyncio.wait_for(result_future, timeout=3600.0)
 
-            # Update job status through JobQueue
+            # Generation jobs become final only after canonical post-processing.
             if result.get("success"):
-                await self.job_queue.complete_job(job_id, result.get("result"))
+                final_result = result.get("result") or {}
+                if (
+                    job_request.feature in {
+                        "text_to_raw_mesh",
+                        "text_to_textured_mesh",
+                        "image_to_raw_mesh",
+                        "image_to_textured_mesh",
+                    }
+                    and final_result.get("output_mesh_path")
+                ):
+                    await self.job_queue.update_job_progress(
+                        job_id, 0.75, "postprocess", "Running production post-processing"
+                    )
+                    try:
+                        from postprocess.pipeline import run_postprocess_job
+
+                        loop = asyncio.get_running_loop()
+
+                        def report(frac: float, stage: str, message: str) -> None:
+                            future = asyncio.run_coroutine_threadsafe(
+                                self.job_queue.update_job_progress(
+                                    job_id,
+                                    0.75 + (min(1.0, max(0.0, frac)) * 0.25),
+                                    stage,
+                                    message,
+                                ),
+                                loop,
+                            )
+                            try:
+                                future.result(timeout=5.0)
+                            except Exception:
+                                logger.debug(
+                                    "Could not persist postprocess progress for %s",
+                                    job_id,
+                                    exc_info=True,
+                                )
+
+                        final_result = await asyncio.to_thread(
+                            run_postprocess_job,
+                            job_id,
+                            final_result,
+                            job_request.inputs,
+                            {
+                                "feature": job_request.feature,
+                                "model_id": job_request.model_preference,
+                            },
+                            report,
+                        )
+                    except Exception as postprocess_error:
+                        err_msg = (
+                            f"Post-processing failed for job {job_id}: "
+                            f"{postprocess_error}"
+                        )
+                        await self.job_queue.fail_job(job_id, err_msg)
+                        logger.error(err_msg, exc_info=True)
+                        return
+
+                await self.job_queue.complete_job(job_id, final_result)
                 logger.info(f"[JOB COMPLETE] job_id={job_id} status=success")
             else:
                 err_msg = result.get("error", "Unknown error")
@@ -1027,10 +1085,10 @@ class MultiprocessModelScheduler:
                 logger.error(f"[JOB FAILED] job_id={job_id} error={err_msg}")
 
         except asyncio.TimeoutError:
-            logger.error(f"Job {job_id} timed out waiting for worker result (600s)")
+            logger.error(f"Job {job_id} timed out waiting for worker result (3600s)")
             try:
                 await self.job_queue.fail_job(
-                    job_id, "Job processing timed out after 600 seconds"
+                    job_id, "Job processing timed out after 3600 seconds"
                 )
             except Exception as e_to:
                 logger.error(f"Failed to mark timed-out job {job_id} as failed: {e_to}")

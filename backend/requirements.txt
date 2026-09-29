@@ -94,5 +94,6 @@ pymeshlab>=2023.12
 embreex>=2.17
 manifold3d>=2.5
 coacd>=1.0
+warp-lang>=1.0
 rtree>=1.2
 matplotlib>=3.8

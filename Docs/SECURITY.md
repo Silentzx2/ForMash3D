@@ -114,3 +114,11 @@ ForMash 3D's FastAPI backend and Next.js frontend are designed by default for lo
 ## 📄 License
 
 ForMash 3D's original source code is released under the **[Apache License 2.0](LICENSE)**. Third-party models, libraries, and checkpoints are governed by their respective author and academic licenses. See **[Docs/MODEL_LICENSES.md](Docs/MODEL_LICENSES.md)** for complete third-party licensing information.
+
+## Asset Artifact Delivery — 2026-09-29
+
+Post-process artifact downloads reuse the existing job authorization checks. The artifact selector is an explicit allowlist and is resolved beneath backend/storage/models/; arbitrary client filesystem paths are rejected.
+
+ZIP files are built from the canonical asset workspace into a temporary directory and removed after the response completes. The canonical workspace never becomes an export archive directory.
+
+The immutable master/source.glb is never overwritten by post-processing.

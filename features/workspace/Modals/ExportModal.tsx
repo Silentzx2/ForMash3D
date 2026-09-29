@@ -15,9 +15,6 @@ export const ExportModal: React.FC = () => {
 
   // Packaging toggles
   const [packageZip, setPackageZip] = useState(false);
-  const [includeLODs, setIncludeLODs] = useState(true);
-  const [includeCollision, setIncludeCollision] = useState(true);
-  const [includeQAReport, setIncludeQAReport] = useState(true);
 
   // Dismiss on Escape
   useEffect(() => {
@@ -32,14 +29,27 @@ export const ExportModal: React.FC = () => {
   if (!isExportModalOpen) return null;
 
   const assetName = currentAsset?.name || 'character.glb';
-  const sourceUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || '/static/models/HeroAsset.glb';
   const qaScore = currentAsset?.qaScore ?? (currentAsset?.artifacts?.qaReport as any)?.game_ready_score;
   const qaStatus = currentAsset?.qaStatus ?? (currentAsset?.artifacts?.qaReport as any)?.status;
   const qaWarnings = currentAsset?.qaWarnings ?? (currentAsset?.artifacts?.qaReport as any)?.warnings ?? [];
 
   const handleExport = async () => {
-    if (!sourceUrl) {
-      setError('No source URL available for this model.');
+    const artifacts = currentAsset?.artifacts;
+    const zipUrl = artifacts?.zipUrl;
+    const sourceArtifact = artifacts?.source;
+    const gameReadyUrl =
+      artifacts?.gameReadyFormats?.[exportFormat] ||
+      artifacts?.gameReady ||
+      null;
+    const selectedUrl =
+      packageZip || variant === 'lod_package'
+        ? zipUrl
+        : variant === 'source'
+        ? sourceArtifact
+        : gameReadyUrl;
+
+    if (!selectedUrl) {
+      setError('This artifact is not available yet.');
       return;
     }
 
@@ -48,8 +58,10 @@ export const ExportModal: React.FC = () => {
 
     try {
       const link = document.createElement('a');
-      link.href = sourceUrl;
-      link.download = `${assetName}.${exportFormat}`;
+      link.href = selectedUrl;
+      link.download = packageZip || variant === 'lod_package'
+        ? `${assetName}.zip`
+        : `${assetName}.${exportFormat}`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -205,66 +217,25 @@ export const ExportModal: React.FC = () => {
 
           {/* Section 3: Packaging Options */}
           <div className="space-y-2 p-3.5 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-2))]">
-<div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Archive className="w-4 h-4 text-primary" />
-                  <div>
-                    <span className="text-zinc-200 font-bold block text-xs">Structured ZIP Package</span>
-                    <span className="text-[10px] text-zinc-400">Bundles source, variants, LODs, collision, and QA report</span>
-                  </div>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={packageZip}
-                    onChange={e => setPackageZip(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className="w-9 h-5 bg-[hsl(var(--surface-2))] rounded-full peer peer-checked:bg-primary peer-checked:after:translate-x-4 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all"></div>
-                </label>
+            <div className="flex items-center gap-2">
+              <Archive className="w-4 h-4 text-primary" />
+              <div>
+                <span className="text-zinc-200 font-bold block text-xs">Complete Asset ZIP</span>
+                <span className="text-[10px] text-zinc-400">
+                  Includes every artifact that was actually generated: master, game-ready formats, LODs,
+                  collision, textures, previews, and metadata.
+                </span>
               </div>
-
-            <AnimatePresence>
-              {packageZip && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="overflow-hidden"
-                >
-                  <div className="pt-2.5 border-t border-white/[0.06] space-y-2 text-xs">
-                    <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
-                      <span>Include LODs (LOD0–LOD3)</span>
-                      <input
-                        type="checkbox"
-                        checked={includeLODs}
-                        onChange={e => setIncludeLODs(e.target.checked)}
-                        className="rounded accent-primary"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
-                      <span>Include Physics Collision Mesh</span>
-                      <input
-                        type="checkbox"
-                        checked={includeCollision}
-                        onChange={e => setIncludeCollision(e.target.checked)}
-                        className="rounded accent-primary"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
-                      <span>Include QA Validation Report (JSON)</span>
-                      <input
-                        type="checkbox"
-                        checked={includeQAReport}
-                        onChange={e => setIncludeQAReport(e.target.checked)}
-                        className="rounded accent-primary"
-                      />
-                    </label>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            </div>
+            <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
+              <span>Package complete workspace</span>
+              <input
+                type="checkbox"
+                checked={packageZip}
+                onChange={e => setPackageZip(e.target.checked)}
+                className="rounded accent-primary"
+              />
+            </label>
           </div>
 
           {error && (

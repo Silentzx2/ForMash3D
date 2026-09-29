@@ -87,6 +87,8 @@ export interface ModelAsset {
     collision?: string;
     qaReport?: Record<string, unknown>;
     pbrMaps?: Record<string, string>;
+    gameReadyFormats?: Record<string, string>;
+    zipUrl?: string;
   };
   qaScore?: number;
   qaStatus?: 'pass' | 'warn' | 'fail';

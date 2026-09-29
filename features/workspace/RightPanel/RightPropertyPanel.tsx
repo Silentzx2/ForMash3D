@@ -91,8 +91,11 @@ export const RightPropertyPanel: React.FC = () => {
   };
 
   const handleExportDownload = async () => {
-    if (!currentAsset?.source) return;
-    const sourceUrl = currentAsset.source.localUrl || currentAsset.source.viewUrl;
+    const sourceUrl =
+      currentAsset.artifacts?.gameReadyFormats?.[exportFormat] ||
+      currentAsset.artifacts?.gameReady ||
+      currentAsset.source?.localUrl ||
+      currentAsset.source?.viewUrl;
     if (!sourceUrl) return;
 
     setIsExporting(true);
@@ -114,7 +117,6 @@ export const RightPropertyPanel: React.FC = () => {
       setIsExporting(false);
     }
   };
-
 
 
   if (!currentAsset) {

@@ -544,3 +544,26 @@ lsof -ti :7842 | xargs -r kill -9
 ForMash 3D's original source code is released under the **[Apache License 2.0](LICENSE)**.
 
 Third-party models, libraries, and checkpoints integrated or referenced by ForMash 3D are governed by their respective author and academic licenses. See **[Docs/MODEL_LICENSES.md](Docs/MODEL_LICENSES.md)** for complete third-party licensing information and attribution.
+
+## Production Post-Processing
+
+ForMash3D now separates raw generation from production asset finishing. After a successful mesh-generation job, the backend preserves the model-native output as an immutable master and automatically produces production artifacts.
+
+```text
+backend/storage/models/<asset_name>_<job_hash>/
+├── master/source.glb
+├── game_ready/
+├── lods/
+├── collision/
+├── textures/
+├── previews/
+└── metadata/
+```
+
+The post-processing engine lives in backend/postprocess/ and includes Auto UV, Auto Retopo, Repair, Optimize/LOD, PBR baking, collision generation, game-ready QA inspection, Blender-isolated FBX/GLTF conversion, and thumbnail generation.
+
+Normal UI downloads use game_ready/. ZIP export is an on-demand snapshot of the complete workspace and includes only artifacts that actually exist.
+
+### Runtime compatibility
+
+The main backend remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. The post-processing dependency block is explicitly marked in backend/requirements.txt. Blender-dependent tools run through BLENDER_EXECUTABLE instead of installing the incompatible upstream bpy wheel into Python 3.10.

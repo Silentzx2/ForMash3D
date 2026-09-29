@@ -360,3 +360,11 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 - [ ] Batch generation queue management
 - [ ] Collaborative workspace features
 - [ ] Mobile-responsive PWA support
+
+## Current Production Post-Processing Contract — 2026-09-29
+
+Every successful mesh-generation job automatically enters post-processing. The raw generation output is preserved byte-for-byte in backend/storage/models/<asset_name>_<job_hash>/master/source.glb before any destructive operation.
+
+The canonical workspace contains master/, game_ready/, lods/, collision/, textures/, previews/, and metadata/. Only artifacts that actually succeed are written.
+
+Normal downloads target game_ready/. ZIP export is an on-demand snapshot of the entire workspace.

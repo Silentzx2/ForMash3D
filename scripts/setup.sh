@@ -347,7 +347,6 @@ create_directories(){
     "$PROJECT_ROOT/backend/storage/uploads" \
     "$PROJECT_ROOT/backend/storage/models" \
     "$PROJECT_ROOT/backend/storage/thumbnails" \
-    "$PROJECT_ROOT/backend/storage/exports" \
     "$PROJECT_ROOT/backend/storage/images" \
     "$PROJECT_ROOT/backend/.hf_cache/hub" \
     "$PROJECT_ROOT/backend/.runtime_cache" 

@@ -111,3 +111,10 @@
 - [ ] Keep CHANGELOG.md to last 3 changes only
 - [ ] Keep RULES.md synchronized with actual project state
 - [ ] Keep MEMORY.md updated with current status
+
+## Completed — Production Post-Processing Integration
+- Ported the 3DGenStudio post-processing engine into backend/postprocess/.
+- Wired automatic post-processing into successful raw mesh-generation jobs.
+- Added canonical per-generation asset workspaces and protected artifact/ZIP delivery.
+- Updated UI export behavior to prefer game-ready artifacts.
+- Added post-processing dependencies under a dedicated backend/requirements.txt header.
