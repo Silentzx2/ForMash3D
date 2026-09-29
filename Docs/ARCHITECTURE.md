@@ -161,7 +161,7 @@ sequenceDiagram
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
     SCHED->>Storage: Preserve master/source.glb byte-for-byte
-    SCHED->>PostProcess: Repair -> Optimize -> Auto UV -> Bake -> QA
+    SCHED->>PostProcess: Repair -> Optimize/Preserve -> Auto UV/Preserve -> QA
     PostProcess->>Storage: Save game_ready/* final formats
     PostProcess->>Storage: Save lods/lod0..3.glb
     PostProcess->>Storage: Save collision/collision.glb
@@ -426,11 +426,11 @@ bash -n backend/scripts/install.sh
 
 ### 2.5 Post-Processing Engine
 
-The production post-processing engine lives under backend/postprocess/. Successful raw mesh-generation jobs run this engine before the job is marked completed.
+The production post-processing engine lives under backend/postprocess/. Successful mesh-generation jobs run this engine before the job is marked completed.
 
-Pipeline: MASTER RAW -> Repair -> Optimize -> Auto UV -> Bake -> GAME READY, with LOD, collision, preview, and QA artifacts derived from the processed mesh.
+Pipeline: MASTER RAW -> Repair -> Optimize/Preserve -> Auto UV/Preserve -> GAME READY -> LOD -> collision -> preview -> QA. Native textured outputs keep their source materials and UVs; raw outputs receive geometry optimization and production UVs. Post-processing does not synthesize textures. Texture creation happens only in model-native textured generation or the dedicated Texture page.
 
-The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE.
+The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE and is best-effort for generation completion.
 
 ## Physics layer
 Physics is an opt-in layer after the existing generation and production post-processing pipeline. The immutable master remains unchanged. When requested, the scheduler passes a provider-neutral physics intent into post-processing; the existing collision service produces the collision representation and `metadata/physics.json` records the rigid-body configuration, material response, collision statistics, provenance, and capabilities. The browser viewer uses the canonical collision artifact with pinned Rapier 0.19.3 while remaining on the existing direct Three.js renderer. Physics preparation is skipped for intermediate Shape output in Shape→Paint auto-chaining and runs only on the final output. The physics runtime is not an inference model and does not consume generation-model VRAM.

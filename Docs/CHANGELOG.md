@@ -1,3 +1,10 @@
+- 2026-09-29 — Generation/Post-Process/UI Integration Hardening
+- Removed mandatory texture baking from the production generation pipeline; textures now come only from model-native textured generation or the dedicated Texture page.
+- Preserved native textured model materials/UVs instead of running texture-destructive optimize/Auto UV stages.
+- Promoted successful generation outputs into the canonical storage workspace and removed legacy output copies after post-process completion.
+- Persisted backend pipeline stage/message/log telemetry through Redis and the DB-backed queue; fixed dynamic progress from overrunning real post-processing progress.
+- Integrated the live pipeline panel with real backend stages and detailed post-process logs.
+
 - 2026-09-29 — Physics Final Audit
 - Preserved the normal collision artifact when Physics is off; Physics now controls physics readiness/metadata and collision quality.
 - Hardened camelCase/snake_case physics config handling, canonical mass application, collider coordinate transforms, async viewer binding, and pre-ready control guards.

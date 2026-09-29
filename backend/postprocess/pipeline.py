@@ -26,7 +26,6 @@ from .meshio import load_mesh, load_mesh_vertex_normals
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
 from .services.auto_retopo import run_auto_retopo
 from .services.auto_uv import run_auto_uv
-from .services.bake import run_bake
 from .services.collision import run_collision
 from .services.convert_fbx import run_convert_fbx
 from .services.inspect import run_inspect
@@ -35,7 +34,6 @@ from .services.simplify import run_lods, run_optimize
 from .schemas import (
     AutoRetopoOptions,
     AutoUvOptions,
-    BakeOptions,
     CollisionOptions,
     ConvertOptions,
     InspectOptions,
@@ -143,43 +141,28 @@ def _export_gltf_embedded(glb_bytes: bytes, target: Path) -> None:
             raise RuntimeError(f"Embedded GLTF export failed: {detail}")
 
 
-def _apply_baked_maps(mesh: trimesh.Trimesh, map_paths: Dict[str, Path]) -> None:
-    if not map_paths or mesh.visual is None:
-        return
-    uv = getattr(mesh.visual, "uv", None)
-    if uv is None:
-        return
+def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
+    """Return True when the generated mesh already owns material texture data."""
+    visual = getattr(mesh, "visual", None)
+    if visual is None:
+        return False
+    if getattr(visual, "kind", None) == "texture":
+        return True
 
-    try:
-        from trimesh.visual.material import PBRMaterial
-        from trimesh.visual.texture import TextureVisuals
+    material = getattr(visual, "material", None)
+    if material is None:
+        return False
 
-        def image(name: str):
-            path = map_paths.get(name)
-            return Image.open(path).convert("RGBA") if path and path.exists() else None
-
-        kwargs: Dict[str, Any] = {}
-        base = image("base_color")
-        normal = image("normal")
-        orm = image("orm")
-        ao = image("ao")
-        if base is not None:
-            kwargs["baseColorTexture"] = base
-        if normal is not None:
-            kwargs["normalTexture"] = normal
-        if orm is not None:
-            kwargs["metallicRoughnessTexture"] = orm
-        if ao is not None:
-            kwargs["occlusionTexture"] = ao
-        if not kwargs:
-            return
-
-        mesh.visual = TextureVisuals(
-            uv=np.asarray(uv),
-            material=PBRMaterial(name="ForMash3D_GameReady", **kwargs),
+    return any(
+        getattr(material, attribute, None) is not None
+        for attribute in (
+            "baseColorTexture",
+            "normalTexture",
+            "metallicRoughnessTexture",
+            "occlusionTexture",
+            "emissiveTexture",
         )
-    except Exception:
-        logger.debug("Could not attach baked PBR maps to the game-ready mesh.", exc_info=True)
+    )
 
 
 def _save_file(path: Path, payload: bytes) -> str:
@@ -313,6 +296,18 @@ def run_postprocess_job(
     asset_manifest = metadata_dir / "asset.json"
     if asset_manifest.exists() and (game_ready_dir / f"{asset_name}_{asset_hash}.glb").exists():
         saved = json.loads(asset_manifest.read_text(encoding="utf-8"))
+        if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
+            try:
+                Path(raw_path).unlink()
+                logger.info(
+                    "[POSTPROCESS STORAGE] Removed legacy generation output after canonical asset recovery: %s",
+                    raw_path,
+                )
+            except OSError:
+                logger.warning(
+                    "[POSTPROCESS STORAGE] Could not remove legacy generation output: %s",
+                    raw_path,
+                )
         saved["zip_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=zip"
         return saved
 
@@ -353,66 +348,77 @@ def run_postprocess_job(
         ),
     )
 
-    _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
-    target_faces = min(50_000, max(5_000, int(len(repaired.faces))))
-    optimized, optimize_stats = run_optimize(
-        repaired,
-        OptimizeOptions(
-            target_faces=target_faces,
-            simplify_error=0.05,
-            allow_seam_breaking=False,
-            permissive=False,
-            aggressive=False,
-            lock_border=False,
-        ),
-    )
+    native_textures = _has_native_textures(mesh)
 
-    _emit(progress, 0.42, "uv", "Generating production UVs.")
-    optimized_normals = np.asarray(optimized.vertex_normals)
-    uv_mesh, uv_stats, _ = run_auto_uv(
-        optimized,
-        AutoUvOptions(
-            resolution=2048,
-            padding_texels=4,
-            refine=True,
-            weld=True,
-            preserve_normals=True,
-            normal_smooth_deg=180,
-        ),
-        source_normals=optimized_normals,
-    )
+    if native_textures:
+        _emit(
+            progress,
+            0.30,
+            "optimize",
+            "Preserving native materials; texture-destructive decimation is skipped.",
+        )
+        optimized = repaired
+        optimize_stats = {
+            "input_triangles": int(len(repaired.faces)),
+            "triangles": int(len(repaired.faces)),
+            "target_faces": int(len(repaired.faces)),
+            "achieved_ratio": 1.0,
+            "passthrough": True,
+            "reason": "Native textures are owned by the selected generation model.",
+        }
 
-    _emit(progress, 0.54, "bake", "Baking high-poly detail and PBR maps.")
-    low_glb = _export_glb(uv_mesh)
-    bake_dir = texture_dir
-    maps, bake_stats = run_bake(
-        low_glb,
-        raw_bytes,
-        BakeOptions(
-            maps=["normal", "ao", "base_color", "roughness", "metallic"],
-            resolution=2048,
-            samples=8,
-            margin=8,
-            align_source=True,
-            require_overlap=0.5,
-        ),
-        progress=lambda stage, frac, msg: _emit(
-            progress, 0.54 + (min(1.0, max(0.0, frac)) * 0.16), "bake", msg
-        ),
-    )
+        _emit(
+            progress,
+            0.55,
+            "uv",
+            "Preserving source UVs and native material textures.",
+        )
+        uv_mesh = optimized
+        uv_stats = {
+            "preserved": True,
+            "native_textures": True,
+            "reason": "The production pipeline does not regenerate textures or rewrite native textured UVs.",
+        }
+    else:
+        _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
+        target_faces = min(50_000, max(5_000, int(len(repaired.faces))))
+        optimized, optimize_stats = run_optimize(
+            repaired,
+            OptimizeOptions(
+                target_faces=target_faces,
+                simplify_error=0.05,
+                allow_seam_breaking=False,
+                permissive=False,
+                aggressive=False,
+                lock_border=False,
+            ),
+        )
+
+        _emit(progress, 0.55, "uv", "Generating production UVs.")
+        optimized_normals = np.asarray(optimized.vertex_normals)
+        uv_mesh, uv_stats, _ = run_auto_uv(
+            optimized,
+            AutoUvOptions(
+                resolution=2048,
+                padding_texels=4,
+                refine=True,
+                weld=True,
+                preserve_normals=True,
+                normal_smooth_deg=180,
+            ),
+            source_normals=optimized_normals,
+        )
 
     texture_paths: Dict[str, Path] = {}
-    for name, payload in maps.items():
-        if not name:
-            continue
-        target = bake_dir / f"{name}.png"
-        target.write_bytes(payload)
-        if name != "orm":
-            texture_paths[name] = target
+    bake_stats = {
+        "status": "skipped",
+        "reason": (
+            "Texture generation is handled only by model-native textured generation "
+            "or the Texture page; production post-processing does not synthesize textures."
+        ),
+    }
 
-    _apply_baked_maps(uv_mesh, {**texture_paths, "orm": bake_dir / "orm.png"})
-
-    _emit(progress, 0.72, "game_ready", "Writing game-ready formats.")
+    _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     base_name = f"{asset_name}_{asset_hash}"
     game_ready: Dict[str, str] = {}
     glb_path = game_ready_dir / f"{base_name}.glb"
@@ -432,7 +438,7 @@ def run_postprocess_job(
             glb_path.read_bytes(),
             ConvertOptions(preset="generic", bake_fps=30, anim_simplify=1.0),
             progress=lambda stage, frac, msg: _emit(
-                progress, 0.72 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
+                progress, 0.62 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
             ),
         )
         fbx_path = game_ready_dir / f"{base_name}.fbx"
@@ -448,7 +454,7 @@ def run_postprocess_job(
     except Exception as exc:
         logger.warning("GLTF embedded export skipped: %s", exc)
 
-    _emit(progress, 0.80, "lod", "Generating LOD chain.")
+    _emit(progress, 0.72, "lod", "Generating LOD chain.")
     lod_levels = run_lods(
         uv_mesh,
         LODOptions(ratios=[1.0, 0.5, 0.25, 0.125]),
@@ -481,7 +487,7 @@ def run_postprocess_job(
             "seed": 0,
         }
 
-    _emit(progress, 0.88, "collision", "Generating collision proxy.")
+    _emit(progress, 0.82, "collision", "Generating collision proxy.")
     collision_path: Optional[Path] = None
     physics_metadata: Optional[Dict[str, Any]] = None
     try:
@@ -504,7 +510,7 @@ def run_postprocess_job(
         logger.error("Collision generation failed for %s: %s", job_id, exc, exc_info=True)
         raise RuntimeError(f"Collision generation failed: {exc}") from exc
 
-    _emit(progress, 0.93, "preview", "Generating asset preview.")
+    _emit(progress, 0.90, "preview", "Generating asset preview.")
     thumbnail_path: Optional[Path] = None
     try:
         from .services.mesh_thumbnail import render_mesh_thumbnail
@@ -516,7 +522,7 @@ def run_postprocess_job(
     except Exception as exc:
         logger.warning("Preview generation skipped: %s", exc)
 
-    _emit(progress, 0.96, "qa", "Running final game-ready inspection.")
+    _emit(progress, 0.95, "qa", "Running final game-ready inspection.")
     try:
         final_scene = trimesh.load(glb_path, file_type="glb", process=False)
         if not isinstance(final_scene, trimesh.Scene):
@@ -578,5 +584,19 @@ def run_postprocess_job(
     final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated)
     final_result["model_url"] = final_result["game_ready_url"]
     _write_json(asset_manifest, final_result)
+
+    if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
+        try:
+            Path(raw_path).unlink()
+            logger.info(
+                "[POSTPROCESS STORAGE] Canonical asset promoted; removed legacy generation output: %s",
+                raw_path,
+            )
+        except OSError:
+            logger.warning(
+                "[POSTPROCESS STORAGE] Canonical asset is ready but legacy output could not be removed: %s",
+                raw_path,
+            )
+
     _emit(progress, 1.0, "postprocess", "Production asset is ready.")
     return final_result

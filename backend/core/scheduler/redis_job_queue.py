@@ -19,10 +19,24 @@ logger = logging.getLogger(__name__)
 
 
 def _status_to_str(status: JobStatus) -> str:
-    """Convert JobStatus enum to string for JSON serialization"""
-    if hasattr(status, 'value'):
+    """Convert JobStatus enum to string for JSON serialization."""
+    if hasattr(status, "value"):
         return status.value
     return str(status)
+
+
+def _append_log(job_data: Dict[str, Any], stage: str, progress: float, message: str, level: str = "info") -> None:
+    logs = job_data.get("logs") or []
+    logs.append(
+        {
+            "stage": stage,
+            "progress": round(float(progress) * 100, 2),
+            "message": message,
+            "level": level,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    )
+    job_data["logs"] = logs[-100:]
 
 
 class RedisJobQueue:
@@ -107,6 +121,7 @@ class RedisJobQueue:
             "created_at": job_request.created_at.isoformat(),
             "metadata": json.dumps(job_request.metadata),
             "user_id": job_request.user_id or "",  # Store user_id for job isolation
+            "logs": [],
         }
         
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
@@ -146,6 +161,7 @@ class RedisJobQueue:
         job_data["progress"] = 0.15
         job_data["stage"] = "loading_model"
         job_data["message"] = "Loading model on GPU..."
+        _append_log(job_data, "loading_model", 0.15, "Loading model on GPU...")
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         
         # Reconstruct JobRequest (job_id is auto-generated, so we set it after)
@@ -198,7 +214,8 @@ class RedisJobQueue:
             job_data["completed_at"] = datetime.utcnow().isoformat()
             job_data["progress"] = 1.0
             job_data["stage"] = "completed"
-            job_data["message"] = "Generation completed successfully"
+            job_data["message"] = "Production asset is ready."
+            _append_log(job_data, "completed", 1.0, "Production asset is ready.")
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         
         # Store result
@@ -224,6 +241,8 @@ class RedisJobQueue:
             job_data["failed_at"] = datetime.utcnow().isoformat()
             job_data["stage"] = "failed"
             job_data["message"] = error
+            progress = float(job_data.get("progress", 0.0))
+            _append_log(job_data, "failed", progress, error, "error")
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
     async def update_job_progress(self, job_id: str, progress: float, stage: Optional[str] = None, message: Optional[str] = None):
@@ -238,6 +257,13 @@ class RedisJobQueue:
                 job_data["stage"] = stage
             if message:
                 job_data["message"] = message
+            if stage or message:
+                _append_log(
+                    job_data,
+                    stage or job_data.get("stage") or "processing",
+                    float(job_data["progress"]),
+                    message or job_data.get("message") or "Processing",
+                )
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
     async def get_job(self, job_id: str) -> Optional[Dict]:
@@ -259,22 +285,31 @@ class RedisJobQueue:
 
         # Dynamic progress calculation while processing so UI progress bar updates live
         if job_data.get("status") == _status_to_str(JobStatus.PROCESSING):
+            stage = job_data.get("stage")
             if "progress" not in job_data or float(job_data.get("progress", 0.0)) < 0.15:
                 job_data["progress"] = 0.15
                 job_data["stage"] = "loading_model"
                 job_data["message"] = "Loading model on GPU..."
+                _append_log(job_data, "loading_model", 0.15, "Loading model on GPU...")
+                stage = "loading_model"
 
             started_at_str = job_data.get("started_at")
-            if started_at_str:
+            if started_at_str and stage in {None, "loading_model", "generating"}:
                 try:
                     elapsed = (datetime.utcnow() - datetime.fromisoformat(started_at_str)).total_seconds()
-                    # Progress curves smoothly from 15% up to 92% based on elapsed seconds
-                    dynamic_prog = min(0.92, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.77)
+                    # Progress curves smoothly from 15% to 72% only while inference is active.
+                    dynamic_prog = min(0.72, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.57)
                     if dynamic_prog > float(job_data.get("progress", 0.0)):
                         job_data["progress"] = round(dynamic_prog, 2)
-                    if elapsed > 2.5 and job_data.get("stage") == "loading_model":
+                    if elapsed > 2.5 and stage == "loading_model":
                         job_data["stage"] = "generating"
                         job_data["message"] = "Synthesizing 3D mesh on GPU..."
+                        _append_log(
+                            job_data,
+                            "generating",
+                            float(job_data["progress"]),
+                            "Synthesizing 3D mesh on GPU...",
+                        )
                 except Exception:
                     pass
         

@@ -158,6 +158,10 @@ function toProxyUrl(url: unknown): string | undefined {
 interface BackendJobPayload {
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
   progress?: number;
+  stage?: string;
+  message?: string;
+  logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
+  metadata?: { logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[] };
   result?: Record<string, any>;
   error?: string | null;
 }
@@ -167,10 +171,14 @@ function normalizeBackendJob(raw: BackendJobPayload) {
   return {
     status: raw.status,
     progress: Math.max(0, Math.min(100, Math.round(Number(raw.progress ?? 0) * 100))),
-    stage: raw.status as string,
-    message: raw.status === 'processing' ? 'Processing' : raw.status === 'queued' ? 'Queued' : undefined,
+    stage: raw.stage || raw.status,
+    message: raw.message || (raw.status === 'processing' ? 'Processing' : raw.status === 'queued' ? 'Queued' : undefined),
     error_message: typeof raw.error === 'string' ? raw.error : undefined,
-    logs: undefined as { stage: string; progress: number; message: string; level: string; timestamp: string }[] | undefined,
+    logs: Array.isArray(raw.logs)
+      ? raw.logs
+      : Array.isArray(raw.metadata?.logs)
+        ? raw.metadata.logs
+        : undefined,
     result: modelUrl ? {
       ...raw.result,
       model_url: modelUrl,

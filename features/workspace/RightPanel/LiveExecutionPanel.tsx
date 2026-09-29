@@ -108,27 +108,111 @@ export const LiveExecutionPanel: React.FC = () => {
   const stageName = (activeTask?.stage || '').toLowerCase();
   const stepText = (activeTask?.currentStep || '').toLowerCase();
 
-  const getStepState = (stageKey: string): 'pending' | 'active' | 'completed' | 'failed' | 'skipped' => {
-    if (isCompleted || progress >= 100) return 'completed';
-    if (!isRunning && !activeTask) return 'pending';
-    if (isFailed) return 'failed';
-    return 'active';
+  const isRemesh = activeTask?.type === 'remesh';
+  const stageNameMap: Record<string, string> = {
+    loading_model: 'synthesis',
+    generating: 'synthesis',
+    postprocess: 'master',
+    inspect: 'master',
+    repair: 'repair',
+    optimize: 'optimize',
+    uv: 'uv',
+    game_ready: 'game_ready',
+    fbx: 'game_ready',
+    lod: 'lod',
+    collision: 'collision',
+    preview: 'qa',
+    qa: 'qa',
+    completed: 'qa',
+    failed: 'qa',
   };
 
-  const isRemesh = activeTask?.type === 'remesh';
+  const pipelineStages: Omit<PipelineStep, 'state'>[] = isRemesh
+    ? [
+        {
+          id: 'synthesis',
+          name: 'Source Mesh Ingestion & Preflight',
+          detail: `Topology preflight & initial geometry parsing (${remeshSettings.targetFaces.toLocaleString()} target tris)`,
+        },
+      ]
+    : [
+        {
+          id: 'synthesis',
+          name: 'AI Geometry Synthesis',
+          detail:
+            activeTask?.type === 'image-to-3d'
+              ? `${modelName} — image preflight and GPU geometry synthesis`
+              : `${modelName} — text embedding and GPU mesh synthesis`,
+        },
+        {
+          id: 'master',
+          name: 'Canonical Master Asset',
+          detail: 'Persist immutable master/source.glb before any downstream processing.',
+        },
+        {
+          id: 'repair',
+          name: 'Topology Repair',
+          detail: 'Weld, de-duplicate, remove invalid topology and close small holes.',
+        },
+        {
+          id: 'optimize',
+          name: 'Geometry Optimization',
+          detail: 'Reduce untextured outputs to the configured game-ready triangle budget.',
+        },
+        {
+          id: 'uv',
+          name: 'UV Preparation',
+          detail: 'Preserve native textured UVs or generate production UVs for raw meshes.',
+        },
+        {
+          id: 'game_ready',
+          name: 'Game-Ready Export',
+          detail: 'Write the canonical GLB/OBJ/STL/PLY and best-effort FBX/GLTF artifacts.',
+        },
+        {
+          id: 'lod',
+          name: 'LOD Generation',
+          detail: 'Generate LOD0–LOD3 from the canonical processed mesh.',
+        },
+        {
+          id: 'collision',
+          name: 'Collision',
+          detail: 'Generate the runtime collision proxy and optional physics metadata.',
+        },
+        {
+          id: 'qa',
+          name: 'Preview & QA',
+          detail: 'Generate preview artifacts and run final game-ready inspection.',
+        },
+      ];
 
-  const stages: PipelineStep[] = [
-    {
-      id: 'synthesis',
-      name: isRemesh ? 'Source Mesh Ingestion & Preflight' : 'AI Geometry Synthesis',
-      state: getStepState('synthesis'),
-      detail: isRemesh
-        ? `Topology preflight & initial geometry parsing (${remeshSettings.targetFaces.toLocaleString()} target tris)`
-        : activeTask?.type === 'image-to-3d'
-        ? `${modelName} — Image preflight & neural isosurface extraction`
-        : `${modelName} — Text embedding & diffusion mesh synthesis`
-    },
-  ];
+  const currentStageIndex = stageNameMap[stageName]
+    ? pipelineStages.findIndex(stage => stage.id === stageNameMap[stageName])
+    : progress >= 100
+      ? pipelineStages.length - 1
+      : progress >= 75
+        ? Math.min(1, pipelineStages.length - 1)
+        : 0;
+
+  const getStepState = (index: number): PipelineStep['state'] => {
+    if (isFailed) {
+      if (index < currentStageIndex) return 'completed';
+      if (index === currentStageIndex) return 'failed';
+      return 'pending';
+    }
+    if (isCompleted || progress >= 100) return 'completed';
+    if (index < currentStageIndex) return 'completed';
+    if (index === currentStageIndex) return 'active';
+    return 'pending';
+  };
+
+  const stages: PipelineStep[] = pipelineStages.map((stage, index) => ({
+    ...stage,
+    state: getStepState(index),
+    detail: index === currentStageIndex && activeTask?.currentStep
+      ? activeTask.currentStep
+      : stage.detail,
+  }));
 
   return (
     <div className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-hidden">
@@ -218,7 +302,9 @@ export const LiveExecutionPanel: React.FC = () => {
             <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
               Pipeline Stages ({stages.filter(s => s.state === 'completed').length} / {stages.length})
             </span>
-            <span className="text-[9px] font-mono text-zinc-500">OpenX Clay Engine</span>
+            <span className="text-[9px] font-mono text-zinc-500">
+              Native texture or Texture page
+            </span>
           </div>
 
           <div className="space-y-1 rounded-xl bg-[#181B20] border border-white/[0.08] p-2">

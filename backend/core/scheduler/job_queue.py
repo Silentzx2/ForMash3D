@@ -132,6 +132,19 @@ class JobRequest:
 
         return job
 
+    def _append_log(self, stage: str, message: str, level: str = "info") -> None:
+        logs = self.metadata.setdefault("logs", [])
+        logs.append(
+            {
+                "stage": stage,
+                "progress": round(self.progress * 100, 2),
+                "message": message,
+                "level": level,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+        self.metadata["logs"] = logs[-100:]
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert job to dictionary representation"""
         return {
@@ -146,6 +159,7 @@ class JobRequest:
             "progress": self.progress,
             "stage": self.metadata.get("stage"),
             "message": self.metadata.get("message"),
+            "logs": self.metadata.get("logs", []),
             "assigned_model": self.assigned_model,
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -181,6 +195,9 @@ class JobRequest:
         self.started_at = datetime.utcnow()
         self.assigned_model = model_id
         self.progress = 0.25
+        self.metadata["stage"] = "loading_model"
+        self.metadata["message"] = "Loading model on GPU..."
+        self._append_log("loading_model", "Loading model on GPU...")
 
     def mark_completed(self, result: Dict[str, Any]):
         """Mark job as completed"""
@@ -188,12 +205,18 @@ class JobRequest:
         self.completed_at = datetime.utcnow()
         self.result = result
         self.progress = 1.0
+        self.metadata["stage"] = "completed"
+        self.metadata["message"] = "Production asset is ready."
+        self._append_log("completed", "Production asset is ready.")
 
     def mark_failed(self, error: str):
         """Mark job as failed"""
         self.status = JobStatus.FAILED
         self.completed_at = datetime.utcnow()
         self.error = error
+        self.metadata["stage"] = "failed"
+        self.metadata["message"] = error
+        self._append_log("failed", error, "error")
 
     def mark_cancelled(self):
         """Mark job as cancelled"""
@@ -494,10 +517,16 @@ class JobQueue:
             if job_id in self._processing_cache:
                 job = self._processing_cache[job_id]
                 if job.started_at:
-                    elapsed = (datetime.utcnow() - job.started_at).total_seconds()
-                    dynamic_prog = min(0.92, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.77)
-                    if dynamic_prog > job.progress:
-                        job.progress = round(dynamic_prog, 2)
+                    stage = job.metadata.get("stage")
+                    if stage in {None, "loading_model", "generating"}:
+                        elapsed = (datetime.utcnow() - job.started_at).total_seconds()
+                        dynamic_prog = min(0.72, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.57)
+                        if dynamic_prog > job.progress:
+                            job.progress = round(dynamic_prog, 2)
+                        if elapsed > 2.5 and stage == "loading_model":
+                            job.metadata["stage"] = "generating"
+                            job.metadata["message"] = "Synthesizing 3D mesh on GPU..."
+                            job._append_log("generating", "Synthesizing 3D mesh on GPU...")
                 return job
 
             # Check completed jobs
@@ -532,6 +561,12 @@ class JobQueue:
                     job.metadata["stage"] = stage
                 if message:
                     job.metadata["message"] = message
+
+                if stage or message:
+                    job._append_log(
+                        stage or job.metadata.get("stage") or "processing",
+                        message or job.metadata.get("message") or "Processing",
+                    )
 
                 if not self.db_manager.save_job(job):
                     logger.error(
