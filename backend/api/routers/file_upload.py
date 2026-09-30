@@ -9,6 +9,7 @@ Supports two deployment modes:
 - Multi-worker mode: Uses Redis-backed FileStore (shared across all workers)
 """
 
+import hashlib
 import logging
 import mimetypes
 import os
@@ -27,6 +28,7 @@ from core.utils.file_utils import (
     SUPPORTED_IMAGE_FORMATS,
     SUPPORTED_MESH_FORMATS,
     FileUploadError,
+    get_storage_base_dir,
     save_upload_file,
 )
 
@@ -34,9 +36,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/file-upload", tags=["file_upload"])
 
-# Configuration
-UPLOAD_BASE_DIR = Path("uploads")
-UPLOAD_BASE_DIR.mkdir(exist_ok=True)
+# Configuration: store uploaded files under canonical backend/storage/uploads
+UPLOAD_BASE_DIR = get_storage_base_dir() / "uploads"
+UPLOAD_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
 # In-memory file metadata storage (fallback for single-worker mode)
 # In multi-worker mode, FileStore (Redis) is used instead
@@ -190,15 +192,28 @@ async def get_file_path_impl(
         if file_path and os.path.exists(file_path):
             return file_path
 
-    # Fallback: check if file_id corresponds to a job output in backend/storage
+    # Fallback: check if file_id corresponds to a job output in canonical storage
     clean_id = file_id.removeprefix("job-")
-    for base in ["backend/storage", "/app/backend/storage"]:
-        job_dir = Path(base) / "models" / clean_id
-        if job_dir.is_dir():
-            for glb in job_dir.glob("*.glb"):
-                return str(glb)
-            for obj in job_dir.glob("*.obj"):
-                return str(obj)
+    id_hash = hashlib.sha256(clean_id.encode("utf-8")).hexdigest()[:8]
+    storage_base = get_storage_base_dir()
+    for base in [storage_base, Path("backend/storage"), Path("/app/backend/storage")]:
+        models_dir = Path(base) / "models"
+        if not models_dir.is_dir():
+            continue
+        # Direct folder match or hash-suffixed folder match
+        candidates = list(models_dir.glob(f"*{clean_id}*")) + list(models_dir.glob(f"*{id_hash}*"))
+        for candidate_dir in candidates:
+            if candidate_dir.is_dir():
+                for glb in candidate_dir.glob("game_ready/*.glb"):
+                    return str(glb)
+                for obj in candidate_dir.glob("game_ready/*.obj"):
+                    return str(obj)
+                for glb in candidate_dir.glob("master/*.glb"):
+                    return str(glb)
+                for glb in candidate_dir.glob("*.glb"):
+                    return str(glb)
+                for obj in candidate_dir.glob("*.obj"):
+                    return str(obj)
 
     return None
 

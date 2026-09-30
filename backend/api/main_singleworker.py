@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 try:
     import orjson
@@ -295,6 +296,15 @@ app.include_router(
 app.include_router(
     motion_generation.router, prefix="/api/v1", tags=["Motion Generation"]
 )
+
+# Canonical storage static files mount (models, uploads, textures, previews)
+try:
+    from core.utils.file_utils import get_storage_base_dir
+    _storage_mount_dir = get_storage_base_dir()
+except Exception:
+    _storage_mount_dir = Path(__file__).resolve().parents[1] / "storage"
+_storage_mount_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_storage_mount_dir)), name="static")
 
 
 # Health check endpoint

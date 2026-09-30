@@ -230,6 +230,10 @@ def _build_result(
 ) -> Dict[str, Any]:
     primary = generated["game_ready"].get("glb") or generated["game_ready"].get("obj")
     base_url = f"/api/v1/system/jobs/{job_id}"
+    rel_model_dir = asset_dir.name
+    primary_name = Path(primary).name if primary else f"{asset_name}.glb"
+    static_model_url = f"/static/models/{rel_model_dir}/game_ready/{primary_name}"
+    static_master_url = f"/static/models/{rel_model_dir}/master/source.glb"
 
     lod_urls = [
         f"{base_url}/download?artifact_format=lod{idx}"
@@ -243,10 +247,12 @@ def _build_result(
     return {
         "success": True,
         "output_mesh_path": primary,
-        "model_url": f"{base_url}/download?artifact_format=glb",
-        "active_model_url": f"{base_url}/download?artifact_format=glb",
-        "source_model_url": f"{base_url}/download?artifact_format=master",
-        "game_ready_url": f"{base_url}/download?artifact_format=glb",
+        "static_url": static_model_url,
+        "model_url": static_model_url,
+        "active_model_url": static_model_url,
+        "download_url": f"{base_url}/download?artifact_format=glb",
+        "source_model_url": static_master_url,
+        "game_ready_url": static_model_url,
         "game_ready_formats": {
             fmt: f"{base_url}/download?artifact_format={fmt}"
             for fmt in generated["game_ready"]
@@ -267,6 +273,11 @@ def _build_result(
         "pbr_maps": pbr_urls,
         "texture_status": generated.get("texture_status", "not_generated"),
         "thumbnail_url": (
+            f"/static/models/{rel_model_dir}/previews/{Path(generated['thumbnail']).name}"
+            if generated.get("thumbnail")
+            else None
+        ),
+        "thumbnail_download_url": (
             f"{base_url}/download?artifact_format=thumbnail"
             if generated.get("thumbnail")
             else None

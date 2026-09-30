@@ -87,6 +87,9 @@ def resolve_server_file_path(path_or_url: Optional[str]) -> Optional[str]:
             (Path.cwd().parent / "uploads").resolve(),
             (Path.cwd().parent / "backend" / "outputs").resolve(),
             (Path.cwd().parent / "backend" / "uploads").resolve(),
+            (Path.cwd() / "backend" / "storage").resolve(),
+            (Path.cwd().parent / "backend" / "storage").resolve(),
+            (Path(__file__).resolve().parents[2] / "storage").resolve(),
         ]
     )
     unrestricted = os.environ.get("ALLOW_LOCAL_SERVER_PATH_INPUTS", "false").lower() in {"1","true","yes","on"}
@@ -592,11 +595,33 @@ def get_file_type_from_extension(filename: str) -> str:
     else:
         return "unknown"
 
-class OutputPathGenerator:
-    """Utility class for generating output file paths."""
+def get_storage_base_dir() -> Path:
+    """Return canonical storage base directory (e.g. backend/storage)."""
+    env_path = os.environ.get("STORAGE_LOCAL_PATH", "").strip()
+    if env_path:
+        base = Path(env_path)
+        if not base.is_absolute():
+            base = (Path(__file__).resolve().parents[2] / base).resolve()
+    else:
+        base = (Path(__file__).resolve().parents[2] / "storage").resolve()
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
-    def __init__(self, base_output_dir: Union[str, Path] = "outputs"):
-        self.base_output_dir = Path(base_output_dir)
+
+class OutputPathGenerator:
+    """Utility class for generating output file paths within canonical storage."""
+
+    def __init__(self, base_output_dir: Optional[Union[str, Path]] = None):
+        storage_base = get_storage_base_dir()
+        if base_output_dir is None or str(base_output_dir).strip() in ("outputs", "./outputs", "storage", "./storage"):
+            self.base_output_dir = storage_base / "models"
+        else:
+            p = Path(base_output_dir)
+            if not p.is_absolute():
+                self.base_output_dir = (storage_base / p).resolve()
+            else:
+                self.base_output_dir = p
+        self.base_output_dir.mkdir(parents=True, exist_ok=True)
 
     def generate_mesh_path(
         self,
