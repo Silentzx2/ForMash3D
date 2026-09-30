@@ -33,7 +33,7 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
         model_id: str = "fastmesh_v1k_retopology",
         variant: str = "V1K",
         model_path: Optional[str] = None,
-        vram_requirement: Optional[int] = None
+        vram_requirement: Optional[int] = None,
         fastmesh_root: Optional[str] = None,
         input_pc_num: int = 8192,
     ):

@@ -35,7 +35,7 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        vram_requirement: Optional[int] = None
+        vram_requirement: Optional[int] = None,
         trellis2_root: Optional[str] = None,
     ):
         if vram_requirement is None:
@@ -309,7 +309,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        vram_requirement: Optional[int] = None
+        vram_requirement: Optional[int] = None,
         trellis2_root: Optional[str] = None,
     ):
         if vram_requirement is None:

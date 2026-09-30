@@ -38,7 +38,7 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
         self,
         model_id: str = "p3sam_mesh_segmentation",
         model_path: Optional[str] = None,
-        vram_requirement: Optional[int] = None
+        vram_requirement: Optional[int] = None,
         p3sam_root: Optional[str] = None,
     ):
         if model_path is None:

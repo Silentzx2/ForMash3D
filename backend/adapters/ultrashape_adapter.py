@@ -38,7 +38,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
         self,
         model_id: Optional[str] = None,
         model_path: Optional[str] = None,
-        vram_requirement: Optional[int] = None
+        vram_requirement: Optional[int] = None,
         ultrashape_root: Optional[str] = None,
         hunyuan3d_root: Optional[str] = None,
         feature_type: Optional[str] = None,

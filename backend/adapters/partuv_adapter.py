@@ -33,7 +33,7 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
         self,
         model_id: str = "partuv_uv_unwrapping",
         model_path: Optional[str] = None,
-        vram_requirement: Optional[int] = None
+        vram_requirement: Optional[int] = None,
         partuv_root: Optional[str] = None,
         config_path: Optional[str] = None,
         distortion_threshold: float = 1.25,
