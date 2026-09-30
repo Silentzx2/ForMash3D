@@ -101,6 +101,32 @@ except Exception as e:
 ' "$WHEEL_DIR" 2>/dev/null || true
 }
 
+# Ensure Blender executable is available for post-processing / blenderproc
+ensure_blender() {
+    if command -v blender >/dev/null 2>&1; then
+        echo "[INFO] Blender already available: $(command -v blender)"
+        return 0
+    fi
+
+    if [[ "${BLENDER_ENABLED:-true}" != "true" ]]; then
+        echo "[WARN] Blender is disabled by BLENDER_ENABLED=false; skipping install."
+        return 0
+    fi
+
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "[INFO] Installing Blender via apt..."
+        local sudo_cmd=""
+        command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
+        $sudo_cmd apt-get update -qq 2>/dev/null || true
+        $sudo_cmd apt-get install -y --no-install-recommends blender 2>/dev/null || true
+    fi
+
+    if ! command -v blender >/dev/null 2>&1; then
+        echo "[WARN] Blender is still not available on PATH."
+        echo "       Install it manually or set BLENDER_EXECUTABLE=/path/to/blender"
+    fi
+}
+
 echo "========================================"
 echo "Starting Backend-API Installation"
 echo "========================================"
