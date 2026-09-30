@@ -68,19 +68,18 @@ export const SecondaryPanel: React.FC<{ tool: ToolType }> = ({ tool }) => {
     return (
       <div id="panel-remesh-secondary" className="flex flex-col h-full overflow-y-auto px-2.5 py-2.5 space-y-3 text-xs select-none bg-[hsl(var(--surface-1))]">
         <div className="space-y-1.5">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-primary">Target Polycount</span>
-          <div className="grid grid-cols-3 gap-1.5">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-primary">FastMesh Variant</span>
+          <div className="grid grid-cols-2 gap-1.5">
             {([
-              { label: '2.5K Low', faces: 2500 },
-              { label: '10K Mid', faces: 10000 },
-              { label: '25K High', faces: 25000 },
+              { label: 'V1K · ~1K vertices', variant: 'V1K' as const },
+              { label: 'V4K · ~4K vertices', variant: 'V4K' as const },
             ]).map((q) => (
               <button
-                key={q.label}
-                onClick={() => setRemeshSettings(prev => ({ ...prev, targetFaces: q.faces }))}
+                key={q.variant}
+                onClick={() => setRemeshSettings(prev => ({ ...prev, variant: q.variant }))}
                 className={`p-1.5 rounded-lg border font-bold text-[10px] transition-all ${
-                  remeshSettings.targetFaces === q.faces
-                    ? 'bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] border-transparent text-[#080808] shadow-md font-black'
+                  remeshSettings.variant === q.variant
+                    ? 'bg-primary text-[hsl(var(--primary-foreground))] border-transparent shadow-md font-black'
                     : 'bg-[hsl(var(--surface-2))] border-white/[0.12] text-zinc-300 hover:text-white hover:border-white/[0.25]'
                 }`}
               >

@@ -200,6 +200,14 @@ class Trellis2Runner:
         
         # Export to GLB format
         if self.o_voxel is not None:
+            effective_decimation_target = (
+                int(len(mesh.faces)) if int(decimation_target) <= 0 else int(decimation_target)
+            )
+            if int(decimation_target) <= 0:
+                logger.info(
+                    "TRELLIS.2 raw export requested without decimation; "
+                    "using the generated face count as the exporter target."
+                )
             logger.info("Exporting mesh to GLB format...")
             glb = self.o_voxel.postprocess.to_glb(
                 vertices=mesh.vertices,
@@ -209,7 +217,7 @@ class Trellis2Runner:
                 attr_layout=mesh.layout,
                 voxel_size=mesh.voxel_size,
                 aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
-                decimation_target=decimation_target,
+                decimation_target=effective_decimation_target,
                 texture_size=texture_size,
                 remesh=remesh,
                 remesh_band=remesh_band,

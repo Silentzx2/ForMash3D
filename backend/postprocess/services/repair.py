@@ -53,12 +53,46 @@ def topology_counts(vertices, faces) -> dict:
                 continue
             edge_counts[(s, t) if s < t else (t, s)] += 1
     non_manifold = sum(1 for n in edge_counts.values() if n > 2)
-    boundary = sum(1 for n in edge_counts.values() if n == 1)
+    boundary_edges = [edge for edge, n in edge_counts.items() if n == 1]
+    boundary_neighbours: dict[int, set[int]] = {}
+    for a, b in boundary_edges:
+        boundary_neighbours.setdefault(int(a), set()).add(int(b))
+        boundary_neighbours.setdefault(int(b), set()).add(int(a))
+
+    # ponytail: classify the largest connected boundary component instead of
+    # comparing the total boundary-edge count to the per-hole repair threshold.
+    largest_boundary_component_edges = 0
+    visited_boundary: set[int] = set()
+    for start in boundary_neighbours:
+        if start in visited_boundary:
+            continue
+        stack = [start]
+        component_vertices: set[int] = set()
+        while stack:
+            vertex = stack.pop()
+            if vertex in component_vertices:
+                continue
+            component_vertices.add(vertex)
+            visited_boundary.add(vertex)
+            stack.extend(
+                neighbour
+                for neighbour in boundary_neighbours.get(vertex, ())
+                if neighbour not in component_vertices
+            )
+        component_edges = sum(
+            len(boundary_neighbours.get(vertex, ()))
+            for vertex in component_vertices
+        ) // 2
+        largest_boundary_component_edges = max(
+            largest_boundary_component_edges, int(component_edges)
+        )
+
     return {
         "non_manifold_edges": int(non_manifold),
-        "boundary_edges": int(boundary),
+        "boundary_edges": int(len(boundary_edges)),
+        "largest_boundary_component_edges": int(largest_boundary_component_edges),
         "faces": int(len(F)),
-        "watertight": bool(non_manifold == 0 and boundary == 0),
+        "watertight": bool(non_manifold == 0 and not boundary_edges),
     }
 
 

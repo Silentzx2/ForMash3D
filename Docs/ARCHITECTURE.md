@@ -428,7 +428,7 @@ bash -n backend/scripts/install.sh
 
 The production post-processing engine lives under backend/postprocess/. Successful mesh-generation jobs run this engine before the job is marked completed.
 
-Pipeline: MASTER RAW -> Repair -> Optimize/Preserve -> Auto UV/Preserve -> GAME READY -> LOD -> collision -> preview -> QA. Native textured outputs keep their source materials and UVs; raw outputs receive geometry optimization and production UVs. Post-processing does not synthesize textures. Texture creation happens only in model-native textured generation or the dedicated Texture page.
+Pipeline: MODEL INFERENCE -> immutable master/source.glb -> Inspect/Repair -> conditional AutoRetopo for a large boundary component -> texture-aware Optimize/Preserve -> Auto UV/Preserve for raw outputs -> GAME READY -> LOD -> collision -> preview -> QA. Native textured outputs are optimized with UV/material-aware decimation; raw outputs receive geometry optimization and production UVs. High-to-low bake remains an explicit transfer operation, and post-processing does not synthesize semantic textures from an untextured source. Quality metadata records source hash, source/repaired/optimized/game-ready snapshots, topology state, texture state, and per-LOD UV/material preservation.
 
 The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE and is best-effort for generation completion.
 

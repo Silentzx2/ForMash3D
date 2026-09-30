@@ -158,94 +158,31 @@ export const SettingsModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Auto-Optimize Defaults */}
+          {/* Post-Process Quality Defaults */}
           <div className="space-y-2 pt-2">
             <div className="flex items-center gap-2">
               <Wrench className="w-3.5 h-3.5 text-primary" />
-              <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Auto-Optimize Defaults</span>
+              <span className="font-semibold text-xs text-muted-foreground uppercase tracking-wider">Post-Process Quality Defaults</span>
             </div>
             <div className="p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-border space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-xs text-foreground font-medium block">Enable Auto-Optimize by Default</span>
-                  <span className="text-[10px] text-muted-foreground">Automatically optimize meshes after generation</span>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-foreground">Default Target Polycount</span>
+                  <span className="text-[10px] font-mono text-primary">{generationSettings.autoOptimizeSettings.targetPolycount.toLocaleString()} tris</span>
                 </div>
-                <button
-                  onClick={() => setGenerationSettings(prev => ({ ...prev, autoOptimize: !prev.autoOptimize }))}
-                  className={`w-9 h-5 rounded-full p-0.5 transition-colors ${
-                    generationSettings.autoOptimize ? 'bg-primary' : 'bg-border'
-                  }`}
-                >
-                  <div className={`w-4 h-4 rounded-full bg-[hsl(var(--surface-1))] transition-transform ${
-                    generationSettings.autoOptimize ? 'translate-x-4' : 'translate-x-0'
-                  }`} />
-                </button>
+                <input
+                  type="range"
+                  min={5000}
+                  max={100000}
+                  step={5000}
+                  value={generationSettings.autoOptimizeSettings.targetPolycount}
+                  onChange={(e) => setGenerationSettings(prev => ({
+                    ...prev,
+                    autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: parseInt(e.target.value) }
+                  }))}
+                  className="w-full h-1.5 rounded-full appearance-none bg-border accent-primary cursor-pointer"
+                />
               </div>
-
-              {generationSettings.autoOptimize && (
-                <div className="space-y-2.5 pt-2 border-t border-border">
-                  {/* Default Target Polycount */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-foreground">Default Target Polycount</span>
-                      <span className="text-[10px] font-mono text-primary">{generationSettings.autoOptimizeSettings.targetPolycount.toLocaleString()} tris</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={5000}
-                      max={100000}
-                      step={5000}
-                      value={generationSettings.autoOptimizeSettings.targetPolycount}
-                      onChange={(e) => setGenerationSettings(prev => ({
-                        ...prev,
-                        autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: parseInt(e.target.value) }
-                      }))}
-                      className="w-full h-1.5 rounded-full appearance-none bg-border accent-primary cursor-pointer"
-                    />
-                  </div>
-
-                  {/* Default Fix UVs */}
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-[11px] text-foreground font-medium block">Fix UVs by Default</span>
-                      <span className="text-[10px] text-muted-foreground">Repair overlapping UVs automatically</span>
-                    </div>
-                    <button
-                      onClick={() => setGenerationSettings(prev => ({
-                        ...prev,
-                        autoOptimizeSettings: { ...prev.autoOptimizeSettings, fixUVs: !prev.autoOptimizeSettings.fixUVs }
-                      }))}
-                      className={`w-9 h-5 rounded-full p-0.5 transition-colors ${
-                        generationSettings.autoOptimizeSettings.fixUVs ? 'bg-primary' : 'bg-border'
-                      }`}
-                    >
-                      <div className={`w-4 h-4 rounded-full bg-[hsl(var(--surface-1))] transition-transform ${
-                        generationSettings.autoOptimizeSettings.fixUVs ? 'translate-x-4' : 'translate-x-0'
-                      }`} />
-                    </button>
-                  </div>
-
-                  {/* Default Preserve Details */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-foreground">Default Detail Preservation</span>
-                      <span className="text-[10px] font-mono text-primary">{generationSettings.autoOptimizeSettings.preserveDetails}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      step={5}
-                      value={generationSettings.autoOptimizeSettings.preserveDetails}
-                      onChange={(e) => setGenerationSettings(prev => ({
-                        ...prev,
-                        autoOptimizeSettings: { ...prev.autoOptimizeSettings, preserveDetails: parseInt(e.target.value) }
-                      }))}
-                      className="w-full h-1.5 rounded-full appearance-none bg-border accent-primary cursor-pointer"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>

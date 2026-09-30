@@ -41,17 +41,9 @@
 
 ## 📰 Recent Updates
 
-* **2026-09-30** — **Review audit hardening**: Corrected Redis queue ordering/state/TTL semantics, added restart recovery and actual worker termination for timeout/cancellation, moved SQLite persistence off async scheduling paths, bounded input/cache memory, made FastMesh variants explicit, and repaired verification commands.
-
-> Compact overview of recent milestone updates (maximum 3 entries preserved; full technical history available in **[Docs/CHANGELOG.md](Docs/CHANGELOG.md)**).
-
-* **2026-09-27** — **Hunyuan3D-Paint-v2-1 Pipeline Audit & Full Integration**: Completed full audit of the Paint-v2-1 pipeline (Pass 1: 18 fixes including FlashVDM toggle, `systemStats` in TexturePanel, `paintResolution` in GenerationSettings, RealESRGAN/DifferentiableRenderer verification; Pass 2: deep scan of 1080 third-party files fixing bare `except:` clauses and missing `__init__.py` files). Added `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` model ID. Fixed Dockerfile to include Paint DifferentiableRenderer build step.
-* **2026-09-26** — **Generation Runtime Hardening & Jobs UI Consolidation**: Hardened TripoSR/TripoSG model adapters with deterministic snapshot provenance, native error preservation, and output validation; eliminated endless job requeue loops on worker startup failure; fatalized required installer dependencies; and consolidated Jobs UI into the left navigation rail with direct deep-linking to `/workspace/jobs`.
-* **2026-09-26** — **Bug Fixes**: Fixed `text_to_textured_mesh` feature availability, resolved `torch.float8_e8m0fnu` AttributeError (torch 2.8.0 compatibility), fixed `diffusers`/`transformers` circular import, fixed `open3d.io.read_triangle_mesh` PosixPath type error.
-* **2026-09-25** — **Backend Environment Discovery & Startup Fix**: Resolved Google Colab/VPS backend launch failure by implementing auto-discovery of Conda (`3daigc-api`) and Venv environments in non-interactive subshells, eliminating disk-exhausting raw PyPI downloads on startup.
-* **2026-09-25** — **Project Rebrand to ForMash 3D**: Executed complete first-party rebrand from AI Studio to ForMash 3D (`ForMash3D`) across UI, API gateway, documentation, and web assets while preserving backward-compatible environment variables.
-
----
+* **2026-09-30** — **Deep quality gap closure**: fixed a post-processing crash on non-Physics jobs, corrected native-texture detection and AutoRetopo hole thresholds, added stage-level quality traces, and reconciled FastMesh UI/API behavior with its fixed V1K/V4K contract.
+* **2026-09-30** — **Quality & detail restoration**: corrected model/extractor quality contracts, preserved textured LOD materials through texture-aware decimation, added conditional structural retopology, source-asset integrity accounting, and removed frontend quality controls without backend consumers.
+* **2026-09-30** — **Review audit hardening**: corrected Redis queue ordering/state/TTL semantics, added restart recovery and worker termination for timeout/cancellation, moved SQLite persistence off async scheduling paths, made FastMesh variants explicit, and repaired verification commands.
 
 ## 📖 Table of Contents
 

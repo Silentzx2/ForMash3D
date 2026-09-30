@@ -7,6 +7,7 @@ mesh-processing stack and can take materially longer than the normal test suite.
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import shutil
 import subprocess
@@ -50,6 +51,61 @@ def test_postprocess_dependencies_import():
     importlib.import_module("postprocess.pipeline")
 
 
+def test_textured_lod_simplification_preserves_uv_material():
+    """Texture-aware decimation must keep UVs and material data attached."""
+    pymeshlab = pytest.importorskip("pymeshlab")
+    import numpy as np
+    import trimesh
+    from postprocess.services.simplify import _simplify
+
+    mesh = trimesh.creation.icosphere(subdivisions=3)
+    mins = mesh.vertices.min(axis=0)
+    span = np.maximum(mesh.vertices.max(axis=0) - mins, 1e-9)
+    uv = (mesh.vertices[:, :2] - mins[:2]) / span[:2]
+    material = trimesh.visual.material.PBRMaterial(
+        baseColorFactor=np.array([180, 180, 180, 255], dtype=np.uint8),
+    )
+    mesh.visual = trimesh.visual.TextureVisuals(uv=uv, material=material)
+
+    reduced, stats = _simplify(mesh, max(100, len(mesh.faces) // 4))
+    assert stats["texture_preserved"] is True
+    assert reduced.visual.uv is not None
+    assert len(reduced.visual.uv) == len(reduced.vertices)
+    assert reduced.visual.material is not None
+
+
+def test_topology_counts_exposes_largest_boundary_component():
+    import numpy as np
+    from postprocess.services.repair import topology_counts
+
+    # Two disconnected tetrahedral shells, each with one face removed.
+    tetra_v = np.array([
+        [0.0, 0.0, 0.0], [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0], [0.0, 0.0, 1.0],
+    ])
+    tetra_f = np.array([
+        [0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3],
+    ])
+    v = np.vstack([tetra_v, tetra_v + np.array([3.0, 0.0, 0.0])])
+    f = np.vstack([tetra_f[:3], tetra_f[:3] + 4])
+
+    stats = topology_counts(v, f)
+    assert stats["boundary_edges"] == 6
+    assert stats["largest_boundary_component_edges"] == 3
+    assert stats["watertight"] is False
+
+
+def test_native_texture_detection_requires_real_texture_payload():
+    import trimesh
+    from postprocess.pipeline import _has_native_textures
+
+    mesh = trimesh.creation.box()
+    uv = np.zeros((len(mesh.vertices), 2), dtype=float)
+    mesh.visual = trimesh.visual.TextureVisuals(uv=uv)
+
+    assert _has_native_textures(mesh) is False
+
+
 def test_blender_runtime_smoke():
     """Blender, when installed, must be able to start headlessly and import bpy."""
     executable = os.environ.get("BLENDER_EXECUTABLE", "blender")
@@ -75,7 +131,8 @@ def test_blender_runtime_smoke():
     os.environ.get("FORMASH_POSTPROCESS_E2E") != "1",
     reason="Set FORMASH_POSTPROCESS_E2E=1 to run the production mesh fixture smoke test.",
 )
-def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch):
+@pytest.mark.parametrize("physics_enabled", [False, True])
+def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch, physics_enabled):
     """Run a real generated GLB fixture through the canonical production pipeline."""
     import trimesh
     import postprocess.pipeline as pipeline
@@ -101,7 +158,7 @@ def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch):
         {
             "model_id": "fixture",
             "feature": "image_to_raw_mesh",
-            "physics_enabled": True,
+            "physics_enabled": physics_enabled,
             "physics_config": {"collision_quality": "fast"},
         },
     )
@@ -117,10 +174,17 @@ def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch):
     assert game_ready_glb.is_file()
     assert quality_report.is_file()
     assert asset_manifest.is_file()
-    assert physics_metadata.is_file()
+    assert physics_metadata.is_file() is physics_enabled
     assert all((asset_root / "lods" / f"lod{i}.glb").is_file() for i in range(4))
     assert result["postprocess_status"] == "completed"
-    assert result["physics_ready"] is True
+    assert result["texture_status"] in {"native", "not_generated"}
+    assert result["physics_ready"] is physics_enabled
     assert result["physics_url"].endswith("artifact_format=physics_json")
     assert result["game_ready_formats"]["glb"].endswith("artifact_format=glb")
     assert result["zip_url"].endswith("artifact_format=zip")
+    quality = json.loads(quality_report.read_text(encoding="utf-8"))
+    assert quality["source_sha256"]
+    assert set(quality["quality_trace"]) == {"source", "repaired", "optimized", "game_ready"}
+    assert quality["collision"] is not None if physics_enabled else quality["collision"] is None
+    assert len(quality["source_sha256"]) == 64
+    assert set(quality["lods"]) >= {"0", "1", "2", "3"}

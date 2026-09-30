@@ -435,13 +435,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     quadTopology: false, topologyMode: 'triangle', seed: 42891, guidanceScale: 7.5, removeBackground: true,
     lowVram: false,
     vramMode: 'auto',
-    autoOptimize: true,
-    autoOptimizeSettings: { targetPolycount: 60000, fixUVs: true, preserveDetails: 85 },
+    autoOptimizeSettings: { targetPolycount: 60000 },
     generateTexture: true,
-    detailPass: false,
-    triposfPass: false,
-    meshEnhancementMode: 'none',
-    detailGuidance: 7.5,
     enableFlashVDM: false,
     lowVramMode: 'auto',
     maxNumView: 6,
@@ -464,9 +459,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const [remeshSettings, setRemeshSettings] = useState<RemeshSettings>({
-    tab: 'auto', preset: 'high', targetFaces: 48512, mode: 'adaptive',
-    preserveShape: true, preserveSharpEdges: true, preserveUVs: false,
-    detailPreservation: 0.75, boundaryProtection: 0.50, voxelSize: 0.10,
+    tab: 'auto', variant: 'V4K', polyType: 'quad',
   });
 
   const [textureSettings, setTextureSettings] = useState<TextureSettings>({
@@ -636,8 +629,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setSelectedAssetId(id);
     // Increment viewport trigger to force MeshViewer reload
     setViewportResetTrigger(prev => prev + 1);
-    const asset = assets.find(a => a.id === id);
-    if (asset?.faces) setRemeshSettings(prev => ({ ...prev, targetFaces: asset.faces }));
   }, [assets]);
 
   const setCurrentAsset = useCallback((asset: ModelAsset) => selectAsset(asset.id), [selectAsset]);
@@ -804,7 +795,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const currentQuality = generationSettings.meshQuality || 'high';
     // Studio Ultra-HD pipeline: auto-tune to high-resolution voxel grid and diffusion steps
-    const octreeRes = currentQuality === 'ultra' ? 640 : 512;
+    const octreeRes =
+      currentQuality === 'ultra' || currentQuality === 'high' ? 512 :
+      currentQuality === 'medium' ? 384 : 256;
     const infSteps = currentQuality === 'ultra' ? 75 : 50;
     const infGuidance = generationSettings.guidanceScale ?? 7.5;
 
@@ -840,21 +833,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         low_vram_mode: generationSettings.lowVramMode ?? 'auto',
         auto_optimize: false,
         target_polycount: targetPoly,
-        fix_uvs: true,
-        preserve_details: generationSettings.autoOptimizeSettings?.preserveDetails ?? 85,
-        repair_uvs: true,
-        topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
-        detail_pass: Boolean(generationSettings.detailPass),
-        detail_guidance: generationSettings.detailGuidance ?? 7.5,
-        triposf_pass: Boolean(generationSettings.triposfPass),
-        mesh_enhancement_mode: generationSettings.meshEnhancementMode || (
-          generationSettings.detailPass && generationSettings.triposfPass ? 'both' :
-          generationSettings.detailPass ? 'detailgen3d' :
-          generationSettings.triposfPass ? 'triposf' : 'none'
-        ),
         negative_prompt: generationSettings.negativePrompt || undefined,
-        enable_mesh_repair: true,
-        compress_output: true,
       };
 
       // Model-specific extraction settings: keep generation high-resolution while reserving
@@ -943,7 +922,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.quadTopology,
     generationSettings.lowVram,
     generationSettings.vramMode,
-    generationSettings.autoOptimize,
     generationSettings.autoOptimizeSettings,
     generationSettings.generateTexture,
     generationSettings.gameReady,
@@ -954,12 +932,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.generateCollision,
     generationSettings.physics,
     generationSettings.generatePBR,
-    generationSettings.preserveDetails,
-    generationSettings.repairUVs,
-    generationSettings.detailPass,
-    generationSettings.triposfPass,
-    generationSettings.meshEnhancementMode,
-    generationSettings.detailGuidance,
     generationSettings.seed,
     generationSettings.guidanceScale,
     generationSettings.enableFlashVDM,
@@ -983,7 +955,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const localTaskId = startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
 
       const currentQuality = generationSettings.meshQuality || 'high';
-      const octreeRes = currentQuality === 'ultra' ? 640 : 512;
+      const octreeRes =
+      currentQuality === 'ultra' || currentQuality === 'high' ? 512 :
+      currentQuality === 'medium' ? 384 : 256;
       const infSteps = currentQuality === 'ultra' ? 75 : 50;
       const infGuidance = generationSettings.guidanceScale ?? 7.5;
 
@@ -1013,21 +987,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         low_vram_mode: generationSettings.lowVramMode ?? 'auto',
         auto_optimize: false,
           target_polycount: targetPoly,
-          fix_uvs: true,
-          preserve_details: generationSettings.autoOptimizeSettings?.preserveDetails ?? 85,
-          repair_uvs: true,
-          topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
-          detail_pass: Boolean(generationSettings.detailPass),
-          detail_guidance: generationSettings.detailGuidance ?? 7.5,
-          triposf_pass: Boolean(generationSettings.triposfPass),
-          mesh_enhancement_mode: generationSettings.meshEnhancementMode || (
-            generationSettings.detailPass && generationSettings.triposfPass ? 'both' :
-            generationSettings.detailPass ? 'detailgen3d' :
-            generationSettings.triposfPass ? 'triposf' : 'none'
-          ),
           negative_prompt: generationSettings.negativePrompt || undefined,
-          enable_mesh_repair: true,
-          compress_output: true,
         };
 
         if (batchItems.length > 0) {
@@ -1135,7 +1095,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.quadTopology,
     generationSettings.lowVram,
     generationSettings.vramMode,
-    generationSettings.autoOptimize,
     generationSettings.autoOptimizeSettings,
     generationSettings.generateTexture,
     generationSettings.gameReady,
@@ -1146,12 +1105,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.generateCollision,
     generationSettings.physics,
     generationSettings.generatePBR,
-    generationSettings.preserveDetails,
-    generationSettings.repairUVs,
-    generationSettings.detailPass,
-    generationSettings.triposfPass,
-    generationSettings.meshEnhancementMode,
-    generationSettings.detailGuidance,
     generationSettings.seed,
     generationSettings.guidanceScale,
     generationSettings.enableFlashVDM,
@@ -1177,9 +1130,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
 
       const body: Record<string, unknown> = {
-        target_vertex_count: remeshSettings.targetFaces ?? 30000,
         output_format: 'glb',
-        model_preference: (remeshSettings as any).modelId || (remeshSettings.targetFaces > 35000 ? 'fastmesh_v4k_retopology' : 'fastmesh_v1k_retopology'),
+        model_preference: remeshSettings.variant === 'V4K'
+          ? 'fastmesh_v4k_retopology'
+          : 'fastmesh_v1k_retopology',
+        poly_type: remeshSettings.polyType,
       };
       if (meshFileId) {
         body.mesh_file_id = meshFileId;

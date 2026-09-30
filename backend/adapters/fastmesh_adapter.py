@@ -139,6 +139,13 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
             output_format = inputs.get("output_format", "obj")
             poly_type = inputs.get("poly_type", "tri")
             seed = inputs.get("seed", None)
+            requested_target = inputs.get("target_vertex_count")
+
+            if requested_target is not None and int(requested_target) != self.target_vertex_count:
+                raise ValueError(
+                    f"FastMesh {self.variant} has a fixed {self.target_vertex_count}-vertex target; "
+                    f"requested target_vertex_count={requested_target} is not supported."
+                )
 
             if output_format not in ["obj", "glb", "ply"]:
                 raise ValueError(f"Unsupported output format: {output_format}")

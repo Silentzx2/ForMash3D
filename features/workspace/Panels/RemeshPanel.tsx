@@ -3,7 +3,6 @@ import {
   Sliders,
   ChevronDown,
   Check,
-  Sparkles,
   Box,
   Loader2,
   Shield,
@@ -21,7 +20,6 @@ export const RemeshPanel: React.FC = () => {
     remeshSettings,
     setRemeshSettings,
     runRemeshGeneration,
-    runUVUnwrapGeneration,
     isExecuting,
     currentAsset,
     assets,
@@ -48,30 +46,25 @@ export const RemeshPanel: React.FC = () => {
     }
   }, [currentAsset, assets, selectAsset]);
 
-  const handlePresetClick = (preset: 'low' | 'medium' | 'high' | 'custom') => {
-    let faces = remeshSettings.targetFaces;
-    if (preset === 'low') faces = 12000;
-    else if (preset === 'medium') faces = 28000;
-    else if (preset === 'high') faces = 50000;
-    
-    setRemeshSettings(prev => ({
-      ...prev,
-      preset,
-      targetFaces: faces
-    }));
+  const handleVariantClick = (variant: 'V1K' | 'V4K') => {
+    setRemeshSettings(prev => ({ ...prev, variant }));
+  };
+
+  const handlePolyTypeClick = (polyType: 'tri' | 'quad') => {
+    setRemeshSettings(prev => ({ ...prev, polyType }));
   };
 
   return (
     <div id="panel-remesh" className="flex flex-col h-full overflow-hidden bg-[hsl(var(--surface-1))] text-xs select-none">
       {/* Panel Header with Segmented Navigation Bar */}
-      <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.08] flex-shrink-0 space-y-2 bg-[#17181B]">
+      <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.08] flex-shrink-0 space-y-2 bg-[hsl(var(--surface-2))]">
         <div className="flex items-center justify-between">
           <span className="font-bold text-xs text-white flex items-center gap-1.5">
             <Sliders className="w-3.5 h-3.5 text-primary" />
             <span>Quad Remesh &amp; Retopo</span>
           </span>
           <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-            {remeshSettings.mode.toUpperCase()}
+            {remeshSettings.variant} · {remeshSettings.polyType.toUpperCase()}
           </span>
         </div>
 
@@ -165,97 +158,66 @@ export const RemeshPanel: React.FC = () => {
               )}
             </div>
 
-            {/* Target Face Count Section */}
+            {/* FastMesh Variant */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-white uppercase tracking-wider text-[10px]">Target Poly Budget</span>
-                <span className="font-mono font-bold text-xs text-primary">
-                  {Math.round(remeshSettings.targetFaces / 1000)}K faces
-                </span>
+                <span className="font-bold text-white uppercase tracking-wider text-[10px]">FastMesh Variant</span>
+                <span className="font-mono font-bold text-xs text-primary">{remeshSettings.variant}</span>
               </div>
-
-              {/* Preset Chips (Low, Medium, High, Custom) */}
-              <div className="grid grid-cols-4 gap-1">
-                {(['low', 'medium', 'high', 'custom'] as const).map((p) => (
+              <div className="grid grid-cols-2 gap-1">
+                {(['V1K', 'V4K'] as const).map((variant) => (
                   <button
-                    key={p}
+                    key={variant}
                     type="button"
-                    onClick={() => handlePresetClick(p)}
-                    className={`py-1 rounded-lg capitalize font-bold transition-all text-[10px] cursor-pointer ${
-                      remeshSettings.preset === p
+                    onClick={() => handleVariantClick(variant)}
+                    className={`py-1.5 rounded-lg font-bold text-[10px] transition-all cursor-pointer ${
+                      remeshSettings.variant === variant
                         ? 'bg-primary text-black shadow-sm font-black'
                         : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
                     }`}
                   >
-                    {p}
+                    {variant} · ~{variant === 'V1K' ? '1K' : '4K'} vertices
                   </button>
                 ))}
               </div>
+              <p className="text-[8px] text-zinc-500 font-mono">
+                FastMesh output is fixed by the selected V1K/V4K variant; arbitrary vertex targets are not supported.
+              </p>
+            </div>
 
-              {/* Interactive Face Count Slider */}
-              <div className="pt-0.5">
-                <input
-                  type="range"
-                  min="5000"
-                  max="100000"
-                  step="1000"
-                  value={remeshSettings.targetFaces}
-                  onChange={(e) => setRemeshSettings(prev => ({
-                    ...prev,
-                    preset: 'custom',
-                    targetFaces: parseInt(e.target.value)
-                  }))}
-                  className="w-full accent-primary cursor-pointer h-1.5 rounded-full bg-[hsl(var(--surface-2))]"
-                />
-                <div className="flex justify-between text-[8px] text-zinc-500 font-mono mt-0.5">
-                  <span>5K (Low-End)</span>
-                  <span>28K (Balanced)</span>
-                  <span>100K (Cine)</span>
-                </div>
+            {/* Output Polygon Type */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white uppercase tracking-wider text-[10px]">Output Polygon Type</span>
+                <span className="font-mono font-bold text-xs text-primary">{remeshSettings.polyType.toUpperCase()}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {(['tri', 'quad'] as const).map((polyType) => (
+                  <button
+                    key={polyType}
+                    type="button"
+                    onClick={() => handlePolyTypeClick(polyType)}
+                    className={`py-1.5 rounded-lg font-bold text-[10px] uppercase transition-all cursor-pointer ${
+                      remeshSettings.polyType === polyType
+                        ? 'bg-primary text-black shadow-sm font-black'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                    }`}
+                  >
+                    {polyType === 'quad' ? 'Quads' : 'Triangles'}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Remesh Mode: Adaptive | Uniform */}
-            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-white font-bold text-[10px] uppercase tracking-wider">
-                <Sparkles className="w-3 h-3 text-primary" />
-                <span>Topology Mode</span>
-              </div>
-              <div className="grid grid-cols-2 p-0.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08]">
-                <button
-                  type="button"
-                  onClick={() => setRemeshSettings(prev => ({ ...prev, mode: 'adaptive' }))}
-                  className={`py-1.5 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
-                    remeshSettings.mode === 'adaptive'
-                      ? 'bg-primary text-black shadow-sm'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Adaptive Quads
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRemeshSettings(prev => ({ ...prev, mode: 'uniform' }))}
-                  className={`py-1.5 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
-                    remeshSettings.mode === 'uniform'
-                      ? 'bg-primary text-black shadow-sm'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Uniform Quads
-                </button>
-              </div>
-            </div>
-
-            {/* Auto Feature Protection Banner */}
+            {/* FastMesh Contract */}
             <div className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.06] text-[9.5px] text-zinc-400 flex items-center gap-1.5">
               <Shield className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-              <span>Auto-Feature Protection: Sharp creases, UV seams, and shape curvature are preserved automatically.</span>
+              <span>Source detail is checked by the production QA pipeline; FastMesh itself uses fixed V1K/V4K variants.</span>
             </div>
 
             {/* Live OpenX Clay Pipeline Tracker when remeshing is active */}
             {isRemeshActive && (
-              <div className="p-2.5 rounded-xl bg-[#1B1E24] border border-primary/30 space-y-2">
+              <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-2))] border border-primary/30 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-white flex items-center gap-1.5">
                     <Activity className="w-3.5 h-3.5 text-primary animate-pulse" />
@@ -324,7 +286,7 @@ export const RemeshPanel: React.FC = () => {
                 type="button"
                 onClick={runRemeshGeneration}
                 disabled={isExecuting || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl)}
-                className="w-full h-10 rounded-xl bg-gradient-to-b from-[hsl(var(--neon-amber))] to-[hsl(var(--primary))] hover:from-[#FFE660] hover:to-[#FFD700] text-black font-black tracking-wider text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(249,207,0,0.25)] hover:shadow-[0_6px_20px_rgba(249,207,0,0.35)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                className="w-full h-10 rounded-xl bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.9)] text-black font-black tracking-wider text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_hsl(var(--primary)/0.25)] hover:shadow-[0_6px_20px_hsl(var(--primary)/0.35)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isExecuting ? (
                   <>
@@ -342,13 +304,13 @@ export const RemeshPanel: React.FC = () => {
               </button>
 
               <p className="text-center text-[9px] text-zinc-400">
-                Target: <span className="text-white font-mono font-medium">{remeshSettings.targetFaces.toLocaleString()} tris</span>
+                Output: <span className="text-white font-mono font-medium">{remeshSettings.variant} · {remeshSettings.polyType.toUpperCase()}</span>
                 {currentAsset?.triangles ? (
                   <span className="text-zinc-500"> (current: {currentAsset.triangles.toLocaleString()})</span>
                 ) : null}
               </p>
               <p className="text-center text-[8px] text-zinc-500 font-mono">
-                FastMesh Pipeline: Deterministic Quad/Triangle Retopology
+                FastMesh {remeshSettings.variant} · {remeshSettings.polyType === 'quad' ? 'Quad' : 'Triangle'} output
               </p>
               {!currentAsset && (
                 <p className="text-[9px] text-amber-400/90 text-center">

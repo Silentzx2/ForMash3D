@@ -525,12 +525,9 @@ export const GeneratePanel: React.FC = () => {
       ...prev,
       generateTexture: prev.generateTexture !== false,
       removeBackground: true,
-      autoOptimize: true,
       autoOptimizeSettings: {
         ...prev.autoOptimizeSettings,
         targetPolycount: prev.autoOptimizeSettings?.targetPolycount || 60000,
-        fixUVs: true,
-        preserveDetails: 85,
       },
     }));
   };
@@ -1261,12 +1258,9 @@ export const GeneratePanel: React.FC = () => {
                         onClick={() => {
                           setGenerationSettings(prev => ({
                             ...prev,
-                            autoOptimize: true,
                             autoOptimizeSettings: {
                               ...prev.autoOptimizeSettings,
                               targetPolycount: preset.val,
-                              preserveDetails: 85,
-                              fixUVs: true,
                             },
                           }));
                         }}
@@ -1294,12 +1288,9 @@ export const GeneratePanel: React.FC = () => {
                     const val = parseInt(e.target.value, 10);
                     setGenerationSettings(prev => ({
                       ...prev,
-                      autoOptimize: true,
                       autoOptimizeSettings: {
                         ...prev.autoOptimizeSettings,
                         targetPolycount: val,
-                        preserveDetails: 85,
-                        fixUVs: true,
                       },
                     }));
                   }}
