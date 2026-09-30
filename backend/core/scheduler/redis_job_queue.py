@@ -192,23 +192,42 @@ class RedisJobQueue:
         
         return job_request
 
-    async def requeue_job(self, job_id: str):
-        """Put a job back at the front of the queue"""
+    async def requeue_job(self, job_id: str, front: bool = True):
+        """Put a job back into the pending queue.
+
+        Args:
+            job_id: The job to requeue.
+            front: If True, place the job at the front of the queue (highest priority).
+                If False, place it at the back of the queue (lowest priority).
+        """
         if not self.redis:
             raise RuntimeError("Redis not connected")
 
         # Remove from processing set
         await self.redis.srem(self.processing_set_key, job_id)
-        
+
         # Get job data to update status
         job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
         if job_data_str:
             job_data = json.loads(job_data_str)
             job_data["status"] = _status_to_str(JobStatus.QUEUED)
+            job_data["started_at"] = ""
+            job_data["progress"] = 0.0
+            job_data["stage"] = "recovering"
+            job_data["message"] = (
+                "Requeued after worker busy; waiting for GPU worker."
+                if not front
+                else "Requeued to front; waiting for GPU worker."
+            )
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
-            
-            # Requeue in the same priority band without artificially aging the job.
-            score = _priority_score(int(job_data.get("priority", 0)), datetime.utcnow())
+
+            priority = int(job_data.get("priority", 0))
+            if front:
+                # Put at the very front of the queue regardless of original timestamp.
+                score = _priority_score(priority, datetime.min)
+            else:
+                # Put at the back of the queue using the current timestamp.
+                score = _priority_score(priority, datetime.utcnow())
             await self.redis.zadd(self.pending_queue_key, {job_id: score})
 
     async def complete_job(self, job_id: str, result: Any):
