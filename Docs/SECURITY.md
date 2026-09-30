@@ -113,7 +113,7 @@ ForMash 3D's FastAPI backend and Next.js frontend are designed by default for lo
 
 ## 📄 License
 
-ForMash 3D's original source code is released under the **[Apache License 2.0](LICENSE)**. Third-party models, libraries, and checkpoints are governed by their respective author and academic licenses. See **[Docs/MODEL_LICENSES.md](Docs/MODEL_LICENSES.md)** for complete third-party licensing information.
+ForMash 3D's original source code is released under the **[Apache License 2.0](LICENSE)**. Third-party models, libraries, and checkpoints are governed by their respective author and academic licenses. See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)** for complete third-party licensing information.
 
 ## Asset Artifact Delivery — 2026-09-29
 

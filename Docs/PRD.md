@@ -277,7 +277,7 @@ pie title QA Score Weighting Distribution (100 Points Total)
 
 ## Third-Party Model Licenses
 
-ForMash 3D does not own or claim rights to third-party architectures or weights. See `Docs/MODEL_LICENSES.md` for complete licensing information.
+ForMash 3D does not own or claim rights to third-party architectures or weights. See `backend/thirdparty/LICENSE` and `backend/postprocess/THIRD_PARTY_LICENSE.md` for complete licensing information.
 
 ## Configuration
 

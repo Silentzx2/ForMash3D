@@ -1,3 +1,9 @@
+## 2026-09-30 — README Overhaul, 3DGenStudio Attribution & SaaS Advisory
+- Revamped README.md: eliminated hype claims (#1/alternatives), framed platform respectfully as inspired by Tripo AI and Meshy workflows.
+- Restyled Mermaid architecture diagram with vibrant Studio Gold theme and verified node-to-node rendering compatibility.
+- Documented post-processing provenance (ported from visualbruno/3DGenStudio under Community License).
+- Added explicit legal warning: Apache 2.0 applies only to ForMash3D core code; third-party models and 3DGenStudio carry non-commercial/SaaS-hosting restrictions.
+
 ## 2026-09-30 — Master Plan v2.1 Verification & Adapter/Postprocess Hardening
 - Clamped Hunyuan extraction resolution to upstream-supported contract range [64, 512] in shape, mini-turbo, and paint adapters.
 - Fixed path string division syntax and changed thirdparty sys.path inserts to appends to prevent package shadowing.

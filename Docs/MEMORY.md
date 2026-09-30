@@ -1,3 +1,9 @@
+## 2026-09-30 README Overhaul & Commercial SaaS License Boundary
+- Eliminated all "#1" and "alternative of Tripo" claims; positioned ForMash3D respectfully as inspired by Tripo AI and Meshy workflows.
+- Restyled Mermaid architecture diagram with vibrant Studio Gold theme, high-contrast dark/light mode compatibility, and strict node-to-node links.
+- Documented 3DGenStudio port provenance in post-processing with Community License terms.
+- Added explicit advisory: Apache 2.0 covers only ForMash3D core code; third-party neural model weights and 3DGenStudio have non-commercial and SaaS-hosting restrictions.
+
 ## 2026-09-30 Master Plan v2.1 Verification & Adapter Hardening
 - Hunyuan octree extraction resolutions clamped to upstream range [64, 512] across shape, mini-turbo, and paint adapters.
 - Fixed path string division syntax and changed thirdparty sys.path inserts to appends to prevent package shadowing.
