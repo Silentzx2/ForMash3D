@@ -16,6 +16,7 @@ import {
   normalizeModelAsset,
 } from '../types';
 import { apiClient } from '../lib/api';
+import { getApiClient } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
 import { useViewerStore, loadModelInViewer } from '@/stores/useViewerStore';
 import { prefetchGLB } from '../lib/glbCache';
@@ -492,6 +493,18 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     showAxes: false,
     showStats: true,
   });
+
+  const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    getApiClient().getAvailableModels().then(data => {
+      if ((data as any)?.model_details) {
+        setModelDetails((data as any).model_details);
+      }
+    }).catch(err => {
+      console.warn('Failed to load model details:', err);
+    });
+  }, []);
 
   const currentAsset = useMemo(
     () => selectedAssetId ? (assets.find(a => a.id === selectedAssetId) ?? null) : null,
@@ -1365,7 +1378,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 currentStep: data.message || data.stage || task.currentStep,
                 stage: data.stage || task.stage,
                 logs: data.logs || task.logs,
-                result: data.result,
                 errorMessage: data.error_message || task.errorMessage,
                 errorCode: (data as any).error_code || task.errorCode,
                 result: data.result || task.result,
@@ -1679,7 +1691,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     saveIndividualParts?: boolean;
     modelParameters?: Record<string, any>;
   }) => {
-    startTask('uv', 'UV Unwrapping (PartUV)');
+    const localTaskId = startTask('uv', 'UV Unwrapping (PartUV)');
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1734,7 +1746,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     modelPreference?: string;
   } | number) => {
     const pref = (typeof customSettings === 'object' && customSettings?.modelPreference) || 'partfield_mesh_segmentation';
-    startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`);
+    const localTaskId = startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1791,7 +1803,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     targetImageBase64?: string;
     strength?: number;
   }) => {
-    startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)');
+    const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)');
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;

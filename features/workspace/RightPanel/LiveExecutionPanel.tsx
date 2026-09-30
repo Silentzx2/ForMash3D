@@ -77,6 +77,7 @@ export const LiveExecutionPanel: React.FC = () => {
   }, [activeTask?.startedAt, isExecuting]);
 
   const logs = activeTask?.logs || [];
+  const latestLog = logs[logs.length - 1];
 
   // Keep the console pinned only when the user is already near the bottom.
   useEffect(() => {

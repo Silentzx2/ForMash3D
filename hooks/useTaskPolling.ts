@@ -13,6 +13,7 @@ const BACKEND_STATUS: Record<JobStatus, 'queued' | 'running' | 'completed' | 'fa
   processing: 'running',
   completed: 'completed',
   failed: 'failed',
+  cancelled: 'completed',
 };
 
 export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {

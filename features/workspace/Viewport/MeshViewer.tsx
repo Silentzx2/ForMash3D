@@ -3054,7 +3054,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               </SimpleTooltip>
             </div>
 
-            {/* Topology HUD */
+            {/* Topology HUD */}
             <div className="bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xl flex items-center gap-2 sm:gap-3 text-xs font-mono">
               <div className="flex items-center gap-1 sm:gap-1.5">
                 <span className="text-zinc-500 text-[10px] uppercase font-semibold hidden sm:inline">Topology</span>
@@ -3478,7 +3478,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             </div>
           )}
 
-          {/* Unified Minimalist Viewport Transport & Shading HUD Capsule */
+          {/* Unified Minimalist Viewport Transport & Shading HUD Capsule */}
           {!isExecuting && !debugBlueprint && (
             <div className="absolute bottom-14 md:bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 sm:gap-2 max-w-[calc(100vw-1.5rem)] flex-wrap justify-center pointer-events-auto">
               {/* Camera Presets Dropdown */}
