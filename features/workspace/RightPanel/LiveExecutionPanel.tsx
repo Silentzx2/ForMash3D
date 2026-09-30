@@ -120,6 +120,9 @@ export const LiveExecutionPanel: React.FC = () => {
     postprocess: 'master',
     inspect: 'master',
     repair: 'repair',
+    retopo: 'repair',
+    remesh: 'optimize',
+    simplify: 'optimize',
     optimize: 'optimize',
     uv: 'uv',
     game_ready: 'game_ready',
@@ -191,14 +194,28 @@ export const LiveExecutionPanel: React.FC = () => {
         },
       ];
 
-  const currentStageIndex = stageNameMap[stageName]
+  let currentStageIndex = stageNameMap[stageName]
     ? pipelineStages.findIndex(stage => stage.id === stageNameMap[stageName])
-    : progress >= 100
-      ? pipelineStages.length - 1
-      : 0;
+    : -1;
+
+  if (currentStageIndex === -1) {
+    if (isCompleted || progress >= 100) {
+      currentStageIndex = pipelineStages.length - 1;
+    } else if (progress >= 95) {
+      currentStageIndex = Math.min(pipelineStages.length - 1, 8);
+    } else if (progress >= 85) {
+      currentStageIndex = Math.min(pipelineStages.length - 1, 7);
+    } else if (progress >= 80) {
+      currentStageIndex = Math.min(pipelineStages.length - 1, 6);
+    } else if (progress >= 75) {
+      currentStageIndex = Math.min(pipelineStages.length - 1, 1);
+    } else {
+      currentStageIndex = 0;
+    }
+  }
 
   const completedStageCount = pipelineStages.filter((stage, index) => {
-    if (isCompleted || progress >= 100) return true;
+    if (isCompleted) return true;
     return index < currentStageIndex;
   }).length;
   const currentStage = pipelineStages[currentStageIndex] || pipelineStages[0];
@@ -215,7 +232,7 @@ export const LiveExecutionPanel: React.FC = () => {
       if (index === currentStageIndex) return 'failed';
       return 'pending';
     }
-    if (isCompleted || progress >= 100) return 'completed';
+    if (isCompleted) return 'completed';
     if (index < currentStageIndex) return 'completed';
     if (index === currentStageIndex) return 'active';
     return 'pending';

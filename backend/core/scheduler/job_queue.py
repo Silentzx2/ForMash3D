@@ -601,6 +601,10 @@ class JobQueue:
                         stage or job.metadata.get("stage") or "processing",
                         message or job.metadata.get("message") or "Processing",
                     )
+                pct = int(job.progress * 100)
+                logger.info(
+                    f"[JOB PROGRESS] job_id={job_id} progress={pct}% stage={job.metadata.get('stage')} message='{job.metadata.get('message')}'"
+                )
 
                 now = time.monotonic()
                 last = self._last_progress_persist.get(job_id, 0.0)

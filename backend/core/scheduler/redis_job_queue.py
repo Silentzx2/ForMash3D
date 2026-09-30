@@ -8,6 +8,7 @@ without conflicts.
 import asyncio
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
@@ -70,6 +71,7 @@ class RedisJobQueue:
         self.cancel_request_key = f"{queue_prefix}:cancel_requested"
         
         self.redis: Optional[aioredis.Redis] = None
+        self._last_get_job_log: Dict[str, float] = {}
 
     async def connect(self):
         """Connect to Redis with bounded connection pool"""
@@ -178,6 +180,7 @@ class RedisJobQueue:
         await self.redis.hset(self.progress_hash_key, job_id, "0.15")
         await self.redis.hset(self.stage_hash_key, job_id, "loading_model")
         await self.redis.hset(self.message_hash_key, job_id, "Loading model on GPU...")
+        logger.info(f"[JOB STARTED] job_id={job_id} stage=loading_model progress=15% message='Loading model on GPU...'")
 
         # Reconstruct JobRequest (job_id is auto-generated, so we set it after)
         job_request = JobRequest(
@@ -251,6 +254,7 @@ class RedisJobQueue:
             job_data["message"] = "Production asset is ready."
             _append_log(job_data, "completed", 1.0, "Production asset is ready.")
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+        logger.info(f"[JOB COMPLETE] job_id={job_id} progress=100% status=completed")
         
         # Store each result under its own key so EXPIRE applies to the result.
         await self.redis.set(
@@ -273,6 +277,8 @@ class RedisJobQueue:
         """Mark job as failed"""
         if not self.redis:
             raise RuntimeError("Redis not connected")
+
+        logger.error(f"[JOB FAILED] job_id={job_id} error={error}")
 
         # Remove from processing
         await self.redis.srem(self.processing_set_key, job_id)
@@ -301,6 +307,7 @@ class RedisJobQueue:
         if not self.redis:
             return
         value = min(1.0, max(0.0, float(progress)))
+        logger.info(f"[JOB PROGRESS] job_id={job_id} progress={int(value * 100)}% stage={stage or 'processing'} message='{message or ''}'")
         await self.redis.hset(self.progress_hash_key, job_id, str(value))
         if stage:
             await self.redis.hset(self.stage_hash_key, job_id, stage)
@@ -323,12 +330,22 @@ class RedisJobQueue:
         if not self.redis:
             raise RuntimeError("Redis not connected")
 
-        logger.debug("get_job: looking up job_id=%s prefix=%s", job_id, self.queue_prefix)
+        now = time.monotonic()
+        should_log = (now - self._last_get_job_log.get(job_id, 0.0)) >= 15.0
+        if should_log:
+            self._last_get_job_log[job_id] = now
+            if len(self._last_get_job_log) > 500:
+                cutoff = now - 60.0
+                self._last_get_job_log = {k: v for k, v in self._last_get_job_log.items() if v >= cutoff}
+            logger.debug("get_job: looking up job_id=%s prefix=%s", job_id, self.queue_prefix)
+
         job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
         if not job_data_str:
-            logger.debug("get_job: job_id=%s not found in Redis", job_id)
+            if should_log:
+                logger.debug("get_job: job_id=%s not found in Redis", job_id)
             return None
-        logger.debug("get_job: job_id=%s found", job_id)
+        if should_log:
+            logger.debug("get_job: job_id=%s found", job_id)
         
         job_data = json.loads(job_data_str)
         hot_progress, hot_stage, hot_message = await asyncio.gather(
@@ -556,6 +573,7 @@ class RedisJobQueue:
             
             # Delete result if exists
             await self.redis.hdel(self.results_hash_key, job_id)
+            self._last_get_job_log.pop(job_id, None)
             
             if deleted_count > 0:
                 logger.info(f"Deleted job {job_id} from Redis")

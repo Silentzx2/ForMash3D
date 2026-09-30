@@ -1196,8 +1196,16 @@ async def download_job_result(
             if canonical_format == "master":
                 output_path = asset_root_path / "master" / "source.glb"
             elif canonical_format in {"glb", "gltf", "fbx", "obj", "stl", "ply"}:
-                stem = asset_name or asset_root_path.name
-                output_path = asset_root_path / "game_ready" / f"{stem}.{canonical_format}"
+                candidate = asset_root_path / "game_ready" / f"{asset_root_path.name}.{canonical_format}"
+                if not candidate.exists() and asset_name:
+                    alt = asset_root_path / "game_ready" / f"{asset_name}.{canonical_format}"
+                    if alt.exists():
+                        candidate = alt
+                if not candidate.exists():
+                    matches = list((asset_root_path / "game_ready").glob(f"*.{canonical_format}"))
+                    if matches:
+                        candidate = matches[0]
+                output_path = candidate
             elif canonical_format in {"lod0", "lod1", "lod2", "lod3"}:
                 output_path = asset_root_path / "lods" / f"{canonical_format}.glb"
             elif canonical_format == "collision":

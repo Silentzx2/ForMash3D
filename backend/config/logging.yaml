@@ -76,8 +76,23 @@ loggers:
     level: DEBUG
     handlers: [console, scheduler_file, error_file]
     propagate: false
+
+  core.models:
+    level: INFO
+    handlers: [console, file, error_file]
+    propagate: false
+
+  core:
+    level: INFO
+    handlers: [console, file, error_file]
+    propagate: false
   
   adapters:
+    level: INFO
+    handlers: [console, file, error_file]
+    propagate: false
+
+  postprocess:
     level: INFO
     handlers: [console, file, error_file]
     propagate: false

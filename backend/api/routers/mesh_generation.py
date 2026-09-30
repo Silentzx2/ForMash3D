@@ -73,6 +73,8 @@ class TextToRawMeshRequest(BaseModel):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
+    quad_topology: bool = Field(False, description="Request quad-dominant topology")
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -103,6 +105,8 @@ class TextToTexturedMeshRequest(TextToRawMeshRequest):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
+    quad_topology: bool = Field(False, description="Request quad-dominant topology")
 
 
 class BatchTextToTexturedMeshItem(BaseModel):
@@ -113,6 +117,8 @@ class BatchTextToTexturedMeshItem(BaseModel):
     texture_prompt: Optional[str] = Field(None, max_length=4000)
     texture_resolution: int = Field(1024, ge=256, le=4096)
     model_parameters: Optional[dict] = None
+    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
+    quad_topology: bool = Field(False, description="Request quad-dominant topology")
 
 
 class BatchTextToTexturedMeshRequest(BaseModel):
@@ -145,6 +151,8 @@ class TextMeshPaintingRequest(BaseModel):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
+    quad_topology: bool = Field(False, description="Request quad-dominant topology")
 
     @field_validator("output_format")
     @classmethod
@@ -195,6 +203,8 @@ class ImageToRawMeshRequest(BaseModel):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
+    quad_topology: bool = Field(False, description="Request quad-dominant topology")
 
     @field_validator("output_format")
     @classmethod
@@ -255,6 +265,8 @@ class ImageToTexturedMeshRequest(BaseModel):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
+    quad_topology: bool = Field(False, description="Request quad-dominant topology")
 
     @field_validator("output_format")
     @classmethod
@@ -477,11 +489,19 @@ async def text_to_raw_mesh(
             inputs={
                 "text_prompt": mesh_request.text_prompt,
                 "output_format": mesh_request.output_format,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 **(mesh_request.model_parameters or {}),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "text_to_raw_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={
+                "feature_type": "text_to_raw_mesh",
+                "physics_enabled": mesh_request.physics_enabled,
+                "physics_config": mesh_request.physics_config,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+            },
             user_id=user_id,
         )
         job_id = await scheduler.schedule_job(job_request)
@@ -533,11 +553,19 @@ async def text_to_textured_mesh(
                 "texture_text_prompt": mesh_request.texture_prompt,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 **(mesh_request.model_parameters or {}),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "text_to_textured_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={
+                "feature_type": "text_to_textured_mesh",
+                "physics_enabled": mesh_request.physics_enabled,
+                "physics_config": mesh_request.physics_config,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+            },
             user_id=user_id,
         )
         # logger.info("JobRequest: {}".format(job_request.to_dict()))
@@ -581,6 +609,8 @@ async def batch_text_to_textured_mesh(
                 "texture_text_prompt": item.texture_prompt or item.text_prompt,
                 "output_format": "glb",
                 "texture_resolution": item.texture_resolution,
+                "topology_mode": item.topology_mode or ("quad" if item.quad_topology else "triangle"),
+                "quad_topology": bool(item.quad_topology or item.topology_mode == "quad"),
                 **(item.model_parameters or {}),
             },
             model_preference=item.model_preference,
@@ -591,6 +621,8 @@ async def batch_text_to_textured_mesh(
                 "batch_max_parallel": batch_request.max_parallel,
                 "batch_size": len(batch_request.items),
                 "batch_item_index": len(jobs),
+                "topology_mode": item.topology_mode or ("quad" if item.quad_topology else "triangle"),
+                "quad_topology": bool(item.quad_topology or item.topology_mode == "quad"),
             },
             user_id=user_id,
         )
@@ -713,11 +745,19 @@ async def image_to_raw_mesh(
             inputs={
                 "image_path": image_file_path,
                 "output_format": mesh_request.output_format,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 **(mesh_request.model_parameters or {}),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "image_to_raw_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={
+                "feature_type": "image_to_raw_mesh",
+                "physics_enabled": mesh_request.physics_enabled,
+                "physics_config": mesh_request.physics_config,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+            },
             user_id=user_id,
         )
 
@@ -790,11 +830,19 @@ async def image_to_textured_mesh(
                 "texture_image_path": texture_image_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 **(mesh_request.model_parameters or {}),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "image_to_textured_mesh", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={
+                "feature_type": "image_to_textured_mesh",
+                "physics_enabled": mesh_request.physics_enabled,
+                "physics_config": mesh_request.physics_config,
+                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
+                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+            },
             user_id=user_id,
         )
 

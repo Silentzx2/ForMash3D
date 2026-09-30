@@ -870,6 +870,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         model_parameters: modelParameters,
         physics_enabled: physicsForThisJob,
         physics_config: generationSettings.physics,
+        topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
+        quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
       };
 
       if (isTextured) {
@@ -1002,6 +1004,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 texture_prompt: item.prompt,
                 texture_resolution: currentQuality === 'ultra' ? 4096 : 2048,
                 model_parameters: modelParameters,
+                topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
+                quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
               })),
               max_parallel: 2,
             }),
@@ -1049,6 +1053,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           model_parameters: modelParameters,
           physics_enabled: Boolean(generationSettings.generateCollision),
           physics_config: generationSettings.physics,
+          topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
+          quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
         };
 
         if (isTextured) {
@@ -1412,6 +1418,25 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           const priorPostprocessStatus = (activeTaskRef.current?.result as any)?.postprocess_status;
           const currentPostprocessStatus = data.result?.postprocess_status;
           const postprocessPending = currentPostprocessStatus === 'pending' || currentPostprocessStatus === 'running';
+
+          if (postprocessPending) {
+            setIsExecuting(true);
+            const postprocessFrac = Math.min(96, Math.max(progress, 75));
+            setExecutionProgress(postprocessFrac);
+            setExecutionStep(currentMsg || 'Finishing production post-processing...');
+            setActiveTask(prev => prev ? {
+              ...prev,
+              status: 'running',
+              progress: postprocessFrac,
+              currentStep: currentMsg || 'Finishing production post-processing...',
+              logs: data.logs || prev.logs,
+              result: data.result || prev.result,
+              stage: data.stage || 'postprocess',
+            } : null);
+            scheduleNext(document.visibilityState === 'hidden' ? 2500 : 1100);
+            return;
+          }
+
           const postprocessFailed =
             currentPostprocessStatus === 'failed' && priorPostprocessStatus !== 'failed';
           const postprocessJustCompleted =
@@ -1421,23 +1446,20 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setIsExecuting(false);
           setExecutionProgress(100);
           setExecutionStep(
-            postprocessPending
-              ? 'Raw result ready; finishing production post-processing'
-              : postprocessFailed
-                ? 'Production post-processing failed; raw result retained'
-                : 'Completed'
+            postprocessFailed
+              ? 'Production post-processing failed; raw result retained'
+              : 'Completed'
           );
           setActiveTask(prev => prev ? {
             ...prev,
             status: 'completed',
             progress: 100,
-            currentStep: postprocessPending
-              ? 'Raw result ready; finishing production post-processing'
-              : postprocessFailed
-                ? 'Production post-processing failed; raw result retained'
-                : 'Completed',
+            currentStep: postprocessFailed
+              ? 'Production post-processing failed; raw result retained'
+              : 'Completed',
             logs: data.logs || prev.logs,
             result: data.result || prev.result,
+            stage: 'completed',
             errorCode: (data as any).error_code || prev.errorCode,
           } : null);
 
@@ -1578,9 +1600,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             }
           }
 
-          if (postprocessPending) {
-            scheduleNext(document.visibilityState === 'hidden' ? 2500 : 1200);
-          }
           return;
         } else if (data.status === 'failed' || data.status === 'cancelled') {
           const currentLatestTask = activeTaskRef.current || task;

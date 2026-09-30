@@ -51,6 +51,7 @@ def run_auto_retopo(mesh: trimesh.Trimesh, options: AutoRetopoOptions, progress=
         "metrics": result.metrics,
         "timings": result.timings,
         "quad_face_count": (len(result.quad_faces) if result.quad_faces is not None else None),
+        "quad_faces": result.quad_faces,
     }
     # result.mesh is a triangle trimesh.Trimesh (GLB is triangles-only; the
     # quad-dominant face list, when requested, is summarized in stats above).

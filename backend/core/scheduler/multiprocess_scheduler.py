@@ -108,6 +108,21 @@ class WorkerResponse:
         self.timestamp = time.time()
 
 
+def _extract_job_status(job: Any) -> Optional[str]:
+    """Safely extract lowercase status string from either a JobRequest or a Redis job dict."""
+    if job is None:
+        return None
+    if isinstance(job, dict):
+        status_val = job.get("status")
+    else:
+        status_val = getattr(job, "status", None)
+    if status_val is None:
+        return None
+    if hasattr(status_val, "value"):
+        return str(status_val.value).lower()
+    return str(status_val).lower()
+
+
 def model_worker_process(
     worker_config: WorkerConfig,
     job_queue: mp.Queue,
@@ -173,17 +188,17 @@ def model_worker_process(
 
         # Load model immediately upon worker creation
         try:
-            logger.info(f"Loading model '{model_id}' on GPU {gpu_id} with config: {model_config.get('init_params', {})}")
+            logger.info(f"[GPU LOAD START] Worker {worker_id} loading model '{model_id}' on GPU {gpu_id} with config: {model_config.get('init_params', {})}")
             model = _create_model_from_config(model_config)
             success = model.load(gpu_id)
 
             if success:
                 loaded_model = model
-                logger.info(f"✓ Worker {worker_id} successfully loaded model '{model_id}' on GPU {gpu_id}")
+                logger.info(f"[GPU LOAD SUCCESS] ✓ Worker {worker_id} successfully loaded model '{model_id}' on GPU {gpu_id}")
                 control_response_queue.put(WorkerResponse("init", True, {"model_id": model_id}))
             else:
                 err_msg = f"Worker {worker_id} model.load({gpu_id}) returned False for model '{model_id}'"
-                logger.error(f"❌ {err_msg}")
+                logger.error(f"[GPU LOAD FAILED] ❌ {err_msg}")
                 try:
                     control_response_queue.put(WorkerResponse("init", False, error=err_msg))
                 except Exception:
@@ -261,9 +276,11 @@ def model_worker_process(
             if loaded_model and hasattr(loaded_model, "_unload_model"):
                 # Synchronous unload for cleanup
                 try:
+                    logger.info(f"[GPU UNLOAD START] Worker {worker_id} unloading model from GPU {gpu_id}...")
                     loaded_model._unload_model()
-                except Exception:
-                    pass
+                    logger.info(f"[GPU UNLOAD SUCCESS] ✓ Worker {worker_id} model unloaded from GPU {gpu_id}")
+                except Exception as unl_err:
+                    logger.warning(f"[GPU UNLOAD FAILED] Worker {worker_id} unload warning: {unl_err}")
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:
@@ -295,6 +312,7 @@ def _handle_control_message(
                 return WorkerResponse(msg.msg_id, True, {"status": "already_loaded"})
 
             # Create and load model
+            logger.info(f"[GPU LOAD START] Worker loading model '{model_id}' on GPU {gpu_id}...")
             model = _create_model_from_config(model_config)
 
             # Load synchronously (we're in a worker process)
@@ -302,8 +320,10 @@ def _handle_control_message(
 
             if success:
                 loaded_model = model
+                logger.info(f"[GPU LOAD SUCCESS] ✓ Worker successfully loaded model '{model_id}' on GPU {gpu_id}")
                 return WorkerResponse(msg.msg_id, True, {"status": "loaded"})
             else:
+                logger.error(f"[GPU LOAD FAILED] ❌ Failed to load model '{model_id}' on GPU {gpu_id}")
                 return WorkerResponse(msg.msg_id, False, error="Failed to load model")
 
         elif msg.type == WorkerMessage.Type.UNLOAD_MODEL:
@@ -314,12 +334,15 @@ def _handle_control_message(
             if loaded_model is None:
                 return WorkerResponse(msg.msg_id, True, {"status": "not_loaded"})
 
+            logger.info(f"[GPU UNLOAD START] Worker unloading model '{model_id}' from GPU {gpu_id}...")
             success = loaded_model.unload()
 
             if success:
                 loaded_model = None
+                logger.info(f"[GPU UNLOAD SUCCESS] ✓ Worker successfully unloaded model '{model_id}' from GPU {gpu_id}")
                 return WorkerResponse(msg.msg_id, True, {"status": "unloaded"})
             else:
+                logger.error(f"[GPU UNLOAD FAILED] ❌ Failed to unload model '{model_id}' from GPU {gpu_id}")
                 return WorkerResponse(msg.msg_id, False, error="Failed to unload model")
 
         elif msg.type == WorkerMessage.Type.GET_STATUS:
@@ -640,6 +663,8 @@ class MultiprocessModelScheduler:
         """Get job status and results"""
         job = await self.job_queue.get_job(job_id)
         if job:
+            if isinstance(job, dict):
+                return job
             return job.to_dict()
         return None
 
@@ -648,9 +673,10 @@ class MultiprocessModelScheduler:
         job = await self.job_queue.get_job(job_id)
         if job is None:
             return False
-        if job.status == JobStatus.CANCELLED:
+        status_str = _extract_job_status(job)
+        if status_str == "cancelled":
             return True
-        if job.status != JobStatus.PROCESSING:
+        if status_str != "processing":
             cancelled = await self.job_queue.cancel_job(job_id)
             if cancelled:
                 self._cleanup_temporary_inputs(job)
@@ -930,7 +956,7 @@ class MultiprocessModelScheduler:
                 stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
                 if not stopped:
                     job = await self.job_queue.get_job(job_id)
-                    if job and job.status == JobStatus.QUEUED:
+                    if job and _extract_job_status(job) == "queued":
                         await self.job_queue.cancel_job(job_id)
                 await clear_request(job_id)
             except Exception:
@@ -1101,11 +1127,47 @@ class MultiprocessModelScheduler:
         """Handle job result asynchronously without blocking the main processing loop"""
         job_id = job_request.job_id
         keep_inputs_for_postprocess = False
+        progress_task = None
         try:
-            result = await asyncio.wait_for(result_future, timeout=3600.0)
+            async def _inference_progress_ticker():
+                """Periodically update job progress while model worker generates mesh."""
+                start_time = time.monotonic()
+                # Interpolate progress from 20% to 70% during inference over expected time
+                stage_messages = [
+                    (20, "generating", "Generating 3D neural latent..."),
+                    (35, "generating", "Predicting geometry coordinates..."),
+                    (50, "generating", "Synthesizing mesh structure..."),
+                    (65, "generating", "Refining 3D surface and textures..."),
+                ]
+                idx = 0
+                while True:
+                    await asyncio.sleep(4.0)
+                    elapsed = time.monotonic() - start_time
+                    if idx < len(stage_messages):
+                        pct, stg, msg = stage_messages[idx]
+                        idx += 1
+                    else:
+                        pct = min(72, 65 + int(elapsed // 10))
+                        stg = "generating"
+                        msg = f"Continuing 3D generation (elapsed: {int(elapsed)}s)..."
+                    await self.job_queue.update_job_progress(job_id, pct / 100.0, stg, msg)
+                    logger.info(
+                        f"[GENERATION PROGRESS] job_id={job_id} progress={pct}% stage={stg} elapsed={elapsed:.1f}s"
+                    )
+
+            progress_task = asyncio.create_task(_inference_progress_ticker())
+            try:
+                result = await asyncio.wait_for(result_future, timeout=3600.0)
+            finally:
+                if progress_task and not progress_task.done():
+                    progress_task.cancel()
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass
 
             current_job = await self.job_queue.get_job(job_id)
-            if current_job and current_job.status in {JobStatus.FAILED, JobStatus.CANCELLED}:
+            if current_job and _extract_job_status(current_job) in {"failed", "cancelled"}:
                 self._cleanup_temporary_inputs(job_request)
                 return
 
@@ -1127,16 +1189,22 @@ class MultiprocessModelScheduler:
                     await self.job_queue.update_job_progress(
                         job_id, 0.75, "postprocess", "Running production post-processing"
                     )
+                    logger.info(f"[POSTPROCESS PROGRESS] job_id={job_id} progress=75% stage=postprocess message='Running production post-processing'")
                     try:
                         from postprocess.pipeline import run_postprocess_job
 
                         loop = asyncio.get_running_loop()
 
                         def report(frac: float, stage: str, message: str) -> None:
+                            calc_progress = 0.75 + (min(1.0, max(0.0, frac)) * 0.25)
+                            pct = int(calc_progress * 100)
+                            logger.info(
+                                f"[POSTPROCESS PROGRESS] job_id={job_id} progress={pct}% stage={stage} message='{message}'"
+                            )
                             future = asyncio.run_coroutine_threadsafe(
                                 self.job_queue.update_job_progress(
                                     job_id,
-                                    0.75 + (min(1.0, max(0.0, frac)) * 0.25),
+                                    calc_progress,
                                     stage,
                                     message,
                                 ),
@@ -1159,6 +1227,7 @@ class MultiprocessModelScheduler:
                             final_result,
                             job_request.inputs,
                             {
+                                **job_request.metadata,
                                 "feature": job_request.feature,
                                 "model_id": job_request.model_preference,
                                 "physics_enabled": bool(job_request.metadata.get("physics_enabled", False)),
@@ -1195,7 +1264,7 @@ class MultiprocessModelScheduler:
             logger.error(f"Error handling result for job {job_id}: {e}")
             try:
                 current_job = await self.job_queue.get_job(job_id)
-                if current_job and current_job.status not in {JobStatus.FAILED, JobStatus.CANCELLED}:
+                if current_job and _extract_job_status(current_job) not in {"failed", "cancelled"}:
                     await self.job_queue.fail_job(
                         job_id, f"Error handling result: {str(e)}"
                     )
@@ -1205,15 +1274,19 @@ class MultiprocessModelScheduler:
             if not keep_inputs_for_postprocess:
                 self._cleanup_temporary_inputs(job_request)
 
-    def _cleanup_temporary_inputs(self, job_request: JobRequest) -> None:
+    def _cleanup_temporary_inputs(self, job_request: Any) -> None:
         """Remove per-request mesh_gen_* input directories once job ownership ends."""
         parents = set()
-        for value in job_request.inputs.values():
-            if not isinstance(value, str):
-                continue
-            path = Path(value)
-            if path.parent.name.startswith("mesh_gen_"):
-                parents.add(path.parent)
+        inputs = getattr(job_request, "inputs", None)
+        if inputs is None and isinstance(job_request, dict):
+            inputs = job_request.get("inputs", {})
+        if isinstance(inputs, dict):
+            for value in inputs.values():
+                if not isinstance(value, str):
+                    continue
+                path = Path(value)
+                if path.parent.name.startswith("mesh_gen_"):
+                    parents.add(path.parent)
         for directory in parents:
             shutil.rmtree(directory, ignore_errors=True)
 

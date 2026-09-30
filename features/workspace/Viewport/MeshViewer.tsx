@@ -3430,7 +3430,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
           {reflectionPeekEnabled && (
             <div
-              className="absolute top-14 right-3 z-10 pointer-events-auto"
+              className="absolute top-14 z-10 pointer-events-auto transition-[right] duration-200"
+              style={{ right: `${rightOffset}px` }}
               onMouseEnter={handleReflectionPeekEnter}
               onMouseLeave={handleReflectionPeekLeave}
               onFocus={handleReflectionPeekEnter}

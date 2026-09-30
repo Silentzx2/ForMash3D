@@ -132,6 +132,33 @@ def _export_bytes(mesh: trimesh.Trimesh, fmt: str) -> bytes:
     raise RuntimeError(f"Unable to export {fmt} from processed mesh.")
 
 
+def _export_quad_obj(mesh: trimesh.Trimesh, quad_faces: Any) -> bytes:
+    """Export mesh as OBJ format with quad/polygonal faces."""
+    lines = ["# ForMash3D Quad Mesh Export\n"]
+    for v in mesh.vertices:
+        lines.append(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
+    has_uv = hasattr(mesh, "visual") and getattr(mesh.visual, "uv", None) is not None and len(mesh.visual.uv) == len(mesh.vertices)
+    if has_uv:
+        for uv in mesh.visual.uv:
+            lines.append(f"vt {uv[0]:.6f} {uv[1]:.6f}\n")
+    has_vn = len(mesh.vertex_normals) == len(mesh.vertices)
+    if has_vn:
+        for vn in mesh.vertex_normals:
+            lines.append(f"vn {vn[0]:.6f} {vn[1]:.6f} {vn[2]:.6f}\n")
+
+    for face in quad_faces:
+        if has_uv and has_vn:
+            items = [f"{int(idx)+1}/{int(idx)+1}/{int(idx)+1}" for idx in face]
+        elif has_uv:
+            items = [f"{int(idx)+1}/{int(idx)+1}" for idx in face]
+        elif has_vn:
+            items = [f"{int(idx)+1}//{int(idx)+1}" for idx in face]
+        else:
+            items = [f"{int(idx)+1}" for idx in face]
+        lines.append(f"f {' '.join(items)}\n")
+    return "".join(lines).encode("utf-8")
+
+
 def _export_glb(mesh: trimesh.Trimesh) -> bytes:
     payload = mesh.export(file_type="glb")
     if isinstance(payload, bytes):
@@ -397,7 +424,37 @@ def run_postprocess_job(
         > RepairOptions().max_hole_size
     )
 
-    if solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
+    is_quad_requested = (
+        job_metadata.get("topology_mode") == "quad"
+        or job_inputs.get("topology_mode") == "quad"
+        or bool(job_metadata.get("quad_topology"))
+        or bool(job_inputs.get("quad_topology"))
+    )
+
+    if is_quad_requested:
+        _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
+        retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), 60_000, max(50, int(len(repaired.faces))))
+        try:
+            repaired, retopo_tool_stats, _ = run_auto_retopo(
+                repaired,
+                AutoRetopoOptions(
+                    target_faces=retopo_target,
+                    quads=True,
+                    watertight=True,
+                    shell_smooth=0.6,
+                    shell_taubin=3,
+                    adaptive=True,
+                    preserve_features=True,
+                    feature_angle=25.0,
+                    project=True,
+                ),
+                progress=lambda stage, frac, msg: _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
+            )
+            retopo_stats = {"status": "completed", "trigger": "quad_requested", **retopo_tool_stats}
+        except Exception as exc:
+            retopo_stats = {"status": "failed", "trigger": "quad_requested", "error": str(exc)}
+            logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
+    elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
         retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), 60_000, max(50, int(len(repaired.faces))))
         try:
@@ -418,12 +475,16 @@ def run_postprocess_job(
         retopo_stats = {"status": "skipped", "reason": "Asset feature does not declare a solid AI-generation contract."}
 
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
-    target_faces = min(50_000, max(5_000, int(job_inputs.get("target_polycount") or 50_000)))
-    optimized, optimize_stats = run_optimize(
-        repaired,
-        OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
-                        permissive=False, aggressive=False, lock_border=False),
-    )
+    if is_quad_requested and retopo_stats.get("status") == "completed":
+        optimized = repaired
+        optimize_stats = {"passthrough": True, "reason": "Quad-dominant topology preserved from retopology pass"}
+    else:
+        target_faces = min(50_000, max(5_000, int(job_inputs.get("target_polycount") or 50_000)))
+        optimized, optimize_stats = run_optimize(
+            repaired,
+            OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
+                            permissive=False, aggressive=False, lock_border=False),
+        )
     quality_trace["optimized"] = {
         **mesh_stats(optimized).model_dump(),
         "native_textures": _has_native_textures(optimized),
@@ -461,10 +522,14 @@ def run_postprocess_job(
     _save_file(glb_path, _export_glb(uv_mesh))
     game_ready["glb"] = str(glb_path)
 
+    quad_faces = retopo_stats.get("quad_faces")
     for fmt in ("obj", "stl", "ply"):
         try:
             target = game_ready_dir / f"{base_name}.{fmt}"
-            _save_file(target, _export_bytes(uv_mesh, fmt))
+            if fmt == "obj" and quad_faces:
+                _save_file(target, _export_quad_obj(uv_mesh, quad_faces))
+            else:
+                _save_file(target, _export_bytes(uv_mesh, fmt))
             game_ready[fmt] = str(target)
         except Exception as exc:
             logger.warning("Game-ready %s export skipped: %s", fmt, exc)
