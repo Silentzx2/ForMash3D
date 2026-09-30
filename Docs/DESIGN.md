@@ -46,38 +46,39 @@ All colors and surfaces in ForMash 3D use HSL CSS variable design tokens. Direct
 
 ```mermaid
 flowchart TB
-    classDef token fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
-    classDef layer fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#fff
-    classDef comp fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
-    classDef pattern fill:#0f172a,stroke:#f97316,stroke-width:2px,color:#fff
+    classDef gold fill:#1a1915,stroke:#ffcc00,stroke-width:2px,color:#ffcc00;
+    classDef cyan fill:#0f1d24,stroke:#06b6d4,stroke-width:2px,color:#67e8f9;
+    classDef green fill:#0d2018,stroke:#10b981,stroke-width:2px,color:#6ee7b7;
+    classDef orange fill:#24160c,stroke:#f97316,stroke-width:2px,color:#fdba74;
 
-    TOKENS["Design Tokens<br/>app/globals.css"]:::token
-    TOKENS --> HSL["HSL CSS Variables<br/>--surface-0 through --surface-4<br/>--primary #FFCC00<br/>--muted-foreground"]
-    TOKENS --> MOTION["Motion Presets<br/>MOTION_FAST/BASE/SLOW<br/>MOTION_SPRING/SPRING_SNAPPY"]
-    TOKENS --> TYPO["Typography Scale<br/>Font: Inter, JetBrains Mono<br/>Sizes: xs → 4xl"]
+    TOKENS["🎨 Design Tokens<br/>app/globals.css"]:::gold
+    TOKENS --> HSL["HSL CSS Variables<br/>--surface-0 through --surface-4<br/>--primary #FFCC00 (Studio Gold)<br/>--muted-foreground"]
+    TOKENS --> MOTION["Motion Presets<br/>Framer Motion Spring<br/>SNAPPY (Stiffness 400, Damping 25)"]
+    TOKENS --> TYPO["Typography Scale<br/>Inter Display + JetBrains Mono<br/>Sizes: xs → 4xl"]
 
-    subgraph LAY["Presentation Layers"]
+    subgraph LAY["🌐 Presentation Hierarchy"]
         direction TB
-        L1["Layout Layer<br/>WorkspaceShell, Providers"]:::layer
-        L2["Component Layer<br/>UI primitives, Feature panels"]:::layer
-        L3["Viewport Layer<br/>Three.js / R3F"]:::layer
+        L1["Layout Layer<br/>WorkspaceShell, Providers, Modals"]:::cyan
+        L2["Component Layer<br/>Studio UI Primitives, Panels"]:::cyan
+        L3["Viewport Layer<br/>Three.js WebGL / R3F Canvas"]:::cyan
     end
 
-    subgraph COMPS["Component Categories"]
+    subgraph COMPS["🧩 Component Categories"]
         direction TB
-        C1["Navigation<br/>TopHeader, LeftNav Rail"]:::comp
-        C2["Panels<br/>GeneratePanel, TexturePanel<br/>RemeshPanel, EditPanel"]:::comp
-        C3["Viewport<br/>MeshViewer, ModelInspector"]:::comp
-        C4["Controls<br/>Sliders, Toggles, Buttons"]:::comp
-        C5["Feedback<br/>Toasts, Skeletons, Progress"]:::comp
+        C1["Navigation<br/>TopHeader, LeftNav Rail"]:::green
+        C2["Workspace Panels<br/>Generate, Texture, Remesh, UV, Rig"]:::green
+        C3["3D Viewport<br/>MeshViewer, PBR Shaders, Matcaps"]:::green
+        C4["Interactive Controls<br/>Sliders, Segmented Tabs, Toggles"]:::green
+        C5["Telemetry & QA<br/>Toasts, VRAM Badges, 0-100 Score"]:::green
     end
 
-    subgraph PAT["Design Patterns"]
+    subgraph PAT["✨ Design Patterns"]
         direction TB
-        P1["Glassmorphism<br/>.glass-panel, .glass-card"]:::pattern
-        P2["Specular Shine<br/>.btn-lighting-shine"]:::pattern
-        P3["Responsive<br/>Desktop / Tablet / Mobile"]:::pattern
-        P4["Dynamic Import<br/>next/dynamic + ssr:false"]:::pattern
+        P1["Studio Glassmorphism<br/>.glass-panel, .glass-card"]:::orange
+        P2["Specular Gold Highlights<br/>.btn-lighting-shine"]:::orange
+        P3["Responsive Dark Layout<br/>Zero-Scroll Desktop Panels"]:::orange
+        P4["Client-Side Isolation<br/>next/dynamic with ssr:false"]:::orange
+    end
         P5["HSL-Only<br/>No hex literals in code"]:::pattern
     end
 

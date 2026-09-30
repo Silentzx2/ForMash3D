@@ -49,9 +49,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
         if model_id is None:
             model_id = self.MODEL_ID
         if model_path is None:
-            model_path = str(Path(__file__).resolve().parents[1]) / "pretrained" / "tencent" / "Hunyuan3D-2.1"
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "tencent" / "Hunyuan3D-2.1")
         if hunyuan3d_root is None:
-            hunyuan3d_root = str(Path(__file__).resolve().parents[1]) / "thirdparty" / "Hunyuan3D-2.1"
+            hunyuan3d_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "Hunyuan3D-2.1")
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
         if supported_output_formats is None:
@@ -79,9 +79,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
         self.model_path = Path(model_path)
         # Add Hunyuan3D to Python path
         if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root))
+            sys.path.append(str(self.hunyuan3d_root))
         if str(self.hunyuan3d_root / "hy3dshape") not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root / "hy3dshape"))
+            sys.path.append(str(self.hunyuan3d_root / "hy3dshape"))
 
     def _load_model(self):
         """Load Hunyuan3D 2.1 pipelines based on configuration."""

@@ -89,11 +89,11 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
         
         # Add paths to sys.path
         if str(self.ultrashape_root) not in sys.path:
-            sys.path.insert(0, str(self.ultrashape_root))
+            sys.path.append(str(self.ultrashape_root))
         if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root))
+            sys.path.append(str(self.hunyuan3d_root))
         if str(self.hunyuan3d_root / "hy3dshape") not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root / "hy3dshape"))
+            sys.path.append(str(self.hunyuan3d_root / "hy3dshape"))
         
         logger.info(f"Initialized UltraShape adapter with root: {ultrashape_root}")
     

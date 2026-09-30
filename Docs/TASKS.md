@@ -83,18 +83,26 @@
 
 ## 🔜 Future Work
 
-### Critical
-- [ ] Verify `runTextureGeneration` dependency array includes `generationSettings.maxNumView`, `generationSettings.resolution`, `generationSettings.generatePBR`
-- [ ] Add `supportsFlashVDM` to `isTexturePaintingModel` if needed
-- [ ] Verify `TexturePanel.tsx` `getTextureStatusInfo` checks VRAM status
+### Quality Master Plan v2.1 Verification & Documentation Hardening
+- [x] Clamp Hunyuan extraction octree resolution to upstream contract range [64, 512]
+- [x] Guard TRELLIS.2 GLB export against None/non-positive decimation targets
+- [x] Harden PyMeshLab texture decimation in `simplify.py` with UV integrity checks and safe passthrough fallback
+- [x] Remove dead frontend detail fields from generation request payload
+- [x] Fix thirdparty sys.path shadowing and path string division syntax in Hunyuan adapters
+- [x] Fix merge conflict syntax error in TRELLIS `app_text.py`
+- [x] Verify `runTextureGeneration` dependency array covers all texture settings
+- [x] Verify `supportsFlashVDM` model scoping and `TexturePanel.tsx` VRAM status checks
+- [x] Verify all shell scripts pass `bash -n`
+- [x] Verify `python3 -m compileall` across entire backend passes with 0 errors
+- [x] Verify full backend test suite with 25 passing tests
+- [x] Redesign architecture & pipeline diagrams with Studio Gold theme (`#FFCC00`)
+- [x] Optimize repository SEO and discoverability (Tripo AI & Meshy comparison, Schema.org JSON-LD, topics metadata)
+- [x] Synchronize all project docs (`Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, `Docs/PRD.md`, `Docs/DECISIONS.md`, `Docs/MEMORY.md`, `Docs/SYSTEM-BLUEPRINT.md`)
 
-### Testing
+### Critical
 - [ ] If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference
 - [ ] Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
 - [ ] Verify `backend/scripts/download_models.sh` correctly copies RealESRGAN to thirdparty location
-- [x] Add post-processing runtime dependency, Blender, and opt-in real-mesh fixture coverage (`backend/tests/test_postprocess_e2e.py`)
-- [ ] Run `npx tsc --noEmit` and `python3 -m compileall` for verification
-- [ ] Run `bash -n` on all shell scripts
 
 ### Features
 - [ ] Cloudflare tunneling for remote access

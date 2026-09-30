@@ -96,6 +96,7 @@ def test_topology_counts_exposes_largest_boundary_component():
 
 
 def test_native_texture_detection_requires_real_texture_payload():
+    import numpy as np
     import trimesh
     from postprocess.pipeline import _has_native_textures
 
@@ -179,7 +180,10 @@ def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch, physics_enabl
     assert result["postprocess_status"] == "completed"
     assert result["texture_status"] in {"native", "not_generated"}
     assert result["physics_ready"] is physics_enabled
-    assert result["physics_url"].endswith("artifact_format=physics_json")
+    if physics_enabled:
+        assert result["physics_url"].endswith("artifact_format=physics_json")
+    else:
+        assert result["physics_url"] is None
     assert result["game_ready_formats"]["glb"].endswith("artifact_format=glb")
     assert result["zip_url"].endswith("artifact_format=zip")
     quality = json.loads(quality_report.read_text(encoding="utf-8"))

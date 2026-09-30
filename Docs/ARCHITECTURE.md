@@ -17,60 +17,67 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 ```mermaid
 flowchart TB
-    classDef layer fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#94a3b8
-    classDef node fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
-    classDef db fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
-    classDef store fill:#1e293b,stroke:#10b981,stroke-width:2px,color:#fff
+    %% Sleek Studio Palette
+    classDef gold fill:#1a1915,stroke:#ffcc00,stroke-width:2px,color:#ffcc00;
+    classDef cyan fill:#0f1d24,stroke:#06b6d4,stroke-width:2px,color:#67e8f9;
+    classDef purple fill:#191326,stroke:#a855f7,stroke-width:2px,color:#d8b4fe;
+    classDef green fill:#0d2018,stroke:#10b981,stroke-width:2px,color:#6ee7b7;
+    classDef orange fill:#24160c,stroke:#f97316,stroke-width:2px,color:#fdba74;
+    classDef slate fill:#14171f,stroke:#475569,stroke-width:1.5px,color:#e2e8f0;
 
-    subgraph LAYER["Frontend Layer"]
+    subgraph LAYER["🌐 Studio Frontend Layer (Next.js 16)"]
         direction TB
-        NEXT["Next.js 16 :3000<br/>React 19 + TypeScript"]:::node
-        VPORT["3D Viewport<br/>Three.js / R3F"]:::node
-        CONTROLS["Generation Controls<br/>LOD / Budget / Export"]:::node
+        NEXT["Next.js 16 Studio :3000<br/>React 19 + TypeScript"]:::gold
+        VPORT["3D Viewport<br/>Three.js / React Three Fiber"]:::gold
+        CONTROLS["Studio Panels<br/>Gen · Retopo · UV · Texture · Rig"]:::gold
     end
 
-    subgraph GW["API Gateway Layer"]
+    subgraph GW["⚡ API Gateway Layer (FastAPI)"]
         direction TB
-        API["FastAPI Gateway :7842<br/>Routers + CORS + Rate Limit"]:::node
-        ROUTERS["API Routers<br/>system · file-upload<br/>mesh-generation · mesh-editing<br/>motion-generation · auto-rigging<br/>mesh-segmentation · mesh-retopology<br/>mesh-uv-unwrapping · users"]:::node
-        SCHED["VRAM-Aware Scheduler<br/>GPU Mutual Exclusion"]:::node
-        STATIC["Static File Delivery<br/>/static Binary Streaming"]:::node
+        API["FastAPI Gateway :7842<br/>Routers + CORS + Rate Limiter"]:::cyan
+        ROUTERS["API Routers<br/>/v1/system · /v1/mesh-generation<br/>/v1/mesh-retopology · /v1/auto-rigging<br/>/v1/mesh-uv-unwrapping · /v1/jobs"]:::cyan
+        STATIC["Binary Asset Delivery<br/>Static Streaming with Caching"]:::cyan
     end
 
-    subgraph CORE["Model Execution Layer"]
+    subgraph SCHEDULER["🛡️ Hardware & Scheduling Layer"]
         direction TB
-        ADAPTERS["Model Adapters<br/>TRELLIS · Hunyuan3D · PartPacker<br/>UltraShape · PartField · UniRig<br/>TripoSR · TripoSG · ARDY<br/>FastMesh · VoxHammer"]:::node
-        GPU_MON["GPU Monitor<br/>VRAM / Temperature"]:::node
-        VRAM_BUF["VRAM Safety Buffer<br/>1GB Free Margin"]:::node
+        SCHED["VRAM-Aware Scheduler<br/>GPU Mutual Exclusion"]:::orange
+        GPU_MON["Hardware Telemetry<br/>VRAM / Temp Polling"]:::orange
+        VRAM_BUF["Safety Margin Buffer<br/>1024 MB Headroom Margin"]:::orange
+        REDIS["Redis 7 Queue :6379<br/>Multi-Worker Mode"]:::orange
     end
 
-    subgraph DATA["Storage Layer"]
+    subgraph CORE["🧠 Model Execution Layer (23 Adapters)"]
         direction TB
-        FILESTORE["Redis FileStore<br/>Cross-Worker Metadata"]:::store
-        LOCAL["Canonical Asset Workspace<br/>backend/storage/models/<asset_name>_<job_hash>/"]:::store
-        UPLOADS["Upload Bucket<br/>backend/storage/uploads/"]:::store
+        SHAPE["Shape Generation<br/>TRELLIS · Hunyuan3D-2.1<br/>TripoSR · TripoSG · TripoSF"]:::purple
+        PAINT["Texture Synthesis<br/>Hunyuan3D-Paint 2B<br/>RealESRGAN x4+ PBR"]:::purple
+        STRUCT["Structure & Motion<br/>FastMesh (V1K/V4K) · PartPacker<br/>UniRig · ARDY · VoxHammer"]:::purple
     end
 
-    subgraph OPT["Optional Services"]
+    subgraph POST["⚙️ Production Post-Processing Core"]
         direction TB
-        REDIS["Redis 7 :6379<br/>Multi-Worker Queue"]:::db
+        SRC_CHECK["master/source.glb<br/>Immutable Master Checkpoint"]:::green
+        REPAIR["Watertight Repair<br/>Boundary Component Guard"]:::green
+        SIMPLIFY["PyMeshLab Decimation<br/>Texture Preservation Fallback"]:::green
+        FINISH["LOD0-LOD3 Cascades<br/>CoACD Physics & QA 0-100"]:::green
     end
 
-    LAYER -->|"REST / SSE / WS"| GW
+    subgraph DATA["📦 Canonical Storage Layer"]
+        direction TB
+        LOCAL["Asset Workspace<br/>backend/storage/models/<asset>_<hash>/"]:::slate
+        ZIP["Engine-Ready Delivery<br/>Unreal Engine 5 · Unity · Godot 4"]:::slate
+    end
+
+    LAYER -->|"REST / SSE Streaming"| GW
     API --> ROUTERS
-    API --> SCHED
-    SCHED --> ADAPTERS
-    SCHED --> GPU_MON
-    SCHED --> VRAM_BUF
-    ADAPTERS -->|Raw Mesh| DATA
-    SCHED --"Job Queue"| OPT
-    STATIC -->|"Binary Delivery"| LAYER
-
-    style LAYER fill:#0f172a
-    style GW fill:#0f172a
-    style CORE fill:#0f172a
-    style DATA fill:#0f172a
-    style OPT fill:#0f172a
+    ROUTERS --> SCHEDULER
+    SCHEDULER --> CORE
+    CORE -->|"Raw Model Output"| SRC_CHECK
+    SRC_CHECK --> POST
+    POST --> LOCAL
+    LOCAL --> ZIP
+    LOCAL -->|"Stream GLB"| STATIC
+    STATIC -->|"View in Browser"| VPORT
 ```
 
 ---

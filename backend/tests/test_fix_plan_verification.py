@@ -29,7 +29,7 @@ from core.scheduler.job_queue import JobRequest
 
 class TestTripoSRAdapter(unittest.TestCase):
     def setUp(self):
-        self.adapter = TripoSRImageToRawMeshAdapter()
+        self.adapter = TripoSRImageToRawMeshAdapter(vram_requirement=4096)
 
     def test_model_path_resolution(self):
         path = self.adapter._resolve_model_path()
@@ -72,7 +72,7 @@ class TestTripoSRAdapter(unittest.TestCase):
 
 class TestTripoSGAdapter(unittest.TestCase):
     def setUp(self):
-        self.adapter = TripoSGImageToRawMeshAdapter()
+        self.adapter = TripoSGImageToRawMeshAdapter(vram_requirement=4096)
 
     def test_model_source_resolution(self):
         source = self.adapter._resolve_model_source()

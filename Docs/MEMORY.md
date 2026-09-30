@@ -1,3 +1,12 @@
+## 2026-09-30 Master Plan v2.1 Verification & Adapter Hardening
+- Hunyuan octree extraction resolutions clamped to upstream range [64, 512] across shape, mini-turbo, and paint adapters.
+- Fixed path string division syntax and changed thirdparty sys.path inserts to appends to prevent package shadowing.
+- Guarded TRELLIS.2 GLB export against None/non-positive decimation targets by falling back safely to generated face count.
+- Hardened PyMeshLab texture decimation in `simplify.py` with strict UV checks, texture image retention, and seamless fallback to passthrough on decimation failure.
+- Cleaned legacy merge conflict artifact in TRELLIS `app_text.py` and brought backend compilation to 100% clean across all modules.
+- Re-architected project documentation and README styling to Studio Gold design system, added Tripo AI comparison matrix, Schema.org microdata, and discoverability metadata.
+- Upgraded test suite coverage: wrapped `test_torchmcubes_scatter_fix.py` for pytest discovery; 25 tests passing cleanly across all backend suites.
+
 ## 2026-09-30 Deep Quality Audit — Second Gap Closure
 - Found and fixed a real post-processing crash: normal jobs with Physics disabled could reference uninitialized `collision_stats` when writing `quality_report.json`.
 - Tightened native-texture detection so UV-only `TextureVisuals` are not mistaken for actual texture payloads. This prevents raw meshes from incorrectly skipping AutoUV/using the textured optimizer.
@@ -152,16 +161,20 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 
 ## Next Step
 
-### Critical
-1. Verify `runTextureGeneration` dependency array includes `generationSettings.maxNumView`, `generationSettings.resolution`, `generationSettings.generatePBR`
-3. Add `supportsFlashVDM` to `isTexturePaintingModel` if needed
-4. Verify `TexturePanel.tsx` `getTextureStatusInfo` checks VRAM status
+### Completed in Master Plan v2.1 Verification
+1. Clamped Hunyuan octree extraction resolution to upstream range [64, 512].
+2. Fixed string path division syntax and thirdparty sys.path shadowing in Hunyuan adapters.
+3. Guarded TRELLIS.2 GLB export against None/non-positive decimation targets.
+4. Hardened PyMeshLab texture decimation in `simplify.py` with UV integrity checks and safe passthrough fallback.
+5. Resolved merge conflict artifact in TRELLIS `app_text.py` (100% clean compilation via `compileall`).
+6. Verified `runTextureGeneration` uses `textureSettings` dependency array covering all parameters.
+7. Verified `supportsFlashVDM` model scoping and `TexturePanel.tsx` VRAM status checks.
+8. Verified full backend test suite: 25 passed across all unit/regression test suites.
 
-### Testing
-5. If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference
-6. Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies
-7. Broaden `backend/tests/test_backend_e2e.py` only when full backend integration coverage is required; post-processing coverage is already separated into `backend/tests/test_postprocess_e2e.py`.
-8. Run `npx tsc --noEmit` and `python3 -m compileall` for verification
+### Testing (GPU-dependent)
+1. If GPU becomes available: test Paint adapter import, Real-ESRGAN build, real Paint inference.
+2. Run `bash backend/scripts/install.sh` to verify installer builds all Paint dependencies.
+3. Verify `backend/scripts/download_models.sh` correctly copies RealESRGAN to thirdparty location.
 
 ### Features
 9. Cloudflare tunneling for remote access

@@ -46,10 +46,15 @@ def _restore_texture(source: trimesh.Trimesh, vertices: np.ndarray, faces: np.nd
                              process=False)
     source_visual = getattr(source, "visual", None)
     source_material = getattr(source_visual, "material", None)
+    source_image = getattr(source_visual, "image", None)
     if source_material is not None:
-        result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64), material=copy.copy(source_material))
-    elif getattr(source_visual, "image", None) is not None:
-        result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64), image=source_visual.image)
+        result.visual = trimesh.visual.TextureVisuals(
+            uv=np.asarray(new_uv, dtype=np.float64),
+            material=copy.copy(source_material),
+            image=source_image if source_image is not None else getattr(source_material, "image", None),
+        )
+    elif source_image is not None:
+        result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64), image=source_image)
     else:
         result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64))
     return result
@@ -62,9 +67,9 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
             "input_triangles": input_faces, "triangles": input_faces,
             "target_faces": int(target_faces), "achieved_ratio": 1.0,
             "seam_limited": False, "seams_broken": False, "passthrough": True,
-            "texture_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
+            "texture_preserved": _has_uv(mesh),
         }
-    textured = getattr(getattr(mesh, "visual", None), "uv", None) is not None
+    textured = _has_uv(mesh)
     ms = pymeshlab.MeshSet()
     mesh_kwargs = {
         "vertex_matrix": np.asarray(mesh.vertices, dtype=np.float64),
@@ -86,6 +91,19 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
                 targetfacenum=int(target_faces), qualitythr=0.3, preservenormal=True,
                 optimalplacement=True, autoclean=True,
             )
+        out = ms.current_mesh()
+        vertices = np.asarray(out.vertex_matrix(), dtype=np.float64)
+        faces = np.asarray(out.face_matrix(), dtype=np.int64)
+        if textured:
+            wedge_uv = np.asarray(out.wedge_tex_coord_matrix(), dtype=np.float64)
+            out_normals = None
+            try:
+                out_normals = np.asarray(out.vertex_normal_matrix(), dtype=np.float64)
+            except Exception:
+                pass
+            result = _restore_texture(mesh, vertices, faces, wedge_uv, out_normals)
+        else:
+            result = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     except Exception as exc:
         if textured:
             return mesh, {
@@ -95,26 +113,13 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
                 "texture_preserved": True, "texture_decimator_error": str(exc),
             }
         raise
-    out = ms.current_mesh()
-    vertices = np.asarray(out.vertex_matrix(), dtype=np.float64)
-    faces = np.asarray(out.face_matrix(), dtype=np.int64)
-    if textured:
-        wedge_uv = np.asarray(out.wedge_tex_coord_matrix(), dtype=np.float64)
-        out_normals = None
-        try:
-            out_normals = np.asarray(out.vertex_normal_matrix(), dtype=np.float64)
-        except Exception:
-            pass
-        result = _restore_texture(mesh, vertices, faces, wedge_uv, out_normals)
-    else:
-        result = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     triangles = int(len(result.faces))
     return result, {
         "input_triangles": input_faces, "triangles": triangles,
         "target_faces": int(target_faces), "achieved_ratio": round(triangles / input_faces, 6),
         "seam_limited": triangles > target_faces, "seams_broken": False,
         "passthrough": False,
-        "texture_preserved": bool(textured and getattr(getattr(result, "visual", None), "uv", None) is not None),
+        "texture_preserved": bool(textured and _has_uv(result)),
     }
 
 

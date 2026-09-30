@@ -30,56 +30,54 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 
 ```mermaid
 graph TD
-    classDef client fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
-    classDef gateway fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#fff
-    classDef scheduler fill:#1e293b,stroke:#f97316,stroke-width:2px,color:#fff
-    classDef adapters fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
-    classDef storage fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
-    classDef queue fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
+    classDef gold fill:#1a1915,stroke:#ffcc00,stroke-width:2px,color:#ffcc00;
+    classDef cyan fill:#0f1d24,stroke:#06b6d4,stroke-width:2px,color:#67e8f9;
+    classDef purple fill:#191326,stroke:#a855f7,stroke-width:2px,color:#d8b4fe;
+    classDef green fill:#0d2018,stroke:#10b981,stroke-width:2px,color:#6ee7b7;
+    classDef orange fill:#24160c,stroke:#f97316,stroke-width:2px,color:#fdba74;
+    classDef slate fill:#14171f,stroke:#475569,stroke-width:1.5px,color:#e2e8f0;
 
-    subgraph Client["🌐 Next.js 16 Frontend :3000"]
+    subgraph Client["🌐 Studio Frontend — Next.js 16 (:3000)"]
         direction TB
-        UI["React 19 + TypeScript + R3F"]:::client
-        STATE["Zustand Global State"]:::client
-        QUERY["TanStack Query"]:::client
+        UI["React 19 + TypeScript + R3F"]:::gold
+        STATE["Zustand Global State"]:::gold
+        QUERY["TanStack Query"]:::gold
     end
 
     subgraph Gateway["⚡ FastAPI Gateway :7842"]
         direction TB
-        API["Routers: system, generation,<br/>editing, rigging, segmentation"]:::gateway
-        SCHED["VRAM-Aware Scheduler"]:::scheduler
+        API["Routers: system, generation,<br/>editing, rigging, segmentation"]:::cyan
+        SCHED["VRAM-Aware Scheduler"]:::cyan
     end
 
-    subgraph S["🎮 VRAM-Aware Scheduler"]
+    subgraph S["🛡️ VRAM-Aware Multi-Process Scheduler"]
         direction TB
-        GPU_LOCK["GPU Mutual Exclusion"]:::scheduler
-        MONITOR["GPU Monitor<br/>VRAM / Temp"]:::scheduler
-        SAFETY["VRAM Safety Buffer<br/>1GB Free Margin"]:::scheduler
-        AUTO_UNLOAD["Auto-Unload After Job"]:::scheduler
+        GPU_LOCK["GPU Mutual Exclusion"]:::orange
+        MONITOR["GPU Monitor<br/>VRAM / Temp"]:::orange
+        SAFETY["VRAM Safety Buffer<br/>1024 MB Free Margin"]:::orange
+        AUTO_UNLOAD["Auto-Unload After Job"]:::orange
     end
 
-    subgraph Adapters["🧠 Model Adapters"]
+    subgraph Adapters["🧠 Model Adapters (23 Models)"]
         direction TB
-        TRELLIS["TRELLIS<br/>FlexiCubes PBR"]:::adapters
-        HUNY["Hunyuan3D<br/>Shape + Paint"]:::adapters
-        TRIPO["TripoSR/SG/SF"]:::adapters
-        PP["PartPacker"]:::adapters
-        US["UltraShape"]:::adapters
-        PF["PartField"]:::adapters
-        UR["UniRig"]:::adapters
-        FM["FastMesh"]:::adapters
-        VH["VoxHammer"]:::adapters
+        TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes PBR"]:::purple
+        HUNY["Hunyuan3D-2.1<br/>Shape + Paint 2B"]:::purple
+        TRIPO["TripoSR / SG / SF"]:::purple
+        PP["PartPacker & UltraShape"]:::purple
+        FM["FastMesh Quad Retopo"]:::purple
+        UR["UniRig & ARDY Motion"]:::purple
     end
 
-    subgraph Storage["💾 Persistent Storage"]
+    subgraph PostProcess["⚙️ Production Post-Processing"]
         direction TB
-        LOCAL["Local Filesystem<br/>backend/storage/models/[job_id]/"]:::storage
-        REDIS_STORE["Redis FileStore<br/>Cross-Worker Metadata"]:::storage
+        CHECK["master/source.glb<br/>Immutable Master Checkpoint"]:::green
+        FINISH["Repair • Retopo • UV • Bake<br/>LOD0-LOD3 • CoACD Colliders"]:::green
     end
 
-    subgraph Queue["📦 Redis 7 :6379"]
+    subgraph Storage["📦 Persistent Storage & Export"]
         direction TB
-        JOB_QUEUE["Job Queue<br/>(multi-worker)"]:::queue
+        LOCAL["Asset Workspace<br/>backend/storage/models/<asset>_<hash>/"]:::slate
+        ZIP["Structured Game-Ready ZIP<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end
 
     Client -- "REST / SSE / WS" --> Gateway
@@ -89,16 +87,11 @@ graph TD
     SCHED --> SAFETY
     SCHED --> AUTO_UNLOAD
     SCHED --> Adapters
-    Adapters -->|Raw Mesh| Storage
-    Storage -- "Static Delivery" --> Client
-    Gateway -.->|Job Queue| Queue
-
-    style Client fill:#1e293b
-    style Gateway fill:#0f172a
-    style S fill:#1e293b
-    style Adapters fill:#0f172a
-    style Storage fill:#0f172a
-    style Queue fill:#0f172a
+    Adapters -->|Raw Model Output| CHECK
+    CHECK --> FINISH
+    FINISH --> LOCAL
+    LOCAL --> ZIP
+    LOCAL -- "Static Stream" --> Client
 ```
 
 ---

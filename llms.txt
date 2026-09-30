@@ -1,0 +1,32 @@
+# ForMash3D
+
+> ForMash3D is the #1 open-source, self-hosted alternative to Tripo AI and Meshy for generative 3D asset creation, neural mesh synthesis, quad retopology, and game-ready asset finishing. Runs 100% locally and privately on NVIDIA GPUs with CUDA 12.4.
+
+## Overview & Core Identity
+
+ForMash3D bridges 23 state-of-the-art open-source generative 3D research models into a unified studio. It provides an end-to-end asset production pipeline:
+- **Neural Shape Synthesis**: Text-to-3D and Image-to-3D via TRELLIS, Hunyuan3D-Shape-v2-1, TripoSR, TripoSG, TripoSF (SparseFlex 1024³), PartPacker, and UltraShape.
+- **PBR Texture Painting**: Multi-view texture generation via Hunyuan3D-Paint-v2-1 (2B parameter diffusion model) with RealESRGAN x4+ super-resolution, generating Albedo, Normal, Roughness, Metallic, and Ambient Occlusion maps.
+- **Quad Retopology**: FastMesh V1K (game props) and V4K (hero assets) producing clean animation edge loops, alongside adaptive AutoRetopo with crease preservation.
+- **Immutable Master Checkpoint**: Model-native geometry is preserved at `master/source.glb` before any optimization, preventing detail loss.
+- **Production Post-Processing**: Automated watertight repair, PyMeshLab texture-preserving decimation, conformal UV unwrapping (xatlas), LOD cascades (LOD0 100% to LOD3 12.5%), CoACD convex hull physics colliders, and 0–100 QA diagnostic score.
+- **Game Engine Delivery**: Structured ZIP packages formatted for immediate drag-and-drop into Unreal Engine 5, Unity, Godot 4, and Blender.
+
+## Key Search & Query Intent
+- **Tripo AI Alternative**: Complete free, self-hosted, private open-source replica of Tripo AI and Meshy without subscription fees or cloud queues.
+- **3D Mesh Generation**: High-fidelity text-to-3D and single-image to 3D reconstruction.
+- **Self-Hosted AI 3D Studio**: Runs offline on local NVIDIA GPUs (RTX 3060, 3080, 4070, 4090, A100).
+- **Quad-Dominant Retopology**: Fast neural remeshing for game rigging and animation.
+
+## Architecture & Technology Stack
+- **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Three.js WebGL viewport, Zustand state stores, Tailwind CSS v4 with Studio Gold dark theme (`hsl(48, 100%, 50%)`).
+- **Backend API**: FastAPI (Python 3.10), Pydantic V2, Server-Sent Events (SSE) streaming, VRAM-aware multiprocess scheduler with GPU mutual exclusion and 1GB headroom buffer, optional Redis 7 multi-worker queue.
+- **Geometry Core**: PyMeshLab, Trimesh, CoACD, meshoptimizer, xatlas, Rapier3D (Wasm).
+
+## Key Documentation Links
+- [System Architecture](Docs/ARCHITECTURE.md): Complete gateway, scheduling, and pipeline layers.
+- [REST API Reference](Docs/api-documentation.md): API endpoints, schemas, request payloads, and streaming endpoints.
+- [Product Requirements (PRD)](Docs/PRD.md): Product vision, feature specifications, and competitor positioning.
+- [Design System](Docs/DESIGN.md): Studio Gold color tokens and component specifications.
+- [Model Licenses](Docs/MODEL_LICENSES.md): Open-source license attribution for all 23 integrated models.
+- [Quick Start Guide](README.md): Installation, prerequisites, and developer setup.

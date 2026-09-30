@@ -69,6 +69,8 @@ extern/uvpackmaster/
 # 4. Finally, unignore include/ and everything beneath it
 !/extern/OpenABF/include/
 !/extern/OpenABF/include/**
+**/__pycache__/
+*.pyc
 
 preprocess_utils/partfield/checkpoints/
 preprocess_utils/partfield/config/*ckpt

@@ -200,10 +200,11 @@ class Trellis2Runner:
         
         # Export to GLB format
         if self.o_voxel is not None:
+            raw_target = -1 if decimation_target is None else int(decimation_target)
             effective_decimation_target = (
-                int(len(mesh.faces)) if int(decimation_target) <= 0 else int(decimation_target)
+                int(len(mesh.faces)) if raw_target <= 0 else raw_target
             )
-            if int(decimation_target) <= 0:
+            if raw_target <= 0:
                 logger.info(
                     "TRELLIS.2 raw export requested without decimation; "
                     "using the generated face count as the exporter target."

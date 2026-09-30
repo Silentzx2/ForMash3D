@@ -51,7 +51,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "tencent" / "Hunyuan3D-2mini")
         if hunyuan3d_root is None:
-            hunyuan3d_root = str(Path(__file__).resolve().parents[1]) / "thirdparty" / "hunyuan3d-dit-v2-mini-turbo"
+            hunyuan3d_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "hunyuan3d-dit-v2-mini-turbo")
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
         if supported_output_formats is None:
@@ -72,9 +72,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
         if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root))
+            sys.path.append(str(self.hunyuan3d_root))
         if str(self.hunyuan3d_root / "hy3dgen") not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root / "hy3dgen"))
+            sys.path.append(str(self.hunyuan3d_root / "hy3dgen"))
 
     def _load_model(self):
         """Load Hunyuan3D-DiT-v2-mini-Turbo pipeline."""
@@ -160,7 +160,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 image = image.convert("RGBA")
 
             logger.info("Generating 3D shape with Mini Turbo...")
-            octree_res = inputs.get("octree_resolution", 256)
+            octree_res = min(512, max(64, int(inputs.get("octree_resolution", 256))))
             num_steps = inputs.get("num_inference_steps", 20)
             guidance_scale = inputs.get("guidance_scale", 5.0)
             low_vram_mode = inputs.get("low_vram_mode", True)

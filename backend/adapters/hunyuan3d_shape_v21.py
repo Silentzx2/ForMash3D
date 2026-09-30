@@ -49,9 +49,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         if model_id is None:
             model_id = self.MODEL_ID
         if model_path is None:
-            model_path = str(Path(__file__).resolve().parents[1]) / "pretrained" / "tencent" / "Hunyuan3D-2.1"
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "tencent" / "Hunyuan3D-2.1")
         if hunyuan3d_root is None:
-            hunyuan3d_root = str(Path(__file__).resolve().parents[1]) / "thirdparty" / "hunyuan3d-shape-v2-1"
+            hunyuan3d_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "hunyuan3d-shape-v2-1")
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
         if supported_output_formats is None:
@@ -72,9 +72,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
         if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root))
+            sys.path.append(str(self.hunyuan3d_root))
         if str(self.hunyuan3d_root / "hy3dshape") not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root / "hy3dshape"))
+            sys.path.append(str(self.hunyuan3d_root / "hy3dshape"))
 
     def _load_model(self):
         """Load Hunyuan3D-Shape-v2-1 pipeline."""
@@ -159,7 +159,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 image = image.convert("RGBA")
 
             logger.info("Generating 3D shape...")
-            octree_res = inputs.get("octree_resolution", 256)
+            octree_res = min(512, max(64, int(inputs.get("octree_resolution", 256))))
             num_steps = inputs.get("num_inference_steps", 50)
             guidance_scale = inputs.get("guidance_scale", 5.0)
 

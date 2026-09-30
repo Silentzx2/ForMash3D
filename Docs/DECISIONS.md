@@ -561,3 +561,14 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - `quality_report.json` can attribute geometry loss to a stage without re-reading every artifact.
 - Boundary-hole action and QA now share the same per-component interpretation.
 - A malformed native-texture signal no longer routes raw UV-only meshes through the textured path.
+
+## ADR-037: Upstream Extraction Contract Conformance & Texture Decimation Resiliency
+
+**Decision**: Clamp Hunyuan extraction resolutions to supported upstream contract ranges `[64, 512]`, guard TRELLIS.2 GLB export against sentinel/None decimation values by falling back to native face count, and wrap PyMeshLab texture-aware decimation in safe passthrough fallbacks with strict `_has_uv` checking.
+
+**Reason**: Passing out-of-spec resolution values (e.g. 640) or non-positive decimation sentinels (`-1`, `None`) causes upstream driver failures, while quadric edge collapse on non-standard UV seams can crash PyMeshLab if not handled with explicit fallback to passthrough.
+
+**Consequences**:
+- Hunyuan shape, paint, and mini-turbo adapters safely operate within supported octree bounds.
+- TRELLIS.2 exporter never triggers unhandled cumesh exceptions on non-decimated requests.
+- Textured assets never lose their materials or crash the post-processing queue on decimation errors.

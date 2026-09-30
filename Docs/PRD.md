@@ -2,22 +2,26 @@
 
 ## Product
 
-**ForMash 3D** — AI-powered 3D generation and asset creation platform.
+**ForMash 3D** — The premier open-source, self-hosted alternative to Tripo AI and Meshy for generative 3D asset creation, neural mesh synthesis, and automated game-ready post-processing.
 
-## Problem
+## Problem & Market Positioning
 
-Creating high-quality 3D assets requires expensive software, extensive artistic skill, and hours of manual work. Existing AI 3D tools produce raw outputs that lack the post-processing pipeline needed for game-ready assets (LOD cascades, physics colliders, UV unwrapping, QA validation).
+Creating high-quality 3D assets requires expensive software, extensive artistic skill, and hours of manual work. Commercial cloud services (Tripo AI, Meshy, CSM) charge heavy recurring subscriptions, lock users into closed clouds, lack transparency, and force data uploads to third-party servers.
+
+Existing open-source AI 3D tools produce raw outputs that lack the post-processing pipeline needed for game-ready assets (LOD cascades, physics colliders, quad retopology, UV unwrapping, QA validation).
+
+**ForMash3D bridges this gap** by offering a 100% self-hosted, private studio running on your local NVIDIA GPU with 23 open-source neural model adapters and an automated game-engine finishing pipeline.
 
 ## Target Users
 
-- Game developers needing rapid 3D asset prototyping
-- 3D artists seeking AI-assisted workflow acceleration
-- Researchers experimenting with generative 3D models
-- Indie developers requiring local, offline 3D generation
+- Game developers needing rapid, production-ready 3D asset prototyping (Unreal Engine 5, Unity, Godot 4)
+- 3D technical artists seeking local AI-assisted workflow acceleration
+- Researchers experimenting with generative 3D shape, texture, and motion models
+- Studios requiring offline, self-hosted 3D generation with absolute data privacy
 
 ## Goal
 
-Create a centralized, local AI 3D asset factory that takes an image or text prompt and automatically produces the highest-quality practical 3D asset possible, processes it intelligently, validates it, optimizes it, and gives the user a usable game-ready result.
+Create a centralized, local AI 3D asset factory that takes an image or text prompt and automatically produces the highest-quality practical 3D asset possible, preserves model-native geometry at an immutable `master/source.glb` checkpoint, processes it intelligently, validates it, optimizes it, and gives the user a usable game-ready result.
 
 ## Core Features
 

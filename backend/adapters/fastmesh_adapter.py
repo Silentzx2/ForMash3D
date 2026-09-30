@@ -74,7 +74,7 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
 
             # Add FastMesh to Python path
             if str(self.fastmesh_root) not in sys.path:
-                sys.path.insert(0, str(self.fastmesh_root))
+                sys.path.append(str(self.fastmesh_root))
 
             from utils.fastmesh_utils import FastMeshRunner
 

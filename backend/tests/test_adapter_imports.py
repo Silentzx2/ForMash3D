@@ -44,7 +44,7 @@ def test_all_adapters_import_and_init():
                 and attr.__module__ == f"adapters.{name}"
             ):
                 try:
-                    instance = attr()
+                    instance = attr(vram_requirement=4096)
                     classes_checked += 1
                 except Exception as e:
                     failures.append(f"Init failure in {name}.{attr_name}: {e}")
