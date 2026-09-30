@@ -101,10 +101,14 @@ interface DiscoveredModel {
   supports_flashvdm?: boolean;
 }
 
-function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
+function formatGenerateModel(
+  id: string,
+  isAvailable = true,
+  detail?: { status?: string; vram_requirement?: number; capabilities?: Record<string, boolean> }
+): DiscoveredModel {
   const def = getModelDefinition(id);
   const isTextured = def?.supportsTexture ?? id.includes('textured');
-  const vram = def?.vramMb || 11776;
+  const vram = detail?.vram_requirement ?? def?.vramMb ?? 11776;
   const isTrellis = id.includes('trellis');
   const isHunyuan = id.includes('hunyuan');
   const supportsFlashVDM = def?.supportsFlashVDM ?? id.includes('dit_v2_mini_turbo');
@@ -126,12 +130,12 @@ function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
     label: cleanLabel,
     available: isAvailable,
     installed: isAvailable,
-    status: isAvailable ? 'ready' : 'uninstalled',
+    status: detail?.status || (isAvailable ? 'ready' : 'uninstalled'),
     vram_required_mb: vram,
     low_vram_supported: def?.lowVramSupported ?? (isTrellis || isHunyuan),
     low_vram_required_mb: def?.lowVramMb ?? ((isTrellis || isHunyuan) ? 6144 : undefined),
-    supports_texture: isTextured,
-    supports: { texture_generation: isTextured },
+    supports_texture: detail?.capabilities?.texture_generation ?? isTextured,
+    supports: { texture_generation: detail?.capabilities?.texture_generation ?? isTextured },
     shape_vram_mb: Math.round(vram * 0.6),
     texture_vram_mb: vram,
     supports_flashvdm: supportsFlashVDM,
@@ -151,8 +155,10 @@ export const GeneratePanel: React.FC = () => {
   const currentMode = generationSettings.mode || 'image-to-3d';
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
   const [weightsStatus, setWeightsStatus] = useState<Record<string, boolean>>({});
+  const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
   const [optionsLoading, setOptionsLoading] = useState(false);
   const pendingGenerateRef = useRef(false);
+  const ownedBlobUrlsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!pendingGenerateRef.current) return;
@@ -170,6 +176,9 @@ export const GeneratePanel: React.FC = () => {
         }
         if ((data as any)?.weights_status) {
           setWeightsStatus((data as any).weights_status);
+        }
+        if ((data as any)?.model_details) {
+          setModelDetails((data as any).model_details);
         }
       }
     }).catch(err => {
@@ -200,20 +209,23 @@ export const GeneratePanel: React.FC = () => {
       ids = combined.length > 0 ? combined : defaults;
     }
 
-    // Only show models whose weights are verified available on disk or on-demand downloadable
+    // Select only models that the backend currently reports as ready.
+    // This prevents a CPU-only/missing-weight machine from presenting unusable models.
+    if (modelDetails && Object.keys(modelDetails).length > 0) {
+      return ids.filter(id => modelDetails[id]?.status === 'ready');
+    }
     if (weightsStatus && Object.keys(weightsStatus).length > 0) {
-      const availableOnly = ids.filter(id => weightsStatus[id] === true);
-      if (availableOnly.length > 0) return availableOnly;
+      return ids.filter(id => weightsStatus[id] === true);
     }
     return ids;
-  }, [modelRegistry, currentMode, weightsStatus]);
+  }, [modelRegistry, currentMode, weightsStatus, modelDetails]);
 
   const meshCapableModels = useMemo(() => {
-    return relevantModelIds.map(id => formatGenerateModel(id, weightsStatus[id] !== false));
-  }, [relevantModelIds, weightsStatus]);
+    return relevantModelIds.map(id =>
+      formatGenerateModel(id, weightsStatus[id] !== false, modelDetails[id])
+    );
+  }, [relevantModelIds, weightsStatus, modelDetails]);
 
-  const gpuAvailable = true;
-  const freeVramMb = 24 * 1024;
   const providersList = meshCapableModels;
 
   // Auto-correct selected model if it does not belong to the current mode / mesh generation
@@ -315,6 +327,24 @@ export const GeneratePanel: React.FC = () => {
   const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
 
   const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
+
+  const ownBlobUrl = useCallback((url: string) => {
+    ownedBlobUrlsRef.current.add(url);
+    return url;
+  }, []);
+
+  const revokeOwnedBlobUrl = useCallback((url?: string | null) => {
+    if (!url || !ownedBlobUrlsRef.current.has(url)) return;
+    URL.revokeObjectURL(url);
+    ownedBlobUrlsRef.current.delete(url);
+  }, []);
+
+  useEffect(() => () => {
+    for (const url of ownedBlobUrlsRef.current) {
+      URL.revokeObjectURL(url);
+    }
+    ownedBlobUrlsRef.current.clear();
+  }, []);
   const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
   const processImageFile = async (file: File) => {
@@ -341,7 +371,7 @@ export const GeneratePanel: React.FC = () => {
       );
       finishUpload();
       if (!res.file_id) throw new Error('Backend did not return a file ID for the uploaded image.');
-      const previewUrl = URL.createObjectURL(file);
+      const previewUrl = ownBlobUrl(URL.createObjectURL(file));
       const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       setGenerationSettings(prev => ({
         ...prev,
@@ -483,7 +513,7 @@ export const GeneratePanel: React.FC = () => {
       return;
     }
     const multiviewCount = Object.values(generationSettings.multiviewImages || {}).filter(Boolean).length;
-    if (subAction === 'crop' && multiviewCount > 1) {
+    if (subAction === 'crop' || multiviewCount > 1) {
       setNoticeMessage('The current backend generation contract is single-image. Use the Single Image tab; collected multiview files are not sent as a multi-view request.');
       setTimeout(() => setNoticeMessage(null), 5000);
       return;
@@ -567,12 +597,12 @@ export const GeneratePanel: React.FC = () => {
                   {
                     id: 'crop',
                     domId: 'subaction-btn-crop',
-                    label: 'Multiview Set',
-                    tooltip: 'Multiview Perspective Angles (Front, Right, Back, Left)',
+                    label: 'Multiview (Unavailable)',
+                    tooltip: 'Multiview is disabled until a model-specific backend contract is available.',
                     icon: Box,
                     onClick: () => {
-                      setSubAction('crop');
-                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
+                      setNoticeMessage('Multiview is disabled until the backend exposes a real multi-view generation contract.');
+                      setTimeout(() => setNoticeMessage(null), 5000);
                     },
                   },
                 ].map((tab) => {
@@ -584,6 +614,7 @@ export const GeneratePanel: React.FC = () => {
                         id={tab.domId}
                         type="button"
                         onClick={tab.onClick}
+                        disabled={tab.id === 'crop'}
                         className={`relative w-full py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95 z-10 ${
                           active ? 'text-primary font-bold' : 'text-zinc-400 hover:text-zinc-200'
                         }`}
@@ -684,6 +715,7 @@ export const GeneratePanel: React.FC = () => {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            revokeOwnedBlobUrl(generationSettings.image);
                             setGenerationSettings(prev => ({ ...prev, image: null, imageName: undefined, mode: 'image-to-3d' }));
                           }}
                           className="text-rose-400 hover:underline cursor-pointer font-medium"
@@ -825,6 +857,8 @@ export const GeneratePanel: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
+                            for (const value of Object.values(generationSettings.multiviewImages || {})) revokeOwnedBlobUrl(value || undefined);
+                            revokeOwnedBlobUrl(generationSettings.image);
                             setGenerationSettings(prev => ({
                               ...prev,
                               multiviewImages: undefined,

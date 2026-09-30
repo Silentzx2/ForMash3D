@@ -66,6 +66,28 @@ def _job_hash(job_id: str) -> str:
     return hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:8]
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _collect_input_hashes(inputs: Dict[str, Any]) -> Dict[str, str]:
+    hashes: Dict[str, str] = {}
+    for key, value in inputs.items():
+        if not isinstance(value, str):
+            continue
+        candidate = Path(value)
+        if candidate.is_file():
+            try:
+                hashes[key] = _sha256_file(candidate)
+            except OSError:
+                logger.debug("Unable to hash input %s", candidate, exc_info=True)
+    return hashes
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
@@ -455,9 +477,18 @@ def run_postprocess_job(
         logger.warning("GLTF embedded export skipped: %s", exc)
 
     _emit(progress, 0.72, "lod", "Generating LOD chain.")
+    source_faces = max(1, len(uv_mesh.faces))
+    target_faces = int(job_inputs.get("target_polycount") or 50_000)
+    target_ratio = min(1.0, max(0.05, target_faces / source_faces))
+    lod_ratios = [
+        1.0,
+        max(0.05, target_ratio * 0.50),
+        max(0.025, target_ratio * 0.25),
+        max(0.0125, target_ratio * 0.125),
+    ]
     lod_levels = run_lods(
         uv_mesh,
-        LODOptions(ratios=[1.0, 0.5, 0.25, 0.125]),
+        LODOptions(ratios=lod_ratios),
     )
     lods: Dict[int, str] = {}
     for level in lod_levels:
@@ -473,42 +504,30 @@ def run_postprocess_job(
         job_metadata.get("physics_config") or job_inputs.get("physics_config")
     )
 
-    # Collision is part of the normal post-processing contract. Physics ON adds
-    # physics metadata/readiness and lets the user choose the collision budget.
-    collision_quality = physics_config["collision_quality"] if physics_enabled else "fast"
-    collision_options = collision_options_for_quality(collision_quality)
-    if not physics_enabled:
-        collision_options = {
-            "method": "convex_hull",
-            "max_hulls": 16,
-            "max_hull_vertices": 64,
-            "input_faces": 1000,
-            "resolution": 1000,
-            "seed": 0,
-        }
-
-    _emit(progress, 0.82, "collision", "Generating collision proxy.")
+    # Collision is only part of the production contract when physics is requested.
     collision_path: Optional[Path] = None
     physics_metadata: Optional[Dict[str, Any]] = None
-    try:
-        collision_scene, collision_stats = run_collision(
-            uv_mesh,
-            CollisionOptions(**collision_options),
-        )
-        collision_payload = collision_scene.export(file_type="glb")
-        if isinstance(collision_payload, str):
-            collision_payload = collision_payload.encode("utf-8")
-        collision_path = collision_dir / "collision.glb"
-        collision_path.write_bytes(collision_payload)
-
-        if physics_enabled:
+    if physics_enabled:
+        collision_quality = physics_config["collision_quality"]
+        collision_options = collision_options_for_quality(collision_quality)
+        _emit(progress, 0.82, "collision", "Generating collision proxy.")
+        try:
+            collision_scene, collision_stats = run_collision(
+                uv_mesh,
+                CollisionOptions(**collision_options),
+            )
+            collision_payload = collision_scene.export(file_type="glb")
+            if isinstance(collision_payload, str):
+                collision_payload = collision_payload.encode("utf-8")
+            collision_path = collision_dir / "collision.glb"
+            collision_path.write_bytes(collision_payload)
             physics_metadata = build_physics_metadata(
                 uv_mesh, physics_config, collision_stats
             )
             _write_json(metadata_dir / "physics.json", physics_metadata)
-    except Exception as exc:
-        logger.error("Collision generation failed for %s: %s", job_id, exc, exc_info=True)
-        raise RuntimeError(f"Collision generation failed: {exc}") from exc
+        except Exception as exc:
+            logger.error("Collision generation failed for %s: %s", job_id, exc, exc_info=True)
+            raise RuntimeError(f"Collision generation failed: {exc}") from exc
 
     _emit(progress, 0.90, "preview", "Generating asset preview.")
     thumbnail_path: Optional[Path] = None
@@ -549,11 +568,22 @@ def run_postprocess_job(
     _write_json(
         metadata_dir / "job.json",
         {
+            "manifest_version": "1",
+            "api_version": "1",
+            "asset_id": asset_name,
             "job_id": job_id,
+            "parent_job_id": job_metadata.get("parent_job_id"),
             "created_at": now,
             "source_path": str(raw_path),
             "model_id": job_metadata.get("model_id"),
             "feature": job_metadata.get("feature"),
+            "seed": job_inputs.get("seed"),
+            "model_parameters": {
+                key: value
+                for key, value in job_inputs.items()
+                if key not in {"image_path", "mesh_path", "texture_image_path"}
+            },
+            "input_sha256": _collect_input_hashes(job_inputs),
             "inputs": job_inputs,
             "generation_result": generation_result,
         },

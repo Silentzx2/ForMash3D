@@ -15,3 +15,19 @@
 - Moved advanced Physics/Mesh generation controls into an on-demand drawer.
 - Added physics and viewer smoke validation paths.
 - Added adaptive renderer quality for very dense meshes.
+
+## 2026-09-30 — Final Review Audit Gap Pass
+- Added backend model readiness/capability metadata and removed frontend assumptions about a fixed 24GB GPU.
+- Made FastMesh variants and VRAM reservation manifest-driven; hardened UltraShape/P3-SAM/PartUV runtime contracts.
+- Added collision gating, adaptive LOD ratios, collision-safe artifact naming, and asset reproducibility metadata with input hashes.
+- Wired the existing frontend batch queue to the scheduler-backed text batch API.
+- Added shared Redis cancellation requests, machine-readable error codes, and parity for background post-processing result updates.
+- Tightened localStorage/blob/file-index cleanup and explicitly disabled unsupported multiview generation.
+
+## 2026-09-30 — Final Audit Gap Closure
+- Fixed production Docker/RunPod dependency paths and release-wheel resolution so container paths match the repository layout and current Wheels release assets.
+- Bounded async SQLite progress persistence, moved status reads/deletes off the event loop, and preserved terminal error-code persistence.
+- Separated raw inference completion from background production post-processing without deleting request inputs before lineage hashing; tracked post-process status/progress/errors explicitly.
+- Reconciled manifest-driven model readiness, capabilities, VRAM requirements, repository-relative adapter paths, and UUID-based artifact naming across the remaining adapters.
+- Fixed frontend post-process rehydration/QA scoring, capability-based routing, LRU cache accounting, and explicit post-process failure messaging.
+- No tests, builds, GPU stress, or load validation were run in this pass by request.

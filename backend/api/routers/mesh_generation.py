@@ -358,8 +358,9 @@ class ImageMeshPaintingRequest(BaseModel):
 
 # Enhanced Response models
 class MeshGenerationResponse(BaseModel):
-    """Response for mesh generation requests"""
+    """Versioned response contract for mesh generation requests."""
 
+    api_version: str = Field("1", description="Generation API contract version")
     job_id: str = Field(..., description="Unique job identifier")
     status: str = Field(..., description="Job status")
     message: str = Field(..., description="Status message")
@@ -388,8 +389,7 @@ async def process_file_input(
             detail=f"Multiple {input_type} inputs provided. Only one allowed.",
         )
 
-    # Create temporary directory for processing
-    temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
+    temp_dir: Optional[str] = None
 
     try:
         if file_path:
@@ -403,6 +403,7 @@ async def process_file_input(
             return str(file_path)
 
         elif base64_data:
+            temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
             # Process base64 data
             file_info = await save_base64_file(
                 base64_data, f"input_{input_type}", temp_dir
@@ -420,18 +421,23 @@ async def process_file_input(
             return resolved_path
 
         elif upload_file:
+            temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
             # Process uploaded file
             file_info = await save_upload_file(upload_file, temp_dir)
             return str(file_info["file_path"])
         else:
             raise HTTPException(status_code=400, detail="No input provided")
     except HTTPException as he:
-        import traceback 
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(he)} {trace}")
         raise he
     except Exception as e:
-        import traceback 
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(e)} {trace}")
         raise HTTPException(
@@ -591,6 +597,7 @@ async def batch_text_to_textured_mesh(
         jobs.append(await scheduler.schedule_job(job_request))
 
     return {
+        "api_version": "1",
         "batch_id": batch_id,
         "status": "queued",
         "max_parallel": batch_request.max_parallel,

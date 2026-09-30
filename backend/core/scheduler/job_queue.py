@@ -1,5 +1,7 @@
 import asyncio
+import copy
 import logging
+import time
 import uuid
 from collections import deque
 from datetime import datetime
@@ -11,6 +13,23 @@ from .database_models import JobModel
 from .database_models import JobStatus as DBJobStatus
 
 logger = logging.getLogger(__name__)
+
+
+def classify_job_error(error: str) -> str:
+    message = (error or "").lower()
+    if "cuda out of memory" in message or "out of memory" in message:
+        return "CUDA_OOM"
+    if "insufficient vram" in message or ("vram" in message and "requirement" in message):
+        return "INSUFFICIENT_VRAM"
+    if "weights" in message or "checkpoint" in message or "model load" in message:
+        return "MODEL_NOT_READY"
+    if "input" in message and "not found" in message:
+        return "INPUT_NOT_FOUND"
+    if "timeout" in message:
+        return "JOB_TIMEOUT"
+    if "cancel" in message:
+        return "JOB_CANCELLED"
+    return "JOB_FAILED"
 
 
 class JobStatus(Enum):
@@ -168,6 +187,7 @@ class JobRequest:
             else None,
             "result": self.result,
             "error": self.error,
+            "error_code": self.metadata.get("error_code"),
             "metadata": self.metadata,
             "retry_count": self.retry_count,
             "max_retries": self.max_retries,
@@ -222,6 +242,7 @@ class JobRequest:
         """Mark job as cancelled"""
         self.status = JobStatus.CANCELLED
         self.completed_at = datetime.utcnow()
+        self.metadata["error_code"] = "JOB_CANCELLED"
 
 
 class JobQueue:
@@ -246,6 +267,8 @@ class JobQueue:
         self._queue_cache = deque()
         self._processing_cache: Dict[str, JobRequest] = {}
         self._completed_cache: Dict[str, JobRequest] = {}
+        self._last_progress_persist: Dict[str, float] = {}
+        self._progress_persist_interval = 0.75
 
         # Thread-safe lock for cache operations
         self._cache_lock = asyncio.Lock()
@@ -341,7 +364,7 @@ class JobQueue:
             self._cleanup_task = None
 
         # Close database connections
-        self.db_manager.close()
+        await asyncio.to_thread(self.db_manager.close)
         logger.info("Stopped database-backed job queue")
 
     async def _periodic_cleanup(self):
@@ -499,6 +522,9 @@ class JobQueue:
                 if not await asyncio.to_thread(self.db_manager.save_job, job):
                     logger.error(f"Failed to save failed job {job_id} to database")
 
+                job.metadata["error_code"] = classify_job_error(error)
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
+                    logger.error(f"Failed to persist failed-job error code for {job_id}")
                 self._completed_cache[job_id] = job
                 logger.error(f"Failed job {job_id}: {error}")
 
@@ -537,27 +563,18 @@ class JobQueue:
             return False
 
     async def get_job(self, job_id: str) -> Optional[JobRequest]:
-        """Get job by ID"""
+        """Get job by ID without mutating state or blocking the event loop."""
         async with self._cache_lock:
-            # Check processing jobs first
             if job_id in self._processing_cache:
                 return self._processing_cache[job_id]
-
-            # Check completed jobs
             if job_id in self._completed_cache:
                 return self._completed_cache[job_id]
-
-            # Check queued jobs
             for job in self._queue_cache:
                 if job.job_id == job_id:
                     return job
 
-            # If not in cache, try database
-            job_model = self.db_manager.get_job(job_id)
-            if job_model:
-                return JobRequest.from_job_model(job_model)
-
-            return None
+        job_model = await asyncio.to_thread(self.db_manager.get_job, job_id)
+        return JobRequest.from_job_model(job_model) if job_model else None
 
     async def update_job_progress(
         self,
@@ -566,37 +583,70 @@ class JobQueue:
         stage: Optional[str] = None,
         message: Optional[str] = None,
     ):
-        """Update job progress and optional pipeline stage/message."""
+        """Persist live progress without blocking the scheduler event loop."""
+        snapshot: Optional[JobRequest] = None
         async with self._cache_lock:
-            if job_id in self._processing_cache:
-                job = self._processing_cache[job_id]
+            job = self._processing_cache.get(job_id)
+            completed_job = self._completed_cache.get(job_id)
+
+            if job is not None:
+                previous_stage = job.metadata.get("stage")
                 job.progress = min(1.0, max(0.0, progress))
                 if stage:
                     job.metadata["stage"] = stage
                 if message:
                     job.metadata["message"] = message
-
                 if stage or message:
                     job._append_log(
                         stage or job.metadata.get("stage") or "processing",
                         message or job.metadata.get("message") or "Processing",
                     )
 
-                if not await asyncio.to_thread(self.db_manager.save_job, job):
-                    logger.error(
-                        f"Failed to save job progress for {job_id} to database"
-                    )
-            elif job_id in self._completed_cache:
-                job = self._completed_cache[job_id]
-                job.progress = min(1.0, max(0.0, progress))
+                now = time.monotonic()
+                last = self._last_progress_persist.get(job_id, 0.0)
+                should_persist = (
+                    job.progress >= 1.0
+                    or bool(stage and stage != previous_stage)
+                    or (now - last) >= self._progress_persist_interval
+                )
+                if should_persist:
+                    self._last_progress_persist[job_id] = now
+                    snapshot = copy.deepcopy(job)
+
+            elif completed_job is not None:
+                # A completed inference job owns its 100% execution progress. Background
+                # production work has a separate result-level progress contract.
+                current = dict(completed_job.result or {})
+                current["postprocess_progress"] = min(1.0, max(0.0, progress))
                 if stage:
-                    job.metadata["stage"] = stage
+                    current["postprocess_stage"] = stage
+                    completed_job.metadata["stage"] = stage
                 if message:
-                    job.metadata["message"] = message
-                if not await asyncio.to_thread(self.db_manager.save_job, job):
-                    logger.error(
-                        f"Failed to save postprocess progress for completed job {job_id}"
+                    current["postprocess_message"] = message
+                    completed_job.metadata["message"] = message
+                if stage or message:
+                    completed_job._append_log(
+                        stage or "postprocess",
+                        message or "Post-processing",
                     )
+                now = time.monotonic()
+                last = self._last_progress_persist.get(job_id, 0.0)
+                if (
+                    current["postprocess_progress"] >= 1.0
+                    or bool(stage and stage != self._last_progress_persist.get(f"{job_id}:stage"))
+                    or (now - last) >= self._progress_persist_interval
+                ):
+                    completed_job.result = current
+                    self._last_progress_persist[job_id] = now
+                    self._last_progress_persist[f"{job_id}:stage"] = stage or ""
+                    snapshot = copy.deepcopy(completed_job)
+                else:
+                    completed_job.result = current
+            else:
+                return
+
+        if snapshot is not None and not await asyncio.to_thread(self.db_manager.save_job, snapshot):
+            logger.error(f"Failed to persist job progress for {job_id}")
 
     async def update_completed_result(self, job_id: str, result: Dict[str, Any]) -> bool:
         """Merge background post-processing results into a completed job."""
@@ -667,7 +717,7 @@ class JobQueue:
                 if job.job_id == job_id:
                     del self._queue_cache[i]
                     # Delete from database
-                    if self.db_manager.delete_job(job_id):
+                    if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                         logger.info(f"Deleted job {job_id} from queue")
                         return True
                     else:
@@ -680,7 +730,7 @@ class JobQueue:
             if job_id in self._processing_cache:
                 del self._processing_cache[job_id]
                 # Delete from database
-                if self.db_manager.delete_job(job_id):
+                if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                     logger.info(f"Deleted job {job_id} from processing")
                     return True
                 else:
@@ -691,7 +741,7 @@ class JobQueue:
             if job_id in self._completed_cache:
                 del self._completed_cache[job_id]
                 # Delete from database
-                if self.db_manager.delete_job(job_id):
+                if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                     logger.info(f"Deleted job {job_id} from completed")
                     return True
                 else:
@@ -699,7 +749,7 @@ class JobQueue:
                     return False
             
             # Job not in any cache, try database directly
-            if self.db_manager.delete_job(job_id):
+            if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                 logger.info(f"Deleted job {job_id} from database (not in cache)")
                 return True
             

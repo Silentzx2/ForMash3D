@@ -33,9 +33,13 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
         self,
         model_id: str = "partfield_mesh_segmentation",
         model_path: Optional[str] = None,
-        vram_requirement: int = 4096,  # 4GB VRAM
+        vram_requirement: Optional[int] = None,
         partfield_root: Optional[str] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_path is None:
             model_path = "backend/pretrained/PartField/model_objaverse.pt"
 
@@ -187,7 +191,7 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
             scene = self._create_segmented_scene(mesh, segmentation_result, num_parts)
 
             # Save segmented mesh
-            self.mesh_processor.save_scene(scene, output_path, do_normalise=True)
+            self.mesh_processor.save_scene(scene, output_path, do_normalise=False)
 
             # Create segmentation info
             segmentation_info = {

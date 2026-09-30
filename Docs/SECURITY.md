@@ -128,3 +128,16 @@ The immutable master/source.glb is never overwritten by post-processing.
 Server filesystem paths supplied by generation APIs are no longer treated as arbitrary host paths. resolve_server_file_path() accepts only configured roots (outputs/ and uploads/ by default), with explicit ALLOWED_INPUT_ROOTS / ALLOW_LOCAL_SERVER_PATH_INPUTS overrides for self-hosted deployments that need wider access.
 
 Multipart uploads enforce the byte limit while streaming rather than after the full file has been written. Base64 payloads are rejected using their encoded-size ceiling before allocating the decoded byte buffer.
+
+## Review Audit — Final Boundary Hardening
+
+Generation file inputs are restricted to configured asset roots. Upload and base64 limits are enforced during ingestion. Artifact downloads use enumerated artifact selectors rather than arbitrary paths.
+
+Running-job cancellation in Redis mode is a shared control-plane request; the scheduler owning the worker performs the actual process termination. This prevents a request handled by one web worker from merely changing state while the GPU worker continues running.
+
+
+## Final Audit Hardening — September 30, 2026
+
+The final non-testing audit pass tightened the security boundary around operational state as well as input data. Client-supplied server paths remain root-restricted; bounded upload/base64 handling remains enforced; request temporary directories are cleaned on successful completion, cancellation/failure, enqueue failure, and stale-process recovery.
+
+Artifact naming uses UUIDs for mesh, segmentation, and rigged outputs to reduce collision and overwrite risk. Model readiness is derived from manifest paths and actual local checkpoint payloads rather than optimistic model identifiers. The scheduler does not expose an in-progress SQLite write through status reads, and background post-processing errors are retained as job-level metadata instead of being silently converted into false success.

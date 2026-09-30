@@ -14,7 +14,13 @@ let currentCacheBytes = 0;
 
 export function getCachedGLB(url: string): ArrayBuffer | undefined {
   if (!url || url.startsWith('blob:') || url.startsWith('data:')) return undefined;
-  return glbBufferCache.get(url);
+  const value = glbBufferCache.get(url);
+  if (value) {
+    // Map insertion order provides the LRU queue; touching a key moves it to MRU.
+    glbBufferCache.delete(url);
+    glbBufferCache.set(url, value);
+  }
+  return value;
 }
 
 export function setCachedGLB(url: string, buffer: ArrayBuffer): void {
@@ -23,6 +29,12 @@ export function setCachedGLB(url: string, buffer: ArrayBuffer): void {
   const itemBytes = buffer.byteLength;
   // If a single model exceeds the budget, don't keep it in L1 RAM (it can still live in L2 disk cache)
   if (itemBytes > MAX_CACHE_BYTES) return;
+
+  const existing = glbBufferCache.get(url);
+  if (existing) {
+    currentCacheBytes -= existing.byteLength;
+    glbBufferCache.delete(url);
+  }
 
   // Evict oldest items if item count or memory budget exceeded
   while (
@@ -73,7 +85,7 @@ export async function loadGLBWithProgress(
 
   // 1. Check L1 in-memory cache (Instant 0ms)
   if (isCacheableUrl) {
-    const memCached = glbBufferCache.get(url);
+    const memCached = getCachedGLB(url);
     if (memCached) {
       onProgress?.(memCached.byteLength, memCached.byteLength, 100);
       return memCached;

@@ -485,3 +485,41 @@ Reason: Evicting live queue state can strand GPU work. Redis EXPIRE applies to k
 Decision: A job that currently cannot acquire compatible worker/VRAM resources is requeued at the back rather than blocking the global queue head.
 
 Reason: A large or unavailable model must not block smaller jobs whose resource requirements are currently satisfiable.
+
+## ADR-021 — Manifest-Driven Model Readiness and VRAM
+
+The backend model manifest is authoritative for capabilities, VRAM reservation, max workers, IO, and model paths. Adapters reject missing manifest VRAM for models whose historical defaults were inconsistent.
+
+## ADR-022 — Unsupported Multiview Is Explicitly Gated
+
+Until a model-specific multi-view request contract exists, the UI must not collect or silently collapse multi-view inputs into a single-view generation request.
+
+## ADR-023 — Raw Result Is Independent from Production Post-Processing
+
+GPU generation publishes the raw artifact first. Production post-processing runs asynchronously and records its own status/error fields on the completed job.
+
+
+---
+
+## ADR-014: Raw Completion Before Production Post-Processing
+
+**Decision**: Mark GPU inference complete as soon as the native model result is durable, then execute canonical production post-processing as a background task with explicit result-level status.
+
+**Reason**: Raw-model availability and game-ready artifact production have different resource/lifecycle characteristics. Keeping them coupled made a successful model inference appear incomplete and encouraged premature input cleanup.
+
+**Consequences**:
+- The job status can be completed while `postprocess_status` is pending/running/completed/failed.
+- Request inputs remain owned by the post-processing task until lineage metadata is written.
+- The frontend can load the raw result immediately and rehydrate the same asset when production artifacts finish.
+- Post-processing failure no longer erases or falsely invalidates a successful raw generation.
+
+## ADR-015: Manifest-Only Runtime Resource Contracts
+
+**Decision**: Adapter runtime constructors do not invent VRAM defaults; model manifests provide the resource requirement and capability contract.
+
+**Reason**: Multiple adapter-local defaults drifted from the canonical YAML and could silently override variant-specific scheduling assumptions.
+
+**Consequences**:
+- Missing manifest VRAM is a configuration error.
+- Repository-relative model/runtime roots avoid current-working-directory dependence.
+- FastMesh/TRELLIS variant selection remains explicit in manifest init parameters.

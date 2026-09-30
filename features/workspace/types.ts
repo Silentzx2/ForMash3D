@@ -30,6 +30,7 @@ export interface ActiveTask {
   estimatedRemainingSec?: number;
   provider?: string;
   errorMessage?: string;
+  errorCode?: string;
   diagnostic?: JobDiagnostic | null;
   result?: Record<string, unknown>;
   logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];

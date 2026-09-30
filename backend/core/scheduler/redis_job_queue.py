@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 
 import redis.asyncio as aioredis
 
-from .job_queue import JobRequest, JobStatus
+from .job_queue import JobRequest, JobStatus, classify_job_error
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,7 @@ class RedisJobQueue:
         self.stage_hash_key = f"{queue_prefix}:stage"
         self.message_hash_key = f"{queue_prefix}:message"
         self.completed_index_key = f"{queue_prefix}:completed_at"
+        self.cancel_request_key = f"{queue_prefix}:cancel_requested"
         
         self.redis: Optional[aioredis.Redis] = None
 
@@ -265,6 +266,7 @@ class RedisJobQueue:
             job_data["failed_at"] = failed_at.isoformat()
             job_data["stage"] = "failed"
             job_data["message"] = error
+            job_data["error_code"] = classify_job_error(error)
             progress = float(job_data.get("progress", 0.0))
             _append_log(job_data, "failed", progress, error, "error")
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
@@ -396,6 +398,30 @@ class RedisJobQueue:
             job_data["message"] = f"Loading model {model_id} on GPU..."
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
+    async def request_cancel(self, job_id: str) -> bool:
+        """Request cancellation through the external scheduler service."""
+        if not self.redis:
+            raise RuntimeError("Redis not connected")
+        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+        if not job_data_str:
+            return False
+        status = json.loads(job_data_str).get("status")
+        if status == _status_to_str(JobStatus.QUEUED):
+            return await self.cancel_job(job_id)
+        if status == _status_to_str(JobStatus.PROCESSING):
+            await self.redis.sadd(self.cancel_request_key, job_id)
+            return True
+        return False
+
+    async def get_cancel_requests(self) -> list[str]:
+        if not self.redis:
+            return []
+        return list(await self.redis.smembers(self.cancel_request_key))
+
+    async def clear_cancel_request(self, job_id: str) -> None:
+        if self.redis:
+            await self.redis.srem(self.cancel_request_key, job_id)
+
     async def cancel_job(self, job_id: str, force: bool = False) -> bool:
         """Cancel a queued job or a worker-already-stopped processing job."""
         if not self.redis:
@@ -418,10 +444,12 @@ class RedisJobQueue:
         await self.redis.srem(self.processing_set_key, job_id)
         job_data["status"] = _status_to_str(JobStatus.CANCELLED)
         job_data["error"] = "Cancelled by user"
+        job_data["error_code"] = "JOB_CANCELLED"
         completed_at = datetime.utcnow()
         job_data["completed_at"] = completed_at.isoformat()
         _append_log(job_data, "cancelled", float(job_data.get("progress", 0.0)), "Cancelled by user", "warning")
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+        await self.redis.srem(self.cancel_request_key, job_id)
         await self.redis.hset(self.stage_hash_key, job_id, "cancelled")
         await self.redis.hset(self.message_hash_key, job_id, "Cancelled by user")
         await self.redis.zadd(self.completed_index_key, {job_id: completed_at.timestamp()})

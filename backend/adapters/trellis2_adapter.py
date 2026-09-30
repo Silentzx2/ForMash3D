@@ -7,7 +7,7 @@ This adapter integrates TRELLIS.2 into our mesh generation framework.
 
 import logging
 import os
-import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -35,20 +35,23 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        vram_requirement: int = 12288,  # 12GB VRAM
+        vram_requirement: Optional[int] = None
         trellis2_root: Optional[str] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         # Set default paths
         if model_path is None:
-            model_path = os.path.abspath(
-                os.path.join(os.getcwd(), "pretrained", "TRELLIS.2")
-            )
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS.2")
         
         if trellis2_root is None:
-            trellis2_root = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "TRELLIS.2")
-            )
+            trellis2_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS.2")
         
+        if vram_requirement is None:
+            raise ValueError("TRELLIS.2 VRAM requirement must come from the model manifest")
+
         super().__init__(
             model_id=self.MODEL_ID,
             model_path=model_path,
@@ -162,7 +165,7 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             
             # Save mesh in requested format
             output_path = self._generate_output_path(image_path, output_format, is_prompt=False)
-            self.mesh_processor.save_mesh(mesh, output_path, do_normalise=True)
+            self.mesh_processor.save_mesh(mesh, output_path, do_normalise=False)
             
             # Generate thumbnail
             thumbnail_path = self._generate_thumbnail_path(output_path)
@@ -217,8 +220,8 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Generate unique filename
-        timestamp = int(time.time())
-        filename = f"trellis2_{safe_name}_{timestamp}.{output_format}"
+        unique_id = uuid.uuid4().hex
+        filename = f"trellis2_{safe_name}_{unique_id}.{output_format}"
         
         return output_dir / filename
     
@@ -306,15 +309,19 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        vram_requirement: int = 12288,  # 12GB VRAM
+        vram_requirement: Optional[int] = None
         trellis2_root: Optional[str] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         # Set default paths
         if model_path is None:
-            model_path = os.path.join(os.getcwd(), "pretrained", "TRELLIS.2")
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS.2")
         
         if trellis2_root is None:
-            trellis2_root = os.path.join(os.getcwd(), "thirdparty", "TRELLIS.2")
+            trellis2_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS.2")
         
         super().__init__(
             model_id=self.MODEL_ID,

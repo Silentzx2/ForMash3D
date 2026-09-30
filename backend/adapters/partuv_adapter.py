@@ -33,16 +33,19 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
         self,
         model_id: str = "partuv_uv_unwrapping",
         model_path: Optional[str] = None,
-        vram_requirement: int = 6144,  # 6GB VRAM
+        vram_requirement: Optional[int] = None
         partuv_root: Optional[str] = None,
         config_path: Optional[str] = None,
         distortion_threshold: float = 1.25,
     ):
         if model_path is None:
-            model_path = "backend/pretrained/PartField/model_objaverse.ckpt"
+            model_path = "backend/pretrained/PartUV/model_objaverse.ckpt"
 
         if partuv_root is None:
-            partuv_root = "thirdparty/PartUV"
+            partuv_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "PartUV")
+
+        if vram_requirement is None:
+            raise ValueError("PartUV VRAM requirement must come from the model manifest")
 
         super().__init__(
             model_id=model_id,
@@ -66,17 +69,11 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
             # if str(self.partuv_root) not in sys.path:
                 # sys.path.insert(0, str(self.partuv_root))
 
-            # Resolve checkpoint path: support PartUV or PartField, .ckpt or .pt
             ckpt_path = Path(self.model_path)
             if not ckpt_path.is_file():
-                for candidate in [
-                    Path("backend/pretrained/PartUV/model_objaverse.ckpt"),
-                    Path("backend/pretrained/PartField/model_objaverse.ckpt"),
-                    Path("backend/pretrained/PartField/model_objaverse.pt"),
-                ]:
-                    if candidate.is_file():
-                        self.model_path = candidate
-                        break
+                raise FileNotFoundError(
+                    f"PartUV checkpoint not found at {ckpt_path}; refusing an implicit PartField fallback."
+                )
 
             # Initialize PartUV runner
             self.partuv_runner = PartUVRunner(

@@ -31,9 +31,13 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
         self,
         model_id: str = "partpacker_image_to_raw_mesh",
         model_path: Optional[str] = None,
-        vram_requirement: int = 10240,  # 10GB VRAM
+        vram_requirement: Optional[int] = None,
         partpacker_root: Optional[str] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_path is None:
             model_path = "backend/pretrained/PartPacker/flow.pt"
 

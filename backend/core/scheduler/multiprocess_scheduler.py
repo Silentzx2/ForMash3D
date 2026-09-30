@@ -48,6 +48,7 @@ import os
 import queue
 import shutil
 import threading
+import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -544,6 +545,7 @@ class MultiprocessModelScheduler:
 
         # Scheduler state
         self.running = False
+        self._background_tasks: set[asyncio.Task] = set()
         self.response_handler_thread: Optional[threading.Thread] = None
         self.pending_results: Dict[str, asyncio.Future] = {}
         self.result_lock = threading.Lock()
@@ -624,7 +626,11 @@ class MultiprocessModelScheduler:
                 f"No models available for feature: {job_request.feature}. Available features: {list(self.model_features.keys())}"
             )
 
-        job_id = await self.job_queue.enqueue(job_request)
+        try:
+            job_id = await self.job_queue.enqueue(job_request)
+        except Exception:
+            self._cleanup_temporary_inputs(job_request)
+            raise
         logger.info(f"Scheduled job {job_id} for feature {job_request.feature}")
 
         # Job will be processed by the background job processing loop
@@ -645,7 +651,10 @@ class MultiprocessModelScheduler:
         if job.status == JobStatus.CANCELLED:
             return True
         if job.status != JobStatus.PROCESSING:
-            return await self.job_queue.cancel_job(job_id)
+            cancelled = await self.job_queue.cancel_job(job_id)
+            if cancelled:
+                self._cleanup_temporary_inputs(job)
+            return cancelled
 
         stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
         if not stopped:
@@ -670,6 +679,7 @@ class MultiprocessModelScheduler:
             # Start job queue persistence
             await self.job_queue.start_persistence()
             await self.job_queue.recover_processing_jobs()
+            self._cleanup_stale_input_dirs()
 
             # Start response handler thread
             self.response_handler_thread = threading.Thread(
@@ -708,6 +718,15 @@ class MultiprocessModelScheduler:
                 await self.job_processing_task
             except asyncio.CancelledError:
                 pass
+
+        if self._background_tasks:
+            pending = list(self._background_tasks)
+            _, still_pending = await asyncio.wait(pending, timeout=10.0)
+            for task in still_pending:
+                task.cancel()
+            if still_pending:
+                await asyncio.gather(*still_pending, return_exceptions=True)
+            self._background_tasks.clear()
 
         # Stop job queue persistence
         await self.job_queue.stop_persistence()
@@ -899,6 +918,28 @@ class MultiprocessModelScheduler:
             "retry_mechanism": "disabled_for_resources",
         }
 
+    async def _process_external_cancellations(self) -> None:
+        """Stop workers for cancellation requests issued through a shared queue."""
+        get_requests = getattr(self.job_queue, "get_cancel_requests", None)
+        clear_request = getattr(self.job_queue, "clear_cancel_request", None)
+        if not callable(get_requests) or not callable(clear_request):
+            return
+
+        for job_id in await get_requests():
+            try:
+                stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
+                if not stopped:
+                    job = await self.job_queue.get_job(job_id)
+                    if job and job.status == JobStatus.QUEUED:
+                        await self.job_queue.cancel_job(job_id)
+                await clear_request(job_id)
+            except Exception:
+                logger.error(
+                    "Failed to process external cancellation for %s",
+                    job_id,
+                    exc_info=True,
+                )
+
     async def _job_processing_loop(self):
         """
         Background loop that processes jobs from the queue using JobQueue.dequeue().
@@ -910,6 +951,7 @@ class MultiprocessModelScheduler:
 
         while self.running:
             try:
+                await self._process_external_cancellations()
                 # Try to get next job from queue
                 job_request = await self.job_queue.dequeue()
 
@@ -1058,6 +1100,7 @@ class MultiprocessModelScheduler:
     async def _handle_job_result(self, job_request: JobRequest, result_future: asyncio.Future):
         """Handle job result asynchronously without blocking the main processing loop"""
         job_id = job_request.job_id
+        keep_inputs_for_postprocess = False
         try:
             result = await asyncio.wait_for(result_future, timeout=3600.0)
 
@@ -1159,7 +1202,8 @@ class MultiprocessModelScheduler:
             except Exception as e2:
                 logger.error(f"Failed to mark job {job_id} as failed: {e2}")
         finally:
-            self._cleanup_temporary_inputs(job_request)
+            if not keep_inputs_for_postprocess:
+                self._cleanup_temporary_inputs(job_request)
 
     def _cleanup_temporary_inputs(self, job_request: JobRequest) -> None:
         """Remove per-request mesh_gen_* input directories once job ownership ends."""

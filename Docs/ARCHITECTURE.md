@@ -453,3 +453,25 @@ Filesystem inputs are restricted to explicit asset roots by default; file upload
 The execution lifecycle is now split at raw inference completion. A successful GPU result is published immediately as the job result, after which canonical post-processing runs as a background task. The completed job retains `postprocess_status` and optional `postprocess_error`, so raw-model availability is independent from game-ready artifact production.
 
 Workspace state is keyed by backend job ID rather than a single global active operation. Batch submissions carry a scheduler-owned `batch_id` and `batch_max_parallel`; the scheduler refuses additional workers for that batch until a slot is free.
+
+## Review Audit — Canonical Runtime Contracts
+
+The backend model manifest is the source of truth for model readiness, capabilities, supported IO, VRAM reservation, and worker limits. Frontend model selectors consume the runtime model-details endpoint; static model definitions remain presentation fallbacks only.
+
+Generation is split into:
+1. raw/native result becoming visible;
+2. optional production post-processing;
+3. canonical asset/export artifacts.
+
+Batch text generation submits independent jobs under a scheduler-owned batch ID and max-parallel limit. Redis and single-worker queues expose the same terminal semantics and error-code surface.
+
+Each canonical asset manifest carries asset_id, job_id, optional parent_job_id, model/feature information, seed/settings, and SHA-256 input hashes for reproducibility.
+
+
+## Final Review Audit Gap Closure — September 30, 2026
+
+The final non-testing audit pass keeps the architecture split at the actual execution boundary: GPU inference becomes a completed raw result immediately, while canonical production post-processing is an independently tracked background task. Request-owned temporary input remains alive until post-processing finishes so asset lineage can hash the original inputs; scheduler shutdown waits briefly for those tasks before releasing persistence.
+
+Model configuration remains canonical in `backend/config/models.yaml`. Adapter constructors reject missing manifest VRAM, repository-relative model/third-party roots are used, and variant-specific overrides do not silently replace manifest values. The system API exposes runtime readiness, weights state, capabilities, and canonical queue counters to the frontend.
+
+The workspace consumes those capabilities for routing and keeps the viewer asset synchronized when post-processing transitions from pending/running to completed or failed. The in-memory GLB cache uses bounded LRU accounting for replacement and reuse.

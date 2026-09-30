@@ -609,8 +609,8 @@ class OutputPathGenerator:
         output_dir = self.base_output_dir / subdirectory
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = int(time.time())
-        filename = f"{model_id}_{base_name}_{timestamp}.{output_format}"
+        unique_id = uuid.uuid4().hex
+        filename = f"{model_id}_{base_name}_{unique_id}.{output_format}"
 
         return output_dir / filename
 
@@ -625,8 +625,8 @@ class OutputPathGenerator:
         output_dir = self.base_output_dir / subdirectory
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = int(time.time())
-        filename = f"{model_id}_{base_name}_{timestamp}.{output_format}"
+        unique_id = uuid.uuid4().hex
+        filename = f"{model_id}_{base_name}_{unique_id}.{output_format}"
 
         return output_dir / filename
 
@@ -655,8 +655,8 @@ class OutputPathGenerator:
         temp_dir = self.base_output_dir / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = int(time.time())
-        filename = f"temp_{base_name}_{timestamp}.{extension}"
+        unique_id = uuid.uuid4().hex
+        filename = f"temp_{base_name}_{unique_id}.{extension}"
 
         return temp_dir / filename
 

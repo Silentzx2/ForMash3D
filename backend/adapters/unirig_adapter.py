@@ -34,10 +34,14 @@ class UniRigAdapter(AutoRigModel):
         self,
         model_id: str = "unirig_auto_rig",
         model_path: Optional[str] = None,
-        vram_requirement: int = 9216,  # 9GB VRAM
+        vram_requirement: Optional[int] = None,
         unirig_root: Optional[str] = None,
         device: str = "cuda",
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_path is None:
             model_path = "backend/pretrained/UniRig"
 

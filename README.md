@@ -586,3 +586,7 @@ ForMash3D now supports opt-in Physics preparation during mesh generation. Physic
 
 
 **Review audit status — 2026-09-30:** the control plane now supports restart recovery, real worker termination for timeout/cancel, bounded Redis telemetry/storage, independent workspace job state, scheduler-limited text batches, and background production post-processing after raw generation becomes available. Target-GPU inference/stress and capability-specific multiview validation remain runtime checks.
+
+### Review audit — final implementation state
+
+The Review branch now includes the audit hardening plus manifest-driven model readiness/capabilities, real batch-job submission, cross-worker cancellation control, raw-first/background post-processing, collision-safe artifacts, reproducibility metadata, and explicit multiview gating. Runtime GPU/build/load testing remains an environment verification step rather than a claim of local execution.

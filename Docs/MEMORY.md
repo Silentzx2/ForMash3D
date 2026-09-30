@@ -213,3 +213,23 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - Workspace generation state is keyed by backend job ID and additional generations are not UI-blocked by an existing active job.
 - Text batches now carry a scheduler-enforced max_parallel limit.
 - Redis progress telemetry uses hot hashes and terminal cleanup uses a completion-time index.
+
+## 2026-09-30 Review Audit Final Gap Pass
+
+- Backend model manifest is now authoritative for runtime readiness/capabilities/VRAM.
+- FastMesh variant propagation is explicit.
+- UltraShape/P3-SAM/PartUV runtime defaults were hardened.
+- Text batch state now reaches the real scheduler-backed batch endpoint.
+- Native artifact naming and asset manifests are collision-safe and reproducible.
+- Multiview is explicitly disabled until a real backend contract exists.
+- Raw generation and production post-processing are separate lifecycle stages.
+- Testing and target-GPU stress remain environment-dependent verification steps.
+
+
+## 2026-09-30 Final Non-Testing Audit State
+- Review branch finalization must retain exactly two implementation commits from the audited baseline; this pass is folded into the recreated second commit.
+- Docker/RunPod dependency paths now resolve under `/app/backend`, with current release-wheel URLs rather than removed repository wheel paths.
+- Scheduler raw completion and production post-processing are separate lifecycle states; request temp inputs survive until post-process lineage metadata is written.
+- Adapter VRAM is manifest-only and remaining repository/model paths are CWD-independent; UUID naming closes timestamp collision windows.
+- Frontend uses backend model capabilities for routing, treats QA scores as 0–100, and refreshes the same asset when post-processing completes or fails.
+- Tests/build/GPU stress/load validation remain intentionally unrun in this pass.

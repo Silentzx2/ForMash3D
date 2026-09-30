@@ -5,6 +5,12 @@
 # text-conditioned geometry/geometry+texture generation
 text_to_textured_mesh:
   trellis_text_to_textured_mesh:
+    capabilities:
+      text_to_3d: true
+      image_to_3d: false
+      multiview: false
+      texture_generation: true
+      raw_mesh: false
     vram_requirement: 11776  # MB
     supported_inputs: ["text"]
     supported_outputs: ["glb", "obj"]
@@ -25,6 +31,13 @@ text_mesh_painting:
 # image-conditioned geometry generation
 image_to_raw_mesh:
   hunyuan3d_shape_v21_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      paint_autochain: true
     vram_requirement: 10240  # MB (3.3B shape model)
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
@@ -33,6 +46,13 @@ image_to_raw_mesh:
     max_workers: 1
 
   hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      paint_autochain: true
     vram_requirement: 6144  # MB (0.6B mini turbo model)
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
@@ -41,6 +61,13 @@ image_to_raw_mesh:
     max_workers: 1
 
   partpacker_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      parts: true
     vram_requirement: 10240  # MB
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
@@ -49,6 +76,12 @@ image_to_raw_mesh:
     max_workers: 1
 
   ultrashape_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
     vram_requirement: 26640  # MB (20GB: 8GB Hunyuan + 12GB UltraShape)
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj", "ply"]
@@ -57,6 +90,13 @@ image_to_raw_mesh:
     max_workers: 1
 
   triposr_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      max_images: 1
     vram_requirement: 6144  # MB
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
@@ -65,6 +105,13 @@ image_to_raw_mesh:
     max_workers: 1
 
   triposg_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      max_images: 1
     vram_requirement: 8192  # MB
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
@@ -73,6 +120,13 @@ image_to_raw_mesh:
     max_workers: 1
 
   triposf_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      max_images: 1
     vram_requirement: 12288  # MB
     supported_inputs: ["image", "mesh"]
     supported_outputs: ["glb", "obj"]
@@ -83,6 +137,13 @@ image_to_raw_mesh:
 # image-conditioned geometry+texture generation
 image_to_textured_mesh:
   trellis_image_to_textured_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: true
+      raw_mesh: false
+      max_images: 1
     vram_requirement: 11776  # MB
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
@@ -91,6 +152,13 @@ image_to_textured_mesh:
     max_workers: 1
 
   trellis2_image_to_textured_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: true
+      raw_mesh: false
+      max_images: 1
     vram_requirement: 23552  # MB (23GB, TRELLIS.2)
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
@@ -101,6 +169,10 @@ image_to_textured_mesh:
 # image-conditioned mesh painting
 image_mesh_painting:
   trellis_image_mesh_painting:
+    capabilities:
+      texture_generation: true
+      texture_refine: true
+      multiview: false
     vram_requirement: 11776  # MB
     supported_inputs: ["mesh", "image"]
     supported_outputs: ["glb", "obj"]
@@ -109,6 +181,10 @@ image_mesh_painting:
     max_workers: 1
 
   trellis2_image_mesh_painting:
+    capabilities:
+      texture_generation: true
+      texture_refine: true
+      multiview: false
     vram_requirement: 23552   # MB (23GB, TRELLIS.2)
     supported_inputs: ["mesh", "image"]
     supported_outputs: ["glb", "obj"]
@@ -117,6 +193,10 @@ image_mesh_painting:
     max_workers: 1
 
   hunyuan3d_paint_v21_image_mesh_painting:
+    capabilities:
+      texture_generation: true
+      texture_refine: true
+      multiview: false
     vram_requirement: 21504  # MB (2B PBR texture checkpoint)
     supported_inputs: ["mesh", "text", "image"]
     supported_outputs: ["glb", "obj"]
@@ -127,6 +207,8 @@ image_mesh_painting:
 # mesh segmentation
 mesh_segmentation:
   partfield_mesh_segmentation:
+    capabilities:
+      segmentation: true
     vram_requirement: 4096  # MB
     supported_inputs: ["glb", "obj"]
     supported_outputs: ["glb"]
@@ -135,6 +217,8 @@ mesh_segmentation:
     max_workers: 1
   
   p3sam_mesh_segmentation:
+    capabilities:
+      segmentation: true
     vram_requirement: 61440  # MB (60GB, P3-SAM)
     supported_inputs: ["glb", "obj", "ply"]
     supported_outputs: ["glb"]
@@ -144,6 +228,9 @@ mesh_segmentation:
 
 auto_rig:
   unirig_auto_rig:
+    capabilities:
+      auto_rig: true
+      character_output: true
     vram_requirement: 9216  # MB
     supported_inputs: ["obj", "glb", "fbx"]
     supported_outputs: ["glb", "fbx"]
@@ -154,6 +241,9 @@ auto_rig:
 # mesh retopology
 mesh_retopology:
   fastmesh_v1k_retopology:
+    capabilities:
+      retopology: true
+      target_variant: "V1K"
     vram_requirement: 16384  # MB
     init_params:
       variant: "V1K"
@@ -164,6 +254,9 @@ mesh_retopology:
     max_workers: 1
     
   fastmesh_v4k_retopology:
+    capabilities:
+      retopology: true
+      target_variant: "V4K"
     vram_requirement: 24500  # MB
     init_params:
       variant: "V4K"
@@ -176,6 +269,8 @@ mesh_retopology:
 # UV unwrapping
 uv_unwrapping:
   partuv_uv_unwrapping:
+    capabilities:
+      uv_unwrap: true
     vram_requirement: 7168  # MB
     supported_inputs: ["obj", "glb"]
     supported_outputs: ["obj"]
@@ -186,6 +281,9 @@ uv_unwrapping:
 # Mesh editing (local editing with VoxHammer)
 text_mesh_editing:
   voxhammer_text_mesh_editing:
+    capabilities:
+      mesh_editing: true
+      text_editing: true
     vram_requirement: 40960  # MB (40GB: TRELLIS + rendering)
     supported_inputs: ["mesh", "text"]
     supported_outputs: ["glb"]
@@ -195,6 +293,9 @@ text_mesh_editing:
 
 image_mesh_editing:
   voxhammer_image_mesh_editing:
+    capabilities:
+      mesh_editing: true
+      image_editing: true
     vram_requirement: 40960  # MB (40GB: TRELLIS + rendering)
     supported_inputs: ["mesh", "image"]
     supported_outputs: ["glb"]
@@ -205,6 +306,8 @@ image_mesh_editing:
 # Motion generation (ARDY)
 motion_generation:
   ardy_motion_generation:
+    capabilities:
+      motion_generation: true
     vram_requirement: 8192  # MB
     supported_inputs: ["text"]
     supported_outputs: ["json", "npz"]

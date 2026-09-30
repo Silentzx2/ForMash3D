@@ -165,6 +165,7 @@ interface BackendJobPayload {
   metadata?: { logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[] };
   result?: Record<string, any>;
   error?: string | null;
+  error_code?: string;
 }
 
 function normalizeBackendJob(raw: BackendJobPayload) {
@@ -175,6 +176,7 @@ function normalizeBackendJob(raw: BackendJobPayload) {
     stage: raw.stage || raw.status,
     message: raw.message || (raw.status === 'processing' ? 'Processing' : raw.status === 'queued' ? 'Queued' : undefined),
     error_message: typeof raw.error === 'string' ? raw.error : undefined,
+    error_code: raw.error_code,
     logs: Array.isArray(raw.logs)
       ? raw.logs
       : Array.isArray(raw.metadata?.logs)
@@ -795,15 +797,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     try {
       // Route dynamically: raw models (Hunyuan3D Raw, PartPacker, UltraShape) must go to image-to-raw-mesh
-      const isRawModel = [
-        'hunyuan3d_shape_v21_image_to_raw_mesh',
-        'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-        'partpacker_image_to_raw_mesh',
-        'ultrashape_image_to_raw_mesh',
-      ].includes(generationSettings.aiModel || '') || Boolean(generationSettings.aiModel?.includes('raw_mesh'));
-
+      const selectedModel = modelDetails[generationSettings.aiModel || ''];
+      const capabilities = selectedModel?.capabilities || {};
+      const isRawModel = capabilities.raw_mesh === true;
       const isTextured = !isRawModel && generationSettings.generateTexture !== false;
-      const isPaintModel = generationSettings.aiModel?.includes('shape_v21') || generationSettings.aiModel?.includes('dit_v2_mini_turbo') || generationSettings.aiModel?.includes('paint_v21') || false;
+      const isPaintModel = capabilities.paint_autochain === true;
       const endpoint = isTextured
         ? '/api/v1/mesh-generation/image-to-textured-mesh'
         : '/api/v1/mesh-generation/image-to-raw-mesh';
@@ -987,6 +985,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         const endpoint = '/api/v1/mesh-generation/text-to-textured-mesh';
 
+        const batchItems = appStore.batchGenerationEnabled
+          ? appStore.batchQueue.filter(item => item.prompt?.trim())
+          : [];
+
         const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 60000;
         const modelParameters: Record<string, unknown> = {
           octree_resolution: octreeRes,
@@ -1015,6 +1017,58 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           compress_output: true,
         };
 
+        if (batchItems.length > 0) {
+          const batchResponse = await fetch('/api/v1/mesh-generation/text-to-textured-mesh/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: batchItems.map(item => ({
+                text_prompt: item.prompt,
+                negative_prompt: item.negativePrompt,
+                model_preference: generationSettings.aiModel,
+                texture_prompt: item.prompt,
+                texture_resolution: currentQuality === 'ultra' ? 4096 : 2048,
+                model_parameters: modelParameters,
+              })),
+              max_parallel: 2,
+            }),
+          });
+          if (!batchResponse.ok) throw await parseApiError(batchResponse);
+
+          const batchData = await parseApiData<{ batch_id: string; job_ids: string[] }>(batchResponse);
+          if (!Array.isArray(batchData.job_ids) || batchData.job_ids.length === 0) {
+            throw new Error('Backend did not return any batch job IDs');
+          }
+
+          const [firstJobId, ...otherJobIds] = batchData.job_ids;
+          bindBackendJob(localTaskId, firstJobId, {
+            status: 'queued',
+            currentStep: 'Batch queued on backend',
+          });
+
+          if (otherJobIds.length > 0) {
+            setJobsById(prev => {
+              const next = { ...prev };
+              otherJobIds.forEach((jobId, index) => {
+                next[jobId] = {
+                  id: jobId,
+                  type: 'text-to-3d',
+                  title: batchItems[index + 1]?.prompt || ('Batch item ' + (index + 2)),
+                  startedAt: Date.now(),
+                  status: 'queued',
+                  progress: 0,
+                  currentStep: 'Batch queued on backend',
+                  provider: generationSettings.aiModel,
+                };
+              });
+              return next;
+            });
+          }
+
+          appStore.clearBatchQueue();
+          setExecutionStep('Batch queued: ' + batchData.job_ids.length + ' jobs');
+          return;
+        }
         const body: Record<string, unknown> = {
           text_prompt: modelPrompt,
           output_format: 'glb',
@@ -1091,8 +1145,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.lowVramMode,
     generationSettings.maxNumView,
     generationSettings.resolution,
+    modelDetails,
     startTask,
     generateImageTo3D,
+    bindBackendJob,
+    appStore.batchGenerationEnabled,
+    appStore.batchQueue,
+    appStore.clearBatchQueue,
   ]);
 
   const runRemeshGeneration = useCallback(async () => {
@@ -1308,6 +1367,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 logs: data.logs || task.logs,
                 result: data.result,
                 errorMessage: data.error_message || task.errorMessage,
+                errorCode: (data as any).error_code || task.errorCode,
+                result: data.result || task.result,
               },
             } : prev;
           });
@@ -1327,7 +1388,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   useEffect(() => {
     const task = activeTaskRef.current;
-    if (!task || task.status === 'completed' || task.status === 'failed' || task.status === 'interrupted') return;
+    if (!task) return;
+    const postprocessStatus = (task.result as any)?.postprocess_status;
+    const terminalButStillPostprocessing = task.status === 'completed' && (postprocessStatus === 'pending' || postprocessStatus === 'running');
+    if ((task.status === 'completed' && !terminalButStillPostprocessing) || task.status === 'failed' || task.status === 'interrupted') return;
     const jobId = task.id;
     const isBackendJob = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId);
     if (!isBackendJob) return;
@@ -1369,32 +1433,95 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ...prev,
           progress,
           currentStep: currentMsg,
+          result: data.result || prev.result,
+          errorCode: (data as any).error_code || prev.errorCode,
           stage: data.stage || prev.stage,
           estimatedRemainingSec: etaSec,
           logs: data.logs || prev.logs,
         } : null);
 
         if (data.status === 'completed') {
+          const alreadyMarkedCompleted = activeTaskRef.current?.status === 'completed';
+          const priorPostprocessStatus = (activeTaskRef.current?.result as any)?.postprocess_status;
+          const currentPostprocessStatus = data.result?.postprocess_status;
+          const postprocessPending = currentPostprocessStatus === 'pending' || currentPostprocessStatus === 'running';
+          const postprocessFailed =
+            currentPostprocessStatus === 'failed' && priorPostprocessStatus !== 'failed';
+          const postprocessJustCompleted =
+            currentPostprocessStatus === 'completed' && priorPostprocessStatus !== 'completed';
+          const shouldHydrateAsset = !alreadyMarkedCompleted || postprocessJustCompleted;
+
           setIsExecuting(false);
           setExecutionProgress(100);
-          setExecutionStep('Completed');
-          setActiveTask(prev => prev ? { ...prev, status: 'completed', progress: 100, currentStep: 'Completed', logs: data.logs || prev.logs } : null);
-          let modelUrl: string | undefined;
-          let cleanName: string | undefined;
-          if (result?.model_url || result?.active_model_url) {
-            const currentLatestTask = activeTaskRef.current || task;
-            modelUrl = (result.active_model_url || result.model_url) as string;
-            const promptTitle = currentLatestTask.title && currentLatestTask.title !== 'Image-to-3D generation' && currentLatestTask.title !== 'generate' ? currentLatestTask.title : null;
-            const rawName = promptTitle || currentLatestTask.inputImageName || (currentLatestTask.inputImage ? currentLatestTask.inputImage.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : null) || `Model_${jobId.slice(0, 6)}`;
-            cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+          setExecutionStep(
+            postprocessPending
+              ? 'Raw result ready; finishing production post-processing'
+              : postprocessFailed
+                ? 'Production post-processing failed; raw result retained'
+                : 'Completed'
+          );
+          setActiveTask(prev => prev ? {
+            ...prev,
+            status: 'completed',
+            progress: 100,
+            currentStep: postprocessPending
+              ? 'Raw result ready; finishing production post-processing'
+              : postprocessFailed
+                ? 'Production post-processing failed; raw result retained'
+                : 'Completed',
+            logs: data.logs || prev.logs,
+            result: data.result || prev.result,
+            errorCode: (data as any).error_code || prev.errorCode,
+          } : null);
 
-            // Pre-fetch the model arrayBuffer immediately into in-memory cache
+          if (shouldHydrateAsset && (result?.model_url || result?.active_model_url)) {
+            const currentLatestTask = activeTaskRef.current || task;
+            const modelUrl = (result.active_model_url || result.model_url) as string;
+            const promptTitle =
+              currentLatestTask.title &&
+              currentLatestTask.title !== 'Image-to-3D generation' &&
+              currentLatestTask.title !== 'generate'
+                ? currentLatestTask.title
+                : null;
+            const rawName =
+              promptTitle ||
+              currentLatestTask.inputImageName ||
+              (currentLatestTask.inputImage
+                ? currentLatestTask.inputImage
+                    .split('/')
+                    .pop()
+                    ?.replace(/\.[^/.]+$/, '')
+                    .replace(/[-_]/g, ' ')
+                : null) ||
+              `Model_${jobId.slice(0, 6)}`;
+            const cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+
             void prefetchGLB(modelUrl);
 
             const qaReport = (result as any).qa_report;
-            const qaScore = qaReport?.game_ready_score ?? (qaReport?.score ? Math.round(qaReport.score * 100) : undefined);
-            const qaStatus = qaReport?.status ?? (qaScore !== undefined ? (qaScore >= 80 ? 'pass' : qaScore >= 50 ? 'warn' : 'fail') : undefined);
-            const qaWarnings = qaReport?.warnings ?? [];
+            const qaScore =
+              typeof qaReport?.score === 'number'
+                ? Math.round(qaReport.score)
+                : typeof qaReport?.game_ready_score === 'number'
+                  ? Math.round(qaReport.game_ready_score)
+                  : undefined;
+            const qaStatus =
+              qaReport?.status ??
+              (qaScore !== undefined
+                ? qaScore >= 80
+                  ? 'pass'
+                  : qaScore >= 60
+                    ? 'warn'
+                    : 'fail'
+                : undefined);
+            const qaWarnings =
+              qaReport?.warnings ??
+              (Array.isArray(qaReport?.checks)
+                ? qaReport.checks
+                    .filter((check: any) => check?.status === 'warn' || check?.status === 'fail')
+                    .map((check: any) => check?.detail || check?.label)
+                    .filter(Boolean)
+                : []);
 
             const outputAsset = normalizeModelAsset({
               id: jobId,
@@ -1418,7 +1545,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               meshDetails: (result.mesh_details || result.segmentation_info)
                 ? {
                     ...(result.mesh_details || {}),
-                    ...(result.segmentation_info ? { segmentation_info: result.segmentation_info } : {}),
+                    ...(result.segmentation_info
+                      ? { segmentation_info: result.segmentation_info }
+                      : {}),
                   }
                 : undefined,
               postprocessStatus: result.postprocess_status || data.status,
@@ -1447,21 +1576,46 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setViewportResetTrigger(prev => prev + 1);
             loadModelInViewer(modelUrl, cleanName, outputAsset as any);
           }
-           toast.success('Generation complete', { description: 'The 3D model is ready and loaded in the viewer.' });
 
-           // Shape → Paint automatic chaining
-           const latestTask = activeTaskRef.current || task;
-           if (
-             (latestTask?.provider?.includes('shape_v21') || latestTask?.provider?.includes('dit_v2_mini_turbo')) &&
-             generationSettings.generateTexture !== false
-           ) {
-             // Automatically trigger Paint-v2-1 texturing
-             void runPaintAutoChaining(
-               typeof data.result?.file_id === 'string' ? data.result.file_id : undefined,
-             );
-           }
-           return;
-         } else if (data.status === 'failed' || data.status === 'cancelled') {
+          if (!alreadyMarkedCompleted) {
+            if (postprocessFailed) {
+              toast.error(
+                'Production post-processing failed',
+                {
+                  description:
+                    (result as any)?.postprocess_error ||
+                    'The raw generated model is retained; production artifacts were not completed.',
+                }
+              );
+            } else {
+              toast.success(
+              'Generation complete',
+              {
+                description: postprocessPending
+                  ? 'The raw 3D model is ready; production processing is finishing in the background.'
+                  : 'The 3D model is ready and loaded in the viewer.',
+              }
+            );
+
+            const latestTask = activeTaskRef.current || task;
+              if (
+                modelDetails[latestTask?.provider || '']?.capabilities?.paint_autochain === true &&
+                generationSettings.generateTexture !== false
+              ) {
+                void runPaintAutoChaining(
+                  typeof data.result?.file_id === 'string'
+                    ? data.result.file_id
+                    : undefined
+                );
+              }
+            }
+          }
+
+          if (postprocessPending) {
+            scheduleNext(document.visibilityState === 'hidden' ? 2500 : 1200);
+          }
+          return;
+        } else if (data.status === 'failed' || data.status === 'cancelled') {
           const currentLatestTask = activeTaskRef.current || task;
           const message = data.error_message || data.message || (data.status === 'cancelled' ? 'Generation cancelled' : 'Generation failed');
           setIsExecuting(false);

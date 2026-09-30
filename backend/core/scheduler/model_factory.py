@@ -8,11 +8,33 @@ load models without direct imports.
 
 import importlib
 import logging
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ..models.base import BaseModel
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_configured_path(value: Optional[str]) -> Optional[str]:
+    """Resolve manifest paths consistently from repo-root or backend workdirs."""
+    if not value:
+        return value
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return str(path)
+
+    repo_root = Path(__file__).resolve().parents[3]
+    candidates = [
+        Path.cwd() / path,
+        Path.cwd() / "backend" / path,
+        repo_root / path,
+        repo_root / "backend" / path,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate.resolve())
+    return value
 
 
 class ModelFactory:
@@ -231,9 +253,10 @@ class ModelFactory:
         cls,
         model_id: str,
         feature_type: str,
-        vram_requirement: int = 4096,
+        vram_requirement: int,
         max_workers: int = 1,
         init_params: Optional[Dict[str, Any]] = None,
+        capabilities: Optional[Dict[str, Any]] = None,
         module_path: Optional[str] = None,
         class_name: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -256,6 +279,7 @@ class ModelFactory:
             "feature_type": feature_type,
             "vram_requirement": vram_requirement,
             "init_params": init_params or {},
+            "capabilities": capabilities or {},
         }
 
         # Add module and class if provided
@@ -349,11 +373,15 @@ def get_model_configs_from_settings(
                     logger.info(f"Skipping disabled model: {model_id}")
                     continue
 
-                vram_requirement = getattr(model_config, "vram_requirement", 4096)
+                vram_requirement = getattr(model_config, "vram_requirement", None)
                 model_path = getattr(model_config, "model_path", None)
                 supported_inputs = getattr(model_config, "supported_inputs", [])
                 supported_outputs = getattr(model_config, "supported_outputs", [])
                 max_workers = getattr(model_config, "max_workers", 1)
+                if vram_requirement is None:
+                    raise ValueError(f"Model {model_id} is missing a manifest vram_requirement")
+                init_params = dict(getattr(model_config, "init_params", {}) or {})
+                capabilities = dict(getattr(model_config, "capabilities", {}) or {})
             elif isinstance(model_config, dict):
                 # Handle dict-based configs from YAML
                 enabled = model_config.get("enabled", True)
@@ -361,11 +389,15 @@ def get_model_configs_from_settings(
                     logger.info(f"Skipping disabled model: {model_id}")
                     continue
 
-                vram_requirement = model_config.get("vram_requirement", 4096)
+                vram_requirement = model_config.get("vram_requirement")
                 model_path = model_config.get("model_path", None)
                 supported_inputs = model_config.get("supported_inputs", [])
                 supported_outputs = model_config.get("supported_outputs", [])
                 max_workers = model_config.get("max_workers", 1)
+                if vram_requirement is None:
+                    raise ValueError(f"Model {model_id} is missing a manifest vram_requirement")
+                init_params = dict(model_config.get("init_params", {}) or {})
+                capabilities = dict(model_config.get("capabilities", {}) or {})
             else:
                 logger.warning(f"Unknown model config type for {model_id}, skipping")
                 continue
@@ -383,16 +415,18 @@ def get_model_configs_from_settings(
                 feature_type=feature_type,
                 vram_requirement=vram_requirement,
                 max_workers=max_workers,
-                init_params={},
+                init_params=init_params,
             )
 
             # Add additional configuration
             if model_path:
-                config["model_path"] = model_path
+                config["model_path"] = _resolve_configured_path(model_path)
             if supported_inputs:
                 config["supported_inputs"] = supported_inputs
             if supported_outputs:
                 config["supported_outputs"] = supported_outputs
+            if capabilities:
+                config["capabilities"] = capabilities
 
             configs[model_id] = config
             # logger.debug(f"Configured model {model_id} for feature {feature_type}")
@@ -403,204 +437,44 @@ def get_model_configs_from_settings(
 
 def get_default_model_configs() -> Dict[str, Dict[str, Any]]:
     """
-    Fallback function to generate default model configurations when YAML loading fails.
+    Load the canonical model manifest when callers need a default config mapping.
 
-    Returns:
-        Dict: Mapping of model_id to configuration
+    There is intentionally no second hardcoded model/VRAM registry here. The YAML
+    manifest remains the single source of truth for enabled models, capabilities,
+    init parameters, paths, outputs, and resource requirements.
     """
-    configs = {}
+    manifest_path = Path(__file__).resolve().parents[2] / "config" / "models.yaml"
+    parsed = load_models_config(str(manifest_path))
+    configs: Dict[str, Dict[str, Any]] = {}
 
-    # TRELLIS models
-    configs.update(
-        {
-            "trellis_text_to_textured_mesh": ModelFactory.create_model_config(
-                model_id="trellis_text_to_textured_mesh",
-                feature_type="text_to_textured_mesh",
-                vram_requirement=11776,  # 12GB
-            ),
-            "trellis_text_mesh_painting": ModelFactory.create_model_config(
-                model_id="trellis_text_mesh_painting",
-                feature_type="text_mesh_painting",
-                vram_requirement=11776,
-            ),
-            "trellis_image_to_textured_mesh": ModelFactory.create_model_config(
-                model_id="trellis_image_to_textured_mesh",
-                feature_type="image_to_textured_mesh",
-                vram_requirement=11776,
-            ),
-            "trellis_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="trellis_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=11776,
-            ),
-            "trellis_image_mesh_painting": ModelFactory.create_model_config(
-                model_id="trellis_image_mesh_painting",
-                feature_type="image_mesh_painting",
-                vram_requirement=11776,
-            ),
-        }
-    )
+    for feature_type, models in parsed.items():
+        for model_id, model_config in models.items():
+            if not model_config.enabled:
+                continue
+            if model_config.vram_requirement is None or model_config.vram_requirement <= 0:
+                raise ValueError(
+                    f"Model {model_id} is missing a valid manifest vram_requirement"
+                )
 
-    # Hunyuan3D Shape v2-1 models
-    configs.update(
-        {
-            "hunyuan3d_shape_v21_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="hunyuan3d_shape_v21_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=10240,
-            ),
-            "hunyuan3d_paint_v21_image_mesh_painting": ModelFactory.create_model_config(
-                model_id="hunyuan3d_paint_v21_image_mesh_painting",
-                feature_type="image_mesh_painting",
-                vram_requirement=21504,
-            ),
-            "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=6144,
-            ),
-        }
-    )
-
-    # Hunyuan3D2.1 legacy models
-    configs.update(
-        {
-            "hunyuan3dv21_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="hunyuan3dv21_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=8192,
-            ),
-            "hunyuan3dv21_image_to_textured_mesh": ModelFactory.create_model_config(
-                model_id="hunyuan3dv21_image_to_textured_mesh",
-                feature_type="image_to_textured_mesh",
-                vram_requirement=19456,
-            ),
-            "hunyuan3dv21_image_mesh_painting": ModelFactory.create_model_config(
-                model_id="hunyuan3dv21_image_mesh_painting",
-                feature_type="image_mesh_painting",
-                vram_requirement=12288,
-            ),
-        }
-    )
-
-    # PartField models
-    configs.update(
-        {
-            "partfield_mesh_segmentation": ModelFactory.create_model_config(
-                model_id="partfield_mesh_segmentation",
-                feature_type="mesh_segmentation",
-                vram_requirement=4096,  # 4GB
+            config = ModelFactory.create_model_config(
+                model_id=model_id,
+                feature_type=feature_type,
+                vram_requirement=model_config.vram_requirement,
+                max_workers=model_config.max_workers,
+                init_params=dict(model_config.init_params or {}),
+                capabilities=dict(model_config.capabilities or {}),
             )
-        }
-    )
+            if model_config.model_path:
+                config["model_path"] = _resolve_configured_path(model_config.model_path)
+            if model_config.supported_inputs:
+                config["supported_inputs"] = list(model_config.supported_inputs)
+            if model_config.supported_outputs:
+                config["supported_outputs"] = list(model_config.supported_outputs)
 
-    # PartPacker models
-    configs.update(
-        {
-            "partpacker_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="partpacker_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=10240,  # 10GB
-            )
-        }
-    )
+            configs[model_id] = config
 
-    # UniRig models
-    configs.update(
-        {
-            "unirig_auto_rig": ModelFactory.create_model_config(
-                model_id="unirig_auto_rig",
-                feature_type="auto_rig",
-                vram_requirement=9216,  # 9GB
-            )
-        }
-    )
-
-    # FastMesh models
-    configs.update(
-        {
-            "fastmesh_v1k_retopology": ModelFactory.create_model_config(
-                model_id="fastmesh_v1k_retopology",
-                feature_type="mesh_retopology",
-                vram_requirement=8192,  # 8GB
-            ),
-            "fastmesh_v4k_retopology": ModelFactory.create_model_config(
-                model_id="fastmesh_v4k_retopology",
-                feature_type="mesh_retopology",
-                vram_requirement=8192,  # 8GB
-            ),
-        }
-    )
-
-    # PartUV models
-    configs.update(
-        {
-            "partuv_uv_unwrapping": ModelFactory.create_model_config(
-                model_id="partuv_uv_unwrapping",
-                feature_type="uv_unwrapping",
-                vram_requirement=6144,  # 6GB
-            )
-        }
-    )
-
-    # UltraShape models
-    configs.update(
-        {
-            "ultrashape_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="ultrashape_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=20480,  # 20GB
-            )
-        }
-    )
-
-    # VoxHammer models
-    configs.update(
-        {
-            "voxhammer_text_mesh_editing": ModelFactory.create_model_config(
-                model_id="voxhammer_text_mesh_editing",
-                feature_type="text_mesh_editing",
-                vram_requirement=40960,  # 40GB
-            ),
-            "voxhammer_image_mesh_editing": ModelFactory.create_model_config(
-                model_id="voxhammer_image_mesh_editing",
-                feature_type="image_mesh_editing",
-                vram_requirement=40960,  # 40GB
-            ),
-        }
-    )
-
-    # TripoSR models
-    configs.update(
-        {
-            "triposr_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="triposr_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=6144,  # 6GB
-            )
-        }
-    )
-
-    # TripoSG models
-    configs.update(
-        {
-            "triposg_image_to_raw_mesh": ModelFactory.create_model_config(
-                model_id="triposg_image_to_raw_mesh",
-                feature_type="image_to_raw_mesh",
-                vram_requirement=8192,  # 8GB
-            )
-        }
-    )
-
-    # ARDY models
-    configs.update(
-        {
-            "ardy_motion_generation": ModelFactory.create_model_config(
-                model_id="ardy_motion_generation",
-                feature_type="motion_generation",
-                vram_requirement=8192,  # 8GB
-            )
-        }
-    )
-
+    if not configs:
+        raise RuntimeError(
+            f"Canonical model manifest is empty or unavailable: {manifest_path}"
+        )
     return configs
