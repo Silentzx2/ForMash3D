@@ -1217,6 +1217,14 @@ class MultiprocessModelScheduler:
         for directory in parents:
             shutil.rmtree(directory, ignore_errors=True)
 
+    def _cleanup_stale_input_dirs(self) -> None:
+        """Remove orphaned mesh_gen_* input directories from previous crashed sessions."""
+        temp_base = Path(tempfile.gettempdir())
+        for entry in temp_base.iterdir():
+            if entry.is_dir() and entry.name.startswith("mesh_gen_"):
+                shutil.rmtree(entry, ignore_errors=True)
+                logger.debug("Cleaned stale input dir: %s", entry)
+
     async def _stop_worker_for_job(self, job_id: str, reason: str) -> bool:
         """Terminate the worker owning a job and release its resources."""
         worker_id = next(
