@@ -12,7 +12,7 @@ import torch
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
