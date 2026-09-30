@@ -1,3 +1,20 @@
+## 2026-09-30 Deep Quality Audit — Second Gap Closure
+- Found and fixed a real post-processing crash: normal jobs with Physics disabled could reference uninitialized `collision_stats` when writing `quality_report.json`.
+- Tightened native-texture detection so UV-only `TextureVisuals` are not mistaken for actual texture payloads. This prevents raw meshes from incorrectly skipping AutoUV/using the textured optimizer.
+- Changed the AutoRetopo trigger to use the largest connected boundary component rather than the total boundary-edge count, matching the per-hole repair threshold semantics.
+- FastMesh was audited end-to-end: its V1K/V4K output is fixed by variant, while the UI/API previously exposed arbitrary poly budgets and silently ignored them. The UI now exposes the real V1K/V4K contract and tri/quad output selection; the API passes `poly_type`, and the adapter rejects unsupported arbitrary targets instead of silently ignoring them.
+- Quality reports now carry stage snapshots for source, repaired, optimized, and game-ready geometry, alongside the existing source hash, topology/QA, texture state, and per-LOD metadata.
+- GPU/model runtime validation remains external because the current container cannot resolve GitHub or provide the production NVIDIA runtime.
+
+## 2026-09-30 Quality & Detail Restoration Audit
+- The generation-to-post-processing quality boundary is now explicit: model-native output is preserved as immutable `master/source.glb`, and quality investigations compare source vs repaired/optimized/LOD artifacts before attributing loss to post-processing.
+- Hunyuan frontend quality mapping now stays within the documented `octree_resolution` ceiling (Ultra/High 512, Medium 384, Low 256); the previous 640 Ultra value was removed.
+- TRELLIS.2 raw export no longer relies on `decimation_target=-1` being an upstream no-op; the integration converts non-positive raw targets to the generated face count before GLB export.
+- Textured meshes now use PyMeshLab's texture-aware decimator and reconstruct per-wedge UVs/materials after topology changes. Conditional AutoRetopo is used only for large structural boundary defects on untextured AI-generated assets.
+- AutoUV normal rebuilding defaults to 60° and AutoRetopo defaults to lower smoothing with feature preservation. Quality metadata records source hash, retopo status, texture status, and per-LOD UV/material preservation.
+- Frontend generation controls that had no backend consumer for detail/UV toggles were removed instead of being left as misleading no-op settings.
+- Local container clone was blocked by GitHub DNS in this environment; static code verification was performed from the exact latest `main` source via the GitHub repository integration. GPU/CUDA/real-model validation remains a required external step.
+ 
 ## 2026-09-29 Production Post-Processing Integration
 - Successful mesh-generation jobs now run post-processing automatically.
 - Raw output is preserved byte-for-byte at backend/storage/models/<asset_name>_<job_hash>/master/source.glb.

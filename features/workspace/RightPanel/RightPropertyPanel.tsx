@@ -509,16 +509,12 @@ export const RightPropertyPanel: React.FC = () => {
 
             <div className="space-y-1.5 text-xs">
               <div className="flex justify-between text-[hsl(var(--foreground))]">
-                <span>Target Polycount</span>
-                <span className="font-mono font-bold text-primary">{remeshSettings.targetFaces.toLocaleString()}</span>
+                <span>FastMesh Variant</span>
+                <span className="font-mono font-bold text-primary">{remeshSettings.variant}</span>
               </div>
               <div className="flex justify-between text-[hsl(var(--foreground))]">
-                <span>Topology Mode</span>
-                <span className="font-mono text-[hsl(var(--neon-blue))] uppercase">{remeshSettings.mode}</span>
-              </div>
-              <div className="flex justify-between text-[hsl(var(--foreground))]">
-                <span>Detail Preservation</span>
-                <span className="font-mono text-[hsl(var(--foreground))] uppercase">{remeshSettings.detailPreservation}</span>
+                <span>Output Polygons</span>
+                <span className="font-mono text-[hsl(var(--neon-blue))] uppercase">{remeshSettings.polyType}</span>
               </div>
               <div className="flex justify-between text-[hsl(var(--foreground))]">
                 <span>Quad Flow Alignment</span>

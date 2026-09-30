@@ -174,6 +174,17 @@ async def retopologize_mesh(
                 status_code=404, detail=f"Mesh file not found: {mesh_file_path}"
             )
 
+        if request.target_vertex_count is not None and "fastmesh" in request.model_preference.lower():
+            expected_target = 4000 if "v4k" in request.model_preference.lower() else 1000
+            if request.target_vertex_count != expected_target:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"{request.model_preference} has a fixed {expected_target}-vertex target; "
+                        "arbitrary target_vertex_count values are not supported."
+                    ),
+                )
+
         # Create job request
         user_id = current_user.user_id if current_user else None
         job_request = JobRequest(
@@ -181,6 +192,7 @@ async def retopologize_mesh(
             inputs={
                 "mesh_path": mesh_file_path,
                 "target_vertex_count": request.target_vertex_count,
+                "poly_type": request.poly_type,
                 "output_format": request.output_format,
                 "seed": request.seed,
                 **(request.model_parameters or {}),

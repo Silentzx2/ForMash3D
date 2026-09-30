@@ -553,18 +553,22 @@ Content-Type: application/json
 
 ### Retopologize Mesh
 
-Retopologize a mesh to target density.
+Retopologize a mesh using the fixed FastMesh V1K/V4K variant contract.
 
 ```http
-POST /api/v1/mesh-retopology
+POST /api/v1/mesh-retopology/retopologize-mesh
 Content-Type: application/json
 
 {
   "mesh_file_id": "mesh_abc123",
   "model_preference": "fastmesh_v4k_retopology",
-  "target_face_count": 10000
+  "poly_type": "quad",
+  "target_vertex_count": 4000,
+  "output_format": "glb"
 }
 ```
+
+FastMesh does not support arbitrary vertex targets. V1K is the ~1K-vertex variant and V4K is the ~4K-vertex variant. When target_vertex_count is supplied, it must match the selected variant; poly_type controls triangle vs quad output.
 
 ---
 

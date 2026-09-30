@@ -523,3 +523,41 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - Missing manifest VRAM is a configuration error.
 - Repository-relative model/runtime roots avoid current-working-directory dependence.
 - FastMesh/TRELLIS variant selection remains explicit in manifest init parameters.
+
+## ADR-034: Generation Fidelity Boundary and Destructive-Stage Controls
+
+**Decision**: Treat the generated `master/source.glb` as the immutable quality checkpoint. Model-native extraction/export is responsible for the maximum detail the selected model/runtime can produce; downstream repair, optimization, UV, retopology, and LOD stages must preserve or explicitly account for any information they remove.
+
+**Reason**: Post-processing cannot reconstruct geometry that the model never represented. Quality regressions therefore require source-vs-derived comparison before changing downstream algorithms.
+
+**Consequences**:
+- Hunyuan extraction presets stay within the supported upstream `octree_resolution` contract.
+- TRELLIS.2 raw export uses an explicit non-decimation target instead of an unverified negative sentinel.
+- Textured meshes use texture-aware decimation with per-wedge UV reconstruction; if that capability fails, the textured mesh is preserved rather than silently untextured.
+- AutoRetopo is conditional on a structural defect and is not run as a blanket cleanup stage.
+- AutoUV/AutoRetopo defaults favor preservation over global smoothing.
+- Quality reports record source hash, repair/retopo/optimization state, texture status, and per-LOD UV/material integrity.
+- Frontend settings are only exposed when a real backend contract exists; unsupported detail/UV toggles are removed rather than represented as functional controls.
+
+## ADR-035: Fixed FastMesh Variant Contract
+
+**Decision**: FastMesh retopology is exposed as its actual fixed V1K/V4K variant contract. The frontend must not present an arbitrary vertex/triangle budget for a model whose runner emits only the selected variant size.
+
+**Reason**: The prior request path accepted `target_vertex_count` and a large triangle slider, but the FastMesh runner ignored that value and selected its output size solely from V1K/V4K. The mismatch produced silent, misleading UI behavior.
+
+**Consequences**:
+- The Remesh UI selects V1K or V4K explicitly and selects tri/quad output explicitly.
+- The retopology router forwards `poly_type`.
+- The FastMesh adapter rejects incompatible requested vertex targets rather than ignoring them.
+- Existing API compatibility is preserved for callers that omit the optional target.
+
+## ADR-036: Quality Trace and Topology Threshold Integrity
+
+**Decision**: Production post-processing records lightweight source/repaired/optimized/game-ready geometry snapshots, and AutoRetopo thresholds use the largest boundary component instead of aggregate boundary edges.
+
+**Reason**: Quality debugging needs stage-local evidence, and a per-hole threshold must not be compared with the sum of unrelated holes.
+
+**Consequences**:
+- `quality_report.json` can attribute geometry loss to a stage without re-reading every artifact.
+- Boundary-hole action and QA now share the same per-component interpretation.
+- A malformed native-texture signal no longer routes raw UV-only meshes through the textured path.

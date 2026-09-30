@@ -58,7 +58,7 @@ class AutoUvOptions(BaseModel):
     preserve_normals: bool = Field(default=True,
                                    description="Carry the input mesh's own vertex normals through the unwrap, so "
                                                "shading is unchanged. Turn off to rebuild them from the geometry.")
-    normal_smooth_deg: float = Field(default=180.0, ge=0.0, le=180.0,
+    normal_smooth_deg: float = Field(default=60.0, ge=0.0, le=180.0,
                                      description="Smoothing angle used only when normals are rebuilt (no input "
                                                  "normals, or preserve off): edges sharper than this stay hard. "
                                                  "180 = fully smooth, 0 = fully faceted.")
@@ -79,9 +79,9 @@ class AutoRetopoOptions(BaseModel):
                                   description="Voxel grid cells along the longest bbox axis.")
     shell_close_iter: int = Field(default=1, ge=0, le=20,
                                   description="Morphological closing iterations to bridge cracks.")
-    shell_smooth: float = Field(default=1.4, ge=0.0, le=5.0,
+    shell_smooth: float = Field(default=0.6, ge=0.0, le=5.0,
                                 description="Gaussian sigma (voxels) on the signed-distance field; kills voxel ripple (lower = crisper).")
-    shell_taubin: int = Field(default=10, ge=0, le=100,
+    shell_taubin: int = Field(default=3, ge=0, le=100,
                               description="Taubin polish steps on the dense shell (0 disables).")
     shell_samples_per_pitch: float = Field(default=2.0, ge=1.0, le=8.0,
                                            description="Surface sampling density (>=2 = gap-free coverage).")
@@ -95,7 +95,7 @@ class AutoRetopoOptions(BaseModel):
     calibrate_passes: int = Field(default=1, ge=0, le=10, description="Rough edge-length correction passes.")
 
     # --- hard-surface / architectural detail preservation ---
-    preserve_features: bool = Field(default=False,
+    preserve_features: bool = Field(default=True,
                                     description="Hard-surface mode: keep sharp creases crisp, skip smoothing/projection.")
     feature_angle: float = Field(default=25.0, ge=0.0, le=180.0,
                                  description="Crease angle (deg) treated as a hard edge when preserve_features is on.")

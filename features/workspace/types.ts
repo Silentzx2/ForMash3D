@@ -218,15 +218,8 @@ export interface SegmentationSettings {
 
 export interface RemeshSettings {
   tab: 'auto' | 'manual';
-  preset: 'low' | 'medium' | 'high' | 'custom';
-  targetFaces: number;
-  mode: 'adaptive' | 'uniform';
-  preserveShape: boolean;
-  preserveSharpEdges: boolean;
-  preserveUVs: boolean;
-  detailPreservation: number;
-  boundaryProtection: number;
-  voxelSize: number;
+  variant: 'V1K' | 'V4K';
+  polyType: 'tri' | 'quad';
 }
 
 export interface TextureSettings {
@@ -253,8 +246,6 @@ export interface TextureSettings {
 
 export interface AutoOptimizeSettings {
   targetPolycount: number;
-  fixUVs: boolean;
-  preserveDetails: number;
 }
 
 export interface PhysicsSettings {
@@ -286,7 +277,6 @@ export interface GenerationSettings {
   removeBackground: boolean;
   lowVram?: boolean;
   vramMode?: 'auto' | 'normal' | 'low';
-  autoOptimize: boolean;
   autoOptimizeSettings: AutoOptimizeSettings;
   generateTexture?: boolean;
   gameReady?: boolean;
@@ -297,14 +287,10 @@ export interface GenerationSettings {
   generateCollision?: boolean;
   physics?: PhysicsSettings;
   generatePBR?: boolean;
-  preserveDetails?: number;
-  repairUVs?: boolean;
+
   prompt?: string;
   imageName?: string;
-  detailPass?: boolean;
-  triposfPass?: boolean;
-  meshEnhancementMode?: 'none' | 'detailgen3d' | 'triposf' | 'both';
-  detailGuidance?: number;
+
   negativePrompt?: string;
   multiviewImages?: {
     front?: string | null;

@@ -22,7 +22,7 @@ from PIL import Image
 
 from core.utils.file_utils import resolve_server_file_path
 from .config import BLENDER_EXECUTABLE
-from .meshio import load_mesh, load_mesh_vertex_normals
+from .meshio import load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
 from .services.auto_retopo import run_auto_retopo
 from .services.auto_uv import run_auto_uv
@@ -164,11 +164,12 @@ def _export_gltf_embedded(glb_bytes: bytes, target: Path) -> None:
 
 
 def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
-    """Return True when the generated mesh already owns material texture data."""
+    """Return True only when actual image/texture payloads exist on the mesh."""
     visual = getattr(mesh, "visual", None)
     if visual is None:
         return False
-    if getattr(visual, "kind", None) == "texture":
+
+    if getattr(visual, "image", None) is not None:
         return True
 
     material = getattr(visual, "material", None)
@@ -237,6 +238,7 @@ def _build_result(
         "physics_ready": bool(generated.get("physics")),
         "physics": generated.get("physics_metadata"),
         "pbr_maps": pbr_urls,
+        "texture_status": generated.get("texture_status", "not_generated"),
         "thumbnail_url": (
             f"{base_url}/download?artifact_format=thumbnail"
             if generated.get("thumbnail")
@@ -336,7 +338,15 @@ def run_postprocess_job(
     _emit(progress, 0.05, "postprocess", "Master asset secured.")
 
     raw_bytes = master_path.read_bytes()
+    source_sha256 = _sha256_file(master_path)
     mesh = load_mesh(raw_bytes, master_path.name)
+    native_textures = _has_native_textures(mesh)
+    quality_trace = {
+        "source": {
+            **mesh_stats(mesh).model_dump(),
+            "native_textures": native_textures,
+        }
+    }
 
     _emit(progress, 0.10, "inspect", "Inspecting generated mesh.")
     try:
@@ -370,64 +380,67 @@ def run_postprocess_job(
         ),
     )
 
-    native_textures = _has_native_textures(mesh)
+    quality_trace["repaired"] = {
+        **mesh_stats(repaired).model_dump(),
+        "native_textures": _has_native_textures(repaired),
+        "topology": repair_stats.get("after"),
+    }
 
+    repaired_topology = repair_stats.get("after", {})
+    retopo_stats: Dict[str, Any] = {"status": "skipped", "reason": "No structural retopology required."}
+    feature_type = str(job_metadata.get("feature") or job_inputs.get("feature") or "")
+    solid_generation_feature = feature_type in {
+        "image_to_raw_mesh", "image_to_textured_mesh", "text_to_raw_mesh", "text_to_textured_mesh",
+    }
+    large_open_defect = (
+        int(repaired_topology.get("largest_boundary_component_edges", 0))
+        > RepairOptions().max_hole_size
+    )
+
+    if solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
+        _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
+        retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), 60_000, max(50, int(len(repaired.faces))))
+        try:
+            repaired, retopo_tool_stats, _ = run_auto_retopo(
+                repaired,
+                AutoRetopoOptions(target_faces=retopo_target, watertight=True, shell_smooth=0.6,
+                                  shell_taubin=3, adaptive=True, preserve_features=True,
+                                  feature_angle=25.0, project=True),
+                progress=lambda stage, frac, msg: _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
+            )
+            retopo_stats = {"status": "completed", "trigger": "large_open_defect", **retopo_tool_stats}
+        except Exception as exc:
+            retopo_stats = {"status": "failed", "trigger": "large_open_defect", "error": str(exc)}
+            logger.warning("Conditional AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
+    elif native_textures:
+        retopo_stats = {"status": "skipped", "reason": "Native textures are preserved; structural rebuild would require a real bake source."}
+    elif not solid_generation_feature:
+        retopo_stats = {"status": "skipped", "reason": "Asset feature does not declare a solid AI-generation contract."}
+
+    _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
+    target_faces = min(50_000, max(5_000, int(job_inputs.get("target_polycount") or 50_000)))
+    optimized, optimize_stats = run_optimize(
+        repaired,
+        OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
+                        permissive=False, aggressive=False, lock_border=False),
+    )
+    quality_trace["optimized"] = {
+        **mesh_stats(optimized).model_dump(),
+        "native_textures": _has_native_textures(optimized),
+    }
     if native_textures:
-        _emit(
-            progress,
-            0.30,
-            "optimize",
-            "Preserving native materials; texture-destructive decimation is skipped.",
-        )
-        optimized = repaired
-        optimize_stats = {
-            "input_triangles": int(len(repaired.faces)),
-            "triangles": int(len(repaired.faces)),
-            "target_faces": int(len(repaired.faces)),
-            "achieved_ratio": 1.0,
-            "passthrough": True,
-            "reason": "Native textures are owned by the selected generation model.",
-        }
-
-        _emit(
-            progress,
-            0.55,
-            "uv",
-            "Preserving source UVs and native material textures.",
-        )
+        if not _has_native_textures(optimized):
+            raise RuntimeError("Texture-aware optimization lost native material data.")
         uv_mesh = optimized
-        uv_stats = {
-            "preserved": True,
-            "native_textures": True,
-            "reason": "The production pipeline does not regenerate textures or rewrite native textured UVs.",
-        }
+        uv_stats = {"preserved": True, "native_textures": True,
+                    "texture_aware_decimation": bool(not optimize_stats.get("passthrough"))}
     else:
-        _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
-        target_faces = min(50_000, max(5_000, int(len(repaired.faces))))
-        optimized, optimize_stats = run_optimize(
-            repaired,
-            OptimizeOptions(
-                target_faces=target_faces,
-                simplify_error=0.05,
-                allow_seam_breaking=False,
-                permissive=False,
-                aggressive=False,
-                lock_border=False,
-            ),
-        )
-
         _emit(progress, 0.55, "uv", "Generating production UVs.")
         optimized_normals = np.asarray(optimized.vertex_normals)
         uv_mesh, uv_stats, _ = run_auto_uv(
             optimized,
-            AutoUvOptions(
-                resolution=2048,
-                padding_texels=4,
-                refine=True,
-                weld=True,
-                preserve_normals=True,
-                normal_smooth_deg=180,
-            ),
+            AutoUvOptions(resolution=2048, padding_texels=4, refine=True, weld=True,
+                          preserve_normals=True, normal_smooth_deg=60),
             source_normals=optimized_normals,
         )
 
@@ -435,10 +448,11 @@ def run_postprocess_job(
     bake_stats = {
         "status": "skipped",
         "reason": (
-            "Texture generation is handled only by model-native textured generation "
-            "or the Texture page; production post-processing does not synthesize textures."
+            "High-to-low baking remains opt-in; production post-processing never "
+            "synthesizes semantic PBR maps from an untextured source."
         ),
     }
+    texture_status = "native" if native_textures else "not_generated"
 
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     base_name = f"{asset_name}_{asset_hash}"
@@ -491,11 +505,20 @@ def run_postprocess_job(
         LODOptions(ratios=lod_ratios),
     )
     lods: Dict[int, str] = {}
+    lod_quality: Dict[str, Dict[str, Any]] = {}
     for level in lod_levels:
         idx = int(level["level"])
+        level_mesh = level["mesh"]
         lod_path = lod_dir / f"lod{idx}.glb"
-        lod_path.write_bytes(_export_glb(level["mesh"]))
+        lod_path.write_bytes(_export_glb(level_mesh))
         lods[idx] = str(lod_path)
+        lod_quality[str(idx)] = {
+            "triangles": int(len(level_mesh.faces)),
+            "vertices": int(len(level_mesh.vertices)),
+            "has_uv": bool(getattr(getattr(level_mesh, "visual", None), "uv", None) is not None),
+            "native_textures": bool(_has_native_textures(level_mesh)),
+            "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
+        }
 
     physics_enabled = bool(
         job_metadata.get("physics_enabled", job_inputs.get("physics_enabled", False))
@@ -506,6 +529,7 @@ def run_postprocess_job(
 
     # Collision is only part of the production contract when physics is requested.
     collision_path: Optional[Path] = None
+    collision_stats: Optional[Dict[str, Any]] = None
     physics_metadata: Optional[Dict[str, Any]] = None
     if physics_enabled:
         collision_quality = physics_config["collision_quality"]
@@ -564,6 +588,12 @@ def run_postprocess_job(
             "warnings": [f"Final inspection failed: {exc}"],
         }
 
+    quality_trace["game_ready"] = {
+        **mesh_stats(uv_mesh).model_dump(),
+        "native_textures": _has_native_textures(uv_mesh),
+        "qa": qa_report,
+    }
+
     now = datetime.now(timezone.utc).isoformat()
     _write_json(
         metadata_dir / "job.json",
@@ -588,15 +618,23 @@ def run_postprocess_job(
             "generation_result": generation_result,
         },
     )
+    if _sha256_file(master_path) != source_sha256:
+        raise RuntimeError("Immutable master source.glb changed during post-processing.")
+
     _write_json(
         metadata_dir / "quality_report.json",
         {
+            "source_sha256": source_sha256,
             "before_postprocess": qa_before,
             "after_postprocess": qa_report,
             "repair": repair_stats,
+            "retopo": retopo_stats,
             "optimize": optimize_stats,
             "uv": uv_stats,
             "bake": bake_stats,
+            "texture_status": texture_status,
+            "quality_trace": quality_trace,
+            "lods": lod_quality,
             "collision": collision_stats,
             "physics": physics_metadata,
         },
@@ -609,6 +647,7 @@ def run_postprocess_job(
         "physics": str(metadata_dir / "physics.json") if physics_metadata else None,
         "physics_metadata": physics_metadata,
         "textures": texture_paths,
+        "texture_status": texture_status,
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
     }
     final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated)

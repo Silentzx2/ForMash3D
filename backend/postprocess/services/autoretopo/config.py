@@ -14,8 +14,8 @@ class RetopoConfig:
                                       # False: remesh the original surface directly (keeps open boundaries)
     shell_resolution: int = 256       # voxel grid cells along the longest bbox axis (silhouette fidelity)
     shell_close_iter: int = 1         # morphological closing to bridge cracks in non-watertight input
-    shell_smooth: float = 1.4         # gaussian sigma (voxels) on the signed-distance field; kills voxel ripple
-    shell_taubin: int = 10            # Taubin polish steps on the dense shell (0 disables)
+    shell_smooth: float = 0.6         # ponytail: keep the shell crisp; higher smoothing erases small features
+    shell_taubin: int = 3             # ponytail: limit post-remesh smoothing before silhouette projection
     shell_samples_per_pitch: float = 2.0  # surface sampling density (>=2 guarantees gap-free voxel coverage)
     max_memory_gb: float = 4.0        # auto-lower shell_resolution so the voxel grid fits this budget
 
@@ -26,7 +26,7 @@ class RetopoConfig:
     calibrate_passes: int = 1         # rough edge-length correction; decimation sets exact count
 
     # --- hard-surface / architectural detail preservation ---
-    preserve_features: bool = False   # keep sharp creases crisp, don't smooth structural edges
+    preserve_features: bool = True    # keep sharp creases crisp, don't smooth structural edges
     feature_angle: float = 25.0       # crease angle (deg) treated as a hard edge when preserve_features
     work_face_cap: int = 120000       # pre-decimate inputs larger than this so remeshing stays fast/robust
 

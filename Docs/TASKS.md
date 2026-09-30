@@ -165,6 +165,21 @@ Still runtime-gated:
 - [x] Text batch endpoint submits independent jobs with scheduler-enforced `max_parallel`.
 - [x] Redis progress/state hot fields no longer rewrite the full job document on every telemetry tick; terminal cleanup uses a time index.
 
+## Review Audit — Deep Quality Gap Closure (2026-09-30)
+
+Completed in the deep second pass:
+- [x] Prevented normal post-processing jobs from referencing an uninitialized collision-stat object when Physics is disabled.
+- [x] Native texture detection requires actual texture/image payload rather than UV presence alone.
+- [x] AutoRetopo compares the largest boundary component against the per-hole repair threshold.
+- [x] FastMesh V1K/V4K is exposed as a fixed variant contract; arbitrary target budgets are no longer presented as supported.
+- [x] Retopology `poly_type` is forwarded end-to-end; incompatible FastMesh target requests are rejected.
+- [x] Added source/repaired/optimized/game-ready quality snapshots to the quality report.
+- [x] Added boundary-component and UV-only regression coverage.
+
+Runtime-gated:
+- [ ] NVIDIA/CUDA model inference and visual-quality validation.
+- [ ] Full dependency/build validation in the unavailable cloned repository environment.
+
 ## Review Audit — Final Implementation Pass (2026-09-30)
 
 Completed beyond the initial audit pass:

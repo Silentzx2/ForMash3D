@@ -137,7 +137,7 @@ export const LiveExecutionPanel: React.FC = () => {
         {
           id: 'synthesis',
           name: 'Source Mesh Ingestion & Preflight',
-          detail: `Topology preflight & initial geometry parsing (${remeshSettings.targetFaces.toLocaleString()} target tris)`,
+          detail: `FastMesh ${remeshSettings.variant} ${remeshSettings.polyType.toUpperCase()} retopology`,
         },
       ]
     : [
