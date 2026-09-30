@@ -53,7 +53,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
         self,
         model_id: str = "ardy_motion_generation",
         model_path: Optional[str] = None,
-        vram_requirement: Optional[int] = None
+        vram_requirement: Optional[int] = None,
         ardy_root: Optional[str] = None,
         default_checkpoint: str = DEFAULT_CHECKPOINT,
     ):

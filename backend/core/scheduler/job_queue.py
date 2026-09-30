@@ -434,7 +434,7 @@ class JobQueue:
             )
 
     async def requeue_job(self, job_id: str, front: bool = True):
-        """Move a job from processing back to the queue.""""
+        """Move a job from processing back to the queue."""
         async with self._cache_lock:
             if job_id in self._processing_cache:
                 job = self._processing_cache[job_id]
