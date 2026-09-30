@@ -125,8 +125,8 @@ async def run_scheduler_service(redis_url: str):
                     if redis_queue_instance and redis_queue_instance.redis:
                         queue_status = await redis_queue_instance.get_queue_status()
                         logger.info(
-                            f"Queue status: {queue_status['pending']} pending, "
-                            f"{queue_status['processing']} processing"
+                            f"Queue status: {queue_status['queued_jobs']} queued, "
+                            f"{queue_status['processing_jobs']} processing"
                         )
                 except Exception as q_err:
                     logger.warning(f"Failed to fetch queue status: {q_err}")
