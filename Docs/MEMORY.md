@@ -4,7 +4,7 @@
 - Guarded TRELLIS.2 GLB export against None/non-positive decimation targets by falling back safely to generated face count.
 - Hardened PyMeshLab texture decimation in `simplify.py` with strict UV checks, texture image retention, and seamless fallback to passthrough on decimation failure.
 - Cleaned legacy merge conflict artifact in TRELLIS `app_text.py` and brought backend compilation to 100% clean across all modules.
-- Re-architected project documentation and README styling to Studio Gold design system, added Tripo AI comparison matrix, Schema.org microdata, and discoverability metadata.
+- Reworked public documentation to use a concise product-first structure, removed raw Schema.org markup from README rendering, and aligned project metadata with the actual self-hosted/open-source scope.
 - Upgraded test suite coverage: wrapped `test_torchmcubes_scatter_fix.py` for pytest discovery; 25 tests passing cleanly across all backend suites.
 
 ## 2026-09-30 Deep Quality Audit — Second Gap Closure

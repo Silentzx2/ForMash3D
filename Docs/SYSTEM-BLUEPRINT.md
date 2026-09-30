@@ -11,7 +11,7 @@
 
 > **System Version**: 0.1.0 (FastAPI + Next.js 16, Python 3.10)
 > **Target Deployments**: Single-GPU Linux / Cloud GPU / Local Workstations
-> **Last Verified**: September 2026
+> **Last Verified**: September 30, 2026
 > **Design Tokens**: Studio Gold `#FFCC00` (`48 100% 50%`) on Matte Black `#080808`
 
 ---
@@ -80,7 +80,7 @@ graph TD
         ZIP["Structured Game-Ready ZIP<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end
 
-    Client -- "REST / SSE / WS" --> Gateway
+    Client -- "REST / SSE" --> Gateway
     Gateway --> SCHED
     SCHED --> GPU_LOCK
     SCHED --> MONITOR

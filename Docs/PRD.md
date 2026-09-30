@@ -2,15 +2,15 @@
 
 ## Product
 
-**ForMash 3D** — The premier open-source, self-hosted alternative to Tripo AI and Meshy for generative 3D asset creation, neural mesh synthesis, and automated game-ready post-processing.
+**ForMash3D** — An open-source, self-hosted platform for generative 3D asset creation, neural mesh synthesis, and automated game-ready post-processing.
 
-## Problem & Market Positioning
+## Problem & Product Position
 
-Creating high-quality 3D assets requires expensive software, extensive artistic skill, and hours of manual work. Commercial cloud services (Tripo AI, Meshy, CSM) charge heavy recurring subscriptions, lock users into closed clouds, lack transparency, and force data uploads to third-party servers.
+Creating high-quality 3D assets requires expensive software, extensive artistic skill, and hours of manual work. Many 3D generation workflows require separate model runtimes, GPU setup, manual post-processing, and multiple tools to turn raw model output into a usable asset.
 
 Existing open-source AI 3D tools produce raw outputs that lack the post-processing pipeline needed for game-ready assets (LOD cascades, physics colliders, quad retopology, UV unwrapping, QA validation).
 
-**ForMash3D bridges this gap** by offering a 100% self-hosted, private studio running on your local NVIDIA GPU with 23 open-source neural model adapters and an automated game-engine finishing pipeline.
+**ForMash3D addresses this workflow gap** by combining model integrations, local GPU execution, asset preservation, and production-oriented finishing in one studio.
 
 ## Target Users
 

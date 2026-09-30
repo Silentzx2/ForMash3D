@@ -1,7 +1,7 @@
 # Architecture — ForMash 3D
 
-> **Architecture Version**: 0.2.0 (FastAPI + Next.js 16)
-> **Last Verified**: September 29, 2026
+> **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
+> **Last Verified**: September 30, 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
@@ -160,6 +160,7 @@ sequenceDiagram
     participant API as FastAPI Router (:7842)
     participant SCHED as VRAM-Aware Scheduler
     participant Adapter as Model Adapter
+    participant PostProcess as Production Post-Processing
     participant Storage as backend/storage/
 
     User->>Frontend: Select prompt / image + Platform budget
@@ -190,6 +191,7 @@ flowchart LR
     ROOT["backend/storage/"]:::dir --> UPLOADS["uploads/<br/>Reference Images"]:::dir
     ROOT --> MODELS["models/<asset_name>_<job_hash>/<br/>Canonical Asset Workspace"]:::dir
     ROOT --> THUMBS["thumbnails/<br/>Preview PNGs"]:::dir
+    ROOT --> DELIVERY["On-demand ZIP delivery"]:::dir
 
     MODELS --> SRC["source.glb<br/>Untouched Master"]:::file
     MODELS --> GAME["game_ready.glb<br/>Engine-Optimized"]:::file
@@ -198,7 +200,7 @@ flowchart LR
     MODELS --> QA["quality_report.json<br/>QA 0-100 Score"]:::file
 
     UPLOADS --> IMG["*.png *.jpg *.webp"]:::file
-    EXPORTS --> ZIP["Project_Export_[job_id].zip"]:::file
+    DELIVERY --> ZIP["Project_Export_[job_id].zip"]:::file
 
     style ROOT fill:#0f172a
 ```

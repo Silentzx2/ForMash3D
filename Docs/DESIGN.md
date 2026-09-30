@@ -78,8 +78,7 @@ flowchart TB
         P2["Specular Gold Highlights<br/>.btn-lighting-shine"]:::orange
         P3["Responsive Dark Layout<br/>Zero-Scroll Desktop Panels"]:::orange
         P4["Client-Side Isolation<br/>next/dynamic with ssr:false"]:::orange
-    end
-        P5["HSL-Only<br/>No hex literals in code"]:::pattern
+        P5["HSL-Only<br/>No hex literals in code"]:::orange
     end
 
     TOKENS --> LAY
