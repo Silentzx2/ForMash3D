@@ -14,7 +14,13 @@ let currentCacheBytes = 0;
 
 export function getCachedGLB(url: string): ArrayBuffer | undefined {
   if (!url || url.startsWith('blob:') || url.startsWith('data:')) return undefined;
-  return glbBufferCache.get(url);
+  const value = glbBufferCache.get(url);
+  if (value) {
+    // Map insertion order provides the LRU queue; touching a key moves it to MRU.
+    glbBufferCache.delete(url);
+    glbBufferCache.set(url, value);
+  }
+  return value;
 }
 
 export function setCachedGLB(url: string, buffer: ArrayBuffer): void {
@@ -23,6 +29,12 @@ export function setCachedGLB(url: string, buffer: ArrayBuffer): void {
   const itemBytes = buffer.byteLength;
   // If a single model exceeds the budget, don't keep it in L1 RAM (it can still live in L2 disk cache)
   if (itemBytes > MAX_CACHE_BYTES) return;
+
+  const existing = glbBufferCache.get(url);
+  if (existing) {
+    currentCacheBytes -= existing.byteLength;
+    glbBufferCache.delete(url);
+  }
 
   // Evict oldest items if item count or memory budget exceeded
   while (
@@ -73,7 +85,7 @@ export async function loadGLBWithProgress(
 
   // 1. Check L1 in-memory cache (Instant 0ms)
   if (isCacheableUrl) {
-    const memCached = glbBufferCache.get(url);
+    const memCached = getCachedGLB(url);
     if (memCached) {
       onProgress?.(memCached.byteLength, memCached.byteLength, 100);
       return memCached;
@@ -88,7 +100,7 @@ export async function loadGLBWithProgress(
       if (matched) {
         const buf = await matched.arrayBuffer();
         if (buf && buf.byteLength > 0) {
-          glbBufferCache.set(url, buf);
+          setCachedGLB(url, buf);
           onProgress?.(buf.byteLength, buf.byteLength, 100);
           return buf;
         }
@@ -115,27 +127,25 @@ export async function loadGLBWithProgress(
 
   if (response.body && typeof ReadableStream !== 'undefined' && total > 0) {
     const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
+    let buffer = new Uint8Array(total);
     let loaded = 0;
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value) {
-        chunks.push(value);
-        loaded += value.length;
-        const percent = Math.min(99, Math.round((loaded / total) * 100));
-        onProgress?.(loaded, total, percent);
+      if (!value) continue;
+      if (loaded + value.byteLength > buffer.byteLength) {
+        const next = new Uint8Array(Math.max(loaded + value.byteLength, buffer.byteLength * 2));
+        next.set(buffer.subarray(0, loaded));
+        buffer = next;
       }
+      buffer.set(value, loaded);
+      loaded += value.byteLength;
+      const percent = Math.min(99, Math.round((loaded / total) * 100));
+      onProgress?.(loaded, total, percent);
     }
 
-    const combined = new Uint8Array(loaded);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.length;
-    }
-    arrayBuffer = combined.buffer;
+    arrayBuffer = buffer.buffer.slice(0, loaded);
     onProgress?.(loaded, total, 100);
   } else {
     arrayBuffer = await response.arrayBuffer();

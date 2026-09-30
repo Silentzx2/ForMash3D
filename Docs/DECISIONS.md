@@ -466,3 +466,60 @@ Security: artifact downloads reuse existing job authorization and accept only fi
 **Reason:** The collision pipeline already exists and should remain the single collision source. Rapier is a browser/WebAssembly runtime that fits the current direct Three.js viewer without forcing a React Three Fiber migration. No AI physics model is necessary, so the feature does not add another GPU-heavy inference dependency.
 
 **Constraints:** Keep the canonical physics representation provider-neutral; do not treat draft glTF physics extensions as the sole source of truth; do not fake soft-body/jiggle; do not add native physics engines until a tested product requirement exists.
+
+## ADR-014: Truthful Execution Telemetry and Artifact-Driven Inspectors
+**Date:** 2026-09-29
+
+**Decision:** The UI must render generation status, progress, cancellation, and asset statistics from real backend contracts only. Missing backend facts remain explicitly unknown instead of being replaced by sample numbers.
+
+**Consequences:** Pipeline status uses real stage logs and adaptive polling; queued cancellation calls the scheduler-backed cancel endpoint; Jobs removes fabricated progress; segmentation inspectors consume `segmentation_info`; uploaded assets no longer pretend to have fixed mesh counts. The current single-image generation backend is surfaced honestly rather than presenting the existing multiview collection UI as a supported multi-view request.
+
+## ADR-019 — Redis Control State Must Not Be Evicted
+
+Decision: Redis used for job/worker control state uses noeviction; result payloads use dedicated expiring keys.
+
+Reason: Evicting live queue state can strand GPU work. Redis EXPIRE applies to keys, not individual hash fields.
+
+## ADR-020 — Resource-Blocked Jobs Rotate
+
+Decision: A job that currently cannot acquire compatible worker/VRAM resources is requeued at the back rather than blocking the global queue head.
+
+Reason: A large or unavailable model must not block smaller jobs whose resource requirements are currently satisfiable.
+
+## ADR-021 — Manifest-Driven Model Readiness and VRAM
+
+The backend model manifest is authoritative for capabilities, VRAM reservation, max workers, IO, and model paths. Adapters reject missing manifest VRAM for models whose historical defaults were inconsistent.
+
+## ADR-022 — Unsupported Multiview Is Explicitly Gated
+
+Until a model-specific multi-view request contract exists, the UI must not collect or silently collapse multi-view inputs into a single-view generation request.
+
+## ADR-023 — Raw Result Is Independent from Production Post-Processing
+
+GPU generation publishes the raw artifact first. Production post-processing runs asynchronously and records its own status/error fields on the completed job.
+
+
+---
+
+## ADR-014: Raw Completion Before Production Post-Processing
+
+**Decision**: Mark GPU inference complete as soon as the native model result is durable, then execute canonical production post-processing as a background task with explicit result-level status.
+
+**Reason**: Raw-model availability and game-ready artifact production have different resource/lifecycle characteristics. Keeping them coupled made a successful model inference appear incomplete and encouraged premature input cleanup.
+
+**Consequences**:
+- The job status can be completed while `postprocess_status` is pending/running/completed/failed.
+- Request inputs remain owned by the post-processing task until lineage metadata is written.
+- The frontend can load the raw result immediately and rehydrate the same asset when production artifacts finish.
+- Post-processing failure no longer erases or falsely invalidates a successful raw generation.
+
+## ADR-015: Manifest-Only Runtime Resource Contracts
+
+**Decision**: Adapter runtime constructors do not invent VRAM defaults; model manifests provide the resource requirement and capability contract.
+
+**Reason**: Multiple adapter-local defaults drifted from the canonical YAML and could silently override variant-specific scheduling assumptions.
+
+**Consequences**:
+- Missing manifest VRAM is a configuration error.
+- Repository-relative model/runtime roots avoid current-working-directory dependence.
+- FastMesh/TRELLIS variant selection remains explicit in manifest init parameters.

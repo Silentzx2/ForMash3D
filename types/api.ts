@@ -12,7 +12,7 @@ export interface ErrorResponse {
 }
 
 // Job Management Types
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
 
 export interface JobInfo {
   job_id: string;
@@ -21,6 +21,11 @@ export interface JobInfo {
   completed_at?: string;
   processing_time?: number;
   model_preference?: string;
+  progress?: number;
+  stage?: string;
+  message?: string;
+  logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
+  error?: string | null;
   result?: {
     output_mesh_path?: string;
     thumbnail_path?: string;

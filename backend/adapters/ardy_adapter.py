@@ -53,10 +53,14 @@ class ArdyMotionGenerationAdapter(BaseModel):
         self,
         model_id: str = "ardy_motion_generation",
         model_path: Optional[str] = None,
-        vram_requirement: int = 8192,  # 8GB VRAM
+        vram_requirement: Optional[int] = None
         ardy_root: Optional[str] = None,
         default_checkpoint: str = DEFAULT_CHECKPOINT,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_path is None:
             model_path = "backend/pretrained/ardy"
 
@@ -220,9 +224,9 @@ class ArdyMotionGenerationAdapter(BaseModel):
             output_np = to_numpy(output)
 
             # Generate output filenames
-            import time
-            timestamp = int(time.time())
-            safe_name = f"motion_{skeleton_id}_{timestamp}"
+            import uuid
+            unique_id = uuid.uuid4().hex
+            safe_name = f"motion_{skeleton_id}_{unique_id}"
             
             output_dir = Path("outputs") / "motions" / safe_name
             output_dir.mkdir(parents=True, exist_ok=True)

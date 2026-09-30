@@ -1,3 +1,12 @@
+## 2026-09-30 Review Audit Runtime Contracts
+
+- Redis control-plane data uses noeviction; result payloads use dedicated TTL keys.
+- Scheduler SQLite persistence is offloaded from the async event loop.
+- Processing jobs are recovered after backend restart.
+- Timeout and cancellation terminate the owning worker before the job becomes terminal.
+- Client filesystem paths are root-restricted and upload/base64 ingestion is bounded.
+- Resource-blocked jobs rotate instead of globally blocking compatible work.
+
 # 🏛️ ForMash 3D — Complete System Architecture & Pipeline Blueprint
 
 > **System Version**: 0.1.0 (FastAPI + Next.js 16, Python 3.10)
@@ -294,3 +303,25 @@ The post-processing stage runs in asyncio.to_thread so CPU-heavy mesh operations
 
 ## Physics path
 Generation requests may carry a physics intent and provider-neutral controller values. The scheduler preserves those values as job metadata. Post-processing conditionally reuses the existing collision service and writes `metadata/physics.json`. The viewer consumes the canonical collision artifact and metadata through a pinned Rapier 0.19.3 browser adapter while the existing Three.js rendering pipeline remains unchanged. Physics binding waits for asset-load completion to prevent cross-asset state leakage.
+
+## Review Audit — Current Job Lifecycle
+
+Browser JobStore / Workspace jobs → FastAPI submit → scheduler → GPU worker → **raw result ready** → completed job becomes user-visible → background postprocess → canonical master/game-ready artifacts.
+
+Batch submissions use a scheduler-owned batch identifier and `max_parallel`; blocked batch items remain queued without consuming another worker slot.
+
+## Review Audit Final Runtime Flow
+
+Browser → versioned API → canonical model/capability readiness → scheduler/resource reservation → worker → raw result visible → background post-processing → canonical asset manifest → QA/game-ready/export artifacts.
+
+Batch jobs share one batch ID but retain independent job IDs. Cancellation is centralized through the scheduler control plane, including Redis deployments.
+
+
+## 2026-09-30 Final Runtime Contract Reconciliation
+
+- Container dependency paths resolve against the repository's backend layout and the maintained Wheels release.
+- SQLite status/progress persistence is offloaded and bounded; status reads do not mutate or synchronously persist jobs.
+- Successful raw inference is terminal for GPU execution; background production post-processing carries independent status/progress/error metadata and preserves input lineage until completion.
+- Model readiness is based on canonical manifest paths, real local checkpoint payloads, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract.
+- The workspace uses backend capability metadata for route selection, keeps unsupported multiview gated, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
+- Artifact naming is UUID-based across generation/segmentation/rig outputs, and stale request temp directories are removed during scheduler recovery.

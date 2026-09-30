@@ -63,46 +63,44 @@ def get_file_size_mb(file_path: str) -> float:
 
 
 def resolve_server_file_path(path_or_url: Optional[str]) -> Optional[str]:
-    """
-    Resolve a file path or URL to an absolute server filesystem path.
-    Handles:
-    - Full HTTP/HTTPS URLs: http://127.0.0.1:7842/outputs/meshes/foo.glb -> /absolute/path/outputs/meshes/foo.glb
-    - Relative URLs: /outputs/meshes/foo.glb -> /absolute/path/outputs/meshes/foo.glb
-    - Relative filesystem paths: outputs/meshes/foo.glb
-    - Already absolute filesystem paths
-    """
+    """Resolve a client path only inside configured local asset roots."""
     if not path_or_url:
         return path_or_url
-
     path_str = str(path_or_url).strip()
     if "://" in path_str:
         from urllib.parse import urlparse
         path_str = urlparse(path_str).path
 
-    clean = path_str.lstrip("/")
-    p = Path(path_str)
-    if p.is_file():
-        return str(p.resolve())
-
-    p_cwd = Path.cwd() / clean
-    if p_cwd.is_file():
-        return str(p_cwd.resolve())
-
-    for base in [Path.cwd(), Path.cwd().parent]:
-        candidate = base / clean
-        if candidate.is_file():
-            return str(candidate.resolve())
-        candidate_backend = base / "backend" / clean
-        if candidate_backend.is_file():
-            return str(candidate_backend.resolve())
-
-    if clean.startswith("outputs/"):
-        return str((Path.cwd() / clean).resolve())
-
-    if not Path(path_str).is_absolute():
-        return str((Path.cwd() / clean).resolve())
-
-    return path_str
+    raw = Path(path_str)
+    candidates = [raw] if raw.is_absolute() else [
+        Path.cwd() / path_str.lstrip("/"),
+        Path.cwd().parent / path_str.lstrip("/"),
+        Path.cwd().parent / "backend" / path_str.lstrip("/"),
+    ]
+    roots_env = os.environ.get("ALLOWED_INPUT_ROOTS", "").strip()
+    roots = (
+        [Path(p).expanduser().resolve() for p in roots_env.split(os.pathsep) if p.strip()]
+        if roots_env else [
+            (Path.cwd() / "outputs").resolve(),
+            (Path.cwd() / "uploads").resolve(),
+            (Path.cwd().parent / "outputs").resolve(),
+            (Path.cwd().parent / "uploads").resolve(),
+            (Path.cwd().parent / "backend" / "outputs").resolve(),
+            (Path.cwd().parent / "backend" / "uploads").resolve(),
+        ]
+    )
+    unrestricted = os.environ.get("ALLOW_LOCAL_SERVER_PATH_INPUTS", "false").lower() in {"1","true","yes","on"}
+    forbidden = (Path("/proc"), Path("/sys"), Path("/dev"), Path("/etc/shadow"), Path("/etc/passwd"))
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except (FileNotFoundError, OSError):
+            continue
+        if any(resolved == root or root in resolved.parents for root in forbidden):
+            raise FileUploadError(path_str, "Access to protected server paths is not allowed")
+        if unrestricted or any(resolved == root or root in resolved.parents for root in roots):
+            return str(resolved)
+    raise FileUploadError(path_str, "Server file path is outside configured input roots. Use file_id input instead.")
 
 
 def detect_file_type_from_content(file_path: str) -> str:
@@ -214,6 +212,7 @@ def validate_mesh_file(
 
 def validate_base64_data(
     base64_data: str,
+    max_bytes: int = 100 * 1024 * 1024,
 ) -> Tuple[bool, Optional[str], Optional[bytes]]:
     """Validate base64 data and extract content type"""
     try:
@@ -228,7 +227,8 @@ def validate_base64_data(
             if ";" in header:
                 content_type = header.split(";")[0].replace("data:", "")
 
-        # Decode base64
+        if len(base64_data) > ((max_bytes + 2) // 3) * 4:
+            return False, None, None
         try:
             decoded_data = base64.b64decode(base64_data, validate=True)
         except Exception:
@@ -267,19 +267,19 @@ async def save_upload_file(
         filename = generate_filename(upload_file.filename or "upload.bin", "upload")
         file_path = Path(destination_dir) / filename
 
-        # Save file
-        async with aiofiles.open(file_path, "wb") as f:
-            while chunk := await upload_file.read(1024 * 1024):  # Read in 1MB chunks
-                await f.write(chunk)
-
-        # Check file size
-        file_size_mb = get_file_size_mb(str(file_path))
-        if file_size_mb > max_size_mb:
-            os.remove(file_path)
-            raise FileUploadError(
-                upload_file.filename or "unknown",
-                f"File size ({file_size_mb:.1f}MB) exceeds limit ({max_size_mb}MB)",
-            )
+        max_size_bytes = max_size_mb * 1024 * 1024
+        total_bytes = 0
+        try:
+            async with aiofiles.open(file_path, "wb") as f:
+                while chunk := await upload_file.read(1024 * 1024):
+                    total_bytes += len(chunk)
+                    if total_bytes > max_size_bytes:
+                        raise FileUploadError(upload_file.filename or "unknown", f"File size exceeds limit ({max_size_mb}MB)")
+                    await f.write(chunk)
+        except Exception:
+            file_path.unlink(missing_ok=True)
+            raise
+        file_size_mb = total_bytes / (1024 * 1024)
 
         # Validate content if requested
         validation_info = {}
@@ -321,7 +321,11 @@ async def save_upload_file(
 
 
 async def save_base64_file(
-    base64_data: str, filename: str, destination_dir: str, validate_content: bool = True
+    base64_data: str,
+    filename: str,
+    destination_dir: str,
+    validate_content: bool = True,
+    max_size_mb: int = 100,
 ) -> Dict[str, Union[str, int, float, bool, Dict]]:
     """Save base64 encoded data to file with enhanced validation"""
     try:
@@ -329,7 +333,9 @@ async def save_base64_file(
         Path(destination_dir).mkdir(parents=True, exist_ok=True)
 
         # Validate base64 data
-        is_valid, content_type, decoded_data = validate_base64_data(base64_data)
+        is_valid, content_type, decoded_data = validate_base64_data(
+            base64_data, max_size_mb * 1024 * 1024
+        )
         if not is_valid:
             raise FileUploadError(filename, "Invalid base64 data")
 
@@ -603,8 +609,8 @@ class OutputPathGenerator:
         output_dir = self.base_output_dir / subdirectory
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = int(time.time())
-        filename = f"{model_id}_{base_name}_{timestamp}.{output_format}"
+        unique_id = uuid.uuid4().hex
+        filename = f"{model_id}_{base_name}_{unique_id}.{output_format}"
 
         return output_dir / filename
 
@@ -619,8 +625,8 @@ class OutputPathGenerator:
         output_dir = self.base_output_dir / subdirectory
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = int(time.time())
-        filename = f"{model_id}_{base_name}_{timestamp}.{output_format}"
+        unique_id = uuid.uuid4().hex
+        filename = f"{model_id}_{base_name}_{unique_id}.{output_format}"
 
         return output_dir / filename
 
@@ -649,8 +655,8 @@ class OutputPathGenerator:
         temp_dir = self.base_output_dir / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = int(time.time())
-        filename = f"temp_{base_name}_{timestamp}.{extension}"
+        unique_id = uuid.uuid4().hex
+        filename = f"temp_{base_name}_{unique_id}.{extension}"
 
         return temp_dir / filename
 

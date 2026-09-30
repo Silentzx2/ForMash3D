@@ -30,7 +30,9 @@ export interface ActiveTask {
   estimatedRemainingSec?: number;
   provider?: string;
   errorMessage?: string;
+  errorCode?: string;
   diagnostic?: JobDiagnostic | null;
+  result?: Record<string, unknown>;
   logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
 }
 
@@ -151,8 +153,9 @@ export function createUploadedMeshAsset(file: File): ModelAsset {
     format: (file.name.split('.').pop()?.toUpperCase() || 'GLB') as any,
     fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
     source: { filename: file.name, subfolder: 'uploads', type: 'upload', localUrl: url, viewUrl: url },
-    vertices: 125000,
-    faces: 250000,
+    vertices: 0,
+    faces: 0,
+    statsAvailable: false,
   });
 }
 

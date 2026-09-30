@@ -7,6 +7,7 @@ This adapter integrates P3-SAM for semantic part segmentation of 3D meshes.
 import logging
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -37,15 +38,18 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
         self,
         model_id: str = "p3sam_mesh_segmentation",
         model_path: Optional[str] = None,
-        vram_requirement: int = 6144,  # 6GB VRAM
+        vram_requirement: Optional[int] = None
         p3sam_root: Optional[str] = None,
     ):
         if model_path is None:
             model_path = "backend/pretrained/P3-SAM/p3sam.safetensors"
         
         if p3sam_root is None:
-            p3sam_root = "thirdparty/Hunyuan3DPart/P3SAM"
+            p3sam_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "Hunyuan3DPart" / "P3SAM")
         
+        if vram_requirement is None:
+            raise ValueError("P3-SAM VRAM requirement must come from the model manifest")
+
         super().__init__(
             model_id=model_id,
             model_path=model_path,
@@ -69,6 +73,9 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
             if str(self.p3sam_root) not in sys.path:
                 sys.path.insert(0, str(self.p3sam_root))
             
+            if not torch.cuda.is_available():
+                raise RuntimeError("P3-SAM requires CUDA; CPU fallback is not supported")
+
             # Initialize P3-SAM runner
             self.p3sam_runner = P3SAMRunner(
                 checkpoint_path=self.checkpoint_path,
@@ -153,7 +160,7 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
             temp_base = (
                 self.path_generator.base_output_dir
                 / "temp"
-                / f"p3sam_{int(time.time())}"
+                / f"p3sam_{uuid.uuid4().hex}"
             )
             temp_base.mkdir(parents=True, exist_ok=True)
             
@@ -188,7 +195,7 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
             scene = create_segmented_parts_scene(processed_mesh, face_ids)
             
             # Save segmented mesh scene
-            self.mesh_processor.save_scene(scene, output_path, do_normalise=True)
+            self.mesh_processor.save_scene(scene, output_path, do_normalise=False)
             
             # Compute part statistics
             part_statistics = self._compute_part_statistics(face_ids, num_parts)

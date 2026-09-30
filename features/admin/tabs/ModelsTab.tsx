@@ -31,6 +31,7 @@ export function ModelsTab() {
   const [featureFilter, setFeatureFilter] = useState('all');
   const [loading, setLoading] = useState(false);
   const [backendFeatures, setBackendFeatures] = useState<Record<string, string[]>>({});
+  const [backendModelDetails, setBackendModelDetails] = useState<Record<string, any>>({});
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -39,6 +40,9 @@ export function ModelsTab() {
       const res = await client.getAvailableModels();
       if (res && res.available_models) {
         setBackendFeatures(res.available_models);
+      }
+      if ((res as any)?.model_details) {
+        setBackendModelDetails((res as any).model_details);
       }
     } catch {
       // Backend status is optional, canonical catalog acts as source of truth
@@ -63,6 +67,11 @@ export function ModelsTab() {
   });
 
   const totalVram = models.reduce((acc, m) => acc + m.vramMb, 0) / 1024;
+  const readinessEntries = Object.values(backendModelDetails);
+  const readyCount = readinessEntries.filter((m: any) => m.status === 'ready').length;
+  const readinessLabel = readinessEntries.length
+    ? `${readyCount}/${readinessEntries.length} ready`
+    : 'Backend status unavailable';
 
   return (
     <div className="space-y-6">
@@ -100,8 +109,8 @@ export function ModelsTab() {
             <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Status</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
-          <div className="mt-2 text-2xl font-bold text-foreground">Operational</div>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Backend adapter scheduler ready</p>
+          <div className="mt-2 text-2xl font-bold text-foreground">{readinessLabel}</div>
+          <p className="text-[11px] text-muted-foreground mt-0.5">Runtime model readiness from backend manifest</p>
         </GlassCard>
       </div>
 

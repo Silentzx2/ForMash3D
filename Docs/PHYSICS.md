@@ -80,7 +80,7 @@ The raw master is never rewritten.
 
 ## Viewer
 
-The existing direct Three.js viewer exposes Physics mode only when an asset is marked Physics Ready.
+The existing direct Three.js viewer exposes Physics mode for Physics Ready assets and also exposes a top-level **Test Physics** inspector action.
 
 Current rigid-body controls:
 
@@ -93,9 +93,9 @@ Current rigid-body controls:
 - Slide
 - Spin
 
-The viewer waits for the selected asset's mesh load to finish before binding physics, and disposes the runtime during asset reloads.
+**Test Physics behaviour:** Physics Ready assets use the canonical collision representation. Ordinary loaded meshes use a lightweight bounds-based smoke-test collider so users can validate gravity, bounce, damping, and rigid-body response without regenerating collision artifacts or writing new physics metadata. The smoke test is viewer-only and does not mutate the asset.
 
-The simulation uses the canonical collision representation; the render mesh remains the visual object that follows the rigid body.
+The viewer waits for the selected asset's mesh load to finish before binding physics, and disposes the runtime during asset reloads.
 
 Jiggle / soft-body behaviour is capability-gated and is not faked by transform animation. The current production path remains rigid-body only.
 
@@ -136,3 +136,5 @@ A real NVIDIA/Colab inference run remains required for complete production GPU v
 ## Extension boundary
 
 Future joints, deformable/jiggle runtimes, native simulation providers, and engine-specific exporters must remain capability-driven. They must not replace the provider-neutral metadata contract or mutate the immutable master asset.
+
+The lightweight Test Physics smoke test is intentionally separate from this extension boundary: it is an inspector-only bounds approximation, not a deformable physics implementation and not a replacement for canonical collision artifacts.

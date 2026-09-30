@@ -8,6 +8,7 @@ providing a complete pipeline for generating high-quality 3D meshes from images.
 import logging
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -37,7 +38,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
         self,
         model_id: Optional[str] = None,
         model_path: Optional[str] = None,
-        vram_requirement: int = 20480,  # 20GB VRAM (8GB Hunyuan + 12GB UltraShape)
+        vram_requirement: Optional[int] = None
         ultrashape_root: Optional[str] = None,
         hunyuan3d_root: Optional[str] = None,
         feature_type: Optional[str] = None,
@@ -46,20 +47,19 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
         if model_id is None:
             model_id = self.MODEL_ID
         if model_path is None:
-            model_path = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "UltraShape")
-            )
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "UltraShape")
         if ultrashape_root is None:
-            ultrashape_root = model_path
+            ultrashape_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "UltraShape")
         if hunyuan3d_root is None:
-            hunyuan3d_root = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "Hunyuan3D-2.1")
-            )
+            hunyuan3d_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "Hunyuan3D-2.1")
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
         if supported_output_formats is None:
             supported_output_formats = ["glb", "obj", "ply"]
         
+        if vram_requirement is None:
+            raise ValueError("UltraShape VRAM requirement must come from the model manifest")
+
         super().__init__(
             model_id=model_id,
             model_path=model_path,
@@ -81,15 +81,11 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
         
         # Checkpoint paths
-        self.ultrashape_checkpoint = os.path.join(
-            os.getcwd(), "pretrained", "UltraShape", "ultrashape_v1.pt"
-        )
+        self.ultrashape_checkpoint = str(Path(model_path) / "ultrashape_v1.pt")
         self.ultrashape_config = os.path.join(
             ultrashape_root, "configs", "infer_dit_refine.yaml"
         )
-        self.hunyuan_model_path = os.path.join(
-            os.getcwd(), "pretrained", "tencent", "Hunyuan3D-2.1"
-        )
+        self.hunyuan_model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "tencent" / "Hunyuan3D-2.1")
         
         # Add paths to sys.path
         if str(self.ultrashape_root) not in sys.path:
@@ -117,6 +113,9 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             
             loaded_models = {}
             
+            if not torch.cuda.is_available():
+                raise RuntimeError("UltraShape requires CUDA/BF16; CPU fallback is not supported")
+
             # Load Hunyuan3D-2.1 for coarse mesh generation
             logger.info("Loading Hunyuan3D-2.1 shape generation pipeline...")
             from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
@@ -218,7 +217,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             
             # Create output directory
             base_name = f"{self.model_id}_{image_path.stem}"
-            output_dir = self.path_generator.base_output_dir / "ultrashape" / f"{image_path.stem}_{int(__import__('time').time())}"
+            output_dir = self.path_generator.base_output_dir / "ultrashape" / f"{image_path.stem}_{uuid.uuid4().hex}"
             output_dir.mkdir(parents=True, exist_ok=True)
             
             # Run complete pipeline: Hunyuan3D coarse + UltraShape refinement

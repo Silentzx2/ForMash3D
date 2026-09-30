@@ -26,6 +26,8 @@ import {
   ZoomOut,
   Maximize2,
   Compass,
+  FlipHorizontal2,
+  Zap,
   X
 } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
@@ -671,9 +673,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [physicsRunning, setPhysicsRunning] = useState(false);
   const [physicsDebug, setPhysicsDebug] = useState(false);
   const [physicsStatus, setPhysicsStatus] = useState<string | null>(null);
+  const [reflectionPeekEnabled, setReflectionPeekEnabled] = useState(false);
+  const [reflectionPreviewUrl, setReflectionPreviewUrl] = useState<string | null>(null);
+  const [reflectionPeekFocused, setReflectionPeekFocused] = useState(false);
+  const reflectionPreviewUrlRef = useRef<string | null>(null);
+  const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
   const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
-  const physicsViewerReady = physicsStatus === 'Physics ready — rigid-body preview';
+  const physicsViewerReady = Boolean(physicsStatus?.toLowerCase().includes('ready'));
 
   // Close menus on outside click or Escape key
   useEffect(() => {
@@ -761,6 +768,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
     setMeshStats({ faces, vertices: verts, triangles, dimensions });
     useViewerStore.getState().setModelStats({ vertices: verts, triangles, dimensions });
+
+    const renderer = rendererRef.current;
+    if (renderer) {
+      const isHeavyMesh = triangles >= 250_000;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isHeavyMesh ? 1.0 : 1.5));
+      renderer.shadowMap.enabled = !isHeavyMesh;
+      if (keyLightRef.current) keyLightRef.current.castShadow = !isHeavyMesh;
+    }
 
     if (currentAsset) {
       // Authoritative contract: final canonical artifact analysis is authoritative;
@@ -2287,6 +2302,121 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     currentAsset?.materialConfig?.normalScale,
   ]);
 
+  const handleReflectionPeekEnter = useCallback(() => {
+    if (!currentMeshGroupRef.current || !cameraRef.current || !controlsRef.current) return;
+    if (!reflectionFocusBackupRef.current) {
+      reflectionFocusBackupRef.current = {
+        position: cameraRef.current.position.clone(),
+        target: controlsRef.current.target.clone(),
+      };
+    }
+    const box = new THREE.Box3().setFromObject(currentMeshGroupRef.current);
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    if (!Number.isFinite(sphere.radius) || sphere.radius <= 0) return;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const direction = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+    const targetDistance = Math.max(controls.minDistance * 1.4, Math.min(controls.maxDistance * 0.55, sphere.radius * 1.15));
+    controls.target.copy(sphere.center);
+    camera.position.copy(sphere.center).add(direction.multiplyScalar(targetDistance));
+    camera.updateProjectionMatrix();
+    controls.update();
+    setReflectionPeekFocused(true);
+  }, []);
+
+  const handleReflectionPeekLeave = useCallback(() => {
+    const backup = reflectionFocusBackupRef.current;
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!backup || !camera || !controls) {
+      setReflectionPeekFocused(false);
+      return;
+    }
+    camera.position.copy(backup.position);
+    controls.target.copy(backup.target);
+    camera.updateProjectionMatrix();
+    controls.update();
+    reflectionFocusBackupRef.current = null;
+    setReflectionPeekFocused(false);
+  }, []);
+
+  useEffect(() => {
+    if (!reflectionPeekEnabled || !currentAsset) {
+      if (reflectionPreviewUrlRef.current) URL.revokeObjectURL(reflectionPreviewUrlRef.current);
+      reflectionPreviewUrlRef.current = null;
+      setReflectionPreviewUrl(null);
+      handleReflectionPeekLeave();
+      return;
+    }
+
+    let stopped = false;
+    let timer: number | null = null;
+    const capture = () => {
+      if (stopped || !rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+      rendererRef.current.render(sceneRef.current, cameraRef.current);
+      rendererRef.current.domElement.toBlob((blob) => {
+        if (stopped || !blob) return;
+        const url = URL.createObjectURL(blob);
+        if (reflectionPreviewUrlRef.current) URL.revokeObjectURL(reflectionPreviewUrlRef.current);
+        reflectionPreviewUrlRef.current = url;
+        setReflectionPreviewUrl(url);
+        timer = window.setTimeout(capture, 1000);
+      }, 'image/jpeg', 0.68);
+    };
+    capture();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+      if (reflectionPreviewUrlRef.current) {
+        URL.revokeObjectURL(reflectionPreviewUrlRef.current);
+        reflectionPreviewUrlRef.current = null;
+      }
+    };
+  }, [reflectionPeekEnabled, currentAsset?.id, handleReflectionPeekLeave]);
+
+  const runPhysicsSmokeTest = useCallback(async () => {
+    setPhysicsModeOpen(true);
+    const existing = physicsRuntimeRef.current;
+    if (existing?.isReady()) {
+      existing.applyTest('drop');
+      setPhysicsRunning(true);
+      return;
+    }
+
+    const scene = sceneRef.current;
+    const meshGroup = currentMeshGroupRef.current;
+    if (!scene || !meshGroup || !currentAsset) {
+      setPhysicsStatus('Load a mesh before running the physics smoke test.');
+      return;
+    }
+
+    const runtime = new PhysicsRuntime();
+    setPhysicsStatus('Preparing quick rigid-body smoke test…');
+    try {
+      await runtime.initQuickTest(scene, meshGroup, {
+        bodyType: 'dynamic',
+        massMode: 'manual',
+        massKg: 1,
+        densityMode: 'auto',
+        densityKgM3: 500,
+        friction: 0.5,
+        restitution: 0.35,
+        linearDamping: 0.05,
+        angularDamping: 0.08,
+        gravityEnabled: true,
+      });
+      physicsRuntimeRef.current?.dispose();
+      physicsRuntimeRef.current = runtime;
+      setPhysicsStatus('Quick physics ready — bounds-based smoke test');
+      runtime.applyTest('drop');
+      setPhysicsRunning(true);
+    } catch (error) {
+      runtime.dispose();
+      setPhysicsStatus(error instanceof Error ? 'Physics test failed: ' + error.message : 'Physics test failed.');
+      setPhysicsRunning(false);
+    }
+  }, [currentAsset]);
+
   // Camera preset switcher
   const applyCameraPreset = useCallback((preset: CameraViewPreset | 'side') => {
     if (!cameraRef.current || !controlsRef.current) return;
@@ -2898,6 +3028,32 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               </SimpleTooltip>
             </div>
 
+            <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+              <SimpleTooltip side="bottom" label={physicsViewerReady ? 'Run rigid-body physics test' : 'Run lightweight bounds-based physics smoke test'}>
+                <button
+                  type="button"
+                  onClick={() => void runPhysicsSmokeTest()}
+                  disabled={!currentAsset || isLoading}
+                  className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-zinc-200 hover:text-primary hover:bg-white/[0.05] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  <Zap className="w-3 h-3 text-primary" />
+                  <span className="hidden sm:inline">Test Physics</span>
+                </button>
+              </SimpleTooltip>
+              <div className="w-px h-3.5 bg-white/[0.12] mx-0.5" />
+              <SimpleTooltip side="bottom" label={reflectionPeekEnabled ? 'Hide mirror detail peek' : 'Show low-rate mirror detail peek'}>
+                <button
+                  type="button"
+                  onClick={() => setReflectionPeekEnabled(prev => !prev)}
+                  disabled={!currentAsset}
+                  className={"flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed " + (reflectionPeekEnabled ? "bg-primary/15 text-primary" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]")}
+                >
+                  <FlipHorizontal2 className="w-3 h-3" />
+                  <span className="hidden sm:inline">Mirror</span>
+                </button>
+              </SimpleTooltip>
+            </div>
+
             {/* Topology HUD */}
             <div className="bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] rounded-xl px-2.5 sm:px-3 py-1.5 shadow-2xl flex items-center gap-2 sm:gap-3 text-xs font-mono">
               <div className="flex items-center gap-1 sm:gap-1.5">
@@ -3269,6 +3425,56 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               >
                 Reset to Studio Defaults
               </button>
+            </div>
+          )}
+
+          {reflectionPeekEnabled && (
+            <div
+              className="absolute top-14 right-3 z-10 pointer-events-auto"
+              onMouseEnter={handleReflectionPeekEnter}
+              onMouseLeave={handleReflectionPeekLeave}
+              onFocus={handleReflectionPeekEnter}
+              onBlur={handleReflectionPeekLeave}
+            >
+              <div
+                className={"relative w-[120px] h-[88px] overflow-hidden rounded-xl bg-black/80 border " + (reflectionPeekFocused ? "border-primary shadow-[0_0_22px_rgba(255,204,0,0.22)]" : "border-white/[0.12]") + " backdrop-blur-md transition-all duration-150"}
+                onClick={() => {
+                  if (reflectionPeekFocused) handleReflectionPeekLeave();
+                  else handleReflectionPeekEnter();
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="Mirror preview and temporary focus zoom"
+              >
+                {reflectionPreviewUrl ? (
+                  <img
+                    src={reflectionPreviewUrl}
+                    alt="Mirrored viewport preview"
+                    className="h-full w-full object-cover"
+                    style={{ transform: 'scaleX(-1)' }}
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-[9px] text-zinc-500">Capturing…</div>
+                )}
+                <div className="absolute inset-x-1 bottom-1 flex items-center justify-between gap-1">
+                  <span className="px-1.5 py-0.5 rounded bg-black/70 text-[8px] font-bold uppercase tracking-wider text-zinc-300">Mirror</span>
+                  {reflectionPeekFocused && (
+                    <span className="px-1.5 py-0.5 rounded bg-primary text-black text-[8px] font-bold">Detail zoom</span>
+                  )}
+                </div>
+              </div>
+              {reflectionPeekFocused && reflectionPreviewUrl && (
+                <div className="absolute top-0 right-[calc(100%+8px)] hidden md:block">
+                  <div className="w-[280px] h-[210px] overflow-hidden rounded-2xl border border-primary/40 bg-black/90 shadow-2xl">
+                    <img
+                      src={reflectionPreviewUrl}
+                      alt="Enlarged mirrored viewport preview"
+                      className="h-full w-full object-contain"
+                      style={{ transform: 'scaleX(-1)' }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -33,7 +33,7 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
         model_id: str = "fastmesh_v1k_retopology",
         variant: str = "V1K",
         model_path: Optional[str] = None,
-        vram_requirement: int = 8192,  # 8GB VRAM
+        vram_requirement: Optional[int] = None
         fastmesh_root: Optional[str] = None,
         input_pc_num: int = 8192,
     ):
@@ -41,10 +41,15 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
             model_path = f"backend/pretrained/FastMesh-{variant}"
 
         if fastmesh_root is None:
-            fastmesh_root = "thirdparty/FastMesh"
+            fastmesh_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "FastMesh")
 
         # Determine target vertex count based on variant
         target_vertex_count = 1000 if variant == "V1K" else 4000
+
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {model_id} must come from the model manifest"
+            )
 
         super().__init__(
             model_id=model_id,

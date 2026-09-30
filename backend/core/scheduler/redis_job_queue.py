@@ -13,16 +13,34 @@ from typing import Any, Dict, Optional
 
 import redis.asyncio as aioredis
 
-from .job_queue import JobRequest, JobStatus
+from .job_queue import JobRequest, JobStatus, classify_job_error
 
 logger = logging.getLogger(__name__)
 
 
 def _status_to_str(status: JobStatus) -> str:
-    """Convert JobStatus enum to string for JSON serialization"""
-    if hasattr(status, 'value'):
+    """Convert JobStatus enum to string for JSON serialization."""
+    if hasattr(status, "value"):
         return status.value
     return str(status)
+
+
+def _priority_score(priority: int, created_at: datetime) -> float:
+    return -priority * 1e12 + created_at.timestamp()
+
+
+def _append_log(job_data: Dict[str, Any], stage: str, progress: float, message: str, level: str = "info") -> None:
+    logs = job_data.get("logs") or []
+    logs.append(
+        {
+            "stage": stage,
+            "progress": round(float(progress) * 100, 2),
+            "message": message,
+            "level": level,
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    )
+    job_data["logs"] = logs[-100:]
 
 
 class RedisJobQueue:
@@ -44,7 +62,12 @@ class RedisJobQueue:
         self.pending_queue_key = f"{queue_prefix}:queue:pending"
         self.processing_set_key = f"{queue_prefix}:queue:processing"
         self.jobs_hash_key = f"{queue_prefix}:jobs"
-        self.results_hash_key = f"{queue_prefix}:results"
+        self.results_prefix = f"{queue_prefix}:result:"
+        self.progress_hash_key = f"{queue_prefix}:progress"
+        self.stage_hash_key = f"{queue_prefix}:stage"
+        self.message_hash_key = f"{queue_prefix}:message"
+        self.completed_index_key = f"{queue_prefix}:completed_at"
+        self.cancel_request_key = f"{queue_prefix}:cancel_requested"
         
         self.redis: Optional[aioredis.Redis] = None
 
@@ -107,12 +130,13 @@ class RedisJobQueue:
             "created_at": job_request.created_at.isoformat(),
             "metadata": json.dumps(job_request.metadata),
             "user_id": job_request.user_id or "",  # Store user_id for job isolation
+            "logs": [],
         }
         
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         
         # Add to pending queue (sorted by priority and timestamp)
-        score = job_request.priority * 1e10 + job_request.created_at.timestamp()
+        score = _priority_score(job_request.priority, job_request.created_at)
         await self.redis.zadd(self.pending_queue_key, {job_id: score})
         
         logger.info(f"Enqueued job {job_id} to Redis")
@@ -146,8 +170,13 @@ class RedisJobQueue:
         job_data["progress"] = 0.15
         job_data["stage"] = "loading_model"
         job_data["message"] = "Loading model on GPU..."
+        _append_log(job_data, "loading_model", 0.15, "Loading model on GPU...")
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         
+        await self.redis.hset(self.progress_hash_key, job_id, "0.15")
+        await self.redis.hset(self.stage_hash_key, job_id, "loading_model")
+        await self.redis.hset(self.message_hash_key, job_id, "Loading model on GPU...")
+
         # Reconstruct JobRequest (job_id is auto-generated, so we set it after)
         job_request = JobRequest(
             feature=job_data["feature"],
@@ -178,8 +207,8 @@ class RedisJobQueue:
             job_data["status"] = _status_to_str(JobStatus.QUEUED)
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
             
-            # Re-add to queue with same priority but earlier timestamp for FIFO
-            score = job_data.get("priority", 0) * 1e10 + datetime.utcnow().timestamp() - 1000
+            # Requeue in the same priority band without artificially aging the job.
+            score = _priority_score(int(job_data.get("priority", 0)), datetime.utcnow())
             await self.redis.zadd(self.pending_queue_key, {job_id: score})
 
     async def complete_job(self, job_id: str, result: Any):
@@ -198,14 +227,26 @@ class RedisJobQueue:
             job_data["completed_at"] = datetime.utcnow().isoformat()
             job_data["progress"] = 1.0
             job_data["stage"] = "completed"
-            job_data["message"] = "Generation completed successfully"
+            job_data["message"] = "Production asset is ready."
+            _append_log(job_data, "completed", 1.0, "Production asset is ready.")
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         
-        # Store result
-        await self.redis.hset(self.results_hash_key, job_id, json.dumps(result))
-        
-        # Set expiration for result (24 hours)
-        await self.redis.expire(f"{self.results_hash_key}:{job_id}", 86400)
+        # Store each result under its own key so EXPIRE applies to the result.
+        await self.redis.set(
+            f"{self.results_prefix}{job_id}",
+            json.dumps(result),
+            ex=86400,
+        )
+
+    async def update_completed_result(self, job_id: str, result: Dict[str, Any]) -> bool:
+        """Merge background post-processing results into a completed Redis job."""
+        if not self.redis:
+            raise RuntimeError("Redis not connected")
+        current_raw = await self.redis.get(f"{self.results_prefix}{job_id}") or "{}"
+        current = json.loads(current_raw)
+        current.update(result)
+        await self.redis.set(f"{self.results_prefix}{job_id}", json.dumps(current), ex=86400)
+        return True
 
     async def fail_job(self, job_id: str, error: str):
         """Mark job as failed"""
@@ -219,26 +260,42 @@ class RedisJobQueue:
         job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
         if job_data_str:
             job_data = json.loads(job_data_str)
+            failed_at = datetime.utcnow()
             job_data["status"] = _status_to_str(JobStatus.FAILED)
             job_data["error"] = error
-            job_data["failed_at"] = datetime.utcnow().isoformat()
+            job_data["failed_at"] = failed_at.isoformat()
             job_data["stage"] = "failed"
             job_data["message"] = error
+            job_data["error_code"] = classify_job_error(error)
+            progress = float(job_data.get("progress", 0.0))
+            _append_log(job_data, "failed", progress, error, "error")
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+            await self.redis.hset(self.progress_hash_key, job_id, str(progress))
+            await self.redis.hset(self.stage_hash_key, job_id, "failed")
+            await self.redis.hset(self.message_hash_key, job_id, error)
+            await self.redis.zadd(self.completed_index_key, {job_id: failed_at.timestamp()})
 
     async def update_job_progress(self, job_id: str, progress: float, stage: Optional[str] = None, message: Optional[str] = None):
         """Update job progress and stage"""
         if not self.redis:
             return
-        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
-        if job_data_str:
-            job_data = json.loads(job_data_str)
-            job_data["progress"] = min(1.0, max(0.0, float(progress)))
-            if stage:
-                job_data["stage"] = stage
-            if message:
-                job_data["message"] = message
-            await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+        value = min(1.0, max(0.0, float(progress)))
+        await self.redis.hset(self.progress_hash_key, job_id, str(value))
+        if stage:
+            await self.redis.hset(self.stage_hash_key, job_id, stage)
+        if message:
+            await self.redis.hset(self.message_hash_key, job_id, message)
+        if stage or message:
+            job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+            if job_data_str:
+                job_data = json.loads(job_data_str)
+                job_data["progress"] = value
+                if stage:
+                    job_data["stage"] = stage
+                if message:
+                    job_data["message"] = message
+                _append_log(job_data, stage or "processing", value, message or "Processing")
+                await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
     async def get_job(self, job_id: str) -> Optional[Dict]:
         """Get job status and result"""
@@ -250,6 +307,17 @@ class RedisJobQueue:
             return None
         
         job_data = json.loads(job_data_str)
+        hot_progress, hot_stage, hot_message = await asyncio.gather(
+            self.redis.hget(self.progress_hash_key, job_id),
+            self.redis.hget(self.stage_hash_key, job_id),
+            self.redis.hget(self.message_hash_key, job_id),
+        )
+        if hot_progress is not None:
+            job_data["progress"] = float(hot_progress)
+        if hot_stage is not None:
+            job_data["stage"] = hot_stage
+        if hot_message is not None:
+            job_data["message"] = hot_message
         
         # Parse nested JSON fields
         if "inputs" in job_data and isinstance(job_data["inputs"], str):
@@ -257,30 +325,9 @@ class RedisJobQueue:
         if "metadata" in job_data and isinstance(job_data["metadata"], str):
             job_data["metadata"] = json.loads(job_data["metadata"])
 
-        # Dynamic progress calculation while processing so UI progress bar updates live
-        if job_data.get("status") == _status_to_str(JobStatus.PROCESSING):
-            if "progress" not in job_data or float(job_data.get("progress", 0.0)) < 0.15:
-                job_data["progress"] = 0.15
-                job_data["stage"] = "loading_model"
-                job_data["message"] = "Loading model on GPU..."
-
-            started_at_str = job_data.get("started_at")
-            if started_at_str:
-                try:
-                    elapsed = (datetime.utcnow() - datetime.fromisoformat(started_at_str)).total_seconds()
-                    # Progress curves smoothly from 15% up to 92% based on elapsed seconds
-                    dynamic_prog = min(0.92, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.77)
-                    if dynamic_prog > float(job_data.get("progress", 0.0)):
-                        job_data["progress"] = round(dynamic_prog, 2)
-                    if elapsed > 2.5 and job_data.get("stage") == "loading_model":
-                        job_data["stage"] = "generating"
-                        job_data["message"] = "Synthesizing 3D mesh on GPU..."
-                except Exception:
-                    pass
-        
-        # Get result if completed
+        # Reads are side-effect free; progress remains owned by worker events.
         if job_data["status"] == _status_to_str(JobStatus.COMPLETED):
-            result_str = await self.redis.hget(self.results_hash_key, job_id)
+            result_str = await self.redis.get(f"{self.results_prefix}{job_id}")
             if result_str:
                 job_data["result"] = json.loads(result_str)
         
@@ -293,12 +340,21 @@ class RedisJobQueue:
 
         pending_count = await self.redis.zcard(self.pending_queue_key)
         processing_count = await self.redis.scard(self.processing_set_key)
-        total_jobs = await self.redis.hlen(self.jobs_hash_key)
-        
+        all_jobs = await self.redis.hgetall(self.jobs_hash_key)
+        status_counts: Dict[str, int] = {}
+        for raw in all_jobs.values():
+            status = json.loads(raw).get("status", "")
+            status_counts[status] = status_counts.get(status, 0) + 1
+
+        max_queue_size = 1000
         return {
-            "pending": pending_count,
-            "processing": processing_count,
-            "total_jobs": total_jobs,
+            "queued_jobs": status_counts.get(_status_to_str(JobStatus.QUEUED), 0),
+            "processing_jobs": status_counts.get(_status_to_str(JobStatus.PROCESSING), processing_count),
+            "completed_jobs": status_counts.get(_status_to_str(JobStatus.COMPLETED), 0),
+            "failed_jobs": status_counts.get(_status_to_str(JobStatus.FAILED), 0),
+            "cancelled_jobs": status_counts.get(_status_to_str(JobStatus.CANCELLED), 0),
+            "max_queue_size": max_queue_size,
+            "queue_utilization": min(1.0, pending_count / max_queue_size),
         }
 
     async def cleanup_old_jobs(self):
@@ -308,22 +364,20 @@ class RedisJobQueue:
 
         cutoff_time = datetime.utcnow() - timedelta(hours=self.max_job_age_hours)
         
-        # Get all jobs
-        all_jobs = await self.redis.hgetall(self.jobs_hash_key)
-        
+        cutoff_time = (datetime.utcnow() - timedelta(hours=self.max_job_age_hours)).timestamp()
+        old_job_ids = await self.redis.zrangebyscore(
+            self.completed_index_key, min="-inf", max=cutoff_time
+        )
+
         deleted_count = 0
-        for job_id, job_data_str in all_jobs.items():
-            job_data = json.loads(job_data_str)
-            
-            # Check if job is old and completed/failed
-            if job_data["status"] in [_status_to_str(JobStatus.COMPLETED), _status_to_str(JobStatus.FAILED)]:
-                completed_at = job_data.get("completed_at") or job_data.get("failed_at")
-                if completed_at:
-                    job_time = datetime.fromisoformat(completed_at)
-                    if job_time < cutoff_time:
-                        await self.redis.hdel(self.jobs_hash_key, job_id)
-                        await self.redis.hdel(self.results_hash_key, job_id)
-                        deleted_count += 1
+        for job_id in old_job_ids:
+            await self.redis.hdel(self.jobs_hash_key, job_id)
+            await self.redis.hdel(self.progress_hash_key, job_id)
+            await self.redis.hdel(self.stage_hash_key, job_id)
+            await self.redis.hdel(self.message_hash_key, job_id)
+            await self.redis.delete(f"{self.results_prefix}{job_id}")
+            await self.redis.zrem(self.completed_index_key, job_id)
+            deleted_count += 1
         
         if deleted_count > 0:
             logger.info(f"Cleaned up {deleted_count} old jobs from Redis")
@@ -344,31 +398,67 @@ class RedisJobQueue:
             job_data["message"] = f"Loading model {model_id} on GPU..."
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
-    async def cancel_job(self, job_id: str) -> bool:
-        """Cancel a job if it's still pending"""
+    async def request_cancel(self, job_id: str) -> bool:
+        """Request cancellation through the external scheduler service."""
         if not self.redis:
             raise RuntimeError("Redis not connected")
-        
-        # Try to remove from pending queue
-        removed = await self.redis.zrem(self.pending_queue_key, job_id)
-        
-        if removed:
-            # Update status
-            job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
-            if job_data_str:
-                job_data = json.loads(job_data_str)
-                job_data["status"] = _status_to_str(JobStatus.FAILED)
-                job_data["error"] = "Cancelled by user"
-                await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+        if not job_data_str:
+            return False
+        status = json.loads(job_data_str).get("status")
+        if status == _status_to_str(JobStatus.QUEUED):
+            return await self.cancel_job(job_id)
+        if status == _status_to_str(JobStatus.PROCESSING):
+            await self.redis.sadd(self.cancel_request_key, job_id)
             return True
-        
         return False
+
+    async def get_cancel_requests(self) -> list[str]:
+        if not self.redis:
+            return []
+        return list(await self.redis.smembers(self.cancel_request_key))
+
+    async def clear_cancel_request(self, job_id: str) -> None:
+        if self.redis:
+            await self.redis.srem(self.cancel_request_key, job_id)
+
+    async def cancel_job(self, job_id: str, force: bool = False) -> bool:
+        """Cancel a queued job or a worker-already-stopped processing job."""
+        if not self.redis:
+            raise RuntimeError("Redis not connected")
+
+        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+        if not job_data_str:
+            return False
+        job_data = json.loads(job_data_str)
+        status = job_data.get("status")
+        if status == _status_to_str(JobStatus.PROCESSING) and not force:
+            return False
+        if status not in {
+            _status_to_str(JobStatus.QUEUED),
+            _status_to_str(JobStatus.PROCESSING),
+        }:
+            return False
+
+        await self.redis.zrem(self.pending_queue_key, job_id)
+        await self.redis.srem(self.processing_set_key, job_id)
+        job_data["status"] = _status_to_str(JobStatus.CANCELLED)
+        job_data["error"] = "Cancelled by user"
+        job_data["error_code"] = "JOB_CANCELLED"
+        completed_at = datetime.utcnow()
+        job_data["completed_at"] = completed_at.isoformat()
+        _append_log(job_data, "cancelled", float(job_data.get("progress", 0.0)), "Cancelled by user", "warning")
+        await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+        await self.redis.srem(self.cancel_request_key, job_id)
+        await self.redis.hset(self.stage_hash_key, job_id, "cancelled")
+        await self.redis.hset(self.message_hash_key, job_id, "Cancelled by user")
+        await self.redis.zadd(self.completed_index_key, {job_id: completed_at.timestamp()})
+        return True
 
     # Compatibility methods for original JobQueue interface
     async def start_persistence(self):
-        """Compatibility method - Redis persistence is always active"""
-        logger.debug("Redis persistence is always active, no action needed")
-        pass
+        """Compatibility method: recover jobs stranded by the previous scheduler."""
+        await self.recover_orphaned_jobs()
 
     async def stop_persistence(self):
         """Compatibility method - Redis persistence is always active"""
@@ -376,8 +466,9 @@ class RedisJobQueue:
         pass
 
     async def cleanup_expired_jobs(self):
-        """Alias for cleanup_old_jobs for compatibility"""
+        """Compatibility hook; Redis cleanup is handled by TTL + retention sweep."""
         await self.cleanup_old_jobs()
+        return []
     
     async def get_jobs_by_status(self, status: JobStatus) -> list:
         """Get all jobs with specified status (compatibility method)"""

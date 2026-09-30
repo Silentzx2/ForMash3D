@@ -1,7 +1,7 @@
 import logging
 import logging.config
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # ── Compatibility shim: torch 2.8.0 does not have float8_e8m0fnu ──
 # transformers >=4.44 references torch.float8_e8m0fnu which causes
@@ -90,6 +90,8 @@ class ModelConfig(BaseSettings):
     model_path: Optional[str] = None
     enabled: bool = True
     model_parameters: Optional[Dict] = None
+    init_params: Dict[str, Any] = {}
+    capabilities: Dict[str, Any] = {}
 
     model_config = SettingsConfigDict(protected_namespaces=("settings_",), extra="allow")
 

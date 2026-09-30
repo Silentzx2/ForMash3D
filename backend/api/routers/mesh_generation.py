@@ -9,9 +9,10 @@ result downloading.
 import logging
 import tempfile
 from pathlib import Path
-from typing import Optional
+from uuid import uuid4
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
@@ -102,6 +103,22 @@ class TextToTexturedMeshRequest(TextToRawMeshRequest):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+
+
+class BatchTextToTexturedMeshItem(BaseModel):
+    """One independent text-generation item inside a batch."""
+    text_prompt: str = Field(..., min_length=1, max_length=4000)
+    negative_prompt: Optional[str] = Field(None, max_length=4000)
+    model_preference: str = Field("trellis_text_to_textured_mesh")
+    texture_prompt: Optional[str] = Field(None, max_length=4000)
+    texture_resolution: int = Field(1024, ge=256, le=4096)
+    model_parameters: Optional[dict] = None
+
+
+class BatchTextToTexturedMeshRequest(BaseModel):
+    """Submit independent text jobs under one scheduler-owned batch."""
+    items: List[BatchTextToTexturedMeshItem] = Field(..., min_length=1, max_length=100)
+    max_parallel: int = Field(2, ge=1, le=32)
 
 
 class TextMeshPaintingRequest(BaseModel):
@@ -341,8 +358,9 @@ class ImageMeshPaintingRequest(BaseModel):
 
 # Enhanced Response models
 class MeshGenerationResponse(BaseModel):
-    """Response for mesh generation requests"""
+    """Versioned response contract for mesh generation requests."""
 
+    api_version: str = Field("1", description="Generation API contract version")
     job_id: str = Field(..., description="Unique job identifier")
     status: str = Field(..., description="Job status")
     message: str = Field(..., description="Status message")
@@ -371,8 +389,7 @@ async def process_file_input(
             detail=f"Multiple {input_type} inputs provided. Only one allowed.",
         )
 
-    # Create temporary directory for processing
-    temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
+    temp_dir: Optional[str] = None
 
     try:
         if file_path:
@@ -386,6 +403,7 @@ async def process_file_input(
             return str(file_path)
 
         elif base64_data:
+            temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
             # Process base64 data
             file_info = await save_base64_file(
                 base64_data, f"input_{input_type}", temp_dir
@@ -403,18 +421,23 @@ async def process_file_input(
             return resolved_path
 
         elif upload_file:
+            temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
             # Process uploaded file
             file_info = await save_upload_file(upload_file, temp_dir)
             return str(file_info["file_path"])
         else:
             raise HTTPException(status_code=400, detail="No input provided")
     except HTTPException as he:
-        import traceback 
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(he)} {trace}")
         raise he
     except Exception as e:
-        import traceback 
+        if temp_dir:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(e)} {trace}")
         raise HTTPException(
@@ -533,6 +556,53 @@ async def text_to_textured_mesh(
     except Exception as e:
         logger.error(f"Error scheduling text-to-textured-mesh job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
+
+
+@router.post("/text-to-textured-mesh/batch")
+async def batch_text_to_textured_mesh(
+    batch_request: BatchTextToTexturedMeshRequest,
+    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
+    current_user = Depends(get_current_user_or_none),
+):
+    """Queue multiple text-to-3D jobs; the scheduler enforces max_parallel."""
+    batch_id = uuid4().hex
+    user_id = current_user.user_id if current_user else None
+    jobs = []
+    for item in batch_request.items:
+        validate_model_preference(
+            item.model_preference, "text_to_textured_mesh", scheduler
+        )
+        job_request = JobRequest(
+            feature="text_to_textured_mesh",
+            inputs={
+                "text_prompt": item.text_prompt,
+                "negative_prompt": item.negative_prompt or "",
+                "texture_prompt": item.texture_prompt or item.text_prompt,
+                "texture_text_prompt": item.texture_prompt or item.text_prompt,
+                "output_format": "glb",
+                "texture_resolution": item.texture_resolution,
+                **(item.model_parameters or {}),
+            },
+            model_preference=item.model_preference,
+            priority=1,
+            metadata={
+                "feature_type": "text_to_textured_mesh",
+                "batch_id": batch_id,
+                "batch_max_parallel": batch_request.max_parallel,
+                "batch_size": len(batch_request.items),
+                "batch_item_index": len(jobs),
+            },
+            user_id=user_id,
+        )
+        jobs.append(await scheduler.schedule_job(job_request))
+
+    return {
+        "api_version": "1",
+        "batch_id": batch_id,
+        "status": "queued",
+        "max_parallel": batch_request.max_parallel,
+        "job_ids": jobs,
+    }
 
 
 # Text-based mesh painting endpoint (supports both file path and base64)
@@ -842,3 +912,50 @@ async def get_supported_formats():
             "image_max_resolution": [4096, 4096],
         },
     }
+
+
+@router.post("/cancel/{job_id}")
+async def cancel_mesh_generation(
+    job_id: str,
+    request: Request,
+    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
+    current_user = Depends(get_current_user_or_none),
+):
+    """Cancel a queued mesh-generation job without deleting its history record."""
+    try:
+        job_status = await scheduler.get_job_status(job_id)
+        if job_status is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        if current_user:
+            from core.auth.models import UserRole
+            job_user_id = job_status.get("user_id")
+            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
+                raise HTTPException(status_code=403, detail="Access denied to this job")
+
+        if job_status.get("status") not in {"queued", "processing", "running"}:
+            return {
+                "job_id": job_id,
+                "status": job_status.get("status"),
+                "cancelled": False,
+                "message": "Job is no longer cancellable",
+            }
+
+        cancelled = await scheduler.cancel_job(job_id)
+        if not cancelled:
+            raise HTTPException(
+                status_code=409,
+                detail="Job is already running in the worker and cannot be cancelled safely.",
+            )
+
+        return {
+            "job_id": job_id,
+            "status": "cancelled",
+            "cancelled": True,
+            "message": "Generation job cancelled",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling mesh generation job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel job: {e}")

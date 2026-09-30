@@ -76,7 +76,7 @@ ENV https_proxy=$https_proxy
 ENV no_proxy=$no_proxy
 
 # Install TRELLIS.2 dependencies
-WORKDIR /app/thirdparty/TRELLIS.2
+WORKDIR /app/backend/thirdparty/TRELLIS.2
 RUN bash setup.sh --basic --flash-attn --nvdiffrast --nvdiffrec --cumesh --o-voxel
 RUN pip install kaolin -f https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.6.0_cu124.html
 
@@ -87,36 +87,39 @@ RUN git clone https://github.com/autonomousvision/mip-splatting.git /tmp/extensi
     rm -rf /tmp/extensions/mip-splatting
 
 # Install PartField dependencies
-WORKDIR /app/thirdparty/PartField
+WORKDIR /app/backend/thirdparty/PartField
 RUN pip install lightning==2.2 h5py yacs trimesh scikit-image loguru boto3
 RUN pip install mesh2sdf tetgen pymeshlab plyfile einops libigl polyscope potpourri3d simple_parsing arrgh open3d psutil
-RUN pip install /app/assets/wheels/torch_scatter-2.1.2+pt26cu124-cp310-cp310-linux_x86_64.whl --no-deps
-RUN pip install /app/assets/wheels/torch_sparse-0.6.18+pt26cu124-cp310-cp310-linux_x86_64.whl --no-deps
-RUN pip install /app/assets/wheels/torch_cluster-1.6.3+pt26cu124-cp310-cp310-linux_x86_64.whl --no-deps
+RUN mkdir -p /app/backend/thirdparty/wheels && \
+    curl -fL --retry 3 "https://github.com/Silentzx2/ForMash3D/releases/download/Wheels/torch_scatter-2.1.2-cp310-cp310-linux_x86_64.whl" \
+    -o /app/backend/thirdparty/wheels/torch_scatter-2.1.2-cp310-cp310-linux_x86_64.whl
+RUN pip install /app/backend/thirdparty/wheels/torch_scatter-2.1.2-cp310-cp310-linux_x86_64.whl --no-deps
+RUN pip install torch-sparse==0.6.18 -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
+RUN pip install torch-cluster==1.6.3 -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
 # RUN pip install torch-scatter torch_cluster -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
 
 # Install Hunyuan3D unified runtime dependencies
-WORKDIR /app/thirdparty
+WORKDIR /app/backend/thirdparty
 RUN pip install -r hunyuan-requirements.txt
 
 # Build Hunyuan3D-Shape-v2-1 native components
-WORKDIR /app/thirdparty/hunyuan3d-shape-v2-1/hy3dpaint/custom_rasterizer
+WORKDIR /app/backend/thirdparty/hunyuan3d-shape-v2-1/hy3dpaint/custom_rasterizer
 RUN pip install -e . --no-build-isolation
-WORKDIR /app/thirdparty/hunyuan3d-shape-v2-1/hy3dpaint/DifferentiableRenderer
+WORKDIR /app/backend/thirdparty/hunyuan3d-shape-v2-1/hy3dpaint/DifferentiableRenderer
 RUN bash compile_mesh_painter.sh
 
 # Build Hunyuan3D-Paint-v2-1 native components
-WORKDIR /app/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/custom_rasterizer
+WORKDIR /app/backend/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/custom_rasterizer
 RUN pip install -e . --no-build-isolation
-WORKDIR /app/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/DifferentiableRenderer
+WORKDIR /app/backend/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/DifferentiableRenderer
 RUN bash compile_mesh_painter.sh
 
 # Install UniRig dependencies
-WORKDIR /app/thirdparty/UniRig
+WORKDIR /app/backend/thirdparty/UniRig
 RUN pip install spconv-cu124 pyrender fast-simplification python-box timm
 
 # Install PartPacker dependencies
-WORKDIR /app/thirdparty/PartPacker
+WORKDIR /app/backend/thirdparty/PartPacker
 RUN pip install pybind11==3.0.1
 RUN pip install meshiki kiui fpsample pymcubes einops
 
@@ -127,23 +130,23 @@ RUN pip install seaborn partuv blenderproc
 RUN pip install numba scikit-learn fpsample
 
 # Install FastMesh dependencies
-WORKDIR /app/thirdparty/FastMesh
+WORKDIR /app/backend/thirdparty/FastMesh
 RUN if [ -f "requirement_extra.txt" ]; then pip install -r requirement_extra.txt; fi
 
 # Install UltraShape dependencies
-WORKDIR /app/thirdparty/UltraShape
+WORKDIR /app/backend/thirdparty/UltraShape
 RUN pip install git+https://github.com/ashawkey/cubvh --no-build-isolation
 
 # Install VoxHammer dependencies
-WORKDIR /app/thirdparty/VoxHammer
+WORKDIR /app/backend/thirdparty/VoxHammer
 RUN pip install git+https://github.com/huanngzh/bpy-renderer.git
 RUN pip install pysdf sentencepiece
 
 # Install main project dependencies
 WORKDIR /app
-RUN pip install -r requirements.txt
-RUN python scripts/verify_postprocess_runtime.py
-RUN pip install -r requirements-test.txt
+RUN pip install -r /app/backend/requirements.txt
+RUN python backend/scripts/verify_postprocess_runtime.py
+RUN pip install -r /app/backend/requirements-test.txt
 
 # Create necessary directories
 RUN mkdir -p /app/uploads /app/data /app/logs /app/outputs

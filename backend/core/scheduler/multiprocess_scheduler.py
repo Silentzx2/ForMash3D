@@ -46,11 +46,14 @@ import logging
 import multiprocessing as mp
 import os
 import queue
+import shutil
 import threading
+import tempfile
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -58,7 +61,7 @@ import torch
 import core.config  # Initialize PyTorch compatibility shims & settings in worker processes
 from ..models.base import BaseModel
 from .gpu_monitor import GPUMonitor
-from .job_queue import JobQueue, JobRequest
+from .job_queue import JobQueue, JobRequest, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -542,6 +545,7 @@ class MultiprocessModelScheduler:
 
         # Scheduler state
         self.running = False
+        self._background_tasks: set[asyncio.Task] = set()
         self.response_handler_thread: Optional[threading.Thread] = None
         self.pending_results: Dict[str, asyncio.Future] = {}
         self.result_lock = threading.Lock()
@@ -622,7 +626,11 @@ class MultiprocessModelScheduler:
                 f"No models available for feature: {job_request.feature}. Available features: {list(self.model_features.keys())}"
             )
 
-        job_id = await self.job_queue.enqueue(job_request)
+        try:
+            job_id = await self.job_queue.enqueue(job_request)
+        except Exception:
+            self._cleanup_temporary_inputs(job_request)
+            raise
         logger.info(f"Scheduled job {job_id} for feature {job_request.feature}")
 
         # Job will be processed by the background job processing loop
@@ -636,8 +644,24 @@ class MultiprocessModelScheduler:
         return None
 
     async def cancel_job(self, job_id: str) -> bool:
-        """Cancel a job if possible"""
-        return await self.job_queue.cancel_job(job_id)
+        """Stop the owning worker, then finalize the job as cancelled."""
+        job = await self.job_queue.get_job(job_id)
+        if job is None:
+            return False
+        if job.status == JobStatus.CANCELLED:
+            return True
+        if job.status != JobStatus.PROCESSING:
+            cancelled = await self.job_queue.cancel_job(job_id)
+            if cancelled:
+                self._cleanup_temporary_inputs(job)
+            return cancelled
+
+        stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
+        if not stopped:
+            logger.warning("No live worker found for processing job %s", job_id)
+        if stopped:
+            self._cleanup_temporary_inputs(job)
+        return stopped
 
     async def start(self):
         """Start the scheduler - no workers created initially"""
@@ -654,6 +678,8 @@ class MultiprocessModelScheduler:
 
             # Start job queue persistence
             await self.job_queue.start_persistence()
+            await self.job_queue.recover_processing_jobs()
+            self._cleanup_stale_input_dirs()
 
             # Start response handler thread
             self.response_handler_thread = threading.Thread(
@@ -692,6 +718,15 @@ class MultiprocessModelScheduler:
                 await self.job_processing_task
             except asyncio.CancelledError:
                 pass
+
+        if self._background_tasks:
+            pending = list(self._background_tasks)
+            _, still_pending = await asyncio.wait(pending, timeout=10.0)
+            for task in still_pending:
+                task.cancel()
+            if still_pending:
+                await asyncio.gather(*still_pending, return_exceptions=True)
+            self._background_tasks.clear()
 
         # Stop job queue persistence
         await self.job_queue.stop_persistence()
@@ -821,26 +856,29 @@ class MultiprocessModelScheduler:
         queue_status = await self.job_queue.get_queue_status()
 
         # Get worker status
-        worker_status = {}
-        for worker_id in self.workers:
+        async def read_worker_status(worker_id: str) -> tuple[str, Dict]:
             try:
-                status_response = await self._send_control_message(
+                response = await self._send_control_message(
                     worker_id, WorkerMessage.Type.GET_STATUS, timeout=2.0
                 )
-                worker_status[worker_id] = (
-                    status_response.data
-                    if status_response.success
-                    else {"error": status_response.error}
+                return worker_id, (
+                    response.data if response.success else {"error": response.error}
                 )
             except Exception as e:
-                worker_status[worker_id] = {"error": str(e)}
+                return worker_id, {"error": str(e)}
+
+        worker_results = await asyncio.gather(
+            *(read_worker_status(worker_id) for worker_id in self.workers),
+            return_exceptions=False,
+        )
+        worker_status = dict(worker_results)
 
         return {
             "scheduler": {
-                "type": "multiprocess_fifo",
+                "type": "multiprocess_resource_aware",
                 "running": self.running,
                 "num_workers": len(self.workers),
-                "processing_mode": "strict_fifo",
+                "processing_mode": "priority_fifo_with_resource_rotation",
             },
             "gpu": gpu_status,
             "queue": queue_status,
@@ -880,6 +918,28 @@ class MultiprocessModelScheduler:
             "retry_mechanism": "disabled_for_resources",
         }
 
+    async def _process_external_cancellations(self) -> None:
+        """Stop workers for cancellation requests issued through a shared queue."""
+        get_requests = getattr(self.job_queue, "get_cancel_requests", None)
+        clear_request = getattr(self.job_queue, "clear_cancel_request", None)
+        if not callable(get_requests) or not callable(clear_request):
+            return
+
+        for job_id in await get_requests():
+            try:
+                stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
+                if not stopped:
+                    job = await self.job_queue.get_job(job_id)
+                    if job and job.status == JobStatus.QUEUED:
+                        await self.job_queue.cancel_job(job_id)
+                await clear_request(job_id)
+            except Exception:
+                logger.error(
+                    "Failed to process external cancellation for %s",
+                    job_id,
+                    exc_info=True,
+                )
+
     async def _job_processing_loop(self):
         """
         Background loop that processes jobs from the queue using JobQueue.dequeue().
@@ -891,6 +951,7 @@ class MultiprocessModelScheduler:
 
         while self.running:
             try:
+                await self._process_external_cancellations()
                 # Try to get next job from queue
                 job_request = await self.job_queue.dequeue()
 
@@ -910,9 +971,32 @@ class MultiprocessModelScheduler:
 
         logger.info("Job processing loop stopped")
 
+    async def _batch_slot_available(self, job_request: JobRequest) -> bool:
+        """Honor a batch's max_parallel limit across single-worker and Redis queues."""
+        batch_id = job_request.metadata.get("batch_id")
+        max_parallel = job_request.metadata.get("batch_max_parallel")
+        if not batch_id or not max_parallel:
+            return True
+        try:
+            limit = max(1, int(max_parallel))
+        except (TypeError, ValueError):
+            return True
+        processing = await self.job_queue.get_jobs_by_status(JobStatus.PROCESSING)
+        active = sum(
+            1
+            for job in processing
+            if job.metadata.get("batch_id") == batch_id
+        )
+        return active < limit
+
     async def _process_job_with_queue_integration(self, job_request: JobRequest):
         """Process a job with proper JobQueue integration - FIFO approach with concurrent execution"""
         try:
+            if not await self._batch_slot_available(job_request):
+                await self.job_queue.requeue_job(job_request.job_id, front=False)
+                await asyncio.sleep(0.25)
+                return
+
             # First check if job is impossible to process
             is_impossible, impossible_reason = self._is_job_impossible(job_request)
             if is_impossible:
@@ -944,11 +1028,12 @@ class MultiprocessModelScheduler:
                 )
                 return
             elif worker_result in ["WORKERS_BUSY", "NO_VRAM"]:
-                # Resources unavailable - put job back at front of queue and wait
+                # Resources unavailable: rotate the blocked job so compatible jobs
+                # behind it can run.
                 logger.info(
-                    f"Job {job_request.job_id} cannot be processed now ({worker_result}), putting back in queue"
+                    f"Job {job_request.job_id} cannot be processed now ({worker_result}), rotating queue"
                 )
-                await self.job_queue.requeue_job(job_request.job_id)
+                await self.job_queue.requeue_job(job_request.job_id, front=False)
 
                 # Add a short delay to prevent busy waiting
                 await asyncio.sleep(2.0)
@@ -1015,8 +1100,14 @@ class MultiprocessModelScheduler:
     async def _handle_job_result(self, job_request: JobRequest, result_future: asyncio.Future):
         """Handle job result asynchronously without blocking the main processing loop"""
         job_id = job_request.job_id
+        keep_inputs_for_postprocess = False
         try:
             result = await asyncio.wait_for(result_future, timeout=3600.0)
+
+            current_job = await self.job_queue.get_job(job_id)
+            if current_job and current_job.status in {JobStatus.FAILED, JobStatus.CANCELLED}:
+                self._cleanup_temporary_inputs(job_request)
+                return
 
             # Generation jobs become final only after canonical post-processing.
             if result.get("success"):
@@ -1051,14 +1142,16 @@ class MultiprocessModelScheduler:
                                 ),
                                 loop,
                             )
-                            try:
-                                future.result(timeout=5.0)
-                            except Exception:
-                                logger.debug(
-                                    "Could not persist postprocess progress for %s",
-                                    job_id,
-                                    exc_info=True,
-                                )
+                            # Telemetry must never block mesh post-processing.
+                            if future.done():
+                                try:
+                                    future.result()
+                                except Exception:
+                                    logger.debug(
+                                        "Could not persist postprocess progress for %s",
+                                        job_id,
+                                        exc_info=True,
+                                    )
 
                         final_result = await asyncio.to_thread(
                             run_postprocess_job,
@@ -1092,20 +1185,75 @@ class MultiprocessModelScheduler:
         except asyncio.TimeoutError:
             logger.error(f"Job {job_id} timed out waiting for worker result (3600s)")
             try:
+                await self._stop_worker_for_job(job_id, "timeout")
                 await self.job_queue.fail_job(
                     job_id, "Job processing timed out after 3600 seconds"
                 )
             except Exception as e_to:
-                logger.error(f"Failed to mark timed-out job {job_id} as failed: {e_to}")
+                logger.error(f"Failed to terminate timed-out job {job_id}: {e_to}")
         except Exception as e:
             logger.error(f"Error handling result for job {job_id}: {e}")
-            # Try to mark job as failed
             try:
-                await self.job_queue.fail_job(
-                    job_id, f"Error handling result: {str(e)}"
-                )
+                current_job = await self.job_queue.get_job(job_id)
+                if current_job and current_job.status not in {JobStatus.FAILED, JobStatus.CANCELLED}:
+                    await self.job_queue.fail_job(
+                        job_id, f"Error handling result: {str(e)}"
+                    )
             except Exception as e2:
                 logger.error(f"Failed to mark job {job_id} as failed: {e2}")
+        finally:
+            if not keep_inputs_for_postprocess:
+                self._cleanup_temporary_inputs(job_request)
+
+    def _cleanup_temporary_inputs(self, job_request: JobRequest) -> None:
+        """Remove per-request mesh_gen_* input directories once job ownership ends."""
+        parents = set()
+        for value in job_request.inputs.values():
+            if not isinstance(value, str):
+                continue
+            path = Path(value)
+            if path.parent.name.startswith("mesh_gen_"):
+                parents.add(path.parent)
+        for directory in parents:
+            shutil.rmtree(directory, ignore_errors=True)
+
+    async def _stop_worker_for_job(self, job_id: str, reason: str) -> bool:
+        """Terminate the worker owning a job and release its resources."""
+        worker_id = next(
+            (wid for wid, current_job in self.worker_current_job.items()
+             if current_job == job_id),
+            None,
+        )
+        if not worker_id:
+            return False
+
+        callback_id = self.worker_current_callback.get(worker_id)
+        with self.result_lock:
+            future = self.pending_results.pop(callback_id, None) if callback_id else None
+            self.job_to_callback.pop(job_id, None)
+
+        process = self.workers.get(worker_id)
+        if process and process.is_alive():
+            process.terminate()
+            await asyncio.to_thread(process.join, 2.0)
+
+        await self._destroy_worker(worker_id)
+
+        if reason == "cancelled by user":
+            await self.job_queue.cancel_job(job_id, force=True)
+        else:
+            await self.job_queue.fail_job(
+                job_id, "Job processing timed out after 3600 seconds"
+            )
+
+        if future is not None and not future.done():
+            future.set_result({
+                "success": False,
+                "error": reason,
+                "job_id": job_id,
+                "cancelled": reason == "cancelled by user",
+            })
+        return True
 
     def _get_model_id_for_job(self, job_request: JobRequest) -> str:
         """Get the model ID that will be used for processing this job"""
@@ -1700,7 +1848,17 @@ class MultiprocessModelScheduler:
         """Periodically clean up expired jobs in the job queue"""
         while self.running:
             try:
-                await self.job_queue.cleanup_expired_jobs()
+                expired_job_ids = await self.job_queue.cleanup_expired_jobs()
+                for expired_job_id in expired_job_ids:
+                    job = await self.job_queue.get_job(expired_job_id)
+                    if not job:
+                        continue
+                    await self._stop_worker_for_job(expired_job_id, "timeout")
+                    await self.job_queue.fail_job(
+                        expired_job_id,
+                        "Job processing timed out after 3600 seconds",
+                    )
+                    self._cleanup_temporary_inputs(job)
                 await asyncio.sleep(60)  # Check every minute
             except Exception as e:
                 logger.error(f"Error in job queue cleanup: {e}")
@@ -1762,11 +1920,11 @@ class MultiprocessModelScheduler:
             # Terminate the process
             process = self.workers.pop(worker_id, None)
             if process:
-                process.join(timeout=5.0)
+                await asyncio.to_thread(process.join, 5.0)
                 if process.is_alive():
                     logger.warning(f"Force terminating worker {worker_id}")
                     process.terminate()
-                    process.join(timeout=2.0)
+                    await asyncio.to_thread(process.join, 2.0)
                     if process.is_alive():
                         process.kill()
 

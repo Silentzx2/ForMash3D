@@ -1,5 +1,6 @@
 """System management and health check endpoints"""
 
+import asyncio
 import logging
 import mimetypes
 import os
@@ -7,6 +8,7 @@ import platform
 import shutil
 import tempfile
 import time
+import torch
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -207,62 +209,46 @@ async def get_model_parameters(
         )
 
 
-def _is_model_weights_available(model_id: str) -> bool:
-    """Check if model checkpoint/weights exist locally or can be auto-downloaded on demand."""
-    hf_auto_models = {
-        "trellis_image_to_textured_mesh",
-        "trellis_text_to_textured_mesh",
-        "triposr_image_to_raw_mesh",
-        "triposg_image_to_raw_mesh",
+def _resolve_manifest_path(model_path: Optional[str]) -> Optional[Path]:
+    if not model_path:
+        return None
+    path = Path(model_path).expanduser()
+    if path.is_absolute():
+        return path
+    repo_root = Path(__file__).resolve().parents[3]
+    candidates = (
+        repo_root / path,
+        repo_root / "backend" / path,
+        Path.cwd() / path,
+    )
+    return next((candidate.resolve() for candidate in candidates if candidate.exists()), None)
+
+
+def _is_model_weights_available(model_config: Any) -> bool:
+    """Check for actual local checkpoint payloads; manifest paths remain canonical."""
+    path = _resolve_manifest_path(getattr(model_config, "model_path", None))
+    if path is None:
+        return False
+    if path.is_file():
+        return path.stat().st_size > 0
+
+    checkpoint_suffixes = {
+        ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
     }
-    if model_id in hf_auto_models:
-        return True
+    try:
+        return any(
+            item.is_file() and item.stat().st_size > 0 and item.suffix.lower() in checkpoint_suffixes
+            for item in path.rglob("*")
+        )
+    except OSError:
+        return False
 
-    cwd = Path(os.getcwd())
-    dirs_to_check = [cwd / "pretrained", cwd / "backend" / "pretrained"]
 
-    for p in dirs_to_check:
-        if not p.exists():
-            continue
-        if "hunyuan" in model_id:
-            hunyuan_dirs = [p / "tencent" / "Hunyuan3D-2.1", p / "thirdparty" / "hunyuan3d-shape-v2-1", p / "thirdparty" / "hunyuan3d-dit-v2-mini-turbo", p / "thirdparty" / "hunyuan3d-paint-v2-1"]
-            if any(d.exists() and any(d.iterdir()) for d in hunyuan_dirs):
-                # For Paint model, also verify RealESRGAN checkpoint exists
-                if "paint_v21" in model_id:
-                    realesrgan_path = p / "thirdparty" / "hunyuan3d-paint-v2-1" / "hy3dpaint" / "ckpt" / "RealESRGAN_x4plus.pth"
-                    if realesrgan_path.exists() and realesrgan_path.stat().st_size > 50000000:
-                        return True
-                    # Also check pretrained/misc location
-                    realesrgan_misc = p / "pretrained" / "misc" / "RealESRGAN_x4plus.pth"
-                    if realesrgan_misc.exists() and realesrgan_misc.stat().st_size > 50000000:
-                        return True
-                    return False
-                return True
-        elif "triposf" in model_id:
-            sf1 = p / "TripoSF" / "pretrained_TripoSFVAE_256i1024o.safetensors"
-            sf2 = p / "TripoSF" / "vae" / "pretrained_TripoSFVAE_256i1024o.safetensors"
-            if sf1.exists() or sf2.exists():
-                return True
-        elif "partfield" in model_id:
-            pf = p / "PartField"
-            if pf.exists() and any(pf.iterdir()):
-                return True
-        elif "ultrashape" in model_id:
-            if (p / "UltraShape" / "ultrashape_v1.pt").exists():
-                return True
-        elif "partpacker" in model_id:
-            pp = p / "partpacker"
-            if pp.exists() and any(pp.iterdir()):
-                return True
-        elif "trellis2" in model_id:
-            t2 = p / "TRELLIS.2-4B"
-            if t2.exists() and any(t2.iterdir()):
-                return True
-        elif "unirig" in model_id:
-            ur = p / "unirig"
-            if ur.exists() and any(ur.iterdir()):
-                return True
-    return False
+def _model_supports_download(model_id: str) -> bool:
+    return any(
+        token in model_id
+        for token in ("trellis", "triposr", "triposg", "triposf")
+    )
 
 
 @router.get("/models", summary="List available models")
@@ -271,33 +257,66 @@ async def list_models(
     settings=Depends(get_current_settings),
     _: bool = Depends(verify_api_key),
 ):
-    """List available models, optionally filtered by feature"""
-
+    """List available models and their runtime readiness/capabilities."""
     available_models = settings.list_available_models()
     weights_status = {}
+    model_details = {}
+    cuda_available = False
+    try:
+        import torch
+        cuda_available = bool(torch.cuda.is_available())
+    except Exception:
+        cuda_available = False
+
     for feat, mlist in available_models.items():
         for mid in mlist:
-            weights_status[mid] = _is_model_weights_available(mid)
+            cfg = settings.models.get(feat, {}).get(mid)
+            weights_ok = bool(cfg and _is_model_weights_available(cfg))
+            weights_status[mid] = weights_ok
+            downloadable = _model_supports_download(mid)
+            model_details[mid] = {
+                "id": mid,
+                "feature": feat,
+                "status": (
+                    "weights_missing" if not weights_ok
+                    else "gpu_unavailable" if not cuda_available
+                    else "ready"
+                ),
+                "weights_available": weights_ok,
+                "weights_downloadable": downloadable,
+                "readiness_reason": (
+                    "ready" if weights_ok and cuda_available
+                    else "GPU/CUDA unavailable" if weights_ok and not cuda_available
+                    else "local checkpoint missing; download or install model weights"
+                ),
+                "cuda_available": cuda_available,
+                "vram_requirement": getattr(cfg, "vram_requirement", None) if cfg else None,
+                "max_workers": getattr(cfg, "max_workers", None) if cfg else None,
+                "supported_inputs": getattr(cfg, "supported_inputs", []) if cfg else [],
+                "supported_outputs": getattr(cfg, "supported_outputs", []) if cfg else [],
+                "model_path": getattr(cfg, "model_path", None) if cfg else None,
+                "capabilities": getattr(cfg, "capabilities", {}) if cfg else {},
+            }
 
     if feature:
         if feature in available_models:
             return {
-                "feature": feature, 
+                "api_version": "1",
+                "feature": feature,
                 "models": available_models[feature],
                 "weights_status": {mid: weights_status[mid] for mid in available_models[feature]},
+                "model_details": {mid: model_details[mid] for mid in available_models[feature]},
             }
-        else:
-            raise HTTPException(
-                status_code=404, detail=f"Feature '{feature}' not found"
-            )
+        raise HTTPException(status_code=404, detail=f"Feature '{feature}' not found")
 
     return {
+        "api_version": "1",
         "available_models": available_models,
         "weights_status": weights_status,
+        "model_details": model_details,
         "total_features": len(available_models),
         "total_models": sum(len(models) for models in available_models.values()),
     }
-
 
 @router.get("/features", summary="List supported features")
 async def list_features(settings=Depends(get_current_settings)):
@@ -761,7 +780,54 @@ async def get_jobs_history(
         if offset < 0:
             offset = 0
 
-        # Get all jobs from the database
+        db_manager = getattr(scheduler.job_queue, "db_manager", None)
+        if db_manager is not None:
+            from datetime import datetime as _dt
+
+            def parse_date(value: Optional[str]) -> Optional[_dt]:
+                if not value:
+                    return None
+                try:
+                    parsed = _dt.fromisoformat(value.replace("Z", "+00:00"))
+                    return parsed.replace(tzinfo=None)
+                except ValueError:
+                    return None
+
+            page_status = status.lower() if status else None
+            user_id = None
+            if current_user and current_user.role != UserRole.ADMIN:
+                user_id = current_user.user_id
+
+            page_jobs, total_jobs = await asyncio.to_thread(
+                db_manager.get_jobs_page,
+                status=page_status,
+                feature=feature,
+                user_id=user_id,
+                start_date=parse_date(start_date),
+                end_date=parse_date(end_date),
+                limit=limit,
+                offset=offset,
+            )
+            jobs = [job.to_dict() for job in page_jobs]
+            return {
+                "jobs": jobs,
+                "pagination": {
+                    "limit": limit,
+                    "offset": offset,
+                    "total": total_jobs,
+                    "has_more": offset + len(jobs) < total_jobs,
+                },
+                "filters": {
+                    "status": status,
+                    "feature": feature,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                },
+                "timestamp": time.time(),
+            }
+
+        # Redis queue fallback: retain its current status-based API until a
+        # dedicated history sorted-set index is introduced.
         all_jobs = []
 
         # Get jobs from different statuses
@@ -890,6 +956,8 @@ async def get_job_status(job_id: str, request: Request):
             # If user is not admin and job doesn't belong to them, deny access
             if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
                 raise HTTPException(status_code=403, detail="Access denied to this job")
+
+        job_status.setdefault("api_version", "1")
 
         # If job is completed and has results, convert file paths to URLs
         if job_status.get("status") == "completed" and job_status.get("result"):

@@ -118,7 +118,7 @@ def test_fastapi_endpoints():
     from backend.api.main_multiworker import app
 
     with TestClient(app) as client:
-        print("[4/5] Testing FastAPI endpoints with TestClient..."
+        print("[4/5] Testing FastAPI endpoints with TestClient...")
         
         
         # 1. Health

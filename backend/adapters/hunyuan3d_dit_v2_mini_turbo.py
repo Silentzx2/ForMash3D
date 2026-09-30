@@ -37,21 +37,21 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
         self,
         model_id: Optional[str] = None,
         model_path: Optional[str] = None,
-        vram_requirement: int = 6144,
+        vram_requirement: Optional[int] = None,
         hunyuan3d_root: Optional[str] = None,
         feature_type: Optional[str] = None,
         supported_output_formats: Optional[List[str]] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_id is None:
             model_id = self.MODEL_ID
         if model_path is None:
-            model_path = os.path.abspath(
-                os.path.join(os.getcwd(), "pretrained", "tencent", "Hunyuan3D-2mini")
-            )
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "tencent" / "Hunyuan3D-2mini")
         if hunyuan3d_root is None:
-            hunyuan3d_root = os.path.abspath(
-                os.path.join(os.getcwd(), "backend", "thirdparty", "hunyuan3d-dit-v2-mini-turbo")
-            )
+            hunyuan3d_root = str(Path(__file__).resolve().parents[1]) / "thirdparty" / "hunyuan3d-dit-v2-mini-turbo"
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
         if supported_output_formats is None:

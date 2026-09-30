@@ -1,5 +1,7 @@
 import asyncio
+import copy
 import logging
+import time
 import uuid
 from collections import deque
 from datetime import datetime
@@ -11,6 +13,23 @@ from .database_models import JobModel
 from .database_models import JobStatus as DBJobStatus
 
 logger = logging.getLogger(__name__)
+
+
+def classify_job_error(error: str) -> str:
+    message = (error or "").lower()
+    if "cuda out of memory" in message or "out of memory" in message:
+        return "CUDA_OOM"
+    if "insufficient vram" in message or ("vram" in message and "requirement" in message):
+        return "INSUFFICIENT_VRAM"
+    if "weights" in message or "checkpoint" in message or "model load" in message:
+        return "MODEL_NOT_READY"
+    if "input" in message and "not found" in message:
+        return "INPUT_NOT_FOUND"
+    if "timeout" in message:
+        return "JOB_TIMEOUT"
+    if "cancel" in message:
+        return "JOB_CANCELLED"
+    return "JOB_FAILED"
 
 
 class JobStatus(Enum):
@@ -132,6 +151,19 @@ class JobRequest:
 
         return job
 
+    def _append_log(self, stage: str, message: str, level: str = "info") -> None:
+        logs = self.metadata.setdefault("logs", [])
+        logs.append(
+            {
+                "stage": stage,
+                "progress": round(self.progress * 100, 2),
+                "message": message,
+                "level": level,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
+        self.metadata["logs"] = logs[-100:]
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert job to dictionary representation"""
         return {
@@ -146,6 +178,7 @@ class JobRequest:
             "progress": self.progress,
             "stage": self.metadata.get("stage"),
             "message": self.metadata.get("message"),
+            "logs": self.metadata.get("logs", []),
             "assigned_model": self.assigned_model,
             "created_at": self.created_at.isoformat(),
             "started_at": self.started_at.isoformat() if self.started_at else None,
@@ -154,6 +187,7 @@ class JobRequest:
             else None,
             "result": self.result,
             "error": self.error,
+            "error_code": self.metadata.get("error_code"),
             "metadata": self.metadata,
             "retry_count": self.retry_count,
             "max_retries": self.max_retries,
@@ -181,6 +215,9 @@ class JobRequest:
         self.started_at = datetime.utcnow()
         self.assigned_model = model_id
         self.progress = 0.25
+        self.metadata["stage"] = "loading_model"
+        self.metadata["message"] = "Loading model on GPU..."
+        self._append_log("loading_model", "Loading model on GPU...")
 
     def mark_completed(self, result: Dict[str, Any]):
         """Mark job as completed"""
@@ -188,17 +225,24 @@ class JobRequest:
         self.completed_at = datetime.utcnow()
         self.result = result
         self.progress = 1.0
+        self.metadata["stage"] = "completed"
+        self.metadata["message"] = "Production asset is ready."
+        self._append_log("completed", "Production asset is ready.")
 
     def mark_failed(self, error: str):
         """Mark job as failed"""
         self.status = JobStatus.FAILED
         self.completed_at = datetime.utcnow()
         self.error = error
+        self.metadata["stage"] = "failed"
+        self.metadata["message"] = error
+        self._append_log("failed", error, "error")
 
     def mark_cancelled(self):
         """Mark job as cancelled"""
         self.status = JobStatus.CANCELLED
         self.completed_at = datetime.utcnow()
+        self.metadata["error_code"] = "JOB_CANCELLED"
 
 
 class JobQueue:
@@ -223,6 +267,8 @@ class JobQueue:
         self._queue_cache = deque()
         self._processing_cache: Dict[str, JobRequest] = {}
         self._completed_cache: Dict[str, JobRequest] = {}
+        self._last_progress_persist: Dict[str, float] = {}
+        self._progress_persist_interval = 0.75
 
         # Thread-safe lock for cache operations
         self._cache_lock = asyncio.Lock()
@@ -285,6 +331,27 @@ class JobQueue:
             self._cleanup_task = asyncio.create_task(self._periodic_cleanup())
             logger.info("Started database-backed job queue")
 
+    async def recover_processing_jobs(self) -> int:
+        """Recover processing jobs left behind by a backend restart."""
+        recovered = 0
+        async with self._cache_lock:
+            for job_id, job in list(self._processing_cache.items()):
+                job.status = JobStatus.QUEUED
+                job.started_at = None
+                job.assigned_model = None
+                job.progress = 0.0
+                job.metadata["stage"] = "recovering"
+                job.metadata["message"] = "Recovered after backend restart; waiting for GPU worker."
+                job._append_log("recovering", job.metadata["message"])
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
+                    continue
+                del self._processing_cache[job_id]
+                self._queue_cache.append(job)
+                recovered += 1
+            if recovered:
+                self._sort_queue_cache()
+        return recovered
+
     async def stop_persistence(self):
         """Stop background tasks"""
         self._running = False
@@ -297,7 +364,7 @@ class JobQueue:
             self._cleanup_task = None
 
         # Close database connections
-        self.db_manager.close()
+        await asyncio.to_thread(self.db_manager.close)
         logger.info("Stopped database-backed job queue")
 
     async def _periodic_cleanup(self):
@@ -305,12 +372,10 @@ class JobQueue:
         while self._running:
             try:
                 # Clean up old completed jobs in database
-                cleaned_count = self.db_manager.cleanup_old_jobs(
-                    self.max_completed_jobs
+                cleaned_count = await asyncio.to_thread(
+                    self.db_manager.cleanup_old_jobs,
+                    self.max_completed_jobs,
                 )
-
-                # Clean up expired jobs
-                await self.cleanup_expired_jobs()
 
                 # Sync completed cache with database if needed
                 async with self._cache_lock:
@@ -342,7 +407,7 @@ class JobQueue:
                 raise Exception("Job queue is full")
 
             # Save to database first
-            if not self.db_manager.save_job(job):
+            if not await asyncio.to_thread(self.db_manager.save_job, job):
                 raise Exception("Failed to save job to database")
 
             # Add to cache
@@ -359,7 +424,7 @@ class JobQueue:
                 raise Exception("Job queue is full")
 
             # Save to database first
-            if not self.db_manager.save_job(job):
+            if not await asyncio.to_thread(self.db_manager.save_job, job):
                 raise Exception("Failed to save job to database")
 
             # Add to front of cache
@@ -368,8 +433,8 @@ class JobQueue:
                 f"Re-enqueued job {job.job_id} to front of queue for feature {job.feature}"
             )
 
-    async def requeue_job(self, job_id: str):
-        """Move a job from processing back to front of queue"""
+    async def requeue_job(self, job_id: str, front: bool = True):
+        """Move a job from processing back to the queue.""""
         async with self._cache_lock:
             if job_id in self._processing_cache:
                 job = self._processing_cache[job_id]
@@ -381,15 +446,16 @@ class JobQueue:
                 job.progress = 0.0
 
                 # Save updated job to database
-                if not self.db_manager.save_job(job):
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
                     logger.error(f"Failed to save requeued job {job_id} to database")
                     return False
 
-                # Move from processing to front of queue
                 del self._processing_cache[job_id]
-                self._queue_cache.appendleft(job)
-
-                logger.info(f"Requeued job {job_id} to front of queue")
+                if front:
+                    self._queue_cache.appendleft(job)
+                else:
+                    self._queue_cache.append(job)
+                logger.info("Requeued job %s to %s of queue", job_id, "front" if front else "back")
                 return True
             return False
 
@@ -414,7 +480,7 @@ class JobQueue:
                 job.mark_started(model_id)
 
                 # Save to database
-                if not self.db_manager.save_job(job):
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
                     logger.error(f"Failed to save started job {job_id} to database")
                 else:
                     logger.info(
@@ -429,7 +495,7 @@ class JobQueue:
                 job.mark_completed(result)
 
                 # Save to database
-                if not self.db_manager.save_job(job):
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
                     logger.error(f"Failed to save completed job {job_id} to database")
 
                 # Move from processing to completed
@@ -453,14 +519,17 @@ class JobQueue:
                 job.mark_failed(error)
 
                 # Save to database
-                if not self.db_manager.save_job(job):
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
                     logger.error(f"Failed to save failed job {job_id} to database")
 
+                job.metadata["error_code"] = classify_job_error(error)
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
+                    logger.error(f"Failed to persist failed-job error code for {job_id}")
                 self._completed_cache[job_id] = job
                 logger.error(f"Failed job {job_id}: {error}")
 
-    async def cancel_job(self, job_id: str) -> bool:
-        """Cancel a job if it's still queued"""
+    async def cancel_job(self, job_id: str, force: bool = False) -> bool:
+        """Cancel a queued job, or a force-stopped processing job."""
         async with self._cache_lock:
             # Check if job is in queue
             for i, job in enumerate(self._queue_cache):
@@ -468,7 +537,7 @@ class JobQueue:
                     job.mark_cancelled()
 
                     # Save to database
-                    if not self.db_manager.save_job(job):
+                    if not await asyncio.to_thread(self.db_manager.save_job, job):
                         logger.error(
                             f"Failed to save cancelled job {job_id} to database"
                         )
@@ -480,41 +549,32 @@ class JobQueue:
                     logger.info(f"Cancelled job {job_id}")
                     return True
 
-            # Check if job is processing (can't cancel)
             if job_id in self._processing_cache:
-                logger.warning(f"Cannot cancel job {job_id}: already processing")
-                return False
+                if not force:
+                    logger.warning("Cannot cancel job %s: already processing", job_id)
+                    return False
+                job = self._processing_cache.pop(job_id)
+                job.mark_cancelled()
+                if not await asyncio.to_thread(self.db_manager.save_job, job):
+                    logger.error("Failed to save cancelled job %s", job_id)
+                self._completed_cache[job_id] = job
+                return True
 
             return False
 
     async def get_job(self, job_id: str) -> Optional[JobRequest]:
-        """Get job by ID"""
+        """Get job by ID without mutating state or blocking the event loop."""
         async with self._cache_lock:
-            # Check processing jobs first
             if job_id in self._processing_cache:
-                job = self._processing_cache[job_id]
-                if job.started_at:
-                    elapsed = (datetime.utcnow() - job.started_at).total_seconds()
-                    dynamic_prog = min(0.92, 0.15 + (1.0 - 1.0 / (1.0 + elapsed / 10.0)) * 0.77)
-                    if dynamic_prog > job.progress:
-                        job.progress = round(dynamic_prog, 2)
-                return job
-
-            # Check completed jobs
+                return self._processing_cache[job_id]
             if job_id in self._completed_cache:
                 return self._completed_cache[job_id]
-
-            # Check queued jobs
             for job in self._queue_cache:
                 if job.job_id == job_id:
                     return job
 
-            # If not in cache, try database
-            job_model = self.db_manager.get_job(job_id)
-            if job_model:
-                return JobRequest.from_job_model(job_model)
-
-            return None
+        job_model = await asyncio.to_thread(self.db_manager.get_job, job_id)
+        return JobRequest.from_job_model(job_model) if job_model else None
 
     async def update_job_progress(
         self,
@@ -523,28 +583,100 @@ class JobQueue:
         stage: Optional[str] = None,
         message: Optional[str] = None,
     ):
-        """Update job progress and optional pipeline stage/message."""
+        """Persist live progress without blocking the scheduler event loop."""
+        snapshot: Optional[JobRequest] = None
         async with self._cache_lock:
-            if job_id in self._processing_cache:
-                job = self._processing_cache[job_id]
+            job = self._processing_cache.get(job_id)
+            completed_job = self._completed_cache.get(job_id)
+
+            if job is not None:
+                previous_stage = job.metadata.get("stage")
                 job.progress = min(1.0, max(0.0, progress))
                 if stage:
                     job.metadata["stage"] = stage
                 if message:
                     job.metadata["message"] = message
-
-                if not self.db_manager.save_job(job):
-                    logger.error(
-                        f"Failed to save job progress for {job_id} to database"
+                if stage or message:
+                    job._append_log(
+                        stage or job.metadata.get("stage") or "processing",
+                        message or job.metadata.get("message") or "Processing",
                     )
+
+                now = time.monotonic()
+                last = self._last_progress_persist.get(job_id, 0.0)
+                should_persist = (
+                    job.progress >= 1.0
+                    or bool(stage and stage != previous_stage)
+                    or (now - last) >= self._progress_persist_interval
+                )
+                if should_persist:
+                    self._last_progress_persist[job_id] = now
+                    snapshot = copy.deepcopy(job)
+
+            elif completed_job is not None:
+                # A completed inference job owns its 100% execution progress. Background
+                # production work has a separate result-level progress contract.
+                current = dict(completed_job.result or {})
+                current["postprocess_progress"] = min(1.0, max(0.0, progress))
+                if stage:
+                    current["postprocess_stage"] = stage
+                    completed_job.metadata["stage"] = stage
+                if message:
+                    current["postprocess_message"] = message
+                    completed_job.metadata["message"] = message
+                if stage or message:
+                    completed_job._append_log(
+                        stage or "postprocess",
+                        message or "Post-processing",
+                    )
+                now = time.monotonic()
+                last = self._last_progress_persist.get(job_id, 0.0)
+                if (
+                    current["postprocess_progress"] >= 1.0
+                    or bool(stage and stage != self._last_progress_persist.get(f"{job_id}:stage"))
+                    or (now - last) >= self._progress_persist_interval
+                ):
+                    completed_job.result = current
+                    self._last_progress_persist[job_id] = now
+                    self._last_progress_persist[f"{job_id}:stage"] = stage or ""
+                    snapshot = copy.deepcopy(completed_job)
+                else:
+                    completed_job.result = current
+            else:
+                return
+
+        if snapshot is not None and not await asyncio.to_thread(self.db_manager.save_job, snapshot):
+            logger.error(f"Failed to persist job progress for {job_id}")
+
+    async def update_completed_result(self, job_id: str, result: Dict[str, Any]) -> bool:
+        """Merge background post-processing results into a completed job."""
+        async with self._cache_lock:
+            job = self._completed_cache.get(job_id)
+            if job is None:
+                job_model = await asyncio.to_thread(self.db_manager.get_job, job_id)
+                if not job_model:
+                    return False
+                job = JobRequest.from_job_model(job_model)
+            current = dict(job.result or {})
+            current.update(result)
+            job.result = current
+            if not await asyncio.to_thread(self.db_manager.save_job, job):
+                return False
+            self._completed_cache[job_id] = job
+            return True
 
     async def get_queue_status(self) -> Dict[str, Any]:
         """Get queue statistics"""
         async with self._cache_lock:
+            completed = sum(1 for job in self._completed_cache.values() if job.status == JobStatus.COMPLETED)
+            failed = sum(1 for job in self._completed_cache.values() if job.status == JobStatus.FAILED)
+            cancelled = sum(1 for job in self._completed_cache.values() if job.status == JobStatus.CANCELLED)
             return {
                 "queued_jobs": len(self._queue_cache),
                 "processing_jobs": len(self._processing_cache),
-                "completed_jobs": len(self._completed_cache),
+                "completed_jobs": completed,
+                "failed_jobs": failed,
+                "cancelled_jobs": cancelled,
                 "max_queue_size": self.max_size,
                 "queue_utilization": len(self._queue_cache) / self.max_size,
             }
@@ -585,7 +717,7 @@ class JobQueue:
                 if job.job_id == job_id:
                     del self._queue_cache[i]
                     # Delete from database
-                    if self.db_manager.delete_job(job_id):
+                    if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                         logger.info(f"Deleted job {job_id} from queue")
                         return True
                     else:
@@ -598,7 +730,7 @@ class JobQueue:
             if job_id in self._processing_cache:
                 del self._processing_cache[job_id]
                 # Delete from database
-                if self.db_manager.delete_job(job_id):
+                if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                     logger.info(f"Deleted job {job_id} from processing")
                     return True
                 else:
@@ -609,7 +741,7 @@ class JobQueue:
             if job_id in self._completed_cache:
                 del self._completed_cache[job_id]
                 # Delete from database
-                if self.db_manager.delete_job(job_id):
+                if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                     logger.info(f"Deleted job {job_id} from completed")
                     return True
                 else:
@@ -617,35 +749,17 @@ class JobQueue:
                     return False
             
             # Job not in any cache, try database directly
-            if self.db_manager.delete_job(job_id):
+            if await asyncio.to_thread(self.db_manager.delete_job, job_id):
                 logger.info(f"Deleted job {job_id} from database (not in cache)")
                 return True
             
             logger.warning(f"Job {job_id} not found in queue or database")
             return False
 
-    async def cleanup_expired_jobs(self):
-        """Clean up expired processing jobs"""
+    async def cleanup_expired_jobs(self) -> List[str]:
+        """Return timed-out job IDs without finalizing them."""
         async with self._cache_lock:
-            expired_jobs = []
-
-            for job_id, job in list(self._processing_cache.items()):
-                if job.is_expired():
-                    expired_jobs.append(job_id)
-
-            for job_id in expired_jobs:
-                job = self._processing_cache[job_id]
-                job.mark_failed("Job timeout exceeded")
-
-                # Save to database
-                if not self.db_manager.save_job(job):
-                    logger.error(f"Failed to save expired job {job_id} to database")
-
-                # Move from processing to completed
-                del self._processing_cache[job_id]
-                self._completed_cache[job_id] = job
-
-                logger.warning(f"Job {job_id} expired after timeout")
+            return [job_id for job_id, job in self._processing_cache.items() if job.is_expired()]
 
     def _sort_queue_cache(self):
         """Sort queue cache by priority (higher priority first)"""

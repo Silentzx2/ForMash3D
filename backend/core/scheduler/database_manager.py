@@ -247,6 +247,36 @@ class DatabaseManager:
             logger.error(f"Unexpected error getting queued jobs: {e}")
             return []
 
+    def get_jobs_page(
+        self,
+        *,
+        status: Optional[str] = None,
+        feature: Optional[str] = None,
+        user_id: Optional[str] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[List[JobModel], int]:
+        """Fetch filtered history directly from storage."""
+        with self.get_session() as session:
+            query = session.query(JobModel)
+            if status:
+                query = query.filter(JobModel.status == status)
+            if feature:
+                query = query.filter(JobModel.feature == feature)
+            if user_id:
+                query = query.filter(JobModel.user_id == user_id)
+            if start_date:
+                query = query.filter(JobModel.created_at >= start_date)
+            if end_date:
+                query = query.filter(JobModel.created_at <= end_date)
+            total = query.with_entities(func.count(JobModel.job_id)).scalar() or 0
+            jobs = query.order_by(desc(JobModel.created_at)).offset(offset).limit(limit).all()
+            for job in jobs:
+                session.expunge(job)
+            return jobs, total
+
     def delete_job(self, job_id: str) -> bool:
         """
         Delete a job from the database.

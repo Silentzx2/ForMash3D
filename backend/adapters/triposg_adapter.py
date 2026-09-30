@@ -37,12 +37,16 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
         self,
         model_id: str = "triposg_image_to_raw_mesh",
         model_path: Optional[str] = None,
-        vram_requirement: int = 8192,  # 8GB VRAM
+        vram_requirement: Optional[int] = None,
         triposg_root: Optional[str] = None,
         rmbg_path: Optional[str] = None,
         num_inference_steps: int = 50,
         guidance_scale: float = 7.0,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_path is None:
             model_path = "backend/pretrained/TripoSG"
 

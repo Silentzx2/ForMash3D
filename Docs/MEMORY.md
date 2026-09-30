@@ -72,7 +72,8 @@ ForMash 3D is in active development. The core architecture is complete with 23 m
 - Next.js 16 App Router with all routes
 - 3D Viewport with Three.js / R3F
 - Workspace Shell with tabbed panels
-- GeneratePanel with model selector, FlashVDM toggle, VRAM stats
+- GeneratePanel with model selector, FlashVDM toggle, VRAM stats, plus a compact Advanced Generation drawer for Physics/quality controls
+- MeshViewer includes a top quick-tool rail with Test Physics and an opt-in mirror/detail inspection peek
 - TexturePanel with PBR controls and systemStats
 - All workspace panels (Remesh, UV, Segment, Edit, Animation, Jobs)
 - Zustand stores, TanStack Query, unified apiClient
@@ -194,3 +195,41 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - Auto-generated mass is now applied as the canonical rigid-body mass; collider density does not overwrite it.
 - Shape→Paint auto-chain skips physics on the intermediate Shape result and prepares it only on final output.
 - Full GPU/Colab inference validation remains outstanding.
+
+- 2026-09-29: execution telemetry baseline now uses real backend stage logs, adaptive visibility-aware polling, truthful cancellation, and artifact-driven segmentation metadata; client-side sample mesh statistics are no longer treated as factual.
+
+## 2026-09-30 Review Audit Hardening
+
+- Redis priority/state/TTL contracts were corrected.
+- SQLite persistence no longer performs synchronous writes directly on async scheduling paths.
+- Processing jobs are recovered after restart; timeout/cancel terminate workers before finalization.
+- Client filesystem inputs and upload/base64 memory are bounded.
+- GLB L1 cache hydration and streaming now respect the existing memory budget.
+- FastMesh V1K/V4K selection is explicit.
+- GPU inference, stress testing, and remaining frontend multi-job/multiview runtime behavior still require target-environment validation.
+
+## 2026-09-30 Review Audit Second Pass
+- Raw inference completion is decoupled from production post-processing; background status is preserved on completed jobs.
+- Workspace generation state is keyed by backend job ID and additional generations are not UI-blocked by an existing active job.
+- Text batches now carry a scheduler-enforced max_parallel limit.
+- Redis progress telemetry uses hot hashes and terminal cleanup uses a completion-time index.
+
+## 2026-09-30 Review Audit Final Gap Pass
+
+- Backend model manifest is now authoritative for runtime readiness/capabilities/VRAM.
+- FastMesh variant propagation is explicit.
+- UltraShape/P3-SAM/PartUV runtime defaults were hardened.
+- Text batch state now reaches the real scheduler-backed batch endpoint.
+- Native artifact naming and asset manifests are collision-safe and reproducible.
+- Multiview is explicitly disabled until a real backend contract exists.
+- Raw generation and production post-processing are separate lifecycle stages.
+- Testing and target-GPU stress remain environment-dependent verification steps.
+
+
+## 2026-09-30 Final Non-Testing Audit State
+- Review branch finalization must retain exactly two implementation commits from the audited baseline; this pass is folded into the recreated second commit.
+- Docker/RunPod dependency paths now resolve under `/app/backend`, with current release-wheel URLs rather than removed repository wheel paths.
+- Scheduler raw completion and production post-processing are separate lifecycle states; request temp inputs survive until post-process lineage metadata is written.
+- Adapter VRAM is manifest-only and remaining repository/model paths are CWD-independent; UUID naming closes timestamp collision windows.
+- Frontend uses backend model capabilities for routing, treats QA scores as 0–100, and refreshes the same asset when post-processing completes or fails.
+- Tests/build/GPU stress/load validation remain intentionally unrun in this pass.

@@ -129,4 +129,66 @@
 - [x] Add physics unit coverage
 - [ ] GPU/Colab end-to-end verification
 - [ ] Capability-gated soft-body/jiggle implementation when a real deformable requirement is justified
+- [x] Compact Advanced Generation drawer for Physics and mesh-quality controls
+- [x] Top-of-viewport rigid-body smoke test with bounds-based fallback
+- [x] Opt-in low-rate mirror/detail inspection peek with hover/focus zoom
 - [ ] Target-specific physics exporters only after tested mappings exist
+
+- [x] Make generation pipeline telemetry stage-aware, ETA-aware, and artifact-aware without fake progress.
+- [x] Fix queued-job cancellation to preserve job history and use the scheduler cancellation contract.
+- [x] Remove fabricated uploaded/segmentation/UV mesh statistics.
+- [x] Make Jobs polling visibility-aware and selected-job telemetry live.
+- [x] Make segmentation inspector artifact-driven and wire segmented GLB download.
+
+## Review Audit Hardening — 2026-09-30
+
+Completed in this pass:
+- Redis priority ordering, failure/cancellation semantics, and result TTL storage corrected.
+- Processing jobs are recovered after backend restart.
+- Scheduler timeout/cancel paths stop the owning worker before terminal state notification.
+- SQLite persistence is dispatched off the async event loop.
+- Queue metrics use the same canonical fields in single-worker and Redis modes.
+- Client-supplied filesystem inputs are restricted to configured asset roots.
+- Multipart/base64 input size limits are enforced during ingestion.
+- GLB cache hydration and streaming respect the existing L1 memory budget.
+- FastMesh V1K/V4K variants are explicit in models.yaml.
+- Verification script syntax and the frontend test command are executable.
+- Storage-side pagination is available for the SQLite-backed history path.
+
+Still runtime-gated:
+- GPU inference/load/stress validation.
+- True multiview inference remains capability-dependent; the backend accepts only explicitly supported view contracts and does not silently collapse a multi-view request.
+
+### Review Audit — Second Pass
+- [x] Raw generation completes independently from production post-processing; postprocess status is tracked separately.
+- [x] Workspace maintains independent job state by backend job ID and permits another generation while one is active.
+- [x] Text batch endpoint submits independent jobs with scheduler-enforced `max_parallel`.
+- [x] Redis progress/state hot fields no longer rewrite the full job document on every telemetry tick; terminal cleanup uses a time index.
+
+## Review Audit — Final Implementation Pass (2026-09-30)
+
+Completed beyond the initial audit pass:
+- [x] Backend model manifest now carries explicit capabilities and runtime readiness metadata.
+- [x] Frontend model selection consumes backend readiness/VRAM data instead of assuming a GPU/24GB budget.
+- [x] FastMesh V1K/V4K manifest parameters are propagated into adapter construction.
+- [x] Adapter VRAM defaults for mismatched models are manifest-driven instead of silently invented.
+- [x] P3-SAM/UltraShape CUDA requirements are explicit; CPU fallback is not advertised.
+- [x] PartUV no longer silently substitutes a PartField checkpoint.
+- [x] Native output filenames and model-specific artifact directories use collision-safe identifiers.
+- [x] Physics collision generation is gated by the physics request.
+- [x] LOD ratios respond to source face count/target polycount rather than one fixed universal chain.
+- [x] Workspace batch queue is wired to the real text-generation batch API and scheduler max-parallel contract.
+- [x] Redis and single-worker cancellation/error semantics expose the same terminal/error-code model.
+- [x] Job manifests record asset lineage/reproducibility metadata including input hashes and generation settings.
+- [x] GLB/blob/localStorage and stale Redis/FileStore cleanup boundaries are hardened.
+- [x] Multiview is explicitly unavailable rather than silently reducing a multiview request to one image.
+
+Testing/build/GPU stress verification remains intentionally outside this pass.
+
+### Final Audit Gap Closure — 2026-09-30
+- [x] Production Docker and RunPod dependency paths reconciled with backend repository layout and release wheels.
+- [x] Async job-status/progress persistence bounded and non-blocking; terminal error codes remain durable.
+- [x] Raw inference completion separated from background production post-processing with owned input cleanup and shutdown lifecycle.
+- [x] Remaining model adapter paths and VRAM declarations reconciled with the canonical manifest; FastMesh/TRELLIS variants cannot override manifest VRAM.
+- [x] Frontend post-processing state, QA score units, capability-based routing, L1 LRU accounting, and failure messaging synchronized with backend contracts.
+- [ ] Runtime/GPU/test/build validation intentionally deferred for this review pass.

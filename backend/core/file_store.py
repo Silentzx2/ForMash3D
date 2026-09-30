@@ -135,11 +135,21 @@ class FileStore:
             # Get file_ids from the sorted set, newest first
             file_ids = await self.redis.zrevrange(key, offset, offset + limit - 1)
 
+            stale_ids = []
             for file_id_bytes in file_ids:
                 file_id = file_id_bytes.decode('utf-8')
                 metadata = await self.get_file_metadata(file_id)
                 if metadata:
                     files.append(metadata)
+                else:
+                    stale_ids.append(file_id)
+
+            if stale_ids:
+                async with self.redis.pipeline() as pipe:
+                    for file_id in stale_ids:
+                        pipe.zrem(self._key("files", "all"), file_id)
+                        pipe.zrem(self._key("files", file_type), file_id) if file_type else None
+                    await pipe.execute()
             return files
         except Exception as e:
             logger.error(f"Failed to list file metadata: {e}")

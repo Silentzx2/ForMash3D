@@ -299,4 +299,15 @@ The ZIP option snapshots the complete canonical workspace; it is not a selective
 Post-processing stage and progress reuse the existing job status model rather than introducing a second progress subsystem.
 
 ## Physics UX
-The Generate panel contains a Physics Preparation controller using the existing `generateCollision` intent rather than introducing overlapping enable flags. The viewer exposes a Physics mode only when an asset is marked Physics Ready. The viewer distinguishes the rendered asset from the collision representation and provides Play, Pause, Step, Reset, collider debug, Drop, Bounce, Slide, and Spin controls. Estimated physical properties are presented as estimates with provenance; user values remain authoritative. Physics controls remain disabled until the viewer has the current asset and canonical collision runtime ready.
+The Generate panel keeps Physics Preparation behind a compact Advanced Generation drawer so the primary workflow stays short and scroll-light. The viewer exposes a top-level Test Physics action. On Physics Ready assets it uses the canonical collision runtime; on ordinary loaded meshes it falls back to a lightweight bounds-based rigid-body smoke test without mutating the asset or running post-processing. The viewer still provides Play, Pause, Step, Reset, collider debug, Drop, Bounce, Slide, and Spin controls. Deformable/jiggle simulation remains capability-gated and is not faked.
+
+## Viewport Inspect UX
+The viewport keeps frequent actions in the center-view rail: camera, shading, wireframe, turntable, Test Physics, and Mirror. Mirror is an opt-in low-rate viewport snapshot that can be hovered or focused to temporarily zoom the main camera to the mesh for detail inspection and exposes a larger mirrored preview on desktop. Snapshot capture runs only while the feature is enabled and is throttled to roughly one frame per second.
+
+## Pipeline Execution UX — 2026-09-29
+The live execution panel is a telemetry surface, not a simulated progress animation. It renders the backend stage/message stream, global progress, completed-stage count, elapsed time, estimated remaining time, worker log timeline, and artifact readiness from the actual job result. Hidden browser tabs reduce polling activity, and log auto-scroll preserves manual inspection when the user scrolls upward.
+
+Jobs & Execution follows the same rule: active jobs refresh frequently, idle history refreshes less often, and no UI fallback invents a non-zero progress percentage.
+
+## Workspace Data Integrity
+Mesh statistics, segmentation part counts, and result metadata are rendered only when supplied by the backend. Client-side sample numbers are not treated as factual asset statistics.

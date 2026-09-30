@@ -41,19 +41,19 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        vram_requirement: int = 11776,  # 12GB VRAM
+        vram_requirement: Optional[int] = None
         trellis_root: Optional[str] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         # Set default paths
         if model_path is None:
-            model_path = os.path.abspath(
-                os.path.join(os.getcwd(), "pretrained", "TRELLIS")
-            )
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS")
 
         if trellis_root is None:
-            trellis_root = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "TRELLIS")
-            )
+            trellis_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS")
 
         super().__init__(
             model_id=self.MODEL_ID,
@@ -239,7 +239,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
 
             # Save mesh in requested format
             output_path = self._generate_output_path(text_prompt, output_format)
-            self.mesh_processor.save_mesh(mesh, output_path, do_normalise=True)
+            self.mesh_processor.save_mesh(mesh, output_path, do_normalise=False)
 
             # Generate thumbnail
             thumbnail_path = self._generate_thumbnail_path(output_path)
@@ -290,14 +290,14 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
         safe_name = safe_name.replace(" ", "_")
 
         # Create output directory if it doesn't exist
-        output_dir = Path(os.getcwd()) / "outputs" / "meshes"
+        output_dir = Path(__file__).resolve().parents[1] / "outputs" / "meshes"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate unique filename
-        import time
+        import uuid
 
-        timestamp = int(time.time())
-        filename = f"trellis_{safe_name}_{timestamp}.{output_format}"
+        unique_id = uuid.uuid4().hex
+        filename = f"trellis_{safe_name}_{unique_id}.{output_format}"
 
         return output_dir / filename
 
@@ -371,15 +371,19 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
     def __init__(
         self,
         model_path: Optional[str] = None,
-        vram_requirement: int = 11776,  # 12GB VRAM
+        vram_requirement: Optional[int] = None
         trellis_root: Optional[str] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         # Set default paths
         if model_path is None:
-            model_path = os.path.join(os.getcwd(), "pretrained", "TRELLIS")
+            model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS")
 
         if trellis_root is None:
-            trellis_root = os.path.join(os.getcwd(), "thirdparty", "TRELLIS")
+            trellis_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS")
 
         super().__init__(
             model_id=self.MODEL_ID,
@@ -715,7 +719,6 @@ class TrellisTextToTexturedMeshAdapter(TrellisTextToMeshAdapterCommon):
     MODEL_ID = "trellis_text_to_textured_mesh"
 
     def __init__(self, *args, **kwargs):
-        kwargs["vram_requirement"] = 11776  # 12GB VRAM
         super().__init__(*args, **kwargs)
         self.supported_output_formats = ["obj", "glb"]
         self.skip_models = [
@@ -734,7 +737,6 @@ class TrellisTextMeshPaintingAdapter(TrellisTextToMeshAdapterCommon):
     MODEL_ID = "trellis_text_mesh_painting"
 
     def __init__(self, *args, **kwargs):
-        kwargs["vram_requirement"] = 11776  # 12GB VRAM
         super().__init__(*args, **kwargs)
         self.supported_output_formats = ["obj", "glb"]
         self.skip_models = [
@@ -767,7 +769,6 @@ class TrellisImageToTexturedMeshAdapter(TrellisImageToMeshAdapterCommon):
     MODEL_ID = "trellis_image_to_textured_mesh"
 
     def __init__(self, *args, **kwargs):
-        kwargs["vram_requirement"] = 11776  # 12GB VRAM
         super().__init__(*args, **kwargs)
         self.skip_models = ["slat_decoder_rf"]
 
@@ -783,7 +784,6 @@ class TrellisImageToRawMeshAdapter(TrellisImageToMeshAdapterCommon):
     MODEL_ID = "trellis_image_to_raw_mesh"
 
     def __init__(self, *args, **kwargs):
-        kwargs["vram_requirement"] = 11776  # 12GB VRAM
         super().__init__(*args, **kwargs)
         self.skip_models = ["slat_decoder_rf"]
 
@@ -799,7 +799,6 @@ class TrellisImageMeshPaintingAdapter(TrellisImageToMeshAdapterCommon):
     MODEL_ID = "trellis_image_mesh_painting"
 
     def __init__(self, *args, **kwargs):
-        kwargs["vram_requirement"] = 12288  # 12GB VRAM
         super().__init__(*args, **kwargs)
         self.skip_models = [
             "sparse_structure_decoder",

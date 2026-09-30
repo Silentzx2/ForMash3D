@@ -195,6 +195,83 @@ export class PhysicsRuntime {
     return group;
   }
 
+
+  /**
+   * Lightweight viewport-only rigid-body smoke test for ordinary loaded meshes.
+   * Uses an approximate bounds collider and never writes physics metadata.
+   */
+  async initQuickTest(
+    scene: THREE.Scene,
+    sourceVisual: THREE.Object3D,
+    config: PhysicsRuntimeConfig,
+  ): Promise<void> {
+    this.dispose();
+    this.scene = scene;
+    this.sourceVisual = sourceVisual;
+
+    const rapier = await import('@dimforge/rapier3d-compat');
+    await rapier.init();
+    this.rapier = rapier;
+
+    const gravity = config.gravityEnabled ? { x: 0, y: -9.81, z: 0 } : { x: 0, y: 0, z: 0 };
+    this.world = new rapier.World(gravity);
+
+    sourceVisual.updateMatrixWorld(true);
+    const sourceBox = new THREE.Box3().setFromObject(sourceVisual);
+    const size = sourceBox.getSize(new THREE.Vector3());
+    const center = sourceBox.getCenter(new THREE.Vector3());
+    const bodyPosition = sourceVisual.getWorldPosition(new THREE.Vector3());
+    const bodyQuaternion = sourceVisual.getWorldQuaternion(new THREE.Quaternion()).normalize();
+    const localCenter = center.clone().sub(bodyPosition).applyQuaternion(bodyQuaternion.clone().invert());
+
+    const floorY = sourceBox.min.y - 0.02;
+    const floorDesc = rapier.ColliderDesc.cuboid(Math.max(5, size.x * 4), 0.05, Math.max(5, size.z * 4));
+    floorDesc.setTranslation(center.x, floorY, center.z);
+    this.floor = this.world.createCollider(floorDesc);
+
+    const bodyDesc = config.bodyType === 'static'
+      ? rapier.RigidBodyDesc.fixed()
+      : config.bodyType === 'kinematic'
+      ? rapier.RigidBodyDesc.kinematicPositionBased()
+      : rapier.RigidBodyDesc.dynamic();
+
+    bodyDesc
+      .setTranslation(bodyPosition.x, bodyPosition.y, bodyPosition.z)
+      .setRotation({ x: bodyQuaternion.x, y: bodyQuaternion.y, z: bodyQuaternion.z, w: bodyQuaternion.w })
+      .setLinearDamping(Math.max(0, config.linearDamping))
+      .setAngularDamping(Math.max(0, config.angularDamping));
+
+    if (config.bodyType !== 'static') bodyDesc.setAdditionalMass(Math.max(0.01, config.massKg));
+
+    const body = this.world.createRigidBody(bodyDesc);
+    const collider = rapier.ColliderDesc.cuboid(
+      Math.max(0.02, size.x * 0.5),
+      Math.max(0.02, size.y * 0.5),
+      Math.max(0.02, size.z * 0.5),
+    );
+    collider
+      .setTranslation(localCenter.x, localCenter.y, localCenter.z)
+      .setDensity(0)
+      .setFriction(Math.max(0, Math.min(2, config.friction)))
+      .setRestitution(Math.max(0, Math.min(1, config.restitution)));
+    this.world.createCollider(collider, body);
+
+    const debug = new THREE.Group();
+    debug.add(new THREE.Box3Helper(sourceBox, 0xffcc00));
+    scene.add(debug);
+
+    this.bodies.push({
+      body,
+      visual: sourceVisual,
+      debug,
+      initialPosition: bodyPosition.clone(),
+      initialQuaternion: bodyQuaternion.clone(),
+    });
+
+    sourceVisual.userData.physicsRuntime = true;
+    this.initialized = true;
+    this.setDebugVisibility(false);
+  }
   setRunning(value: boolean): void {
     this.running = value;
   }

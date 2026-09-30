@@ -11,7 +11,9 @@ import {
   AlertTriangle,
   Plus,
   ChevronDown,
+  ChevronUp,
   Check,
+  Settings2,
   Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -99,10 +101,14 @@ interface DiscoveredModel {
   supports_flashvdm?: boolean;
 }
 
-function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
+function formatGenerateModel(
+  id: string,
+  isAvailable = true,
+  detail?: { status?: string; vram_requirement?: number; capabilities?: Record<string, boolean> }
+): DiscoveredModel {
   const def = getModelDefinition(id);
   const isTextured = def?.supportsTexture ?? id.includes('textured');
-  const vram = def?.vramMb || 11776;
+  const vram = detail?.vram_requirement ?? def?.vramMb ?? 11776;
   const isTrellis = id.includes('trellis');
   const isHunyuan = id.includes('hunyuan');
   const supportsFlashVDM = def?.supportsFlashVDM ?? id.includes('dit_v2_mini_turbo');
@@ -124,12 +130,12 @@ function formatGenerateModel(id: string, isAvailable = true): DiscoveredModel {
     label: cleanLabel,
     available: isAvailable,
     installed: isAvailable,
-    status: isAvailable ? 'ready' : 'uninstalled',
+    status: detail?.status || (isAvailable ? 'ready' : 'uninstalled'),
     vram_required_mb: vram,
     low_vram_supported: def?.lowVramSupported ?? (isTrellis || isHunyuan),
     low_vram_required_mb: def?.lowVramMb ?? ((isTrellis || isHunyuan) ? 6144 : undefined),
-    supports_texture: isTextured,
-    supports: { texture_generation: isTextured },
+    supports_texture: detail?.capabilities?.texture_generation ?? isTextured,
+    supports: { texture_generation: detail?.capabilities?.texture_generation ?? isTextured },
     shape_vram_mb: Math.round(vram * 0.6),
     texture_vram_mb: vram,
     supports_flashvdm: supportsFlashVDM,
@@ -149,7 +155,16 @@ export const GeneratePanel: React.FC = () => {
   const currentMode = generationSettings.mode || 'image-to-3d';
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
   const [weightsStatus, setWeightsStatus] = useState<Record<string, boolean>>({});
+  const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
   const [optionsLoading, setOptionsLoading] = useState(false);
+  const pendingGenerateRef = useRef(false);
+  const ownedBlobUrlsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!pendingGenerateRef.current) return;
+    pendingGenerateRef.current = false;
+    void generate3DModel('image-to-3d');
+  }, [generationSettings, generate3DModel]);
 
   useEffect(() => {
     let active = true;
@@ -161,6 +176,9 @@ export const GeneratePanel: React.FC = () => {
         }
         if ((data as any)?.weights_status) {
           setWeightsStatus((data as any).weights_status);
+        }
+        if ((data as any)?.model_details) {
+          setModelDetails((data as any).model_details);
         }
       }
     }).catch(err => {
@@ -191,20 +209,23 @@ export const GeneratePanel: React.FC = () => {
       ids = combined.length > 0 ? combined : defaults;
     }
 
-    // Only show models whose weights are verified available on disk or on-demand downloadable
+    // Select only models that the backend currently reports as ready.
+    // This prevents a CPU-only/missing-weight machine from presenting unusable models.
+    if (modelDetails && Object.keys(modelDetails).length > 0) {
+      return ids.filter(id => modelDetails[id]?.status === 'ready');
+    }
     if (weightsStatus && Object.keys(weightsStatus).length > 0) {
-      const availableOnly = ids.filter(id => weightsStatus[id] === true);
-      if (availableOnly.length > 0) return availableOnly;
+      return ids.filter(id => weightsStatus[id] === true);
     }
     return ids;
-  }, [modelRegistry, currentMode, weightsStatus]);
+  }, [modelRegistry, currentMode, weightsStatus, modelDetails]);
 
   const meshCapableModels = useMemo(() => {
-    return relevantModelIds.map(id => formatGenerateModel(id, weightsStatus[id] !== false));
-  }, [relevantModelIds, weightsStatus]);
+    return relevantModelIds.map(id =>
+      formatGenerateModel(id, weightsStatus[id] !== false, modelDetails[id])
+    );
+  }, [relevantModelIds, weightsStatus, modelDetails]);
 
-  const gpuAvailable = true;
-  const freeVramMb = 24 * 1024;
   const providersList = meshCapableModels;
 
   // Auto-correct selected model if it does not belong to the current mode / mesh generation
@@ -240,6 +261,7 @@ export const GeneratePanel: React.FC = () => {
 
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
 
   useEffect(() => {
     if (!modelDropdownOpen) return;
@@ -305,6 +327,24 @@ export const GeneratePanel: React.FC = () => {
   const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
 
   const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
+
+  const ownBlobUrl = useCallback((url: string) => {
+    ownedBlobUrlsRef.current.add(url);
+    return url;
+  }, []);
+
+  const revokeOwnedBlobUrl = useCallback((url?: string | null) => {
+    if (!url || !ownedBlobUrlsRef.current.has(url)) return;
+    URL.revokeObjectURL(url);
+    ownedBlobUrlsRef.current.delete(url);
+  }, []);
+
+  useEffect(() => () => {
+    for (const url of ownedBlobUrlsRef.current) {
+      URL.revokeObjectURL(url);
+    }
+    ownedBlobUrlsRef.current.clear();
+  }, []);
   const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
   const processImageFile = async (file: File) => {
@@ -331,7 +371,7 @@ export const GeneratePanel: React.FC = () => {
       );
       finishUpload();
       if (!res.file_id) throw new Error('Backend did not return a file ID for the uploaded image.');
-      const previewUrl = URL.createObjectURL(file);
+      const previewUrl = ownBlobUrl(URL.createObjectURL(file));
       const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       setGenerationSettings(prev => ({
         ...prev,
@@ -468,11 +508,19 @@ export const GeneratePanel: React.FC = () => {
       (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
     );
     if (!hasImage) {
-      setNoticeMessage('Please upload a reference image or select a multiview set.');
+      setNoticeMessage('Please upload a reference image first.');
       setTimeout(() => setNoticeMessage(null), 4000);
       return;
     }
-    // Guarantee top quality settings automatically
+    const multiviewCount = Object.values(generationSettings.multiviewImages || {}).filter(Boolean).length;
+    if (subAction === 'crop' || multiviewCount > 1) {
+      setNoticeMessage('The current backend generation contract is single-image. Use the Single Image tab; collected multiview files are not sent as a multi-view request.');
+      setTimeout(() => setNoticeMessage(null), 5000);
+      return;
+    }
+    // Commit the request settings first; the effect above submits only after React
+    // has installed this exact snapshot, avoiding stale-state generation requests.
+    pendingGenerateRef.current = true;
     setGenerationSettings(prev => ({
       ...prev,
       generateTexture: prev.generateTexture !== false,
@@ -485,11 +533,10 @@ export const GeneratePanel: React.FC = () => {
         preserveDetails: 85,
       },
     }));
-    generate3DModel('image-to-3d');
   };
 
   return (
-    <div id="panel-generate-model" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden">
+    <div id="panel-generate-model" className="relative flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden">
       {/* Panel Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
@@ -550,12 +597,12 @@ export const GeneratePanel: React.FC = () => {
                   {
                     id: 'crop',
                     domId: 'subaction-btn-crop',
-                    label: 'Multiview Set',
-                    tooltip: 'Multiview Perspective Angles (Front, Right, Back, Left)',
+                    label: 'Multiview (Unavailable)',
+                    tooltip: 'Multiview is disabled until a model-specific backend contract is available.',
                     icon: Box,
                     onClick: () => {
-                      setSubAction('crop');
-                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
+                      setNoticeMessage('Multiview is disabled until the backend exposes a real multi-view generation contract.');
+                      setTimeout(() => setNoticeMessage(null), 5000);
                     },
                   },
                 ].map((tab) => {
@@ -567,6 +614,7 @@ export const GeneratePanel: React.FC = () => {
                         id={tab.domId}
                         type="button"
                         onClick={tab.onClick}
+                        disabled={tab.id === 'crop'}
                         className={`relative w-full py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95 z-10 ${
                           active ? 'text-primary font-bold' : 'text-zinc-400 hover:text-zinc-200'
                         }`}
@@ -667,6 +715,7 @@ export const GeneratePanel: React.FC = () => {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
+                            revokeOwnedBlobUrl(generationSettings.image);
                             setGenerationSettings(prev => ({ ...prev, image: null, imageName: undefined, mode: 'image-to-3d' }));
                           }}
                           className="text-rose-400 hover:underline cursor-pointer font-medium"
@@ -808,6 +857,8 @@ export const GeneratePanel: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => {
+                            for (const value of Object.values(generationSettings.multiviewImages || {})) revokeOwnedBlobUrl(value || undefined);
+                            revokeOwnedBlobUrl(generationSettings.image);
                             setGenerationSettings(prev => ({
                               ...prev,
                               multiviewImages: undefined,
@@ -1015,6 +1066,63 @@ export const GeneratePanel: React.FC = () => {
             </div>
 
 
+            {/* Advanced generation controls are opt-in so the main workflow stays compact. */}
+            <button
+              type="button"
+              onClick={() => setAdvancedSettingsOpen(true)}
+              className="w-full rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 text-left hover:border-primary/40 hover:bg-[hsl(var(--surface-2))] transition-all cursor-pointer"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                    <Settings2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-white">Advanced Generation</div>
+                    <div className="text-[9px] text-zinc-400 truncate">
+                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 60000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
+                    </div>
+                  </div>
+                </div>
+                <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+              </div>
+            </button>
+          </div>
+        </div>
+
+      <AnimatePresence>
+        {advancedSettingsOpen && (
+          <motion.div
+            className="absolute inset-0 z-40 pointer-events-none"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+              className="absolute inset-y-0 right-0 w-full max-w-[380px] bg-[hsl(var(--surface-1))] border-l border-white/[0.1] shadow-2xl flex flex-col pointer-events-auto"
+            >
+              <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Settings2 className="w-4 h-4 text-primary shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white">Advanced Generation</div>
+                    <div className="text-[9px] text-zinc-500 truncate">Physics, quality budget and topology</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAdvancedSettingsOpen(false)}
+                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
+                  aria-label="Close advanced generation settings"
+                >
+                  <ChevronUp className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
             {/* Physics Preparation */}
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
@@ -1244,9 +1352,22 @@ export const GeneratePanel: React.FC = () => {
                   </button>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
+              </div>
+              </div>
+              <div className="p-2.5 border-t border-white/[0.08] shrink-0 bg-[hsl(var(--surface-1))]">
+                <button
+                  type="button"
+                  onClick={() => setAdvancedSettingsOpen(false)}
+                  className="w-full h-9 rounded-xl bg-primary text-black text-[10px] font-black tracking-wide hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  APPLY & CLOSE
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Bottom Sticky Action Footer */}
       <div className="p-2.5 border-t border-white/[0.08] bg-[hsl(var(--surface-1))] relative z-20 flex-shrink-0 space-y-2 overflow-x-hidden">
@@ -1274,7 +1395,7 @@ export const GeneratePanel: React.FC = () => {
         <ShimmerButton
           id="btn-generate-model-action"
           onClick={handleGenerate}
-          disabled={isExecuting}
+          disabled={false}
           shimmerColor="hsl(var(--neon-amber))"
           shimmerSize="0.1em"
           shimmerDuration="2.5s"
@@ -1298,7 +1419,7 @@ export const GeneratePanel: React.FC = () => {
           ) : (
             <>
               <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="tracking-wider">GENERATE 3D MODEL</span>
+              <span className="tracking-wider">{isExecuting ? 'GENERATE ANOTHER' : 'GENERATE 3D MODEL'}</span>
             </>
           )}
         </ShimmerButton>

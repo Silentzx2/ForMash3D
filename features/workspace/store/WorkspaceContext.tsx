@@ -16,6 +16,7 @@ import {
   normalizeModelAsset,
 } from '../types';
 import { apiClient } from '../lib/api';
+import { getApiClient } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
 import { useViewerStore, loadModelInViewer } from '@/stores/useViewerStore';
 import { prefetchGLB } from '../lib/glbCache';
@@ -83,6 +84,7 @@ interface WorkspaceContextType {
   rightPanelWidth: number;
   setRightPanelWidth: (width: number) => void;
   activeTask: ActiveTask | null;
+  jobsById: Record<string, ActiveTask>;
   dismissActiveTask: () => void;
   isExecuting: boolean;
   executionProgress: number;
@@ -158,8 +160,13 @@ function toProxyUrl(url: unknown): string | undefined {
 interface BackendJobPayload {
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
   progress?: number;
+  stage?: string;
+  message?: string;
+  logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
+  metadata?: { logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[] };
   result?: Record<string, any>;
   error?: string | null;
+  error_code?: string;
 }
 
 function normalizeBackendJob(raw: BackendJobPayload) {
@@ -167,10 +174,15 @@ function normalizeBackendJob(raw: BackendJobPayload) {
   return {
     status: raw.status,
     progress: Math.max(0, Math.min(100, Math.round(Number(raw.progress ?? 0) * 100))),
-    stage: raw.status as string,
-    message: raw.status === 'processing' ? 'Processing' : raw.status === 'queued' ? 'Queued' : undefined,
+    stage: raw.stage || raw.status,
+    message: raw.message || (raw.status === 'processing' ? 'Processing' : raw.status === 'queued' ? 'Queued' : undefined),
     error_message: typeof raw.error === 'string' ? raw.error : undefined,
-    logs: undefined as { stage: string; progress: number; message: string; level: string; timestamp: string }[] | undefined,
+    error_code: raw.error_code,
+    logs: Array.isArray(raw.logs)
+      ? raw.logs
+      : Array.isArray(raw.metadata?.logs)
+        ? raw.metadata.logs
+        : undefined,
     result: modelUrl ? {
       ...raw.result,
       model_url: modelUrl,
@@ -408,6 +420,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [executionProgress, setExecutionProgress] = useState(0);
   const [executionStep, setExecutionStep] = useState('');
   const [activeTask, setActiveTask] = useState<ActiveTask | null>(null);
+  const [jobsById, setJobsById] = useState<Record<string, ActiveTask>>({});
+  const jobsByIdRef = useRef(jobsById);
+  jobsByIdRef.current = jobsById;
   const activeTaskRef = useRef<ActiveTask | null>(activeTask);
   activeTaskRef.current = activeTask;
 
@@ -478,6 +493,18 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     showAxes: false,
     showStats: true,
   });
+
+  const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    getApiClient().getAvailableModels().then(data => {
+      if ((data as any)?.model_details) {
+        setModelDetails((data as any).model_details);
+      }
+    }).catch(err => {
+      console.warn('Failed to load model details:', err);
+    });
+  }, []);
 
   const currentAsset = useMemo(
     () => selectedAssetId ? (assets.find(a => a.id === selectedAssetId) ?? null) : null,
@@ -702,14 +729,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!jobId) return;
 
     try {
-      const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
-      if (!res.ok) throw await parseApiError(res);
-      const data = await parseApiData<{ status?: string }>(res);
-      if (data.status === 'cancelled' || data.status === 'deleted') {
+      const data = await getApiClient().cancelGenerationJob(jobId);
+      if (data.cancelled || data.status === 'cancelled') {
         setIsExecuting(false);
         setExecutionProgress(0);
         setExecutionStep('Execution cancelled');
-        setActiveTask(prev => prev ? { ...prev, status: 'interrupted', currentStep: 'Execution cancelled' } : null);
+        setActiveTask(prev => prev ? {
+          ...prev,
+          status: 'interrupted',
+          currentStep: 'Execution cancelled',
+          stage: 'cancelled',
+        } : null);
+      } else {
+        const message = data.message || 'Job is already running and cannot be cancelled safely.';
+        setExecutionStep(message);
+        toast.info('Generation is already running', { description: message });
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to cancel generation job';
@@ -719,11 +753,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [activeTask?.id]);
 
   const startTask = useCallback((type: ActiveTask['type'], title: string, promptId?: string, provider?: string, inputImage?: string, inputImageName?: string) => {
-    setIsExecuting(true);
-    setExecutionProgress(0);
-    setExecutionStep('Queued');
-    setActiveTask({
-      id: promptId ?? `task-${type}-${Date.now()}`,
+    const taskId = promptId ?? crypto.randomUUID();
+    const task: ActiveTask = {
+      id: taskId,
       type,
       title,
       startedAt: Date.now(),
@@ -733,7 +765,26 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       provider,
       inputImage,
       inputImageName,
+    };
+    setIsExecuting(true);
+    setExecutionProgress(0);
+    setExecutionStep('Queued');
+    setActiveTask(task);
+    setJobsById(prev => ({ ...prev, [taskId]: task }));
+    return taskId;
+  }, []);
+
+  const bindBackendJob = useCallback((localTaskId: string, jobId: string, updates: Partial<ActiveTask> = {}) => {
+    setJobsById(prev => {
+      const task = prev[localTaskId] || activeTaskRef.current;
+      if (!task) return prev;
+      const next = { ...task, ...updates, id: jobId };
+      const copy = { ...prev };
+      delete copy[localTaskId];
+      copy[jobId] = next;
+      return copy;
     });
+    setActiveTask(prev => prev && prev.id === localTaskId ? { ...prev, ...updates, id: jobId } : prev);
   }, []);
 
   const generateImageTo3D = useCallback(async (customImage?: string) => {
@@ -749,7 +800,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const imageFileName = generationSettings.imageName
       || (imageToUse ? decodeURIComponent(imageToUse.split('/').pop()?.replace(/\?.*$/, '') || '') : '')
       || modelPrompt;
-    startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName);
+    const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName);
 
     const currentQuality = generationSettings.meshQuality || 'high';
     // Studio Ultra-HD pipeline: auto-tune to high-resolution voxel grid and diffusion steps
@@ -759,15 +810,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     try {
       // Route dynamically: raw models (Hunyuan3D Raw, PartPacker, UltraShape) must go to image-to-raw-mesh
-      const isRawModel = [
-        'hunyuan3d_shape_v21_image_to_raw_mesh',
-        'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-        'partpacker_image_to_raw_mesh',
-        'ultrashape_image_to_raw_mesh',
-      ].includes(generationSettings.aiModel || '') || Boolean(generationSettings.aiModel?.includes('raw_mesh'));
-
+      const selectedModel = modelDetails[generationSettings.aiModel || ''];
+      const capabilities = selectedModel?.capabilities || {};
+      const isRawModel = capabilities.raw_mesh === true;
       const isTextured = !isRawModel && generationSettings.generateTexture !== false;
-      const isPaintModel = generationSettings.aiModel?.includes('shape_v21') || generationSettings.aiModel?.includes('dit_v2_mini_turbo') || generationSettings.aiModel?.includes('paint_v21') || false;
+      const isPaintModel = capabilities.paint_autochain === true;
       const endpoint = isTextured
         ? '/api/v1/mesh-generation/image-to-textured-mesh'
         : '/api/v1/mesh-generation/image-to-raw-mesh';
@@ -859,7 +906,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string; status?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a generation job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, inputImage: imageToUse, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { inputImage: imageToUse, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Generation queued on backend');
 
       // Shape → Paint automatic chaining: after Shape mesh is generated,
@@ -933,7 +980,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         toast.error('Prompt required', { description: 'Please enter a text prompt to generate a 3D model.' });
         return;
       }
-      startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
+      const localTaskId = startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
 
       const currentQuality = generationSettings.meshQuality || 'high';
       const octreeRes = currentQuality === 'ultra' ? 640 : 512;
@@ -950,6 +997,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           throw new Error('Text-to-raw mesh generation is not available. No text-to-raw model is registered in the backend.');
         }
         const endpoint = '/api/v1/mesh-generation/text-to-textured-mesh';
+
+        const batchItems = appStore.batchGenerationEnabled
+          ? appStore.batchQueue.filter(item => item.prompt?.trim())
+          : [];
 
         const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 60000;
         const modelParameters: Record<string, unknown> = {
@@ -979,6 +1030,58 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           compress_output: true,
         };
 
+        if (batchItems.length > 0) {
+          const batchResponse = await fetch('/api/v1/mesh-generation/text-to-textured-mesh/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: batchItems.map(item => ({
+                text_prompt: item.prompt,
+                negative_prompt: item.negativePrompt,
+                model_preference: generationSettings.aiModel,
+                texture_prompt: item.prompt,
+                texture_resolution: currentQuality === 'ultra' ? 4096 : 2048,
+                model_parameters: modelParameters,
+              })),
+              max_parallel: 2,
+            }),
+          });
+          if (!batchResponse.ok) throw await parseApiError(batchResponse);
+
+          const batchData = await parseApiData<{ batch_id: string; job_ids: string[] }>(batchResponse);
+          if (!Array.isArray(batchData.job_ids) || batchData.job_ids.length === 0) {
+            throw new Error('Backend did not return any batch job IDs');
+          }
+
+          const [firstJobId, ...otherJobIds] = batchData.job_ids;
+          bindBackendJob(localTaskId, firstJobId, {
+            status: 'queued',
+            currentStep: 'Batch queued on backend',
+          });
+
+          if (otherJobIds.length > 0) {
+            setJobsById(prev => {
+              const next = { ...prev };
+              otherJobIds.forEach((jobId, index) => {
+                next[jobId] = {
+                  id: jobId,
+                  type: 'text-to-3d',
+                  title: batchItems[index + 1]?.prompt || ('Batch item ' + (index + 2)),
+                  startedAt: Date.now(),
+                  status: 'queued',
+                  progress: 0,
+                  currentStep: 'Batch queued on backend',
+                  provider: generationSettings.aiModel,
+                };
+              });
+              return next;
+            });
+          }
+
+          appStore.clearBatchQueue();
+          setExecutionStep('Batch queued: ' + batchData.job_ids.length + ' jobs');
+          return;
+        }
         const body: Record<string, unknown> = {
           text_prompt: modelPrompt,
           output_format: 'glb',
@@ -1055,12 +1158,17 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings.lowVramMode,
     generationSettings.maxNumView,
     generationSettings.resolution,
+    modelDetails,
     startTask,
     generateImageTo3D,
+    bindBackendJob,
+    appStore.batchGenerationEnabled,
+    appStore.batchQueue,
+    appStore.clearBatchQueue,
   ]);
 
   const runRemeshGeneration = useCallback(async () => {
-    startTask('remesh', 'Remesh / topology optimization');
+    const localTaskId = startTask('remesh', 'Remesh / topology optimization');
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1088,7 +1196,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a remesh job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Remesh queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Remesh submission failed';
@@ -1100,7 +1208,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [remeshSettings, currentAsset, startTask]);
 
   const runTextureGeneration = useCallback(async () => {
-    startTask('texture', 'Texture generation', undefined, textureSettings.modelId);
+    const localTaskId = startTask('texture', 'Texture generation', undefined, textureSettings.modelId);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1165,7 +1273,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a texture job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Texture generation queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Texture generation submission failed';
@@ -1184,7 +1292,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
    }, [textureSettings, currentAsset, startTask]);
 
    const runPaintAutoChaining = useCallback(async (shapeMeshFileId?: string) => {
-     startTask('texture', 'Paint-v2-1 Texturing', undefined, 'hunyuan3d_paint_v21_image_mesh_painting');
+     const localTaskId = startTask('texture', 'Paint-v2-1 Texturing', undefined, 'hunyuan3d_paint_v21_image_mesh_painting');
      try {
        if (!shapeMeshFileId) {
          throw new Error('Generated mesh file ID is missing; cannot start Paint-v2-1.');
@@ -1225,7 +1333,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const data = await parseApiData<{ job_id?: string; id?: string }>(res);
         const jobId = data.job_id ?? data.id;
         if (!jobId) throw new Error('Backend did not return a texture job ID');
-        setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+        bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
         setExecutionStep('Paint-v2-1 texturing queued on backend');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Paint auto-chaining failed';
@@ -1236,8 +1344,66 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.imageFileId, generationSettings.generateTexture, generationSettings.generatePBR, generationSettings.generateCollision, generationSettings.physics, startTask]);
 
   useEffect(() => {
+    let stopped = false;
+    let timer: number | null = null;
+
+    const pollOtherJobs = async () => {
+      const activeId = activeTaskRef.current?.id;
+      const ids = Object.keys(jobsByIdRef.current).filter((id) => {
+        const task = jobsByIdRef.current[id];
+        return id !== activeId &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) &&
+          task.status !== 'completed' &&
+          task.status !== 'failed' &&
+          task.status !== 'interrupted';
+      });
+      await Promise.all(ids.map(async (id) => {
+        try {
+          const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' });
+          if (!res.ok) return;
+          const data = normalizeBackendJob(await res.json());
+          const status: ActiveTask['status'] =
+            data.status === 'processing' ? 'running' :
+            data.status === 'completed' ? 'completed' :
+            data.status === 'failed' ? 'failed' :
+            data.status === 'cancelled' ? 'interrupted' : 'queued';
+          setJobsById(prev => {
+            const task = prev[id];
+            return task ? {
+              ...prev,
+              [id]: {
+                ...task,
+                status,
+                progress: data.progress,
+                currentStep: data.message || data.stage || task.currentStep,
+                stage: data.stage || task.stage,
+                logs: data.logs || task.logs,
+                errorMessage: data.error_message || task.errorMessage,
+                errorCode: (data as any).error_code || task.errorCode,
+                result: data.result || task.result,
+              },
+            } : prev;
+          });
+        } catch {
+          // Active-job polling is the authoritative UI path; secondary polling is best-effort.
+        }
+      }));
+      if (!stopped) timer = window.setTimeout(() => void pollOtherJobs(), 1500);
+    };
+
+    void pollOtherJobs();
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [activeTask?.id]);
+
+  useEffect(() => {
     const task = activeTaskRef.current;
-    if (!task || task.status === 'completed' || task.status === 'failed' || task.status === 'interrupted') return;
+    if (!task) return;
+    const postprocessStatus = (task.result as any)?.postprocess_status;
+    const terminalButStillPostprocessing = task.status === 'completed' && (postprocessStatus === 'pending' || postprocessStatus === 'running');
+    if ((task.status === 'completed' && !terminalButStillPostprocessing) || task.status === 'failed' || task.status === 'interrupted') return;
     const jobId = task.id;
     const isBackendJob = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId);
     if (!isBackendJob) return;
@@ -1267,38 +1433,107 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const result = data.result;
 
         const progress = Math.max(0, Math.min(100, Number(data.progress ?? 0)));
-        setExecutionProgress(progress);
+        const startedAt = activeTaskRef.current?.startedAt;
+        const elapsedSec = startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
+        const etaSec = progress > 1 && progress < 99 && elapsedSec > 2
+          ? Math.max(1, Math.round(elapsedSec * ((100 - progress) / progress)))
+          : undefined;
         const currentMsg = data.message || data.stage || 'Processing';
+        setExecutionProgress(progress);
         setExecutionStep(currentMsg);
         setActiveTask(prev => prev ? {
           ...prev,
           progress,
           currentStep: currentMsg,
+          result: data.result || prev.result,
+          errorCode: (data as any).error_code || prev.errorCode,
           stage: data.stage || prev.stage,
+          estimatedRemainingSec: etaSec,
           logs: data.logs || prev.logs,
         } : null);
 
         if (data.status === 'completed') {
+          const alreadyMarkedCompleted = activeTaskRef.current?.status === 'completed';
+          const priorPostprocessStatus = (activeTaskRef.current?.result as any)?.postprocess_status;
+          const currentPostprocessStatus = data.result?.postprocess_status;
+          const postprocessPending = currentPostprocessStatus === 'pending' || currentPostprocessStatus === 'running';
+          const postprocessFailed =
+            currentPostprocessStatus === 'failed' && priorPostprocessStatus !== 'failed';
+          const postprocessJustCompleted =
+            currentPostprocessStatus === 'completed' && priorPostprocessStatus !== 'completed';
+          const shouldHydrateAsset = !alreadyMarkedCompleted || postprocessJustCompleted;
+
           setIsExecuting(false);
           setExecutionProgress(100);
-          setExecutionStep('Completed');
-          setActiveTask(prev => prev ? { ...prev, status: 'completed', progress: 100, currentStep: 'Completed', logs: data.logs || prev.logs } : null);
-          let modelUrl: string | undefined;
-          let cleanName: string | undefined;
-          if (result?.model_url || result?.active_model_url) {
-            const currentLatestTask = activeTaskRef.current || task;
-            modelUrl = (result.active_model_url || result.model_url) as string;
-            const promptTitle = currentLatestTask.title && currentLatestTask.title !== 'Image-to-3D generation' && currentLatestTask.title !== 'generate' ? currentLatestTask.title : null;
-            const rawName = promptTitle || currentLatestTask.inputImageName || (currentLatestTask.inputImage ? currentLatestTask.inputImage.split('/').pop()?.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : null) || `Model_${jobId.slice(0, 6)}`;
-            cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+          setExecutionStep(
+            postprocessPending
+              ? 'Raw result ready; finishing production post-processing'
+              : postprocessFailed
+                ? 'Production post-processing failed; raw result retained'
+                : 'Completed'
+          );
+          setActiveTask(prev => prev ? {
+            ...prev,
+            status: 'completed',
+            progress: 100,
+            currentStep: postprocessPending
+              ? 'Raw result ready; finishing production post-processing'
+              : postprocessFailed
+                ? 'Production post-processing failed; raw result retained'
+                : 'Completed',
+            logs: data.logs || prev.logs,
+            result: data.result || prev.result,
+            errorCode: (data as any).error_code || prev.errorCode,
+          } : null);
 
-            // Pre-fetch the model arrayBuffer immediately into in-memory cache
+          if (shouldHydrateAsset && (result?.model_url || result?.active_model_url)) {
+            const currentLatestTask = activeTaskRef.current || task;
+            const modelUrl = (result.active_model_url || result.model_url) as string;
+            const promptTitle =
+              currentLatestTask.title &&
+              currentLatestTask.title !== 'Image-to-3D generation' &&
+              currentLatestTask.title !== 'generate'
+                ? currentLatestTask.title
+                : null;
+            const rawName =
+              promptTitle ||
+              currentLatestTask.inputImageName ||
+              (currentLatestTask.inputImage
+                ? currentLatestTask.inputImage
+                    .split('/')
+                    .pop()
+                    ?.replace(/\.[^/.]+$/, '')
+                    .replace(/[-_]/g, ' ')
+                : null) ||
+              `Model_${jobId.slice(0, 6)}`;
+            const cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+
             void prefetchGLB(modelUrl);
 
             const qaReport = (result as any).qa_report;
-            const qaScore = qaReport?.game_ready_score ?? (qaReport?.score ? Math.round(qaReport.score * 100) : undefined);
-            const qaStatus = qaReport?.status ?? (qaScore !== undefined ? (qaScore >= 80 ? 'pass' : qaScore >= 50 ? 'warn' : 'fail') : undefined);
-            const qaWarnings = qaReport?.warnings ?? [];
+            const qaScore =
+              typeof qaReport?.score === 'number'
+                ? Math.round(qaReport.score)
+                : typeof qaReport?.game_ready_score === 'number'
+                  ? Math.round(qaReport.game_ready_score)
+                  : undefined;
+            const qaStatus =
+              qaReport?.status ??
+              (qaScore !== undefined
+                ? qaScore >= 80
+                  ? 'pass'
+                  : qaScore >= 60
+                    ? 'warn'
+                    : 'fail'
+                : undefined);
+            const qaWarnings =
+              qaReport?.warnings ??
+              (Array.isArray(qaReport?.checks)
+                ? qaReport.checks
+                    .filter((check: any) => check?.status === 'warn' || check?.status === 'fail')
+                    .map((check: any) => check?.detail || check?.label)
+                    .filter(Boolean)
+                : []);
 
             const outputAsset = normalizeModelAsset({
               id: jobId,
@@ -1319,7 +1554,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
               objectCount: result.object_count,
               componentCount: result.component_count,
               materialCount: result.material_count,
-              meshDetails: result.mesh_details,
+              meshDetails: (result.mesh_details || result.segmentation_info)
+                ? {
+                    ...(result.mesh_details || {}),
+                    ...(result.segmentation_info
+                      ? { segmentation_info: result.segmentation_info }
+                      : {}),
+                  }
+                : undefined,
               postprocessStatus: result.postprocess_status || data.status,
               dateCreated: new Date().toISOString().split('T')[0],
               tags: ['AI Generated'],
@@ -1346,21 +1588,46 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             setViewportResetTrigger(prev => prev + 1);
             loadModelInViewer(modelUrl, cleanName, outputAsset as any);
           }
-           toast.success('Generation complete', { description: 'The 3D model is ready and loaded in the viewer.' });
 
-           // Shape → Paint automatic chaining
-           const latestTask = activeTaskRef.current || task;
-           if (
-             (latestTask?.provider?.includes('shape_v21') || latestTask?.provider?.includes('dit_v2_mini_turbo')) &&
-             generationSettings.generateTexture !== false
-           ) {
-             // Automatically trigger Paint-v2-1 texturing
-             void runPaintAutoChaining(
-               typeof data.result?.file_id === 'string' ? data.result.file_id : undefined,
-             );
-           }
-           return;
-         } else if (data.status === 'failed' || data.status === 'cancelled') {
+          if (!alreadyMarkedCompleted) {
+            if (postprocessFailed) {
+              toast.error(
+                'Production post-processing failed',
+                {
+                  description:
+                    (result as any)?.postprocess_error ||
+                    'The raw generated model is retained; production artifacts were not completed.',
+                }
+              );
+            } else {
+              toast.success(
+              'Generation complete',
+              {
+                description: postprocessPending
+                  ? 'The raw 3D model is ready; production processing is finishing in the background.'
+                  : 'The 3D model is ready and loaded in the viewer.',
+              }
+            );
+
+            const latestTask = activeTaskRef.current || task;
+              if (
+                modelDetails[latestTask?.provider || '']?.capabilities?.paint_autochain === true &&
+                generationSettings.generateTexture !== false
+              ) {
+                void runPaintAutoChaining(
+                  typeof data.result?.file_id === 'string'
+                    ? data.result.file_id
+                    : undefined
+                );
+              }
+            }
+          }
+
+          if (postprocessPending) {
+            scheduleNext(document.visibilityState === 'hidden' ? 2500 : 1200);
+          }
+          return;
+        } else if (data.status === 'failed' || data.status === 'cancelled') {
           const currentLatestTask = activeTaskRef.current || task;
           const message = data.error_message || data.message || (data.status === 'cancelled' ? 'Generation cancelled' : 'Generation failed');
           setIsExecuting(false);
@@ -1385,20 +1652,35 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           return;
         }
 
-        // Adaptive polling: 500ms when in active generation/texturing, 1000ms otherwise
-        const nextInterval = (progress >= 50 || data.stage === 'generating' || data.stage === 'texturing' || data.stage === 'optimizing') ? 500 : 1000;
-        scheduleNext(nextInterval);
+        // Keep telemetry responsive without creating a polling storm; pause aggressively while the tab is hidden.
+        if (document.visibilityState === 'hidden') {
+          scheduleNext(2500);
+        } else {
+          const fastStage = data.stage === 'generating' || data.stage === 'texturing';
+          const postStage = data.stage === 'postprocess' || data.stage === 'repair' || data.stage === 'optimize' ||
+            data.stage === 'uv' || data.stage === 'game_ready' || data.stage === 'lod' ||
+            data.stage === 'collision' || data.stage === 'qa';
+          const nextInterval = fastStage ? 700 : postStage ? 1100 : progress > 0 ? 1600 : 2200;
+          scheduleNext(nextInterval);
+        }
       } catch (error) {
         if (stopped) return;
         if (error instanceof Error) setExecutionStep(`Syncing job status… ${error.message}`);
-        scheduleNext(1500);
+        scheduleNext(document.visibilityState === 'hidden' ? 3000 : 1800);
       }
     };
 
+    const handleVisibilityChange = () => {
+      if (!stopped && document.visibilityState === 'visible') {
+        void poll();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     void poll();
     return () => {
       stopped = true;
       if (timerId) window.clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [activeTask?.id, activeTask?.status, addAsset, runPaintAutoChaining, generationSettings.generateTexture]);
 
@@ -1409,7 +1691,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     saveIndividualParts?: boolean;
     modelParameters?: Record<string, any>;
   }) => {
-    startTask('uv', 'UV Unwrapping (PartUV)');
+    const localTaskId = startTask('uv', 'UV Unwrapping (PartUV)');
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1444,7 +1726,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a UV unwrapping job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('UV unwrapping queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'UV unwrapping submission failed';
@@ -1464,7 +1746,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     modelPreference?: string;
   } | number) => {
     const pref = (typeof customSettings === 'object' && customSettings?.modelPreference) || 'partfield_mesh_segmentation';
-    startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`);
+    const localTaskId = startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1499,7 +1781,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return a segmentation job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Mesh segmentation queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Segmentation submission failed';
@@ -1521,7 +1803,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     targetImageBase64?: string;
     strength?: number;
   }) => {
-    startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)');
+    const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)');
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1575,7 +1857,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const data = await parseApiData<{ job_id?: string; id?: string }>(res);
       const jobId = data.job_id ?? data.id;
       if (!jobId) throw new Error('Backend did not return an editing job ID');
-      setActiveTask(prev => prev ? { ...prev, id: jobId, status: 'queued', currentStep: 'Queued on backend' } : prev);
+      bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Mesh editing queued on backend');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Mesh editing submission failed';
@@ -1685,9 +1967,9 @@ const queueWorkflow = useCallback(async (workflow: Record<string, unknown>, type
     refreshSystemStats]);
 
   const executionValue = useMemo(() => ({
-    activeTask, dismissActiveTask,
+    activeTask, jobsById, dismissActiveTask,
     isExecuting, executionProgress, executionStep, cancelExecution,
-  }), [activeTask, dismissActiveTask,
+  }), [activeTask, jobsById, dismissActiveTask,
     isExecuting, executionProgress, executionStep, cancelExecution]);
 
   const generationSettingsValue = useMemo(() => ({

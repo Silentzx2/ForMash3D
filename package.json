@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start -p 3000 -H 0.0.0.0",
     "lint": "eslint",
-    "test": "echo \"Error: no test specified\" && exit 0"
+    "test": "tsc --noEmit"
   },
   "packageManager": "bun",
   "engines": {

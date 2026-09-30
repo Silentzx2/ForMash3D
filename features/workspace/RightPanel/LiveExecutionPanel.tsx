@@ -52,6 +52,7 @@ export const LiveExecutionPanel: React.FC = () => {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [logsCopied, setLogsCopied] = useState(false);
   const [expandedStageId, setExpandedStageId] = useState<string | null>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const handleCopyLogs = async () => {
@@ -76,11 +77,15 @@ export const LiveExecutionPanel: React.FC = () => {
   }, [activeTask?.startedAt, isExecuting]);
 
   const logs = activeTask?.logs || [];
+  const latestLog = logs[logs.length - 1];
 
-  // Auto-scroll logs to bottom as they arrive
+  // Keep the console pinned only when the user is already near the bottom.
   useEffect(() => {
-    if (logs.length > 0) {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = logsContainerRef.current;
+    if (!container || logs.length === 0) return;
+    const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom < 96) {
+      container.scrollTop = container.scrollHeight;
     }
   }, [logs.length]);
 
@@ -106,29 +111,123 @@ export const LiveExecutionPanel: React.FC = () => {
   const modelName = activeTask?.provider || generationSettings.aiModel || 'Generative Engine';
   const progress = activeTask?.progress ?? 0;
   const stageName = (activeTask?.stage || '').toLowerCase();
-  const stepText = (activeTask?.currentStep || '').toLowerCase();
 
-  const getStepState = (stageKey: string): 'pending' | 'active' | 'completed' | 'failed' | 'skipped' => {
-    if (isCompleted || progress >= 100) return 'completed';
-    if (!isRunning && !activeTask) return 'pending';
-    if (isFailed) return 'failed';
-    return 'active';
-  };
 
   const isRemesh = activeTask?.type === 'remesh';
+  const stageNameMap: Record<string, string> = {
+    loading_model: 'synthesis',
+    generating: 'synthesis',
+    postprocess: 'master',
+    inspect: 'master',
+    repair: 'repair',
+    optimize: 'optimize',
+    uv: 'uv',
+    game_ready: 'game_ready',
+    fbx: 'game_ready',
+    lod: 'lod',
+    collision: 'collision',
+    preview: 'qa',
+    qa: 'qa',
+    completed: 'qa',
+    failed: 'qa',
+  };
 
-  const stages: PipelineStep[] = [
-    {
-      id: 'synthesis',
-      name: isRemesh ? 'Source Mesh Ingestion & Preflight' : 'AI Geometry Synthesis',
-      state: getStepState('synthesis'),
-      detail: isRemesh
-        ? `Topology preflight & initial geometry parsing (${remeshSettings.targetFaces.toLocaleString()} target tris)`
-        : activeTask?.type === 'image-to-3d'
-        ? `${modelName} — Image preflight & neural isosurface extraction`
-        : `${modelName} — Text embedding & diffusion mesh synthesis`
-    },
-  ];
+  const pipelineStages: Omit<PipelineStep, 'state'>[] = isRemesh
+    ? [
+        {
+          id: 'synthesis',
+          name: 'Source Mesh Ingestion & Preflight',
+          detail: `Topology preflight & initial geometry parsing (${remeshSettings.targetFaces.toLocaleString()} target tris)`,
+        },
+      ]
+    : [
+        {
+          id: 'synthesis',
+          name: 'AI Geometry Synthesis',
+          detail:
+            activeTask?.type === 'image-to-3d'
+              ? `${modelName} — image preflight and GPU geometry synthesis`
+              : `${modelName} — text embedding and GPU mesh synthesis`,
+        },
+        {
+          id: 'master',
+          name: 'Canonical Master Asset',
+          detail: 'Persist immutable master/source.glb before any downstream processing.',
+        },
+        {
+          id: 'repair',
+          name: 'Topology Repair',
+          detail: 'Weld, de-duplicate, remove invalid topology and close small holes.',
+        },
+        {
+          id: 'optimize',
+          name: 'Geometry Optimization',
+          detail: 'Reduce untextured outputs to the configured game-ready triangle budget.',
+        },
+        {
+          id: 'uv',
+          name: 'UV Preparation',
+          detail: 'Preserve native textured UVs or generate production UVs for raw meshes.',
+        },
+        {
+          id: 'game_ready',
+          name: 'Game-Ready Export',
+          detail: 'Write the canonical GLB/OBJ/STL/PLY and best-effort FBX/GLTF artifacts.',
+        },
+        {
+          id: 'lod',
+          name: 'LOD Generation',
+          detail: 'Generate LOD0–LOD3 from the canonical processed mesh.',
+        },
+        {
+          id: 'collision',
+          name: 'Collision',
+          detail: 'Generate the runtime collision proxy and optional physics metadata.',
+        },
+        {
+          id: 'qa',
+          name: 'Preview & QA',
+          detail: 'Generate preview artifacts and run final game-ready inspection.',
+        },
+      ];
+
+  const currentStageIndex = stageNameMap[stageName]
+    ? pipelineStages.findIndex(stage => stage.id === stageNameMap[stageName])
+    : progress >= 100
+      ? pipelineStages.length - 1
+      : 0;
+
+  const completedStageCount = pipelineStages.filter((stage, index) => {
+    if (isCompleted || progress >= 100) return true;
+    return index < currentStageIndex;
+  }).length;
+  const currentStage = pipelineStages[currentStageIndex] || pipelineStages[0];
+  const etaSec = activeTask?.estimatedRemainingSec;
+  const etaLabel = etaSec == null
+    ? 'Estimating…'
+    : etaSec < 60
+      ? '~' + etaSec + 's left'
+      : '~' + Math.ceil(etaSec / 60) + 'm left';
+
+  const getStepState = (index: number): PipelineStep['state'] => {
+    if (isFailed) {
+      if (index < currentStageIndex) return 'completed';
+      if (index === currentStageIndex) return 'failed';
+      return 'pending';
+    }
+    if (isCompleted || progress >= 100) return 'completed';
+    if (index < currentStageIndex) return 'completed';
+    if (index === currentStageIndex) return 'active';
+    return 'pending';
+  };
+
+  const stages: PipelineStep[] = pipelineStages.map((stage, index) => ({
+    ...stage,
+    state: getStepState(index),
+    detail: index === currentStageIndex && activeTask?.currentStep
+      ? activeTask.currentStep
+      : stage.detail,
+  }));
 
   return (
     <div className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-hidden">
@@ -178,8 +277,20 @@ export const LiveExecutionPanel: React.FC = () => {
           <div className="text-xs font-bold text-white leading-snug">
             {activeTask?.title || '3D Asset Generation'}
           </div>
-          <div className="text-[10px] text-zinc-300 font-mono mt-0.5 break-words">
-            {activeTask?.currentStep || (isRunning ? 'Executing inference graph...' : isCompleted ? 'Generation complete' : 'Ready')}
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="px-1.5 py-0.5 rounded border border-primary/25 bg-primary/10 text-primary text-[8px] font-bold uppercase tracking-wider">
+              {currentStage?.name || 'Execution'}
+            </span>
+            <span className="text-[9px] text-zinc-500 font-mono">
+              {completedStageCount}/{pipelineStages.length} stages complete
+            </span>
+          </div>
+          <div className="text-[10px] text-zinc-300 font-mono mt-1 break-words">
+            {latestLog?.message || activeTask?.currentStep || (isRunning ? 'Executing inference graph...' : isCompleted ? 'Generation complete' : 'Ready')}
+          </div>
+          <div className="flex items-center justify-between text-[9px] text-zinc-500 font-mono mt-1.5">
+            <span>Live backend telemetry</span>
+            <span>{isCompleted ? 'Ready' : isFailed ? 'Stopped' : etaLabel}</span>
           </div>
           {/* Progress bar */}
           <div className="w-full bg-white/[0.06] rounded-full h-1.5 mt-2 overflow-hidden">
@@ -218,7 +329,9 @@ export const LiveExecutionPanel: React.FC = () => {
             <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
               Pipeline Stages ({stages.filter(s => s.state === 'completed').length} / {stages.length})
             </span>
-            <span className="text-[9px] font-mono text-zinc-500">OpenX Clay Engine</span>
+            <span className="text-[9px] font-mono text-zinc-500">
+              Backend telemetry · live stage state
+            </span>
           </div>
 
           <div className="space-y-1 rounded-xl bg-[#181B20] border border-white/[0.08] p-2">
@@ -352,7 +465,7 @@ export const LiveExecutionPanel: React.FC = () => {
             </div>
           </div>
 
-          <div className="rounded-xl bg-black/60 border border-white/[0.08] p-2.5 max-h-44 overflow-y-auto font-mono text-[10px] space-y-1.5 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent select-text">
+          <div ref={logsContainerRef} className="rounded-xl bg-black/60 border border-white/[0.08] p-2.5 max-h-44 overflow-y-auto font-mono text-[10px] space-y-1.5 scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent select-text">
             {logs.length === 0 ? (
               <div className="text-zinc-500 italic py-3 text-center text-[10px]">
                 Awaiting telemetry logs from worker...
@@ -470,8 +583,21 @@ export const LiveExecutionPanel: React.FC = () => {
               <span>3D Asset Ready in Viewport</span>
             </div>
             <p className="text-[11px] text-emerald-300/90 leading-relaxed">
-              Mesh generation, OpenX Clay post-processing, and optimization completed successfully.
+              The backend pipeline completed successfully and the production asset is ready for inspection/export.
             </p>
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {[
+                ['Master', Boolean(currentAsset?.artifacts?.source)],
+                ['Game Ready', Boolean(currentAsset?.artifacts?.gameReady)],
+                ['LOD', Boolean(currentAsset?.artifacts?.lods?.length)],
+                ['Collision', Boolean(currentAsset?.artifacts?.collision)],
+                ['QA', Boolean(currentAsset?.qaScore ?? currentAsset?.artifacts?.qaReport)],
+              ].map(([label, ready]) => (
+                <span key={String(label)} className={ready ? 'px-1.5 py-0.5 rounded border text-[8px] font-bold uppercase tracking-wider border-emerald-500/25 bg-emerald-500/10 text-emerald-300' : 'px-1.5 py-0.5 rounded border text-[8px] font-bold uppercase tracking-wider border-white/[0.06] bg-white/[0.03] text-zinc-500'}>
+                  {String(label)} {ready ? 'ready' : '—'}
+                </span>
+              ))}
+            </div>
             <div className="grid grid-cols-2 gap-1.5 pt-1">
               <button
                 type="button"

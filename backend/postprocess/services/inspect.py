@@ -413,4 +413,28 @@ def run_inspect(scene: trimesh.Scene, mesh: trimesh.Trimesh,
     for entry in checks:
         summary[entry["status"]] = summary.get(entry["status"], 0) + 1
 
-    return {"checks": checks, "summary": summary, "stats": stats}
+    weights = {"geometry_topology": 35, "uv_material": 35, "platform": 30}
+    points = {key: 0.0 for key in weights}
+    seen = {key: 0 for key in weights}
+    for entry in checks:
+        if entry["group"] in {"Geometry", "Topology"}:
+            key = "geometry_topology"
+        elif entry["group"] in {"UVs", "Materials"}:
+            key = "uv_material"
+        else:
+            key = "platform"
+        seen[key] += 1
+        points[key] += {"pass": 1.0, "info": 1.0, "warn": 0.6, "fail": 0.0}[entry["status"]]
+
+    subscores = {
+        key: round(weights[key] * points[key] / seen[key], 1) if seen[key] else weights[key]
+        for key in weights
+    }
+    score = int(round(sum(subscores.values())))
+    qa = {
+        "score": score,
+        "status": "fail" if score < 60 else "warn" if score < 80 else "pass",
+        "weights": weights,
+        "subscores": subscores,
+    }
+    return {"checks": checks, "summary": summary, "stats": stats, "qa": qa}

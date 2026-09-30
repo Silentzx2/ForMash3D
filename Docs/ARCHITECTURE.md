@@ -84,7 +84,7 @@ flowchart TB
 | **App Router** | `app/` | Next.js 16 App Router with server components, layouts, and API proxy routes |
 | **Workspace Shell** | `features/workspace/WorkspaceShell.tsx` | Main workspace UI with tabbed panels and model viewport |
 | **API Client** | `services/apiClient.ts` | Unified axios client for all FastAPI backend REST/SSE communication |
-| **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | Three.js WebGL viewport with orbit controls, wireframe mode, matcap shading |
+| **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | Three.js WebGL viewport with orbit controls, wireframe/matcap shading, physics smoke test, and opt-in mirror inspection |
 | **State Stores** | `stores/` | Zustand stores for global client state (`useAppStore`, `useViewerStore`, `useAnimationStore`, `useRiggingStore`, `useUIStore`) |
 | **Data Fetching** | hooks + TanStack Query | Server-state caching and synchronization for job status |
 
@@ -161,7 +161,7 @@ sequenceDiagram
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
     SCHED->>Storage: Preserve master/source.glb byte-for-byte
-    SCHED->>PostProcess: Repair -> Optimize -> Auto UV -> Bake -> QA
+    SCHED->>PostProcess: Repair -> Optimize/Preserve -> Auto UV/Preserve -> QA
     PostProcess->>Storage: Save game_ready/* final formats
     PostProcess->>Storage: Save lods/lod0..3.glb
     PostProcess->>Storage: Save collision/collision.glb
@@ -426,11 +426,52 @@ bash -n backend/scripts/install.sh
 
 ### 2.5 Post-Processing Engine
 
-The production post-processing engine lives under backend/postprocess/. Successful raw mesh-generation jobs run this engine before the job is marked completed.
+The production post-processing engine lives under backend/postprocess/. Successful mesh-generation jobs run this engine before the job is marked completed.
 
-Pipeline: MASTER RAW -> Repair -> Optimize -> Auto UV -> Bake -> GAME READY, with LOD, collision, preview, and QA artifacts derived from the processed mesh.
+Pipeline: MASTER RAW -> Repair -> Optimize/Preserve -> Auto UV/Preserve -> GAME READY -> LOD -> collision -> preview -> QA. Native textured outputs keep their source materials and UVs; raw outputs receive geometry optimization and production UVs. Post-processing does not synthesize textures. Texture creation happens only in model-native textured generation or the dedicated Texture page.
 
-The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE.
+The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE and is best-effort for generation completion.
 
 ## Physics layer
 Physics is an opt-in layer after the existing generation and production post-processing pipeline. The immutable master remains unchanged. When requested, the scheduler passes a provider-neutral physics intent into post-processing; the existing collision service produces the collision representation and `metadata/physics.json` records the rigid-body configuration, material response, collision statistics, provenance, and capabilities. The browser viewer uses the canonical collision artifact with pinned Rapier 0.19.3 while remaining on the existing direct Three.js renderer. Physics preparation is skipped for intermediate Shape output in Shape→Paint auto-chaining and runs only on the final output. The physics runtime is not an inference model and does not consume generation-model VRAM.
+
+### Execution telemetry and cancellation
+The workspace treats `/api/v1/system/jobs/{job_id}` as the source of truth for live job state. The frontend uses adaptive, visibility-aware polling because the current backend exposes the system job status contract as REST; it does not claim a per-job SSE stream that is not implemented. Queue cancellation uses `POST /api/v1/mesh-generation/cancel/{job_id}` and preserves the job history record.
+
+Segmentation results carry `segmentation_info` through normalized asset metadata so inspectors render actual backend part statistics rather than static sample data.
+
+## Review Audit Hardening — Current Runtime Contracts
+
+The scheduler control plane keeps blocking SQLite work off the FastAPI event loop, treats job-status reads as side-effect-free, recovers processing jobs after restart, and terminates owning worker processes for timeout/cancellation before publishing terminal state.
+
+Redis control state uses noeviction. Result payloads use dedicated per-job keys with native Redis TTLs. Resource-blocked jobs rotate to the back of the queue so a non-runnable large model does not globally block compatible work.
+
+Filesystem inputs are restricted to explicit asset roots by default; file uploads and base64 inputs enforce bounded ingestion. The GLB client cache applies one L1 budget to both network hydration and persistent-cache hydration.
+
+## Review Audit — Async Generation Boundary
+
+The execution lifecycle is now split at raw inference completion. A successful GPU result is published immediately as the job result, after which canonical post-processing runs as a background task. The completed job retains `postprocess_status` and optional `postprocess_error`, so raw-model availability is independent from game-ready artifact production.
+
+Workspace state is keyed by backend job ID rather than a single global active operation. Batch submissions carry a scheduler-owned `batch_id` and `batch_max_parallel`; the scheduler refuses additional workers for that batch until a slot is free.
+
+## Review Audit — Canonical Runtime Contracts
+
+The backend model manifest is the source of truth for model readiness, capabilities, supported IO, VRAM reservation, and worker limits. Frontend model selectors consume the runtime model-details endpoint; static model definitions remain presentation fallbacks only.
+
+Generation is split into:
+1. raw/native result becoming visible;
+2. optional production post-processing;
+3. canonical asset/export artifacts.
+
+Batch text generation submits independent jobs under a scheduler-owned batch ID and max-parallel limit. Redis and single-worker queues expose the same terminal semantics and error-code surface.
+
+Each canonical asset manifest carries asset_id, job_id, optional parent_job_id, model/feature information, seed/settings, and SHA-256 input hashes for reproducibility.
+
+
+## Final Review Audit Gap Closure — September 30, 2026
+
+The final non-testing audit pass keeps the architecture split at the actual execution boundary: GPU inference becomes a completed raw result immediately, while canonical production post-processing is an independently tracked background task. Request-owned temporary input remains alive until post-processing finishes so asset lineage can hash the original inputs; scheduler shutdown waits briefly for those tasks before releasing persistence.
+
+Model configuration remains canonical in `backend/config/models.yaml`. Adapter constructors reject missing manifest VRAM, repository-relative model/third-party roots are used, and variant-specific overrides do not silently replace manifest values. The system API exposes runtime readiness, weights state, capabilities, and canonical queue counters to the frontend.
+
+The workspace consumes those capabilities for routing and keeps the viewer asset synchronized when post-processing transitions from pending/running to completed or failed. The in-memory GLB cache uses bounded LRU accounting for replacement and reuse.

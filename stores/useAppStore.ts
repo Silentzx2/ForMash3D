@@ -538,11 +538,8 @@ export const useAppStore = create<AppState>()(
         steps: state.steps,
         cfgScale: state.cfgScale,
         seed: state.seed,
-        // FE-023/024/026: uploadedImage holds a File (unserializable) and
-        // currentJob holds Date objects + stale result URLs — both degrade to
-        // junk after JSON round-trip and resurrect stale jobs on refresh.
-        // jobHistory is refreshed from the backend via loadHistory().
-        jobHistory: state.jobHistory,
+        // Job history and runtime state are backend/in-memory concerns. Persist only
+        // lightweight preferences so localStorage stays bounded and synchronous.
         recentPrompts: state.recentPrompts,
         // UI state
         leftSidebarCollapsed: state.leftSidebarCollapsed,

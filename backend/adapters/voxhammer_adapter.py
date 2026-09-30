@@ -37,26 +37,30 @@ class VoxHammerTextMeshEditingAdapter(TextMeshEditingModel):
         self,
         model_id: Optional[str] = None,
         model_path: Optional[str] = None,
-        vram_requirement: int = 40960,  # 40GB VRAM (TRELLIS + rendering overhead)
+        vram_requirement: Optional[int] = None,
         voxhammer_root: Optional[str] = None,
         trellis_root: Optional[str] = None,
         feature_type: Optional[str] = None,
         supported_output_formats: Optional[List[str]] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_id is None:
             model_id = self.MODEL_ID
         if model_path is None:
             model_path = os.path.abspath(
-                os.path.join(os.getcwd(), "pretrained", "VoxHammer")
+                str(Path(__file__).resolve().parents[1] / "pretrained" / "VoxHammer")
             )
         if voxhammer_root is None:
             voxhammer_root = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "VoxHammer")
+                str(Path(__file__).resolve().parents[1] / "thirdparty" / "VoxHammer")
             )
 
         if trellis_root is None:
             trellis_root = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "TRELLIS")
+                str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS")
             )
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
@@ -301,25 +305,29 @@ class VoxHammerImageMeshEditingAdapter(ImageMeshEditingModel):
         self,
         model_id: Optional[str] = None,
         model_path: Optional[str] = None,
-        vram_requirement: int = 40960,  # 40GB VRAM
+        vram_requirement: Optional[int] = None,
         voxhammer_root: Optional[str] = None,
         trellis_root: Optional[str] = None,
         feature_type: Optional[str] = None,
         supported_output_formats: Optional[List[str]] = None,
     ):
+        if vram_requirement is None:
+            raise ValueError(
+                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
+            )
         if model_id is None:
             model_id = self.MODEL_ID
         if model_path is None:
             model_path = os.path.abspath(
-                os.path.join(os.getcwd(), "pretrained", "VoxHammer")
+                str(Path(__file__).resolve().parents[1] / "pretrained" / "VoxHammer")
             )
         if voxhammer_root is None:
             voxhammer_root = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "VoxHammer")
+                str(Path(__file__).resolve().parents[1] / "thirdparty" / "VoxHammer")
             )
         if trellis_root is None:
             trellis_root = os.path.abspath(
-                os.path.join(os.getcwd(), "thirdparty", "TRELLIS")
+                str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS")
             )
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
