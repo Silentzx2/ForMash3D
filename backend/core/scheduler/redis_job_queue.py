@@ -460,6 +460,11 @@ class RedisJobQueue:
         """Compatibility method: recover jobs stranded by the previous scheduler."""
         await self.recover_orphaned_jobs()
 
+    async def recover_processing_jobs(self) -> int:
+        """Compatibility alias: recover jobs stranded in processing state."""
+        await self.recover_orphaned_jobs()
+        return 0
+
     async def stop_persistence(self):
         """Compatibility method - Redis persistence is always active"""
         logger.debug("Redis persistence is always active, no action needed")
