@@ -118,7 +118,8 @@ class RedisJobQueue:
             raise RuntimeError("Redis not connected")
 
         job_id = job_request.job_id
-        
+        logger.debug("enqueue: storing job_id=%s prefix=%s", job_id, self.queue_prefix)
+
         # Store job data (convert enum to string for JSON serialization)
         job_data = {
             "job_id": job_id,
@@ -132,14 +133,14 @@ class RedisJobQueue:
             "user_id": job_request.user_id or "",  # Store user_id for job isolation
             "logs": [],
         }
-        
+
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
-        
+
         # Add to pending queue (sorted by priority and timestamp)
         score = _priority_score(job_request.priority, job_request.created_at)
         await self.redis.zadd(self.pending_queue_key, {job_id: score})
-        
-        logger.info(f"Enqueued job {job_id} to Redis")
+
+        logger.info("Enqueued job %s to Redis", job_id)
         return job_id
 
     async def dequeue(self) -> Optional[JobRequest]:
@@ -149,12 +150,13 @@ class RedisJobQueue:
 
         # Use ZPOPMIN to get lowest score (highest priority, earliest timestamp)
         result = await self.redis.zpopmin(self.pending_queue_key, count=1)
-        
+
         if not result:
             return None
-        
+
         job_id = result[0][0]
-        
+        logger.debug("dequeue: popped job_id=%s prefix=%s", job_id, self.queue_prefix)
+
         # Get job data
         job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
         if not job_data_str:
@@ -321,9 +323,12 @@ class RedisJobQueue:
         if not self.redis:
             raise RuntimeError("Redis not connected")
 
+        logger.debug("get_job: looking up job_id=%s prefix=%s", job_id, self.queue_prefix)
         job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
         if not job_data_str:
+            logger.debug("get_job: job_id=%s not found in Redis", job_id)
             return None
+        logger.debug("get_job: job_id=%s found", job_id)
         
         job_data = json.loads(job_data_str)
         hot_progress, hot_stage, hot_message = await asyncio.gather(
@@ -366,6 +371,13 @@ class RedisJobQueue:
             status_counts[status] = status_counts.get(status, 0) + 1
 
         max_queue_size = 1000
+        logger.debug(
+            "get_queue_status: prefix=%s pending=%s processing=%s status_counts=%s",
+            self.queue_prefix,
+            pending_count,
+            processing_count,
+            status_counts,
+        )
         return {
             "queued_jobs": status_counts.get(_status_to_str(JobStatus.QUEUED), 0),
             "processing_jobs": status_counts.get(_status_to_str(JobStatus.PROCESSING), processing_count),
