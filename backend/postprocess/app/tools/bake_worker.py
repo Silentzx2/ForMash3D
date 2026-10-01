@@ -772,7 +772,7 @@ def main() -> None:
     bake.use_selected_to_active = True
 
     # Cage extrusion is a distance, so a fixed default is only ever right for one
-    # mesh size: 5cm is generous on a 1m prop and invisible on a 20m building.
+    # mesh size: 5cm is generous on a 1m prop and visible at 20m scale.
     # 0 means "scale it to this mesh" — 2% of the bounding-box diagonal, which
     # reaches far enough to catch protruding detail without punching through to
     # surfaces on the far side.

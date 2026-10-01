@@ -547,7 +547,7 @@ def run_segment(mesh: trimesh.Trimesh, options: SegmentOptions, progress=None) -
     if face_count < 4:
         raise ValueError("The mesh has too few triangles to segment.")
 
-    emit("proxy", 0.05, "Building the analysis proxy…")
+    emit("proxy", 0.05, "Making the analysis proxy…")
     proxy = _build_proxy(mesh, int(options.proxy_faces))
     if len(proxy.faces) < 4:
         raise ValueError("The analysis proxy came out too small to segment.")
@@ -566,7 +566,7 @@ def run_segment(mesh: trimesh.Trimesh, options: SegmentOptions, progress=None) -
     sdf, escape_ratio, ray_target, degraded = _compute_sdf(
         mesh, proxy, centers, normals, options, scale, progress=emit)
 
-    emit("graph", 0.5, "Building the region graph…")
+    emit("graph", 0.5, "Making the region graph…")
     pairs = _build_pairs(vertices, faces, centers, normals, float(options.convex_eta))
     if not pairs:
         raise ValueError("No face adjacency found — the mesh is all loose triangles.")
