@@ -36,7 +36,7 @@ import {
   listWorkingGeometry,
   putWorkingGeometry,
 } from '../utils/assemblyWorking'
-import { buildAssetUrl } from '../utils/meshTexturing'
+import { buildAssetUrl } from '@/features/utils/meshTexturing'
 import { applyMatrixToPiece, composePieceMatrix } from '../utils/assemblyGeometry'
 import { canWarpPiece } from '../utils/assemblyHelpers'
 import * as THREE from 'three'

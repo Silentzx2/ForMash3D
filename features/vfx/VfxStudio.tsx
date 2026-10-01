@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Flame,
@@ -21,28 +21,38 @@ import { useWorkspace } from '@/features/workspace/store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
 // Import VFX components
-import VfxBoard from './components/VfxBoard';
-import VfxTimeline from './components/VfxTimeline';
-import VfxParamsPanel from './components/VfxParamsPanel';
-import VfxPresetsDialog from './components/VfxPresetsDialog';
-import VfxSheetDialog from './components/VfxSheetDialog';
-import VfxExportDialog from './components/VfxExportDialog';
-import VfxShortcuts from './components/VfxShortcuts';
-import VfxPreviewHud from './components/VfxPreviewHud';
-import VfxViewport from './components/VfxViewport';
+import _VfxBoard from './components/VfxBoard';
+import _VfxTimeline from './components/VfxTimeline';
+import _VfxParamsPanel from './components/VfxParamsPanel';
+import _VfxPresetsDialog from './components/VfxPresetsDialog';
+import _VfxSheetDialog from './components/VfxSheetDialog';
+import _VfxExportDialog from './components/VfxExportDialog';
+import _VfxShortcuts from './components/VfxShortcuts';
+import _VfxPreviewHud from './components/VfxPreviewHud';
+import _VfxViewport from './components/VfxViewport';
+
+const VfxBoard = _VfxBoard as any;
+const VfxTimeline = _VfxTimeline as any;
+const VfxParamsPanel = _VfxParamsPanel as any;
+const VfxPresetsDialog = _VfxPresetsDialog as any;
+const VfxSheetDialog = _VfxSheetDialog as any;
+const VfxExportDialog = _VfxExportDialog as any;
+const VfxShortcuts = _VfxShortcuts as any;
+const VfxPreviewHud = _VfxPreviewHud as any;
+const VfxViewport = _VfxViewport as any;
 
 // Import hooks & engine
 import useVfxDocument from './hooks/useVfxDocument';
 import useVfxRuntime from './hooks/useVfxRuntime';
 import { compileVfxGraph } from '@/vfx/compile.js';
 import { createEmptyVfxDoc } from '@/vfx/doc.js';
-import { reset, seekTo } from './utils/vfx/system';
+import { reset, seekTo } from '@/features/utils/vfx/system';
 
 export const VfxStudio: React.FC = () => {
   const { navigateToTool } = useWorkspace();
 
   // Document & runtime state
-  const { doc, setDoc, undo, redo, canUndo, canRedo } = useVfxDocument(null);
+  const { doc, setDoc, undo, redo, canUndo, canRedo } = useVfxDocument({} as any);
   
   // Compile IR from doc
   const compiled = useMemo(() => {

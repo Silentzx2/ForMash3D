@@ -19,7 +19,6 @@
 // space should land somewhere useful rather than nowhere.
 
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { CATALOG, CONTEXT_DEFS, defaultProps, ENGINE_SUPPORT } from '../../../vfx/catalog.js'
 import { CONTEXT_KIND } from '../../../vfx/doc.js'
 import { readSpriteSheet } from '../../utils/vfx/edits.js'
@@ -347,10 +346,10 @@ function BlockParams({
             so plainly if not - and nobody was ever going to write thirty-five
             of them. The per-block teaching lives in the hover card and in the
             panel above this link. */}
-        <Link to="/wiki/VFX%20Editor" className="vfx-params__learn">
+        <a href="/wiki" className="vfx-params__learn">
           Learn more about {def.label}
           <span className="material-symbols-outlined">arrow_forward</span>
-        </Link>
+        </a>
       </div>
 
       {/* At the most detailed level, the raw node. This doubles as the

@@ -32,7 +32,7 @@ import { PROP_TYPE } from '../../../building/catalog.js'
 // because a building profile stores metres directly rather than a normalised
 // value, and `domainLabel` because the horizontal axis here is height, not a
 // particle's age.
-import VfxCurveEditor from '../vfx/VfxCurveEditor'
+import VfxCurveEditor from '@/features/vfx/components/VfxCurveEditor'
 import { useEffect, useRef, useState } from 'react'
 import './BuildingInspector.css'
 

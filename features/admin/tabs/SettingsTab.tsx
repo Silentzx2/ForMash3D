@@ -41,7 +41,7 @@ type SettingsSubTab =
 interface SubTabItem {
   id: SettingsSubTab;
   label: string;
-  icon: React.ElementType;
+  icon: any;
   description: string;
 }
 

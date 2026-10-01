@@ -22,7 +22,7 @@
 // memory, so three re-uploads them on the next render.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { buildAssetUrl } from '../utils/meshTexturing'
+import { buildAssetUrl } from '@/features/utils/meshTexturing'
 import {
   disposeAssemblyEntry,
   loadAssemblyPieceRoot,

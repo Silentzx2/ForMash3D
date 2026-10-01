@@ -25,6 +25,7 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
 import { getModelDefinition, isTexturePaintingModel } from '@/constants/models';
+import { toast } from 'sonner';
 
 interface DiscoveredTextureModel {
   id: string;

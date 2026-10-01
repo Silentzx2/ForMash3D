@@ -4,7 +4,7 @@
 // Kept out of assemblyHelpers.js on purpose — that module is pure JSON with no
 // three.js import, which is what lets it be unit-tested in plain Node.
 import * as THREE from 'three'
-import { loadMeshRootFromUrl } from './meshTexturing'
+import { loadMeshRootFromUrl } from '@/features/utils/meshTexturing'
 
 const _position = new THREE.Vector3()
 const _quaternion = new THREE.Quaternion()

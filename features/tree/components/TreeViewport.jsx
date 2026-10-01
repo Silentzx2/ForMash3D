@@ -62,7 +62,7 @@ export default function TreeViewport({
   frameKey = 0,
   orthographic = false,
   showGrid = true,
-  onCameraReady,
+  onCameraReady = () => {},
 }) {
   // Rebuilt only when the bounds actually change, and disposed when replaced —
   // it is a real GPU buffer, small but not free, and a live preview churns it.

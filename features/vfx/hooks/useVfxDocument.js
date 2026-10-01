@@ -27,7 +27,7 @@
 // ref alone is correct.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createEmptyVfxDoc, normalizeVfxDoc, vfxSignature } from '../../vfx/doc.js'
+import { createEmptyVfxDoc, normalizeVfxDoc, vfxSignature } from '@/vfx/doc.js'
 import { loadVfxAsset, saveVfxAsset, vfxAssetId } from '../utils/vfxApi.js'
 import useVfxHistory from './useVfxHistory.js'
 

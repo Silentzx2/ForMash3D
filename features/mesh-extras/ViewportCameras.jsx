@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import { OrthographicCamera, PerspectiveCamera } from '@react-three/drei'
 import * as THREE from 'three'
-import { viewWorldHeightAt } from '../../utils/cameraViewport'
+import { viewWorldHeightAt } from '@/features/utils/cameraViewport'
 
 // The viewport's two cameras. BOTH stay mounted at all times; `makeDefault` is what
 // decides which one R3F hands to CameraRig's OrbitControls, to every raycast, and to

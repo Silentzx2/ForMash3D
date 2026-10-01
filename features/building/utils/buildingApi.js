@@ -31,14 +31,14 @@ import {
   buildingAssetDigest,
   normalizeBuildingDoc,
   serializeBuildingDoc,
-} from '../../building/doc.js'
+} from '@/building/doc.js'
 // Borrowed from the VFX library helper rather than reimplemented. Neither
 // function is VFX-specific - they decode an /api/assets/library listing, whose
 // two awkward facts (a root's id is the string `library:<n>` while a child's is
 // a bare number; an edit is its own row with its own file) are documented in
 // that file and have already been got wrong by hand elsewhere. Aliased on import
 // so nothing below reads as if buildings were part of the VFX feature.
-import { vfxAssetId as libraryAssetId } from './vfx/library.js'
+import { vfxAssetId as libraryAssetId } from '@/features/utils/vfx/library.js'
 
 /** The asset type name, lower-cased as it travels on the wire. */
 export const BUILDING_ASSET_TYPE = 'building'

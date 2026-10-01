@@ -124,6 +124,10 @@ const TOOL_TO_ROUTE: Record<ToolType, string> = {
   environment: '/workspace/generate',
   animation: '/workspace/animation',
   rigging: '/workspace/rigging',
+  vfx: '/vfx',
+  tree: '/trees',
+  building: '/buildings',
+  assembly: '/assembly',
 };
 
 async function parseApiData<T>(response: Response): Promise<T> {

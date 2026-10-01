@@ -7,7 +7,7 @@
 // iteration rather than relying on R3F's event ordering.
 import { useCallback } from 'react'
 import * as THREE from 'three'
-import { isPointerOverViewGizmo } from '../utils/viewGizmoLayout'
+import { isPointerOverViewGizmo } from '@/features/utils/viewGizmoLayout'
 import { composePieceMatrix, ensurePieceBvh } from '../utils/assemblyGeometry'
 
 const _raycaster = new THREE.Raycaster()

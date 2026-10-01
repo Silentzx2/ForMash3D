@@ -24,7 +24,7 @@ import {
   buildingSignature,
   createBuildingDoc,
   normalizeBuildingDoc,
-} from '../../building/doc.js'
+} from '@/building/doc.js'
 import {
   libraryAssetId,
   loadBuildingAsset,
@@ -35,7 +35,7 @@ import {
 // is particular to a particle system. Only its comments mention VFX. Aliased on
 // import so the code below does not read as if buildings were part of that
 // feature.
-import useSnapshotHistory from './useVfxHistory.js'
+import useSnapshotHistory from '@/features/hooks/useVfxHistory.js'
 
 const DRAFT_PREFIX = 'building:draft:'
 const DRAFT_DEBOUNCE_MS = 1000

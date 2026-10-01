@@ -1,9 +1,17 @@
-// components/AssetSelectorModal.jsx
 import { useEffect, useMemo, useState } from 'react';
-import { useProjects } from '../context/ProjectContext';
-import { assetUrl } from '../config';
+import { API_BASE, assetUrl } from '@/features/config';
 import TagFilter from './TagFilter';
-import './AssetSelectorModal.css'; // we'll create a separate CSS or reuse AssetsPage.css
+import './AssetSelectorModal.css';
+
+async function getLibraryAssets() {
+  try {
+    const res = await fetch(`${API_BASE}/assets/library`);
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
 
 function formatDimensions(width, height) {
   if (!width || !height) return null;
@@ -56,7 +64,7 @@ const MESHES_PER_PAGE = 20;
 // ARRAY. It is opt-in for a reason: six call sites rely on onSelect(oneAsset),
 // so the single-select path below stays byte-identical.
 export default function AssetSelectorModal({ assetType, onSelect, onClose, showEdits = false, multiple = false, title }) {
-  const { getLibraryAssets, projects } = useProjects();
+  const projects = [];
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedAssetKey, setSelectedAssetKey] = useState(null);

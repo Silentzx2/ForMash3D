@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import { OrbitControls } from '@react-three/drei'
 import * as THREE from 'three'
-import { FRAME_EYE_OFFSET, framedOrthoZoom, FRAMED_SPHERE_SPAN } from '../../utils/cameraFraming'
+import { FRAME_EYE_OFFSET, framedOrthoZoom, FRAMED_SPHERE_SPAN } from '@/features/utils/cameraFraming'
 
 // R3F scene helper extracted from MeshEditorPage.jsx (behaviour-preserving move).
 export default function CameraRig({ geometry, frameKey, onCameraReady, controlsEnabled = true, allowPan = true, lockToCenter = false }) {

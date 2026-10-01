@@ -23,14 +23,14 @@
 // Disposal is the part that belongs in an effect, keyed on the value it owns.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createBatches, disposeBatch } from '../utils/vfx/batch.js'
+import { createBatches, disposeBatch } from '@/features/utils/vfx/batch.js'
 import {
   disposeVfxMeshes,
   disposeVfxTextures,
   loadVfxMeshes,
   loadVfxTextures,
-} from '../utils/vfx/assets.js'
-import { createVfxRuntime, installMeshSamplers } from '../utils/vfx/system.js'
+} from '@/features/utils/vfx/assets.js'
+import { createVfxRuntime, installMeshSamplers } from '@/features/utils/vfx/system.js'
 
 // Shared empties, so an effect with no assets keeps a STABLE identity and the
 // batches memo below does not rebuild every render.

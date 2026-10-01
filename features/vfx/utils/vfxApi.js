@@ -26,9 +26,9 @@
 // takes ONE `payload` JSON part and accepts the thumbnail in the same request.
 // Getting them the wrong way round produces a 400 that says nothing useful.
 
-import { API_BASE, SERVER_ORIGIN, assetUrl } from '../config.js'
-import { indexLibraryAssets, vfxAssetId } from './vfx/library.js'
-import { normalizeVfxDoc, serializeVfxDoc, vfxAssetDigest } from '../../vfx/doc.js'
+import { API_BASE, SERVER_ORIGIN, assetUrl } from '@/features/config.js'
+import { indexLibraryAssets, vfxAssetId } from '@/features/utils/vfx/library.js'
+import { normalizeVfxDoc, serializeVfxDoc, vfxAssetDigest } from '@/vfx/doc.js'
 
 export const VFX_ASSET_TYPE = 'vfx'
 

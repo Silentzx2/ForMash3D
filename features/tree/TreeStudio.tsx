@@ -116,7 +116,7 @@ export const TreeStudio: React.FC = () => {
 
     const timer = setTimeout(() => {
       setPreviewing(true);
-      previewTree({ spec, signal: controller.signal })
+      previewTree({ spec, signal: controller.signal } as any)
         .then(payload => {
           setPreview(payload);
           setPreviewError(null);
@@ -194,7 +194,7 @@ export const TreeStudio: React.FC = () => {
         ...resolved,
         signal: controller.signal,
         onProgress: (event: any) => setProgress({ frac: event.frac, message: event.message || event.stage }),
-      });
+      } as any);
 
       const url = URL.createObjectURL(result.blob);
       try {
@@ -359,6 +359,7 @@ export const TreeStudio: React.FC = () => {
             frameKey={frameKey}
             orthographic={orthographic}
             showGrid={showGrid}
+            onCameraReady={() => {}}
           />
 
           {/* Telemetry overlay */}

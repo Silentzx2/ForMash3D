@@ -19,16 +19,23 @@ import {
 import { useWorkspace } from '@/features/workspace/store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
-import BuildingViewport from './components/BuildingViewport';
-import BuildingPlanEditor from './components/BuildingPlanEditor';
-import BuildingInspector from './components/BuildingInspector';
-import BuildingStylePanel from './components/BuildingStylePanel';
-import BuildingPalette from './components/BuildingPalette';
-import BuildingTextures from './components/BuildingTextures';
+import _BuildingViewport from './components/BuildingViewport';
+import _BuildingPlanEditor from './components/BuildingPlanEditor';
+import _BuildingInspector from './components/BuildingInspector';
+import _BuildingStylePanel from './components/BuildingStylePanel';
+import _BuildingPalette from './components/BuildingPalette';
+import _BuildingTextures from './components/BuildingTextures';
+
+const BuildingViewport = _BuildingViewport as any;
+const BuildingPlanEditor = _BuildingPlanEditor as any;
+const BuildingInspector = _BuildingInspector as any;
+const BuildingStylePanel = _BuildingStylePanel as any;
+const BuildingPalette = _BuildingPalette as any;
+const BuildingTextures = _BuildingTextures as any;
 
 import useBuildingDocument from './hooks/useBuildingDocument';
 import useBuildingCompile from './hooks/useBuildingCompile';
-import { ensureStarterGraph } from './utils/building/edits';
+import { ensureStarterGraph } from './utils/edits';
 import './pages/BuildingGenPage.css';
 
 export const BuildingStudio: React.FC = () => {

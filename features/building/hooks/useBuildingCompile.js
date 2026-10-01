@@ -15,9 +15,9 @@
 // cache key.
 
 import { useMemo } from 'react'
-import { compileBuilding } from '../../building/compile.js'
-import { buildingSignature } from '../../building/doc.js'
-import { SEVERITY } from '../../building/diagnostics.js'
+import { compileBuilding } from '@/building/compile.js'
+import { buildingSignature } from '@/building/doc.js'
+import { SEVERITY } from '@/building/diagnostics.js'
 
 /**
  * @param {object} doc a building document

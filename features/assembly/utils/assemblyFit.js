@@ -12,7 +12,7 @@
 import * as THREE from 'three'
 import { API_BASE } from '../config'
 import { ensureDesktopService, readSseStream } from './meshTools'
-import { dequantizeGeometryAttributes } from './meshEditor'
+import { dequantizeGeometryAttributes } from '@/features/utils/meshEditor'
 import { composePieceMatrix, pieceWorldBox } from './assemblyGeometry'
 
 // Mirrors python-server/app/schemas.py FitOptions. Keep the two in step.

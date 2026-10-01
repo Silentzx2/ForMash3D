@@ -237,7 +237,7 @@ export default function useAssemblyDocument({ assemblyId, onAssemblyIdChange }) 
   const undo = useCallback(() => restore(undoRef, redoRef), [restore])
   const redo = useCallback(() => restore(redoRef, undoRef), [restore])
 
-  const patchPiece = useCallback((pieceId, patch, options) => {
+  const patchPiece = useCallback((pieceId, patch, options = {}) => {
     applyChange(draft => {
       const piece = draft.pieces.find(p => p.id === pieceId)
       if (!piece) return null
@@ -342,7 +342,7 @@ export default function useAssemblyDocument({ assemblyId, onAssemblyIdChange }) 
     flushSave()
   }, [applyChange, flushSave])
 
-  const patchSettings = useCallback((patch, options) => {
+  const patchSettings = useCallback((patch, options = {}) => {
     applyChange(draft => {
       Object.assign(draft.settings, typeof patch === 'function' ? patch(draft.settings) : patch)
       return draft

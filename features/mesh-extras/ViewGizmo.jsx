@@ -13,8 +13,8 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { GizmoHelper, GizmoViewcube } from '@react-three/drei'
 import * as THREE from 'three'
-import { VIEW_GIZMO_MARGIN, isPointerOverViewGizmo } from '../../utils/viewGizmoLayout'
-import { fitCameraToSphere, meshFittingSphere } from '../../utils/cameraFraming'
+import { VIEW_GIZMO_MARGIN, isPointerOverViewGizmo } from '@/features/utils/viewGizmoLayout'
+import { fitCameraToSphere, meshFittingSphere } from '@/features/utils/cameraFraming'
 
 // GizmoHelper measures the orbit radius for a snap from the WORLD ORIGIN, not from
 // the controls' target — it distances against a Vector3 that is never assigned. Our
