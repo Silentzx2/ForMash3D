@@ -18,6 +18,13 @@ import {
   Brush,
   Pipette,
 } from 'lucide-react';
+import {
+  PaintBrushToolIcon,
+  AirbrushIcon,
+  EraserToolIcon,
+  EyedropperToolIcon,
+  PaintBucketIcon,
+} from '@/components/icons/BrushIcons';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { motion } from 'motion/react';
 import { useRouter } from 'next/navigation';
@@ -74,7 +81,7 @@ export const TexturePanel: React.FC = () => {
   const [panelTab, setPanelTab] = useState<'texture' | 'maps' | 'paint' | 'settings'>('texture');
 
   // Interactive 3D Surface Paint States synced with WorkspaceContext
-  const [paintMode, setPaintMode] = useState<'draw' | 'erase'>('draw');
+  const [paintMode, setPaintMode] = useState<'draw' | 'airbrush' | 'erase'>('draw');
   const paintBrushSize = paintBrushSettings.size;
   const setPaintBrushSize = (size: number) => setPaintBrushSettings(prev => ({ ...prev, size }));
   const paintOpacity = paintBrushSettings.opacity;
@@ -931,36 +938,56 @@ export const TexturePanel: React.FC = () => {
               </div>
             </div>
 
-            {/* Paint Mode Switch: Draw vs Erase */}
+            {/* Paint Mode Switch: Draw, Airbrush, Erase */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Paint Mode</span>
+                <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Paint Tool</span>
                 <span className="text-[9px] font-mono text-primary font-bold uppercase">{paintMode}</span>
               </div>
-              <div className="grid grid-cols-2 gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5">
                 <button
                   type="button"
-                  onClick={() => setPaintMode('draw')}
-                  className={`py-1.5 px-2 rounded-lg font-bold text-[10.5px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  onClick={() => {
+                    setPaintMode('draw');
+                    setPaintHardness(0.7);
+                    setPaintOpacity(1.0);
+                  }}
+                  className={`py-2 px-1.5 rounded-xl font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     paintMode === 'draw'
-                      ? 'bg-primary text-black shadow-sm font-black'
+                      ? 'bg-primary text-black shadow-[0_2px_10px_rgba(255,204,0,0.3)] font-black'
                       : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
                   }`}
                 >
-                  <Brush className="w-3.5 h-3.5" />
-                  <span>Drawing</span>
+                  <PaintBrushToolIcon className="w-4 h-4" />
+                  <span>Brush</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaintMode('airbrush');
+                    setPaintHardness(0.05);
+                    setPaintOpacity(0.4);
+                  }}
+                  className={`py-2 px-1.5 rounded-xl font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    paintMode === 'airbrush'
+                      ? 'bg-cyan-400 text-black shadow-[0_2px_10px_rgba(34,211,238,0.3)] font-black'
+                      : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                  }`}
+                >
+                  <AirbrushIcon className="w-4 h-4" />
+                  <span>Airbrush</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setPaintMode('erase')}
-                  className={`py-1.5 px-2 rounded-lg font-bold text-[10.5px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  className={`py-2 px-1.5 rounded-xl font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
                     paintMode === 'erase'
-                      ? 'bg-rose-500 text-white shadow-sm font-black'
+                      ? 'bg-rose-500 text-white shadow-[0_2px_10px_rgba(244,63,94,0.3)] font-black'
                       : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
                   }`}
                 >
-                  <X className="w-3.5 h-3.5" />
-                  <span>Erasing</span>
+                  <EraserToolIcon className="w-4 h-4" />
+                  <span>Eraser</span>
                 </button>
               </div>
             </div>
@@ -1011,6 +1038,21 @@ export const TexturePanel: React.FC = () => {
                       title={hex}
                     />
                   ))}
+                </div>
+
+                {/* Flood Fill Action */}
+                <div className="flex items-center gap-1.5 pt-1 border-t border-white/[0.06]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(new CustomEvent('formash:fill_paint_canvas', { detail: { color: paintColor } }));
+                      toast.success(`Flooded texture canvas with ${paintColor}`);
+                    }}
+                    className="w-full py-1.5 px-2 rounded-lg bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-[9.5px] font-bold text-zinc-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <PaintBucketIcon className="w-3.5 h-3.5 text-primary" />
+                    <span>Flood Fill Texture with Color</span>
+                  </button>
                 </div>
               </div>
             )}

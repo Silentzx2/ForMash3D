@@ -24,6 +24,15 @@ import {
   Check,
   Scissors,
 } from 'lucide-react';
+import {
+  StandardBrushIcon,
+  ClayBrushIcon,
+  InflateBrushIcon,
+  SmoothBrushIcon,
+  FlattenBrushIcon,
+  PinchBrushIcon,
+  GrabBrushIcon,
+} from '@/components/icons/BrushIcons';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { createUploadedMeshAsset } from '../types';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
@@ -570,32 +579,42 @@ export const MeshEditPanel: React.FC = () => {
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 {[
-                  { id: 'standard', label: 'Standard', desc: 'Displace surface' },
-                  { id: 'clay', label: 'Clay', desc: 'Build up strips' },
-                  { id: 'inflate', label: 'Inflate', desc: 'Expand outward' },
-                  { id: 'smooth', label: 'Smooth', desc: 'Relax geometry' },
-                  { id: 'flatten', label: 'Flatten', desc: 'Planar surface' },
-                  { id: 'pinch', label: 'Pinch', desc: 'Sharpen crease' },
-                  { id: 'grab', label: 'Grab', desc: 'Pull / Move' },
+                  { id: 'standard', label: 'Standard', desc: 'Displace surface', icon: StandardBrushIcon },
+                  { id: 'clay', label: 'Clay', desc: 'Build up strips', icon: ClayBrushIcon },
+                  { id: 'inflate', label: 'Inflate', desc: 'Expand outward', icon: InflateBrushIcon },
+                  { id: 'smooth', label: 'Smooth', desc: 'Relax geometry', icon: SmoothBrushIcon },
+                  { id: 'flatten', label: 'Flatten', desc: 'Planar surface', icon: FlattenBrushIcon },
+                  { id: 'pinch', label: 'Pinch', desc: 'Sharpen crease', icon: PinchBrushIcon },
+                  { id: 'grab', label: 'Grab', desc: 'Pull / Move', icon: GrabBrushIcon },
                 ].map((b) => {
                   const isActive = sculptBrush === b.id;
+                  const Icon = b.icon;
                   return (
                     <button
                       key={b.id}
                       type="button"
                       onClick={() => setSculptBrush(b.id as any)}
-                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                      className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
                         isActive
-                          ? 'bg-primary text-black font-bold shadow-sm border-primary'
+                          ? 'bg-primary text-black font-bold shadow-[0_2px_12px_rgba(255,204,0,0.3)] border-primary'
                           : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                       }`}
                     >
-                      <div className="text-[10.5px] font-bold leading-tight flex items-center justify-between">
-                        <span>{b.label}</span>
-                        {isActive && <Check className="w-3 h-3 text-black" />}
-                      </div>
-                      <div className={`text-[8.5px] mt-0.5 ${isActive ? 'text-black/80' : 'text-zinc-400'}`}>
-                        {b.desc}
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
+                          isActive ? 'bg-black text-primary shadow-sm' : 'bg-white/[0.08] text-primary'
+                        }`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[10.5px] font-bold leading-tight flex items-center justify-between">
+                            <span className="truncate">{b.label}</span>
+                            {isActive && <Check className="w-3 h-3 text-black flex-shrink-0 ml-1" />}
+                          </div>
+                          <div className={`text-[8.5px] mt-0.5 truncate ${isActive ? 'text-black/80 font-medium' : 'text-zinc-400'}`}>
+                            {b.desc}
+                          </div>
+                        </div>
                       </div>
                     </button>
                   );

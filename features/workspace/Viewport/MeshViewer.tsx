@@ -43,6 +43,34 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
+import {
+  StandardBrushIcon,
+  ClayBrushIcon,
+  InflateBrushIcon,
+  SmoothBrushIcon,
+  FlattenBrushIcon,
+  PinchBrushIcon,
+  GrabBrushIcon,
+  PaintBrushToolIcon,
+  AirbrushIcon,
+  EraserToolIcon,
+} from '@/components/icons/BrushIcons';
+
+function getActiveBrushIcon(activeTool: string, sculptBrush?: string, isErase?: boolean) {
+  if (activeTool === 'texture') {
+    return isErase ? EraserToolIcon : PaintBrushToolIcon;
+  }
+  switch (sculptBrush) {
+    case 'clay': return ClayBrushIcon;
+    case 'inflate': return InflateBrushIcon;
+    case 'smooth': return SmoothBrushIcon;
+    case 'flatten': return FlattenBrushIcon;
+    case 'pinch': return PinchBrushIcon;
+    case 'grab': return GrabBrushIcon;
+    case 'standard':
+    default: return StandardBrushIcon;
+  }
+}
 
 const disposeMaterial = (material: THREE.Material) => {
   const m = material as any;
@@ -617,6 +645,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const activeToolRef = useRef(activeTool);
   const sculptSettingsRef = useRef(sculptSettings);
   const paintBrushSettingsRef = useRef(paintBrushSettings);
+  const tintedIndicesRef = useRef<Set<number>>(new Set());
+  const lastSculptedMeshRef = useRef<THREE.Mesh | null>(null);
+  const lastNormalsUpdateRef = useRef<number>(0);
+  const lastPaintUVRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     activeToolRef.current = activeTool;
@@ -1621,6 +1653,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         const posAttr = geom.attributes.position;
         if (!posAttr) return;
 
+        lastSculptedMeshRef.current = targetMesh;
+
         const sSettings = sculptSettingsRef.current;
         const worldRadius = sSettings?.radius || 0.15;
         const meshScale = targetMesh.getWorldScale(new THREE.Vector3()).x || 1.0;
@@ -1687,7 +1721,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 p.addScaledVector(centerNorm, amount);
               }
 
-              // Apply dynamic sculpt heatmap tint
+              // Apply dynamic sculpt heatmap tint & track modified index
               if (colorAttr) {
                 const curR = colorAttr.getX(i);
                 const curG = colorAttr.getY(i);
@@ -1699,6 +1733,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   curG * (1 - blend) + hlG * blend,
                   curB * (1 - blend) + hlB * blend
                 );
+                tintedIndicesRef.current.add(i);
               }
 
               posAttr.setXYZ(i, p.x, p.y, p.z);
@@ -1715,9 +1750,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         if (changed) {
           posAttr.needsUpdate = true;
           if (colorAttr) colorAttr.needsUpdate = true;
-          geom.computeVertexNormals();
-          if (normAttr) normAttr.needsUpdate = true;
-          geom.computeBoundingSphere();
+          // Throttled normal update during continuous drag keeps interactions at 60+ FPS
+          const now = performance.now();
+          if (now - lastNormalsUpdateRef.current > 50) {
+            geom.computeVertexNormals();
+            if (normAttr) normAttr.needsUpdate = true;
+            lastNormalsUpdateRef.current = now;
+          }
         }
       } else if (tool === 'texture') {
         if (!hit.uv) return;
@@ -1759,27 +1798,60 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         }
 
         if (ctx && dynamicCanvas) {
-          const px = hit.uv.x * dynamicCanvas.width;
-          const py = (1 - hit.uv.y) * dynamicCanvas.height;
-          const pSettings = paintBrushSettingsRef.current;
-          const radius = pSettings?.size || 24;
-          const color = pSettings?.color || '#FFCC00';
+          // Precise UV mapping: wrap coords to [0, 1] and match texture orientation
+          const isFlipped = Boolean(mat.map && mat.map.flipY);
+          const rawU = ((hit.uv.x % 1) + 1) % 1;
+          const rawV = ((hit.uv.y % 1) + 1) % 1;
+          const currX = rawU * dynamicCanvas.width;
+          const currY = (isFlipped ? (1 - rawV) : rawV) * dynamicCanvas.height;
 
-          ctx.save();
-          if (isCtrl) {
-            ctx.globalCompositeOperation = 'destination-out';
+          const pSettings = paintBrushSettingsRef.current;
+          const radius = Math.max(1, pSettings?.size || 24);
+          const color = pSettings?.color || '#FFCC00';
+          const opacity = Math.max(0.05, Math.min(1.0, pSettings?.opacity ?? 1.0));
+          const hardness = Math.max(0.02, Math.min(0.98, pSettings?.hardness ?? 0.7));
+
+          const drawDab = (x: number, y: number) => {
+            ctx.save();
+            if (isCtrl) {
+              ctx.globalCompositeOperation = 'destination-out';
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(0,0,0,${opacity})`;
+              ctx.fill();
+            } else {
+              ctx.globalCompositeOperation = 'source-over';
+              const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+              grad.addColorStop(0, color);
+              grad.addColorStop(hardness, color);
+              grad.addColorStop(1, 'transparent');
+              ctx.fillStyle = grad;
+              ctx.globalAlpha = opacity;
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          };
+
+          // Continuous interpolated stroke ensures solid coverage with zero gaps or skips
+          if (lastPaintUVRef.current) {
+            const prev = lastPaintUVRef.current;
+            const dist = Math.hypot(currX - prev.x, currY - prev.y);
+            const step = Math.max(2, radius * 0.25);
+            if (dist > step) {
+              const steps = Math.min(50, Math.ceil(dist / step));
+              for (let s = 1; s <= steps; s++) {
+                const t = s / steps;
+                drawDab(prev.x + (currX - prev.x) * t, prev.y + (currY - prev.y) * t);
+              }
+            } else {
+              drawDab(currX, currY);
+            }
           } else {
-            ctx.globalCompositeOperation = 'source-over';
+            drawDab(currX, currY);
           }
-          const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
-          grad.addColorStop(0, color);
-          grad.addColorStop(0.7, color);
-          grad.addColorStop(1, 'transparent');
-          ctx.fillStyle = grad;
-          ctx.beginPath();
-          ctx.arc(px, py, radius, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
+          lastPaintUVRef.current = { x: currX, y: currY };
 
           if (mat.map) {
             mat.map.needsUpdate = true;
@@ -1860,6 +1932,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       if (hits.length > 0) {
         isBrushingRef.current = true;
         controls.enabled = false;
+        lastPaintUVRef.current = null;
         applyBrushStroke(hits[0], e.shiftKey, e.ctrlKey || e.metaKey);
         idleFrames = 0;
       }
@@ -1873,14 +1946,58 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       if (isBrushingRef.current) {
         isBrushingRef.current = false;
         controls.enabled = true;
+        lastPaintUVRef.current = null;
+        // Final clean pass for geometry normals and bounding volume
+        if (activeToolRef.current === 'edit' && lastSculptedMeshRef.current?.geometry) {
+          const g = lastSculptedMeshRef.current.geometry;
+          g.computeVertexNormals();
+          if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
+          g.computeBoundingSphere();
+        }
         idleFrames = 0;
       }
+    };
+
+    const onFillPaintCanvas = (e: any) => {
+      const color = e.detail?.color || '#FFCC00';
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          let mat = child.material as any;
+          if (Array.isArray(mat)) mat = mat[0];
+          if (!mat) return;
+          let dynamicCanvas = child.userData?.paintCanvas as HTMLCanvasElement;
+          let ctx = child.userData?.paintCtx as CanvasRenderingContext2D;
+          if (!dynamicCanvas) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 1024;
+            const context = canvas.getContext('2d');
+            if (context) {
+              context.fillStyle = color;
+              context.fillRect(0, 0, 1024, 1024);
+            }
+            const canvasTex = new THREE.CanvasTexture(canvas);
+            canvasTex.colorSpace = THREE.SRGBColorSpace;
+            canvasTex.flipY = false;
+            mat.map = canvasTex;
+            mat.needsUpdate = true;
+            child.userData.paintCanvas = canvas;
+            child.userData.paintCtx = context;
+          } else if (ctx) {
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, dynamicCanvas.width, dynamicCanvas.height);
+            if (mat.map) mat.map.needsUpdate = true;
+          }
+          idleFrames = 0;
+        }
+      });
     };
 
     renderer.domElement.addEventListener('pointerdown', onBrushPointerDown);
     renderer.domElement.addEventListener('pointermove', onBrushPointerMove);
     window.addEventListener('pointerup', onBrushPointerUp);
     window.addEventListener('pointercancel', onBrushPointerUp);
+    window.addEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
 
     // Raycast on canvas to select bone joints or place new bones in Rigging mode
     const onCanvasPointerDown = (event: MouseEvent) => {
@@ -1998,33 +2115,33 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         rigArmatureGroupRef.current.updateMatrixWorld();
       }
 
-      // Smoothly fade sculpt highlight vertex colors back to neutral
-      if (currentMeshGroupRef.current && !isBrushingRef.current) {
-        currentMeshGroupRef.current.traverse((child) => {
-          if (child instanceof THREE.Mesh && child.geometry?.attributes?.color) {
-            const cAttr = child.geometry.attributes.color as THREE.BufferAttribute;
-            let stillHighlighted = false;
-            const decay = Math.min(1, delta * 3.5);
-            for (let i = 0; i < cAttr.count; i++) {
-              const r = cAttr.getX(i);
-              const g = cAttr.getY(i);
-              const b = cAttr.getZ(i);
-              if (r < 0.98 || g < 0.98 || b < 0.98) {
-                cAttr.setXYZ(
-                  i,
-                  r + (1.0 - r) * decay,
-                  g + (1.0 - g) * decay,
-                  b + (1.0 - b) * decay
-                );
-                stillHighlighted = true;
-              }
+      // Smoothly fade sculpt highlight vertex colors back to neutral (indexed tracking for 0ms idle overhead)
+      const tinted = tintedIndicesRef.current;
+      if (tinted.size > 0 && !isBrushingRef.current && lastSculptedMeshRef.current) {
+        const cAttr = lastSculptedMeshRef.current.geometry?.attributes?.color as THREE.BufferAttribute | undefined;
+        if (cAttr) {
+          const decay = Math.min(1, delta * 4.0);
+          const toDelete: number[] = [];
+          tinted.forEach((idx) => {
+            const r = cAttr.getX(idx);
+            const g = cAttr.getY(idx);
+            const b = cAttr.getZ(idx);
+            if (r < 0.98 || g < 0.98 || b < 0.98) {
+              cAttr.setXYZ(
+                idx,
+                r + (1.0 - r) * decay,
+                g + (1.0 - g) * decay,
+                b + (1.0 - b) * decay
+              );
+            } else {
+              cAttr.setXYZ(idx, 1.0, 1.0, 1.0);
+              toDelete.push(idx);
             }
-            if (stillHighlighted) {
-              cAttr.needsUpdate = true;
-              idleFrames = 0;
-            }
-          }
-        });
+          });
+          toDelete.forEach((idx) => tinted.delete(idx));
+          cAttr.needsUpdate = true;
+          idleFrames = 0;
+        }
       }
 
       const controlsChanged = controls.update();
@@ -2063,6 +2180,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       renderer.domElement.removeEventListener('pointermove', onBrushPointerMove);
       window.removeEventListener('pointerup', onBrushPointerUp);
       window.removeEventListener('pointercancel', onBrushPointerUp);
+      window.removeEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
       if (brushCursorRef.current) {
         scene.remove(brushCursorRef.current);
         brushCursorRef.current = null;
@@ -3210,11 +3328,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           </div>
 
           {/* Floating Brush Type & Radius Badge */}
-          <div className="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md bg-black/85 backdrop-blur-md border border-white/10 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
-            <span 
-              className="w-1.5 h-1.5 rounded-full animate-pulse" 
-              style={{ backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00' }} 
-            />
+          <div className="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-black/90 backdrop-blur-md border border-white/15 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
+            {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush), {
+              className: "w-3.5 h-3.5 text-primary flex-shrink-0"
+            })}
             <span>
               {activeTool === 'edit' 
                 ? `${sculptSettings?.brush?.toUpperCase() || 'STANDARD'} • R:${(sculptSettings?.radius || 0.15).toFixed(2)}` 
@@ -3379,12 +3496,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
           <div className="pointer-events-auto rounded-xl border border-white/[0.14] bg-[hsl(var(--surface-1))]/95 backdrop-blur-md shadow-2xl px-3.5 py-2 flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <span
-                className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0"
-                style={{ backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00' }}
-              />
+              <div className="w-6 h-6 rounded-lg bg-black/60 border border-white/10 flex items-center justify-center text-primary flex-shrink-0">
+                {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush), { className: "w-3.5 h-3.5" })}
+              </div>
               <span className="text-xs font-bold text-white tracking-wide uppercase">
-                {activeTool === 'edit' ? `Sculpt Brush: ${sculptSettings?.brush || 'standard'}` : `3D Paint: ${paintBrushSettings?.color || '#FFCC00'}`}
+                {activeTool === 'edit' ? `Sculpt: ${sculptSettings?.brush || 'standard'}` : `3D Paint: ${paintBrushSettings?.color || '#FFCC00'}`}
               </span>
             </div>
             <div className="h-4 w-px bg-white/10" />

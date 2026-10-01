@@ -40,6 +40,10 @@
 - [x] Fix dead RGB/background-removal branches in project-owned Hunyuan helpers
 
 ### Frontend & Studios
+- [x] Bespoke Studio-Grade Vector SVG Brush Icons (`components/icons/BrushIcons.tsx` across panels, floating HUD, and cursor reticle)
+- [x] Precision 3D Surface Paint with dynamic Three.js `flipY` orientation alignment, sub-texel DDA stroke interpolation, and canvas flood fill
+- [x] Blazing Fast 60+ FPS Viewport Engine with indexed vertex color tracking and throttled normal recalculations
+- [x] Preserved Plugins and Backend Integrations (`plugins/unity`, `plugins/unreal`, `backend/`)
 - [x] Next.js 16 App Router with all routes
 - [x] 3D Viewport with Three.js / R3F (continuous background MeshViewer preserved)
 - [x] Workspace Shell with unified left navigation rail and right property inspector
