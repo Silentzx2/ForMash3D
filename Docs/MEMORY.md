@@ -1,3 +1,8 @@
+## 2026-10-01 Butter-Smooth Viewport & Real-Time Cursor Reticle
+- Replaced React state `brushPointer` with direct DOM ref `translate3d` tracking (`will-change-transform`), eliminating re-renders on mousemove and removing the 75ms CSS transition lag.
+- Integrated vector tool icons directly into the center reticle dot and badge for real-time cursor feedback.
+- Optimized the sculpt deformation loop with squared-distance thresholding and eliminated intermediate object allocations.
+
 ## 2026-10-01 Hugeicons Standardization & Type System Remediation
 - Remediated 47 TypeScript compilation errors across 11 files after migrating from `lucide-react` to `@hugeicons/react` and `@hugeicons/core-free-icons`.
 - Replaced direct JSX rendering of `IconSvgObject` definitions with `<HugeiconsIcon icon={...} />` wrappers across admin tabs (`QueueTab`, `RuntimeTab`, `StorageTab`, `SettingsTab`).

@@ -648,13 +648,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [brushPreviewColor, setBrushPreviewColor] = useState('#FFCC00');
   const brushPreviewTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Dynamic 2D BrushIcon Ring Pointer tracking
-  const [brushPointer, setBrushPointer] = useState<{ x: number; y: number; visible: boolean; isDown: boolean }>({
-    x: 0,
-    y: 0,
-    visible: false,
-    isDown: false,
-  });
+  // Dynamic 2D Brush Reticle Pointer tracking (ref-based for zero React re-renders)
+  const brushReticleRef = useRef<HTMLDivElement>(null);
+  const isPointerDownRef = useRef(false);
 
   useEffect(() => {
     if (activeTool === 'edit') {
@@ -1673,14 +1669,30 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         const hlG = brush === 'smooth' ? 0.95 : (dir > 0 ? 0.8 : 0.75);
         const hlB = brush === 'smooth' ? 0.5 : (dir > 0 ? 0.15 : 1.0);
 
+        const radiusSq = localRadius * localRadius;
+        const invRadius = 1 / localRadius;
+        const hardnessExp = 1 + (1 - hardness) * 2;
+        const tempVec = new THREE.Vector3();
+
         const deform = (center: THREE.Vector3, centerNorm: THREE.Vector3) => {
+          const cx = center.x, cy = center.y, cz = center.z;
+          const cnx = centerNorm.x, cny = centerNorm.y, cnz = centerNorm.z;
+
           for (let i = 0; i < count; i++) {
-            p.fromBufferAttribute(posAttr, i);
-            const dist = p.distanceTo(center);
-            if (dist < localRadius) {
-              const t = dist / localRadius;
-              const falloff = Math.pow(Math.max(0, 1 - t), 1 + (1 - hardness) * 2);
+            const px = posAttr.getX(i);
+            const py = posAttr.getY(i);
+            const pz = posAttr.getZ(i);
+            const dx = px - cx;
+            const dy = py - cy;
+            const dz = pz - cz;
+            const distSq = dx * dx + dy * dy + dz * dz;
+
+            if (distSq < radiusSq) {
+              const dist = Math.sqrt(distSq);
+              const t = dist * invRadius;
+              const falloff = Math.pow(Math.max(0, 1 - t), hardnessExp);
               const amount = strength * falloff * 0.04 * dir;
+              p.set(px, py, pz);
 
               if (brush === 'smooth') {
                 p.lerp(center, strength * falloff * 0.12);
@@ -1692,10 +1704,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   p.addScaledVector(centerNorm, amount);
                 }
               } else if (brush === 'flatten') {
-                const planeDist = p.clone().sub(center).dot(centerNorm);
+                const planeDist = dx * cnx + dy * cny + dz * cnz;
                 p.addScaledVector(centerNorm, -planeDist * strength * falloff * 0.35);
               } else if (brush === 'pinch') {
-                p.addScaledVector(center.clone().sub(p), strength * falloff * 0.2 * dir);
+                tempVec.set(-dx, -dy, -dz);
+                p.addScaledVector(tempVec, strength * falloff * 0.2 * dir);
               } else {
                 p.addScaledVector(centerNorm, amount);
               }
@@ -3245,70 +3258,83 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         ref={containerRef} 
         onPointerMove={(e) => {
           if (activeTool === 'edit' || activeTool === 'texture') {
-            setBrushPointer({
-              x: e.clientX,
-              y: e.clientY,
-              visible: true,
-              isDown: e.buttons > 0,
-            });
+            const el = brushReticleRef.current;
+            if (el) {
+              el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%) scale(${isPointerDownRef.current ? 0.94 : 1})`;
+              if (el.style.display !== 'flex') el.style.display = 'flex';
+            }
           }
         }}
         onPointerDown={(e) => {
+          isPointerDownRef.current = true;
           if (activeTool === 'edit' || activeTool === 'texture') {
-            setBrushPointer(prev => ({ ...prev, x: e.clientX, y: e.clientY, isDown: true }));
+            const el = brushReticleRef.current;
+            if (el) {
+              el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%) scale(0.94)`;
+            }
           }
         }}
         onPointerUp={() => {
-          setBrushPointer(prev => ({ ...prev, isDown: false }));
+          isPointerDownRef.current = false;
+          const el = brushReticleRef.current;
+          if (el) {
+            el.style.transform = el.style.transform.replace('scale(0.94)', 'scale(1)');
+          }
         }}
         onPointerLeave={() => {
-          setBrushPointer(prev => ({ ...prev, visible: false, isDown: false }));
+          isPointerDownRef.current = false;
+          const el = brushReticleRef.current;
+          if (el) el.style.display = 'none';
         }}
         className={`w-full h-full absolute inset-0 ${
           activeTool === 'edit' || activeTool === 'texture'
             ? 'cursor-none'
+            : activeTool === 'uv' || activeTool === 'segment'
+            ? 'cursor-crosshair'
             : 'cursor-grab active:cursor-grabbing'
         }`} 
       />
 
-      {/* Floating Precision BrushIcon Reticle Cursor */}
-      {(activeTool === 'edit' || activeTool === 'texture') && brushPointer.visible && (
+      {/* Floating Real-Time Zero-Lag Precision Brush Reticle Cursor */}
+      {(activeTool === 'edit' || activeTool === 'texture') && (
         <div
-          className="fixed pointer-events-none z-50 transition-transform duration-75 ease-out"
+          ref={brushReticleRef}
+          className="fixed pointer-events-none z-50 will-change-transform hidden flex-col items-center justify-center"
           style={{
-            left: `${brushPointer.x}px`,
-            top: `${brushPointer.y}px`,
-            transform: `translate(-50%, -50%) scale(${brushPointer.isDown ? 0.94 : 1})`,
+            left: 0,
+            top: 0,
           }}
         >
           <div
-            className="rounded-full border-2 transition-all duration-100 flex items-center justify-center"
+            className="rounded-full border-2 flex items-center justify-center"
             style={{
               width: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
               height: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
               borderColor: activeTool === 'texture' 
                 ? (paintBrushSettings?.color || '#FFCC00') 
-                : (brushPointer.isDown ? '#FFAA00' : '#FFCC00'),
+                : '#FFCC00',
               backgroundColor: activeTool === 'texture' 
                 ? `${paintBrushSettings?.color || '#FFCC00'}22` 
-                : (brushPointer.isDown ? 'rgba(255, 170, 0, 0.16)' : 'rgba(255, 204, 0, 0.07)'),
-              boxShadow: brushPointer.isDown 
-                ? '0 0 18px rgba(255, 204, 0, 0.65), inset 0 0 10px rgba(255, 204, 0, 0.35)' 
-                : '0 0 10px rgba(255, 204, 0, 0.3)',
+                : 'rgba(255, 204, 0, 0.08)',
+              boxShadow: '0 0 14px rgba(255, 204, 0, 0.4), inset 0 0 8px rgba(255, 204, 0, 0.2)',
             }}
           >
-            {/* Center Reticle Crosshair Dot */}
+            {/* Center Reticle Icon — Shows the actual tool/brush icon */}
             <div 
-              className="w-1.5 h-1.5 rounded-full"
+              className="w-4 h-4 rounded-full flex items-center justify-center shadow-sm"
               style={{
                 backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00'
               }}
-            />
+            >
+              {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush, false), {
+                className: "w-2.5 h-2.5 text-black flex-shrink-0"
+              })}
+            </div>
           </div>
 
-          {/* Floating BrushIcon Type & Radius Badge */}
-          <div className="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-black/90 backdrop-blur-md border border-white/15 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
-            {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush), {
+          {/* Floating Brush Type & Radius Badge */}
+          <div className="mt-1.5 px-2.5 py-1 rounded-lg bg-black/90 backdrop-blur-md border border-white/20 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
+            {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush, false), {
               className: "w-3.5 h-3.5 text-primary flex-shrink-0"
             })}
             <span>
