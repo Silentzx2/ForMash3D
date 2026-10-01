@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import config
-from app.routes import health, meshes, tree
+from app.routes import health, meshes
 
 app = FastAPI(
     title="3D Gen Studio — Mesh Tools",
@@ -33,7 +33,6 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(meshes.router)
-app.include_router(tree.router)
 
 
 if __name__ == "__main__":

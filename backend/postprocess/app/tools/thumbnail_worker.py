@@ -7,7 +7,7 @@ and a crash inside Blender must not take the API down.
 
 Why a server-side render at all: mesh thumbnails are normally rendered in the
 browser (src/utils/meshThumbnail.js, WebGL). Meshes created without a browser
-(ComfyUI workflows / external-API generation driven over MCP) never get one, so
+(external-API generation driven over MCP) never get one, so
 the app shows an empty image. This renders one headlessly instead.
 
 Engine choice: Cycles on the CPU. Cycles needs no GL/display context, so it

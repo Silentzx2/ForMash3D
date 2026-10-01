@@ -92,6 +92,7 @@ kill_by_port(){
 }
 
 section "Stopping ForMash 3D"
+kill_group_from_file "$PID_DIR/postprocess.pid" "PostProcess service"
 kill_group_from_file "$PID_DIR/frontend.pid" "Frontend"
 kill_group_from_file "$PID_DIR/backend.pid" "Backend supervisor"
 kill_backend_children
@@ -102,6 +103,7 @@ kill_by_pattern "scheduler_service.py" "Scheduler service"
 kill_by_pattern "next-server" "Next.js frontend"
 kill_by_port 7842 "Backend port 7842"
 kill_by_port 3000 "Frontend port 3000"
+kill_by_port 8200 "PostProcess port 8200"
 
 stop_local_redis
 

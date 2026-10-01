@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start the Standalone Mesh Tools / PostProcess Microservice
 # Service: FastAPI running on port 8200
-# Endpoints: /api/meshes/* (Auto UV, Auto Retopo, Repair, Bake, Segment) and /api/tree/generate
+# Endpoints: /api/meshes/* (Auto UV, Auto Retopo, Repair, Bake, Segment)
 
 set -euo pipefail
 

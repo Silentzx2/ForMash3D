@@ -30,18 +30,12 @@ from ..config import MAX_UPLOAD_BYTES
 from ..meshio import (export_mesh, load_mesh, load_mesh_vertex_normals, load_scene,
                       mesh_stats, scene_to_mesh)
 from ..schemas import (AutoRetopoOptions, AutoUvOptions, BakeOptions, CollisionOptions,
-                       ImpostorOptions,
-                       ConvertOptions, FitOptions, FlattenOptions, HiddenFaceOptions, InspectOptions,
+                       ConvertOptions, FlattenOptions, InspectOptions,
                        RepairOptions, SegmentOptions)
-from ..services.assembly_fit import run_fit
 from ..services.auto_retopo import run_auto_retopo
 from ..services.auto_uv import run_auto_uv
-from ..services.hidden_faces import run_hidden_faces
 from ..services.bake import run_bake, run_flatten
 from ..services.collision import run_collision
-# The impostor baker lives under treegen only because that is where it was
-# first needed; it takes a plain Scene and knows nothing about trees.
-from ..services.treegen.impostor import bake_impostor
 from ..services.convert_fbx import run_convert_fbx
 from ..services.inspect import run_inspect
 from ..services.mesh_thumbnail import render_mesh_thumbnail
@@ -273,75 +267,6 @@ async def flatten(
     return stream_payload(run, "Flatten")
 
 
-@router.post("/fit")
-async def fit(
-    meshFile: UploadFile = File(...),
-    sourceFile: UploadFile = File(...),
-    options: str | None = Form(None),
-) -> StreamingResponse:
-    """Adapt a garment/armour piece so it follows a base body's silhouette.
-
-    Two uploads, like /bake: `meshFile` is the PIECE being modified (matching
-    every other route's meaning of meshFile) and `sourceFile` is the base body
-    it is fitted to.
-
-    Both meshes must already be in ONE SHARED WORLD SPACE -- the client bakes
-    each piece's placement into the GLB it uploads. A proximity query between
-    meshes in different spaces is meaningless, and nothing here re-implements
-    the client's TRS or mirroring.
-
-    Returns POSITIONS, not geometry: the terminal `done` event carries
-    `positions_b64` (a float32 xyz array in the input's vertex order) instead of
-    the usual `mesh_b64`. The fit never changes vertex count or order, so the
-    client applies just the coordinates onto its own geometry and keeps its UVs,
-    materials and skinning. See services/assembly_fit.run_fit.
-    """
-    opts = _parse_options(options, FitOptions)
-    piece_bytes = await _read_upload(meshFile)
-    body_bytes = await _read_upload(sourceFile)
-
-    piece = load_mesh(piece_bytes, meshFile.filename or "piece.glb")
-    body = load_mesh(body_bytes, sourceFile.filename or "body.glb")
-
-    def run(emit):
-        return run_fit(piece, body, opts, progress=emit)
-
-    return stream_payload(run, "Fit")
-
-
-@router.post("/hidden-faces")
-async def hidden_faces(
-    meshFile: UploadFile = File(...),
-    sourceFile: UploadFile = File(...),
-    options: str | None = Form(None),
-) -> StreamingResponse:
-    """Find the faces of a base body that the armour completely hides.
-
-    Two uploads, following /fit: `meshFile` is the BODY (the thing being
-    modified) and `sourceFile` is every occluding piece, concatenated.
-
-    Both must already be in ONE SHARED WORLD SPACE, as everywhere else in the
-    assembly pipeline.
-
-    Returns a per-face MASK, not a mesh: the terminal `done` event carries
-    `mask_b64`, one byte per face in the uploaded face order. Deleting faces
-    changes the vertex count, and the base is usually rigged -- trimesh cannot
-    carry skinning through a load, so the client applies the mask to its own
-    geometry and keeps every attribute. See services/hidden_faces.
-    """
-    opts = _parse_options(options, HiddenFaceOptions)
-    body_bytes = await _read_upload(meshFile)
-    occluder_bytes = await _read_upload(sourceFile)
-
-    body = load_mesh(body_bytes, meshFile.filename or "body.glb")
-    occluders = load_mesh(occluder_bytes, sourceFile.filename or "occluders.glb")
-
-    def run(emit):
-        return run_hidden_faces(body, occluders, opts, progress=emit)
-
-    return stream_payload(run, "Hidden faces")
-
-
 @router.post("/segment")
 async def segment(
     meshFile: UploadFile = File(...),
@@ -400,7 +325,7 @@ async def thumbnail(meshFile: UploadFile = File(...)) -> dict:
 
     Single-artifact endpoint (no SSE): returns plain JSON with the PNG base64 in
     `preview_b64`. Used by the Node backend to give server-side-generated meshes
-    (ComfyUI / external-API, driven over MCP) a thumbnail — those never get the
+    (external-API, driven over MCP) a thumbnail — those never get the
     browser's WebGL render. The render runs in a threadpool so the bpy subprocess
     does not block the event loop.
     """
@@ -410,45 +335,3 @@ async def thumbnail(meshFile: UploadFile = File(...)) -> dict:
     except Exception as exc:  # noqa: BLE001 — surface as a clean HTTP error
         raise HTTPException(status_code=500, detail=f"Thumbnail render failed: {exc}") from exc
     return {"preview_b64": base64.b64encode(png).decode("ascii")}
-
-@router.post("/impostor")
-async def impostor(
-    meshFile: UploadFile = File(...),
-    options: str | None = Form(None),
-) -> StreamingResponse:
-    """Bake a hemi-octahedral impostor atlas for any mesh.
-
-    The baker is the tree generator's, unchanged and not copied: it always took a
-    plain `trimesh.Scene` and never knew anything about trees, it was simply only
-    ever reachable through /tree/lods. A building wants exactly the same thing
-    for its most distant level, and so would any other large static prop.
-
-    Returns images rather than geometry the way `/meshes/bake` does, plus the
-    billboard GLB and the `meta` an impostor shader needs to pick and blend
-    views.
-    """
-    opts = _parse_options(options, ImpostorOptions)
-    data = await _read_upload(meshFile)
-    scene = load_scene(data, meshFile.filename or "mesh.glb")
-
-    def run(emit):
-        result = bake_impostor(
-            scene,
-            grid=opts.grid,
-            tile=opts.tile,
-            seed=opts.seed,
-            samples_per_pixel=opts.samples_per_pixel,
-            on_progress=lambda frac, label: emit("impostor", frac, label),
-            name=opts.name,
-        )
-        return {
-            "format": "glb",
-            "mesh_b64": base64.b64encode(result["glb"]).decode("ascii"),
-            "maps": {
-                "albedo": base64.b64encode(result["albedo_png"]).decode("ascii"),
-                "normal": base64.b64encode(result["normal_png"]).decode("ascii"),
-            },
-            "meta": result["meta"],
-        }
-
-    return stream_payload(run, "Impostor")

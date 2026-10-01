@@ -92,7 +92,7 @@ ORM_NEUTRAL = {"ao": 255, "roughness": 255, "metallic": 0}
 # when it is measured rather than assumed: if the target's box is the source's box
 # times the same ratio on all three axes, the two are the same shape in different
 # units. That case is common and arrives entirely from outside this editor — a mesh
-# simplified in a ComfyUI graph rather than by Auto Retopo/Optimize keeps the
+# simplified in an external graph rather than by Auto Retopo/Optimize keeps the
 # original's space, while the texturing pass it is meant to be baked against
 # normalises its output to a unit bounding box at the origin (Trellis2 does exactly
 # this). The two then differ by a clean uniform factor, which is recoverable; only

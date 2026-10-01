@@ -1,8 +1,7 @@
 """Runtime configuration for the mesh-processing service.
 
 All values can be overridden with environment variables so the service can run
-on a different machine/port than the Node backend — mirroring how ComfyUI is
-configured in the main app.
+on a different machine/port than the Node backend.
 """
 from __future__ import annotations
 
