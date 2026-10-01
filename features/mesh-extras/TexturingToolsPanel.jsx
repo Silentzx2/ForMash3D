@@ -1,5 +1,5 @@
-import { getWorkflowValueType } from '../../utils/meshTexturing'
-import { getWorkflowEnumOptions, resolveWorkflowEnumValue } from '../../utils/workflowEnums'
+import { getWorkflowValueType } from '../utils/meshTexturing'
+import { getWorkflowEnumOptions, resolveWorkflowEnumValue } from '../utils/workflowEnums'
 import ComfyTextButton from '../comfy/ComfyTextButton'
 
 // Texturing-mode left panel (brush/crop/feather, AI workflow + image-input

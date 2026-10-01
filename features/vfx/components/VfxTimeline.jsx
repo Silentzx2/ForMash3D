@@ -108,8 +108,8 @@ export default function VfxTimeline({
   const frame = useRef(0)
   const [laneWidth, setLaneWidth] = useState(600)
 
-  const duration = doc.effect.duration || 1
-  const step = doc.effect.fixedDt || 1 / 60
+  const duration = doc?.effect?.duration || 1
+  const step = doc?.effect?.fixedDt || 1 / 60
   const pps = laneWidth / duration
 
   // Measured rather than assumed: the dock spans all three panes and its width
@@ -396,8 +396,8 @@ export default function VfxTimeline({
         <label className="vfx-timeline__loop" title="Restart the effect when it reaches the end.">
           <input
             type="checkbox"
-            checked={Boolean(doc.effect.loop)}
-            onChange={event => actions.setEffectSettings({ loop: event.target.checked })}
+            checked={Boolean(doc?.effect?.loop)}
+            onChange={event => actions?.setEffectSettings?.({ loop: event.target.checked })}
           />
           Loop effect
         </label>

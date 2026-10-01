@@ -38,8 +38,8 @@ const CELL_SIZES = [64, 128, 256, 512]
 export default function VfxSheetDialog({
   ir, doc, name, cameraRef, textures, meshes, onClose, notify,
 }) {
-  const fixedDt = doc.effect.fixedDt || 1 / 60
-  const durationFrames = Math.max(1, Math.round((doc.effect.duration || 1) / fixedDt))
+  const fixedDt = doc?.effect?.fixedDt || 1 / 60
+  const durationFrames = Math.max(1, Math.round((doc?.effect?.duration || 1) / fixedDt))
 
   const [startFrame, setStartFrame] = useState(0)
   const [endFrame, setEndFrame] = useState(durationFrames)
@@ -52,8 +52,8 @@ export default function VfxSheetDialog({
   const [busy, setBusy] = useState(false)
 
   const plan = useMemo(() => planSpriteSheet({
-    startFrame, endFrame, columns, rows, cell, loop: doc.effect.loop !== false,
-  }), [startFrame, endFrame, columns, rows, cell, doc.effect.loop])
+    startFrame, endFrame, columns, rows, cell, loop: doc?.effect?.loop !== false,
+  }), [startFrame, endFrame, columns, rows, cell, doc?.effect?.loop])
 
   const seconds = (frames) => `${(frames * fixedDt).toFixed(2)}s`
 

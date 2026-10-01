@@ -10,7 +10,7 @@
 // produced by `loadEditableGeometryFromObject` in src/utils/meshEditor.js).
 
 import * as THREE from 'three'
-import { buildCanonicalVertexIds } from './meshEditor'
+import { buildCanonicalVertexIds } from '../../utils/meshEditor'
 
 const MAX_GRID_CELLS = 4_000_000 // cap memory footprint of the uniform grid
 const INITIAL_QUERY_CAP = 4096

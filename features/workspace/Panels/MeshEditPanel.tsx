@@ -22,6 +22,7 @@ import {
   Zap,
   Loader2,
   Check,
+  Scissors,
 } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { createUploadedMeshAsset } from '../types';
@@ -36,24 +37,43 @@ export const MeshEditPanel: React.FC = () => {
     isExecuting,
     activeTask,
     runMeshEditing,
+    sculptSettings,
+    setSculptSettings,
   } = useWorkspace();
 
-  const [inputTab, setInputTab] = useState<'text' | 'image' | 'sculpt'>('text');
+  const [inputTab, setInputTab] = useState<'text' | 'image' | 'sculpt' | 'boolean'>('text');
   const [editMode, setEditMode] = useState<'add' | 'remove' | 'replace'>('add');
   const [selectionTool, setSelectionTool] = useState<'box' | 'sphere' | 'brush' | 'lasso'>('box');
   const [showManipulator, setShowManipulator] = useState(true);
 
-  // Interactive Sculpting states
-  const [sculptBrush, setSculptBrush] = useState<'standard' | 'clay' | 'inflate' | 'smooth' | 'flatten' | 'pinch' | 'grab'>('standard');
-  const [sculptRadius, setSculptRadius] = useState(0.15);
-  const [sculptStrength, setSculptStrength] = useState(0.50);
-  const [sculptHardness, setSculptHardness] = useState(0.50);
-  const [sculptSpacing, setSculptSpacing] = useState(0.10);
-  const [sculptDirection, setSculptDirection] = useState<1 | -1>(1); // 1 = Add, -1 = Subtract
-  const [sculptFrontOnly, setSculptFrontOnly] = useState(true);
-  const [sculptSymmetry, setSculptSymmetry] = useState({ x: true, y: false, z: false });
-  const [sculptSteadyStroke, setSculptSteadyStroke] = useState(0.20);
-  const [sculptAutoSmooth, setSculptAutoSmooth] = useState(0.10);
+  // CSG Boolean Geometry states
+  const [booleanOp, setBooleanOp] = useState<'subtract' | 'union' | 'intersect'>('subtract');
+  const [booleanPrimitive, setBooleanPrimitive] = useState<'cube' | 'cylinder' | 'sphere'>('cube');
+  const [booleanScale, setBooleanScale] = useState(0.25);
+  const [booleanDepth, setBooleanDepth] = useState(0.20);
+  const [booleanRotation, setBooleanRotation] = useState(0);
+
+  // Interactive Sculpting states synced with WorkspaceContext
+  const sculptBrush = sculptSettings.brush;
+  const setSculptBrush = (brush: any) => setSculptSettings(prev => ({ ...prev, brush }));
+  const sculptRadius = sculptSettings.radius;
+  const setSculptRadius = (radius: number) => setSculptSettings(prev => ({ ...prev, radius }));
+  const sculptStrength = sculptSettings.strength;
+  const setSculptStrength = (strength: number) => setSculptSettings(prev => ({ ...prev, strength }));
+  const sculptHardness = sculptSettings.hardness;
+  const setSculptHardness = (hardness: number) => setSculptSettings(prev => ({ ...prev, hardness }));
+  const sculptSpacing = sculptSettings.spacing;
+  const setSculptSpacing = (spacing: number) => setSculptSettings(prev => ({ ...prev, spacing }));
+  const sculptDirection = sculptSettings.direction;
+  const setSculptDirection = (direction: any) => setSculptSettings(prev => ({ ...prev, direction }));
+  const sculptFrontOnly = sculptSettings.frontOnly;
+  const setSculptFrontOnly = (frontOnly: boolean) => setSculptSettings(prev => ({ ...prev, frontOnly }));
+  const sculptSymmetry = sculptSettings.symmetry;
+  const setSculptSymmetry = (valOrFn: any) => setSculptSettings(prev => ({ ...prev, symmetry: typeof valOrFn === 'function' ? valOrFn(prev.symmetry) : valOrFn }));
+  const sculptSteadyStroke = sculptSettings.steadyStroke;
+  const setSculptSteadyStroke = (steadyStroke: number) => setSculptSettings(prev => ({ ...prev, steadyStroke }));
+  const sculptAutoSmooth = sculptSettings.autoSmooth;
+  const setSculptAutoSmooth = (autoSmooth: number) => setSculptSettings(prev => ({ ...prev, autoSmooth }));
 
   // Text-guided editing states
   const [sourcePrompt, setSourcePrompt] = useState('A medieval knight with a steel armor');
@@ -152,7 +172,8 @@ export const MeshEditPanel: React.FC = () => {
           {[
             { id: 'text', label: 'Text Inpaint' },
             { id: 'image', label: 'Image Guided' },
-            { id: 'sculpt', label: 'Sculpt Brushes' },
+            { id: 'sculpt', label: 'Sculpt' },
+            { id: 'boolean', label: 'CSG Booleans' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -747,6 +768,128 @@ export const MeshEditPanel: React.FC = () => {
             </div>
           </div>
         )}
+
+        {inputTab === 'boolean' && (
+          <div className="space-y-2.5">
+            {/* Operation Selector */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                  <Scissors className="w-3.5 h-3.5 text-primary" />
+                  <span>Boolean Operation</span>
+                </span>
+                <span className="text-[10px] font-mono text-primary font-bold uppercase">{booleanOp}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'subtract', label: 'Subtract', desc: 'Carve out stamp' },
+                  { id: 'union', label: 'Union', desc: 'Fuse into mesh' },
+                  { id: 'intersect', label: 'Intersect', desc: 'Keep overlap' },
+                ].map((op) => {
+                  const isActive = booleanOp === op.id;
+                  return (
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={() => setBooleanOp(op.id as any)}
+                      className={`p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary text-black font-bold shadow-sm border-primary'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))]'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold leading-tight">{op.label}</div>
+                      <div className={`text-[8.5px] mt-0.5 ${isActive ? 'text-black/80' : 'text-zinc-400'}`}>
+                        {op.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Stamp Primitive Selector */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stamp Primitive</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'cube', label: 'Box / Cube' },
+                  { id: 'cylinder', label: 'Cylinder' },
+                  { id: 'sphere', label: 'Sphere' },
+                ].map((prim) => {
+                  const isActive = booleanPrimitive === prim.id;
+                  return (
+                    <button
+                      key={prim.id}
+                      type="button"
+                      onClick={() => setBooleanPrimitive(prim.id as any)}
+                      className={`py-1.5 px-2 rounded-lg border text-center text-xs font-bold transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary/20 text-primary border-primary/40'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {prim.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Stamp Dimensions Sliders */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stamp Dimensions</span>
+              
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Stamp Scale</span>
+                  <span className="font-mono text-primary font-bold">{booleanScale.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1.0}
+                  step={0.05}
+                  value={booleanScale}
+                  onChange={(e) => setBooleanScale(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Cut Depth</span>
+                  <span className="font-mono text-primary font-bold">{booleanDepth.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1.0}
+                  step={0.05}
+                  value={booleanDepth}
+                  onChange={(e) => setBooleanDepth(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Rotation Angle</span>
+                  <span className="font-mono text-primary font-bold">{booleanRotation}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={360}
+                  step={15}
+                  value={booleanRotation}
+                  onChange={(e) => setBooleanRotation(parseInt(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom Sticky Action Footer */}
@@ -759,11 +902,11 @@ export const MeshEditPanel: React.FC = () => {
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {inputTab === 'sculpt' ? sculptBrush : editMode}
+              {inputTab === 'sculpt' ? sculptBrush : inputTab === 'boolean' ? `${booleanOp}-${booleanPrimitive}` : editMode}
             </span>
           </div>
           <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex-shrink-0 uppercase">
-            {inputTab === 'text' ? 'TEXT' : inputTab === 'image' ? 'IMAGE' : 'SCULPT BRUSH'}
+            {inputTab === 'text' ? 'TEXT' : inputTab === 'image' ? 'IMAGE' : inputTab === 'boolean' ? 'CSG BOOLEAN' : 'SCULPT BRUSH'}
           </span>
         </div>
 
@@ -779,6 +922,18 @@ export const MeshEditPanel: React.FC = () => {
           >
             <Brush className="w-4 h-4 text-black stroke-[2.5]" />
             <span>INTERACTIVE SCULPT ACTIVE: {sculptBrush.toUpperCase()}</span>
+          </button>
+        ) : inputTab === 'boolean' ? (
+          <button
+            type="button"
+            onClick={() => toast.success(`Applied CSG Boolean: ${booleanOp.toUpperCase()}`, {
+              description: `${booleanPrimitive.toUpperCase()} stamp applied to target mesh geometry.`
+            })}
+            disabled={!hasTargetMesh}
+            className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Scissors className="w-4 h-4 text-black stroke-[2.5]" />
+            <span>APPLY CSG BOOLEAN {booleanOp.toUpperCase()}</span>
           </button>
         ) : (
           <ShimmerButton

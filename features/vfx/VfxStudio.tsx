@@ -52,7 +52,8 @@ export const VfxStudio: React.FC = () => {
   const { navigateToTool } = useWorkspace();
 
   // Document & runtime state
-  const { doc, setDoc, undo, redo, canUndo, canRedo } = useVfxDocument({} as any);
+  const { doc, commit, undo, redo, canUndo, canRedo } = useVfxDocument({} as any);
+  const setDoc = commit;
   
   // Compile IR from doc
   const compiled = useMemo(() => {
@@ -307,6 +308,10 @@ export const VfxStudio: React.FC = () => {
         {/* Bottom Timeline */}
         <footer className="h-20 border-t border-white/[0.08] bg-[hsl(var(--surface-1))] z-20 flex-shrink-0">
           <VfxTimeline
+            doc={doc}
+            actions={{
+              setEffectSettings: (patch: any) => commit((d: any) => ({ ...d, effect: { ...d?.effect, ...patch } })),
+            }}
             playing={isPlaying}
             onTogglePlay={togglePlay}
             currentTime={currentTime}
@@ -332,6 +337,12 @@ export const VfxStudio: React.FC = () => {
         {sheetOpen && (
           <VfxSheetDialog
             open={sheetOpen}
+            ir={compiled.ir}
+            doc={doc}
+            name="VFX Effect"
+            cameraRef={cameraRef}
+            textures={new Map()}
+            meshes={new Map()}
             onClose={() => setSheetOpen(false)}
           />
         )}

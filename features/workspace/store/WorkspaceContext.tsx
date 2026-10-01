@@ -11,6 +11,8 @@ import {
   GenerationSettings,
   RemeshSettings,
   TextureSettings,
+  SculptSettings,
+  PaintBrushSettings,
   ActiveTask,
   EnvironmentSettings,
   normalizeModelAsset,
@@ -96,6 +98,10 @@ interface WorkspaceContextType {
   setRemeshSettings: React.Dispatch<React.SetStateAction<RemeshSettings>>;
   textureSettings: TextureSettings;
   setTextureSettings: React.Dispatch<React.SetStateAction<TextureSettings>>;
+  sculptSettings: SculptSettings;
+  setSculptSettings: React.Dispatch<React.SetStateAction<SculptSettings>>;
+  paintBrushSettings: PaintBrushSettings;
+  setPaintBrushSettings: React.Dispatch<React.SetStateAction<PaintBrushSettings>>;
   generate3DModel: (forcedMode?: 'image-to-3d' | 'text-to-3d') => Promise<void>;
   generateImageTo3D: (customImage?: string) => Promise<void>;
   runModelGeneration: () => Promise<void>;
@@ -475,6 +481,29 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
     maxNumView: 6,
     generatePBR: true,
+  });
+
+  const [sculptSettings, setSculptSettings] = useState<SculptSettings>({
+    brush: 'standard',
+    radius: 0.15,
+    strength: 0.50,
+    hardness: 0.50,
+    spacing: 0.10,
+    direction: 1,
+    frontOnly: true,
+    symmetry: { x: true, y: false, z: false },
+    steadyStroke: 0.20,
+    autoSmooth: 0.10,
+  });
+
+  const [paintBrushSettings, setPaintBrushSettings] = useState<PaintBrushSettings>({
+    color: '#FFCC00',
+    size: 24,
+    opacity: 1.0,
+    flow: 0.8,
+    hardness: 0.8,
+    shape: 'round',
+    blendMode: 'normal',
   });
 
   const [environmentSettings, setEnvironmentSettings] = useState<EnvironmentSettings>({
@@ -1954,10 +1983,14 @@ const queueWorkflow = useCallback(async (workflow: Record<string, unknown>, type
     generationSettings, setGenerationSettings,
     remeshSettings, setRemeshSettings,
     textureSettings, setTextureSettings,
+    sculptSettings, setSculptSettings,
+    paintBrushSettings, setPaintBrushSettings,
     environmentSettings, setEnvironmentSettings,
   }), [generationSettings, setGenerationSettings,
     remeshSettings, setRemeshSettings,
     textureSettings, setTextureSettings,
+    sculptSettings, setSculptSettings,
+    paintBrushSettings, setPaintBrushSettings,
     environmentSettings, setEnvironmentSettings]);
 
   const generationActionsValue = useMemo(() => ({

@@ -3,7 +3,7 @@
 // No React, no component state.
 
 import * as THREE from 'three'
-import { viewWorldHeightAt } from './cameraViewport'
+import { viewWorldHeightAt } from '../../utils/cameraViewport'
 
 /**
  * Convert a screen-space brush radius (pixels) into the equivalent radius in

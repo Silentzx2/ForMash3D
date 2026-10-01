@@ -36,12 +36,13 @@ import useAssemblyScene from './hooks/useAssemblyScene';
 import useAssemblyFitRun from './hooks/useAssemblyFitRun';
 import useAssemblyPicking from './hooks/useAssemblyPicking';
 
-import { getBasePiece, getGarmentPieces, getVisiblePieces } from './utils/assemblyHelpers';
+import { createEmptyAssembly, getBasePiece, getGarmentPieces, getVisiblePieces } from './utils/assemblyHelpers';
 import './pages/AssemblyPage.css';
 
 export const AssemblyStudio: React.FC = () => {
   const { navigateToTool } = useWorkspace();
 
+  const [assemblyId, setAssemblyId] = useState<string | null>('1');
   const [activeTab, setActiveTab] = useState<'fit' | 'transform' | 'landmarks'>('fit');
   const [showGrid, setShowGrid] = useState(true);
   const [orthographic, setOrthographic] = useState(false);
@@ -50,8 +51,15 @@ export const AssemblyStudio: React.FC = () => {
   const cameraRef = useRef<any>(null);
   const gizmoDraggingRef = useRef(false);
 
+  const assemblyDocHook = useAssemblyDocument({
+    assemblyId,
+    onAssemblyIdChange: setAssemblyId
+  } as any);
+
+  const fallbackDoc = useMemo(() => createEmptyAssembly(), []);
+  const doc = assemblyDocHook.doc || fallbackDoc;
+
   const {
-    doc,
     ready,
     loading,
     canUndo,
@@ -63,7 +71,7 @@ export const AssemblyStudio: React.FC = () => {
     removePiece,
     setBase,
     patchSettings,
-  } = useAssemblyDocument({ assemblyId: null, onAssemblyIdChange: () => {} } as any);
+  } = assemblyDocHook;
 
   const {
     entries,

@@ -319,3 +319,27 @@ export interface CompareSettings {
   showWireframe: boolean;
   showGrid: boolean;
 }
+
+export interface SculptSettings {
+  brush: 'standard' | 'clay' | 'inflate' | 'smooth' | 'flatten' | 'pinch' | 'grab';
+  radius: number;
+  strength: number;
+  hardness: number;
+  spacing: number;
+  direction: 1 | -1;
+  frontOnly: boolean;
+  symmetry: { x: boolean; y: boolean; z: boolean };
+  steadyStroke: number;
+  autoSmooth: number;
+}
+
+export interface PaintBrushSettings {
+  color: string;
+  size: number;
+  opacity: number;
+  flow: number;
+  hardness: number;
+  shape: 'round' | 'square' | 'spray' | 'chalk';
+  blendMode: string;
+}
+

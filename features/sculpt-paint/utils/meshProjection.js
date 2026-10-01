@@ -3,7 +3,7 @@
 // No React, no component state.
 
 import * as THREE from 'three'
-import { mapUvToCanvasPoint } from './meshTexturing'
+import { mapUvToCanvasPoint } from '../../utils/meshTexturing'
 
 export function drawProjectionCheckerboard(context, width, height) {
   if (!context || !width || !height) {

@@ -62,6 +62,12 @@ export const BuildingStudio: React.FC = () => {
 
   const compiled = useBuildingCompile(doc);
 
+  useEffect(() => {
+    if (doc && (!doc.nodes || doc.nodes.length === 0)) {
+      commit((d: any) => ensureStarterGraph(d), { label: 'Initialize starter building' });
+    }
+  }, [doc, commit]);
+
   const canUndo = history?.past?.length > 0;
   const canRedo = history?.future?.length > 0;
 

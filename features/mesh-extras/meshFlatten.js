@@ -27,7 +27,7 @@
 // ray casting at all — the target and the source are the same surface.
 import * as THREE from 'three'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
-import { extractIslands, planAtlas } from './assemblyAtlas'
+import { extractIslands, planAtlas } from '../utils/assemblyAtlas'
 import { exportObject3D, loadGlbBlob, measureUvHealth, textureFromBlob } from './meshExport'
 import { flattenBake } from './meshTools'
 

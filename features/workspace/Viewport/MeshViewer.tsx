@@ -605,10 +605,31 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     setIsLeftPanelOpen,
     leftPanelWidth,
     isRightPanelOpen,
-    rightPanelWidth
+    rightPanelWidth,
+    sculptSettings,
+    paintBrushSettings,
   } = useWorkspace();
 
   const [isDesktopScreen, setIsDesktopScreen] = useState(true);
+
+  const brushCursorRef = useRef<THREE.Mesh | null>(null);
+  const isBrushingRef = useRef(false);
+  const activeToolRef = useRef(activeTool);
+  const sculptSettingsRef = useRef(sculptSettings);
+  const paintBrushSettingsRef = useRef(paintBrushSettings);
+
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+    sculptSettingsRef.current = sculptSettings;
+    paintBrushSettingsRef.current = paintBrushSettings;
+    if (brushCursorRef.current) {
+      if (activeTool === 'texture') {
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(paintBrushSettings?.color || '#FFCC00');
+      } else {
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(0xffcc00);
+      }
+    }
+  }, [activeTool, sculptSettings, paintBrushSettings]);
 
   useEffect(() => {
     const checkScreenSize = () => {
@@ -1544,6 +1565,258 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scene.add(rigGroup);
     rigArmatureGroupRef.current = rigGroup;
 
+    // 7e. Interactive 3D Brush Cursor Ring for Sculpt & Paint
+    const brushRingGeo = new THREE.RingGeometry(0.92, 1.0, 36);
+    const brushRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffcc00,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const brushCursor = new THREE.Mesh(brushRingGeo, brushRingMat);
+    brushCursor.renderOrder = 999;
+    brushCursor.visible = false;
+    scene.add(brushCursor);
+    brushCursorRef.current = brushCursor;
+
+    const applyBrushStroke = (hit: THREE.Intersection, isShift: boolean, isCtrl: boolean) => {
+      const tool = activeToolRef.current;
+      if (tool === 'edit') {
+        const targetMesh = hit.object as THREE.Mesh;
+        if (!targetMesh || !targetMesh.geometry) return;
+        const geom = targetMesh.geometry as THREE.BufferGeometry;
+        const posAttr = geom.attributes.position;
+        if (!posAttr) return;
+
+        const sSettings = sculptSettingsRef.current;
+        const worldRadius = sSettings?.radius || 0.15;
+        const meshScale = targetMesh.getWorldScale(new THREE.Vector3()).x || 1.0;
+        const localRadius = worldRadius / meshScale;
+        const strength = sSettings?.strength || 0.5;
+        const hardness = sSettings?.hardness || 0.5;
+        let dir: 1 | -1 = (sSettings?.direction === -1 ? -1 : 1);
+        if (isCtrl) dir = (dir === 1 ? -1 : 1);
+        let brush = sSettings?.brush || 'standard';
+        if (isShift) brush = 'smooth';
+        const symX = Boolean(sSettings?.symmetry?.x);
+
+        const localHit = targetMesh.worldToLocal(hit.point.clone());
+        const localNormal = hit.face?.normal ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0);
+
+        const count = posAttr.count;
+        const p = new THREE.Vector3();
+        const vNorm = new THREE.Vector3();
+        const normAttr = geom.attributes.normal;
+        let changed = false;
+
+        const deform = (center: THREE.Vector3, centerNorm: THREE.Vector3) => {
+          for (let i = 0; i < count; i++) {
+            p.fromBufferAttribute(posAttr, i);
+            const dist = p.distanceTo(center);
+            if (dist < localRadius) {
+              const t = dist / localRadius;
+              const falloff = Math.pow(Math.max(0, 1 - t), 1 + (1 - hardness) * 2);
+              const amount = strength * falloff * 0.04 * dir;
+
+              if (brush === 'smooth') {
+                p.lerp(center, strength * falloff * 0.12);
+              } else if (brush === 'inflate') {
+                if (normAttr) {
+                  vNorm.fromBufferAttribute(normAttr, i);
+                  p.addScaledVector(vNorm, amount);
+                } else {
+                  p.addScaledVector(centerNorm, amount);
+                }
+              } else if (brush === 'flatten') {
+                const planeDist = p.clone().sub(center).dot(centerNorm);
+                p.addScaledVector(centerNorm, -planeDist * strength * falloff * 0.35);
+              } else if (brush === 'pinch') {
+                p.addScaledVector(center.clone().sub(p), strength * falloff * 0.2 * dir);
+              } else {
+                p.addScaledVector(centerNorm, amount);
+              }
+
+              posAttr.setXYZ(i, p.x, p.y, p.z);
+              changed = true;
+            }
+          }
+        };
+
+        deform(localHit, localNormal);
+        if (symX) {
+          deform(new THREE.Vector3(-localHit.x, localHit.y, localHit.z), new THREE.Vector3(-localNormal.x, localNormal.y, localNormal.z));
+        }
+
+        if (changed) {
+          posAttr.needsUpdate = true;
+          geom.computeVertexNormals();
+          if (normAttr) normAttr.needsUpdate = true;
+          geom.computeBoundingSphere();
+        }
+      } else if (tool === 'texture') {
+        if (!hit.uv) return;
+        const targetMesh = hit.object as THREE.Mesh;
+        let mat = targetMesh.material as any;
+        if (Array.isArray(mat)) mat = mat[0];
+        if (!mat) return;
+
+        let dynamicCanvas = targetMesh.userData?.paintCanvas as HTMLCanvasElement;
+        let ctx = targetMesh.userData?.paintCtx as CanvasRenderingContext2D;
+
+        if (!dynamicCanvas) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1024;
+          canvas.height = 1024;
+          const context = canvas.getContext('2d');
+          if (context) {
+            if (mat.map && mat.map.image) {
+              try {
+                context.drawImage(mat.map.image, 0, 0, 1024, 1024);
+              } catch {
+                context.fillStyle = '#f0f0f0';
+                context.fillRect(0, 0, 1024, 1024);
+              }
+            } else {
+              context.fillStyle = mat.color ? `#${mat.color.getHexString()}` : '#ffffff';
+              context.fillRect(0, 0, 1024, 1024);
+            }
+          }
+          const canvasTex = new THREE.CanvasTexture(canvas);
+          canvasTex.colorSpace = THREE.SRGBColorSpace;
+          canvasTex.flipY = false;
+          mat.map = canvasTex;
+          mat.needsUpdate = true;
+          targetMesh.userData.paintCanvas = canvas;
+          targetMesh.userData.paintCtx = context;
+          dynamicCanvas = canvas;
+          ctx = context!;
+        }
+
+        if (ctx && dynamicCanvas) {
+          const px = hit.uv.x * dynamicCanvas.width;
+          const py = (1 - hit.uv.y) * dynamicCanvas.height;
+          const pSettings = paintBrushSettingsRef.current;
+          const radius = pSettings?.size || 24;
+          const color = pSettings?.color || '#FFCC00';
+
+          ctx.save();
+          if (isCtrl) {
+            ctx.globalCompositeOperation = 'destination-out';
+          } else {
+            ctx.globalCompositeOperation = 'source-over';
+          }
+          const grad = ctx.createRadialGradient(px, py, 0, px, py, radius);
+          grad.addColorStop(0, color);
+          grad.addColorStop(0.7, color);
+          grad.addColorStop(1, 'transparent');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(px, py, radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          if (mat.map) {
+            mat.map.needsUpdate = true;
+          }
+        }
+      }
+    };
+
+    const updateBrushCursor = (e: MouseEvent) => {
+      const tool = activeToolRef.current;
+      const cursor = brushCursorRef.current;
+      if (!cursor) return;
+
+      if (tool !== 'edit' && tool !== 'texture') {
+        cursor.visible = false;
+        return;
+      }
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes: THREE.Mesh[] = [];
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.geometry) {
+          meshes.push(child);
+        }
+      });
+
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        const hit = hits[0];
+        const sSettings = sculptSettingsRef.current;
+        const pSettings = paintBrushSettingsRef.current;
+        const r = tool === 'edit'
+          ? (sSettings?.radius || 0.15)
+          : ((pSettings?.size || 24) * 0.004);
+
+        const normal = hit.face?.normal
+          ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
+          : new THREE.Vector3(0, 0, 1);
+
+        cursor.position.copy(hit.point).addScaledVector(normal, 0.002);
+        cursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        cursor.scale.set(r, r, r);
+        cursor.visible = true;
+
+        if (isBrushingRef.current) {
+          applyBrushStroke(hit, e.shiftKey, e.ctrlKey || e.metaKey);
+        }
+        idleFrames = 0;
+      } else {
+        cursor.visible = false;
+      }
+    };
+
+    const onBrushPointerDown = (e: PointerEvent) => {
+      const tool = activeToolRef.current;
+      if (e.button !== 0 || (tool !== 'edit' && tool !== 'texture')) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes: THREE.Mesh[] = [];
+      currentMeshGroupRef.current?.traverse((c) => {
+        if (c instanceof THREE.Mesh && c.geometry) meshes.push(c);
+      });
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        isBrushingRef.current = true;
+        controls.enabled = false;
+        applyBrushStroke(hits[0], e.shiftKey, e.ctrlKey || e.metaKey);
+        idleFrames = 0;
+      }
+    };
+
+    const onBrushPointerMove = (e: PointerEvent) => {
+      updateBrushCursor(e);
+    };
+
+    const onBrushPointerUp = () => {
+      if (isBrushingRef.current) {
+        isBrushingRef.current = false;
+        controls.enabled = true;
+        idleFrames = 0;
+      }
+    };
+
+    renderer.domElement.addEventListener('pointerdown', onBrushPointerDown);
+    renderer.domElement.addEventListener('pointermove', onBrushPointerMove);
+    window.addEventListener('pointerup', onBrushPointerUp);
+    window.addEventListener('pointercancel', onBrushPointerUp);
+
     // Raycast on canvas to select bone joints or place new bones in Rigging mode
     const onCanvasPointerDown = (event: MouseEvent) => {
       const state = useAnimationStore.getState();
@@ -1692,6 +1965,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       resizeObserver.disconnect();
       renderer.setAnimationLoop(null);
       renderer.domElement.removeEventListener('pointerdown', onCanvasPointerDown);
+      renderer.domElement.removeEventListener('pointerdown', onBrushPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onBrushPointerMove);
+      window.removeEventListener('pointerup', onBrushPointerUp);
+      window.removeEventListener('pointercancel', onBrushPointerUp);
+      if (brushCursorRef.current) {
+        scene.remove(brushCursorRef.current);
+        brushCursorRef.current = null;
+      }
       if (rigArmatureGroupRef.current) {
         scene.remove(rigArmatureGroupRef.current);
         rigArmatureGroupRef.current = null;
@@ -2873,6 +3154,42 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         </div>
       )}
 
+
+      {showOverlayUI && (activeTool === 'edit' || activeTool === 'texture') && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="pointer-events-auto rounded-xl border border-white/[0.14] bg-[hsl(var(--surface-1))]/95 backdrop-blur-md shadow-2xl px-3.5 py-2 flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span
+                className="w-2.5 h-2.5 rounded-full animate-pulse flex-shrink-0"
+                style={{ backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00' }}
+              />
+              <span className="text-xs font-bold text-white tracking-wide uppercase">
+                {activeTool === 'edit' ? `Sculpt Brush: ${sculptSettings?.brush || 'standard'}` : `3D Paint: ${paintBrushSettings?.color || '#FFCC00'}`}
+              </span>
+            </div>
+            <div className="h-4 w-px bg-white/10" />
+            <div className="text-[10.5px] text-zinc-300 font-mono flex items-center gap-2">
+              {activeTool === 'edit' ? (
+                <>
+                  <span>Radius: {sculptSettings?.radius?.toFixed(2) || '0.15'}</span>
+                  <span>•</span>
+                  <span>Strength: {sculptSettings?.strength?.toFixed(2) || '0.50'}</span>
+                  <span>•</span>
+                  <span className="text-primary font-bold">Drag on mesh to sculpt (Shift: Smooth, Ctrl: Invert)</span>
+                </>
+              ) : (
+                <>
+                  <span>Size: {paintBrushSettings?.size || 24}px</span>
+                  <span>•</span>
+                  <span>Opacity: {Math.round((paintBrushSettings?.opacity ?? 1) * 100)}%</span>
+                  <span>•</span>
+                  <span className="text-primary font-bold">Drag on mesh to paint (Ctrl: Erase)</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showOverlayUI && currentAsset?.artifacts?.physicsReady && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import * as THREE from 'three'
-import { getTextureKeyFromMaterial } from '../../utils/meshTexturing'
+import { getTextureKeyFromMaterial } from '../utils/meshTexturing'
 
 // R3F scene helper extracted from MeshEditorPage.jsx (behaviour-preserving move).
 export default function TexturedMesh({

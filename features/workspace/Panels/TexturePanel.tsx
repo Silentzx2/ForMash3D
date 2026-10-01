@@ -66,19 +66,27 @@ export const TexturePanel: React.FC = () => {
     assets,
     selectAsset,
     systemStats,
+    paintBrushSettings,
+    setPaintBrushSettings,
   } = useWorkspace();
 
   // Tab State: 'texture' (essential primary view) | 'maps' (PBR channels) | 'paint' (interactive 3D surface paint) | 'settings' (advanced & reference)
   const [panelTab, setPanelTab] = useState<'texture' | 'maps' | 'paint' | 'settings'>('texture');
 
-  // Interactive 3D Surface Paint States
+  // Interactive 3D Surface Paint States synced with WorkspaceContext
   const [paintMode, setPaintMode] = useState<'draw' | 'erase'>('draw');
-  const [paintBrushSize, setPaintBrushSize] = useState(24);
-  const [paintOpacity, setPaintOpacity] = useState(1.0);
-  const [paintFlow, setPaintFlow] = useState(0.85);
-  const [paintHardness, setPaintHardness] = useState(0.5);
-  const [paintColor, setPaintColor] = useState('#FFCC00');
-  const [paintBlendMode, setPaintBlendMode] = useState<'normal' | 'multiply' | 'screen' | 'overlay'>('normal');
+  const paintBrushSize = paintBrushSettings.size;
+  const setPaintBrushSize = (size: number) => setPaintBrushSettings(prev => ({ ...prev, size }));
+  const paintOpacity = paintBrushSettings.opacity;
+  const setPaintOpacity = (opacity: number) => setPaintBrushSettings(prev => ({ ...prev, opacity }));
+  const paintFlow = paintBrushSettings.flow;
+  const setPaintFlow = (flow: number) => setPaintBrushSettings(prev => ({ ...prev, flow }));
+  const paintHardness = paintBrushSettings.hardness;
+  const setPaintHardness = (hardness: number) => setPaintBrushSettings(prev => ({ ...prev, hardness }));
+  const paintColor = paintBrushSettings.color;
+  const setPaintColor = (color: string) => setPaintBrushSettings(prev => ({ ...prev, color }));
+  const paintBlendMode = paintBrushSettings.blendMode as any;
+  const setPaintBlendMode = (blendMode: any) => setPaintBrushSettings(prev => ({ ...prev, blendMode }));
   const [paintBrushShape, setPaintBrushShape] = useState<'round-soft' | 'round-hard' | 'noise' | 'chalk'>('round-soft');
 
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);

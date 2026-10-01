@@ -14,7 +14,7 @@ import { RangeField, ToggleField, SelectField } from './MeshToolField'
 import MeshToolProgress from './MeshToolProgress'
 import RigTransferSection from './RigTransferSection'
 import WeightPaintSection from './WeightPaintSection'
-import { AUTO_RIG_BONE_NAME_OPTIONS } from '../../utils/meshTools'
+import { AUTO_RIG_BONE_NAME_OPTIONS } from '../utils/meshTools'
 
 // The quarter turns offered above the rig options. Left and right are the
 // MESH's own — "Turn Left" turns it to ITS left, which for a model facing you

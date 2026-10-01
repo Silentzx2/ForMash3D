@@ -3,7 +3,7 @@
 // No React, no component state.
 
 import * as THREE from 'three'
-import { subdivideSelectedFaces } from './meshEditor'
+import { subdivideSelectedFaces } from '../../utils/meshEditor'
 
 export function getRectangleBounds(startPoint, endPoint) {
   return {

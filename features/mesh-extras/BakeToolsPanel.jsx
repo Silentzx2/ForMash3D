@@ -8,8 +8,8 @@
 // Presentational: option state + handlers come from MeshEditorPage.
 import { NumberField, RangeField, SelectField, ToggleField } from './MeshToolField'
 import MeshToolProgress from './MeshToolProgress'
-import { BAKE_MAP_LABELS } from '../../utils/meshTools'
-import { BAKE_COVERAGE_COMPLETE } from '../../utils/meshExport'
+import { BAKE_MAP_LABELS } from '../utils/meshTools'
+import { BAKE_COVERAGE_COMPLETE } from '../utils/meshExport'
 
 // Request order for the checkboxes. 'orm' is never requested — the service packs
 // it from ao/roughness/metallic — but it does come back in the result.
