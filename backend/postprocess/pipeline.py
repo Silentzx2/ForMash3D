@@ -285,6 +285,8 @@ def _build_result(
         "asset_root": str(asset_dir),
         "asset_name": asset_name,
         "postprocess_status": "completed",
+        "target_polycount": target_polycount,
+        "lod_enabled": lod_enabled,
         "artifacts": {
             "master": {"status": "ready", "url": download_master_url, "required": True},
             "game_ready": {
@@ -340,6 +342,13 @@ def run_postprocess_job(
     """Create the canonical asset workspace and run production post-processing."""
     job_inputs = job_inputs or {}
     job_metadata = job_metadata or {}
+    try:
+        resolved_target_polycount = min(
+            MAX_PRODUCTION_FACES,
+            max(5_000, int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)),
+        )
+    except (TypeError, ValueError):
+        resolved_target_polycount = MAX_PRODUCTION_FACES
 
     raw_candidate = (
         generation_result.get("output_mesh_path")
@@ -425,7 +434,7 @@ def run_postprocess_job(
             scene,
             mesh,
             InspectOptions(
-                tri_budget=MAX_PRODUCTION_FACES,
+                tri_budget=resolved_target_polycount,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -726,6 +735,12 @@ def run_postprocess_job(
             "model_id": job_metadata.get("model_id"),
             "feature": job_metadata.get("feature"),
             "seed": job_inputs.get("seed"),
+            "target_polycount": resolved_target_polycount,
+            "lod": {
+                "enabled": lod_enabled,
+                "preset": job_inputs.get("lodPreset") or "high",
+                "count": len(lods),
+            },
             "model_parameters": {
                 key: value
                 for key, value in job_inputs.items()
@@ -755,6 +770,7 @@ def run_postprocess_job(
             "lods": lod_quality,
             "collision": collision_stats,
             "physics": physics_metadata,
+            "target_polycount": resolved_target_polycount,
         },
     )
 
@@ -768,7 +784,7 @@ def run_postprocess_job(
         "texture_status": texture_status,
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
     }
-    final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=min(MAX_PRODUCTION_FACES, max(5_000, int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES))), lod_enabled=lod_enabled)
+    final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=resolved_target_polycount, lod_enabled=lod_enabled)
     final_result["model_url"] = final_result["game_ready_url"]
     _write_json(asset_manifest, final_result)
 
