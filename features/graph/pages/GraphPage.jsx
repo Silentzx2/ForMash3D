@@ -1,0 +1,3838 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
+import {
+  addEdge,
+  BaseEdge,
+  Background,
+  Controls,
+  EdgeLabelRenderer,
+  Handle,
+  MiniMap,
+  Panel,
+  Position,
+  ReactFlow,
+  useEdgesState,
+  useNodesState
+} from '@xyflow/react'
+import Header from '../components/Header'
+import Footer from '../components/Footer'
+import SettingsModal from '../components/SettingsModal'
+import { useProjects } from '../context/ProjectContext'
+import { useSettings } from '../context/SettingsContext.shared'
+import { useNotifications } from '../context/NotificationContext'
+import { useWorkflowJobs } from '../context/WorkflowJobsContext'
+import { createMeshThumbnailFile } from '../utils/meshThumbnail'
+import '@xyflow/react/dist/style.css'
+import './KanbanPage.css'
+import './GraphPage.css'
+import AssetSelectorModal from '../components/AssetSelectorModal';
+import MeshPreviewDialog from '../components/MeshPreviewDialog'
+import {
+  CONNECTOR_TYPE_META,
+  DEFAULT_CUSTOM_API_TYPE,
+  DEFAULT_INPUT_ID,
+  DEFAULT_OUTPUT_ID,
+  GRAPH_NODE_TYPE_OPTIONS,
+  IMAGE_API_LIST,
+  IMAGE_COMPARE_INPUT_IDS,
+  IMAGE_COMPARE_NODE_TYPE_NAME,
+  LEGACY_INPUT_ID,
+  MESH_FILE_EXTENSIONS,
+  HITEM_MESH_API_OPTION,
+  HITEM_MESH_GENERATION_API_ID,
+  TENCENT_GENERATION_TYPE_OPTIONS,
+  TENCENT_MESH_API_OPTION,
+  TENCENT_MESH_GENERATION_API_ID,
+  TENCENT_MODEL_VERSION_OPTIONS,
+  TENCENT_POLYGON_TYPE_OPTIONS,
+  TENCENT_REGION_OPTIONS,
+  TRIPO_GEOMETRY_QUALITY_OPTIONS,
+  TRIPO_MESH_API_OPTION,
+  TRIPO_MESH_GENERATION_API_ID,
+  TRIPO_MODEL_VERSION_OPTIONS,
+  TRIPO_ORIENTATION_OPTIONS,
+  TRIPO_TEXTURE_ALIGNMENT_OPTIONS,
+  TRIPO_TEXTURE_QUALITY_OPTIONS,
+  buildInputConnectors,
+  buildLastActionParams,
+  deserializeActionDraft,
+  serializeActionDraft,
+  buildNodeInputSources,
+  canFetchHitemMeshResult,
+  canFetchTencentMeshResult,
+  canFetchTripoMeshResult,
+  canNodeTypeAcceptIncomingConnection,
+  computeReorganizedLayout,
+  createComfyExecutionId,
+  createWorkflowDraftBindings,
+  createWorkflowDraftInputs,
+  describeWorkflowParams,
+  filterImageEditWorkflows,
+  filterImageGenerationWorkflows,
+  filterMeshGenerationWorkflows,
+  filterTextGenerationWorkflows,
+  getAssetPreviewUrl,
+  getAssetSourceReference,
+  getCompatibleInputSources,
+  getDefaultNodeOutputType,
+  getDefaultNodeOutputValue,
+  getDefaultTargetInputId,
+  getHitemResolutionOptions,
+  getInputSource,
+  getInputSourceSelectionValue,
+  getNodeKind,
+  getNodeOutputType,
+  getPointerClientPosition,
+  getWorkflowFileInputAccept,
+  getWorkflowParameterBinding,
+  getWorkflowParameterValueType,
+  isConnectorOnlyWorkflowValueType,
+  isFileWorkflowValueType,
+  isHitemMeshGenerationApi,
+  isTencentMeshGenerationApi,
+  isTripoMeshGenerationApi,
+  isValueNodeKind,
+  normalizeCustomApiType,
+  normalizeNodeOutputValue,
+  resolveImageSourceOption,
+  resolveSelectedInputSource,
+  resolveWorkflowParameterValue,
+  toBaseFlowNode,
+  toFlowEdge
+} from '../utils/graphHelpers'
+import GraphAssetNode from '../components/graph/GraphAssetNode'
+import GraphDeleteEdge from '../components/graph/GraphDeleteEdge'
+import GraphImageCompareNode from '../components/graph/GraphImageCompareNode'
+import GraphRigMeshNode from '../components/graph/GraphRigMeshNode'
+import GraphValueNode from '../components/graph/GraphValueNode'
+import { autoRig as runAutoRigService, ensureDesktopService, DEFAULT_AUTO_RIG_OPTIONS, pickAutoRigOptions } from '../utils/meshTools'
+import usePasteImageFiles from '../hooks/usePasteImageFiles'
+import { saveWorkflowDefaults } from '../utils/workflowDefaults'
+import {
+  WORKFLOW_INPUT_NONE,
+  isWorkflowInputNone,
+  isWorkflowInputNoneValue
+} from '../utils/workflowFileInputs'
+
+const flowNodeTypes = {
+  image: GraphAssetNode,
+  imageEdit: GraphAssetNode,
+  imageCompare: GraphImageCompareNode,
+  meshGen: GraphAssetNode,
+  rigMesh: GraphRigMeshNode,
+  number: GraphValueNode,
+  text: GraphValueNode,
+  boolean: GraphValueNode
+}
+
+const flowEdgeTypes = {
+  deletable: GraphDeleteEdge
+}
+
+const isMeshFile = (file) => MESH_FILE_EXTENSIONS.includes((file.name.split('.').pop() || '').toLowerCase())
+
+// Half of a typical asset node, so a pasted node lands centred on the viewport.
+const PASTED_NODE_CENTER_OFFSET = { x: 180, y: 140 }
+
+export default function GraphPage({ project }) {
+  const {
+    getProjectNodes,
+    createProjectNode,
+    updateProjectNode,
+    updateProjectNodePosition,
+    deleteProjectNode,
+    getProjectConnections,
+    createProjectConnection,
+    deleteProjectConnection,
+    uploadAsset,
+    uploadAssetThumbnail,
+    attachExistingAsset,
+    getLibraryAssets,
+    generateImage,
+    getComfyWorkflows,
+    updateComfyWorkflow,
+    runComfyWorkflow,
+    cancelComfyWorkflow,
+    runImageEditApi,
+    runImageEditComfy,
+    runMeshGenerationApi,
+    saveMeshEdit,
+    queryTencentMeshGenerationResult,
+    queryTripoMeshGenerationResult,
+    queryHitemMeshGenerationResult,
+    saveGraphViewport
+  } = useProjects()
+  const { settings } = useSettings()
+  const { addNotification } = useNotifications()
+  const location = useLocation()
+  const { jobs: workflowJobs, registerJob, completeJob, cancelJob, removeJobsForTarget } = useWorkflowJobs()
+
+  const [showSettings, setShowSettings] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  // Open parameter panels, keyed by node id. Several nodes can have their panel
+  // open at once, and a panel stays mounted across a run (locked, not unmounted)
+  // so the user never loses the parameters they just typed.
+  const [actionDraftsByNodeId, setActionDraftsByNodeId] = useState({})
+  // Panels the user has folded away. The draft survives; only the body is hidden.
+  const [collapsedDraftNodeIds, setCollapsedDraftNodeIds] = useState(() => new Set())
+  const [libraryAssets, setLibraryAssets] = useState({ images: [], meshes: [] })
+  const [libraryLoading, setLibraryLoading] = useState(false)
+  const [comfyWorkflows, setComfyWorkflows] = useState([])
+  const [comfyLoading, setComfyLoading] = useState(false)
+  const [nodePicker, setNodePicker] = useState(null)
+  const [reactFlowInstance, setReactFlowInstance] = useState(null)
+
+	const [assetSelectorOpen, setAssetSelectorOpen] = useState(false);
+	const [assetSelectorType, setAssetSelectorType] = useState('image');
+	const [pendingAssetNodeId, setPendingAssetNodeId] = useState(null);
+	const [assetSelectorShowEdits, setAssetSelectorShowEdits] = useState(true);
+  // Mesh nodes preview their asset in a page-level dialog: a viewer rendered
+  // inside the node would live under React Flow's transformed canvas.
+  const [meshPreviewAsset, setMeshPreviewAsset] = useState(null)
+
+  const fileInputRef = useRef(null)
+  const pendingUploadNodeIdRef = useRef(null)
+  const meshFileInputRef = useRef(null)
+  const pendingMeshUploadNodeIdRef = useRef(null)
+  const pendingConnectionRef = useRef(null)
+  const skipNextPaneClickRef = useRef(false)
+  const libraryLoadedRef = useRef(false)
+  const workflowsLoadedRef = useRef(false)
+  const graphCanvasRef = useRef(null)
+  const hasAutoFitOnLoadRef = useRef(false)
+  const viewportSaveTimeoutRef = useRef(null)
+  // What each node's draft looked like the last time it hit the DB, so the
+  // autosave below only writes nodes that actually changed.
+  const persistedDraftsRef = useRef(new Map())
+  const draftSaveTimeoutRef = useRef(null)
+  // Latest pending autosave, so leaving the page mid-edit still writes.
+  const flushDraftSaveRef = useRef(null)
+
+  // Open one node's panel without touching any other node's. Every writer goes
+  // through here: replacing the whole map is what used to make the panels
+  // mutually exclusive.
+  const setActionDraft = useCallback((nodeId, draft) => {
+    setActionDraftsByNodeId(currentDrafts => ({ ...currentDrafts, [String(nodeId)]: draft }))
+  }, [])
+
+  // Close one node's panel and drop its collapsed flag. Only user-driven closes
+  // (BACK, an attached asset, a deleted node) call this — a run never does.
+  const closeActionDraft = useCallback((nodeId) => {
+    const key = String(nodeId)
+    setActionDraftsByNodeId(currentDrafts => {
+      if (!(key in currentDrafts)) {
+        return currentDrafts
+      }
+      const nextDrafts = { ...currentDrafts }
+      delete nextDrafts[key]
+      return nextDrafts
+    })
+    setCollapsedDraftNodeIds(currentIds => {
+      if (!currentIds.has(key)) {
+        return currentIds
+      }
+      const nextIds = new Set(currentIds)
+      nextIds.delete(key)
+      return nextIds
+    })
+  }, [])
+
+  const toggleDraftCollapsed = useCallback((nodeId) => {
+    const key = String(nodeId)
+    setCollapsedDraftNodeIds(currentIds => {
+      const nextIds = new Set(currentIds)
+      if (nextIds.has(key)) {
+        nextIds.delete(key)
+      } else {
+        nextIds.add(key)
+      }
+      return nextIds
+    })
+  }, [])
+
+  const pushMeshGenerationFailureNotification = useCallback((message, source = 'Mesh generation API') => {
+    addNotification({
+      title: 'Mesh generation failed',
+      message: message || 'Mesh generation request failed',
+      source,
+      tone: 'error'
+    })
+  }, [addNotification])
+
+  const pushExternalApiFailureNotification = useCallback((title, message, source = 'External API') => {
+    addNotification({
+      title,
+      message: message || 'External API request failed',
+      source,
+      tone: 'error'
+    })
+  }, [addNotification])
+
+  const customApis = useMemo(() => settings?.apis?.custom || [], [settings])
+  const imageGenerationApis = useMemo(() => ([
+    ...IMAGE_API_LIST,
+    ...customApis
+      .filter(api => normalizeCustomApiType(api?.type) === 'image-generation')
+      .map(api => ({ id: `custom_${api.id}`, name: api.name }))
+  ]), [customApis])
+  const imageEditApis = useMemo(() => ([
+    ...IMAGE_API_LIST,
+    ...customApis
+      .filter(api => normalizeCustomApiType(api?.type) === 'image-edit')
+      .map(api => ({ id: `custom_${api.id}`, name: api.name }))
+  ]), [customApis])
+
+  const meshGenerationApis = useMemo(() => (
+    [
+      TENCENT_MESH_API_OPTION,
+      TRIPO_MESH_API_OPTION,
+      HITEM_MESH_API_OPTION,
+      ...customApis
+        .filter(api => normalizeCustomApiType(api?.type) === 'mesh-generation')
+        .map(api => ({ id: `custom_${api.id}`, name: api.name }))
+    ]
+  ), [customApis])
+
+  const imageGenerationWorkflows = useMemo(() => filterImageGenerationWorkflows(comfyWorkflows), [comfyWorkflows])
+
+  const imageEditWorkflows = useMemo(() => filterImageEditWorkflows(comfyWorkflows), [comfyWorkflows])
+
+  const meshGenerationWorkflows = useMemo(() => filterMeshGenerationWorkflows(comfyWorkflows), [comfyWorkflows])
+
+  const textGenerationWorkflows = useMemo(() => filterTextGenerationWorkflows(comfyWorkflows), [comfyWorkflows])
+
+  const libraryImageOptions = useMemo(() => {
+    return (libraryAssets.images || []).flatMap(asset => {
+      const children = asset.children || asset.edits || []
+      const originalOption = {
+        id: `asset:${asset.id}`,
+        name: asset.name,
+        filename: asset.filename,
+        url: asset.url,
+        extension: asset.extension || (asset.filename?.split('.').pop() || '').toUpperCase(),
+        isEdit: false
+      }
+
+      const childOptions = children.map(child => ({
+        id: `edit:${child.id}`,
+        name: child.name || `${asset.name} Edit`,
+        filename: child.filename,
+        url: child.url || getAssetPreviewUrl(child.filename),
+        extension: (child.filename?.split('.').pop() || '').toUpperCase(),
+        sourceReference: child.filePath ? `edit:${child.filePath}` : '',
+        isEdit: true
+      }))
+
+      return [{
+        ...originalOption,
+        sourceReference: `asset:${asset.id}`
+      }, ...childOptions]
+    })
+  }, [libraryAssets])
+
+  const libraryMeshOptions = useMemo(() => {
+    return (libraryAssets.meshes || []).flatMap(asset => {
+      const children = asset.children || asset.edits || []
+      const originalOption = {
+        id: `asset:${asset.id}`,
+        name: asset.name,
+        filename: asset.filename,
+        url: asset.url,
+        thumbnailUrl: asset.thumbnailUrl || null,
+        extension: asset.extension || (asset.filename?.split('.').pop() || '').toUpperCase(),
+        type: 'mesh',
+        isEdit: false
+      }
+
+      const childOptions = children.map(child => ({
+        id: `edit:${child.id}`,
+        name: child.name || `${asset.name} Edit`,
+        filename: child.filename,
+        url: child.url || getAssetPreviewUrl(child.filename),
+        thumbnailUrl: child.thumbnailUrl || null,
+        extension: (child.filename?.split('.').pop() || '').toUpperCase(),
+        sourceReference: child.filePath ? `edit:${child.filePath}` : '',
+        type: 'mesh',
+        isEdit: true
+      }))
+
+      return [{
+        ...originalOption,
+        sourceReference: `asset:${asset.id}`
+      }, ...childOptions]
+    })
+  }, [libraryAssets])
+
+  const getConnectedInputAssetFrom = useCallback((currentNodes, currentEdges, nodeId) => {
+    return getInputSource(currentNodes, currentEdges, nodeId, 'image').asset
+  }, [])
+
+  const createImageNodeDraft = useCallback((mode = 'select', inputSources = [], workflowListOverride = null) => {
+    const workflowList = workflowListOverride || imageGenerationWorkflows
+    const defaultWorkflow = workflowList[0] || null
+    return {
+      mode,
+      name: '',
+      selectedApi: imageGenerationApis[0]?.id || '',
+      prompt: '',
+      workflowId: defaultWorkflow?.id || '',
+      inputs: mode === 'comfy' ? createWorkflowDraftInputs(defaultWorkflow, () => null) : {},
+      inputBindings: mode === 'comfy' ? createWorkflowDraftBindings(defaultWorkflow, inputSources) : {}
+    }
+  }, [imageGenerationApis, imageGenerationWorkflows])
+
+  const createTextNodeDraft = useCallback((mode = 'select', inputSources = [], workflowListOverride = null) => {
+    const workflowList = workflowListOverride || textGenerationWorkflows
+    const defaultWorkflow = workflowList[0] || null
+    return {
+      mode,
+      workflowId: defaultWorkflow?.id || '',
+      inputs: mode === 'comfy'
+        ? createWorkflowDraftInputs(defaultWorkflow, () => null)
+        : {},
+      inputBindings: mode === 'comfy'
+        ? createWorkflowDraftBindings(defaultWorkflow, inputSources, ['string', 'number', 'boolean'])
+        : {}
+    }
+  }, [textGenerationWorkflows])
+
+  const createImageEditNodeDraft = useCallback((mode = 'select', sourceAsset = null, inputSources = [], libraryOptions = [], workflowListOverride = null) => {
+    const workflowList = workflowListOverride || imageEditWorkflows
+    const defaultWorkflow = workflowList[0] || null
+    const sourceReference = getAssetSourceReference(sourceAsset)
+    const defaultImageInputSource = getCompatibleInputSources(inputSources, 'image')[0] || null
+    const isApiMode = mode === 'edit-api' || mode === 'api'
+    const isComfyMode = mode === 'edit-comfy' || mode === 'comfy'
+    return {
+      mode,
+      name: '',
+      selectedApi: imageEditApis[0]?.id || '',
+      prompt: '',
+      selectedInputSource: isApiMode
+        ? (getInputSourceSelectionValue(defaultImageInputSource) || libraryOptions[0]?.sourceReference || sourceReference || '')
+        : '',
+      workflowId: defaultWorkflow?.id || '',
+      inputs: isComfyMode
+        ? createWorkflowDraftInputs(defaultWorkflow, (_parameter, valueType) => valueType === 'image'
+            ? ({ source: libraryOptions[0]?.sourceReference || sourceReference || '' })
+            : null)
+        : {},
+      inputBindings: isComfyMode
+        ? createWorkflowDraftBindings(defaultWorkflow, inputSources, ['image'])
+        : {}
+    }
+  }, [imageEditApis, imageEditWorkflows])
+
+  const createMeshGenNodeDraft = useCallback((mode = 'select', sourceAsset = null, inputSources = [], libraryOptions = [], workflowListOverride = null) => {
+    const workflowList = workflowListOverride || meshGenerationWorkflows
+    const defaultWorkflow = workflowList[0] || null
+    const sourceReference = getAssetSourceReference(sourceAsset)
+    const defaultImageInputSource = getCompatibleInputSources(inputSources, 'image')[0] || null
+
+    return {
+      mode,
+      name: '',
+      selectedApi: meshGenerationApis[0]?.id || '',
+      prompt: '',
+      selectedInputSource: mode === 'api'
+        ? (getInputSourceSelectionValue(defaultImageInputSource) || sourceReference || '')
+        : '',
+      workflowId: defaultWorkflow?.id || '',
+      inputs: mode === 'comfy'
+        ? createWorkflowDraftInputs(defaultWorkflow, (_parameter, valueType) => valueType === 'image'
+            ? ({ source: libraryOptions[0]?.sourceReference || sourceReference || '' })
+            : null)
+        : {},
+      inputBindings: mode === 'comfy'
+        ? createWorkflowDraftBindings(defaultWorkflow, inputSources, ['image'])
+        : {},
+      region: 'eu-frankfurt',
+      modelVersion: '3.0',
+      enablePBR: false,
+      faceCount: 500000,
+      generationType: 'Normal',
+      polygonType: 'triangle',
+      modelSeed: '',
+      enableImageAutofix: false,
+      faceLimit: '',
+      texture: true,
+      pbr: true,
+      textureSeed: '',
+      textureAlignment: 'original_image',
+      textureQuality: 'standard',
+      autoSize: false,
+      orientation: 'default',
+      quad: false,
+      smartLowPoly: false,
+      generateParts: false,
+      exportUv: true,
+      geometryQuality: 'standard',
+      hitemModel: 'hitem3dv2.1',
+      hitemResolution: '1536pro',
+      hitemRequestType: 3,
+      hitemFace: 300000,
+      hitemPbr: false
+    }
+  }, [meshGenerationApis, meshGenerationWorkflows])
+
+  // Rig Mesh nodes have a single mode, so their draft is just the Auto Rig option
+  // set plus the name the rigged version is saved under. It is created up front
+  // (see the effect below) so the parameters are always on the node.
+  const createRigMeshNodeDraft = useCallback((sourceAsset = null) => ({
+    mode: 'rig',
+    name: sourceAsset?.name ? `${sourceAsset.name} (rigged)` : '',
+    ...DEFAULT_AUTO_RIG_OPTIONS
+  }), [])
+
+  const replaceFlowNodeData = useCallback((updatedNode) => {
+    setNodes(currentNodes => currentNodes.map(node => (
+      node.id === String(updatedNode.id)
+        ? {
+            ...node,
+            position: node.position,
+            data: {
+              ...node.data,
+              ...updatedNode,
+              nodeKind: getNodeKind(updatedNode.nodeTypeName)
+            }
+          }
+        : node
+    )))
+  }, [setNodes])
+
+  const handleNodeNameChange = useCallback((nodeId, name) => {
+    setNodes(currentNodes => currentNodes.map(node => (
+      node.id === String(nodeId)
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              name
+            }
+          }
+        : node
+    )))
+  }, [setNodes])
+
+  const handleNodeNameCommit = useCallback(async (nodeId, name) => {
+    const existingNode = nodes.find(node => node.id === String(nodeId))
+    if (!existingNode) {
+      return
+    }
+
+    const nextName = String(name || '').trim() || existingNode.data.asset?.name || existingNode.data.nodeTypeName || 'Node'
+
+    setNodes(currentNodes => currentNodes.map(node => (
+      node.id === String(nodeId)
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              name: nextName
+            }
+          }
+        : node
+    )))
+
+    try {
+      const updatedNode = await updateProjectNode(project.id, Number(nodeId), { name: nextName })
+      replaceFlowNodeData(updatedNode)
+    } catch (err) {
+      console.error('Failed to rename graph node:', err)
+    }
+  }, [nodes, project.id, replaceFlowNodeData, setNodes, updateProjectNode])
+
+  const handleNodeOutputValueChange = useCallback((nodeId, outputValue) => {
+    setNodes(currentNodes => currentNodes.map(node => (
+      node.id === String(nodeId)
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              metadata: {
+                ...(node.data.metadata || {}),
+                outputValue
+              }
+            }
+          }
+        : node
+    )))
+  }, [setNodes])
+
+  const handleNodeOutputValueCommit = useCallback(async (nodeId, outputValue) => {
+    const existingNode = nodes.find(node => node.id === String(nodeId))
+    if (!existingNode) {
+      return
+    }
+
+    const normalizedValue = normalizeNodeOutputValue(existingNode.data.nodeKind, outputValue)
+
+    setNodes(currentNodes => currentNodes.map(node => (
+      node.id === String(nodeId)
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              metadata: {
+                ...(node.data.metadata || {}),
+                outputValue: normalizedValue
+              }
+            }
+          }
+        : node
+    )))
+
+    try {
+      const updatedNode = await updateProjectNode(project.id, Number(nodeId), {
+        metadata: {
+          outputValue: normalizedValue
+        }
+      })
+      replaceFlowNodeData(updatedNode)
+    } catch (err) {
+      console.error('Failed to persist graph node value:', err)
+    }
+  }, [nodes, project.id, replaceFlowNodeData, setNodes, updateProjectNode])
+
+  // Live workflow progress is owned by the app-level WorkflowJobs store so it
+  // survives navigating away from this page. While the page is mounted, mirror
+  // the progress of any in-flight job onto its node for display.
+  useEffect(() => {
+    if (!project?.id) {
+      return
+    }
+    const activeJobs = workflowJobs.filter(job => (
+      job.projectId === project.id
+      && job.page === 'graph'
+      && job.targetId
+      && (job.status === 'queued' || job.status === 'processing' || job.status === 'cancelling')
+    ))
+    if (activeJobs.length === 0) {
+      return
+    }
+    setNodes(current => {
+      let changed = false
+      const next = current.map(item => {
+        const job = activeJobs.find(candidate => candidate.targetId === item.id)
+        if (!job) {
+          return item
+        }
+        const nextStatus = job.status === 'error' ? 'error' : 'processing'
+        const nextProgress = Math.max(Number(item.data.progress) || 0, Number(job.progressPercent) || 0)
+        const nextDetail = job.detail || item.data.progressDetail || null
+        const nextLabel = job.currentNodeLabel || item.data.currentNodeLabel || null
+        // Carried so the node can offer (and disable) its Cancel button: the
+        // promptId is the job id the backend cancels by.
+        const nextIsCancelling = job.status === 'cancelling'
+        if (
+          item.data.status === nextStatus
+          && item.data.progress === nextProgress
+          && item.data.progressDetail === nextDetail
+          && item.data.currentNodeLabel === nextLabel
+          && item.data.activeJobId === job.id
+          && item.data.isCancelling === nextIsCancelling
+        ) {
+          return item
+        }
+        changed = true
+        return {
+          ...item,
+          data: {
+            ...item.data,
+            status: nextStatus,
+            progress: nextProgress,
+            progressDetail: nextDetail,
+            currentNodeLabel: nextLabel,
+            activeJobId: job.id,
+            isCancelling: nextIsCancelling
+          }
+        }
+      })
+      return changed ? next : current
+    })
+  }, [workflowJobs, project?.id, setNodes])
+
+  const handleDeleteNode = useCallback(async (nodeId) => {
+    removeJobsForTarget(project.id, nodeId)
+    await deleteProjectNode(project.id, Number(nodeId))
+    setNodes(currentNodes => currentNodes.filter(node => node.id !== String(nodeId)))
+    setEdges(currentEdges => currentEdges.filter(edge => edge.source !== String(nodeId) && edge.target !== String(nodeId)))
+    setActionDraftsByNodeId(currentDrafts => {
+      const nextDrafts = { ...currentDrafts }
+      delete nextDrafts[String(nodeId)]
+      return nextDrafts
+    })
+  }, [removeJobsForTarget, deleteProjectNode, project.id, setEdges, setNodes])
+
+  const ensureGeneratedMeshThumbnail = useCallback(async (asset) => {
+    if (!asset || asset.type !== 'mesh' || asset.thumbnail) {
+      return asset
+    }
+
+    const assetUrl = getAssetPreviewUrl(asset.filename)
+    const response = await fetch(assetUrl)
+
+    if (!response.ok) {
+      throw new Error(`Failed to download generated mesh ${asset.name || asset.filename}`)
+    }
+
+    const blob = await response.blob()
+    const file = new File([blob], asset.filename?.split('/').pop() || `${asset.name || 'mesh'}.glb`, {
+      type: blob.type || 'application/octet-stream'
+    })
+    const thumbnailFile = await createMeshThumbnailFile(file)
+
+    if (!thumbnailFile) {
+      return asset
+    }
+
+    return await uploadAssetThumbnail(asset.id, thumbnailFile)
+  }, [uploadAssetThumbnail])
+
+  const ensureGeneratedMeshThumbnails = useCallback(async (generatedAssets) => {
+    const meshAssets = (Array.isArray(generatedAssets) ? generatedAssets : [generatedAssets]).filter(asset => asset?.type === 'mesh')
+
+    for (const meshAsset of meshAssets) {
+      try {
+        await ensureGeneratedMeshThumbnail(meshAsset)
+      } catch (err) {
+        console.warn(`Failed to generate thumbnail for mesh ${meshAsset?.name || meshAsset?.id}:`, err)
+      }
+    }
+  }, [ensureGeneratedMeshThumbnail])
+
+  const setNodeTransientData = useCallback((nodeId, updates) => {
+    setNodes(currentNodes => currentNodes.map(node => (
+      node.id === String(nodeId)
+        ? {
+            ...node,
+            data: {
+              ...node.data,
+              ...updates
+            }
+          }
+        : node
+    )))
+  }, [setNodes])
+
+  // Stop the ComfyUI run a node is waiting on. While the run is live the node is
+  // put back to idle by the run's own cancellation (see finishFailedRun below),
+  // so a cancel ComfyUI refuses leaves the node running rather than lying.
+  const handleCancelNodeRun = useCallback(async (nodeId) => {
+    const job = workflowJobs.find(item => (
+      item.projectId === project.id
+      && item.targetId === String(nodeId)
+      && (item.status === 'queued' || item.status === 'processing')
+    ))
+
+    if (job) {
+      await cancelJob(job.id)
+      return
+    }
+
+    // No live job: the run was started before a page reload, so nothing in this
+    // browser is waiting on it. Cancel it by the promptId saved on the node and
+    // clear the node here — no pending run is going to do it.
+    const orphanedNode = nodes.find(item => item.id === String(nodeId))
+    const orphanedPromptId = orphanedNode?.data?.metadata?.promptId
+
+    if (!orphanedPromptId) {
+      return
+    }
+
+    setNodeTransientData(nodeId, { isCancelling: true })
+
+    try {
+      await cancelComfyWorkflow(orphanedPromptId)
+    } catch (err) {
+      setNodeTransientData(nodeId, { isCancelling: false })
+      addNotification({
+        title: 'Cancel failed',
+        message: err.message || 'Failed to cancel the workflow',
+        source: 'ComfyUI',
+        tone: 'error'
+      })
+      return
+    }
+
+    try {
+      const updatedNode = await updateProjectNode(project.id, Number(nodeId), {
+        status: null,
+        progress: null,
+        metadata: { error: null, cancelled: true }
+      })
+      replaceFlowNodeData(updatedNode)
+      setNodeTransientData(nodeId, {
+        progressDetail: null,
+        currentNodeLabel: null,
+        activeJobId: null,
+        isCancelling: false
+      })
+    } catch (err) {
+      console.error('Failed to reset a cancelled graph node:', err)
+    }
+  }, [addNotification, cancelComfyWorkflow, cancelJob, nodes, project.id, replaceFlowNodeData, setNodeTransientData, updateProjectNode, workflowJobs])
+
+  const ensureLibraryLoaded = useCallback(async () => {
+    if (libraryLoadedRef.current) {
+      return
+    }
+
+    setLibraryLoading(true)
+    try {
+      const library = await getLibraryAssets()
+      setLibraryAssets(library)
+      libraryLoadedRef.current = true
+    } finally {
+      setLibraryLoading(false)
+    }
+  }, [getLibraryAssets])
+
+  const ensureComfyWorkflowsLoaded = useCallback(async () => {
+    if (workflowsLoadedRef.current) {
+      return comfyWorkflows
+    }
+
+    setComfyLoading(true)
+    try {
+      const workflows = await getComfyWorkflows()
+      setComfyWorkflows(workflows)
+      workflowsLoadedRef.current = true
+      return workflows
+    } finally {
+      setComfyLoading(false)
+    }
+  }, [comfyWorkflows, getComfyWorkflows])
+
+  // Persist current field values as the workflow's defaults when "Set as default" is checked,
+  // then refresh the in-memory workflow list so later nodes pick up the new defaults.
+  const persistWorkflowDefaultsIfRequested = useCallback(async (draft, workflow, values) => {
+    if (!draft?.setAsDefault) return
+    const saved = await saveWorkflowDefaults(updateComfyWorkflow, workflow, values)
+    if (saved) {
+      try {
+        setComfyWorkflows(await getComfyWorkflows())
+      } catch (err) {
+        console.error('Failed to refresh ComfyUI workflows:', err)
+      }
+    }
+  }, [getComfyWorkflows, updateComfyWorkflow])
+
+  // Bumped when something outside this browser (e.g. an MCP client / AI
+  // agent) mutates this project — re-runs the loadGraph effect below.
+  const [externalReloadTick, setExternalReloadTick] = useState(0)
+
+  useEffect(() => {
+    const handleExternalMutation = (event) => {
+      const targetProjectId = event?.detail?.projectId
+      if (targetProjectId == null || Number(targetProjectId) === Number(project.id)) {
+        setExternalReloadTick(tick => tick + 1)
+      }
+    }
+    window.addEventListener('genstudio:external-mutation', handleExternalMutation)
+    return () => window.removeEventListener('genstudio:external-mutation', handleExternalMutation)
+  }, [project.id])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadGraph() {
+      setLoading(true)
+
+      try {
+        const [projectNodes, projectConnections] = await Promise.all([
+          getProjectNodes(project.id),
+          getProjectConnections(project.id)
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        setNodes(projectNodes.map(node => toBaseFlowNode(node, handleDeleteNode)))
+        setEdges(projectConnections.map(toFlowEdge))
+
+        // Bring back the parameter panels exactly as the user left them, and
+        // seed the autosave baseline so hydration doesn't write straight back.
+        const restoredDrafts = {}
+        const restoredCollapsed = new Set()
+        const restoredBaseline = new Map()
+        for (const node of projectNodes) {
+          const restoredDraft = deserializeActionDraft(node.metadata?.actionDraft)
+          if (!restoredDraft) {
+            continue
+          }
+          const key = String(node.id)
+          restoredDrafts[key] = restoredDraft
+          if (node.metadata?.actionDraftCollapsed) {
+            restoredCollapsed.add(key)
+          }
+          restoredBaseline.set(key, JSON.stringify({
+            draft: serializeActionDraft(restoredDraft),
+            collapsed: Boolean(node.metadata?.actionDraftCollapsed)
+          }))
+        }
+        persistedDraftsRef.current = restoredBaseline
+        setActionDraftsByNodeId(restoredDrafts)
+        setCollapsedDraftNodeIds(restoredCollapsed)
+      } catch (err) {
+        console.error('Failed to load workflow graph:', err)
+        if (!cancelled) {
+          setNodes([])
+          setEdges([])
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    loadGraph()
+
+    return () => {
+      cancelled = true
+    }
+  }, [getProjectConnections, getProjectNodes, handleDeleteNode, project.id, setEdges, setNodes, externalReloadTick])
+
+  // Autosave open parameter panels into their card metadata. Debounced because
+  // this fires on every keystroke in a prompt box, and diffed against the last
+  // persisted value so an unrelated draft edit doesn't rewrite every node.
+  useEffect(() => {
+    if (loading) {
+      return undefined
+    }
+
+    const saveDrafts = async () => {
+      const liveNodeIds = new Set(nodes.map(node => String(node.id)))
+      const baseline = persistedDraftsRef.current
+      const nextKeys = new Set(Object.keys(actionDraftsByNodeId))
+
+      for (const nodeId of liveNodeIds) {
+        const draft = actionDraftsByNodeId[nodeId] || null
+        const isCollapsed = collapsedDraftNodeIds.has(nodeId)
+        const serialized = draft
+          ? JSON.stringify({ draft: serializeActionDraft(draft), collapsed: isCollapsed })
+          : null
+
+        if ((baseline.get(nodeId) ?? null) === serialized) {
+          continue
+        }
+
+        try {
+          await updateProjectNode(project.id, Number(nodeId), {
+            metadata: {
+              actionDraft: draft ? serializeActionDraft(draft) : null,
+              actionDraftCollapsed: draft ? isCollapsed : null
+            }
+          })
+          if (serialized === null) {
+            baseline.delete(nodeId)
+          } else {
+            baseline.set(nodeId, serialized)
+          }
+        } catch (err) {
+          console.error('Failed to persist node parameters:', err)
+        }
+      }
+
+      // Drop baselines for nodes that no longer exist, so a recreated id starts clean.
+      for (const nodeId of Array.from(baseline.keys())) {
+        if (!liveNodeIds.has(nodeId) && !nextKeys.has(nodeId)) {
+          baseline.delete(nodeId)
+        }
+      }
+    }
+
+    flushDraftSaveRef.current = saveDrafts
+    draftSaveTimeoutRef.current = setTimeout(saveDrafts, 600)
+
+    return () => {
+      clearTimeout(draftSaveTimeoutRef.current)
+    }
+  }, [actionDraftsByNodeId, collapsedDraftNodeIds, loading, nodes, project.id, updateProjectNode])
+
+  // Navigating away mid-edit would otherwise lose whatever was typed inside the
+  // debounce window. The save diffs against its baseline, so flushing is a no-op
+  // when nothing changed.
+  useEffect(() => () => {
+    flushDraftSaveRef.current?.()
+  }, [])
+
+  // The workflow list and the asset library are lazy: they used to load only
+  // when the user picked a mode from the Action menu. A panel restored on mount
+  // (or after navigating back mid-run) skips that click, so it would render
+  // against an empty list and claim "No imported workflows available". Both
+  // loaders are ref-guarded, so asking again once they are warm costs nothing.
+  useEffect(() => {
+    const openDrafts = Object.values(actionDraftsByNodeId).filter(Boolean)
+    if (openDrafts.length === 0) {
+      return
+    }
+
+    const needsWorkflows = openDrafts.some(draft => String(draft.mode || '').includes('comfy'))
+    // A rig panel picks its mesh from the wired input alone, so it needs neither.
+    const needsLibrary = openDrafts.some(draft => draft.mode && !['select', 'rig'].includes(draft.mode))
+
+    if (needsWorkflows) {
+      ensureComfyWorkflowsLoaded().catch(err => {
+        console.error('Failed to load ComfyUI workflows for a restored panel:', err)
+      })
+    }
+
+    if (needsLibrary) {
+      ensureLibraryLoaded().catch(err => {
+        console.error('Failed to load the asset library for a restored panel:', err)
+      })
+    }
+  }, [actionDraftsByNodeId, ensureComfyWorkflowsLoaded, ensureLibraryLoaded])
+
+  const handleCreateNode = useCallback(async (nodeTypeName, initialData = {}) => {
+    const nextIndex = nodes.length
+    const defaultOutputType = getDefaultNodeOutputType(nodeTypeName)
+    const createdNode = await createProjectNode(project.id, {
+      nodeTypeName,
+      name: initialData.name || nodeTypeName,
+      xPos: initialData.xPos ?? (96 + ((nextIndex % 4) * 48)),
+      yPos: initialData.yPos ?? (96 + (nextIndex * 32)),
+      assetId: initialData.assetId ?? null,
+      status: initialData.status ?? null,
+      progress: initialData.progress ?? null,
+      metadata: {
+        inputType: null,
+        outputType: defaultOutputType,
+        ...(isValueNodeKind(defaultOutputType) ? { outputValue: getDefaultNodeOutputValue(nodeTypeName) } : {}),
+        ...(initialData.metadata || {})
+      }
+    })
+
+    setNodes(currentNodes => [...currentNodes, toBaseFlowNode(createdNode, handleDeleteNode)])
+    return createdNode
+  }, [createProjectNode, handleDeleteNode, nodes.length, project.id, setNodes])
+
+  const openNodePickerAt = useCallback((clientX, clientY, pendingConnection = null) => {
+    const canvasBounds = graphCanvasRef.current?.getBoundingClientRect()
+    const flowPosition = reactFlowInstance?.screenToFlowPosition
+      ? reactFlowInstance.screenToFlowPosition({ x: clientX, y: clientY })
+      : { x: 96, y: 96 }
+
+    setNodePicker({
+      menuX: canvasBounds ? clientX - canvasBounds.left : clientX,
+      menuY: canvasBounds ? clientY - canvasBounds.top : clientY,
+      flowX: flowPosition.x,
+      flowY: flowPosition.y,
+      pendingConnection
+    })
+  }, [reactFlowInstance])
+
+  const handlePaneContextMenu = useCallback((event) => {
+    event.preventDefault()
+    openNodePickerAt(event.clientX, event.clientY)
+  }, [openNodePickerAt])
+
+  const handleCreateNodeFromPicker = useCallback(async (nodeTypeName) => {
+    if (!nodePicker) {
+      return
+    }
+
+    const createdNode = await handleCreateNode(nodeTypeName, {
+      xPos: nodePicker.flowX,
+      yPos: nodePicker.flowY
+    })
+
+    if (nodePicker.pendingConnection && canNodeTypeAcceptIncomingConnection(nodeTypeName, nodePicker.pendingConnection.outputType)) {
+      try {
+        const createdConnection = await createProjectConnection(project.id, {
+          sourceNodeId: Number(nodePicker.pendingConnection.sourceNodeId),
+          targetNodeId: Number(createdNode.id),
+          inputId: getDefaultTargetInputId(nodeTypeName),
+          outputId: nodePicker.pendingConnection.outputId || DEFAULT_OUTPUT_ID
+        })
+
+        setEdges(currentEdges => {
+          const nextEdge = toFlowEdge(createdConnection)
+          if (currentEdges.some(edge => edge.id === nextEdge.id)) {
+            return currentEdges
+          }
+
+          return addEdge(nextEdge, currentEdges)
+        })
+      } catch (err) {
+        console.error('Failed to connect newly created graph node:', err)
+      }
+    }
+
+    setNodePicker(null)
+  }, [createProjectConnection, handleCreateNode, nodePicker, project.id, setEdges])
+
+  const handleConnectStart = useCallback((_event, params) => {
+    if (params?.handleType !== 'source' || !params?.nodeId) {
+      pendingConnectionRef.current = null
+      return
+    }
+
+    const sourceNode = nodes.find(node => node.id === String(params.nodeId))
+    pendingConnectionRef.current = {
+      sourceNodeId: String(params.nodeId),
+      outputId: params.handleId || DEFAULT_OUTPUT_ID,
+      outputType: getNodeOutputType(sourceNode)
+    }
+  }, [nodes])
+
+  const handleConnectEnd = useCallback((event, connectionState) => {
+    const pendingConnection = pendingConnectionRef.current
+    pendingConnectionRef.current = null
+
+    if (!pendingConnection || connectionState?.isValid) {
+      return
+    }
+
+    const pointerPosition = getPointerClientPosition(event)
+    if (!pointerPosition) {
+      return
+    }
+
+    const canvasBounds = graphCanvasRef.current?.getBoundingClientRect()
+    if (canvasBounds) {
+      const droppedInsideCanvas = (
+        pointerPosition.x >= canvasBounds.left
+        && pointerPosition.x <= canvasBounds.right
+        && pointerPosition.y >= canvasBounds.top
+        && pointerPosition.y <= canvasBounds.bottom
+      )
+
+      if (!droppedInsideCanvas) {
+        return
+      }
+    }
+
+    skipNextPaneClickRef.current = true
+    openNodePickerAt(pointerPosition.x, pointerPosition.y, pendingConnection)
+  }, [openNodePickerAt])
+
+  const buildSelectDraft = useCallback((nodeId, nodeKind) => {
+    const inputSources = buildNodeInputSources(nodeId, nodes, edges)
+    return nodeKind === 'rigMesh'
+      ? createRigMeshNodeDraft(getInputSource(nodes, edges, nodeId, 'mesh').asset)
+      : nodeKind === 'meshGen'
+      ? createMeshGenNodeDraft('select', getConnectedInputAssetFrom(nodes, edges, nodeId), inputSources, libraryImageOptions)
+      : nodeKind === 'imageEdit'
+      ? createImageEditNodeDraft('select', getConnectedInputAssetFrom(nodes, edges, nodeId), inputSources, libraryImageOptions)
+      : nodeKind === 'text'
+      ? createTextNodeDraft('select', inputSources)
+      : createImageNodeDraft('select', inputSources)
+  }, [createImageEditNodeDraft, createImageNodeDraft, createMeshGenNodeDraft, createRigMeshNodeDraft, createTextNodeDraft, edges, getConnectedInputAssetFrom, libraryImageOptions, nodes])
+
+  // A Rig Mesh node shows its Auto Rig parameters permanently (there is no mode
+  // menu to open them from), so seed a draft for any rig node that has none yet —
+  // freshly created ones, and older ones saved before this ran.
+  useEffect(() => {
+    if (loading) {
+      return
+    }
+
+    const seededNodes = nodes.filter(node => (
+      node.data.nodeKind === 'rigMesh' && !actionDraftsByNodeId[String(node.id)]
+    ))
+
+    if (seededNodes.length === 0) {
+      return
+    }
+
+    setActionDraftsByNodeId(currentDrafts => {
+      const nextDrafts = { ...currentDrafts }
+      for (const node of seededNodes) {
+        if (!nextDrafts[String(node.id)]) {
+          nextDrafts[String(node.id)] = createRigMeshNodeDraft(getInputSource(nodes, edges, node.id, 'mesh').asset)
+        }
+      }
+      return nextDrafts
+    })
+  }, [actionDraftsByNodeId, createRigMeshNodeDraft, edges, loading, nodes])
+
+  // BACK: rewind an open panel to the mode menu without closing it.
+  const openActionDraft = useCallback((nodeId, nodeKind) => {
+    setActionDraft(nodeId, buildSelectDraft(nodeId, nodeKind))
+  }, [buildSelectDraft, setActionDraft])
+
+  // The node's Action button: open the panel, or close it if it is already open.
+  const toggleActionDraft = useCallback((nodeId, nodeKind) => {
+    const key = String(nodeId)
+    if (actionDraftsByNodeId[key]) {
+      closeActionDraft(nodeId)
+      return
+    }
+    setActionDraft(nodeId, buildSelectDraft(nodeId, nodeKind))
+  }, [actionDraftsByNodeId, buildSelectDraft, closeActionDraft, setActionDraft])
+
+	const handleOpenAssetSelector = useCallback((nodeId, type, showEdits = true) => {
+		setAssetSelectorType(type === 'mesh' ? 'mesh' : 'image');
+		setPendingAssetNodeId(nodeId);
+		setAssetSelectorOpen(true);
+		setAssetSelectorShowEdits(showEdits);
+	}, []);	
+
+	const handleAssetSelected = useCallback(async (asset) => {
+		if (!pendingAssetNodeId) return;
+
+		if (!asset) {
+			console.error('No asset provided');
+			return;
+		}
+
+		const assetType = assetSelectorType; // 'image' or 'mesh'
+		try {
+			// A library version/edit (child asset) already exists as its own row and
+			// owns a unique file. Reference it directly instead of attaching it: going
+			// through attachExistingAsset would mint a NEW root-level asset pointing at
+			// the version's file, which (a) surfaces a duplicate at the root of the
+			// asset library, (b) has no thumbnail (the link lookup only finds roots),
+			// and (c) shares the file, so deleting that root nukes the version's mesh.
+			const versionAssetId = (asset.isChild || asset.isEdit) ? Number(asset.id) : NaN;
+			const isLibraryVersion = Number.isFinite(versionAssetId) && versionAssetId > 0;
+
+			let resolvedAssetId;
+			let resolvedName;
+
+			if (isLibraryVersion) {
+				resolvedAssetId = versionAssetId;
+				resolvedName = asset.name;
+			} else {
+				// Root library asset: attach a project-scoped reference as before.
+				const attachedAsset = await attachExistingAsset(project.id, {
+					filename: asset.filename || asset.filePath,
+					type: assetType,
+					name: asset.name,
+					metadata: {
+						format: asset.extension || (asset.filename?.split('.').pop() || '').toUpperCase(),
+						source: 'ASSET LIB'
+					}
+				});
+				resolvedAssetId = attachedAsset.id;
+				resolvedName = attachedAsset.name;
+			}
+
+			// Update the graph node – IMPORTANT: use the returned updated node directly
+			const updatedNode = await updateProjectNode(project.id, Number(pendingAssetNodeId), {
+				assetId: resolvedAssetId,
+				name: resolvedName,
+				status: null,
+				progress: null,
+				metadata: { lastAction: 'asset-library' }
+			});
+
+			// 3. Apply the fresh node data to the React Flow state
+			if (updatedNode) replaceFlowNodeData(updatedNode);
+
+			// 4. Clear the draft panel for this node
+			setActionDraftsByNodeId(prev => {
+				const next = { ...prev };
+				delete next[String(pendingAssetNodeId)];
+				return next;
+			});
+		} catch (err) {
+			console.error('Failed to attach asset to node:', err);
+			// Optional: show user-friendly error (you can integrate a toast/notification here)
+		} finally {
+			setAssetSelectorOpen(false);
+			setPendingAssetNodeId(null);
+		}
+	}, [attachExistingAsset, assetSelectorType, pendingAssetNodeId, project.id, updateProjectNode, replaceFlowNodeData, setActionDraftsByNodeId]);
+
+  const handleOpenMeshPreview = useCallback((asset) => {
+    if (!asset?.filename) {
+      return
+    }
+
+    setMeshPreviewAsset({
+      name: asset.name,
+      url: getAssetPreviewUrl(asset.filename)
+    })
+  }, [])
+
+  const renderedNodes = useMemo(() => nodes.map(node => {
+    const nodeInputConnectors = buildInputConnectors(node.id, nodes, edges)
+    const nodeInputSources = buildNodeInputSources(node.id, nodes, edges)
+
+    return ({
+    ...node,
+    dragHandle: isValueNodeKind(node.data.nodeKind)
+      ? '.graph-node__value-card'
+      : node.data.nodeKind === 'imageCompare'
+        ? '.graph-node__compare-header'
+        : '.graph-node__card',
+    data: {
+      ...node.data,
+      inputConnectors: nodeInputConnectors,
+      inputSources: nodeInputSources,
+      outputConnector: {
+        id: DEFAULT_OUTPUT_ID,
+        type: getNodeOutputType(node)
+      },
+			onOpenAssetSelector: (nodeId, type) => handleOpenAssetSelector(nodeId, type),
+      onOpenMeshPreview: handleOpenMeshPreview,
+      onCancelRun: handleCancelNodeRun,
+      actionDraft: actionDraftsByNodeId[node.id] || null,
+      connectedInputAsset: getConnectedInputAssetFrom(nodes, edges, node.id),
+      imageGenerationApis,
+      imageEditApis,
+      meshGenerationApis,
+      imageGenerationWorkflows,
+      imageEditWorkflows,
+      meshGenerationWorkflows,
+      textGenerationWorkflows,
+      libraryImageOptions,
+      libraryMeshOptions,
+      libraryLoading,
+      comfyLoading,
+      onNodeNameChange: handleNodeNameChange,
+      onNodeNameCommit: handleNodeNameCommit,
+      onNodeOutputValueChange: handleNodeOutputValueChange,
+      onNodeOutputValueCommit: handleNodeOutputValueCommit,
+      onToggleAction: toggleActionDraft,
+      onBackToActionMenu: openActionDraft,
+      onImageModeSelect: async (targetNodeId, mode) => {
+        if (mode === 'local') {
+          pendingUploadNodeIdRef.current = String(targetNodeId)
+          fileInputRef.current?.click()
+          return
+        }
+
+				if (mode === 'assets') {
+					await ensureLibraryLoaded();
+					setActionDraft(targetNodeId, createImageNodeDraft('assets'));
+					handleOpenAssetSelector(targetNodeId, 'image');
+					return;
+				}
+
+        if (mode === 'comfy') {
+          const workflows = await ensureComfyWorkflowsLoaded()
+          const nodeInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+          setActionDraft(targetNodeId, createImageNodeDraft('comfy', nodeInputSources, filterImageGenerationWorkflows(workflows || [])))
+          return
+        }
+
+        const nodeInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+        setActionDraft(targetNodeId, mode === 'comfy'
+            ? createImageNodeDraft('comfy', nodeInputSources)
+            : createImageNodeDraft(mode, nodeInputSources))
+      },
+      onImageEditModeSelect: async (targetNodeId, mode) => {
+        if (mode === 'edit-api' || mode === 'api') {
+          await ensureLibraryLoaded()
+        }
+
+        if (mode === 'edit-comfy' || mode === 'comfy') {
+          await ensureLibraryLoaded()
+          const workflows = await ensureComfyWorkflowsLoaded()
+          const nodeInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+          setActionDraft(targetNodeId, createImageEditNodeDraft(
+              mode,
+              getConnectedInputAssetFrom(nodes, edges, targetNodeId),
+              nodeInputSources,
+              libraryImageOptions,
+              filterImageEditWorkflows(workflows || [])
+            ))
+          return
+        }
+
+        const nodeInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+        setActionDraft(targetNodeId, createImageEditNodeDraft(mode, getConnectedInputAssetFrom(nodes, edges, targetNodeId), nodeInputSources, libraryImageOptions))
+      },
+      onMeshGenModeSelect: async (targetNodeId, mode) => {
+        if (mode === 'local') {
+          pendingMeshUploadNodeIdRef.current = String(targetNodeId)
+          meshFileInputRef.current?.click()
+          return
+        }
+
+        if (mode === 'api') {
+          await ensureLibraryLoaded()
+        }
+				
+				if (mode === 'assets') {
+					await ensureLibraryLoaded();
+					setActionDraft(targetNodeId, createImageNodeDraft('assets'));
+					handleOpenAssetSelector(targetNodeId, 'mesh');
+					return;
+				}
+
+        if (mode === 'comfy') {
+          await ensureLibraryLoaded()
+          const workflows = await ensureComfyWorkflowsLoaded()
+          const nodeInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+          setActionDraft(targetNodeId, createMeshGenNodeDraft(
+              mode,
+              getConnectedInputAssetFrom(nodes, edges, targetNodeId),
+              nodeInputSources,
+              libraryImageOptions,
+              filterMeshGenerationWorkflows(workflows || [])
+            ))
+          return
+        }
+
+        const nodeInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+        setActionDraft(targetNodeId, createMeshGenNodeDraft(mode, getConnectedInputAssetFrom(nodes, edges, targetNodeId), nodeInputSources, libraryImageOptions))
+      },
+      onTextModeSelect: async (targetNodeId, mode) => {
+        if (mode === 'comfy') {
+          const workflows = await ensureComfyWorkflowsLoaded()
+          const nodeInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+          setActionDraft(targetNodeId, createTextNodeDraft('comfy', nodeInputSources, filterTextGenerationWorkflows(workflows || [])))
+          return
+        }
+
+        setActionDraft(targetNodeId, createTextNodeDraft('select', buildNodeInputSources(targetNodeId, nodes, edges)))
+      },
+      onDraftFieldChange: (targetNodeId, field, value) => {
+        setActionDraftsByNodeId(currentDrafts => {
+          const nodeDraft = currentDrafts[String(targetNodeId)]
+          if (!nodeDraft) {
+            return currentDrafts
+          }
+
+          const targetInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+          let nextDraft = {
+            ...nodeDraft,
+            [field]: value
+          }
+
+          if (field === 'workflowId') {
+            const isEditNode = ['edit-api', 'edit-comfy'].includes(nodeDraft.mode)
+            const isMeshGenNode = node.data.nodeKind === 'meshGen'
+            const isTextNode = node.data.nodeKind === 'text'
+            const workflowList = isTextNode
+              ? textGenerationWorkflows
+              : isMeshGenNode
+                ? meshGenerationWorkflows
+                : isEditNode
+                  ? imageEditWorkflows
+                  : imageGenerationWorkflows
+            const selectedWorkflow = workflowList.find(workflow => workflow.id == value) || null
+            nextDraft = {
+              ...nextDraft,
+              inputs: (isEditNode || isMeshGenNode)
+                ? createWorkflowDraftInputs(selectedWorkflow, (_parameter, valueType) => valueType === 'image'
+                    ? ({ source: libraryImageOptions[0]?.sourceReference || '' })
+                    : null)
+                : createWorkflowDraftInputs(selectedWorkflow, () => null),
+              inputBindings: isTextNode
+                ? createWorkflowDraftBindings(selectedWorkflow, targetInputSources, ['string', 'number', 'boolean'])
+                : (isEditNode || isMeshGenNode)
+                  ? createWorkflowDraftBindings(selectedWorkflow, targetInputSources, ['image'])
+                  : createWorkflowDraftBindings(selectedWorkflow, targetInputSources)
+            }
+          }
+
+          if (field === 'selectedApi' && node.data.nodeKind === 'meshGen') {
+            const defaultImageInputSource = getCompatibleInputSources(targetInputSources, 'image')[0] || null
+            const isAsyncImageConnectorApi = isTencentMeshGenerationApi(value) || isTripoMeshGenerationApi(value)
+            nextDraft = {
+              ...nextDraft,
+              selectedInputSource: isAsyncImageConnectorApi
+                ? (getInputSourceSelectionValue(defaultImageInputSource) || '')
+                : (nextDraft.selectedInputSource || getInputSourceSelectionValue(defaultImageInputSource) || libraryImageOptions[0]?.sourceReference || ''),
+              modelVersion: isTripoMeshGenerationApi(value)
+                ? (TRIPO_MODEL_VERSION_OPTIONS.includes(nextDraft.modelVersion) ? nextDraft.modelVersion : 'v2.5-20250123')
+                : (TENCENT_MODEL_VERSION_OPTIONS.includes(nextDraft.modelVersion) ? nextDraft.modelVersion : '3.0')
+            }
+          }
+
+          if (field === 'generationType' && value !== 'LowPoly') {
+            nextDraft = {
+              ...nextDraft,
+              polygonType: 'triangle'
+            }
+          }
+
+          if (field === 'hitemModel') {
+            const resolutionOptions = getHitemResolutionOptions(value)
+            if (!resolutionOptions.includes(nextDraft.hitemResolution)) {
+              nextDraft = {
+                ...nextDraft,
+                hitemResolution: resolutionOptions[0]
+              }
+            }
+          }
+
+          return {
+            ...currentDrafts,
+            [String(targetNodeId)]: nextDraft
+          }
+        })
+      },
+      onDraftInputChange: (targetNodeId, parameter, nextValue) => {
+        setActionDraftsByNodeId(currentDrafts => {
+          const nodeDraft = currentDrafts[String(targetNodeId)]
+          if (!nodeDraft) {
+            return currentDrafts
+          }
+
+          return {
+            ...currentDrafts,
+            [String(targetNodeId)]: {
+              ...nodeDraft,
+              inputs: {
+                ...(nodeDraft.inputs || {}),
+                [parameter.id]: nextValue
+              }
+            }
+          }
+        })
+      },
+      onDraftInputSourceChange: (targetNodeId, parameter, source) => {
+        setActionDraftsByNodeId(currentDrafts => {
+          const nodeDraft = currentDrafts[String(targetNodeId)]
+          if (!nodeDraft) {
+            return currentDrafts
+          }
+
+          return {
+            ...currentDrafts,
+            [String(targetNodeId)]: {
+              ...nodeDraft,
+              inputBindings: {
+                ...(nodeDraft.inputBindings || {}),
+                [parameter.id]: {
+                  ...getWorkflowParameterBinding(nodeDraft, parameter),
+                  source
+                }
+              }
+            }
+          }
+        })
+      },
+      onRequestLocalFile: (targetNodeId) => {
+        pendingUploadNodeIdRef.current = String(targetNodeId)
+        fileInputRef.current?.click()
+      },
+      onAttachLibraryAsset: async (targetNodeId, libraryAsset) => {
+        const assetType = libraryAsset.type || (node.data.nodeKind === 'meshGen' ? 'mesh' : 'image')
+        const attachedAsset = await attachExistingAsset(project.id, {
+          filename: libraryAsset.filename,
+          type: assetType,
+          name: libraryAsset.name,
+          metadata: {
+            ...(assetType === 'image' ? { resolution: 'Unknown' } : {}),
+            format: libraryAsset.extension,
+            source: 'ASSET LIB'
+          }
+        })
+        const updatedNode = await updateProjectNode(project.id, Number(targetNodeId), {
+          assetId: attachedAsset.id,
+          name: attachedAsset.name,
+          status: null,
+          progress: null,
+          metadata: {
+            lastAction: 'asset-library'
+          }
+        })
+        replaceFlowNodeData(updatedNode)
+        closeActionDraft(targetNodeId)
+      },
+      onRunNodeAction: async (targetNodeId) => {
+        const targetNode = nodes.find(item => item.id === String(targetNodeId))
+        const targetDraft = actionDraftsByNodeId[String(targetNodeId)]
+        if (!targetNode || !targetDraft) {
+          return
+        }
+
+        const setProcessingState = async (status, progress = null, metadata = {}, transientData = {}) => {
+          const updatedNode = await updateProjectNode(project.id, Number(targetNodeId), {
+            status,
+            progress,
+            metadata
+          })
+          replaceFlowNodeData(updatedNode)
+          setNodeTransientData(targetNodeId, {
+            progressDetail: transientData.progressDetail ?? null,
+            currentNodeLabel: transientData.currentNodeLabel ?? null,
+            // Dropped on every state change: the live job mirror re-attaches
+            // them while a run is in flight, so a stale id can't outlive it and
+            // leave a Cancel button pointing at a finished job.
+            activeJobId: null,
+            isCancelling: false
+          })
+        }
+
+        // A run the user cancelled is not a failure: the node goes back to idle
+        // with its parameters intact instead of showing an error. Node metadata
+        // is merged server-side, so a previous run's `error` is cleared here.
+        const finishFailedRun = async (err, promptId, fallbackMessage) => {
+          if (err?.cancelled) {
+            await setProcessingState(null, null, { error: null, cancelled: true, promptId })
+            completeJob(promptId, { status: 'cancelled' })
+            return
+          }
+
+          await setProcessingState('error', null, { error: err.message || fallbackMessage, promptId })
+          completeJob(promptId, { status: 'error', error: err.message || fallbackMessage })
+        }
+
+        const applyNodeResult = async (asset, metadata = {}) => {
+          const updatedNode = await updateProjectNode(project.id, Number(targetNodeId), {
+            assetId: asset.id,
+            name: asset.name,
+            status: null,
+            progress: null,
+            metadata
+          })
+          replaceFlowNodeData(updatedNode)
+          setNodeTransientData(targetNodeId, {
+            progressDetail: null,
+            currentNodeLabel: null,
+            activeJobId: null,
+            isCancelling: false
+          })
+        }
+
+        const spawnAdditionalResultNodes = async (nodeTypeName, assets) => {
+          // The first result is applied to the target node, which keeps its existing
+          // reference connection(s). Every additional result becomes a new node that
+          // must be wired up to the same reference node(s) so it can be used the same way.
+          // For an image workflow the target can reference several nodes, so replicate all
+          // of its incoming edges (preserving handles); Image Edit / Mesh Gen wire the
+          // single image input to their default handle.
+          const referenceEdges = nodeTypeName === 'Image'
+            ? edges
+                .filter(edge => edge.target === String(targetNodeId))
+                .map(edge => ({
+                  source: edge.source,
+                  inputId: edge.targetHandle || DEFAULT_INPUT_ID,
+                  outputId: edge.sourceHandle || DEFAULT_OUTPUT_ID
+                }))
+            : (() => {
+                const sourceEdge = getInputSource(nodes, edges, targetNodeId, 'image').edge
+                return sourceEdge
+                  ? [{
+                      source: sourceEdge.source,
+                      inputId: DEFAULT_INPUT_ID,
+                      outputId: sourceEdge.sourceHandle || DEFAULT_OUTPUT_ID
+                    }]
+                  : []
+              })()
+          // Stack the additional nodes in a single vertical column directly below the
+          // target node (which holds the first result). Use a fixed step: a collapsed
+          // image/mesh card is a fixed-size 360px-wide, ~480px-tall card, and the target
+          // node's live measured height is unreliable here (it's still in its taller
+          // processing layout when this runs).
+          const baseX = targetNode.position.x
+          const baseY = targetNode.position.y
+          const verticalStep = 580
+          for (let index = 0; index < assets.length; index += 1) {
+            const asset = assets[index]
+            const createdNode = await handleCreateNode(nodeTypeName, {
+              name: asset.name || nodeTypeName,
+              assetId: asset.id,
+              xPos: baseX,
+              yPos: baseY + ((index + 1) * verticalStep),
+              metadata: {
+                createdFromNodeId: Number(targetNodeId)
+              }
+            })
+
+            for (const referenceEdge of referenceEdges) {
+              const newConnection = await createProjectConnection(project.id, {
+                sourceNodeId: Number(referenceEdge.source),
+                targetNodeId: createdNode.id,
+                inputId: referenceEdge.inputId,
+                outputId: referenceEdge.outputId
+              })
+
+              setEdges(currentEdges => {
+                const nextEdge = toFlowEdge(newConnection)
+                if (currentEdges.some(edge => edge.id === nextEdge.id)) {
+                  return currentEdges
+                }
+                return addEdge(nextEdge, currentEdges)
+              })
+            }
+          }
+        }
+
+        if (targetNode.data.nodeKind === 'text') {
+          if (targetDraft.mode !== 'comfy') {
+            return
+          }
+
+          const workflow = textGenerationWorkflows.find(item => item.id == targetDraft.workflowId)
+          if (!workflow) {
+            return
+          }
+
+          const targetInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+          const inputValues = {}
+          for (const parameter of workflow.parameters || []) {
+            const valueType = getWorkflowParameterValueType(parameter)
+            const inputValue = resolveWorkflowParameterValue(parameter, targetDraft, targetInputSources)
+
+            if (isFileWorkflowValueType(valueType)) {
+              if (!inputValue) {
+                return
+              }
+              inputValues[parameter.id] = inputValue
+              continue
+            }
+
+            if (valueType === 'number') {
+              if (String(inputValue ?? '').trim() === '' || Number.isNaN(Number(inputValue))) {
+                return
+              }
+              inputValues[parameter.id] = inputValue
+              continue
+            }
+
+            if (valueType === 'boolean') {
+              inputValues[parameter.id] = Boolean(inputValue)
+              continue
+            }
+
+            if (!String(inputValue ?? '').trim()) {
+              return
+            }
+
+            inputValues[parameter.id] = inputValue
+          }
+
+          const promptId = createComfyExecutionId('graph-text-prompt')
+          const clientId = createComfyExecutionId('graph-text-client')
+          registerJob({
+            id: promptId,
+            projectId: project.id,
+            projectName: project.name,
+            page: 'graph',
+            targetId: targetNodeId,
+            kind: 'text',
+            label: targetNode.data.name || workflow.name
+          })
+
+          await setProcessingState('processing', 0, { processingSource: 'ComfyUI', promptId }, {
+            progressDetail: 'Preparing ComfyUI workflow',
+            currentNodeLabel: 'Waiting for ComfyUI execution to start'
+          })
+          try {
+            const results = await runComfyWorkflow(project.id, {
+              workflowId: Number(targetDraft.workflowId),
+              name: targetNode.data.name || workflow.name,
+              inputs: inputValues,
+              promptId,
+              clientId,
+              persistProcessingCard: false,
+              persistGeneratedAssets: false
+            })
+            const textResult = (Array.isArray(results) ? results : [results]).find(item => item?.type === 'text')
+            if (!textResult || typeof textResult.text !== 'string') {
+              throw new Error('The workflow did not return any text output')
+            }
+            setNodeTransientData(targetNodeId, {
+              status: 'processing',
+              progress: 100,
+              progressDetail: 'Saving generated text',
+              currentNodeLabel: 'ComfyUI workflow completed'
+            })
+            const updatedNode = await updateProjectNode(project.id, Number(targetNodeId), {
+              status: null,
+              progress: null,
+              metadata: {
+                outputValue: textResult.text,
+                lastAction: 'comfy-text',
+                promptId,
+                lastActionParams: buildLastActionParams({
+                  source: 'ComfyUI',
+                  label: workflow.name,
+                  params: describeWorkflowParams(workflow, inputValues, targetDraft, targetInputSources)
+                })
+              }
+            })
+            replaceFlowNodeData(updatedNode)
+            setNodeTransientData(targetNodeId, {
+              progressDetail: null,
+              currentNodeLabel: null
+            })
+            completeJob(promptId, { status: 'completed' })
+          } catch (err) {
+            await finishFailedRun(err, promptId, 'ComfyUI workflow failed')
+          }
+          return
+        }
+
+        if (targetNode.data.nodeKind === 'image') {
+          const targetInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+          if (targetDraft.mode === 'api') {
+            if (!targetDraft.selectedApi || !String(targetDraft.prompt || '').trim() || !String(targetDraft.name || '').trim()) {
+              return
+            }
+
+            // With an image attached to the node, an API run edits that image and
+            // saves the result as an edit of it; otherwise it's a plain generation.
+            const connectedInputAsset = getConnectedInputAssetFrom(nodes, edges, targetNodeId)
+            const editSourceReference = getAssetSourceReference(connectedInputAsset)
+
+            if (editSourceReference) {
+              await setProcessingState('processing', null, { processingSource: 'API', inputSource: editSourceReference })
+              try {
+                const response = await runImageEditApi(project.id, {
+                  imageSource: editSourceReference,
+                  name: targetDraft.name.trim(),
+                  selectedApi: targetDraft.selectedApi,
+                  prompt: targetDraft.prompt.trim()
+                })
+                const savedEdits = response?.savedEdits || []
+                if (savedEdits.length === 0) {
+                  throw new Error('Image edit did not return any saved image')
+                }
+                await applyNodeResult({ id: savedEdits[0].id, name: savedEdits[0].name || targetDraft.name.trim() }, {
+                  lastAction: 'image-edit-api',
+                  inputSource: editSourceReference,
+                  lastActionParams: buildLastActionParams({
+                    source: 'API',
+                    label: imageGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || targetDraft.selectedApi,
+                    params: [
+                      { label: 'Prompt', type: 'string', value: targetDraft.prompt.trim() },
+                      { label: 'Image source', type: 'image', value: editSourceReference }
+                    ]
+                  })
+                })
+                if (savedEdits.length > 1) {
+                  await spawnAdditionalResultNodes('Image', savedEdits.slice(1).map(edit => ({
+                    id: edit.id,
+                    name: edit.name || targetDraft.name.trim()
+                  })))
+                }
+              } catch (err) {
+                await setProcessingState('error', null, { error: err.message || 'Image edit failed', inputSource: editSourceReference })
+                pushExternalApiFailureNotification(
+                  'Image edit failed',
+                  err.message || 'Image edit failed',
+                  imageGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || 'Image edit API'
+                )
+              }
+              return
+            }
+
+            await setProcessingState('processing', null, { processingSource: 'API' })
+            try {
+              const generatedAsset = await generateImage(project.id, {
+                selectedApi: targetDraft.selectedApi,
+                prompt: targetDraft.prompt.trim(),
+                name: targetDraft.name.trim()
+              })
+              await applyNodeResult(generatedAsset, {
+                lastAction: 'image-api',
+                lastActionParams: buildLastActionParams({
+                  source: 'API',
+                  label: imageGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || targetDraft.selectedApi,
+                  params: [
+                    { label: 'Prompt', type: 'string', value: targetDraft.prompt.trim() }
+                  ]
+                })
+              })
+            } catch (err) {
+              await setProcessingState('error', null, { error: err.message || 'Image generation failed' })
+              pushExternalApiFailureNotification(
+                'Image generation failed',
+                err.message || 'Image generation failed',
+                imageGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || 'Image generation API'
+              )
+            }
+            return
+          }
+
+          if (targetDraft.mode === 'comfy') {
+            const workflow = imageGenerationWorkflows.find(item => item.id == targetDraft.workflowId)
+            if (!workflow || !String(targetDraft.name || '').trim()) {
+              return
+            }
+
+            const inputValues = {}
+            for (const parameter of workflow.parameters || []) {
+              const valueType = getWorkflowParameterValueType(parameter)
+              const inputValue = resolveWorkflowParameterValue(parameter, targetDraft, targetInputSources)
+
+              if (isFileWorkflowValueType(valueType)) {
+                if (!inputValue) {
+                  return
+                }
+                inputValues[parameter.id] = inputValue
+                continue
+              }
+
+              if (valueType === 'number') {
+                if (String(inputValue ?? '').trim() === '' || Number.isNaN(Number(inputValue))) {
+                  return
+                }
+                inputValues[parameter.id] = inputValue
+                continue
+              }
+
+              if (valueType === 'boolean') {
+                inputValues[parameter.id] = Boolean(inputValue)
+                continue
+              }
+
+              if (!String(inputValue ?? '').trim()) {
+                return
+              }
+
+              inputValues[parameter.id] = inputValue
+            }
+
+            // With an image attached to the node, the workflow output is saved as
+            // an edit of that image instead of as a brand-new asset — but only when
+            // the workflow exposes an image input to receive it. A pure text-to-image
+            // workflow can't edit the attached image, so it falls back to generation.
+            // An image input bound to "None" receives nothing, so it doesn't count.
+            const connectedInputAsset = getConnectedInputAssetFrom(nodes, edges, targetNodeId)
+            const workflowAcceptsImageInput = (workflow.parameters || []).some(parameter => (
+              getWorkflowParameterValueType(parameter) === 'image'
+              && !isWorkflowInputNoneValue(inputValues[parameter.id])
+            ))
+            const saveAsEdit = Boolean(connectedInputAsset && workflowAcceptsImageInput)
+            const promptId = createComfyExecutionId('graph-image-prompt')
+            const clientId = createComfyExecutionId('graph-image-client')
+            registerJob({
+              id: promptId,
+              projectId: project.id,
+              projectName: project.name,
+              page: 'graph',
+              targetId: targetNodeId,
+              kind: saveAsEdit ? 'imageEdit' : 'image',
+              label: targetDraft.name.trim() || workflow.name
+            })
+
+            await setProcessingState('processing', 0, { processingSource: 'ComfyUI', promptId }, {
+              progressDetail: saveAsEdit ? 'Preparing ComfyUI image edit' : 'Preparing ComfyUI workflow',
+              currentNodeLabel: 'Waiting for ComfyUI execution to start'
+            })
+            try {
+              if (saveAsEdit) {
+                const response = await runImageEditComfy(project.id, {
+                  assetId: connectedInputAsset.id,
+                  workflowId: Number(targetDraft.workflowId),
+                  name: targetDraft.name.trim(),
+                  inputValues,
+                  promptId,
+                  clientId
+                })
+                const savedEdits = response?.savedEdits || []
+                if (savedEdits.length === 0) {
+                  throw new Error('ComfyUI image edit did not return any saved image')
+                }
+                setNodeTransientData(targetNodeId, {
+                  status: 'processing',
+                  progress: 100,
+                  progressDetail: 'Saving edited image',
+                  currentNodeLabel: 'ComfyUI image edit completed'
+                })
+                await applyNodeResult({ id: savedEdits[0].id, name: savedEdits[0].name || targetDraft.name.trim() }, {
+                  lastAction: 'image-edit-comfy',
+                  promptId,
+                  inputSource: JSON.stringify(inputValues),
+                  lastActionParams: buildLastActionParams({
+                    source: 'ComfyUI',
+                    label: workflow.name,
+                    params: describeWorkflowParams(workflow, inputValues, targetDraft, targetInputSources)
+                  })
+                })
+                if (savedEdits.length > 1) {
+                  await spawnAdditionalResultNodes('Image', savedEdits.slice(1).map(edit => ({
+                    id: edit.id,
+                    name: edit.name || targetDraft.name.trim()
+                  })))
+                }
+                await persistWorkflowDefaultsIfRequested(targetDraft, workflow, inputValues)
+                completeJob(promptId, { status: 'completed' })
+                return
+              }
+
+              const generatedAssets = await runComfyWorkflow(project.id, {
+                workflowId: Number(targetDraft.workflowId),
+                name: targetDraft.name.trim(),
+                inputs: inputValues,
+                promptId,
+                clientId
+              })
+              const imageAssets = (Array.isArray(generatedAssets) ? generatedAssets : [generatedAssets]).filter(asset => asset?.type === 'image')
+              if (imageAssets.length === 0) {
+                throw new Error('The workflow did not return any image output')
+              }
+              setNodeTransientData(targetNodeId, {
+                status: 'processing',
+                progress: 100,
+                progressDetail: 'Saving generated image',
+                currentNodeLabel: 'ComfyUI workflow completed'
+              })
+              await applyNodeResult(imageAssets[0], {
+                lastAction: 'comfy-workflow',
+                promptId,
+                lastActionParams: buildLastActionParams({
+                  source: 'ComfyUI',
+                  label: workflow.name,
+                  params: describeWorkflowParams(workflow, inputValues, targetDraft, targetInputSources)
+                })
+              })
+              if (imageAssets.length > 1) {
+                await spawnAdditionalResultNodes('Image', imageAssets.slice(1))
+              }
+              await persistWorkflowDefaultsIfRequested(targetDraft, workflow, inputValues)
+              completeJob(promptId, { status: 'completed' })
+            } catch (err) {
+              await finishFailedRun(err, promptId, 'ComfyUI workflow failed')
+            }
+            return
+          }
+
+          if (targetDraft.mode === 'edit-api') {
+            const selectedApiSource = resolveImageSourceOption(targetDraft.selectedInputSource, targetInputSources, libraryImageOptions)
+            const sourceAsset = selectedApiSource?.asset || getConnectedInputAssetFrom(nodes, edges, targetNodeId)
+            const sourceReference = selectedApiSource?.sourceReference || getAssetSourceReference(sourceAsset)
+            if (!sourceReference) {
+              return
+            }
+
+            if (!targetDraft.selectedApi || !String(targetDraft.prompt || '').trim() || !String(targetDraft.name || '').trim()) {
+              return
+            }
+
+            await setProcessingState('processing', null, { processingSource: 'API', inputSource: sourceReference })
+            try {
+              const response = await runImageEditApi(project.id, {
+                imageSource: sourceReference,
+                name: targetDraft.name.trim(),
+                selectedApi: targetDraft.selectedApi,
+                prompt: targetDraft.prompt.trim()
+              })
+              const savedEdits = response?.savedEdits || []
+              if (savedEdits.length === 0) {
+                throw new Error('Image edit did not return any saved image')
+              }
+              await applyNodeResult({ id: savedEdits[0].id, name: savedEdits[0].name || targetDraft.name.trim() }, {
+                lastAction: 'image-edit-api',
+                inputSource: sourceReference,
+                lastActionParams: buildLastActionParams({
+                  source: 'API',
+                  label: imageEditApis.find(api => api.id === targetDraft.selectedApi)?.name || targetDraft.selectedApi,
+                  params: [
+                    { label: 'Prompt', type: 'string', value: targetDraft.prompt.trim() },
+                    { label: 'Image source', type: 'image', value: sourceReference, boundFrom: selectedApiSource?.label || null }
+                  ]
+                })
+              })
+              if (savedEdits.length > 1) {
+                await spawnAdditionalResultNodes('Image', savedEdits.slice(1).map(edit => ({
+                  id: edit.id,
+                  name: edit.name || targetDraft.name.trim()
+                })))
+              }
+            } catch (err) {
+              await setProcessingState('error', null, { error: err.message || 'Image edit failed', inputSource: sourceReference })
+              pushExternalApiFailureNotification(
+                'Image edit failed',
+                err.message || 'Image edit failed',
+                imageEditApis.find(api => api.id === targetDraft.selectedApi)?.name || 'Image edit API'
+              )
+            }
+            return
+          }
+
+          if (targetDraft.mode === 'edit-comfy') {
+            const workflow = imageEditWorkflows.find(item => item.id == targetDraft.workflowId)
+            if (!workflow || !String(targetDraft.name || '').trim()) {
+              return
+            }
+
+            const inputValues = {}
+            for (const parameter of workflow.parameters || []) {
+              const valueType = getWorkflowParameterValueType(parameter)
+              const inputValue = resolveWorkflowParameterValue(parameter, targetDraft, targetInputSources)
+
+              if (isFileWorkflowValueType(valueType)) {
+                if (!inputValue) {
+                  return
+                }
+                inputValues[parameter.id] = inputValue
+                continue
+              }
+
+              if (valueType === 'number') {
+                if (String(inputValue ?? '').trim() === '' || Number.isNaN(Number(inputValue))) {
+                  return
+                }
+                inputValues[parameter.id] = inputValue
+                continue
+              }
+
+              if (valueType === 'boolean') {
+                inputValues[parameter.id] = Boolean(inputValue)
+                continue
+              }
+
+              if (!String(inputValue ?? '').trim()) {
+                return
+              }
+
+              inputValues[parameter.id] = inputValue
+            }
+
+            const promptId = createComfyExecutionId('graph-image-edit-prompt')
+            const clientId = createComfyExecutionId('graph-image-edit-client')
+            registerJob({
+              id: promptId,
+              projectId: project.id,
+              projectName: project.name,
+              page: 'graph',
+              targetId: targetNodeId,
+              kind: 'imageEdit',
+              label: targetDraft.name.trim() || 'Image edit'
+            })
+
+            await setProcessingState('processing', 0, { processingSource: 'ComfyUI', promptId }, {
+              progressDetail: 'Preparing ComfyUI image edit',
+              currentNodeLabel: 'Waiting for ComfyUI execution to start'
+            })
+            try {
+              const response = await runImageEditComfy(project.id, {
+                assetId: getConnectedInputAssetFrom(nodes, edges, targetNodeId)?.id || null,
+                workflowId: Number(targetDraft.workflowId),
+                name: targetDraft.name.trim(),
+                inputValues,
+                promptId,
+                clientId
+              })
+              const savedEdits = response?.savedEdits || []
+              if (savedEdits.length === 0) {
+                throw new Error('ComfyUI image edit did not return any saved image')
+              }
+              setNodeTransientData(targetNodeId, {
+                status: 'processing',
+                progress: 100,
+                progressDetail: 'Saving edited image',
+                currentNodeLabel: 'ComfyUI image edit completed'
+              })
+              await applyNodeResult({ id: savedEdits[0].id, name: savedEdits[0].name || targetDraft.name.trim() }, {
+                lastAction: 'image-edit-comfy',
+                promptId,
+                inputSource: JSON.stringify(inputValues),
+                lastActionParams: buildLastActionParams({
+                  source: 'ComfyUI',
+                  label: workflow.name,
+                  params: describeWorkflowParams(workflow, inputValues, targetDraft, targetInputSources)
+                })
+              })
+              if (savedEdits.length > 1) {
+                await spawnAdditionalResultNodes('Image', savedEdits.slice(1).map(edit => ({
+                  id: edit.id,
+                  name: edit.name || targetDraft.name.trim()
+                })))
+              }
+              await persistWorkflowDefaultsIfRequested(targetDraft, workflow, inputValues)
+              completeJob(promptId, { status: 'completed' })
+            } catch (err) {
+              await finishFailedRun(err, promptId, 'ComfyUI image edit failed')
+            }
+            return
+          }
+
+          return
+        }
+
+        const targetInputSources = buildNodeInputSources(targetNodeId, nodes, edges)
+
+        // Rig Mesh: run the connected mesh through the rigging service (same
+        // Auto Rig as the Mesh Editor) and save the skinned GLB as a new version
+        // of that mesh. The node then displays / outputs the rigged version.
+        if (targetNode.data.nodeKind === 'rigMesh') {
+          const sourceAsset = getInputSource(nodes, edges, targetNodeId, 'mesh').asset
+
+          if (!sourceAsset?.id || !sourceAsset?.filename) {
+            return
+          }
+
+          const versionName = String(targetDraft.name || '').trim() || `${sourceAsset.name || 'Mesh'} (rigged)`
+          const rigOptions = pickAutoRigOptions(targetDraft)
+
+          await setProcessingState('processing', 0, {
+            processingSource: 'Auto Rig',
+            parentAssetId: sourceAsset.id,
+            inputSource: getAssetSourceReference(sourceAsset),
+            error: null,
+            detail: 'Starting the rigging service'
+          }, {
+            progressDetail: 'Starting the rigging service',
+            currentNodeLabel: 'Auto Rig'
+          })
+
+          try {
+            // Desktop: start the rigging service on demand (no-op elsewhere).
+            await ensureDesktopService('rigging')
+
+            const meshResponse = await fetch(getAssetPreviewUrl(sourceAsset.filename))
+            if (!meshResponse.ok) {
+              throw new Error(`Failed to download the connected mesh (${meshResponse.status})`)
+            }
+            const meshBlob = await meshResponse.blob()
+
+            const { blob, stats } = await runAutoRigService(meshBlob, {
+              options: rigOptions,
+              fileName: sourceAsset.filename.split('/').pop() || 'mesh.glb',
+              onProgress: evt => setNodeTransientData(targetNodeId, {
+                status: 'processing',
+                progress: Number.isFinite(Number(evt?.frac))
+                  ? Math.round(Math.max(0, Math.min(1, Number(evt.frac))) * 100)
+                  : null,
+                progressDetail: evt?.message || evt?.stage || 'Rigging…',
+                currentNodeLabel: 'Auto Rig'
+              })
+            })
+
+            setNodeTransientData(targetNodeId, {
+              status: 'processing',
+              progress: 100,
+              progressDetail: 'Saving the rigged mesh',
+              currentNodeLabel: 'Auto Rig'
+            })
+
+            const meshFile = new File([blob], `${versionName}.glb`, { type: 'model/gltf-binary' })
+            const savedAsset = await saveMeshEdit({
+              assetId: sourceAsset.id,
+              filePath: '',
+              name: versionName,
+              saveMode: 'version',
+              meshFile
+            })
+
+            if (!savedAsset?.id) {
+              throw new Error('Auto Rig did not return a saved mesh version')
+            }
+
+            await ensureGeneratedMeshThumbnails([savedAsset])
+
+            const rigStats = stats?.tool || {}
+            await applyNodeResult(savedAsset, {
+              lastAction: 'auto-rig',
+              parentAssetId: sourceAsset.id,
+              error: null,
+              detail: null,
+              lastActionParams: buildLastActionParams({
+                source: 'Auto Rig',
+                label: 'SkinTokens rigging service',
+                params: [
+                  { label: 'Input mesh', type: 'mesh', value: sourceAsset.name, boundFrom: sourceAsset.name },
+                  { label: 'Version name', type: 'string', value: versionName },
+                  ...(rigStats.bones != null ? [{ label: 'Bones', type: 'number', value: rigStats.bones }] : []),
+                  { label: 'Bone names', type: 'string', value: rigOptions.rename_bones },
+                  { label: 'Preserve texture & scale', type: 'boolean', value: rigOptions.use_transfer },
+                  { label: 'Voxel-skin postprocess', type: 'boolean', value: rigOptions.use_postprocess },
+                  { label: 'Top-k', type: 'number', value: rigOptions.top_k },
+                  { label: 'Top-p', type: 'number', value: rigOptions.top_p },
+                  { label: 'Temperature', type: 'number', value: rigOptions.temperature },
+                  { label: 'Repetition penalty', type: 'number', value: rigOptions.repetition_penalty },
+                  { label: 'Beams', type: 'number', value: rigOptions.num_beams },
+                  { label: 'Length penalty', type: 'number', value: rigOptions.length_penalty }
+                ]
+              })
+            })
+          } catch (err) {
+            const failureMessage = err.message || 'Auto Rig failed'
+            await setProcessingState('error', null, {
+              processingSource: 'Auto Rig',
+              parentAssetId: sourceAsset.id,
+              error: failureMessage,
+              detail: failureMessage
+            }, {
+              progressDetail: failureMessage,
+              currentNodeLabel: 'Auto Rig failed'
+            })
+            addNotification({
+              title: 'Auto Rig failed',
+              message: failureMessage,
+              source: 'Rigging service',
+              tone: 'error'
+            })
+          }
+          return
+        }
+
+        if (targetNode.data.nodeKind === 'meshGen') {
+          // When a mesh is connected to (and therefore used to edit) this node, the
+          // generated mesh should become a version (child) of that connected mesh
+          // instead of a brand-new root asset in the Assets page.
+          const connectedMeshAssetId = getInputSource(nodes, edges, targetNodeId, 'mesh')?.asset?.id || null
+
+          if (targetDraft.mode === 'api') {
+            const selectedApiSource = resolveImageSourceOption(targetDraft.selectedInputSource, targetInputSources, libraryImageOptions)
+            const sourceAsset = selectedApiSource?.asset || getConnectedInputAssetFrom(nodes, edges, targetNodeId)
+            const sourceReference = selectedApiSource?.sourceReference || getAssetSourceReference(sourceAsset)
+            const isTencentMeshApi = isTencentMeshGenerationApi(targetDraft.selectedApi)
+            const isTripoMeshApi = isTripoMeshGenerationApi(targetDraft.selectedApi)
+            const isHitemMeshApi = isHitemMeshGenerationApi(targetDraft.selectedApi)
+            const trimmedPrompt = String(targetDraft.prompt || '').trim()
+            const effectiveSourceReference = (isTencentMeshApi || isTripoMeshApi) && trimmedPrompt
+              ? ''
+              : sourceReference
+
+            if (!isTencentMeshApi && !isTripoMeshApi && !effectiveSourceReference) {
+              return
+            }
+
+            if (!targetDraft.selectedApi || !String(targetDraft.name || '').trim()) {
+              return
+            }
+
+            if (isTencentMeshApi) {
+              if (Boolean(trimmedPrompt) === Boolean(effectiveSourceReference)) {
+                const validationMessage = 'Provide either a prompt or an image input for Tencent Cloud mesh generation'
+                await setProcessingState('error', null, {
+                  processingSource: 'Tencent Cloud',
+                  selectedApi: targetDraft.selectedApi,
+                  error: validationMessage,
+                  detail: 'Use either prompt-only or image-only input for Tencent Cloud',
+                  currentNodeLabel: 'Tencent Cloud input validation failed'
+                }, {
+                  progressDetail: 'Use either prompt-only or image-only input for Tencent Cloud',
+                  currentNodeLabel: 'Tencent Cloud input validation failed'
+                })
+                pushMeshGenerationFailureNotification(validationMessage, 'Tencent Cloud · Hunyuan3D Pro')
+                return
+              }
+
+              await setProcessingState('processing', null, {
+                processingSource: 'Tencent Cloud',
+                selectedApi: targetDraft.selectedApi,
+                inputSource: effectiveSourceReference || null,
+                region: targetDraft.region,
+                modelVersion: targetDraft.modelVersion,
+                generationType: targetDraft.generationType,
+                polygonType: targetDraft.generationType === 'LowPoly' ? targetDraft.polygonType : null,
+                enablePBR: Boolean(targetDraft.enablePBR),
+                faceCount: Number(targetDraft.faceCount) || 500000,
+                prompt: trimmedPrompt,
+                parentAssetId: connectedMeshAssetId,
+                jobStatus: 'WAIT',
+                detail: 'Submitting Tencent Cloud mesh generation job',
+                currentNodeLabel: 'Waiting for Tencent Cloud job id'
+              }, {
+                progressDetail: 'Submitting Tencent Cloud mesh generation job',
+                currentNodeLabel: 'Waiting for Tencent Cloud job id'
+              })
+
+              try {
+                const response = await runMeshGenerationApi(project.id, {
+                  imageSource: effectiveSourceReference || null,
+                  name: targetDraft.name.trim(),
+                  selectedApi: targetDraft.selectedApi,
+                  prompt: trimmedPrompt,
+                  region: targetDraft.region,
+                  modelVersion: targetDraft.modelVersion,
+                  enablePBR: Boolean(targetDraft.enablePBR),
+                  faceCount: Number(targetDraft.faceCount) || 500000,
+                  generationType: targetDraft.generationType,
+                  polygonType: targetDraft.generationType === 'LowPoly' ? targetDraft.polygonType : undefined
+                })
+
+                await setProcessingState('processing', null, {
+                  processingSource: 'Tencent Cloud',
+                  selectedApi: response.selectedApi || targetDraft.selectedApi,
+                  inputSource: effectiveSourceReference || null,
+                  region: response.region || targetDraft.region,
+                  modelVersion: targetDraft.modelVersion,
+                  generationType: targetDraft.generationType,
+                  polygonType: targetDraft.generationType === 'LowPoly' ? targetDraft.polygonType : null,
+                  enablePBR: Boolean(targetDraft.enablePBR),
+                  faceCount: Number(targetDraft.faceCount) || 500000,
+                  prompt: trimmedPrompt,
+                  meshName: targetDraft.name.trim(),
+                  jobId: response.jobId,
+                  promptId: response.jobId,
+                  jobStatus: 'WAIT',
+                  detail: 'Tencent Cloud job submitted. Use GET RESULT to refresh status.',
+                  currentNodeLabel: 'Tencent Cloud job is queued',
+                  lastActionParams: buildLastActionParams({
+                    source: 'API',
+                    label: meshGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || 'Tencent Cloud',
+                    params: [
+                      { label: 'Prompt', type: 'string', value: trimmedPrompt },
+                      { label: 'Image source', type: 'image', value: effectiveSourceReference || '' },
+                      { label: 'Region', type: 'string', value: response.region || targetDraft.region },
+                      { label: 'Model version', type: 'string', value: targetDraft.modelVersion },
+                      { label: 'Generation type', type: 'string', value: targetDraft.generationType },
+                      { label: 'Polygon type', type: 'string', value: targetDraft.generationType === 'LowPoly' ? targetDraft.polygonType : '' },
+                      { label: 'Enable PBR', type: 'boolean', value: Boolean(targetDraft.enablePBR) },
+                      { label: 'Face count', type: 'number', value: Number(targetDraft.faceCount) || 500000 }
+                    ]
+                  })
+                }, {
+                  progressDetail: 'Tencent Cloud job submitted. Use GET RESULT to refresh status.',
+                  currentNodeLabel: 'Tencent Cloud job is queued'
+                })
+              } catch (err) {
+                await setProcessingState('error', null, {
+                  processingSource: 'Tencent Cloud',
+                  selectedApi: targetDraft.selectedApi,
+                  inputSource: effectiveSourceReference || null,
+                  region: targetDraft.region,
+                  prompt: trimmedPrompt,
+                  error: err.message || 'Tencent Cloud mesh generation failed',
+                  detail: err.message || 'Tencent Cloud mesh generation failed',
+                  currentNodeLabel: 'Tencent Cloud job submission failed',
+                  jobStatus: 'FAIL'
+                }, {
+                  progressDetail: err.message || 'Tencent Cloud mesh generation failed',
+                  currentNodeLabel: 'Tencent Cloud job submission failed'
+                })
+                pushMeshGenerationFailureNotification(
+                  err.message || 'Tencent Cloud mesh generation failed',
+                  'Tencent Cloud · Hunyuan3D Pro'
+                )
+              }
+              return
+            }
+
+            if (isTripoMeshApi) {
+              if (Boolean(trimmedPrompt) === Boolean(effectiveSourceReference)) {
+                const validationMessage = 'Provide either a prompt or an image input for Tripo AI mesh generation'
+                await setProcessingState('error', null, {
+                  processingSource: 'Tripo AI',
+                  selectedApi: targetDraft.selectedApi,
+                  error: validationMessage,
+                  detail: 'Use either prompt-only or image-only input for Tripo AI',
+                  currentNodeLabel: 'Tripo AI input validation failed'
+                }, {
+                  progressDetail: 'Use either prompt-only or image-only input for Tripo AI',
+                  currentNodeLabel: 'Tripo AI input validation failed'
+                })
+                pushMeshGenerationFailureNotification(validationMessage, 'Tripo AI')
+                return
+              }
+
+              await setProcessingState('processing', null, {
+                processingSource: 'Tripo AI',
+                selectedApi: targetDraft.selectedApi,
+                inputSource: effectiveSourceReference || null,
+                prompt: trimmedPrompt,
+                parentAssetId: connectedMeshAssetId,
+                modelVersion: targetDraft.modelVersion || 'v2.5-20250123',
+                modelSeed: targetDraft.modelSeed,
+                enableImageAutofix: Boolean(targetDraft.enableImageAutofix),
+                faceLimit: targetDraft.faceLimit,
+                texture: Boolean(targetDraft.texture),
+                pbr: Boolean(targetDraft.pbr),
+                textureSeed: targetDraft.textureSeed,
+                textureAlignment: targetDraft.textureAlignment || 'original_image',
+                textureQuality: targetDraft.textureQuality || 'standard',
+                autoSize: Boolean(targetDraft.autoSize),
+                orientation: targetDraft.orientation || 'default',
+                quad: Boolean(targetDraft.quad),
+                smartLowPoly: Boolean(targetDraft.smartLowPoly),
+                generateParts: Boolean(targetDraft.generateParts),
+                exportUv: Boolean(targetDraft.exportUv),
+                geometryQuality: targetDraft.geometryQuality || 'standard',
+                detail: 'Submitting Tripo AI mesh generation task',
+                currentNodeLabel: 'Waiting for Tripo AI task id'
+              }, {
+                progressDetail: 'Submitting Tripo AI mesh generation task',
+                currentNodeLabel: 'Waiting for Tripo AI task id'
+              })
+
+              try {
+                const response = await runMeshGenerationApi(project.id, {
+                  imageSource: effectiveSourceReference || null,
+                  name: targetDraft.name.trim(),
+                  selectedApi: targetDraft.selectedApi,
+                  prompt: trimmedPrompt,
+                  modelVersion: targetDraft.modelVersion || 'v2.5-20250123',
+                  modelSeed: targetDraft.modelSeed,
+                  faceLimit: targetDraft.faceLimit,
+                  texture: Boolean(targetDraft.texture),
+                  pbr: Boolean(targetDraft.pbr),
+                  textureSeed: targetDraft.textureSeed,
+                  textureQuality: targetDraft.textureQuality || 'standard',
+                  autoSize: Boolean(targetDraft.autoSize),
+                  exportUv: Boolean(targetDraft.exportUv),
+                  ...(targetDraft.modelVersion === 'P1-20260311'
+                    ? {}
+                    : {
+                        enableImageAutofix: Boolean(targetDraft.enableImageAutofix),
+                        textureAlignment: targetDraft.textureAlignment || 'original_image',
+                        orientation: targetDraft.orientation || 'default',
+                        quad: Boolean(targetDraft.quad),
+                        smartLowPoly: Boolean(targetDraft.smartLowPoly),
+                        generateParts: Boolean(targetDraft.generateParts),
+                        geometryQuality: targetDraft.geometryQuality || 'standard'
+                      })
+                })
+
+                await setProcessingState('processing', null, {
+                  processingSource: 'Tripo AI',
+                  selectedApi: response.selectedApi || targetDraft.selectedApi,
+                  inputSource: effectiveSourceReference || null,
+                  prompt: trimmedPrompt,
+                  modelVersion: targetDraft.modelVersion || 'v2.5-20250123',
+                  modelSeed: targetDraft.modelSeed,
+                  enableImageAutofix: Boolean(targetDraft.enableImageAutofix),
+                  faceLimit: targetDraft.faceLimit,
+                  texture: Boolean(targetDraft.texture),
+                  pbr: Boolean(targetDraft.pbr),
+                  textureSeed: targetDraft.textureSeed,
+                  textureAlignment: targetDraft.textureAlignment || 'original_image',
+                  textureQuality: targetDraft.textureQuality || 'standard',
+                  autoSize: Boolean(targetDraft.autoSize),
+                  orientation: targetDraft.orientation || 'default',
+                  quad: Boolean(targetDraft.quad),
+                  smartLowPoly: Boolean(targetDraft.smartLowPoly),
+                  generateParts: Boolean(targetDraft.generateParts),
+                  exportUv: Boolean(targetDraft.exportUv),
+                  geometryQuality: targetDraft.geometryQuality || 'standard',
+                  meshName: targetDraft.name.trim(),
+                  taskId: response.taskId,
+                  promptId: response.taskId,
+                  taskStatus: 'queued',
+                  detail: 'Tripo AI task submitted. Use GET RESULT to refresh status.',
+                  currentNodeLabel: 'Tripo AI task is queued',
+                  lastActionParams: buildLastActionParams({
+                    source: 'API',
+                    label: meshGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || 'Tripo AI',
+                    params: [
+                      { label: 'Prompt', type: 'string', value: trimmedPrompt },
+                      { label: 'Image source', type: 'image', value: effectiveSourceReference || '' },
+                      { label: 'Model version', type: 'string', value: targetDraft.modelVersion || 'v2.5-20250123' },
+                      { label: 'Model seed', type: 'string', value: targetDraft.modelSeed },
+                      { label: 'Face limit', type: 'string', value: targetDraft.faceLimit },
+                      { label: 'Texture', type: 'boolean', value: Boolean(targetDraft.texture) },
+                      { label: 'PBR', type: 'boolean', value: Boolean(targetDraft.pbr) },
+                      { label: 'Texture quality', type: 'string', value: targetDraft.textureQuality || 'standard' },
+                      { label: 'Auto size', type: 'boolean', value: Boolean(targetDraft.autoSize) },
+                      { label: 'Export UV', type: 'boolean', value: Boolean(targetDraft.exportUv) },
+                      { label: 'Geometry quality', type: 'string', value: targetDraft.geometryQuality || 'standard' }
+                    ]
+                  })
+                }, {
+                  progressDetail: 'Tripo AI task submitted. Use GET RESULT to refresh status.',
+                  currentNodeLabel: 'Tripo AI task is queued'
+                })
+              } catch (err) {
+                await setProcessingState('error', null, {
+                  processingSource: 'Tripo AI',
+                  selectedApi: targetDraft.selectedApi,
+                  inputSource: effectiveSourceReference || null,
+                  prompt: trimmedPrompt,
+                  error: err.message || 'Tripo AI mesh generation failed',
+                  detail: err.message || 'Tripo AI mesh generation failed',
+                  currentNodeLabel: 'Tripo AI task submission failed',
+                  taskStatus: 'failed'
+                }, {
+                  progressDetail: err.message || 'Tripo AI mesh generation failed',
+                  currentNodeLabel: 'Tripo AI task submission failed'
+                })
+                pushMeshGenerationFailureNotification(
+                  err.message || 'Tripo AI mesh generation failed',
+                  'Tripo AI'
+                )
+              }
+              return
+            }
+
+            if (isHitemMeshApi) {
+              if (!effectiveSourceReference) {
+                const validationMessage = 'Hitem3D requires an image input for mesh generation'
+                await setProcessingState('error', null, {
+                  processingSource: 'Hitem3D',
+                  selectedApi: targetDraft.selectedApi,
+                  error: validationMessage,
+                  detail: 'Connect an image input or pick one from the asset library for Hitem3D',
+                  currentNodeLabel: 'Hitem3D input validation failed'
+                }, {
+                  progressDetail: 'Connect an image input or pick one from the asset library for Hitem3D',
+                  currentNodeLabel: 'Hitem3D input validation failed'
+                })
+                pushMeshGenerationFailureNotification(validationMessage, 'Hitem3D')
+                return
+              }
+
+              const hitemModel = targetDraft.hitemModel || 'hitem3dv2.1'
+              const hitemResolution = targetDraft.hitemResolution || '1536pro'
+              const hitemRequestType = Number(targetDraft.hitemRequestType) || 3
+              const hitemFace = Number(targetDraft.hitemFace) || 300000
+              const hitemPbr = Boolean(targetDraft.hitemPbr)
+
+              await setProcessingState('processing', null, {
+                processingSource: 'Hitem3D',
+                selectedApi: targetDraft.selectedApi,
+                inputSource: effectiveSourceReference || null,
+                parentAssetId: connectedMeshAssetId,
+                hitemModel,
+                hitemResolution,
+                hitemRequestType,
+                hitemFace,
+                hitemPbr,
+                detail: 'Submitting Hitem3D mesh generation task',
+                currentNodeLabel: 'Waiting for Hitem3D task id'
+              }, {
+                progressDetail: 'Submitting Hitem3D mesh generation task',
+                currentNodeLabel: 'Waiting for Hitem3D task id'
+              })
+
+              try {
+                const response = await runMeshGenerationApi(project.id, {
+                  imageSource: effectiveSourceReference || null,
+                  name: targetDraft.name.trim(),
+                  selectedApi: targetDraft.selectedApi,
+                  hitemModel,
+                  hitemResolution,
+                  hitemRequestType,
+                  hitemFace,
+                  hitemPbr
+                })
+
+                await setProcessingState('processing', null, {
+                  processingSource: 'Hitem3D',
+                  selectedApi: response.selectedApi || targetDraft.selectedApi,
+                  inputSource: effectiveSourceReference || null,
+                  hitemModel,
+                  hitemResolution,
+                  hitemRequestType,
+                  hitemFace,
+                  hitemPbr,
+                  meshName: targetDraft.name.trim(),
+                  taskId: response.taskId,
+                  promptId: response.taskId,
+                  taskStatus: 'processing',
+                  detail: 'Hitem3D task submitted. Use GET RESULT to refresh status.',
+                  currentNodeLabel: 'Hitem3D task is queued',
+                  lastActionParams: buildLastActionParams({
+                    source: 'API',
+                    label: meshGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || 'Hitem3D',
+                    params: [
+                      { label: 'Image source', type: 'image', value: effectiveSourceReference || '' },
+                      { label: 'Model', type: 'string', value: hitemModel },
+                      { label: 'Resolution', type: 'string', value: hitemResolution },
+                      { label: 'Generation type', type: 'string', value: hitemRequestType === 1 ? 'Mesh Only' : 'Textured Mesh' },
+                      { label: 'Face count', type: 'number', value: hitemFace },
+                      { label: 'Enable PBR', type: 'boolean', value: hitemPbr }
+                    ]
+                  })
+                }, {
+                  progressDetail: 'Hitem3D task submitted. Use GET RESULT to refresh status.',
+                  currentNodeLabel: 'Hitem3D task is queued'
+                })
+              } catch (err) {
+                await setProcessingState('error', null, {
+                  processingSource: 'Hitem3D',
+                  selectedApi: targetDraft.selectedApi,
+                  inputSource: effectiveSourceReference || null,
+                  error: err.message || 'Hitem3D mesh generation failed',
+                  detail: err.message || 'Hitem3D mesh generation failed',
+                  currentNodeLabel: 'Hitem3D task submission failed',
+                  taskStatus: 'failed'
+                }, {
+                  progressDetail: err.message || 'Hitem3D mesh generation failed',
+                  currentNodeLabel: 'Hitem3D task submission failed'
+                })
+                pushMeshGenerationFailureNotification(
+                  err.message || 'Hitem3D mesh generation failed',
+                  'Hitem3D'
+                )
+              }
+              return
+            }
+
+            await setProcessingState('processing', null, { processingSource: 'API', inputSource: sourceReference })
+            try {
+              const response = await runMeshGenerationApi(project.id, {
+                imageSource: sourceReference,
+                name: targetDraft.name.trim(),
+                selectedApi: targetDraft.selectedApi,
+                prompt: targetDraft.prompt.trim(),
+                parentAssetId: connectedMeshAssetId
+              })
+              const savedMeshes = (Array.isArray(response) ? response : [response]).filter(asset => asset?.type === 'mesh')
+              if (savedMeshes.length === 0) {
+                throw new Error('Mesh generation did not return any saved mesh')
+              }
+              await ensureGeneratedMeshThumbnails(savedMeshes)
+              await applyNodeResult(savedMeshes[0], {
+                lastAction: 'mesh-generation-api',
+                inputSource: sourceReference,
+                lastActionParams: buildLastActionParams({
+                  source: 'API',
+                  label: meshGenerationApis.find(api => api.id === targetDraft.selectedApi)?.name || targetDraft.selectedApi,
+                  params: [
+                    { label: 'Prompt', type: 'string', value: targetDraft.prompt.trim() },
+                    { label: 'Image source', type: 'image', value: sourceReference, boundFrom: selectedApiSource?.label || null }
+                  ]
+                })
+              })
+              if (savedMeshes.length > 1) {
+                await spawnAdditionalResultNodes('Mesh Gen', savedMeshes.slice(1))
+              }
+            } catch (err) {
+              await setProcessingState('error', null, { error: err.message || 'Mesh generation failed', inputSource: sourceReference })
+              pushMeshGenerationFailureNotification(err.message || 'Mesh generation failed', 'Mesh generation API')
+            }
+            return
+          }
+
+          if (targetDraft.mode === 'comfy') {
+            const workflow = meshGenerationWorkflows.find(item => item.id == targetDraft.workflowId)
+            if (!workflow || !String(targetDraft.name || '').trim()) {
+              return
+            }
+
+            const inputValues = {}
+            for (const parameter of workflow.parameters || []) {
+              const valueType = getWorkflowParameterValueType(parameter)
+              const inputValue = resolveWorkflowParameterValue(parameter, targetDraft, targetInputSources)
+
+              if (isFileWorkflowValueType(valueType)) {
+                if (!inputValue) {
+                  return
+                }
+                inputValues[parameter.id] = inputValue
+                continue
+              }
+
+              if (valueType === 'number') {
+                if (String(inputValue ?? '').trim() === '' || Number.isNaN(Number(inputValue))) {
+                  return
+                }
+                inputValues[parameter.id] = inputValue
+                continue
+              }
+
+              if (valueType === 'boolean') {
+                inputValues[parameter.id] = Boolean(inputValue)
+                continue
+              }
+
+              if (!String(inputValue ?? '').trim()) {
+                return
+              }
+
+              inputValues[parameter.id] = inputValue
+            }
+
+            const promptId = createComfyExecutionId('graph-mesh-gen-prompt')
+            const clientId = createComfyExecutionId('graph-mesh-gen-client')
+            registerJob({
+              id: promptId,
+              projectId: project.id,
+              projectName: project.name,
+              page: 'graph',
+              targetId: targetNodeId,
+              kind: 'mesh',
+              label: targetDraft.name.trim() || workflow.name
+            })
+
+            await setProcessingState('processing', 0, { processingSource: 'ComfyUI', promptId }, {
+              progressDetail: 'Preparing ComfyUI mesh generation',
+              currentNodeLabel: 'Waiting for ComfyUI execution to start'
+            })
+            try {
+              const generatedAssets = await runComfyWorkflow(project.id, {
+                workflowId: Number(targetDraft.workflowId),
+                name: targetDraft.name.trim(),
+                inputs: inputValues,
+                promptId,
+                clientId,
+                parentAssetId: connectedMeshAssetId,
+                // A version is nested under its parent mesh, so don't spawn a new
+                // standalone Kanban card for it (progress is tracked via the node).
+                persistProcessingCard: connectedMeshAssetId ? false : true
+              })
+              const meshAssets = (Array.isArray(generatedAssets) ? generatedAssets : [generatedAssets]).filter(asset => asset?.type === 'mesh')
+              if (meshAssets.length === 0) {
+                throw new Error('The workflow did not return any mesh output')
+              }
+              await ensureGeneratedMeshThumbnails(meshAssets)
+              setNodeTransientData(targetNodeId, {
+                status: 'processing',
+                progress: 100,
+                progressDetail: 'Saving generated mesh',
+                currentNodeLabel: 'ComfyUI mesh generation completed'
+              })
+              await applyNodeResult(meshAssets[0], {
+                lastAction: 'mesh-generation-comfy',
+                promptId,
+                lastActionParams: buildLastActionParams({
+                  source: 'ComfyUI',
+                  label: workflow.name,
+                  params: describeWorkflowParams(workflow, inputValues, targetDraft, targetInputSources)
+                })
+              })
+              if (meshAssets.length > 1) {
+                await spawnAdditionalResultNodes('Mesh Gen', meshAssets.slice(1))
+              }
+              await persistWorkflowDefaultsIfRequested(targetDraft, workflow, inputValues)
+              completeJob(promptId, { status: 'completed' })
+            } catch (err) {
+              await finishFailedRun(err, promptId, 'ComfyUI mesh generation failed')
+            }
+            return
+          }
+        }
+
+        if (targetDraft.mode === 'api') {
+          const selectedApiSource = resolveImageSourceOption(targetDraft.selectedInputSource, targetInputSources, libraryImageOptions)
+          const sourceAsset = selectedApiSource?.asset || getConnectedInputAssetFrom(nodes, edges, targetNodeId)
+          const sourceReference = selectedApiSource?.sourceReference || getAssetSourceReference(sourceAsset)
+          if (!sourceReference) {
+            return
+          }
+
+          if (!targetDraft.selectedApi || !String(targetDraft.prompt || '').trim() || !String(targetDraft.name || '').trim()) {
+            return
+          }
+
+          await setProcessingState('processing', null, { processingSource: 'API', inputSource: sourceReference })
+          try {
+            const response = await runImageEditApi(project.id, {
+              imageSource: sourceReference,
+              name: targetDraft.name.trim(),
+              selectedApi: targetDraft.selectedApi,
+              prompt: targetDraft.prompt.trim()
+            })
+            const savedEdits = response?.savedEdits || []
+            if (savedEdits.length === 0) {
+              throw new Error('Image edit did not return any saved image')
+            }
+            await applyNodeResult({ id: savedEdits[0].id, name: savedEdits[0].name || targetDraft.name.trim() }, {
+              lastAction: 'image-edit-api',
+              inputSource: sourceReference
+            })
+            if (savedEdits.length > 1) {
+              await spawnAdditionalResultNodes('Image Edit', savedEdits.slice(1).map(edit => ({
+                id: edit.id,
+                name: edit.name || targetDraft.name.trim()
+              })))
+            }
+          } catch (err) {
+            await setProcessingState('error', null, { error: err.message || 'Image edit failed', inputSource: sourceReference })
+            pushExternalApiFailureNotification(
+              'Image edit failed',
+              err.message || 'Image edit failed',
+              imageEditApis.find(api => api.id === targetDraft.selectedApi)?.name || 'Image edit API'
+            )
+          }
+          return
+        }
+
+        if (targetDraft.mode === 'comfy') {
+          const workflow = imageEditWorkflows.find(item => item.id == targetDraft.workflowId)
+          if (!workflow || !String(targetDraft.name || '').trim()) {
+            return
+          }
+
+          const inputValues = {}
+          for (const parameter of workflow.parameters || []) {
+            const valueType = getWorkflowParameterValueType(parameter)
+            const inputValue = resolveWorkflowParameterValue(parameter, targetDraft, targetInputSources)
+
+            if (isFileWorkflowValueType(valueType)) {
+              if (!inputValue) {
+                return
+              }
+              inputValues[parameter.id] = inputValue
+              continue
+            }
+
+            if (valueType === 'number') {
+              if (String(inputValue ?? '').trim() === '' || Number.isNaN(Number(inputValue))) {
+                return
+              }
+              inputValues[parameter.id] = inputValue
+              continue
+            }
+
+            if (valueType === 'boolean') {
+              inputValues[parameter.id] = Boolean(inputValue)
+              continue
+            }
+
+            if (!String(inputValue ?? '').trim()) {
+              return
+            }
+
+            inputValues[parameter.id] = inputValue
+          }
+
+          const promptId = createComfyExecutionId('graph-image-edit-prompt')
+          const clientId = createComfyExecutionId('graph-image-edit-client')
+          registerJob({
+            id: promptId,
+            projectId: project.id,
+            projectName: project.name,
+            page: 'graph',
+            targetId: targetNodeId,
+            kind: 'imageEdit',
+            label: targetDraft.name.trim() || 'Image edit'
+          })
+
+          await setProcessingState('processing', 0, { processingSource: 'ComfyUI', promptId }, {
+            progressDetail: 'Preparing ComfyUI image edit',
+            currentNodeLabel: 'Waiting for ComfyUI execution to start'
+          })
+          try {
+            const response = await runImageEditComfy(project.id, {
+              assetId: getConnectedInputAssetFrom(nodes, edges, targetNodeId)?.id || null,
+              workflowId: Number(targetDraft.workflowId),
+              name: targetDraft.name.trim(),
+              inputValues,
+              promptId,
+              clientId
+            })
+            const savedEdits = response?.savedEdits || []
+            if (savedEdits.length === 0) {
+              throw new Error('ComfyUI image edit did not return any saved image')
+            }
+            setNodeTransientData(targetNodeId, {
+              status: 'processing',
+              progress: 100,
+              progressDetail: 'Saving edited image',
+              currentNodeLabel: 'ComfyUI image edit completed'
+            })
+            await applyNodeResult({ id: savedEdits[0].id, name: savedEdits[0].name || targetDraft.name.trim() }, {
+              lastAction: 'image-edit-comfy',
+              promptId,
+              inputSource: JSON.stringify(inputValues)
+            })
+            if (savedEdits.length > 1) {
+              await spawnAdditionalResultNodes('Image Edit', savedEdits.slice(1).map(edit => ({
+                id: edit.id,
+                name: edit.name || targetDraft.name.trim()
+              })))
+            }
+            completeJob(promptId, { status: 'completed' })
+          } catch (err) {
+            await finishFailedRun(err, promptId, 'ComfyUI image edit failed')
+          }
+        }
+      },
+      onGetAsyncMeshResult: async (targetNodeId) => {
+        const targetNode = nodes.find(item => item.id === String(targetNodeId))
+        const runtimeMetadata = targetNode?.data?.metadata || {}
+        const isTencentRuntime = isTencentMeshGenerationApi(runtimeMetadata?.selectedApi)
+        const isTripoRuntime = isTripoMeshGenerationApi(runtimeMetadata?.selectedApi)
+        const isHitemRuntime = isHitemMeshGenerationApi(runtimeMetadata?.selectedApi)
+        const providerName = isTencentRuntime ? 'Tencent Cloud' : isTripoRuntime ? 'Tripo AI' : 'Hitem3D'
+        const notificationSource = isTencentRuntime ? 'Tencent Cloud · Hunyuan3D Pro' : providerName
+
+        if (!targetNode || !(canFetchTencentMeshResult(runtimeMetadata, targetNode.data.status) || canFetchTripoMeshResult(runtimeMetadata, targetNode.data.status) || canFetchHitemMeshResult(runtimeMetadata, targetNode.data.status))) {
+          return
+        }
+
+        const setProcessingState = async (status, progress = null, metadata = {}, transientData = {}) => {
+          const updatedNode = await updateProjectNode(project.id, Number(targetNodeId), {
+            status,
+            progress,
+            metadata
+          })
+          replaceFlowNodeData(updatedNode)
+          setNodeTransientData(targetNodeId, {
+            progressDetail: transientData.progressDetail ?? null,
+            currentNodeLabel: transientData.currentNodeLabel ?? null
+          })
+        }
+
+        const applyNodeResult = async (asset, metadata = {}) => {
+          const updatedNode = await updateProjectNode(project.id, Number(targetNodeId), {
+            assetId: asset.id,
+            name: asset.name,
+            status: null,
+            progress: null,
+            metadata
+          })
+          replaceFlowNodeData(updatedNode)
+          setNodeTransientData(targetNodeId, {
+            progressDetail: null,
+            currentNodeLabel: null
+          })
+        }
+
+        const spawnAdditionalResultNodes = async (nodeTypeName, assets) => {
+          // Stack the additional nodes in a single vertical column directly below the
+          // target node (which holds the first result). Use a fixed step matching the
+          // collapsed fixed-size card (~480px tall) plus a gap; the target's live
+          // measured height is unreliable here (it's still in its taller processing layout).
+          const baseX = targetNode.position.x
+          const baseY = targetNode.position.y
+          const verticalStep = 580
+          for (let index = 0; index < assets.length; index += 1) {
+            const asset = assets[index]
+            await handleCreateNode(nodeTypeName, {
+              name: asset.name || nodeTypeName,
+              assetId: asset.id,
+              xPos: baseX,
+              yPos: baseY + ((index + 1) * verticalStep),
+              metadata: {
+                createdFromNodeId: Number(targetNodeId)
+              }
+            })
+          }
+        }
+
+        await setProcessingState('processing', null, {
+          ...runtimeMetadata,
+          detail: isTencentRuntime ? 'Checking Tencent Cloud job result…' : `Checking ${providerName} task result…`,
+          currentNodeLabel: isTencentRuntime
+            ? `Job ${runtimeMetadata.jobId}`
+            : `Task ${runtimeMetadata.taskId}`
+        }, {
+          progressDetail: isTencentRuntime ? 'Checking Tencent Cloud job result…' : `Checking ${providerName} task result…`,
+          currentNodeLabel: isTencentRuntime
+            ? `Job ${runtimeMetadata.jobId}`
+            : `Task ${runtimeMetadata.taskId}`
+        })
+
+        try {
+          const meshResultName = runtimeMetadata.meshName || targetNode.data.name || targetNode.data.asset?.name || 'Generated Mesh'
+          const response = isTencentRuntime
+            ? await queryTencentMeshGenerationResult(project.id, {
+              jobId: runtimeMetadata.jobId,
+              region: runtimeMetadata.region,
+              name: meshResultName,
+              prompt: runtimeMetadata.prompt || '',
+              selectedApi: runtimeMetadata.selectedApi || TENCENT_MESH_GENERATION_API_ID,
+              parentAssetId: runtimeMetadata.parentAssetId || null
+            })
+            : isHitemRuntime
+              ? await queryHitemMeshGenerationResult(project.id, {
+                taskId: runtimeMetadata.taskId,
+                name: meshResultName,
+                prompt: runtimeMetadata.prompt || '',
+                selectedApi: runtimeMetadata.selectedApi || HITEM_MESH_GENERATION_API_ID,
+                parentAssetId: runtimeMetadata.parentAssetId || null
+              })
+              : await queryTripoMeshGenerationResult(project.id, {
+                taskId: runtimeMetadata.taskId,
+                name: meshResultName,
+                prompt: runtimeMetadata.prompt || '',
+                selectedApi: runtimeMetadata.selectedApi || TRIPO_MESH_GENERATION_API_ID,
+                parentAssetId: runtimeMetadata.parentAssetId || null
+              })
+
+          if (response.status === 'processing') {
+            const processingProgress = isTripoRuntime && Number.isFinite(response.progress)
+              ? Math.max(0, Math.min(100, Math.round(response.progress)))
+              : null
+            await setProcessingState('processing', processingProgress, {
+              ...runtimeMetadata,
+              selectedApi: response.selectedApi || runtimeMetadata.selectedApi,
+              region: response.region || runtimeMetadata.region,
+              jobId: response.jobId || runtimeMetadata.jobId,
+              promptId: isTencentRuntime
+                ? (response.jobId || runtimeMetadata.promptId)
+                : (response.taskId || runtimeMetadata.promptId),
+              jobStatus: response.jobStatus || runtimeMetadata.jobStatus,
+              taskId: response.taskId || runtimeMetadata.taskId,
+              taskStatus: response.taskStatus || runtimeMetadata.taskStatus,
+              detail: isTencentRuntime
+                ? `Tencent Cloud job status: ${response.jobStatus}`
+                : `${providerName} task status: ${response.taskStatus}`,
+              currentNodeLabel: isTencentRuntime
+                ? (response.jobStatus === 'RUN' ? 'Tencent Cloud job is running' : 'Tencent Cloud job is queued')
+                : `${providerName} task is running`
+            }, {
+              progressDetail: isTencentRuntime
+                ? `Tencent Cloud job status: ${response.jobStatus}`
+                : `${providerName} task status: ${response.taskStatus}`,
+              currentNodeLabel: isTencentRuntime
+                ? (response.jobStatus === 'RUN' ? 'Tencent Cloud job is running' : 'Tencent Cloud job is queued')
+                : `${providerName} task is running`
+            })
+            return
+          }
+
+          if (response.status === 'error') {
+            const failureMessage = response.error || `${providerName} mesh generation failed`
+            await setProcessingState('error', null, {
+              ...runtimeMetadata,
+              jobStatus: isTencentRuntime ? 'FAIL' : runtimeMetadata.jobStatus,
+              taskStatus: (isTripoRuntime || isHitemRuntime) ? 'failed' : runtimeMetadata.taskStatus,
+              detail: failureMessage,
+              currentNodeLabel: isTencentRuntime ? 'Tencent Cloud job failed' : `${providerName} task failed`,
+              error: failureMessage
+            }, {
+              progressDetail: failureMessage,
+              currentNodeLabel: isTencentRuntime ? 'Tencent Cloud job failed' : `${providerName} task failed`
+            })
+            pushMeshGenerationFailureNotification(failureMessage, notificationSource)
+            return
+          }
+
+          const savedMeshes = (response.assets || []).filter(asset => asset?.type === 'mesh')
+          if (savedMeshes.length === 0) {
+            throw new Error(`${providerName} job finished but no saved mesh was returned`)
+          }
+
+          await ensureGeneratedMeshThumbnails(savedMeshes)
+          await applyNodeResult(savedMeshes[0], {
+            lastAction: isTencentRuntime ? 'mesh-generation-tencent' : isHitemRuntime ? 'mesh-generation-hitem' : 'mesh-generation-tripo',
+            inputSource: runtimeMetadata.inputSource || null,
+            processingSource: null,
+            selectedApi: null,
+            region: null,
+            jobId: null,
+            promptId: null,
+            jobStatus: null,
+            taskId: null,
+            taskStatus: null,
+            parentAssetId: null,
+            detail: null,
+            currentNodeLabel: null,
+            error: null
+          })
+          if (savedMeshes.length > 1) {
+            await spawnAdditionalResultNodes('Mesh Gen', savedMeshes.slice(1))
+          }
+        } catch (err) {
+          const failureMessage = err.message || `Failed to fetch ${providerName} mesh result`
+          await setProcessingState('error', null, {
+            ...runtimeMetadata,
+            jobStatus: isTencentRuntime ? 'FAIL' : runtimeMetadata.jobStatus,
+            taskStatus: (isTripoRuntime || isHitemRuntime) ? 'failed' : runtimeMetadata.taskStatus,
+            detail: failureMessage,
+            currentNodeLabel: isTencentRuntime ? 'Tencent Cloud result query failed' : `${providerName} result query failed`,
+            error: failureMessage
+          }, {
+            progressDetail: failureMessage,
+            currentNodeLabel: isTencentRuntime ? 'Tencent Cloud result query failed' : `${providerName} result query failed`
+          })
+          pushMeshGenerationFailureNotification(failureMessage, notificationSource)
+        }
+      },
+      onCloseAction: (targetNodeId) => closeActionDraft(targetNodeId),
+      onToggleDraftCollapsed: toggleDraftCollapsed,
+      isDraftCollapsed: collapsedDraftNodeIds.has(String(node.id))
+    }
+  })}), [actionDraftsByNodeId, addNotification, saveMeshEdit, attachExistingAsset, comfyLoading, completeJob, createImageEditNodeDraft, createImageNodeDraft, createMeshGenNodeDraft, createTextNodeDraft, createProjectConnection, edges, ensureComfyWorkflowsLoaded, ensureGeneratedMeshThumbnails, ensureLibraryLoaded, generateImage, getConnectedInputAssetFrom, handleCreateNode, handleNodeNameChange, handleNodeNameCommit, handleNodeOutputValueChange, handleNodeOutputValueCommit, handleOpenAssetSelector, handleOpenMeshPreview, handleCancelNodeRun, imageEditApis, imageEditWorkflows, imageGenerationApis, imageGenerationWorkflows, libraryImageOptions, libraryLoading, libraryMeshOptions, meshGenerationApis, meshGenerationWorkflows, textGenerationWorkflows, nodes, openActionDraft, toggleActionDraft, closeActionDraft, setActionDraft, toggleDraftCollapsed, collapsedDraftNodeIds, project.id, project.name, pushExternalApiFailureNotification, pushMeshGenerationFailureNotification, queryTencentMeshGenerationResult, queryTripoMeshGenerationResult, queryHitemMeshGenerationResult, registerJob, replaceFlowNodeData, runComfyWorkflow, runImageEditApi, runImageEditComfy, runMeshGenerationApi, persistWorkflowDefaultsIfRequested, setEdges, setNodeTransientData, setNodes, updateProjectNode])
+
+  const handleFileUpload = useCallback(async (event) => {
+    const file = event.target.files?.[0]
+    const nodeId = pendingUploadNodeIdRef.current
+    event.target.value = ''
+
+    if (!file || !nodeId) {
+      pendingUploadNodeIdRef.current = null
+      return
+    }
+
+    try {
+      const uploadedAsset = await uploadAsset(project.id, file, 'image', {
+        resolution: 'Unknown',
+        format: file.type.split('/')[1]?.toUpperCase() || 'IMG',
+        source: 'IMPORT'
+      })
+      const updatedNode = await updateProjectNode(project.id, Number(nodeId), {
+        assetId: uploadedAsset.id,
+        name: uploadedAsset.name,
+        status: null,
+        progress: null,
+        metadata: {
+          lastAction: 'local-upload'
+        }
+      })
+      replaceFlowNodeData(updatedNode)
+      closeActionDraft(nodeId)
+    } catch (err) {
+      console.error('Failed to upload image to node:', err)
+    } finally {
+      pendingUploadNodeIdRef.current = null
+    }
+  }, [closeActionDraft, project.id, replaceFlowNodeData, updateProjectNode, uploadAsset])
+
+  const handleMeshFileUpload = useCallback(async (event) => {
+    const file = event.target.files?.[0]
+    const nodeId = pendingMeshUploadNodeIdRef.current
+    event.target.value = ''
+
+    if (!file || !nodeId) {
+      pendingMeshUploadNodeIdRef.current = null
+      return
+    }
+
+    try {
+      const uploadedAsset = await uploadAsset(project.id, file, 'mesh', {
+        format: file.name.split('.').pop()?.toUpperCase() || 'MESH',
+        source: 'IMPORT'
+      })
+
+      try {
+        const thumbnailFile = await createMeshThumbnailFile(file)
+        if (thumbnailFile) {
+          await uploadAssetThumbnail(uploadedAsset.id, thumbnailFile)
+        }
+      } catch (thumbErr) {
+        console.warn('Failed to generate thumbnail for imported mesh:', thumbErr)
+      }
+
+      const updatedNode = await updateProjectNode(project.id, Number(nodeId), {
+        assetId: uploadedAsset.id,
+        name: uploadedAsset.name,
+        status: null,
+        progress: null,
+        metadata: {
+          lastAction: 'local-upload'
+        }
+      })
+      replaceFlowNodeData(updatedNode)
+      closeActionDraft(nodeId)
+    } catch (err) {
+      console.error('Failed to upload mesh to node:', err)
+    } finally {
+      pendingMeshUploadNodeIdRef.current = null
+    }
+  }, [closeActionDraft, project.id, replaceFlowNodeData, updateProjectNode, uploadAsset, uploadAssetThumbnail])
+
+  const handleCanvasFileDragOver = useCallback((event) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }, [])
+
+  // Import image/mesh files into Assets and create the matching node (Image or
+  // Mesh) for each one at `flowPosition`, then bind the uploaded asset to it.
+  const importFilesToCanvas = useCallback(async (files, flowPosition) => {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      const isMesh = isMeshFile(file)
+      try {
+        const createdNode = await handleCreateNode(isMesh ? 'Mesh' : 'Image', {
+          xPos: flowPosition.x + (index * 32),
+          yPos: flowPosition.y + (index * 32),
+          name: file.name?.replace(/\.[^.]+$/, '') || (isMesh ? 'Mesh' : 'Image')
+        })
+
+        const uploadedAsset = isMesh
+          ? await uploadAsset(project.id, file, 'mesh', {
+              format: file.name.split('.').pop()?.toUpperCase() || 'MESH',
+              source: 'IMPORT'
+            })
+          : await uploadAsset(project.id, file, 'image', {
+              resolution: 'Unknown',
+              format: file.type.split('/')[1]?.toUpperCase() || 'IMG',
+              source: 'IMPORT'
+            })
+
+        if (isMesh) {
+          try {
+            const thumbnailFile = await createMeshThumbnailFile(file)
+            if (thumbnailFile) {
+              await uploadAssetThumbnail(uploadedAsset.id, thumbnailFile)
+            }
+          } catch (thumbErr) {
+            console.warn('Failed to generate thumbnail for imported mesh:', thumbErr)
+          }
+        }
+
+        const updatedNode = await updateProjectNode(project.id, Number(createdNode.id), {
+          assetId: uploadedAsset.id,
+          name: uploadedAsset.name,
+          status: null,
+          progress: null,
+          metadata: { lastAction: 'local-upload' }
+        })
+        if (updatedNode) replaceFlowNodeData(updatedNode)
+      } catch (err) {
+        console.error(`Failed to import ${isMesh ? 'mesh' : 'image'} to graph:`, err)
+      }
+    }
+  }, [handleCreateNode, project.id, replaceFlowNodeData, updateProjectNode, uploadAsset, uploadAssetThumbnail])
+
+  const handleCanvasFileDrop = useCallback(async (event) => {
+    const files = Array.from(event.dataTransfer?.files || []).filter(file => file.type.startsWith('image/') || isMeshFile(file))
+    if (files.length === 0) return
+    event.preventDefault()
+
+    const flowPosition = reactFlowInstance?.screenToFlowPosition
+      ? reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      : { x: 96, y: 96 }
+
+    await importFilesToCanvas(files, flowPosition)
+  }, [importFilesToCanvas, reactFlowInstance])
+
+  // Ctrl-V of a clipboard image creates an Image node holding the imported asset,
+  // centred on the visible part of the canvas.
+  const handlePasteImageFiles = useCallback(async (files) => {
+    const canvasBounds = graphCanvasRef.current?.getBoundingClientRect()
+
+    // The offset is applied after the conversion so the node stays centred at any zoom.
+    const canvasCenter = reactFlowInstance?.screenToFlowPosition && canvasBounds
+      ? reactFlowInstance.screenToFlowPosition({
+          x: canvasBounds.left + (canvasBounds.width / 2),
+          y: canvasBounds.top + (canvasBounds.height / 2)
+        })
+      : { x: 96 + PASTED_NODE_CENTER_OFFSET.x, y: 96 + PASTED_NODE_CENTER_OFFSET.y }
+
+    await importFilesToCanvas(files, {
+      x: canvasCenter.x - PASTED_NODE_CENTER_OFFSET.x,
+      y: canvasCenter.y - PASTED_NODE_CENTER_OFFSET.y
+    })
+  }, [importFilesToCanvas, reactFlowInstance])
+
+  usePasteImageFiles(handlePasteImageFiles, {
+    enabled: !showSettings && !assetSelectorOpen && !meshPreviewAsset
+  })
+
+  const handleDeleteConnection = useCallback(async (edgeToDelete) => {
+    if (!edgeToDelete) {
+      return
+    }
+
+    setEdges(currentEdges => currentEdges.filter(edge => edge.id !== edgeToDelete.id))
+
+    try {
+      await deleteProjectConnection(project.id, {
+        sourceNodeId: Number(edgeToDelete.source),
+        targetNodeId: Number(edgeToDelete.target),
+        inputId: edgeToDelete.targetHandle || DEFAULT_INPUT_ID,
+        outputId: edgeToDelete.sourceHandle || DEFAULT_OUTPUT_ID
+      })
+    } catch (err) {
+      console.error('Failed to delete graph connection:', err)
+    }
+  }, [deleteProjectConnection, project.id, setEdges])
+
+  const handleConnect = useCallback(async (connection) => {
+    if (!connection.source || !connection.target) {
+      return
+    }
+
+    const sourceNode = nodes.find(node => node.id === String(connection.source))
+    const targetNode = nodes.find(node => node.id === String(connection.target))
+
+    if (!sourceNode || !targetNode) {
+      return
+    }
+
+    const targetHandleId = connection.targetHandle || DEFAULT_INPUT_ID
+    if (targetNode.data.nodeKind === 'imageCompare') {
+      if (!IMAGE_COMPARE_INPUT_IDS.includes(targetHandleId) || getNodeOutputType(sourceNode) !== 'image') {
+        return
+      }
+    }
+
+    // Auto Rig takes a single mesh and nothing else.
+    if (targetNode.data.nodeKind === 'rigMesh') {
+      if (targetHandleId !== DEFAULT_INPUT_ID || getNodeOutputType(sourceNode) !== 'mesh') {
+        return
+      }
+    }
+
+    if (edges.some(edge => edge.target === String(connection.target) && (edge.targetHandle || DEFAULT_INPUT_ID) === targetHandleId)) {
+      return
+    }
+
+    const createdConnection = await createProjectConnection(project.id, {
+      sourceNodeId: Number(connection.source),
+      targetNodeId: Number(connection.target),
+      inputId: targetHandleId,
+      outputId: connection.sourceHandle || DEFAULT_OUTPUT_ID
+    })
+
+    setEdges(currentEdges => {
+      const nextEdge = toFlowEdge(createdConnection)
+      if (currentEdges.some(edge => edge.id === nextEdge.id)) {
+        return currentEdges
+      }
+
+      return addEdge(nextEdge, currentEdges)
+    })
+  }, [createProjectConnection, edges, nodes, project.id, setEdges])
+
+  const isValidConnection = useCallback((connection) => {
+    if (!connection.source || !connection.target) {
+      return false
+    }
+
+    const sourceNode = nodes.find(node => node.id === String(connection.source))
+    const targetNode = nodes.find(node => node.id === String(connection.target))
+
+    if (!sourceNode || !targetNode || sourceNode.id === targetNode.id) {
+      return false
+    }
+
+    const targetHandleId = connection.targetHandle || DEFAULT_INPUT_ID
+    if (edges.some(edge => edge.target === String(connection.target) && (edge.targetHandle || DEFAULT_INPUT_ID) === targetHandleId)) {
+      return false
+    }
+
+    if (targetNode.data.nodeKind === 'imageCompare') {
+      return IMAGE_COMPARE_INPUT_IDS.includes(targetHandleId) && getNodeOutputType(sourceNode) === 'image'
+    }
+
+    if (targetNode.data.nodeKind === 'rigMesh') {
+      return targetHandleId === DEFAULT_INPUT_ID && getNodeOutputType(sourceNode) === 'mesh'
+    }
+
+    return true
+  }, [edges, nodes])
+
+  const handlePaneClick = useCallback(() => {
+    if (skipNextPaneClickRef.current) {
+      skipNextPaneClickRef.current = false
+      return
+    }
+
+    if (nodePicker) {
+      setNodePicker(null)
+    }
+  }, [nodePicker])
+
+  const handleNodeDragStop = useCallback(async (_event, node) => {
+    try {
+      await updateProjectNodePosition(project.id, Number(node.id), node.position)
+    } catch (err) {
+      console.error('Failed to persist node position:', err)
+    }
+  }, [project.id, updateProjectNodePosition])
+
+  // Tidy up the canvas: lay the nodes out in clean left-to-right columns that
+  // follow the connections, persist the new positions, then re-fit the view.
+  const handleReorganize = useCallback(async () => {
+    const layout = computeReorganizedLayout(nodes, edges)
+    const movedNodes = nodes.filter(node => {
+      const position = layout[node.id]
+      return position && (position.x !== node.position.x || position.y !== node.position.y)
+    })
+
+    if (movedNodes.length === 0) {
+      return
+    }
+
+    setNodes(currentNodes => currentNodes.map(node => (
+      layout[node.id] ? { ...node, position: layout[node.id] } : node
+    )))
+
+    window.requestAnimationFrame(() => {
+      reactFlowInstance?.fitView?.({ padding: 0.2, duration: 400 })
+    })
+
+    try {
+      await Promise.all(movedNodes.map(node => (
+        updateProjectNodePosition(project.id, Number(node.id), layout[node.id])
+      )))
+    } catch (err) {
+      console.error('Failed to persist reorganized node positions:', err)
+    }
+  }, [nodes, edges, setNodes, reactFlowInstance, project.id, updateProjectNodePosition])
+
+  const handleEdgesDelete = useCallback(async (deletedEdges) => {
+    await Promise.all(
+      deletedEdges.map(edge => handleDeleteConnection(edge))
+    )
+  }, [handleDeleteConnection])
+
+  // Persist the canvas pan + zoom (debounced) whenever the user finishes panning
+  // or zooming, so reopening the project restores the exact same view.
+  const handleMoveEnd = useCallback((_event, viewport) => {
+    // Ignore programmatic moves during initial load positioning; only persist
+    // once the load-time viewport decision (restore / fit / focus) has run.
+    if (!hasAutoFitOnLoadRef.current || !viewport) {
+      return
+    }
+    if (viewportSaveTimeoutRef.current) {
+      window.clearTimeout(viewportSaveTimeoutRef.current)
+    }
+    viewportSaveTimeoutRef.current = window.setTimeout(() => {
+      viewportSaveTimeoutRef.current = null
+      saveGraphViewport(project.id, {
+        x: viewport.x,
+        y: viewport.y,
+        zoom: viewport.zoom
+      })
+    }, 500)
+  }, [project.id, saveGraphViewport])
+
+  useEffect(() => () => {
+    if (viewportSaveTimeoutRef.current) {
+      window.clearTimeout(viewportSaveTimeoutRef.current)
+    }
+  }, [])
+
+  const renderedEdges = useMemo(() => edges.map(edge => ({
+    ...edge,
+    data: {
+      ...(edge.data || {}),
+      onDelete: () => handleDeleteConnection(edge)
+    }
+  })), [edges, handleDeleteConnection])
+
+  useEffect(() => {
+    setActionDraftsByNodeId(currentDrafts => {
+      const nextDrafts = Object.entries(currentDrafts).reduce((accumulator, [nodeId, draft]) => {
+        const node = nodes.find(item => item.id === nodeId)
+        if (!node || !draft) {
+          return accumulator
+        }
+
+        const nodeInputSources = buildNodeInputSources(nodeId, nodes, edges)
+        const isEditNode = node.data.nodeKind === 'imageEdit'
+        const isMeshGenNode = node.data.nodeKind === 'meshGen'
+        const isTextNode = node.data.nodeKind === 'text'
+        let nextDraft = draft
+
+        if (draft.mode === 'api' && (isEditNode || isMeshGenNode)) {
+          const validImageSelections = isMeshGenNode && isTencentMeshGenerationApi(draft.selectedApi)
+            ? getCompatibleInputSources(nodeInputSources, 'image').map(getInputSourceSelectionValue)
+            : [
+                ...getCompatibleInputSources(nodeInputSources, 'image').map(getInputSourceSelectionValue),
+                ...libraryImageOptions.map(option => option.sourceReference).filter(Boolean)
+              ]
+
+          const nextSelectedInputSource = validImageSelections.includes(draft.selectedInputSource)
+            ? draft.selectedInputSource
+            : (validImageSelections[0] || '')
+
+          if (nextSelectedInputSource !== draft.selectedInputSource) {
+            nextDraft = {
+              ...nextDraft,
+              selectedInputSource: nextSelectedInputSource
+            }
+          }
+        }
+
+        if (draft.mode === 'comfy') {
+          const workflowList = isTextNode
+            ? textGenerationWorkflows
+            : isMeshGenNode ? meshGenerationWorkflows : isEditNode ? imageEditWorkflows : imageGenerationWorkflows
+          const selectedWorkflow = workflowList.find(workflow => workflow.id == draft.workflowId) || null
+
+          if (selectedWorkflow) {
+            const nextBindings = { ...(nextDraft.inputBindings || {}) }
+            let bindingsChanged = false
+
+            for (const parameter of selectedWorkflow.parameters || []) {
+              const valueType = getWorkflowParameterValueType(parameter)
+              const compatibleSources = getCompatibleInputSources(nodeInputSources, valueType)
+              const currentBinding = getWorkflowParameterBinding(nextDraft, parameter)
+              const currentSource = currentBinding.source || 'custom'
+              let nextSource = currentSource
+
+              // Re-point a binding whose connected input is gone. "None" and "custom"
+              // are deliberate choices, not stale wiring, so they are left alone —
+              // this effect also runs on every node/edge change (selecting a node
+              // counts), which would otherwise undo the user's pick immediately.
+              if (currentSource !== 'custom'
+                && !isWorkflowInputNone(currentSource)
+                && !resolveSelectedInputSource(currentSource, compatibleSources)) {
+                nextSource = compatibleSources[0]
+                  ? getInputSourceSelectionValue(compatibleSources[0])
+                  : (isConnectorOnlyWorkflowValueType(valueType) ? WORKFLOW_INPUT_NONE : 'custom')
+              }
+
+              if (nextSource !== currentSource) {
+                nextBindings[parameter.id] = {
+                  ...currentBinding,
+                  source: nextSource
+                }
+                bindingsChanged = true
+              }
+            }
+
+            if (bindingsChanged) {
+              nextDraft = {
+                ...nextDraft,
+                inputBindings: nextBindings
+              }
+            }
+          }
+        }
+
+        accumulator[nodeId] = nextDraft
+        return accumulator
+      }, {})
+
+      const currentSerialized = JSON.stringify(currentDrafts)
+      const nextSerialized = JSON.stringify(nextDrafts)
+      return currentSerialized === nextSerialized ? currentDrafts : nextDrafts
+    })
+  }, [edges, imageEditWorkflows, imageGenerationWorkflows, libraryImageOptions, meshGenerationWorkflows, textGenerationWorkflows, nodes])
+
+  useEffect(() => {
+    hasAutoFitOnLoadRef.current = false
+  }, [project.id])
+
+  useEffect(() => {
+    if (!reactFlowInstance || loading || nodes.length === 0) {
+      return
+    }
+
+    if (hasAutoFitOnLoadRef.current) {
+      return
+    }
+
+    // If we arrived via a workflow notification, let the focus effect center on
+    // the target node instead of doing a generic fit-all-nodes on load.
+    if (location.state?.focusTargetId != null) {
+      hasAutoFitOnLoadRef.current = true
+      return
+    }
+
+    hasAutoFitOnLoadRef.current = true
+
+    // Prefer the last saved viewport (pan + zoom) so reopening a project lands
+    // exactly where the user left off, instead of a generic fit-all-nodes.
+    const savedViewport = project?.graphViewport
+    const hasSavedViewport = savedViewport
+      && Number.isFinite(savedViewport.x)
+      && Number.isFinite(savedViewport.y)
+      && Number.isFinite(savedViewport.zoom)
+
+    if (hasSavedViewport) {
+      const restoreViewport = () => {
+        try {
+          reactFlowInstance.setViewport(
+            { x: savedViewport.x, y: savedViewport.y, zoom: savedViewport.zoom },
+            { duration: 0 }
+          )
+        } catch {
+          // Instance torn down before this fired (e.g. StrictMode remount).
+        }
+      }
+      const frameId = window.requestAnimationFrame(restoreViewport)
+      const timeoutId = window.setTimeout(restoreViewport, 220)
+      return () => {
+        window.cancelAnimationFrame(frameId)
+        window.clearTimeout(timeoutId)
+      }
+    }
+
+    const fitWorkflow = () => {
+      reactFlowInstance.fitView({
+        padding: 0.18,
+        duration: 300,
+        includeHiddenNodes: true
+      })
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      fitWorkflow()
+    })
+    const timeoutId = window.setTimeout(() => {
+      fitWorkflow()
+    }, 220)
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      window.clearTimeout(timeoutId)
+    }
+  }, [edges.length, loading, nodes.length, project.id, project?.graphViewport, reactFlowInstance, location.state?.focusTargetId])
+
+  // Deep-link focus: when the user clicks a workflow notification, the Header
+  // navigates here with a focus target in router state. Once the graph and its
+  // nodes are ready, center the viewport on the originating node.
+  //
+  // The guard is keyed on both the notification nonce AND the React Flow
+  // instance identity. React 18 StrictMode remounts <ReactFlow>, which
+  // re-applies defaultViewport (jumping back to the origin) and hands us a new
+  // instance; keying on the instance lets us re-center on that fresh instance
+  // instead of a one-shot guard leaving the viewport stuck at the origin.
+  const focusAppliedRef = useRef({ nonce: null, instance: null })
+  useEffect(() => {
+    const focus = location.state
+    const focusTargetId = focus?.focusTargetId != null ? String(focus.focusTargetId) : null
+    if (!focusTargetId || !reactFlowInstance || nodes.length === 0) return
+
+    // Guard on nonce + instance identity: StrictMode remounts <ReactFlow> and
+    // hands over a fresh instance, so re-center on the new one instead of a
+    // one-shot guard leaving the viewport stuck.
+    const applied = focusAppliedRef.current
+    if (applied.nonce === focus.focusNonce && applied.instance === reactFlowInstance) return
+
+    const targetNode = nodes.find(node => String(node.id) === focusTargetId)
+    if (!targetNode) return // nodes still loading — retry once they update
+
+    const instance = reactFlowInstance
+    // setCenter is deterministic: it uses the node's stored position, so it works
+    // even with onlyRenderVisibleElements (the target node may be off-screen and
+    // thus unmeasured, which breaks fitView). Estimate the centre from its size.
+    const width = targetNode.measured?.width ?? targetNode.width ?? 260
+    const height = targetNode.measured?.height ?? targetNode.height ?? 140
+    const centerX = targetNode.position.x + width / 2
+    const centerY = targetNode.position.y + height / 2
+
+    const centerOnNode = () => {
+      focusAppliedRef.current = { nonce: focus.focusNonce, instance }
+      try {
+        instance.setCenter(centerX, centerY, { zoom: 1, duration: 500 })
+      } catch {
+        // Instance was torn down (e.g. StrictMode remount) before this fired.
+      }
+    }
+
+    const frameId = window.requestAnimationFrame(centerOnNode)
+    const timeoutIds = [260, 700].map(delay => window.setTimeout(centerOnNode, delay))
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
+      timeoutIds.forEach(window.clearTimeout)
+    }
+  }, [location.key, location.state, nodes, reactFlowInstance])
+
+  const showEmptyState = !loading && nodes.length === 0
+  const minimapNodeColor = useCallback((node) => {
+    if (node.type === 'meshGen') return '#79e388'
+    if (node.type === 'imageCompare') return '#ff9a62'
+    if (node.type === 'text') return '#ffd36e'
+    if (node.type === 'boolean') return '#ff7fc8'
+    if (node.type === 'number') return '#79e388'
+    if (node.type === 'imageEdit') return '#ac89ff'
+    if (node.type === 'rigMesh') return '#ac89ff'
+    return '#8ff5ff'
+  }, [])
+
+  return (
+    <div className="graph-layout">
+      <Header
+        onSettingsClick={() => setShowSettings(true)}
+        title={project?.name || 'Workspace'}
+        centerTitle
+        projectId={project?.id}
+      />
+
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+			
+			{assetSelectorOpen && (
+				<AssetSelectorModal
+					assetType={assetSelectorType}
+					onSelect={handleAssetSelected}
+					onClose={() => {
+						setAssetSelectorOpen(false);
+						setPendingAssetNodeId(null);
+						// Optionally clear the draft for the pending node if user cancels
+						if (pendingAssetNodeId) {
+							setActionDraftsByNodeId(prev => {
+								const next = { ...prev };
+								delete next[String(pendingAssetNodeId)];
+								return next;
+							});
+						}
+					}}
+					showEdits={assetSelectorShowEdits}
+				/>
+			)}
+
+      {meshPreviewAsset && (
+        <MeshPreviewDialog
+          asset={meshPreviewAsset}
+          titleId="graph-mesh-preview-dialog-title"
+          onClose={() => setMeshPreviewAsset(null)}
+        />
+      )}
+
+      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileUpload} />
+      <input ref={meshFileInputRef} type="file" accept={getWorkflowFileInputAccept('mesh')} style={{ display: 'none' }} onChange={handleMeshFileUpload} />
+
+      <div className="graph-page__body">
+        <main className="graph-page__main" id="graph-main">
+          <div className="graph-page__canvas-shell" ref={graphCanvasRef}>
+            {showEmptyState && (
+              <div className="graph-page__empty-state">
+                <div className="graph-page__empty-icon">
+                  <span className="material-symbols-outlined">account_tree</span>
+                </div>
+                <div className="graph-page__empty-copy">
+                  <h2 className="graph-page__empty-title font-headline">Empty workflow graph</h2>
+                  <p className="graph-page__empty-text">
+                    Right-click anywhere on the graph to add a node.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Only while there is nothing on screen yet. The effect that sets
+                `loading` re-runs whenever its context callbacks change identity,
+                and flashing this badge over an already-drawn graph reads as a
+                glitch. */}
+            {loading && nodes.length === 0 && (
+              <div className="graph-page__loading font-label">Loading graph…</div>
+            )}
+
+            {nodePicker && (
+              <div
+                className="graph-page__node-picker"
+                style={{ left: `${nodePicker.menuX}px`, top: `${nodePicker.menuY}px` }}
+              >
+                <div className="graph-page__node-picker-title font-label">ADD NODE</div>
+                <div className="graph-page__node-picker-options">
+                  {GRAPH_NODE_TYPE_OPTIONS
+                    .filter(nodeTypeName => !nodePicker.pendingConnection || getDefaultTargetInputId(nodeTypeName))
+                    .map(nodeTypeName => (
+                    <button
+                      key={nodeTypeName}
+                      type="button"
+                      className="graph-page__node-picker-option"
+                      disabled={Boolean(nodePicker.pendingConnection) && !canNodeTypeAcceptIncomingConnection(nodeTypeName, nodePicker.pendingConnection.outputType)}
+                      onClick={() => handleCreateNodeFromPicker(nodeTypeName)}
+                      title={nodePicker.pendingConnection && !canNodeTypeAcceptIncomingConnection(nodeTypeName, nodePicker.pendingConnection.outputType)
+                        ? 'This node cannot accept the dragged connection'
+                        : undefined}
+                    >
+                      {nodeTypeName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <ReactFlow
+              className="graph-page__canvas"
+              nodes={renderedNodes}
+              edges={renderedEdges}
+              nodeTypes={flowNodeTypes}
+              edgeTypes={flowEdgeTypes}
+              onlyRenderVisibleElements
+              onInit={setReactFlowInstance}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnectStart={handleConnectStart}
+              onConnect={handleConnect}
+              onConnectEnd={handleConnectEnd}
+              isValidConnection={isValidConnection}
+              onPaneClick={handlePaneClick}
+              onPaneContextMenu={handlePaneContextMenu}
+              onDragOver={handleCanvasFileDragOver}
+              onDrop={handleCanvasFileDrop}
+              onNodeDragStop={handleNodeDragStop}
+              onMoveEnd={handleMoveEnd}
+              onEdgesDelete={handleEdgesDelete}
+              defaultViewport={{ x: 0, y: 0, zoom: 0.9 }}
+              minZoom={0.2}
+              maxZoom={2}
+              deleteKeyCode={null}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Panel position="top-left">
+                <button
+                  type="button"
+                  className="graph-page__reorganize"
+                  onClick={handleReorganize}
+                  disabled={nodes.length === 0}
+                  title="Reorganize nodes by following their connections"
+                >
+                  <span className="material-symbols-outlined">account_tree</span>
+                  <span>Reorganize</span>
+                </button>
+              </Panel>
+              <Background gap={24} size={1} color="rgba(143, 245, 255, 0.14)" />
+              <MiniMap pannable zoomable className="graph-page__minimap" nodeColor={minimapNodeColor} />
+              <Controls className="graph-page__controls" showInteractive={false} />
+            </ReactFlow>
+          </div>
+        </main>
+      </div>
+
+      <Footer variant="kanban" />
+    </div>
+  )
+}

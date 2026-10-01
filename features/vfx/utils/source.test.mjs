@@ -1,0 +1,1033 @@
+// Textual invariants of the VFX source, checked by READING it rather than by
+// importing it.
+//
+//     node src/utils/vfx/source.test.mjs
+//
+// WHY THIS FILE IMPORTS NOTHING IT CHECKS. Everything here is a PARSE-time
+// failure, and a test that imports the broken module throws on its own import -
+// before any check inside it can run. The first version of the backtick guard
+// lived in render.test.mjs, which imports materials.js for a dozen other
+// reasons, so reintroducing the bug produced a stack trace from the module
+// loader and the guard never executed. Verified by putting the bug back and
+// watching it not fire.
+//
+// So: read the bytes, assert on the text, import nothing.
+
+import { readdir, readFile } from 'node:fs/promises';
+
+let failures = 0;
+
+function check(label, ok, detail = '') {
+  if (!ok) failures += 1;
+  console.log(`${label.padEnd(58)} ${ok ? 'ok  ' : '*** FAIL ***'} ${detail}`);
+}
+
+// The character this file is about, named rather than written, so the checks
+// are not themselves a way to break the file that holds them.
+import { indexInstalledPackAssets, presetAssetName } from '../../../vfx/preset.js';
+import { exportAction } from './actionGates.js';
+
+const BACKTICK = String.fromCharCode(96);
+
+const materials = await readFile(new URL('./materials.js', import.meta.url), 'utf8');
+
+console.log('\n--- Shader template literals ---');
+{
+  // A BACKTICK INSIDE A GLSL COMMENT TERMINATES THE TEMPLATE LITERAL.
+  //
+  // The shaders are JS template literals, so naming a variable in prose the
+  // natural way - with backticks around it - turns the rest of the shader into
+  // JavaScript and the module stops parsing. It has happened TWICE, both times
+  // while adding a render mode, and both times the symptom was a SyntaxError
+  // pointing at an English word in a comment.
+  const offenders = [];
+  for (const name of ['VERTEX_HEAD', 'VERTEX_BODY', 'FRAGMENT']) {
+    const opener = `const ${name} = /* glsl */${BACKTICK}`;
+    const at = materials.indexOf(opener);
+    if (at < 0) {
+      offenders.push(`${name}: not found - renamed?`);
+      continue;
+    }
+    const start = at + opener.length;
+    // The statement ends at the first backtick-semicolon pair. Anything between
+    // the opening backtick and that point which is itself a backtick has closed
+    // the literal early.
+    const end = materials.indexOf(`${BACKTICK};`, start);
+    const body = materials.slice(start, end < 0 ? materials.length : end);
+    if (body.includes(BACKTICK)) {
+      const line = materials.slice(0, start + body.indexOf(BACKTICK)).split('\n').length;
+      offenders.push(`${name}: backtick on line ${line}`);
+    }
+  }
+  check('no backtick appears inside a shader template literal',
+    offenders.length === 0, offenders.join('; '));
+
+  // And the literals are all still there, so a rename cannot make the check
+  // above pass by finding nothing to look at.
+  check('  and all three shader literals were found',
+    !offenders.some((entry) => entry.includes('renamed')));
+}
+
+console.log('\n--- Render modes ---');
+{
+  // Every mode the catalog offers must either have a shader path or be
+  // explicitly reported. A mode that silently falls through to billboard is the
+  // bug I_TRAIL_UNSUPPORTED exists for - `point` was in the dropdown for four
+  // phases and did nothing at all.
+  //
+  // Read textually, for the same reason as above: this file must stay usable
+  // when materials.js does not parse.
+  const catalog = await readFile(new URL('../../../vfx/catalog.js', import.meta.url), 'utf8');
+  const offered = /options: \[('billboard'[^\]]*)\]/.exec(catalog);
+  check('the output mode list was found', Boolean(offered));
+  if (offered) {
+    const modes = offered[1].split(',').map((entry) => entry.trim().replace(/'/g, ''));
+    const defines = new Set(
+      [...materials.matchAll(/defines\.MODE_([A-Z]+)/g)].map((m) => m[1].toLowerCase()),
+    );
+    // Billboard is the else-branch and has no define, by design.
+    defines.add('billboard');
+    // Reported rather than implemented - the diagnostic has to exist.
+    const diagnostics = await readFile(new URL('../../../vfx/diagnostics.js', import.meta.url), 'utf8');
+    const reported = new Set();
+    if (diagnostics.includes('I_TRAIL_UNSUPPORTED')) reported.add('trail');
+
+    const silent = modes.filter((mode) => !defines.has(mode) && !reported.has(mode));
+    check('every offered render mode is implemented or reported',
+      silent.length === 0,
+      silent.length
+        ? `${silent.join(', ')} silently fall back to billboard`
+        : `${modes.join(', ')} (${reported.size} reported)`);
+  }
+}
+
+console.log('\n--- Asset wiring ---');
+{
+  const page = await readFile(
+    new URL('../../pages/VfxEditorPage.jsx', import.meta.url), 'utf8');
+
+  // ASSETS MUST LOAD WHEN THE LIBRARY ARRIVES, NOT ONLY WHEN THE DOCUMENT DOES.
+  //
+  // THE BUG: opening a SAVED effect drew it with no textures and no emitter
+  // mesh until the author touched any property. The two loader effects in
+  // useVfxRuntime were keyed on the graph hash alone, while `resolveUrl` is
+  // built from the asset library the page fetches asynchronously - so the
+  // document usually won the race, every asset resolved to null, the
+  // `size === 0` early return fired, and nothing re-ran when the library
+  // landed. Touching a property recompiled the graph, changed the hash and ran
+  // the loaders again - by which time the library was there. That is why it
+  // looked like the mesh needed "a property change to apply".
+  //
+  // Checked in the source because the failure is a RACE: both orderings are
+  // valid React, only one of them is broken, and which one you get depends on
+  // how fast the library endpoint answers.
+  const runtimeHook = await readFile(
+    new URL('../../hooks/useVfxRuntime.js', import.meta.url), 'utf8');
+  const depsOf = (loader) => {
+    const at = runtimeHook.indexOf(loader);
+    if (at < 0) return null;
+    // The dependency array closing this effect: the first `}, [ ... ])` after
+    // the loader call.
+    const match = /\}, \[([^\]]*)\]\)/.exec(runtimeHook.slice(at));
+    return match ? match[1].split(',').map((d) => d.trim()).filter(Boolean) : null;
+  };
+  for (const loader of ['loadVfxTextures(ir', 'loadVfxMeshes(ir']) {
+    const deps = depsOf(loader);
+    check(`${loader.replace('(ir', '')} re-runs when the resolver arrives`,
+      Boolean(deps) && deps.includes('resolveUrl'),
+      deps ? deps.join(', ') : 'effect not found');
+  }
+  // The mesh loader installs samplers INTO the runtime, so one handed to a
+  // runtime that has since been replaced is a sampler nothing will read.
+  check('  and the mesh loader also follows the runtime it fills',
+    (depsOf('loadVfxMeshes(ir') || []).includes('runtime'),
+    (depsOf('loadVfxMeshes(ir') || []).join(', '));
+  // `ir` must stay OUT: it is a new object on every recompile, including ones
+  // the hash deliberately ignores, so keying on it would reload every texture
+  // when the author moved a node.
+  check('  while `ir` stays out, so tidying the board reloads nothing',
+    !(depsOf('loadVfxTextures(ir') || []).includes('ir'),
+    (depsOf('loadVfxTextures(ir') || []).join(', '));
+
+  // And the page hands over no resolver at all until the library has answered,
+  // so the runtime waits rather than burning a pass on one that resolves
+  // nothing. An empty array cannot express "not loaded yet".
+  check('the page withholds the resolver until the library has answered',
+    /libraryReady \? makeAssetResolver/.test(page));
+  check('  including when the fetch errors, or it would wait for ever',
+    /\.finally\(\(\) => \{[\s\S]{0,400}?setLibraryReady\(true\)/.test(page));
+
+  // EDITS AND VERSIONS ARE SELECTABLE. AssetSelectorModal hides them unless
+  // asked, so the sprite picker offered only ROOT images - and a sprite is very
+  // often an edit rather than the original: the generated image cropped, its
+  // background removed, its channels adjusted.
+  check('the asset picker offers edits and versions',
+    /<AssetSelectorModal[\s\S]*?showEdits[\s\S]*?\/>/.test(page));
+
+  // ONE RESOLVER SERVES TEXTURES AND MESHES. useVfxRuntime hands the same
+  // function to loadVfxTextures and loadVfxMeshes, so a resolver built from the
+  // image listing alone made every mesh asset unresolvable - loadVfxMeshes put
+  // it straight into `failed` and the mesh renderer had nothing to draw, with
+  // no error reported anywhere.
+  check('the asset resolver is built from images AND meshes',
+    /makeAssetResolver\(\[\.\.\.libraryImages, \.\.\.libraryMeshes\]\)/.test(page));
+  const runtime = await readFile(
+    new URL('../../hooks/useVfxRuntime.js', import.meta.url), 'utf8');
+  check('  and it really is the one both loaders get',
+    /loadVfxTextures\(ir, \{ resolveUrl \}\)/.test(runtime)
+    && /loadVfxMeshes\(ir, \{ resolveUrl \}\)/.test(runtime));
+
+  // The writer and the resolver must derive an id the SAME way, or a picked
+  // asset is stored under an id nothing can look up again. A root's listing id
+  // is `library:<n>` and an edit's is a bare number.
+  check('the picked id comes from vfxAssetId, not hand-parsed',
+    /const numericId = vfxAssetId\(asset\)/.test(page)
+    && !/String\(asset\.id\)\.replace\('library:'/.test(page));
+  check('  and the label map is indexed the same way',
+    /indexLibraryAssets\(\[\.\.\.libraryImages, \.\.\.libraryMeshes\]\)/.test(page));
+}
+
+console.log('\n--- Drag surfaces ---');
+{
+  // THE RULE: AN IMPERATIVE DRAG PREVIEW NEVER WRITES A PROPERTY REACT WRITES.
+  //
+  // THE BUG THIS EXISTS FOR. A timeline clip dragged sideways collapsed, on
+  // release, to a ~24px stub - two 8px handles, a 6px minimum body and a
+  // hairline, i.e. an element with no width at all. The drag previewed itself
+  // with `element.style.left/width` and then cleared both to '' at pointer-up
+  // "so React's render owns the geometry again". React does not work that way:
+  // it diffs the style props it rendered LAST against the ones it is rendering
+  // NOW, never against the DOM. After a move (which changes `at` and not
+  // `duration`) the width string was identical, React skipped it, and the '' we
+  // had just written survived - until some unrelated render happened to change
+  // the width string, which is why it sometimes appeared to heal itself a
+  // second later. Two earlier fixes to the drag ARITHMETIC did nothing, because
+  // the arithmetic was never wrong.
+  //
+  // The fix is structural: React sets --vfx-clip-at / --vfx-clip-w from the
+  // document, the drag adds --vfx-clip-dx / --vfx-clip-dw, and the stylesheet
+  // composes them with calc(). Clearing a property React has never written
+  // cannot be skipped by a diff, because there is no diff.
+  //
+  // Checked textually because the failure is a rendered pixel, which no
+  // headless test can see - but the line of code that causes it is right here
+  // in the text, and it is the kind of line someone reaches for again.
+  const files = [
+    'components/vfx/VfxTimeline.jsx',
+    'components/vfx/VfxSplitter.jsx',
+    'components/vfx/VfxCurveEditor.jsx',
+    'components/vfx/VfxGradientEditor.jsx',
+    'hooks/useVfxBlockDrag.js',
+  ];
+  const offenders = [];
+  for (const file of files) {
+    const text = await readFile(new URL(`../../${file}`, import.meta.url), 'utf8');
+    // Comments are stripped first, or this very explanation would fail the
+    // check it is explaining.
+    const code = text
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+    for (const match of code.matchAll(/\.style\.(left|top|width|height)\s*=/g)) {
+      // A canvas is the one exemption, and a permanent one: its CSS size has to
+      // be written next to its backing-store size for DPR scaling, and React
+      // renders neither - so there is no second writer to disagree with.
+      const before = code.slice(Math.max(0, match.index - 12), match.index);
+      if (/canvas$/.test(before)) continue;
+      const line = code.slice(0, match.index).split('\n').length;
+      offenders.push(`${file}:${line} writes style.${match[1]}`);
+    }
+  }
+  check('no drag writes a geometry property React also renders',
+    offenders.length === 0, offenders.join('; '));
+
+  // And the composition the timeline replaced it with is actually in place, so
+  // the check above cannot pass by the drag preview having been deleted.
+  const timeline = await readFile(
+    new URL('../../components/vfx/VfxTimeline.jsx', import.meta.url), 'utf8');
+  const css = await readFile(
+    new URL('../../components/vfx/VfxTimeline.css', import.meta.url), 'utf8');
+  check('  the clip drag offsets a custom property instead',
+    timeline.includes("setProperty('--vfx-clip-dx'")
+    && timeline.includes("setProperty('--vfx-clip-dw'"));
+  check('  and drops it with removeProperty, not by clearing left/width',
+    timeline.includes("removeProperty('--vfx-clip-dx'")
+    && timeline.includes("removeProperty('--vfx-clip-dw'"));
+  check('  React writes only --vfx-clip-at and --vfx-clip-w',
+    timeline.includes("'--vfx-clip-at'") && timeline.includes("'--vfx-clip-w'"));
+  check('  and the stylesheet composes the two with calc()',
+    /left:\s*calc\(var\(--vfx-clip-at[^)]*\)\s*\+\s*var\(--vfx-clip-dx\)\)/.test(css)
+    && /width:\s*calc\(var\(--vfx-clip-w[^)]*\)\s*\+\s*var\(--vfx-clip-dw\)\)/.test(css));
+  // Registered, so an unset delta is a real 0px rather than an unresolved var()
+  // that would invalidate the whole declaration.
+  check('  the deltas are registered as lengths with a 0px initial value',
+    /@property --vfx-clip-dx \{[^}]*syntax: '<length>'[^}]*initial-value: 0px;/.test(css)
+    && /@property --vfx-clip-dw \{[^}]*syntax: '<length>'[^}]*initial-value: 0px;/.test(css));
+}
+
+console.log('\n--- A newly created asset reaches the effect ---');
+{
+  // THE BUG: generating a sprite uploaded it, wired it into the Output, and
+  // changed nothing on screen. The asset LISTING is fetched when the page
+  // opens, so an asset created DURING the session is not in it - `resolveUrl`
+  // answered null, loadVfxTextures found nothing, and the batch fell back to
+  // the built-in sprite. Silently, because that fallback is the correct
+  // behaviour for a texture that genuinely is not there.
+  //
+  // Fixed by reacting to the DOCUMENT rather than to the generate button, so
+  // every route that can introduce a new reference is covered by one mechanism:
+  // the sprite panel, the asset picker, a template, an effect an agent saved in
+  // another window.
+  const pageSource = await readFile(
+    new URL('../../pages/VfxEditorPage.jsx', import.meta.url), 'utf8');
+
+  check('the page can reload the asset library',
+    /const reloadLibrary = useCallback/.test(pageSource));
+  check('  and notices ids the listing has never heard of',
+    /const missingAssetKey = useMemo/.test(pageSource)
+    && /!known\.has\(Number\(match\[1\]\)\)/.test(pageSource));
+  // KEYED ON THE MISSING SET, not on the document: a genuinely deleted asset
+  // stays missing after the reload, so an unchanged key means the effect does
+  // not run again. Keying on `doc` would reload on every keystroke for ever.
+  check('  reloading once per new unknown id, not once per render',
+    /\}, \[libraryReady, missingAssetKey, reloadLibrary\]\)/.test(pageSource));
+
+  // A LOAD FAILURE IS NOT A COMPILE DIAGNOSTIC. The compiler is pure and knows
+  // nothing about whether the bytes arrived, so the only place this can be
+  // reported is the page - and both loaders had always returned a `failed` list
+  // that nothing read.
+  const hook = await readFile(
+    new URL('../../hooks/useVfxRuntime.js', import.meta.url), 'utf8');
+  check('the runtime hook reports which assets failed to load',
+    /failedAssets/.test(hook) && /return \{ runtime, batches, textures, meshes, failedAssets \}/.test(hook));
+  check('  from both loaders, not just one',
+    (hook.match(/setFailed\('(texture|mesh)', result\.failed\)/g) || []).length === 2,
+    String((hook.match(/setFailed\('(texture|mesh)', result\.failed\)/g) || []).length));
+  check('  and the page shows them', /failedAssets\.length > 0 && \(/.test(pageSource));
+  check('    naming the asset rather than an id the author never sees',
+    /assetLabelFor\(doc, entry\.assetId\)/.test(pageSource));
+}
+
+console.log('\n--- The sprite panel workflow filter ---');
+{
+  // A WORKFLOW PARAMETER CARRIES `type` AND `valueType`; AN OUTPUT CARRIES ONLY
+  // `valueType`.
+  //
+  // THE BUG: the panel filtered on `output.type === 'image'`, which is a field
+  // outputs do not have. It matched nothing, the dropdown read "No image
+  // workflows in the library", and the library held six perfectly good
+  // text-to-image workflows. Guessing a field name is what caused it, so the
+  // fix is one reader that accepts either spelling - and this checks the panel
+  // uses that reader everywhere rather than reintroducing a bare `.type`.
+  const panel = await readFile(
+    new URL('../../components/vfx/VfxSpritePanel.jsx', import.meta.url), 'utf8');
+  const code = panel
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+  check('the panel reads a type through one helper',
+    /const typeOf = \(entry\) => entry\?\.valueType \|\| entry\?\.type/.test(code));
+  // No bare `.type ===` comparisons left anywhere, which is the shape that
+  // failed. `typeOf(...) === 'string'` is fine; `p.type === 'string'` is not.
+  const bare = [...code.matchAll(/\w+\.type\s*===/g)].map((m) => m[0]);
+  check('  and nowhere compares a bare .type', bare.length === 0, bare.join(' '));
+  check('  including the prompt parameter lookup',
+    /find\(p => typeOf\(p\) === 'string'\)/.test(code));
+  check('  and the output check', /typeOf\(output\) === 'image'/.test(code));
+
+  // An empty dropdown has to say WHICH empty it is. "No image workflows"
+  // reads as "your library has none" when the truth was "the filter is broken",
+  // and that ambiguity is what made the bug hard to report.
+
+  // EVERY PARAMETER IS AUTHORABLE, not just the prompt. A sprite workflow has a
+  // seed, a step count, a sampler and a resolution like any other, and offering
+  // only a prompt box meant every sprite came out of the same dice roll with no
+  // way to change it. The field is the one the image editor, graph and kanban
+  // panels use, so enum parameters arrive as dropdowns and there is no fourth
+  // implementation of "render a ComfyUI parameter" to keep in step.
+  check('the panel renders parameters with the shared field',
+    /import WorkflowParameterField from '\.\.\/imageEditor\/controls\/WorkflowParameterField'/
+      .test(code)
+    && /<WorkflowParameterField/.test(code));
+  check('  over the selected workflow’s whole parameter list',
+    /\(workflow\.parameters \|\| \[\]\)[\s\S]{0,400}\.map\(parameter =>/.test(code));
+
+  // AND THE RUN SENDS THEM. Rendering a seed field that the run then ignores is
+  // worse than not offering one, because the author watches the value change
+  // and the image not change. An untouched field resolves to the workflow's own
+  // saved default rather than to '' - an empty seed or step count is a failed
+  // run or a noise image, which is the trap ImageEditorPage already documents.
+  check('the run sends every parameter, not just the prompt',
+    /for \(const parameter of workflow\.parameters \|\| \[\]\)/.test(code)
+    && /inputs\[parameter\.id\] = values\[parameter\.id\] \?\? parameter\.defaultValue \?\? ''/
+      .test(code));
+  check('  while still appending the black background to the prompt',
+    /inputs\[promptParam\.id\] = `\$\{prompt\.trim\(\)\}, \$\{BLACK_BACKGROUND\}`/.test(code));
+
+  // Parameter ids are `<nodeId>.<inputKey>`, so "6.text" appears in most of
+  // these workflows meaning something different in each. Values must not carry
+  // across a change of workflow or one workflow's step count silently lands on
+  // another's sampler.
+  check('  and switching workflow drops the previous values',
+    /const selectWorkflow = \(id\) => \{[\s\S]{0,120}setValues\(\{\}\)/.test(code));
+
+  // SORTED BY NAME. The library returns them in insertion order, which tells
+  // the author nothing when the dropdown holds a dozen entries.
+  check('the workflow list is sorted by name',
+    /usable\.sort\(\(a, b\) => String\(a\.name \|\| ''\)\.localeCompare\(String\(b\.name \|\| ''\)\)\)/
+      .test(code));
+
+  check('an empty dropdown distinguishes an empty library from no match',
+    /No ComfyUI workflows in the library/.test(panel)
+    && /None of \$\{considered\} workflows is text-to-image/.test(panel));
+}
+
+console.log('\n--- The shortcuts sheet ---');
+{
+  // A SHEET THAT DOCUMENTS A KEY THE APP DOES NOT HANDLE IS WORSE THAN NO
+  // SHEET: the reader tries it, nothing happens, and they stop trusting the
+  // rest of the list. `Alt + arrow` was in the plan and had never been built -
+  // writing this file is what surfaced that, and it is now implemented rather
+  // than merely documented.
+  const sheet = await readFile(
+    new URL('../../components/vfx/VfxShortcuts.jsx', import.meta.url), 'utf8');
+  const page = await readFile(
+    new URL('../../pages/VfxEditorPage.jsx', import.meta.url), 'utf8');
+  const row = await readFile(
+    new URL('../../components/vfx/VfxBlockRow.jsx', import.meta.url), 'utf8');
+
+  const claims = (key) => sheet.includes(key);
+  check('the sheet claims the keys it should', ['Space', 'Ctrl / Cmd + Z', 'Escape', 'Alt']
+    .every(claims));
+
+  // Each claim, against the handler that has to honour it.
+  check('  Space is handled', /event\.code === 'Space'/.test(page));
+  check('  undo and redo are handled',
+    /toLowerCase\(\) === 'z'/.test(page) && /toLowerCase\(\) === 'y'/.test(page));
+  check('  Escape is handled', /event\.key === 'Escape'/.test(page));
+  // The one the sheet found missing.
+  check('  Alt + arrow really reorders a block',
+    /event\.altKey/.test(row) && /actions\.moveBlock\(block\.id, index \+ delta\)/.test(row));
+  check('  and the sheet itself opens on ?', /event\.key === '\?'/.test(page));
+}
+
+console.log('\n--- Mute and solo ---');
+{
+  // THEY ARE PREVIEW STATE, NOT DOCUMENT STATE, and everything that renders
+  // them has to agree about that.
+  //
+  // THE BUG: clicking Mute or Solo did nothing visible. The action writes into
+  // the page's `preview` map on purpose - mute and solo must NEVER reach the
+  // document, because the compiler drops a disabled system from the IR, so
+  // writing them would restart the whole effect, which is the opposite of what
+  // muting one system is for. But the timeline rendered from `system.enabled`
+  // and `system.solo`, document fields nothing ever writes. The runtime was
+  // being muted correctly the whole time; the icons just never moved.
+  const timeline = await readFile(
+    new URL('../../components/vfx/VfxTimeline.jsx', import.meta.url), 'utf8');
+  const code = timeline
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+  check('the timeline reads mute and solo from the preview map',
+    /const stateOf = system => preview\[system\.id\]/.test(code));
+  for (const field of ['system.enabled', 'system.solo']) {
+    check(`  and never from ${field}`, !code.includes(field), field);
+  }
+  const pageSource = await readFile(
+    new URL('../../pages/VfxEditorPage.jsx', import.meta.url), 'utf8');
+  check('  and the page actually hands it over',
+    /<VfxTimeline[\s\S]*?preview=\{preview\}/.test(pageSource));
+
+  // A muted emitter must stop DRAWING, not only spawning. Stopping spawns alone
+  // means a four-second lifetime takes four seconds to look muted, which is
+  // indistinguishable from a broken button.
+  const batchSource = await readFile(new URL('./batch.js', import.meta.url), 'utf8');
+  check('a muted emitter is skipped by the write loop',
+    /for \(const emitter of sources\) \{[\s\S]{0,900}?if \(emitter\.muted\) continue;/.test(batchSource));
+}
+
+console.log('\n--- React Flow board ---');
+{
+  const board = await readFile(
+    new URL('../../components/vfx/VfxBoard.jsx', import.meta.url), 'utf8');
+
+  // A CONTROLLED `nodes` PROP NEEDS onNodesChange OR NOTHING MOVES.
+  //
+  // React Flow applies a node change itself only when it owns the array
+  // (`defaultNodes`). With a controlled `nodes` prop, `triggerNodeChanges`
+  // calls onNodesChange and applies nothing - so with no handler at all, every
+  // position change a drag produced went into the void and a dragged node did
+  // not follow the cursor: it stayed put until pointer-up committed the edit
+  // and then jumped. The comment on <ReactFlow> asserted the opposite for two
+  // phases; it was a guess.
+  check('the board handles onNodesChange', /onNodesChange=\{/.test(board));
+  check('  and only applies position changes from it',
+    /change\.type !== 'position'/.test(board));
+
+  // TIDY MUST MEASURE THE NODES REACT FLOW MEASURED, NOT THE ONES WE BUILT.
+  //
+  // `measured` is written into React Flow's internal nodeLookup
+  // (updateNodeInternals sets it on the INTERNAL node), never onto the user
+  // node. Tidy used to read `node.measured` off the array toFlowNodes builds,
+  // where that field has never existed - so every node measured zero,
+  // autoLayout fell back to a uniform 160px row for all of them, and a stage
+  // with eight blocks overlapped the one below it. Which is the bug Tidy exists
+  // to fix, reported as Tidy causing it.
+  check('Tidy measures through getInternalNode',
+    /getInternalNode\(id\)\?\.measured/.test(board));
+  check('  and never reads measured off the derived nodes array',
+    !/nodes\.map\(node => \[node\.id, node\]\)/.test(board));
+
+  // THE FLOW SOCKETS ARE ON THE SIDE EDGES, NOT THE TOP AND BOTTOM.
+  //
+  // A context node grows DOWNWARD as blocks are added. With the sockets on the
+  // top and bottom the chain ran along that same axis, so every block added to
+  // a stage pushed the next stage further away and the board had to be
+  // re-tidied to stay readable. Sideways, the two axes are perpendicular.
+  //
+  // Checked in the source because the failure is a rendered layout: the
+  // positions are two identifiers in a component and nothing else would notice
+  // them being changed back.
+  const contextNode = await readFile(
+    new URL('../../components/vfx/VfxContextNode.jsx', import.meta.url), 'utf8');
+  const flowHandles = [...contextNode.matchAll(
+    /position=\{Position\.(\w+)\}[\s\S]{0,120}?id="(flow-in|flow-out)"/g)];
+  check('both flow sockets were found', flowHandles.length === 2,
+    flowHandles.map((m) => `${m[2]}:${m[1]}`).join(' '));
+  check('  flow-in is on the left and flow-out on the right',
+    flowHandles.some((m) => m[2] === 'flow-in' && m[1] === 'Left')
+    && flowHandles.some((m) => m[2] === 'flow-out' && m[1] === 'Right'),
+    flowHandles.map((m) => `${m[2]}:${m[1]}`).join(' '));
+
+  // And they are pinned to the header. React Flow centres a left/right handle
+  // at 50% of the node's height, which on a six-block stage lands exactly on a
+  // block row's own property socket - those are on the left edge too.
+  const nodeCss = await readFile(
+    new URL('../../components/vfx/VfxContextNode.css', import.meta.url), 'utf8');
+  check('  and pinned to the header rather than centred on the node',
+    /\.vfx-node__flow\.react-flow__handle \{[^}]*top: \d+px;/.test(nodeCss));
+
+  // A DRAG MOVES ONLY WHAT YOU GRABBED. React Flow drags the pointed node
+  // together with anything `selected` (getDragItems in @xyflow/system), which
+  // is right where selection is a deliberate multi-select and wrong here, where
+  // `selected` means "the node open in the Parameters panel" - clicking
+  // Initialize to edit it and then dragging Update would move Initialize too.
+  // Only reachable at all now that a drag moves anything on screen.
+  check('a drag previews only the node it started on',
+    /onNodeDragStart=\{/.test(board)
+    && /dragOrigin\.current = node\.id/.test(board)
+    && /change\.id !== dragOrigin\.current/.test(board));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- Shader uniforms are declared in the stage that reads them ---');
+// ---------------------------------------------------------------------------
+//
+// A UNIFORM READ IN A STAGE THAT DOES NOT DECLARE IT IS A COMPILE ERROR, and it
+// takes the WHOLE EFFECT down: the program never links, so nothing draws at all
+// - not the textured particles, not the untextured ones. The browser reports
+// only "Fragment shader is not compiled" and the viewport is empty.
+//
+// THE BUG: `uBlackPoint` was declared beside `uTiles`, which lives in the
+// VERTEX shader because the flipbook cell maths runs there. It is read in the
+// FRAGMENT shader.
+//
+// The test written for that property asserted the shader TEXT contained the
+// line, and that the line came before the colour multiply. Both were true the
+// whole time the shader was broken. Presence is not scope, so check scope.
+{
+  const stageOf = (name) => {
+    const opener = `const ${name} = /* glsl */${BACKTICK}`;
+    const at = materials.indexOf(opener);
+    if (at < 0) return null;
+    const start = at + opener.length;
+    const end = materials.indexOf(`${BACKTICK};`, start);
+    return materials.slice(start, end < 0 ? materials.length : end);
+  };
+
+  // The vertex program is the head and the body concatenated - see
+  // buildVertexShader - so a uniform declared in either is in scope for both.
+  const vertexHead = stageOf('VERTEX_HEAD');
+  const vertexBody = stageOf('VERTEX_BODY');
+  const fragment = stageOf('FRAGMENT');
+  check('both shader stages were found',
+    Boolean(vertexHead && vertexBody && fragment));
+  const vertex = `${vertexHead || ''}\n${vertexBody || ''}`;
+
+  // Comments come out first: these shaders explain their own uniforms by name
+  // in prose, and a mention is not a use.
+  const stripComments = (src) => src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ');
+
+  const DECLARATION = /uniform\s+\w+\s+(u\w+)\s*;/g;
+
+  const undeclared = (rawSource, label) => {
+    const source = stripComments(rawSource);
+    const declared = new Set([...source.matchAll(DECLARATION)].map((m) => m[1]));
+    // Every `uSomething` the stage still mentions once its own declarations are
+    // removed. Our uniforms are all named uXxx; three's injected ones are not.
+    const used = new Set(
+      [...source.replace(DECLARATION, ' ').matchAll(/\bu[A-Z]\w*/g)].map((m) => m[0]),
+    );
+    return [...used].filter((name) => !declared.has(name)).map((name) => `${label}:${name}`);
+  };
+
+  const missing = [...undeclared(vertex, 'vertex'), ...undeclared(fragment, 'fragment')];
+  check('every uniform is declared in the stage that reads it',
+    missing.length === 0, missing.join(' '));
+
+  // And the guard is not vacuous - it has to be finding real uniforms, and in
+  // particular the one that taught it the lesson.
+  const fragmentUniforms = [...stripComments(fragment || '').matchAll(DECLARATION)]
+    .map((m) => m[1]);
+  check('  the fragment stage really declares several',
+    fragmentUniforms.length >= 4, fragmentUniforms.join(' '));
+  check('  including the one this guard was written for',
+    fragmentUniforms.includes('uBlackPoint'), fragmentUniforms.join(' '));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- The preview canvas is opaque ---');
+// ---------------------------------------------------------------------------
+//
+// ADDITIVE PARTICLES REQUIRE AN OPAQUE RENDER TARGET. A transparent canvas is
+// composited as PREMULTIPLIED alpha - a colour channel may not exceed the alpha
+// it is premultiplied by, and browsers clamp when it does - and no pair of
+// blend factors survives that:
+//
+//   alpha written by the preset (SrcAlpha, One)  ->  a sprite with no alpha
+//     channel drives the canvas alpha to 1 across the whole quad while adding
+//     no colour, so its black background becomes an opaque BLACK BOX that hides
+//     the page backdrop.
+//   alpha left alone (Zero, One)                 ->  alpha stays 0, the
+//     compositor clamps the glow to it, and particles appear ONLY where
+//     something else already wrote alpha. With the grid on, the effect drew as
+//     a crosshatch; with the grid off, nothing at all.
+//
+// Both were observed on one effect, hours apart, and each looked like a
+// different bug. The fix is the destination, so that is what is checked here.
+// This cannot be caught from the material: `createParticleMaterial` is correct
+// in both cases.
+{
+  const viewport = await readFile(
+    new URL('../../components/vfx/VfxViewport.jsx', import.meta.url), 'utf8');
+
+  check('the preview canvas asks for an opaque context',
+    /gl=\{\{[^}]*alpha:\s*false/.test(viewport));
+
+  // And having taken the page's CSS backdrop out of the picture, the scene has
+  // to paint one - or the viewport is plain black and the grid floats in a void
+  // that looks like a failed render.
+  check('  and the scene paints the ground the CSS used to',
+    /scene\.background\s*=\s*new THREE\.Color\(/.test(viewport));
+
+  // The thumbnail path renders offscreen with its own scene and never had this
+  // problem, which is why saved cards looked right while the live preview did
+  // not. Keep it that way: it is the same requirement, met independently.
+  const thumb = await readFile(new URL('../vfxThumbnail.js', import.meta.url), 'utf8');
+  check('  and the thumbnail renderer is opaque too',
+    /scene\.background\s*=\s*new THREE\.Color\(/.test(thumb));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- The preset library is read-only without the author flag ---');
+// ---------------------------------------------------------------------------
+//
+// The presets ship with the app and every installation can read them; only the
+// one carrying the marker file may write. That is the wiki's arrangement and it
+// reuses the wiki's marker deliberately - a second flag file would be a second
+// thing to remember and the one eventually forgotten.
+//
+// A MISSING GATE HERE IS NOT VISIBLE FROM THE AUTHOR'S MACHINE, which is the
+// whole reason to check it in a test: on the machine where the flag exists,
+// gated and ungated behave identically.
+{
+  const server = await readFile(new URL('../../../server.js', import.meta.url), 'utf8');
+
+  // Every mutating route, and there are exactly three.
+  const writes = [
+    /app\.put\('\/api\/vfx\/presets\/:id', requireVfxAuthor/,
+    /app\.delete\('\/api\/vfx\/presets\/:id', requireVfxAuthor/,
+    /app\.post\('\/api\/vfx\/presets\/:id\/thumbnail', requireVfxAuthor/,
+  ];
+  check('every preset write route is behind the author gate',
+    writes.every((pattern) => pattern.test(server)),
+    writes.map((p, i) => (p.test(server) ? '' : `#${i}`)).filter(Boolean).join(' ') || '3 of 3');
+  check('  and the gate is the wiki’s marker file',
+    /function requireVfxAuthor[\s\S]{0,200}isWikiAuthorMode\(\)/.test(server));
+  // The client cannot ask separately, so the listing carries it - and a client
+  // that never learns it would render Delete buttons that 403.
+  check('  with the listing reporting authorMode to the client',
+    /authorMode: isWikiAuthorMode\(\)/.test(server));
+
+  // THE ID BECOMES A FILENAME. `..%2f..%2fpackage` is a path, not an id, so it
+  // is matched against the pattern rather than merely escaped or joined.
+  check('a preset id is validated before it becomes a path',
+    /PRESET_ID_PATTERN\.test\(id\)/.test(server));
+
+  // One unreadable file must not empty the library: a half-written preset would
+  // otherwise take all fifty others down and read as "the presets are gone".
+  check('an unreadable preset is skipped rather than fatal',
+    /Skipping unreadable VFX preset/.test(server));
+
+  // Info-level diagnostics include I_DEFAULT_SPRITE, and a preset may not
+  // reference assets at all - so it ALWAYS draws with the built-in sprite. Read
+  // as "warnings", that fired on every save and trained the author to ignore
+  // the report.
+  check('only warn-level diagnostics are reported back as warnings',
+    /warnings: diagnostics\.filter\(\(entry\) => entry\.severity === 'warn'\)/.test(server));
+
+  // The shared-server case: presets live where the wiki lives, so a remote
+  // install must read the server's library rather than its own stale copy.
+  const mode = await readFile(new URL('../../../serverMode.js', import.meta.url), 'utf8');
+  check('the routes are forwarded in shared-server mode',
+    /'\/api\/vfx\/presets'/.test(mode));
+
+  // resources/ is excluded from the Docker image wholesale - it is animation
+  // GLBs, preview videos and Python wheels. The presets are the exception,
+  // because the SERVER serves them.
+  const dockerignore = await readFile(new URL('../../../.dockerignore', import.meta.url), 'utf8');
+  const dockerfile = await readFile(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+  const builder = await readFile(new URL('../../../electron-builder.yml', import.meta.url), 'utf8');
+  check('the preset files ship in the Docker image',
+    /^!resources\/vfx\/$/m.test(dockerignore) && /COPY .*resources\/vfx \.\/resources\/vfx/.test(dockerfile));
+  check('  and in the desktop build', /- resources\/vfx\/\*\*\/\*/.test(builder));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- The Snapshot button ---');
+// ---------------------------------------------------------------------------
+//
+// WHY IT EXISTS: the preset library's bulk thumbnail pass renders a SIMULATED
+// frame at a fixed capture time, and no single time works for fifty-three
+// effects whose lifetimes run from 0.07s to seven seconds - a one-shot burst
+// has already died, a slow plume has not arrived - so a good number of cards
+// came out black. Choosing the frame is a judgement, so Snapshot hands it to
+// the author: scrub, orbit, press.
+{
+  const page = await readFile(
+    new URL('../../pages/VfxEditorPage.jsx', import.meta.url), 'utf8');
+
+  check('the toolbar has a snapshot button', /onClick=\{handleSnapshot\}/.test(page));
+  // Next to the shortcuts icon, which is where it was asked for and where the
+  // other icon-only tools live.
+  check('  placed after the keyboard-shortcuts icon',
+    page.indexOf('setShortcutsOpen(true)') < page.indexOf('onClick={handleSnapshot}'));
+
+  // THE SAME RENDERER THE CARD USES, fed the LIVE runtime and camera - that is
+  // the "capture the frame on screen" path, as opposed to the simulated one
+  // that produced the black cards.
+  check('it captures the live frame, not a simulated one',
+    /handleSnapshot = async[\s\S]{0,1400}createVfxThumbnailFile\(compiled\.ir, \{[\s\S]{0,200}runtime,[\s\S]{0,120}camera: cameraRef\.current/
+      .test(page));
+
+  // A REPORT, NOT A FALLBACK. createVfxThumbnailFile falls back to a simulated
+  // frame when nothing is alive, which is right for a save and wrong here: the
+  // author asked for THIS frame, and quietly handing back another black PNG is
+  // the same bug they pressed the button to escape. This project has been
+  // burned by exactly that shape before - a correct fallback with no report is
+  // indistinguishable from a broken feature.
+  check('an empty frame is reported rather than silently substituted',
+    /handleSnapshot = async[\s\S]{0,900}aliveCount\(runtime\) === 0[\s\S]{0,220}notify\(/.test(page));
+  // aliveCount reads runtime.emitters, and useVfxRuntime returns null until the
+  // effect has compiled and its assets have loaded.
+  check('  and a runtime that does not exist yet does not throw',
+    /!runtime \|\| aliveCount\(runtime\) === 0/.test(page));
+
+  // Named the way resources/vfx/thumbnails/ expects, so a snapshot of a
+  // preset-derived effect drops straight in.
+  check('the file is named as a thumbnail slug',
+    /link\.download = `\$\{slug\}\.png`/.test(page)
+    && /replace\(\/\[\^a-z0-9\]\+\/g, '-'\)/.test(page));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- Dedup for installed preset assets ---');
+// ---------------------------------------------------------------------------
+//
+// A preset names a bundled FILE; opening it installs that file into this
+// library. Every subsequent open has to find the copy already there, or opening
+// Campfire five times adds fifteen textures.
+//
+// DEDUP IS BY NAME, and that is forced rather than chosen: the library listing
+// does NOT project the metadata column (recorded in vfxApi.js), so there is
+// nowhere to hide a content hash. It is also what
+// /api/setup/install-workflows already does for bundled workflows.
+{
+  const index = indexInstalledPackAssets([
+    { id: 'library:12', name: 'VFX Flame Wisp' },
+    { id: 14, name: 'VFX Soft Glow' },
+    // A user's OWN asset that happens to share the bare name. The prefix is
+    // what stops it being adopted as though it came from the pack and then
+    // silently becoming the texture of every fire preset.
+    { id: 15, name: 'Flame Wisp' },
+    { id: 16, name: '' },
+    { id: 'not-a-number', name: 'VFX Ring' },
+    null,
+  ]);
+
+  check('a prefixed row is indexed', index.get('VFX Flame Wisp') === 12);
+  check('  through the library:<id> handle form', index.get('VFX Soft Glow') === 14);
+  check('an unprefixed row of the same name is ignored', !index.has('Flame Wisp'));
+  check('  and so is a nameless or unusable row',
+    index.size === 2, [...index.keys()].join(' '));
+
+  // TWO ROWS WITH ONE NAME means a previous install raced, or the author
+  // duplicated one. Picking the lower id keeps a preset opening the same way
+  // every time rather than alternating between copies.
+  const dupes = indexInstalledPackAssets([
+    { id: 40, name: 'VFX Ring' },
+    { id: 12, name: 'VFX Ring' },
+    { id: 99, name: 'VFX Ring' },
+  ]);
+  check('duplicates resolve to the lowest id, deterministically', dupes.get('VFX Ring') === 12);
+
+  // The name in the library is what the preset's declaration asks for, so the
+  // two must be produced by the same function - a prefix applied in one place
+  // and not the other means nothing is ever deduped.
+  check('the installed name matches what the format generates',
+    presetAssetName({ name: 'Flame Wisp' }) === 'VFX Flame Wisp');
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- The install-on-open path ---');
+// ---------------------------------------------------------------------------
+//
+// Checked against the source rather than executed: the install itself is fetch
+// plus FormData against a live server, which is what tools/vfx-preset-e2e
+// territory covers. What matters here is the two decisions that would fail
+// silently.
+{
+  const source = await readFile(new URL('./presetAssets.js', import.meta.url), 'utf8');
+
+  // A FAILED INSTALL MUST NOT BE FATAL AND MUST NOT BE SILENT. One texture that
+  // fails should still let the author open the effect and see the other three -
+  // but a system quietly drawing with the built-in blob is indistinguishable
+  // from a preset nobody bothered to texture, which is the exact shape of bug
+  // this project keeps re-learning.
+  check('a failed install is collected rather than thrown',
+    /catch \(err\) \{[\s\S]{0,400}failed\.push\(/.test(source));
+  check('  and reported back beside the document',
+    /return \{[\s\S]{0,200}installed,[\s\S]{0,200}missing:/.test(source));
+
+  // The dedup index is rebuilt from a FRESH listing on every open, because the
+  // page's cached copy may predate assets this very dialog installed.
+  check('the library is re-read rather than taken from a cache',
+    /await options\.listLibrary\(\)/.test(source));
+
+  // Two needs naming one file in a single preset must share the upload.
+  check('an install is recorded so a repeat need in one preset reuses it',
+    /byName\.set\(presetAssetName\(need\), id\)/.test(source));
+
+  // The bundled bytes come off the static /resources mount - no route, no auth,
+  // and the same path in the browser, in Electron and behind the gateway.
+  check('bundled bytes are read from the static resources mount',
+    /\/resources\/vfx\/assets\//.test(source));
+
+  const page = await readFile(new URL('../../pages/VfxEditorPage.jsx', import.meta.url), 'utf8');
+  check('the page hands the dialog a live library reader',
+    /listLibrary=\{async \(\) => \{/.test(page));
+
+  const dialog = await readFile(
+    new URL('../../components/vfx/VfxPresetsDialog.jsx', import.meta.url), 'utf8');
+  check('opening a preset resolves its assets first',
+    /resolvePresetAssets\(full, \{/.test(dialog)
+    && dialog.indexOf('resolvePresetAssets') < dialog.indexOf('onOpen({ ...full, doc })'));
+  // Installing assets into someone's library without saying so is a surprise
+  // they find later; failing to install one and saying nothing is worse.
+  check('  and both outcomes are announced',
+    /could not be wired/.test(dialog) && /to your library/.test(dialog));
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n--- The asset pack ships and is gated ---');
+// ---------------------------------------------------------------------------
+{
+  const server = await readFile(new URL('../../../server.js', import.meta.url), 'utf8');
+
+  // Reading the pack is public; adding to it is the author's alone. The pack
+  // ships with the app, so a stranger writing into it would change what every
+  // preset draws with.
+  check('adding to the pack is behind the author gate',
+    /app\.post\('\/api\/vfx\/preset-assets', requireVfxAuthor/.test(server));
+  check('  while listing it is public',
+    /app\.get\('\/api\/vfx\/preset-assets', async/.test(server));
+  // Refusing rather than overwriting, and never guessing a suffix: fifty
+  // presets may already name the file being replaced.
+  check('  and a name collision is refused, not overwritten',
+    /already in the pack[\s\S]{0,120}overwrite/.test(server));
+
+  // A DECLARATION NAMING A FILE THE PACK DOES NOT HAVE installs nothing and
+  // wires nothing - the effect opens on the built-in blob with only an info
+  // diagnostic to show for it. Caught at save, where the author can act.
+  check('a preset naming a file the pack lacks cannot be saved',
+    /The preset asset pack has no file/.test(server));
+
+  const mode = await readFile(new URL('../../../serverMode.js', import.meta.url), 'utf8');
+  check('the pack routes are forwarded in shared-server mode',
+    /'\/api\/vfx\/preset-assets'/.test(mode));
+
+  // resources/vfx/**/* already covers the pack in both builds - the presets and
+  // their assets live in one tree precisely so they cannot ship apart.
+  const builder = await readFile(new URL('../../../electron-builder.yml', import.meta.url), 'utf8');
+  const dockerfile = await readFile(new URL('../../../Dockerfile', import.meta.url), 'utf8');
+  check('the pack ships wherever the presets ship',
+    /- resources\/vfx\/\*\*\/\*/.test(builder)
+    && /COPY .*resources\/vfx \.\/resources\/vfx/.test(dockerfile));
+}
+
+
+// --- The path gizmo draws the emitter's own curve ----------------------------
+//
+// THE DRAWN PATH IS A PROMISE about where particles will appear, and it was
+// briefly kept by a second copy of the spline living in the viewport. Two
+// copies of a polynomial is how a drawn curve and a spawned one quietly stop
+// agreeing - and the failure is invisible in a screenshot, because a wrong
+// curve still looks like a curve. A source check rather than a behavioural
+// one, because the component cannot be imported without a DOM.
+{
+  console.log('\n--- The curve gizmo and the curve emitter are one spline ---');
+  const viewport = await readFile(
+    new URL('../../components/vfx/VfxViewport.jsx', import.meta.url), 'utf8');
+  const kernelSrc = await readFile(new URL('./kernels.js', import.meta.url), 'utf8');
+
+  check('the viewport imports the emitter\'s spline',
+    /import \{ catmullRom \} from '\.\.\/\.\.\/utils\/vfx\/kernels'/.test(viewport));
+  check('  rather than defining one of its own',
+    !/function \w*atmullRom\w*\s*\(/.test(viewport));
+  check('  and the kernel exports it deliberately',
+    /export function catmullRom\(p, count, t\)/.test(kernelSrc));
+
+  // The count has to reach it, or a path of any length is drawn as its first
+  // four points with the rest silently ignored - which is exactly the shape
+  // this emitter had before the path became a list.
+  check('every axis is sampled with the path\'s real length',
+    (viewport.match(/catmullRom\(\w+, count, t\)/g) || []).length === 3);
+}
+
+
+// --- The importers agree with the exporter about the bundle's shape ---------
+//
+// THE EXPORT HAS ONE JSON FILE. `manifest.json` carries the IR inline as
+// `manifest.ir`, beside an `assets/<kind>/` tree - there is no ir.json and
+// never has been. An early guess at the layout said otherwise, and the Unity
+// importer's MENU kept that guess as a pre-flight check long after the loader
+// beside it had been rewritten against a real export. The result was the worst
+// kind of bug: a correct bundle refused by a dialog naming a file the app does
+// not write, while every headless test passed - because the smoke harness calls
+// the loader directly and never goes through the menu.
+//
+// A source check, because the thing being guarded is a guard.
+{
+  console.log('\n--- The bundle has one manifest and no ir.json ---');
+
+  // The WRITE route, which is the half kept local by serverMode.js so the
+  // bundle lands where the user is rather than where the database is.
+  const written = await readFile(new URL('../../../server.js', import.meta.url), 'utf8');
+  check('the exporter writes manifest.json',
+    /path\.join\(bundleDir, 'manifest\.json'\)/.test(written));
+  check('  and never an ir.json',
+    !/['"`]ir\.json['"`]/.test(written));
+
+  // Every shipped C# file, so a second copy of the guess cannot hide in one.
+  const unityDir = new URL('../../../plugins/unity/com.3dgenstudio.vfx-import/Editor/',
+    import.meta.url);
+  const names = (await readdir(unityDir)).filter((name) => name.endsWith('.cs'));
+  const offenders = [];
+  for (const name of names) {
+    const text = await readFile(new URL(name, unityDir), 'utf8');
+    // A comment explaining that there is no ir.json is the point, not a bug -
+    // so only code that names the file as a path is counted.
+    if (/Combine\([^)]*["']ir\.json["']|Exists\([^)]*["']ir\.json["']/.test(text)) {
+      offenders.push(name);
+    }
+  }
+  check('no Unity source looks for ir.json', offenders.length === 0, offenders.join(' '));
+
+  const menu = await readFile(new URL('VfxImportMenu.cs', unityDir), 'utf8');
+  check('the menu gates on manifest.json instead',
+    /File\.Exists\(Path\.Combine\(folder, "manifest\.json"\)\)/.test(menu));
+  // And its DIALOG must not name a file the app does not write, or the author
+  // goes looking for one. Scoped to the message rather than the whole file:
+  // the comment above the guard explains the old mistake on purpose.
+  const dialog = menu.slice(menu.indexOf('DisplayDialog'));
+  check('  and its refusal names only files that exist',
+    !/ir\.json/.test(dialog.slice(0, 600)), dialog.slice(0, 120).replace(/\s+/g, ' '));
+
+  const unrealDir = new URL('../../../plugins/unreal/VfxImport/Source/VfxImportEditor/Private/',
+    import.meta.url);
+  const importer = await readFile(new URL('VfxBundleImporter.cpp', unrealDir), 'utf8');
+  check('the Unreal importer gates on the same file',
+    /manifest\.json/.test(importer) && !/ir\.json/.test(importer));
+}
+
+
+// --- Export works from wherever the author is -------------------------------
+//
+// TWO WRONG ANSWERS CAME BEFORE THIS ONE. First the button was wrapped in
+// `assetId != null &&`, so it was never rendered on an effect that had not been
+// saved - which is the state you are in every time you open a preset. The
+// reported bug was "Export is missing" and the first guess, mine, was that the
+// toolbar had run out of room; it had not, and no amount of looking at the
+// toolbar would have found it.
+//
+// Then it was rendered but DISABLED with an explanation. Honest, and still
+// wrong: the reason a save is needed - the bundle is built on the server from
+// the saved FILE - is a fact about the app's plumbing, not a chore to hand to
+// the author. So the button now says "Save & Export..." and does both.
+{
+  console.log('\n--- Export works from wherever the author is ---');
+
+  const fresh = exportAction({ assetId: null, dirty: true, status: 'idle' });
+  check('a preset that was never saved can still export', fresh.disabled === false);
+  check('  by saving first', fresh.needsSave === true);
+  check('  and the button SAYS so, rather than doing it silently',
+    fresh.label === 'Save & Export...', fresh.label);
+  // The save has a real consequence - the effect appears in the library - so
+  // announcing it is the point. Announcing is not the same as making someone
+  // do it themselves.
+  check('  naming the library, since that is the consequence',
+    /library/i.test(fresh.hint), fresh.hint);
+
+  const edited = exportAction({ assetId: 12, dirty: true, status: 'idle' });
+  check('a saved effect with edits saves first too', edited.needsSave === true);
+  check('  with the other wording', /not from what is on screen/.test(edited.hint), edited.hint);
+  // An unsaved effect is ALSO dirty, so the order inside the rule matters:
+  // "save your changes first" reads as the save you just did not counting.
+  check('  and the two differ', edited.hint !== fresh.hint);
+
+  const clean = exportAction({ assetId: 12, dirty: false, status: 'idle' });
+  check('an already-saved, unchanged effect exports directly',
+    clean.needsSave === false && clean.label === 'Export...', clean.label);
+
+  // The ONLY genuinely unavailable case: a save is already in flight and a
+  // second one would race it.
+  const saving = exportAction({ assetId: 12, dirty: false, status: 'saving' });
+  check('a save in flight is the one thing that disables it', saving.disabled === true);
+  check('  and nothing else is ever disabled',
+    [fresh, edited, clean].every((a) => a.disabled === false));
+
+  // And the page must RENDER it regardless of state. A behavioural check on the
+  // rule cannot see a button that was never mounted, which is exactly how the
+  // first version got through.
+  const page = await readFile(new URL('../../pages/VfxEditorPage.jsx', import.meta.url), 'utf8');
+  const exportAt = page.indexOf('exportAvailability.label');
+  check('the page has an Export button', exportAt > 0);
+  const before = page.slice(Math.max(0, exportAt - 700), exportAt);
+  check('  that is not hidden behind an assetId check',
+    !/\{assetId != null && \($/m.test(before.trimEnd()),
+    before.slice(-80).replace(/\s+/g, ' '));
+  check('  and takes its label and reason from the shared rule',
+    /disabled=\{exportAvailability\.disabled\}/.test(before)
+    && /title=\{exportAvailability\.hint\}/.test(before));
+  // The save has to happen BEFORE the dialog opens, or the bundle is built
+  // from the previous save while the newest edits play in the preview.
+  check('  and saves before opening the dialog',
+    /needsSave\)\s*\{\s*const saved = await handleSave\(\)/.test(page));
+  check('  refusing to export when that save fails',
+    /if \(!saved\?\.id\) return/.test(page));
+}
+
+console.log(`\n${failures ? `${failures} failure(s)` : 'all checks passed'}`);
+process.exit(failures ? 1 : 0);

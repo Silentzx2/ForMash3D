@@ -1,3 +1,12 @@
+## 2026-10-01 — [Active Development] 3DGenStudio Modular Tooling Staging & Architecture Realignment
+- **VFX Studio Ecosystem:** Migrated complete particle graph editor, timeline, Bezier/Gradient editors, WebGL particle simulator, Unity VFX Graph package, and Unreal Niagara plugin.
+- **Procedural Studios:** Integrated 2D-to-3D procedural building generator, grammar compiler, stylepacks, and procedural tree generator with dual-preview viewport.
+- **Assembly & Kitbashing:** Staged multi-mesh character outfitter, landmark alignment, and conformal garment fitting service.
+- **Advanced Sculpt & Mesh Extras:** Staged 7 interactive sculpting brushes, 3D surface paint, CSG booleans, gltfpack LOD generation, semantic mesh segmentation, and game-readiness audits.
+- **Standalone PostProcess Microservice (Port 8200):** Formalized mesh processing tools into dedicated FastAPI microservice on port 8200 with `scripts/start_postprocess_service.sh`.
+- **Comprehensive Guide:** Added `MIGRATION_AND_WIRING_GUIDE.md` detailing App Router integration, TypeScript conversion roadmap, and relative import resolution matrix.
+- **Dependencies:** Added `@xyflow/react`, `clipper-lib`, `three-mesh-bvh`, `three-bvh-csg`, `meshoptimizer`, and `@types/three`.
+
 ## 2026-09-30 — README Overhaul, 3DGenStudio Attribution & SaaS Advisory
 - Revamped README.md: eliminated hype claims (#1/alternatives), framed platform respectfully as inspired by Tripo AI and Meshy workflows.
 - Restyled Mermaid architecture diagram with vibrant Studio Gold theme and verified node-to-node rendering compatibility.

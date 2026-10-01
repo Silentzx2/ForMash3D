@@ -1,0 +1,323 @@
+{
+  "format": 1,
+  "id": "thruster",
+  "name": "Thruster",
+  "category": "Sci-Fi & Tech",
+  "description": "The blue-white plume out of an engine bell, hottest at the throat.",
+  "teaches": [
+    "A cone pointed backwards",
+    "Colour cooling along the plume",
+    "Short lifetimes keeping a plume tight"
+  ],
+  "tags": [
+    "looping",
+    "beginner",
+    "additive"
+  ],
+  "assets": [
+    {
+      "slot": "tex_blk-mtvb5irr-9n_texture",
+      "file": "soft-glow.png",
+      "kind": "image",
+      "name": "Soft Glow"
+    }
+  ],
+  "doc": {
+    "format": 1,
+    "kind": "vfx-graph",
+    "savedAt": 1789031482695,
+    "name": "Thruster",
+    "effect": {
+      "seed": 12345,
+      "duration": 2,
+      "loop": true,
+      "fixedDt": 0.016666666666666666,
+      "maxSubSteps": 4,
+      "simulationSpace": "local",
+      "capacity": 1024,
+      "boundsMin": [
+        -2,
+        -2,
+        -2
+      ],
+      "boundsMax": [
+        2,
+        2,
+        2
+      ],
+      "boundsAuto": true,
+      "prewarm": 0,
+      "timeScale": 1
+    },
+    "systems": [
+      {
+        "id": "sys-ge",
+        "name": "Plume",
+        "enabled": true,
+        "solo": false,
+        "capacity": 512,
+        "simulationSpace": "inherit",
+        "seedOffset": 40503,
+        "contexts": [
+          {
+            "id": "c-spawn-ge",
+            "kind": "spawn",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-g6",
+                "type": "spawn.rate",
+                "enabled": true,
+                "props": {
+                  "rate": {
+                    "mode": "const",
+                    "v": 400
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-init-ge",
+            "kind": "initialize",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-g7",
+                "type": "initialize.setLifetime",
+                "enabled": true,
+                "props": {
+                  "lifetime": {
+                    "mode": "random",
+                    "a": 0.18,
+                    "b": 0.4,
+                    "freq": "perParticle",
+                    "v": 0.29000000000000004
+                  }
+                }
+              },
+              {
+                "id": "b-g8",
+                "type": "initialize.setSize",
+                "enabled": true,
+                "props": {
+                  "size": {
+                    "mode": "random",
+                    "a": 0.07,
+                    "b": 0.16,
+                    "freq": "perParticle",
+                    "v": 0.115
+                  }
+                }
+              },
+              {
+                "id": "b-g9",
+                "type": "initialize.setColor",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "const",
+                    "v": [
+                      1.4,
+                      1.9,
+                      3,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "b-ga",
+                "type": "initialize.positionCone",
+                "enabled": true,
+                "props": {
+                  "angle": {
+                    "mode": "const",
+                    "v": 9
+                  },
+                  "radius": {
+                    "mode": "const",
+                    "v": 0.1
+                  },
+                  "speed": {
+                    "mode": "random",
+                    "a": 7,
+                    "b": 10,
+                    "freq": "perParticle",
+                    "v": 8.5
+                  },
+                  "rotation": {
+                    "mode": "const",
+                    "v": [
+                      180,
+                      0,
+                      0
+                    ]
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-update-ge",
+            "kind": "update",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-gb",
+                "type": "update.drag",
+                "enabled": true,
+                "props": {
+                  "drag": {
+                    "mode": "const",
+                    "v": 2.2
+                  }
+                }
+              },
+              {
+                "id": "b-gc",
+                "type": "update.sizeOverLife",
+                "enabled": true,
+                "props": {
+                  "scale": {
+                    "mode": "curve",
+                    "curve": {
+                      "keys": [
+                        {
+                          "t": 0,
+                          "v": 0,
+                          "inTangent": 0,
+                          "outTangent": 0,
+                          "interp": "linear"
+                        },
+                        {
+                          "t": 1,
+                          "v": 1,
+                          "inTangent": 0,
+                          "outTangent": 0,
+                          "interp": "linear"
+                        }
+                      ],
+                      "preWrap": "clamp",
+                      "postWrap": "clamp"
+                    },
+                    "domain": "life",
+                    "scale": 1.9,
+                    "v": 1.9
+                  }
+                }
+              },
+              {
+                "id": "b-gd",
+                "type": "update.colorOverLife",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "gradient",
+                    "gradient": {
+                      "colorKeys": [
+                        {
+                          "t": 0,
+                          "hex": "#ffffff",
+                          "intensity": 6
+                        },
+                        {
+                          "t": 0.35,
+                          "hex": "#9fd8ff",
+                          "intensity": 3
+                        },
+                        {
+                          "t": 1,
+                          "hex": "#2a6bff",
+                          "intensity": 1.4
+                        }
+                      ],
+                      "alphaKeys": [
+                        {
+                          "t": 0,
+                          "a": 1
+                        },
+                        {
+                          "t": 0.6,
+                          "a": 0.8
+                        },
+                        {
+                          "t": 1,
+                          "a": 0
+                        }
+                      ],
+                      "mode": "blend"
+                    },
+                    "domain": "life",
+                    "v": [
+                      6,
+                      6,
+                      6,
+                      1
+                    ]
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-out-ge",
+            "kind": "output",
+            "label": "",
+            "blocks": [
+              {
+                "id": "blk-mtvb5irr-9n",
+                "type": "output.setMainTexture",
+                "enabled": true,
+                "props": {
+                  "texture": {
+                    "mode": "const",
+                    "v": "tex_blk-mtvb5irr-9n_texture"
+                  },
+                  "blackPoint": {
+                    "mode": "const",
+                    "v": 0
+                  }
+                }
+              }
+            ],
+            "params": {
+              "mode": "billboard",
+              "blend": "additive",
+              "sort": "none"
+            }
+          }
+        ],
+        "schedule": {
+          "clips": [
+            {
+              "id": "clip-mtvb5irr-9m",
+              "at": 0,
+              "duration": 0,
+              "loop": false
+            }
+          ]
+        }
+      }
+    ],
+    "events": [],
+    "operators": [],
+    "edges": [],
+    "exposed": [],
+    "references": {
+      "tex_blk-mtvb5irr-9n_texture": {
+        "kind": "image",
+        "ref": "",
+        "name": "Soft Glow",
+        "colorSpace": "srgb"
+      }
+    },
+    "layout": {
+      "nodes": {},
+      "notes": []
+    }
+  }
+}

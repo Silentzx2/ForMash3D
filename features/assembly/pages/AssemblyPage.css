@@ -1,0 +1,1388 @@
+/* Mesh Assembly workspace.
+ *
+ * Deliberately no `backdrop-filter` anywhere that overlaps the viewport. In
+ * Electron, a blurred panel layered over a live WebGL canvas forces a canvas
+ * readback every composited frame and can halve the framerate; MeshEditorPage
+ * pays that cost today (MeshEditorPage.css:22, :512). Panels here use an
+ * opaque surface colour instead. Blur is fine on full-screen modals, where the
+ * canvas behind is idle. */
+
+.assembly-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--background);
+  color: var(--on-surface);
+  overflow: hidden;
+}
+
+/* ---- Toolbar ------------------------------------------------------------ */
+
+.assembly-page__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+
+.assembly-page__toolbar-spacer {
+  flex: 1;
+}
+
+.assembly-page__history {
+  display: flex;
+  gap: 4px;
+}
+
+.assembly-page__history button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.assembly-page__history button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.assembly-page__history button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.assembly-page__save {
+  min-width: 76px;
+  font-size: 12px;
+  text-align: right;
+  color: var(--on-surface-variant);
+}
+
+.assembly-page__save--error {
+  color: var(--error, #ef5350);
+}
+
+.assembly-page__error {
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--error, #ef5350) 12%, transparent);
+  color: var(--error, #ef5350);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+/* ---- Layout ------------------------------------------------------------- */
+
+.assembly-page__workspace {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 300px 1fr 280px;
+  min-height: 0;
+}
+
+.assembly-page__rail {
+  background: var(--surface);
+  border-right: 1px solid var(--outline-variant);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.assembly-page__panel {
+  background: var(--surface);
+  border-left: 1px solid var(--outline-variant);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.assembly-page__loading {
+  padding: 24px 16px;
+  font-size: 13px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Viewport ----------------------------------------------------------- */
+
+.assembly-page__viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: var(--background);
+  /* The canvas fills this; without it a tall piece list can push the canvas
+     past the viewport and the WebGL drawing buffer chases the overflow. */
+  overflow: hidden;
+}
+
+.assembly-vp-toolbar {
+  /* Top-LEFT: the view cube reserves the top-right (VIEW_GIZMO_MARGIN 80px +
+     VIEW_GIZMO_HIT_RADIUS 58px), and anything under it would be unclickable. */
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.assembly-vp-toolbar__group {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  /* Opaque, NOT backdrop-filter: a blurred panel over a live WebGL canvas
+     forces a full canvas readback every composited frame in Chromium and can
+     halve the framerate in the Electron build. */
+  background: var(--surface);
+  pointer-events: auto;
+}
+
+.assembly-vp-toolbar__btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.assembly-vp-toolbar__btn:hover {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.assembly-vp-toolbar__btn--on {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  color: var(--primary);
+}
+
+.assembly-vp-toolbar__readout {
+  display: flex;
+  gap: 10px;
+  padding: 5px 9px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  pointer-events: auto;
+}
+
+.assembly-vp-toolbar__warn {
+  color: var(--error, #ef5350);
+  font-weight: 600;
+}
+
+.assembly-page__isolate-banner {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2;
+  padding: 6px 12px;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.assembly-page__viewport-empty,
+.assembly-page__viewport-placeholder {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--on-surface-variant);
+  background: var(--background);
+  padding: 24px;
+}
+
+.assembly-page__viewport-placeholder h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.assembly-page__viewport-placeholder p {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---- Switcher ----------------------------------------------------------- */
+
+.assembly-switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assembly-switcher__current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.assembly-switcher__current:hover {
+  background: var(--surface-container-high);
+}
+
+.assembly-switcher__name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assembly-switcher__icon-btn,
+.assembly-switcher__btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.assembly-switcher__icon-btn {
+  width: 30px;
+  justify-content: center;
+}
+
+.assembly-switcher__btn {
+  padding: 0 10px;
+}
+
+.assembly-switcher__icon-btn:hover,
+.assembly-switcher__btn:hover:not(:disabled) {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
+.assembly-switcher__input {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 13px;
+}
+
+.assembly-switcher__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--surface-container);
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.assembly-switcher__item {
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.assembly-switcher__item:hover {
+  background: var(--surface-container-high);
+}
+
+.assembly-switcher__item--active {
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--on-surface);
+}
+
+.assembly-switcher__empty {
+  padding: 10px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Piece list --------------------------------------------------------- */
+
+.assembly-pieces__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.assembly-pieces__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.assembly-pieces__add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.assembly-pieces__add:hover {
+  background: var(--surface-container-high);
+}
+
+.assembly-pieces__empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--on-surface-variant);
+}
+
+.assembly-pieces__empty p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.assembly-pieces__empty-hint {
+  font-size: 12px !important;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+.assembly-pieces__list {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.assembly-piece {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px 1fr 22px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--surface-container);
+  cursor: pointer;
+}
+
+.assembly-piece:hover {
+  background: var(--surface-container-high);
+}
+
+.assembly-piece--selected {
+  border-color: var(--primary);
+}
+
+.assembly-piece--base {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface-container));
+}
+
+.assembly-piece--missing {
+  opacity: 0.7;
+  border-color: color-mix(in srgb, var(--error, #ef5350) 45%, transparent);
+}
+
+.assembly-piece__thumb {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--surface-container-highest, rgba(255, 255, 255, 0.06));
+  color: var(--on-surface-variant);
+}
+
+.assembly-piece__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.assembly-piece__body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.assembly-piece__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assembly-piece__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.assembly-piece__badge {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--primary);
+  color: var(--on-primary, #fff);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.assembly-piece__status {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-piece__status--error {
+  color: var(--error, #ef5350);
+}
+
+.assembly-piece__status--ready {
+  color: var(--primary);
+}
+
+.assembly-piece__missing-note {
+  font-size: 11px;
+  color: var(--error, #ef5350);
+}
+
+.assembly-piece__controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.assembly-piece__toggle {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.assembly-piece__toggle:hover {
+  background: var(--surface-container-highest, rgba(255, 255, 255, 0.08));
+  color: var(--on-surface);
+}
+
+.assembly-piece__toggle--on {
+  color: var(--primary);
+}
+
+.assembly-piece__toggle--off {
+  opacity: 0.45;
+}
+
+.assembly-piece__opacity {
+  width: 54px;
+  margin-left: 2px;
+  accent-color: var(--primary);
+}
+
+.assembly-piece__remove {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.assembly-piece:hover .assembly-piece__remove {
+  opacity: 1;
+}
+
+.assembly-piece__remove:hover {
+  background: color-mix(in srgb, var(--error, #ef5350) 20%, transparent);
+  color: var(--error, #ef5350);
+}
+
+/* ---- Transform panel ---------------------------------------------------- */
+
+.assembly-tp {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  font-size: 12px;
+}
+
+.assembly-tp--empty {
+  padding: 24px 16px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-tp__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.assembly-tp__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.assembly-tp__section {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--outline-variant);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.assembly-tp__row {
+  display: grid;
+  grid-template-columns: 52px repeat(3, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+.assembly-tp__label {
+  color: var(--on-surface-variant);
+}
+
+.assembly-tp__field {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.assembly-tp__axis {
+  width: 9px;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-tp__field input,
+.assembly-tp__region select {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.assembly-tp__check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.assembly-tp__region {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.assembly-tp__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.assembly-tp__actions button {
+  flex: 1;
+  min-width: 84px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.assembly-tp__actions button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+}
+
+.assembly-tp__actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.assembly-tp__note {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+  opacity: 0.8;
+}
+
+.assembly-tp__stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.assembly-tp__stats dt {
+  color: var(--on-surface-variant);
+}
+
+.assembly-tp__stats dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.assembly-tp__warn {
+  color: var(--error, #ef5350);
+  font-weight: 600;
+}
+
+/* ---- Toolbar: snap fields + space toggle -------------------------------- */
+
+.assembly-vp-toolbar__snap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-vp-toolbar__snap input {
+  width: 46px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.assembly-vp-toolbar__btn--text {
+  width: auto;
+  min-width: 40px;
+  padding: 0 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.assembly-vp-toolbar__btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (max-width: 1200px) {
+  .assembly-page__workspace {
+    grid-template-columns: 260px 1fr 250px;
+  }
+}
+
+@media (max-width: 900px) {
+  .assembly-page__workspace {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(160px, 28%) 1fr minmax(160px, 28%);
+  }
+
+  .assembly-page__rail {
+    border-right: none;
+    border-bottom: 1px solid var(--outline-variant);
+  }
+
+  .assembly-page__panel {
+    border-left: none;
+    border-top: 1px solid var(--outline-variant);
+  }
+}
+
+/* ---- Fit panel ---------------------------------------------------------- */
+
+.assembly-fit {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px 14px;
+  font-size: 12px;
+}
+
+.assembly-fit--empty {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-fit__section {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--outline-variant);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.assembly-fit__classes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+}
+
+.assembly-fit__class {
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.assembly-fit__class--on {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  color: var(--on-surface);
+}
+
+.assembly-fit__stage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.assembly-fit__knobs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.assembly-fit__knob {
+  display: grid;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-fit__knob input {
+  height: 24px;
+  padding: 0 4px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.assembly-fit__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.assembly-fit__actions button,
+.assembly-fit__run {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.assembly-fit__run {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  font-weight: 600;
+}
+
+.assembly-fit__actions button:hover:not(:disabled),
+.assembly-fit__run:hover:not(:disabled) {
+  background: var(--surface-container-high);
+}
+
+.assembly-fit__actions button:disabled,
+.assembly-fit__run:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.assembly-fit__progress {
+  display: grid;
+  gap: 3px;
+}
+
+.assembly-fit__bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--surface-container-high);
+}
+
+.assembly-fit__bar span {
+  display: block;
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.15s linear;
+}
+
+.assembly-fit__progress-text {
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-fit__hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+  opacity: 0.8;
+}
+
+.assembly-fit__result {
+  margin: 0;
+  font-size: 11px;
+}
+
+.assembly-fit__warn {
+  margin: 0;
+  font-size: 10px;
+  color: var(--error, #ef5350);
+}
+
+.assembly-fit__error {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--error, #ef5350) 15%, transparent);
+  color: var(--error, #ef5350);
+  font-size: 10px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.assembly-fit__tag {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--error, #ef5350) 22%, transparent);
+  color: var(--error, #ef5350);
+  font-size: 9px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ---- Sculpt brush -------------------------------------------------------- */
+
+.assembly-page__viewport--sculpt {
+  /* The brush ring IS the cursor; the arrow would sit in the middle of it. */
+  cursor: none;
+}
+
+.assembly-page__brush {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -50%);
+  border: 1.5px solid rgba(143, 245, 255, 0.9);
+  border-radius: 50%;
+  /* Must never eat the pointer events the brush itself depends on. */
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45) inset;
+}
+
+.assembly-page__brush::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  background: rgba(143, 245, 255, 0.9);
+}
+
+.assembly-page__sculpt-banner {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 6px 12px;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ---- Save as assets ------------------------------------------------------ */
+
+.assembly-page__save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 6px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.assembly-page__save-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.assembly-page__save-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* A full-screen modal, so the WebGL canvas behind it is idle — blur here does
+   not cost a per-frame readback the way it would over a live viewport. */
+.assembly-save__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.assembly-save {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  border: 1px solid var(--outline-variant);
+  border-radius: 12px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.assembly-save__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+
+.assembly-save__header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.assembly-save__header button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.assembly-save__header button:hover:not(:disabled) {
+  background: var(--surface-container-high);
+}
+
+.assembly-save__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.assembly-save__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.assembly-save__check input[type='checkbox'] {
+  accent-color: var(--primary);
+}
+
+.assembly-save__muted {
+  color: var(--on-surface-variant);
+  opacity: 0.75;
+}
+
+.assembly-save__pieces {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0 0 0 24px;
+  list-style: none;
+}
+
+.assembly-save__pieces input,
+.assembly-save__merged input[type='text'],
+.assembly-save__merged label > input,
+.assembly-save__merged select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-size: 12px;
+}
+
+.assembly-save__merged {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 0 0 24px;
+}
+
+.assembly-save__merged > label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+/* The checkbox row inside the merged block is a row, not a stacked field. */
+.assembly-save__merged > label.assembly-save__check {
+  flex-direction: row;
+  align-items: center;
+  color: var(--on-surface);
+  font-size: 13px;
+}
+
+.assembly-save__merged > label.assembly-save__check input {
+  width: auto;
+}
+
+.assembly-save__note {
+  margin: 0 0 0 24px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.assembly-save__merged .assembly-save__note {
+  margin-left: 0;
+}
+
+.assembly-save__atlas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 24px;
+}
+
+.assembly-save__atlas > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-save__atlas select {
+  flex: 0 0 auto;
+  min-width: 150px;
+}
+
+.assembly-save__warn {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning, #f0a030) 14%, transparent);
+  color: var(--on-surface);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.assembly-save__error,
+.assembly-save__error-text {
+  font-size: 12px;
+  color: var(--error, #ef5350);
+}
+
+.assembly-save__error {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--error, #ef5350) 12%, transparent);
+}
+
+.assembly-save__progress {
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.assembly-save__result {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-container-high);
+  font-size: 12px;
+}
+
+.assembly-save__result p {
+  margin: 0 0 4px;
+}
+
+.assembly-save__result p:last-child {
+  margin-bottom: 0;
+}
+
+.assembly-save__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--outline-variant);
+}
+
+.assembly-save__actions button {
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.assembly-save__actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.assembly-save__primary {
+  border-color: transparent !important;
+  background: var(--primary) !important;
+  color: var(--on-primary) !important;
+  font-weight: 600;
+}
+
+/* ---- Landmarks ----------------------------------------------------------- */
+
+.assembly-landmarks__intro,
+.assembly-landmarks__note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.assembly-landmarks__start,
+.assembly-landmarks__stop,
+.assembly-landmarks__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.assembly-landmarks__start:hover,
+.assembly-landmarks__clear:hover {
+  background: var(--surface-container-highest, var(--surface-container-high));
+}
+
+.assembly-landmarks__stop {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+.assembly-landmarks__hint {
+  opacity: 0.7;
+}
+
+/* The prompt is the state machine made visible: which side is expected next.
+   Colour-matched to the markers so the panel and the viewport agree. */
+.assembly-landmarks__prompt {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.assembly-landmarks__prompt--base {
+  background: color-mix(in srgb, #4fc3f7 18%, transparent);
+  color: var(--on-surface);
+}
+
+.assembly-landmarks__prompt--piece {
+  background: color-mix(in srgb, #ffb74d 18%, transparent);
+  color: var(--on-surface);
+}
+
+.assembly-landmarks__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assembly-landmarks__list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.assembly-landmarks__list li:hover {
+  background: var(--surface-container-high);
+}
+
+.assembly-landmarks__row--partial {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.assembly-landmarks__index {
+  min-width: 22px;
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
+.assembly-landmarks__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assembly-landmarks__list button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.assembly-landmarks__list button:hover {
+  background: var(--surface-container-highest, var(--surface-container-high));
+  color: var(--error, #ef5350);
+}
+
+.assembly-landmarks__gate {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning, #f0a030) 14%, transparent);
+  font-size: 11px;
+}
+
+.assembly-landmarks__gate--ok {
+  background: color-mix(in srgb, #66bb6a 16%, transparent);
+}
+
+.assembly-fit__tag--warn {
+  background: color-mix(in srgb, var(--warning, #f0a030) 22%, transparent);
+}

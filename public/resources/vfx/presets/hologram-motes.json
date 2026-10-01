@@ -1,0 +1,292 @@
+{
+  "format": 1,
+  "id": "hologram-motes",
+  "name": "Hologram Motes",
+  "category": "Sci-Fi & Tech",
+  "description": "Cyan specks scanning up a projected volume, for holograms and materialisation.",
+  "teaches": [
+    "A box emitter as a projection volume",
+    "Upward drift as a scan",
+    "Cool colour with no gravity"
+  ],
+  "tags": [
+    "looping",
+    "beginner",
+    "additive"
+  ],
+  "assets": [
+    {
+      "slot": "tex_blk-mtvb5irx-a3_texture",
+      "file": "star-four.png",
+      "kind": "image",
+      "name": "Star Four"
+    }
+  ],
+  "doc": {
+    "format": 1,
+    "kind": "vfx-graph",
+    "savedAt": 1789031482700,
+    "name": "Hologram Motes",
+    "effect": {
+      "seed": 12345,
+      "duration": 3,
+      "loop": true,
+      "fixedDt": 0.016666666666666666,
+      "maxSubSteps": 4,
+      "simulationSpace": "local",
+      "capacity": 1024,
+      "boundsMin": [
+        -2,
+        -2,
+        -2
+      ],
+      "boundsMax": [
+        2,
+        2,
+        2
+      ],
+      "boundsAuto": true,
+      "prewarm": 0,
+      "timeScale": 1
+    },
+    "systems": [
+      {
+        "id": "sys-gv",
+        "name": "Motes",
+        "enabled": true,
+        "solo": false,
+        "capacity": 512,
+        "simulationSpace": "inherit",
+        "seedOffset": 40503,
+        "contexts": [
+          {
+            "id": "c-spawn-gv",
+            "kind": "spawn",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-go",
+                "type": "spawn.rate",
+                "enabled": true,
+                "props": {
+                  "rate": {
+                    "mode": "const",
+                    "v": 200
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-init-gv",
+            "kind": "initialize",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-gp",
+                "type": "initialize.setLifetime",
+                "enabled": true,
+                "props": {
+                  "lifetime": {
+                    "mode": "random",
+                    "a": 1,
+                    "b": 2,
+                    "freq": "perParticle",
+                    "v": 1.5
+                  }
+                }
+              },
+              {
+                "id": "b-gq",
+                "type": "initialize.setSize",
+                "enabled": true,
+                "props": {
+                  "size": {
+                    "mode": "random",
+                    "a": 0.015,
+                    "b": 0.04,
+                    "freq": "perParticle",
+                    "v": 0.0275
+                  }
+                }
+              },
+              {
+                "id": "b-gr",
+                "type": "initialize.setColor",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "const",
+                    "v": [
+                      0.6,
+                      2,
+                      2.4,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "b-gs",
+                "type": "initialize.positionBox",
+                "enabled": true,
+                "props": {
+                  "size": {
+                    "mode": "const",
+                    "v": [
+                      1.2,
+                      2,
+                      1.2
+                    ]
+                  },
+                  "offset": {
+                    "mode": "const",
+                    "v": [
+                      0,
+                      1,
+                      0
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "b-gt",
+                "type": "initialize.velocityDirection",
+                "enabled": true,
+                "props": {
+                  "direction": {
+                    "mode": "const",
+                    "v": [
+                      0,
+                      1,
+                      0
+                    ]
+                  },
+                  "speed": {
+                    "mode": "random",
+                    "a": 0.4,
+                    "b": 1,
+                    "freq": "perParticle",
+                    "v": 0.7
+                  },
+                  "spread": {
+                    "mode": "const",
+                    "v": 0.1
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-update-gv",
+            "kind": "update",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-gu",
+                "type": "update.colorOverLife",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "gradient",
+                    "gradient": {
+                      "colorKeys": [
+                        {
+                          "t": 0,
+                          "hex": "#ffffff",
+                          "intensity": 1
+                        }
+                      ],
+                      "alphaKeys": [
+                        {
+                          "t": 0,
+                          "a": 0
+                        },
+                        {
+                          "t": 0.2,
+                          "a": 1
+                        },
+                        {
+                          "t": 0.8,
+                          "a": 1
+                        },
+                        {
+                          "t": 1,
+                          "a": 0
+                        }
+                      ],
+                      "mode": "blend"
+                    },
+                    "domain": "life",
+                    "v": [
+                      1,
+                      1,
+                      1,
+                      1
+                    ]
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-out-gv",
+            "kind": "output",
+            "label": "",
+            "blocks": [
+              {
+                "id": "blk-mtvb5irx-a3",
+                "type": "output.setMainTexture",
+                "enabled": true,
+                "props": {
+                  "texture": {
+                    "mode": "const",
+                    "v": "tex_blk-mtvb5irx-a3_texture"
+                  },
+                  "blackPoint": {
+                    "mode": "const",
+                    "v": 0
+                  }
+                }
+              }
+            ],
+            "params": {
+              "mode": "billboard",
+              "blend": "additive",
+              "sort": "none"
+            }
+          }
+        ],
+        "schedule": {
+          "clips": [
+            {
+              "id": "clip-mtvb5irx-a2",
+              "at": 0,
+              "duration": 0,
+              "loop": false
+            }
+          ]
+        }
+      }
+    ],
+    "events": [],
+    "operators": [],
+    "edges": [],
+    "exposed": [],
+    "references": {
+      "tex_blk-mtvb5irx-a3_texture": {
+        "kind": "image",
+        "ref": "",
+        "name": "Star Four",
+        "colorSpace": "srgb"
+      }
+    },
+    "layout": {
+      "nodes": {},
+      "notes": []
+    }
+  }
+}

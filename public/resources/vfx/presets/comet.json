@@ -1,0 +1,535 @@
+{
+  "format": 1,
+  "id": "comet",
+  "name": "Comet",
+  "category": "Trails & Projectiles",
+  "description": "A bright head dragging a cold tail of sparks behind it.",
+  "teaches": [
+    "A dense core with a sparse tail",
+    "Drag spreading a tail out",
+    "Two ramps on one silhouette"
+  ],
+  "tags": [
+    "looping",
+    "beginner",
+    "additive",
+    "stretched"
+  ],
+  "assets": [
+    {
+      "slot": "tex_blk-mtvb5isa-au_texture",
+      "file": "soft-glow.png",
+      "kind": "image",
+      "name": "Soft Glow"
+    },
+    {
+      "slot": "tex_blk-mtvb5isa-av_texture",
+      "file": "spark-streak.png",
+      "kind": "image",
+      "name": "Spark Streak"
+    }
+  ],
+  "doc": {
+    "format": 1,
+    "kind": "vfx-graph",
+    "savedAt": 1789031482714,
+    "name": "Comet",
+    "effect": {
+      "seed": 12345,
+      "duration": 3,
+      "loop": true,
+      "fixedDt": 0.016666666666666666,
+      "maxSubSteps": 4,
+      "simulationSpace": "local",
+      "capacity": 1024,
+      "boundsMin": [
+        -2,
+        -2,
+        -2
+      ],
+      "boundsMax": [
+        2,
+        2,
+        2
+      ],
+      "boundsAuto": true,
+      "prewarm": 0,
+      "timeScale": 1
+    },
+    "systems": [
+      {
+        "id": "sys-ht",
+        "name": "Head",
+        "enabled": true,
+        "solo": false,
+        "capacity": 128,
+        "simulationSpace": "inherit",
+        "seedOffset": 40503,
+        "contexts": [
+          {
+            "id": "c-spawn-ht",
+            "kind": "spawn",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-hm",
+                "type": "spawn.rate",
+                "enabled": true,
+                "props": {
+                  "rate": {
+                    "mode": "const",
+                    "v": 160
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-init-ht",
+            "kind": "initialize",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-hn",
+                "type": "initialize.setLifetime",
+                "enabled": true,
+                "props": {
+                  "lifetime": {
+                    "mode": "random",
+                    "a": 0.2,
+                    "b": 0.35,
+                    "freq": "perParticle",
+                    "v": 0.275
+                  }
+                }
+              },
+              {
+                "id": "b-ho",
+                "type": "initialize.setSize",
+                "enabled": true,
+                "props": {
+                  "size": {
+                    "mode": "random",
+                    "a": 0.12,
+                    "b": 0.2,
+                    "freq": "perParticle",
+                    "v": 0.16
+                  }
+                }
+              },
+              {
+                "id": "b-hp",
+                "type": "initialize.setColor",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "const",
+                    "v": [
+                      1.6,
+                      2,
+                      2.6,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "b-hq",
+                "type": "initialize.positionSphere",
+                "enabled": true,
+                "props": {
+                  "radius": {
+                    "mode": "const",
+                    "v": 0.06
+                  }
+                },
+                "modes": {
+                  "fill": "volume"
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-update-ht",
+            "kind": "update",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-hr",
+                "type": "update.sizeOverLife",
+                "enabled": true,
+                "props": {
+                  "scale": {
+                    "mode": "curve",
+                    "curve": {
+                      "keys": [
+                        {
+                          "t": 0,
+                          "v": 1,
+                          "inTangent": 0,
+                          "outTangent": 0,
+                          "interp": "linear"
+                        },
+                        {
+                          "t": 1,
+                          "v": 0,
+                          "inTangent": 0,
+                          "outTangent": 0,
+                          "interp": "linear"
+                        }
+                      ],
+                      "preWrap": "clamp",
+                      "postWrap": "clamp"
+                    },
+                    "domain": "life",
+                    "scale": 1.1,
+                    "v": 1.1
+                  }
+                }
+              },
+              {
+                "id": "b-hs",
+                "type": "update.colorOverLife",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "gradient",
+                    "gradient": {
+                      "colorKeys": [
+                        {
+                          "t": 0,
+                          "hex": "#eafcff",
+                          "intensity": 2.4
+                        },
+                        {
+                          "t": 0.45,
+                          "hex": "#7fdcff",
+                          "intensity": 1.6
+                        },
+                        {
+                          "t": 1,
+                          "hex": "#1d5fb8",
+                          "intensity": 1
+                        }
+                      ],
+                      "alphaKeys": [
+                        {
+                          "t": 0,
+                          "a": 0
+                        },
+                        {
+                          "t": 0.15,
+                          "a": 1
+                        },
+                        {
+                          "t": 1,
+                          "a": 0
+                        }
+                      ],
+                      "mode": "blend"
+                    },
+                    "domain": "life",
+                    "v": [
+                      1.406936991561986,
+                      1.9226717885722246,
+                      2.1222222222222222,
+                      0.9926470588235294
+                    ]
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-out-ht",
+            "kind": "output",
+            "label": "",
+            "blocks": [
+              {
+                "id": "blk-mtvb5isa-au",
+                "type": "output.setMainTexture",
+                "enabled": true,
+                "props": {
+                  "texture": {
+                    "mode": "const",
+                    "v": "tex_blk-mtvb5isa-au_texture"
+                  },
+                  "blackPoint": {
+                    "mode": "const",
+                    "v": 0
+                  }
+                }
+              }
+            ],
+            "params": {
+              "mode": "billboard",
+              "blend": "additive",
+              "sort": "none"
+            }
+          }
+        ],
+        "schedule": {
+          "clips": [
+            {
+              "id": "clip-mtvb5isa-as",
+              "at": 0,
+              "duration": 0,
+              "loop": false
+            }
+          ]
+        }
+      },
+      {
+        "id": "sys-i2",
+        "name": "Tail",
+        "enabled": true,
+        "solo": false,
+        "capacity": 512,
+        "simulationSpace": "inherit",
+        "seedOffset": 81006,
+        "contexts": [
+          {
+            "id": "c-spawn-i2",
+            "kind": "spawn",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-hu",
+                "type": "spawn.rate",
+                "enabled": true,
+                "props": {
+                  "rate": {
+                    "mode": "const",
+                    "v": 260
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-init-i2",
+            "kind": "initialize",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-hv",
+                "type": "initialize.setLifetime",
+                "enabled": true,
+                "props": {
+                  "lifetime": {
+                    "mode": "random",
+                    "a": 0.6,
+                    "b": 1.4,
+                    "freq": "perParticle",
+                    "v": 1
+                  }
+                }
+              },
+              {
+                "id": "b-hw",
+                "type": "initialize.setSize",
+                "enabled": true,
+                "props": {
+                  "size": {
+                    "mode": "random",
+                    "a": 0.02,
+                    "b": 0.05,
+                    "freq": "perParticle",
+                    "v": 0.035
+                  }
+                }
+              },
+              {
+                "id": "b-hx",
+                "type": "initialize.setColor",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "const",
+                    "v": [
+                      1.2,
+                      1.6,
+                      2.4,
+                      1
+                    ]
+                  }
+                }
+              },
+              {
+                "id": "b-hy",
+                "type": "initialize.positionSphere",
+                "enabled": true,
+                "props": {
+                  "radius": {
+                    "mode": "const",
+                    "v": 0.1
+                  }
+                },
+                "modes": {
+                  "fill": "volume"
+                }
+              },
+              {
+                "id": "b-hz",
+                "type": "initialize.velocityRandom",
+                "enabled": true,
+                "props": {
+                  "min": {
+                    "mode": "const",
+                    "v": [
+                      -0.6,
+                      -0.6,
+                      -0.6
+                    ]
+                  },
+                  "max": {
+                    "mode": "const",
+                    "v": [
+                      0.6,
+                      0.6,
+                      0.6
+                    ]
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-update-i2",
+            "kind": "update",
+            "label": "",
+            "blocks": [
+              {
+                "id": "b-i0",
+                "type": "update.drag",
+                "enabled": true,
+                "props": {
+                  "drag": {
+                    "mode": "const",
+                    "v": 1.1
+                  }
+                }
+              },
+              {
+                "id": "b-i1",
+                "type": "update.colorOverLife",
+                "enabled": true,
+                "props": {
+                  "color": {
+                    "mode": "gradient",
+                    "gradient": {
+                      "colorKeys": [
+                        {
+                          "t": 0,
+                          "hex": "#eafcff",
+                          "intensity": 2.4
+                        },
+                        {
+                          "t": 0.45,
+                          "hex": "#7fdcff",
+                          "intensity": 1.6
+                        },
+                        {
+                          "t": 1,
+                          "hex": "#1d5fb8",
+                          "intensity": 1
+                        }
+                      ],
+                      "alphaKeys": [
+                        {
+                          "t": 0,
+                          "a": 0
+                        },
+                        {
+                          "t": 0.15,
+                          "a": 1
+                        },
+                        {
+                          "t": 1,
+                          "a": 0
+                        }
+                      ],
+                      "mode": "blend"
+                    },
+                    "domain": "life",
+                    "v": [
+                      1.406936991561986,
+                      1.9226717885722246,
+                      2.1222222222222222,
+                      0.9926470588235294
+                    ]
+                  }
+                }
+              }
+            ],
+            "params": {}
+          },
+          {
+            "id": "c-out-i2",
+            "kind": "output",
+            "label": "",
+            "blocks": [
+              {
+                "id": "blk-mtvb5isa-av",
+                "type": "output.setMainTexture",
+                "enabled": true,
+                "props": {
+                  "texture": {
+                    "mode": "const",
+                    "v": "tex_blk-mtvb5isa-av_texture"
+                  },
+                  "blackPoint": {
+                    "mode": "const",
+                    "v": 0
+                  }
+                }
+              }
+            ],
+            "params": {
+              "mode": "stretched",
+              "blend": "additive",
+              "sort": "none"
+            }
+          }
+        ],
+        "schedule": {
+          "clips": [
+            {
+              "id": "clip-mtvb5isa-at",
+              "at": 0,
+              "duration": 0,
+              "loop": false
+            }
+          ]
+        }
+      }
+    ],
+    "events": [],
+    "operators": [],
+    "edges": [],
+    "exposed": [],
+    "references": {
+      "tex_blk-mtvb5isa-au_texture": {
+        "kind": "image",
+        "ref": "",
+        "name": "Soft Glow",
+        "colorSpace": "srgb"
+      },
+      "tex_blk-mtvb5isa-av_texture": {
+        "kind": "image",
+        "ref": "",
+        "name": "Spark Streak",
+        "colorSpace": "srgb"
+      }
+    },
+    "layout": {
+      "nodes": {},
+      "notes": []
+    }
+  }
+}

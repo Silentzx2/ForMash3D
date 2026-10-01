@@ -1,0 +1,848 @@
+/* Procedural Tree Generator workspace.
+ *
+ * Same rule as the assembly workspace: no `backdrop-filter` on anything that
+ * overlaps the viewport. In Electron a blurred panel layered over a live WebGL
+ * canvas forces a canvas readback every composited frame and can halve the
+ * framerate. Panels here use an opaque surface colour instead. */
+
+.treegen {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--background);
+  color: var(--on-surface);
+  overflow: hidden;
+}
+
+.treegen__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 250px minmax(0, 1fr) 320px;
+  min-height: 0;
+}
+
+/* ---- Sidebars ----------------------------------------------------------- */
+
+.treegen__sidebar {
+  background: var(--surface);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.treegen__sidebar--left { border-right: 1px solid var(--outline-variant); }
+.treegen__sidebar--right { border-left: 1px solid var(--outline-variant); }
+
+.treegen__title {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+/* ---- Species picker ----------------------------------------------------- */
+
+.treegen__presets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.treegen__preset {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 10px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.treegen__preset:hover { background: var(--surface-container-high); }
+
+.treegen__preset--active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface-container));
+}
+
+.treegen__preset-label { font-size: 13px; font-weight: 600; }
+.treegen__preset-meta { font-size: 11px; color: var(--on-surface-variant); }
+
+/* ---- Seed --------------------------------------------------------------- */
+
+.treegen__seed-row {
+  display: flex;
+  gap: 6px;
+}
+
+.treegen__seed-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+/* The most-pressed control on the page: re-rolling is the main loop. */
+.treegen__dice {
+  width: 38px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.treegen__dice:hover { background: var(--surface-container-high); }
+.treegen__dice:active { transform: rotate(-18deg); }
+
+.treegen__spec-io {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.treegen__spec-io button,
+.treegen__actions button,
+.treegen__viewport-toolbar button {
+  padding: 6px 10px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.treegen__spec-io button:hover,
+.treegen__actions button:hover:not(:disabled),
+.treegen__viewport-toolbar button:hover { background: var(--surface-container-high); }
+
+.treegen__actions button:disabled { opacity: 0.5; cursor: default; }
+
+/* ---- Viewport ----------------------------------------------------------- */
+
+.treegen__viewport {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--background);
+}
+
+.treegen__viewport-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.treegen__viewport-toolbar button.is-active {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.treegen__toolbar-spacer { flex: 1; }
+
+.treegen__mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.treegen__spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--outline-variant);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: treegen-spin 0.7s linear infinite;
+}
+
+@keyframes treegen-spin { to { transform: rotate(360deg); } }
+
+.treegen__canvas { flex: 1; min-height: 0; }
+
+.treegen__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--outline-variant);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.treegen__generate {
+  font-weight: 600 !important;
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
+
+.treegen__progress {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--surface-container);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+.treegen__progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+  transition: width 120ms linear;
+}
+
+.treegen__progress span {
+  position: relative;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.treegen__error {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--error, #e5484d);
+  background: var(--surface);
+  border-top: 1px solid var(--outline-variant);
+}
+
+/* ---- Parameter panel ---------------------------------------------------- */
+
+.treegen__params { display: flex; flex-direction: column; gap: 6px; }
+.treegen__params--disabled { opacity: 0.55; pointer-events: none; }
+
+.treegen__advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+}
+
+.treegen__group {
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.treegen__group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.treegen__chevron { width: 10px; color: var(--on-surface-variant); }
+
+.treegen__group-count {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--on-surface-variant);
+}
+
+.treegen__group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+}
+
+.treegen__field { display: flex; flex-direction: column; gap: 3px; }
+
+.treegen__field label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+}
+
+.treegen__value {
+  margin-left: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--on-surface);
+}
+
+.treegen__slider-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.treegen__slider-row input[type='range'] { flex: 1; min-width: 0; }
+
+.treegen__number {
+  width: 62px;
+  padding: 3px 5px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.treegen__field select {
+  padding: 4px 6px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 12px;
+}
+
+.treegen__field--check {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.treegen__field--check span { font-size: 12px; color: var(--on-surface); }
+
+/* ---- Stats -------------------------------------------------------------- */
+
+.treegen__stats {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.treegen__stats > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.treegen__stats dt { color: var(--on-surface-variant); }
+
+.treegen__stats dd {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  color: var(--on-surface);
+}
+
+.treegen__stats-rule {
+  height: 1px;
+  background: var(--outline-variant);
+  margin: 4px 0;
+}
+
+@media (max-width: 1200px) {
+  .treegen__body { grid-template-columns: 200px minmax(0, 1fr) 270px; }
+}
+
+/* ---- Texture slots ------------------------------------------------------ */
+
+.treegen__textures {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.treegen__slot {
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  padding: 7px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface-container);
+}
+
+.treegen__slot-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.treegen__slot-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.treegen__slot-optional {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.treegen__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Leaves added without a stem pivot. A caution, not an error — the builder
+ * auto-orients them — so it reads as a note in the warning colour, not a
+ * blocking red banner. */
+.treegen__slot-warning {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--warning, #e0a458);
+}
+
+/* Clicking a thumbnail removes it — the × is an affordance, not a second
+ * target, so the whole tile stays comfortably clickable at 44px. */
+.treegen__thumb-wrap {
+  position: relative;
+}
+
+.treegen__thumb {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.treegen__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.treegen__thumb-remove {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+}
+
+.treegen__thumb:hover .treegen__thumb-remove { opacity: 1; }
+
+.treegen__slot-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.treegen__slot-actions button,
+.treegen__upload {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-size: 11px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.treegen__slot-actions button:hover,
+.treegen__upload:hover { background: var(--surface-container-high); }
+
+/* ---- Saved parameter sets ----------------------------------------------- */
+
+.treegen__saved {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.treegen__saved-form {
+  display: flex;
+  gap: 4px;
+}
+
+.treegen__saved-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 5px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 12px;
+}
+
+.treegen__saved-form button,
+.treegen__saved-overwrite {
+  padding: 5px 9px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 5px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.treegen__saved-form button:disabled { opacity: 0.5; cursor: default; }
+.treegen__saved-overwrite { width: 100%; }
+.treegen__saved-form button:hover:not(:disabled),
+.treegen__saved-overwrite:hover:not(:disabled) { background: var(--surface-container-high); }
+
+.treegen__open-preset {
+  margin: 2px 0 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+}
+
+.treegen__open-preset strong {
+  color: var(--on-surface);
+}
+
+.treegen__saved-empty {
+  margin: 2px 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--on-surface-variant);
+}
+
+.treegen__saved-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.treegen__saved-item {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 5px;
+  background: var(--surface-container);
+  overflow: hidden;
+}
+
+.treegen__saved-item--active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-container));
+}
+
+.treegen__saved-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 6px;
+  border: 0;
+  background: none;
+  color: var(--on-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.treegen__saved-open:hover { background: var(--surface-container-high); }
+
+.treegen__saved-open img,
+.treegen__saved-placeholder {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+}
+
+.treegen__saved-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.treegen__saved-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.treegen__saved-meta {
+  font-size: 10px;
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.treegen__saved-actions {
+  display: flex;
+  flex-direction: column;
+}
+
+.treegen__saved-actions button {
+  flex: 1;
+  width: 22px;
+  border: 0;
+  border-left: 1px solid var(--outline-variant);
+  background: none;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.treegen__saved-actions button:hover { background: var(--surface-container-high); color: var(--on-surface); }
+.treegen__saved-confirm { color: var(--error, #e5484d) !important; }
+
+.treegen__notice {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  background: var(--surface);
+  border-top: 1px solid var(--outline-variant);
+}
+
+/* Which constraint capped the leaf count — see foliage.limited_by. */
+.treegen__stat-note {
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+/* Pivot control on a leaf thumbnail. Filled once a stem has been placed, so an
+ * unset leaf is visible at a glance. */
+.treegen__thumb-pivot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--outline-variant);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.treegen__thumb-pivot:hover { background: var(--surface-container-high); color: var(--on-surface); }
+
+.treegen__thumb-pivot--set {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ---- Leaf pivot dialog --------------------------------------------------- */
+
+.leafpivot__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.leafpivot {
+  width: min(760px, 92vw);
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: 10px;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.leafpivot__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.leafpivot__header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.leafpivot__header button {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--on-surface-variant);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.leafpivot__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--on-surface-variant);
+}
+
+.leafpivot__body {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+/* The checkerboard makes a transparent cut-out's silhouette readable, which is
+ * exactly what has to be judged when placing a stem. */
+.leafpivot__stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 1;
+  max-height: 56vh;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: crosshair;
+  background-color: #2a2d31;
+  background-image:
+    linear-gradient(45deg, #33373c 25%, transparent 25%),
+    linear-gradient(-45deg, #33373c 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #33373c 75%),
+    linear-gradient(-45deg, transparent 75%, #33373c 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+.leafpivot__stage img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  pointer-events: none;
+}
+
+.leafpivot__marker {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border: 2px solid #ff4d4d;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.leafpivot__marker::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 2px;
+  margin: -1px 0 0 -1px;
+  background: #ff4d4d;
+}
+
+.leafpivot__side {
+  width: 140px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.leafpivot__side-label {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+}
+
+.leafpivot__side canvas {
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+}
+
+.leafpivot__side code {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.leafpivot__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.leafpivot__spacer { flex: 1; }
+
+.leafpivot__footer button {
+  padding: 6px 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 6px;
+  background: var(--surface-container);
+  color: var(--on-surface);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.leafpivot__footer button:hover { background: var(--surface-container-high); }
+
+.leafpivot__primary {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+  font-weight: 600;
+}

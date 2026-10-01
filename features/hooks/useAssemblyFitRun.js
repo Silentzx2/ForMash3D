@@ -1,0 +1,677 @@
+// Runs the fit for the assembly's pieces and holds the previews.
+//
+// SEQUENTIAL, deliberately. The Python service is one process, so parallel
+// calls contend for the same GPU; five concurrent SSE streams cannot be
+// reported honestly; and ensureDesktopService('meshtools') has to finish once
+// before anything starts. A queue is also the only thing that makes
+// cancellation meaningful.
+//
+// The fit NEVER mutates the loaded piece. A result becomes a preview held here,
+// and the viewport decides which of the two to draw — which is what makes
+// revert free: drop the preview. Nothing is written to an ASSET until the user
+// explicitly saves.
+//
+// A preview is not lost on navigation, though. It is mirrored to disk as
+// working geometry (src/utils/assemblyWorking.js) and restored when the
+// assembly is reopened — the alternative was silently throwing away a fit and a
+// sculpting session because the user clicked Assets. That mirror is scratch
+// state belonging to the assembly, not an Asset: Revert still deletes it, and
+// saving a version is still the separate, explicit step.
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  buildLandmarkPayload,
+  buildFitPayloadGeometry,
+  buildFitPreview,
+  buildFitRanges,
+  createPreviewFromPiece,
+  disposeFitPreview,
+  fitPiece,
+  payloadToGlb,
+} from '../utils/assemblyFit'
+import {
+  decodeWorkingGeometry,
+  deleteWorkingGeometry,
+  encodeWorkingGeometry,
+  fetchWorkingGeometry,
+  listWorkingGeometry,
+  putWorkingGeometry,
+} from '../utils/assemblyWorking'
+import { buildAssetUrl } from '../utils/meshTexturing'
+import { applyMatrixToPiece, composePieceMatrix } from '../utils/assemblyGeometry'
+import { canWarpPiece } from '../utils/assemblyHelpers'
+import * as THREE from 'three'
+
+// Long enough that a burst of brush strokes writes once, short enough that
+// clicking away straight after a stroke still catches it. The unmount flush
+// below is what makes the exact number uncritical.
+const PERSIST_DELAY = 900
+
+const IDENTITY_ELEMENTS = new THREE.Matrix4().elements.slice()
+
+export default function useAssemblyFitRun({
+  assemblyId, doc, entries, getEntry, patchPiece, onPreviewReplaced, gizmoDraggingRef,
+}) {
+  const previewsRef = useRef(new Map())        // pieceId -> preview entry
+  const [previews, setPreviews] = useState(new Map())
+  const [showFitted, setShowFitted] = useState(new Set())
+  const [running, setRunning] = useState(null)  // { pieceId, index, total } | null
+  const [progress, setProgress] = useState({ frac: 0, message: '' })
+  const [error, setError] = useState('')
+
+  const cancelRef = useRef(false)
+  const abortRef = useRef(null)
+  const unmountedRef = useRef(false)
+
+  // Persistence bookkeeping. Refs throughout: none of it renders, and the
+  // debounce has to survive the re-renders a stroke causes.
+  const persistTimersRef = useRef(new Map())     // pieceId -> timeout
+  const flushPersistRef = useRef(null)           // set in an effect, read on unmount
+  const restoredRef = useRef(new Set())          // pieces already attempted this assembly
+  const storedRef = useRef(new Set())            // pieces the server has a file for
+  const listedRef = useRef(false)                // has the listing been fetched?
+  const inFlightRef = useRef(new Set())          // restores currently awaiting bytes
+  // Mirrors of the current props, so the debounced writers and the unmount
+  // flush read what is true NOW rather than whatever was captured when the
+  // timer was set. Assigned in an effect: writing a ref during render is what
+  // makes a Strict-Mode double render commit twice.
+  const docRef = useRef(doc)
+  const assemblyIdRef = useRef(assemblyId)
+  useEffect(() => { docRef.current = doc }, [doc])
+  useEffect(() => { assemblyIdRef.current = assemblyId }, [assemblyId])
+
+  useEffect(() => {
+    unmountedRef.current = false
+    const store = previewsRef
+    const timers = persistTimersRef
+    return () => {
+      unmountedRef.current = true
+      abortRef.current?.abort()
+      // Anything still debounced is written NOW, before the geometry it reads
+      // is disposed two lines down. This is the case the whole feature exists
+      // for: the user sculpts and immediately navigates away.
+      for (const [pieceId, timer] of timers.current) {
+        clearTimeout(timer)
+        flushPersistRef.current?.(pieceId)
+      }
+      timers.current.clear()
+      for (const preview of store.current.values()) disposeFitPreview(preview)
+      store.current.clear()
+    }
+  }, [])
+
+  // A different assembly has a different set of files and a different set of
+  // pieces, so every per-assembly conclusion has to be dropped. Without this,
+  // opening a second assembly would decide it had already tried each piece.
+  useEffect(() => {
+    listedRef.current = false
+    storedRef.current = new Set()
+    restoredRef.current = new Set()
+    inFlightRef.current = new Set()
+  }, [assemblyId])
+
+  const publish = useCallback(() => {
+    setPreviews(new Map(previewsRef.current))
+  }, [])
+
+  /** Mirror one piece's current preview to disk. Never throws at the caller. */
+  const persistNow = useCallback(async pieceId => {
+    const id = assemblyIdRef.current
+    const preview = previewsRef.current.get(pieceId)
+    const piece = docRef.current?.pieces?.find(p => p.id === pieceId)
+    if (!id || !preview?.meshes?.length || !piece) return
+    try {
+      const buffer = encodeWorkingGeometry({
+        sourceUrl: buildAssetUrl(piece),
+        meshes: preview.meshes,
+        placement: preview.placementAtFit,
+      })
+      if (!buffer) return
+      await putWorkingGeometry(id, pieceId, buffer)
+      storedRef.current.add(pieceId)
+    } catch (err) {
+      // A failed mirror costs the user nothing right now — the preview is still
+      // on screen. Shouting about it mid-stroke would be worse than the loss it
+      // warns of, so it is logged and the next stroke tries again.
+      console.warn('Could not store the fitted geometry for this piece', err)
+    }
+  }, [])
+
+  // Held in a ref because the unmount cleanup is declared above persistNow and
+  // must not close over a stale one. Assigned in an effect, never during render.
+  useEffect(() => { flushPersistRef.current = persistNow }, [persistNow])
+
+  /** Debounced: a brush stroke fires this on every mouse-up. */
+  const persistPiece = useCallback(pieceId => {
+    const timers = persistTimersRef.current
+    clearTimeout(timers.get(pieceId))
+    timers.set(pieceId, setTimeout(() => {
+      timers.delete(pieceId)
+      persistNow(pieceId)
+    }, PERSIST_DELAY))
+  }, [persistNow])
+
+  /**
+   * Fold a placement change into the preview's vertices.
+   *
+   * Between a move and this call the preview is DRAWN through a delta matrix,
+   * which is right for the eye but leaves its positions in the space they were
+   * fitted in. Everything else in the feature — the brush, the exporter, the
+   * working file — assumes a preview's positions ARE its world positions, so
+   * the delta is baked away as soon as the move is committed rather than
+   * teaching each of them about a second space.
+   *
+   * Called once per completed move, never per frame: this walks every vertex.
+   */
+  const rebasePreview = useCallback(pieceId => {
+    const preview = previewsRef.current.get(pieceId)
+    const piece = docRef.current?.pieces?.find(p => p.id === pieceId)
+    if (!preview?.placementAtFit || !piece || !preview.meshes?.length) return
+
+    const current = composePieceMatrix(piece, new THREE.Matrix4())
+    const delta = current.clone().multiply(preview.placementAtFit.clone().invert())
+    // elements are column-major; an unchanged placement is the common case and
+    // must not cost a vertex pass.
+    if (delta.elements.every((value, i) => Math.abs(value - IDENTITY_ELEMENTS[i]) < 1e-9)) return
+
+    for (const mesh of preview.meshes) {
+      const geometry = mesh.geometry
+      if (!geometry) continue
+      // applyMatrix4 transforms the normal attribute through the proper normal
+      // matrix, so normals must NOT be recomputed here — doing so would smooth
+      // a mesh the file deliberately shipped flat-shaded.
+      geometry.applyMatrix4(delta)
+      // The tree indexes the OLD positions; a stale one silently mis-picks.
+      geometry.disposeBoundsTree?.()
+      geometry.computeBoundingBox()
+      geometry.computeBoundingSphere()
+    }
+    preview.bvhBuilt = false
+    preview.localBox = new THREE.Box3().setFromObject(preview.root)
+    preview.placementAtFit = current
+
+    publish()
+    // The stored copy has to move too, or reopening would put the piece back
+    // where it was fitted.
+    persistPiece(pieceId)
+  }, [publish, persistPiece])
+
+  const dropPreview = useCallback(pieceId => {
+    const preview = previewsRef.current.get(pieceId)
+    if (preview) {
+      // Tell anything holding references (sculpt undo) before the buffers go.
+      onPreviewReplaced?.(preview)
+      disposeFitPreview(preview)
+      previewsRef.current.delete(pieceId)
+    }
+
+    // The stored copy goes with it, and any write still queued is cancelled —
+    // otherwise a debounced stroke would land a moment later and resurrect the
+    // fit the user just reverted.
+    //
+    // Cleaned up UNCONDITIONALLY, even with no preview in memory and even if
+    // the piece is not in the listing yet. Removing a piece before its stored
+    // fit had a chance to restore is exactly the case that used to return early
+    // here and strand the file until the whole assembly was deleted. A DELETE
+    // for a file that is not there is a 404 the client already ignores.
+    clearTimeout(persistTimersRef.current.get(pieceId))
+    persistTimersRef.current.delete(pieceId)
+    restoredRef.current.add(pieceId)
+    storedRef.current.delete(pieceId)
+    if (assemblyIdRef.current) deleteWorkingGeometry(assemblyIdRef.current, pieceId)
+
+    publish()
+    setShowFitted(previous => {
+      if (!previous.has(pieceId)) return previous
+      const next = new Set(previous)
+      next.delete(pieceId)
+      return next
+    })
+  }, [publish, onPreviewReplaced])
+
+  /** Revert one piece to how the user aligned it. Free — the fit never mutated it. */
+  const revert = useCallback(pieceId => {
+    dropPreview(pieceId)
+    patchPiece(pieceId, { fit: { status: 'idle', message: '', stats: {}, fittedAt: null } })
+  }, [dropPreview, patchPiece])
+
+  const toggleFitted = useCallback((pieceId, next) => {
+    setShowFitted(previous => {
+      const set = new Set(previous)
+      const wanted = next === undefined ? !set.has(pieceId) : next
+      if (wanted) set.add(pieceId)
+      else set.delete(pieceId)
+      return set
+    })
+  }, [])
+
+  const cancel = useCallback(() => {
+    cancelRef.current = true
+    abortRef.current?.abort()
+  }, [])
+
+  /**
+   * Fit `pieceIds` against the base, one after another.
+   *
+   * The base's payload is built ONCE: it is the same mesh for every piece, and
+   * exporting a 200k-vertex body per piece would dominate the runtime.
+   */
+  const run = useCallback(async pieceIds => {
+    const base = doc.pieces.find(piece => piece.id === doc.basePieceId)
+    const baseEntry = base ? getEntry(base.id) : null
+    if (!base || !baseEntry) {
+      setError('The base mesh has not loaded yet.')
+      return
+    }
+
+    const targets = pieceIds
+      .map(id => ({ piece: doc.pieces.find(p => p.id === id), entry: getEntry(id) }))
+      .filter(target => target.piece && target.entry && target.piece.id !== base.id)
+
+    if (!targets.length) {
+      setError('Nothing to fit — add a piece other than the base.')
+      return
+    }
+
+    cancelRef.current = false
+    setError('')
+
+    let baseFile
+    try {
+      baseFile = await payloadToGlb(buildFitPayloadGeometry(baseEntry, base), 'base')
+    } catch (err) {
+      setError(err.message || 'Could not prepare the base mesh.')
+      return
+    }
+
+    for (let index = 0; index < targets.length; index += 1) {
+      if (cancelRef.current || unmountedRef.current) break
+      const { piece, entry } = targets[index]
+
+      setRunning({ pieceId: piece.id, index, total: targets.length })
+      setProgress({ frac: 0, message: 'Starting…' })
+      patchPiece(piece.id, {
+        fit: { status: 'running', message: '', stats: {}, fittedAt: null },
+      }, { history: false })
+
+      const controller = new AbortController()
+      abortRef.current = controller
+      let seatingStats = null
+
+      try {
+        // ---- seating, as its own call ---------------------------------
+        //
+        // Split from the deform stages deliberately. Rigid seating produces a
+        // TRANSFORM, and folding it into the piece's placement keeps the piece
+        // un-deformed and the move visible in the numeric panel — where letting
+        // it come back as moved vertices would turn "the armour was seated"
+        // into "the armour is a modified mesh", and hide the change from every
+        // tool that reads the placement.
+        //
+        // The second call then has to re-export the piece, because the payload
+        // must be in the space the piece now occupies.
+        let seated = piece
+        if (piece.fitStages?.rigid) {
+          const seatFile = await payloadToGlb(buildFitPayloadGeometry(entry, piece), 'piece')
+          const result = await fitPiece({
+            pieceFile: seatFile,
+            baseFile,
+            options: { stages: ['rigid'], ...piece.fitOptions },
+            signal: controller.signal,
+            onProgress: event => setProgress({
+              frac: (event.frac ?? 0) * 0.4, message: event.message || '',
+            }),
+          })
+          if (unmountedRef.current) break
+          if (result.transform) {
+            const trs = applyMatrixToPiece(piece, result.transform)
+            seated = { ...piece, ...trs }
+            patchPiece(piece.id, trs)
+          }
+          seatingStats = result.stats?.rigid || result.stats?.stages?.rigid || null
+        }
+
+        const stages = activeStages(seated)
+        if (!stages.length) {
+          // Seating only: there is no deformation, so there is no preview to
+          // make. The piece simply moved, which the document already records.
+          patchPiece(piece.id, {
+            fit: {
+              status: 'ready',
+              message: describeSeating(seatingStats),
+              stats: { seating: seatingStats },
+              fittedAt: Date.now(),
+            },
+          }, { history: false })
+          continue
+        }
+
+        const payload = buildFitPayloadGeometry(entry, seated)
+        const pieceFile = await payloadToGlb(payload, 'piece')
+
+        const { positions, stats } = await fitPiece({
+          pieceFile,
+          baseFile,
+          options: {
+            stages,
+            ...seated.fitOptions,
+            // Built from SEATED, matching the geometry just uploaded: a rigid
+            // seat moves the piece, and landmarks taken from the pre-seat
+            // placement would point at where it used to be.
+            ...(stages.includes('warp')
+              ? { landmarks: buildLandmarkPayload(seated, base) }
+              : {}),
+          },
+          signal: controller.signal,
+          onProgress: event => setProgress({
+            frac: (piece.fitStages?.rigid ? 0.4 : 0) + (event.frac ?? 0) * (piece.fitStages?.rigid ? 0.6 : 1),
+            message: event.message || '',
+          }),
+        })
+        if (unmountedRef.current) break
+
+        // Replace rather than accumulate: a re-fit of the same piece must not
+        // strand the previous preview's geometry on the GPU.
+        const existing = previewsRef.current.get(piece.id)
+        if (existing) {
+          onPreviewReplaced?.(existing)
+          disposeFitPreview(existing)
+        }
+
+        previewsRef.current.set(piece.id, {
+          ...buildFitPreview(payload, positions),
+          pieceId: piece.id,
+          // The placement these WORLD positions were computed at. Without it a
+          // fitted piece stops following the gizmo: the preview draws in world
+          // space, so moving the piece would slide the placement out from under
+          // geometry that has it baked in, and the visible mesh would sit still
+          // while the invisible original moved.
+          placementAtFit: composePieceMatrix(seated, new THREE.Matrix4()),
+        })
+        publish()
+        setShowFitted(previous => new Set(previous).add(piece.id))
+        // Straight away, not debounced: a fit is minutes of work and the user
+        // may well click away the moment they see the result.
+        persistNow(piece.id)
+
+        patchPiece(piece.id, {
+          fit: {
+            status: 'ready',
+            message: describeResult(stats),
+            stats: { ...summarizeStats(stats), seating: seatingStats },
+            fittedAt: Date.now(),
+          },
+        }, { history: false })
+      } catch (err) {
+        if (unmountedRef.current) break
+        const aborted = err.name === 'AbortError' || cancelRef.current
+        patchPiece(piece.id, {
+          fit: {
+            status: aborted ? 'idle' : 'error',
+            message: aborted ? '' : (err.message || 'Fit failed'),
+            stats: {},
+            fittedAt: null,
+          },
+        }, { history: false })
+        if (!aborted) setError(`${piece.name}: ${err.message || 'Fit failed'}`)
+      } finally {
+        abortRef.current = null
+      }
+    }
+
+    if (!unmountedRef.current) {
+      setRunning(null)
+      setProgress({ frac: 0, message: '' })
+    }
+  }, [doc, getEntry, patchPiece, publish, onPreviewReplaced, persistNow])
+
+  // Every OTHER way a placement changes — the numeric fields, mirror, fit to
+  // region, drop to surface, reset, paste transform. Each of those is a single
+  // committed edit, so re-basing straight from the document is safe.
+  //
+  // A gizmo drag is excluded because it patches the document on every frame,
+  // and re-basing per frame would walk every vertex per frame. That path calls
+  // rebasePreview itself once the drag ends.
+  useEffect(() => {
+    if (gizmoDraggingRef?.current) return
+    for (const piece of doc.pieces) {
+      if (previewsRef.current.has(piece.id)) rebasePreview(piece.id)
+    }
+  }, [doc, gizmoDraggingRef, rebasePreview])
+
+  // ---- Restoring a stored fit ----------------------------------------------
+  //
+  // Runs as pieces finish loading, because rebuilding a preview needs the
+  // source asset's geometry: the file holds positions only, and the UVs,
+  // materials and topology come from the asset. Anything that no longer lines
+  // up is discarded rather than pasted on (see decodeWorkingGeometry) — a
+  // re-pointed asset is exactly the case that produces a mismatch.
+  //
+  // ---- `cancelled` means SUPERSEDED, not "stop" ------------------------------
+  //
+  // This effect depends on `doc` and `entries`, and both change constantly: on
+  // every autosave, every patch, and every piece that finishes loading. So an
+  // in-flight restore is cancelled many times during a normal page load.
+  //
+  // An earlier version marked a piece as attempted BEFORE awaiting its file and
+  // then bailed out on `cancelled` — so a superseded run left the piece flagged
+  // as done with nothing restored, and no later run would retry it. The fit
+  // simply vanished, most often on whichever piece was edited last, and saving
+  // made it near-certain because the save patches the document and cancels
+  // whatever was in flight.
+  //
+  // So there is no `cancelled` flag at all. Unmount is the only stop condition;
+  // `restoredRef` and `inFlightRef` make overlapping runs harmless, so a
+  // superseded run simply finishes what it started. Aborting on supersession
+  // also had a quieter failure: the run that fetched the LISTING would abandon
+  // it while every later run short-circuited on the still-empty set, leaving
+  // the listing loaded and never used.
+  useEffect(() => {
+    if (!assemblyId) return undefined
+
+    ;(async () => {
+      let stored = storedRef.current
+      if (!listedRef.current) {
+        listedRef.current = true
+        try {
+          stored = new Set(await listWorkingGeometry(assemblyId))
+          storedRef.current = stored
+        } catch {
+          return
+        }
+      }
+      if (unmountedRef.current || !stored.size) return
+
+      for (const piece of doc.pieces) {
+        if (unmountedRef.current) break
+        if (!stored.has(piece.id)) continue
+        if (restoredRef.current.has(piece.id)) continue
+        if (previewsRef.current.has(piece.id)) continue
+        const entry = entries.get(piece.id)
+        if (!entry?.meshes?.length) continue          // not loaded yet; a later pass gets it
+
+        if (inFlightRef.current.has(piece.id)) continue
+        inFlightRef.current.add(piece.id)
+        try {
+          const buffer = await fetchWorkingGeometry(assemblyId, piece.id)
+          if (unmountedRef.current) return
+          if (!buffer) {
+            // The listing said there was a file and there is not. Nothing to
+            // retry, so record it as settled.
+            restoredRef.current.add(piece.id)
+            storedRef.current.delete(piece.id)
+            continue
+          }
+          const { ranges, vertexCount } = buildFitRanges(entry)
+          const decoded = decodeWorkingGeometry(buffer, {
+            sourceUrl: buildAssetUrl(piece),
+            vertexCount,
+          })
+          if (!decoded) {
+            // Stale against the asset it claims to belong to. Removing it stops
+            // the same rejected file being fetched on every future open.
+            restoredRef.current.add(piece.id)
+            storedRef.current.delete(piece.id)
+            deleteWorkingGeometry(assemblyId, piece.id)
+            continue
+          }
+          // Another run got there first — settled either way.
+          if (previewsRef.current.has(piece.id)) {
+            restoredRef.current.add(piece.id)
+            continue
+          }
+
+          // Marked only now, with the preview actually in hand.
+          restoredRef.current.add(piece.id)
+          previewsRef.current.set(piece.id, {
+            ...buildFitPreview({ ranges }, decoded.positions),
+            pieceId: piece.id,
+            // The frame the stored vertices belong to. Falling back to the
+            // piece's CURRENT placement (delta = identity) is what keeps files
+            // written before this field readable — those were always saved with
+            // the piece where it was fitted.
+            placementAtFit: decoded.header.placement
+              ? new THREE.Matrix4().fromArray(decoded.header.placement)
+              : composePieceMatrix(piece, new THREE.Matrix4()),
+          })
+          publish()
+          setShowFitted(previous => new Set(previous).add(piece.id))
+
+          // A piece can have been MOVED after it was fitted, in this session or
+          // a previous one, so the restored vertices may be a placement behind.
+          // Folding that in now rather than waiting for the next document
+          // change keeps the exporter's assumption true — that a preview's
+          // positions are its world positions — from the moment it appears.
+          rebasePreview(piece.id)
+        } catch (err) {
+          // Deliberately NOT marked as restored: a failed fetch is worth
+          // another go on the next pass.
+          console.warn(`Could not restore the stored fit for ${piece.name}`, err)
+        } finally {
+          inFlightRef.current.delete(piece.id)
+        }
+      }
+    })()
+
+    return undefined
+  }, [assemblyId, doc, entries, publish, rebasePreview])
+
+  /**
+   * The piece's editable preview, created from its current placement if it has
+   * never been fitted. Sculpting calls this so it always has something of its
+   * own to modify rather than touching the loaded asset.
+   */
+  const ensurePreview = useCallback(pieceId => {
+    const existing = previewsRef.current.get(pieceId)
+    if (existing) return existing
+    const piece = doc.pieces.find(p => p.id === pieceId)
+    const entry = getEntry(pieceId)
+    if (!piece || !entry) return null
+    const preview = {
+      ...createPreviewFromPiece(entry, piece),
+      pieceId,
+      placementAtFit: composePieceMatrix(piece, new THREE.Matrix4()),
+    }
+    previewsRef.current.set(pieceId, preview)
+    publish()
+    setShowFitted(previous => new Set(previous).add(pieceId))
+    return preview
+  }, [doc, getEntry, publish])
+
+  return {
+    previews,
+    showFitted,
+    ensurePreview,
+    running,
+    progress,
+    error,
+    clearError: useCallback(() => setError(''), []),
+    // Called by the sculpt brush on mouse-up: the stroke writes into the
+    // preview's geometry directly, so this hook cannot see it any other way.
+    persistPiece,
+    run,
+    cancel,
+    revert,
+    dropPreview,
+    rebasePreview,
+    toggleFitted,
+  }
+}
+
+// The DEFORM stages the piece's material class turns on, in pipeline order.
+// `rigid` is deliberately absent: it runs as its own call so its result can
+// become a placement rather than moved vertices — see run().
+// Pipeline order, not checkbox order: the warp corrects proportions before the
+// conform pulls the result onto the surface, and pushing out comes last.
+//
+// The warp is dropped when the piece has too few pairs rather than failing the
+// run — the panel already says how many are needed, and refusing to fit at all
+// because an optional stage is under-supplied would be the wrong trade.
+function activeStages(piece) {
+  const stages = []
+  if (piece.fitStages?.warp && canWarpPiece(piece)) stages.push('warp')
+  if (piece.fitStages?.shrinkwrap) stages.push('shrinkwrap')
+  if (piece.fitStages?.penetration) stages.push('penetration')
+  return stages
+}
+
+// The one-line verdict for a seating-only run.
+function describeSeating(stats) {
+  if (!stats) return 'Seated'
+  if (stats.kept_identity) {
+    return stats.clipping_vertices
+      ? 'Nothing a rigid move could improve — try Push out of the body'
+      : 'Already clear of the body — nothing moved'
+  }
+  const parts = []
+  if (Math.abs((stats.scale ?? 1) - 1) > 0.005) parts.push(`resized ${stats.scale.toFixed(2)}x`)
+  if ((stats.rotation_deg ?? 0) > 0.5) parts.push(`rotated ${stats.rotation_deg.toFixed(0)}°`)
+  if (!parts.length) parts.push('nudged into place')
+  if (stats.clipping_vertices) parts.push(`${stats.clipping_vertices} clipping vertices`)
+  const seated = `Seated — ${parts.join(', ')}`
+  // Worth saying out loud: the stage refines, it does not rescue a mis-sized
+  // piece, and the clamp is the moment the user needs to hear that.
+  return stats.scale_clamped
+    ? `${seated} (size change was capped — use Fit to region for a big rescale)`
+    : seated
+}
+
+// Only the numbers worth persisting. The full stats dict includes per-stage
+// timings and iteration counts, which are debugging detail, not document state.
+function summarizeStats(stats) {
+  return {
+    penetratingBefore: stats.penetrating_before ?? null,
+    penetratingAfter: stats.penetrating_after ?? null,
+    maxDepthBefore: stats.max_depth_before ?? null,
+    maxDepthAfter: stats.max_depth_after ?? null,
+    flippedFaces: stats.flipped_faces ?? null,
+    faceCount: stats.piece_faces ?? null,
+    bodyWatertight: stats.body_watertight ?? null,
+    converged: stats.converged ?? null,
+    stoppedOnInversion: stats.stopped_on_inversion ?? false,
+    surfacesTouching: stats.surfaces_touching ?? false,
+    reshaped: !!stats.stages?.shrinkwrap,
+  }
+}
+
+// The one-line verdict. Flipped faces come first when there are any: that is
+// the number that says the result may be unusable, and it should not be buried
+// behind a reassuring penetration count.
+function describeResult(stats) {
+  const flipped = stats.flipped_faces ?? 0
+  const faces = stats.piece_faces ?? 0
+  if (flipped > 0 && faces > 0 && flipped / faces > 0.01) {
+    return `${flipped} of ${faces} faces inverted — check the result`
+  }
+  const before = stats.penetrating_before ?? 0
+  const after = stats.penetrating_after ?? 0
+
+  if (before === 0 && after === 0) {
+    // The common confusion: a piece sitting AROUND the body has nothing inside
+    // it, so the push has nothing to do and the button looks broken. Say what
+    // to reach for instead of just reporting a zero.
+    return stats.stages?.shrinkwrap
+      ? 'Reshaped — nothing was clipping'
+      : 'Nothing was inside the body, so nothing moved. Turn on "Reshape to the body" to make the piece follow its shape.'
+  }
+  return `Clipping ${before} → ${after} vertices`
+}

@@ -1,0 +1,213 @@
+.btex {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btex__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.btex__slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+}
+
+.btex__slot:hover {
+  background: var(--surface-container-high);
+}
+
+/* A square chip rather than a thumbnail: the image lives in the library and
+   fetching five previews to decorate a sidebar is a lot of round trips for
+   something the 3D view shows properly a moment later. */
+.btex__chip {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--outline-variant);
+  color: var(--on-surface-variant);
+}
+
+.btex__chip .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.btex__chip--on {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.btex__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.btex__label {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.btex__state {
+  font-size: 10px;
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btex__buttons {
+  display: flex;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+.btex__buttons button {
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 3px;
+}
+
+.btex__buttons button:hover {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.btex__buttons .material-symbols-outlined {
+  font-size: 17px;
+}
+
+.btex__note {
+  margin: 2px 2px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--on-surface-variant);
+}
+
+/* A slot is a group now: the row, then its entries when there is more than one
+   to tell apart. */
+.btex__group {
+  display: flex;
+  flex-direction: column;
+}
+
+.btex__entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px 1px 34px;
+  font-size: 11px;
+  color: var(--on-surface-variant);
+}
+
+.btex__entry-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btex__entry button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+
+.btex__entry button:hover {
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+}
+
+.btex__entry .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* A single binding gets a plain Clear rather than a named row - the name is
+   already on the row above it. */
+.btex__entry--only {
+  padding-left: 30px;
+}
+
+/* Why a slot does nothing, said even when something is bound to it - a model in
+   a slot the graph never places would otherwise look like it had taken. */
+.btex__warn {
+  margin: 0 2px 4px 34px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--primary);
+  opacity: 0.85;
+}
+
+/* A model entry carries its rotation, so its row is taller and wraps. An image
+   entry keeps the single compact line it always had. */
+.btex__entry--mesh {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+
+.btex__rot {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.btex__rot-axis {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+}
+
+.btex__rot-axis input {
+  width: 42px;
+  padding: 1px 3px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 4px;
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+  font-size: 11px;
+  text-align: right;
+}
+
+.btex__rot-axis input:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+}
+
+/* Metres per tile, across and up. Wider than a rotation field because a tile
+   size is a decimal - 0.45 is a normal roof course - where an angle is whole
+   degrees. */
+.btex__tile .btex__rot-axis input {
+  width: 48px;
+}
+
+.btex__entry-del {
+  flex: 0 0 auto;
+}
