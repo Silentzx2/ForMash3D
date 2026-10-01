@@ -427,8 +427,37 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-white/[0.12] text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-white/[0.08] transition-colors"
                     >
                       <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5" />
-                      <span>DownloadIcon GLB</span>
+                      <span>Download Game-ready GLB</span>
                     </a>
+                  </div>
+                </div>
+              )}
+
+              {(selectedJob.result as any)?.artifacts && (
+                <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3 md:col-span-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <HugeiconsIcon icon={LayersIcon} size={16} className="w-4 h-4 text-primary" />
+                    <span>Artifacts</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {Object.entries((selectedJob.result as any).artifacts).flatMap(([group, value]: [string, any]) => {
+                      const entries = value && typeof value === 'object' && !('status' in value)
+                        ? Object.entries(value).map(([key, item]) => [`${group} / ${key}`, item] as const)
+                        : [[group, value] as const];
+                      return entries;
+                    }).map(([label, item]: [string, any]) => (
+                      <div key={label} className="rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-2))] p-2.5 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-semibold text-zinc-200 truncate">{label}</div>
+                          <div className="text-[9px] text-zinc-500 uppercase">{item?.status || 'unknown'}</div>
+                        </div>
+                        {item?.status === 'ready' && item?.url ? (
+                          <a href={item.url} download className="text-primary hover:text-white transition-colors" aria-label={`Download ${label}`}>
+                            <HugeiconsIcon icon={DownloadIcon} size={16} className="w-4 h-4" />
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -458,7 +487,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                     <div className="space-y-1.5 text-[11px] divide-y divide-white/[0.04]">
                       <div className="flex justify-between py-1"><span className="text-zinc-400">Created At</span><span className="font-mono text-white">{selectedJob.created_at ? new Date(selectedJob.created_at).toLocaleString() : 'N/A'}</span></div>
                       <div className="flex justify-between py-1"><span className="text-zinc-400">Completed At</span><span className="font-mono text-white">{selectedJob.completed_at ? new Date(selectedJob.completed_at).toLocaleString() : 'In Progress'}</span></div>
-                      <div className="flex justify-between py-1"><span className="text-zinc-400">Output Format</span><span className="font-mono text-white uppercase">GLB</span></div>
+                      
                       {selectedJob.parameters && typeof selectedJob.parameters === 'object' && Object.entries(selectedJob.parameters).slice(0, 6).map(([k, v]) => (
                         <div key={k} className="flex justify-between py-1">
                           <span className="text-zinc-400 truncate max-w-[140px]">{k}</span>

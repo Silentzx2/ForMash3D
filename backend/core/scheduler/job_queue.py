@@ -669,6 +669,28 @@ class JobQueue:
             self._completed_cache[job_id] = job
             return True
 
+    async def prepare_postprocess_retry(self, job_id: str) -> Optional[JobRequest]:
+        """Move a failed/completed job back to processing for deterministic postprocess retry."""
+        async with self._cache_lock:
+            job = self._completed_cache.get(job_id)
+            if job is None:
+                job_model = await asyncio.to_thread(self.db_manager.get_job, job_id)
+                job = JobRequest.from_job_model(job_model) if job_model else None
+            if job is None or not (job.result or {}).get("asset_root"):
+                return None
+            job.status = JobStatus.PROCESSING
+            job.progress = 0.0
+            job.error = None
+            job.metadata["stage"] = "postprocess"
+            job.metadata["message"] = "Retrying production post-processing."
+            self._completed_cache.pop(job_id, None)
+            self._processing_cache[job_id] = job
+            if not await asyncio.to_thread(self.db_manager.save_job, job):
+                self._processing_cache.pop(job_id, None)
+                self._completed_cache[job_id] = job
+                return None
+            return job
+
     async def get_queue_status(self) -> Dict[str, Any]:
         """Get queue statistics"""
         async with self._cache_lock:

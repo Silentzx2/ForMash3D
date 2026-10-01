@@ -8,6 +8,7 @@ from . import (
     mesh_retopology,
     mesh_segmentation,
     mesh_uv_unwrapping,
+    mesh_tools,
     motion_generation,
     system,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "mesh_retopology",
     "mesh_segmentation",
     "mesh_uv_unwrapping",
+    "mesh_tools",
     "motion_generation",
     "system",
 ]

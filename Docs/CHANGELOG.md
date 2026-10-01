@@ -1,3 +1,11 @@
+## 2026-10-01 — [Production Pipeline Convergence] Canonical Mesh Tools, Durable Workflows & Truthful Asset Delivery
+- **Unified mesh-tools API:** Migrated the 3DGenStudio-derived mesh tools behind the main FastAPI `/api/v1/mesh-tools/*` contract and removed the unused browser/port-8200 sidecar boundary.
+- **Backend-owned Shape→Paint:** Moved auto-paint chaining into persisted scheduler parent/child jobs so browser lifecycle no longer controls execution.
+- **Universal production post-processing:** Mesh-producing jobs now declare an explicit `postprocess_mode` contract instead of relying on a feature-name whitelist.
+- **Artifact contract:** Canonical results expose required/optional artifact status through one manifest; Job Detail consumes that manifest instead of hard-coding GLB.
+- **Recovery and storage:** Added post-process retry from immutable `master/source.glb`, deterministic DB location, durable SQL terminal history, and canonical workspace cleanup.
+- **Runtime cleanup:** Removed the separate Python 3.13 mesh-tools runtime and retired the default 8200 startup path.
+
 ## 2026-10-01 — [Butter-Smooth Viewport & Real-Time Cursor Reticle] 0ms Latency Brush Tracking, Zero-Allocation Sculpt Engine & Active Tool Reticle
 - **Zero-Latency Real-Time Cursor Reticle:** Eliminated React re-renders on mouse movement by replacing `useState` with direct DOM ref `translate3d` tracking (`will-change-transform`), removing the 75ms CSS transition lag for instant 1:1 hardware pointer responsiveness.
 - **Embedded Active Tool Cursor Badges:** Integrated active vector tool/brush icons directly into the center reticle cursor dot and floating tool badge, giving immediate visual feedback for the selected brush (`Standard`, `Clay`, `Inflate`, `Smooth`, `Flatten`, `Pinch`, `Grab`, `Paint`, `Eraser`).
@@ -9,8 +17,3 @@
 - **Multi-Subagent Concurrent Remediation:** Dispatched 5 concurrent subagents to autonomously fix distinct subsystems (admin jobs/models, queue, runtime/settings/storage, workspace views, viewport mesh viewer) with 100% type check verification (`npx tsc --noEmit` exit code 0).
 - **Production Clean Build:** Confirmed `npm run build` succeeds cleanly with Turbopack in 18.9s across all 14 routes.
 
-## 2026-10-01 — [High-Performance Viewport & Bespoke Tooling] Bespoke Brush Icons, Precision UV Surface Paint & 60+ FPS Sculpt Engine
-- **Bespoke Studio-Grade Vector SVG Brush Icons:** Designed and integrated 12 custom vector brush icons (`StandardBrushIcon`, `ClayBrushIcon`, `InflateBrushIcon`, `SmoothBrushIcon`, `FlattenBrushIcon`, `PinchBrushIcon`, `GrabBrushIcon`, `PaintBrushToolIcon`, `AirbrushIcon`, `EraserToolIcon`, `EyedropperToolIcon`, `PaintBucketIcon`) across `MeshEditPanel.tsx`, `TexturePanel.tsx`, floating viewport cursor badge, and top-center active tool HUD.
-- **Precision 3D Surface Texture Painting:** Resolved vertical UV flip inversion by dynamically querying `mat.map.flipY`, eliminating misplaced or inverted brush strokes. Implemented sub-texel DDA stroke interpolation with `lastPaintUVRef` to guarantee continuous, gapless strokes during rapid gestures, alongside a 1-click canvas flood fill utility.
-- **Blazing Fast 60+ FPS Viewport Engine:** Eliminated sculpt frame drops and UI lag through indexed vertex tracking (`tintedIndicesRef: Set<number>`) during heatmap decay (zero operations when idle), and throttled `computeVertexNormals()` passes during continuous sculpting down to 50ms intervals with a clean final pass on pointer release.
-- **Preserved & Restored Plugins & Backend:** Confirmed complete integrity of Unity VFX packages (`plugins/unity/3dgenstudio-vfx-import.unitypackage`), Unreal engine integrations, and core backend endpoints.

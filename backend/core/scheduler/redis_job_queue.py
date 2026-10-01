@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 
 import redis.asyncio as aioredis
 
+from .database_manager import DatabaseManager
 from .job_queue import JobRequest, JobStatus, classify_job_error
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class RedisJobQueue:
         self.queue_prefix = queue_prefix
         self.max_job_age_hours = max_job_age_hours
         self.max_connections = max_connections
+        self.db_manager = DatabaseManager()
         
         # Redis keys
         self.pending_queue_key = f"{queue_prefix}:queue:pending"
@@ -137,6 +139,9 @@ class RedisJobQueue:
         }
 
         await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+        if not await asyncio.to_thread(self.db_manager.save_job, job_request):
+            await self.redis.hdel(self.jobs_hash_key, job_id)
+            raise RuntimeError("Failed to persist job in durable SQL history")
 
         # Add to pending queue (sorted by priority and timestamp)
         score = _priority_score(job_request.priority, job_request.created_at)
@@ -194,6 +199,11 @@ class RedisJobQueue:
         # Restore original job_id and created_at
         job_request.job_id = job_id
         job_request.created_at = datetime.fromisoformat(job_data["created_at"])
+        job_request.status = JobStatus.PROCESSING
+        job_request.progress = 0.15
+        job_request.metadata.update({"stage": "loading_model", "message": "Loading model on GPU..."})
+        if not await asyncio.to_thread(self.db_manager.save_job, job_request):
+            raise RuntimeError(f"Failed to persist started job {job_id}")
         
         return job_request
 
@@ -255,13 +265,17 @@ class RedisJobQueue:
             _append_log(job_data, "completed", 1.0, "Production asset is ready.")
             await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
         logger.info(f"[JOB COMPLETE] job_id={job_id} progress=100% status=completed")
-        
-        # Store each result under its own key so EXPIRE applies to the result.
-        await self.redis.set(
-            f"{self.results_prefix}{job_id}",
-            json.dumps(result),
-            ex=86400,
-        )
+        job_request = await self._load_job_request_for_persistence(job_id)
+        if job_request is not None:
+            job_request.status = JobStatus.COMPLETED
+            job_request.progress = 1.0
+            job_request.result = result
+            job_request.completed_at = datetime.utcnow()
+            job_request.metadata.update({"stage": "completed", "message": "Production asset is ready."})
+            await asyncio.to_thread(self.db_manager.save_job, job_request)
+
+        # Redis remains a queue/cache; terminal history is durable in SQL.
+        await self.redis.set(f"{self.results_prefix}{job_id}", json.dumps(result))
 
     async def update_completed_result(self, job_id: str, result: Dict[str, Any]) -> bool:
         """Merge background post-processing results into a completed Redis job."""
@@ -301,6 +315,32 @@ class RedisJobQueue:
             await self.redis.hset(self.stage_hash_key, job_id, "failed")
             await self.redis.hset(self.message_hash_key, job_id, error)
             await self.redis.zadd(self.completed_index_key, {job_id: failed_at.timestamp()})
+            job_request = await self._load_job_request_for_persistence(job_id)
+            if job_request is not None:
+                job_request.status = JobStatus.FAILED
+                job_request.progress = progress
+                job_request.error = error
+                job_request.completed_at = failed_at
+                job_request.metadata.update({"stage": "failed", "message": error, "error_code": job_data["error_code"]})
+                await asyncio.to_thread(self.db_manager.save_job, job_request)
+
+    async def _load_job_request_for_persistence(self, job_id: str) -> Optional[JobRequest]:
+        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+        if not job_data_str:
+            return None
+        data = json.loads(job_data_str)
+        job = JobRequest(
+            feature=data["feature"],
+            inputs=json.loads(data["inputs"]),
+            model_preference=data.get("model_preference") or None,
+            priority=data.get("priority", 0),
+            metadata=json.loads(data.get("metadata", "{}")),
+            user_id=data.get("user_id") or None,
+        )
+        job.job_id = job_id
+        if data.get("created_at"):
+            job.created_at = datetime.fromisoformat(data["created_at"])
+        return job
 
     async def update_job_progress(self, job_id: str, progress: float, stage: Optional[str] = None, message: Optional[str] = None):
         """Update job progress and stage"""
@@ -341,9 +381,8 @@ class RedisJobQueue:
 
         job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
         if not job_data_str:
-            if should_log:
-                logger.debug("get_job: job_id=%s not found in Redis", job_id)
-            return None
+            durable = await asyncio.to_thread(self.db_manager.get_job, job_id)
+            return durable.to_dict() if durable else None
         if should_log:
             logger.debug("get_job: job_id=%s found", job_id)
         
@@ -424,6 +463,7 @@ class RedisJobQueue:
             await self.redis.hdel(self.stage_hash_key, job_id)
             await self.redis.hdel(self.message_hash_key, job_id)
             await self.redis.delete(f"{self.results_prefix}{job_id}")
+            await asyncio.to_thread(self.db_manager.delete_job, job_id)
             await self.redis.zrem(self.completed_index_key, job_id)
             deleted_count += 1
         

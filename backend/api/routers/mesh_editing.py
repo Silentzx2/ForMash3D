@@ -273,7 +273,7 @@ async def text_mesh_editing(
             },
             model_preference=request.model_preference,
             priority=1,
-            metadata={"feature_type": "text_mesh_editing"},
+            metadata={"postprocess_mode": "production_mesh", "feature_type": "text_mesh_editing"},
             user_id=user_id,
         )
         
@@ -382,7 +382,7 @@ async def image_mesh_editing(
             },
             model_preference=request.model_preference,
             priority=1,
-            metadata={"feature_type": "image_mesh_editing"},
+            metadata={"postprocess_mode": "production_mesh", "feature_type": "image_mesh_editing"},
             user_id=user_id,
         )
         

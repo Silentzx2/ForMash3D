@@ -1127,44 +1127,8 @@ class MultiprocessModelScheduler:
         """Handle job result asynchronously without blocking the main processing loop"""
         job_id = job_request.job_id
         keep_inputs_for_postprocess = False
-        progress_task = None
         try:
-            async def _inference_progress_ticker():
-                """Periodically update job progress while model worker generates mesh."""
-                start_time = time.monotonic()
-                # Interpolate progress from 20% to 70% during inference over expected time
-                stage_messages = [
-                    (20, "generating", "Generating 3D neural latent..."),
-                    (35, "generating", "Predicting geometry coordinates..."),
-                    (50, "generating", "Synthesizing mesh structure..."),
-                    (65, "generating", "Refining 3D surface and textures..."),
-                ]
-                idx = 0
-                while True:
-                    await asyncio.sleep(4.0)
-                    elapsed = time.monotonic() - start_time
-                    if idx < len(stage_messages):
-                        pct, stg, msg = stage_messages[idx]
-                        idx += 1
-                    else:
-                        pct = min(72, 65 + int(elapsed // 10))
-                        stg = "generating"
-                        msg = f"Continuing 3D generation (elapsed: {int(elapsed)}s)..."
-                    await self.job_queue.update_job_progress(job_id, pct / 100.0, stg, msg)
-                    logger.info(
-                        f"[GENERATION PROGRESS] job_id={job_id} progress={pct}% stage={stg} elapsed={elapsed:.1f}s"
-                    )
-
-            progress_task = asyncio.create_task(_inference_progress_ticker())
-            try:
-                result = await asyncio.wait_for(result_future, timeout=3600.0)
-            finally:
-                if progress_task and not progress_task.done():
-                    progress_task.cancel()
-                    try:
-                        await progress_task
-                    except asyncio.CancelledError:
-                        pass
+            result = await asyncio.wait_for(result_future, timeout=3600.0)
 
             current_job = await self.job_queue.get_job(job_id)
             if current_job and _extract_job_status(current_job) in {"failed", "cancelled"}:
@@ -1174,18 +1138,51 @@ class MultiprocessModelScheduler:
             # Generation jobs become final only after canonical post-processing.
             if result.get("success"):
                 final_result = result.get("result") or {}
-                if (
-                    final_result.get("output_mesh_path")
-                    and (
-                        job_request.feature in {
-                            "text_to_raw_mesh",
-                            "text_to_textured_mesh",
-                            "image_to_raw_mesh",
-                            "image_to_textured_mesh",
-                        }
-                        or bool(job_request.metadata.get("physics_enabled"))
+                postprocess_mode = str(job_request.metadata.get("postprocess_mode") or "none").lower()
+                auto_paint = bool(job_request.metadata.get("auto_paint") or job_request.inputs.get("auto_paint"))
+                if auto_paint and final_result.get("output_mesh_path"):
+                    workflow_id = str(job_request.metadata.get("workflow_id") or job_id)
+                    child_request = JobRequest(
+                        feature="image_mesh_painting",
+                        inputs={
+                            "image_path": job_request.inputs.get("image_path"),
+                            "mesh_path": final_result["output_mesh_path"],
+                            "output_format": "glb",
+                            "texture_resolution": int(job_request.inputs.get("paint_resolution") or 512),
+                            "resolution": int(job_request.inputs.get("paint_resolution") or 512),
+                            "max_num_view": int(job_request.inputs.get("max_num_view") or 6),
+                        },
+                        model_preference=str(
+                            job_request.inputs.get("paint_model_preference")
+                            or "hunyuan3d_paint_v21_image_mesh_painting"
+                        ),
+                        priority=job_request.priority,
+                        timeout_seconds=job_request.timeout_seconds,
+                        metadata={
+                            "feature_type": "image_mesh_painting",
+                            "postprocess_mode": "production_mesh",
+                            "physics_enabled": bool(job_request.metadata.get("physics_enabled")),
+                            "physics_config": job_request.metadata.get("physics_config"),
+                            "workflow_id": workflow_id,
+                            "parent_job_id": job_id,
+                            "workflow_stage": "paint",
+                            "workflow_state": "queued",
+                            "auto_paint": False,
+                        },
+                        user_id=job_request.user_id,
                     )
-                ):
+                    child_id = await self.schedule_job(child_request)
+                    final_result["workflow"] = {
+                        "workflow_id": workflow_id,
+                        "parent_job_id": job_id,
+                        "child_job_id": child_id,
+                        "stage": "shape",
+                        "state": "child_queued",
+                    }
+                    await self.job_queue.update_job_progress(
+                        job_id, 0.9, "workflow", f"Paint child job queued: {child_id}"
+                    )
+                elif final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
                     await self.job_queue.update_job_progress(
                         job_id, 0.75, "postprocess", "Running production post-processing"
                     )

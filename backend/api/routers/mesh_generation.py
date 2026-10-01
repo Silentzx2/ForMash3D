@@ -496,6 +496,7 @@ async def text_to_raw_mesh(
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
+                "postprocess_mode": "production_mesh",
                 "feature_type": "text_to_raw_mesh",
                 "physics_enabled": mesh_request.physics_enabled,
                 "physics_config": mesh_request.physics_config,
@@ -560,6 +561,7 @@ async def text_to_textured_mesh(
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
+                "postprocess_mode": "production_mesh",
                 "feature_type": "text_to_textured_mesh",
                 "physics_enabled": mesh_request.physics_enabled,
                 "physics_config": mesh_request.physics_config,
@@ -616,6 +618,7 @@ async def batch_text_to_textured_mesh(
             model_preference=item.model_preference,
             priority=1,
             metadata={
+                "postprocess_mode": "production_mesh",
                 "feature_type": "text_to_textured_mesh",
                 "batch_id": batch_id,
                 "batch_max_parallel": batch_request.max_parallel,
@@ -684,7 +687,7 @@ async def text_mesh_painting(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "text_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={"postprocess_mode": "production_mesh", "feature_type": "text_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
 
@@ -752,6 +755,7 @@ async def image_to_raw_mesh(
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
+                "postprocess_mode": "production_mesh",
                 "feature_type": "image_to_raw_mesh",
                 "physics_enabled": mesh_request.physics_enabled,
                 "physics_config": mesh_request.physics_config,
@@ -837,6 +841,7 @@ async def image_to_textured_mesh(
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
+                "postprocess_mode": "production_mesh",
                 "feature_type": "image_to_textured_mesh",
                 "physics_enabled": mesh_request.physics_enabled,
                 "physics_config": mesh_request.physics_config,
@@ -918,7 +923,7 @@ async def image_mesh_painting(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"feature_type": "image_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={"postprocess_mode": "production_mesh", "feature_type": "image_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
             user_id=user_id,
         )
 

@@ -513,7 +513,7 @@ export const GeneratePanel: React.FC = () => {
       removeBackground: true,
       autoOptimizeSettings: {
         ...prev.autoOptimizeSettings,
-        targetPolycount: prev.autoOptimizeSettings?.targetPolycount || 60000,
+        targetPolycount: prev.autoOptimizeSettings?.targetPolycount || 50000,
       },
     }));
   };
@@ -752,7 +752,7 @@ export const GeneratePanel: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1.5">
+                    <div className="grid grid-cols-3 gap-1.5">
                       {([
                         { key: 'front', label: 'Front', req: true },
                         { key: 'right', label: 'Right', req: false },
@@ -1063,7 +1063,7 @@ export const GeneratePanel: React.FC = () => {
                   <div className="min-w-0">
                     <div className="text-[11px] font-bold text-white">Advanced Generation</div>
                     <div className="text-[9px] text-zinc-400 truncate">
-                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 60000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
+                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
                     </div>
                   </div>
                 </div>
@@ -1224,19 +1224,18 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">TargetIcon Polycount</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {((generationSettings.autoOptimizeSettings?.targetPolycount || 60000)).toLocaleString()} tris
+                    {((generationSettings.autoOptimizeSettings?.targetPolycount || 50000)).toLocaleString()} tris
                   </span>
                 </div>
 
                 {/* Preset Chips */}
-                <div className="grid grid-cols-4 gap-1">
+                <div className="grid grid-cols-3 gap-1">
                   {[
                     { label: '15K', val: 15000, desc: 'Mobile' },
                     { label: '35K', val: 35000, desc: 'Game' },
-                    { label: '60K', val: 60000, desc: 'Studio' },
-                    { label: '100K', val: 100000, desc: 'Ultra' },
+                    { label: '50K', val: 50000, desc: 'Studio' },
                   ].map((preset) => {
-                    const isSelected = (generationSettings.autoOptimizeSettings?.targetPolycount || 60000) === preset.val;
+                    const isSelected = (generationSettings.autoOptimizeSettings?.targetPolycount || 50000) === preset.val;
                     return (
                       <button
                         key={preset.val}
@@ -1252,7 +1251,7 @@ export const GeneratePanel: React.FC = () => {
                         }}
                         className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
                           isSelected
-                            ? 'bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-black font-black shadow-[0_0_8px_rgba(255,204,0,0.35)]'
+                            ? 'bg-primary text-black font-black shadow-sm'
                             : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
                         }`}
                       >
@@ -1267,9 +1266,9 @@ export const GeneratePanel: React.FC = () => {
                 <input
                   type="range"
                   min={5000}
-                  max={120000}
+                  max={50000}
                   step={5000}
-                  value={generationSettings.autoOptimizeSettings?.targetPolycount || 60000}
+                  value={generationSettings.autoOptimizeSettings?.targetPolycount || 50000}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     setGenerationSettings(prev => ({
@@ -1356,7 +1355,7 @@ export const GeneratePanel: React.FC = () => {
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 60000) / 1000)}K {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
+              {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
             </span>
           </div>
           <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border flex-shrink-0 ${

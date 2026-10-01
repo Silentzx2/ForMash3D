@@ -56,7 +56,7 @@ is_alive(){ [[ -n "${1:-}" ]] && kill -0 "$1" 2>/dev/null; }
 
 
 start_redis(){
-  section "1/3 Redis"
+  section "1/2 Redis"
   if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
     log "Redis is already running."
     return 0
@@ -101,7 +101,7 @@ start_redis(){
 
 
 start_backend() {
-  section "2/3 Backend API"
+  section "2/2 Backend API"
 
   local script="$PROJECT_ROOT/backend/scripts/run_server.sh"
   [[ -f "$script" ]] || fail "run_server.sh not found at $script"
@@ -168,42 +168,9 @@ start_backend() {
 }
 
 
-start_postprocess() {
-  section "PostProcess Service"
-  local script="$PROJECT_ROOT/scripts/start_postprocess_service.sh"
-  [[ -f "$script" ]] || { warn "start_postprocess_service.sh not found; skipping."; return 0; }
-  chmod +x "$script" 2>/dev/null || true
-
-  if [[ -f "$PID_DIR/postprocess.pid" ]] && is_alive "$(cat "$PID_DIR/postprocess.pid" 2>/dev/null || true)"; then
-    log "PostProcess service already running."
-    return 0
-  fi
-
-  info "Launching PostProcess microservice on :8200..."
-  setsid nohup bash "$script" >> "$PROJECT_ROOT/logs/postprocess.log" 2>&1 &
-  local pp_pid=$!
-  disown "$pp_pid" 2>/dev/null || true
-  echo $pp_pid > "$PID_DIR/postprocess.pid"
-
-  local healthy=false
-  for _ in $(seq 1 40); do
-    if curl -fsS --max-time 2 "http://127.0.0.1:8200/health" >/dev/null 2>&1; then
-      healthy=true
-      break
-    fi
-    sleep 1
-  done
-
-  if [[ "$healthy" == "true" ]]; then
-    log "PostProcess service healthy: http://127.0.0.1:8200"
-  else
-    warn "PostProcess service did not respond in time. Check logs/postprocess.log"
-  fi
-}
-
 
 start_frontend(){
-  section "3/3 Frontend"
+  section "2/2 Frontend"
   BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
   [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
   [[ -d "$PROJECT_ROOT/node_modules" ]] || fail "Frontend dependencies are missing. Run bash scripts/setup.sh first."
@@ -245,7 +212,6 @@ start_frontend(){
 banner
 start_redis
 start_backend
-start_postprocess
 start_frontend
 
 section "ForMash 3D is Running"

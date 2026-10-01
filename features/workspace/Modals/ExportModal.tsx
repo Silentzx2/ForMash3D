@@ -13,7 +13,6 @@ export const ExportModal: React.FC = () => {
   // Variant & Format states
   const [variant, setVariant] = useState<'source' | 'game_ready' | 'lod_package'>('game_ready');
   const [exportFormat, setExportFormat] = useState<'glb' | 'gltf' | 'fbx' | 'obj' | 'stl' | 'ply'>('glb');
-  const [targetPlatform, setTargetPlatform] = useState<'mobile' | 'low' | 'medium' | 'high' | 'cinematic'>('medium');
 
   // Packaging toggles
   const [packageZip, setPackageZip] = useState(false);
@@ -166,35 +165,6 @@ export const ExportModal: React.FC = () => {
             </div>
           </div>
 
-          {/* TargetIcon Platform Budget (when Game-Ready is active) */}
-          {variant === 'game_ready' && (
-            <div className="space-y-1.5 p-3 rounded-xl bg-black/20 border border-white/[0.06]">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Optimization TargetIcon</span>
-              <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                {[
-                  { id: 'mobile', label: 'Mobile', desc: '~18k' },
-                  { id: 'low', label: 'Low', desc: '~28k' },
-                  { id: 'medium', label: 'Medium', desc: '~45k' },
-                  { id: 'high', label: 'High', desc: '~85k' },
-                  { id: 'cinematic', label: 'Cine', desc: '~180k' },
-                ].map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setTargetPlatform(p.id as any)}
-                    className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer ${
-                      targetPlatform === p.id
-                        ? 'bg-[hsl(var(--neon-green))] text-black font-bold'
-                        : 'bg-[hsl(var(--surface-2))] text-zinc-300 hover:bg-white/[0.06] border border-white/[0.06]'
-                    }`}
-                  >
-                    <span className="block text-[10px]">{p.label}</span>
-                    <span className="block text-[8px] opacity-75">{p.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Section 2: Format Selector */}
           <div className="space-y-1.5">
@@ -271,7 +241,7 @@ export const ExportModal: React.FC = () => {
           <button
             onClick={() => void handleExport()}
             disabled={isExporting}
-            className={`flex-1 sm:flex-initial px-5 sm:px-6 py-2.5 text-xs font-black rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] hover:brightness-105 shadow-[0_4px_16px_rgba(255,204,0,0.38)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 btn-lighting-shine ${isExporting ? 'is-executing' : ''}`}
+            className={`flex-1 sm:flex-initial px-5 sm:px-6 py-2.5 text-xs font-black rounded-xl bg-primary text-black hover:brightness-105 shadow-md transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2 btn-lighting-shine ${isExporting ? 'is-executing' : ''}`}
           >
             {isExporting ? (
               <>

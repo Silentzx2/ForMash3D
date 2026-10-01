@@ -1,6 +1,6 @@
-// Client helpers for the Python mesh-tools service (Auto UV / Auto Retopo).
+// Client helpers for the ForMash3D FastAPI mesh-tools API (Auto UV / Auto Retopo).
 //
-// These call the Node proxy routes (/api/meshes/auto-uv, /api/meshes/auto-retopo),
+// These call the Node proxy routes (/api/mesh-tools/auto-uv, /api/mesh-tools/auto-retopo),
 // which forward to the configurable Python service. Pass the mesh as a Blob/File
 // (a GLB exported from the editor via utils/meshExport.js works directly).
 //
@@ -148,17 +148,17 @@ export const DEFAULT_AUTO_UV_OPTIONS = {
 }
 
 export function autoUv(meshBlob, opts = {}) {
-  return callMeshTool('/meshes/auto-uv', meshBlob, opts)
+  return callMeshTool('/mesh-tools/auto-uv', meshBlob, opts)
 }
 
 export function autoRetopo(meshBlob, opts = {}) {
-  return callMeshTool('/meshes/auto-retopo', meshBlob, opts)
+  return callMeshTool('/mesh-tools/auto-retopo', meshBlob, opts)
 }
 
 // Non-manifold / topology repair. Same SSE contract as Auto UV / Auto Retopo;
 // the tool stats carry before/after non-manifold + boundary edge counts.
 export function repairMesh(meshBlob, opts = {}) {
-  return callMeshTool('/meshes/repair', meshBlob, opts)
+  return callMeshTool('/mesh-tools/repair', meshBlob, opts)
 }
 
 // GLB -> FBX engine-preset conversion (headless Blender in the mesh-tools
@@ -166,7 +166,7 @@ export function repairMesh(meshBlob, opts = {}) {
 // service's ConvertOptions. Same SSE contract; the returned blob is the FBX and
 // stats.tool carries { bones, meshes, clips, preset, validation }.
 export function convertMesh(meshBlob, opts = {}) {
-  return callMeshTool('/meshes/convert', meshBlob, { ...opts, format: 'fbx' })
+  return callMeshTool('/mesh-tools/convert', meshBlob, { ...opts, format: 'fbx' })
 }
 
 // Convex collision hulls (CoACD decomposition in the mesh-tools service). Same
@@ -174,7 +174,7 @@ export function convertMesh(meshBlob, opts = {}) {
 // node per hull (named collision_01, collision_02, …) and stats.tool carries
 // { method, parts, faces, volume_ratio, fallback }.
 export function generateCollision(meshBlob, opts = {}) {
-  return callMeshTool('/meshes/collision', meshBlob, opts)
+  return callMeshTool('/mesh-tools/collision', meshBlob, opts)
 }
 
 // Mirrors CollisionOptions in python-server/app/schemas.py. The CoACD search
@@ -213,7 +213,7 @@ export async function bakeMaps(lowBlob, highBlob, { options = {}, fileName = 'lo
   form.append('sourceFile', highBlob, sourceName)
   form.append('options', JSON.stringify(options))
 
-  const response = await fetch(`${API_BASE}/meshes/bake`, { method: 'POST', body: form })
+  const response = await fetch(`${API_BASE}/mesh-tools/bake`, { method: 'POST', body: form })
   if (!response.ok) {
     let message = `Request failed (${response.status})`
     try {
@@ -241,7 +241,7 @@ export async function flattenBake(meshBlob, { options = {}, fileName = 'mesh.glb
   form.append('meshFile', meshBlob, fileName)
   form.append('options', JSON.stringify(options))
 
-  const response = await fetch(`${API_BASE}/meshes/flatten`, { method: 'POST', body: form })
+  const response = await fetch(`${API_BASE}/mesh-tools/flatten`, { method: 'POST', body: form })
   if (!response.ok) {
     let message = `Request failed (${response.status})`
     try {
@@ -299,7 +299,7 @@ export async function inspectMesh(meshBlob, { options = {}, fileName = 'mesh.glb
   form.append('meshFile', meshBlob, fileName)
   form.append('options', JSON.stringify(options))
 
-  const response = await fetch(`${API_BASE}/meshes/inspect`, { method: 'POST', body: form })
+  const response = await fetch(`${API_BASE}/mesh-tools/inspect`, { method: 'POST', body: form })
   if (!response.ok) {
     let message = `Request failed (${response.status})`
     try {
@@ -377,7 +377,7 @@ export async function generateLods(meshBlob, { ratios = [], allowSeamBreaking = 
 
   onProgress?.({ type: 'progress', stage: 'run', frac: 0.2, message: `Generating ${ratios.length} LOD levels…` })
 
-  const response = await fetch(`${API_BASE}/meshes/lods`, { method: 'POST', body: form })
+  const response = await fetch(`${API_BASE}/mesh-tools/lods`, { method: 'POST', body: form })
   if (!response.ok) {
     let message = `Request failed (${response.status})`
     try {
@@ -501,7 +501,7 @@ export function pickAutoRigOptions(source = {}) {
 // tools above it must NOT be flattened into editable geometry. Same SSE contract;
 // tool stats carry { bones, rename_bones, transfer, postprocess }.
 export function autoRig(meshBlob, opts = {}) {
-  return callMeshTool('/meshes/rig', meshBlob, opts)
+  return callMeshTool('/mesh-tools/rig', meshBlob, opts)
 }
 
 // Runs the bundled gltfpack binary server-side (not the Python service). Unlike
@@ -515,7 +515,7 @@ export async function optimizeMesh(meshBlob, { options = {}, fileName = 'mesh.gl
 
   onProgress?.({ type: 'progress', stage: 'run', frac: 0.3, message: 'Optimizing…' })
 
-  const response = await fetch(`${API_BASE}/meshes/optimize`, { method: 'POST', body: form })
+  const response = await fetch(`${API_BASE}/mesh-tools/optimize`, { method: 'POST', body: form })
   if (!response.ok) {
     let message = `Request failed (${response.status})`
     try {
@@ -557,7 +557,7 @@ export async function segmentMesh(meshBlob, { options = {}, fileName = 'mesh.glb
   form.append('meshFile', meshBlob, fileName)
   form.append('options', JSON.stringify(options))
 
-  const response = await fetch(`${API_BASE}/meshes/segment`, { method: 'POST', body: form })
+  const response = await fetch(`${API_BASE}/mesh-tools/segment`, { method: 'POST', body: form })
   if (!response.ok) {
     let message = `Request failed (${response.status})`
     try {

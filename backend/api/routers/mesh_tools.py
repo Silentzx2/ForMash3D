@@ -26,24 +26,25 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
-from ..config import MAX_UPLOAD_BYTES
-from ..meshio import (export_mesh, load_mesh, load_mesh_vertex_normals, load_scene,
+from postprocess.config import MAX_UPLOAD_BYTES
+from postprocess.meshio import (export_mesh, load_mesh, load_mesh_vertex_normals, load_scene,
                       mesh_stats, scene_to_mesh)
-from ..schemas import (AutoRetopoOptions, AutoUvOptions, BakeOptions, CollisionOptions,
-                       ConvertOptions, FlattenOptions, InspectOptions,
+from postprocess.schemas import (AutoRetopoOptions, AutoUvOptions, BakeOptions, CollisionOptions,
+                       ConvertOptions, FlattenOptions, InspectOptions, LODOptions, OptimizeOptions,
                        RepairOptions, SegmentOptions)
-from ..services.auto_retopo import run_auto_retopo
-from ..services.auto_uv import run_auto_uv
-from ..services.bake import run_bake, run_flatten
-from ..services.collision import run_collision
-from ..services.convert_fbx import run_convert_fbx
-from ..services.inspect import run_inspect
-from ..services.mesh_thumbnail import render_mesh_thumbnail
-from ..services.repair import run_repair
-from ..services.segment import run_segment
-from .streaming import stream_payload
+from postprocess.services.auto_retopo import run_auto_retopo
+from postprocess.services.auto_uv import run_auto_uv
+from postprocess.services.bake import run_bake, run_flatten
+from postprocess.services.collision import run_collision
+from postprocess.services.convert_fbx import run_convert_fbx
+from postprocess.services.inspect import run_inspect
+from postprocess.services.simplify import run_lods, run_optimize
+from postprocess.services.mesh_thumbnail import render_mesh_thumbnail
+from postprocess.services.repair import run_repair
+from postprocess.services.segment import run_segment
+from postprocess.streaming import stream_payload
 
-router = APIRouter(prefix="/meshes", tags=["meshes"])
+router = APIRouter(prefix="/mesh-tools", tags=["Mesh Tools"])
 
 
 def _parse_options(raw: str | None, model):
@@ -94,6 +95,30 @@ def _stream_tool(run_callable, fmt: str, label: str) -> StreamingResponse:
         return _envelope(mesh, fmt, tool_stats, preview)
 
     return stream_payload(run, label)
+
+
+@router.post("/lods")
+async def lods(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    opts = _parse_options(options, LODOptions)
+    data = await _read_upload(meshFile)
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+    return _stream_tool(lambda emit: run_lods(mesh, opts, progress=emit), format, "LOD generation")
+
+
+@router.post("/optimize")
+async def optimize(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    opts = _parse_options(options, OptimizeOptions)
+    data = await _read_upload(meshFile)
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+    return _stream_tool(lambda emit: run_optimize(mesh, opts, progress=emit), format, "Mesh optimization")
 
 
 @router.post("/auto-uv")

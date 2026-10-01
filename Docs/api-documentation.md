@@ -17,12 +17,13 @@
 6. [Mesh Editing APIs](#mesh-editing-apis)
 7. [Auto Rigging APIs](#auto-rigging-apis)
 8. [Motion Generation APIs](#motion-generation-apis)
-9. [Mesh Segmentation APIs](#mesh-segmentation-apis)
-10. [Mesh Retopology APIs](#mesh-retopology-apis)
-11. [Mesh UV Unwrapping APIs](#mesh-uv-unwrapping-apis)
-12. [Users APIs](#users-apis)
-13. [Error Handling](#error-handling)
-14. [Deployment Modes](#deployment-modes)
+9. [Mesh Tools APIs](#mesh-tools-apis)
+10. [Mesh Segmentation APIs](#mesh-segmentation-apis)
+11. [Mesh Retopology APIs](#mesh-retopology-apis)
+12. [Mesh UV Unwrapping APIs](#mesh-uv-unwrapping-apis)
+13. [Users APIs](#users-apis)
+14. [Error Handling](#error-handling)
+15. [Deployment Modes](#deployment-modes)
 
 ---
 
@@ -531,6 +532,33 @@ GET /api/v1/motion-generation/checkpoints
 
 ---
 
+## Mesh Tools APIs
+
+The migrated mesh-processing tools are exposed by the main FastAPI process. Browser requests use the same-origin `/api/v1` proxy; there is no direct port 8200 dependency.
+
+| Endpoint | Method | Contract |
+|---|---|---|
+| `/api/v1/mesh-tools/inspect` | POST | JSON game-ready inspection |
+| `/api/v1/mesh-tools/auto-uv` | POST | SSE mesh result |
+| `/api/v1/mesh-tools/auto-retopo` | POST | SSE mesh result |
+| `/api/v1/mesh-tools/repair` | POST | SSE mesh result |
+| `/api/v1/mesh-tools/optimize` | POST | JSON optimized mesh |
+| `/api/v1/mesh-tools/lods` | POST | JSON LOD set |
+| `/api/v1/mesh-tools/collision` | POST | SSE collision scene |
+| `/api/v1/mesh-tools/bake` | POST | SSE texture maps |
+| `/api/v1/mesh-tools/flatten` | POST | SSE texture map |
+| `/api/v1/mesh-tools/convert` | POST | SSE FBX result |
+| `/api/v1/mesh-tools/segment` | POST | SSE segmentation hierarchy |
+
+### Production post-process retry
+
+`POST /api/v1/system/jobs/{job_id}/postprocess/retry` rebuilds derived artifacts from immutable `master/source.glb` without re-running model inference.
+
+### Canonical artifact manifest
+
+Mesh-producing terminal results include `result.artifacts`. Each artifact declares `status`, `url`, and `required`. The successful production contract requires the master, game-ready GLB, and quality report; optional exports are explicitly represented as unavailable, skipped, or ready.
+
+
 ## Mesh Segmentation APIs
 
 ### Segment Mesh
@@ -685,7 +713,7 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ## WebSocket/SSE Events
 
-The frontend subscribes to real-time generation progress via Server-Sent Events (SSE) at `/api/v1/mesh-generation/status/{job_id}`.
+The frontend observes durable job state by polling `GET /api/v1/system/jobs/{job_id}`. Mesh-tool operations use Server-Sent Events (SSE) for operation-level progress.
 
 Event types:
 - `queued`: Job has been accepted and queued

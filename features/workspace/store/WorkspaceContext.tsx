@@ -256,7 +256,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : null;
         const name = promptName || `Model_${id.slice(0, 8)}`;
         const outputs = (h.outputs || {}) as Record<string, any>;
-        const outputUrl = (outputs.glb as string) || (outputs.model_url as string) || `/static/models/${id}/model.glb`;
+        const outputUrl = (outputs.glb as string) || (outputs.model_url as string) || (outputs.download_url as string) || `/api/v1/system/jobs/${id}/download?artifact_format=glb`;
         return normalizeModelAsset({
           id: id || `hist-${i}`,
           name,
@@ -441,7 +441,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     quadTopology: false, topologyMode: 'triangle', seed: 42891, guidanceScale: 7.5, removeBackground: true,
     lowVram: false,
     vramMode: 'auto',
-    autoOptimizeSettings: { targetPolycount: 60000 },
+    autoOptimizeSettings: { targetPolycount: 50000 },
     generateTexture: true,
     enableFlashVDM: false,
     lowVramMode: 'auto',
@@ -851,7 +851,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         throw new Error('No usable image input. Please upload an image first.');
       }
 
-      const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 60000;
+      const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
       const modelParameters: Record<string, unknown> = {
         octree_resolution: octreeRes,
         num_inference_steps: infSteps,
@@ -862,6 +862,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         low_vram_mode: generationSettings.lowVramMode ?? 'auto',
         auto_optimize: false,
         target_polycount: targetPoly,
+        generateLOD: generationSettings.generateLOD !== false,
+        lodPreset: generationSettings.lodPreset || 'high',
+        lodCount: generationSettings.lodCount || 4,
         negative_prompt: generationSettings.negativePrompt || undefined,
       };
 
@@ -886,6 +889,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       if (isPaintModel) {
         modelParameters.max_num_view = generationSettings.maxNumView ?? 6;
         modelParameters.resolution = generationSettings.resolution ?? 512;
+        modelParameters.auto_paint = true;
+        modelParameters.paint_model_preference = 'hunyuan3d_paint_v21_image_mesh_painting';
+        modelParameters.paint_resolution = generationSettings.resolution ?? 512;
       }
 
       const physicsForThisJob =
@@ -919,16 +925,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       bindBackendJob(localTaskId, jobId, { inputImage: imageToUse, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' });
       setExecutionStep('Generation queued on backend');
 
-      // Shape → Paint automatic chaining: after Shape mesh is generated,
-      // automatically trigger Paint-v2-1 texturing
-      if (isPaintModel && generationSettings.generateTexture !== false) {
-        // The Shape model generates a raw mesh; after completion, automatically
-        // call image-mesh-painting with the Paint model
-        // This is handled by the job system polling for completion
-        // and triggering the Paint pipeline automatically
-        console.log('Shape → Paint automatic chaining enabled for', generationSettings.aiModel);
-      }
-    } catch (error) {
+          } catch (error) {
       const message = error instanceof Error ? error.message : 'Generation submission failed';
       setIsExecuting(false);
       setExecutionStep(message);
@@ -1007,7 +1004,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ? appStore.batchQueue.filter(item => item.prompt?.trim())
           : [];
 
-        const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 60000;
+        const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
         const modelParameters: Record<string, unknown> = {
           octree_resolution: octreeRes,
           num_inference_steps: infSteps,
@@ -1018,6 +1015,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         low_vram_mode: generationSettings.lowVramMode ?? 'auto',
         auto_optimize: false,
           target_polycount: targetPoly,
+          generateLOD: generationSettings.generateLOD !== false,
+          lodPreset: generationSettings.lodPreset || 'high',
+          lodCount: generationSettings.lodCount || 4,
           negative_prompt: generationSettings.negativePrompt || undefined,
         };
 
@@ -1280,412 +1280,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
        toast.error('Texture generation failed', { description: message });
      }
    }, [textureSettings, currentAsset, startTask]);
-
-   const runPaintAutoChaining = useCallback(async (shapeMeshFileId?: string) => {
-     const localTaskId = startTask('texture', 'Paint-v2-1 Texturing', undefined, 'hunyuan3d_paint_v21_image_mesh_painting');
-     try {
-       if (!shapeMeshFileId) {
-         throw new Error('Generated mesh file ID is missing; cannot start Paint-v2-1.');
-       }
-       const imageInput = generationSettings.imageFileId
-         ? { image_file_id: generationSettings.imageFileId }
-         : typeof generationSettings.image === 'string' && generationSettings.image.startsWith('data:')
-         ? { image_base64: generationSettings.image }
-         : null;
-       if (!imageInput) {
-         throw new Error('Original generation image input is unavailable; cannot start Paint-v2-1.');
-       }
-
-       const endpoint = '/api/v1/mesh-generation/image-mesh-painting';
-       const body: Record<string, unknown> = {
-         ...imageInput,
-         mesh_file_id: shapeMeshFileId,
-         output_format: 'glb',
-         model_preference: 'hunyuan3d_paint_v21_image_mesh_painting',
-         model_parameters: {
-           max_num_view: textureSettings.maxNumView ?? 6,
-           resolution: textureSettings.paintResolution ?? 512,
-         },
-         physics_enabled: Boolean(generationSettings.generateCollision),
-         physics_config: generationSettings.physics,
-       };
-
-        if (generationSettings.generatePBR !== false) {
-          body.generate_pbr = true;
-        }
-
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) throw await parseApiError(res);
-        const data = await parseApiData<{ job_id?: string; id?: string }>(res);
-        const jobId = data.job_id ?? data.id;
-        if (!jobId) throw new Error('Backend did not return a texture job ID');
-        bindBackendJob(localTaskId, jobId, { status: 'queued', currentStep: 'Queued on backend' });
-        setExecutionStep('Paint-v2-1 texturing queued on backend');
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Paint auto-chaining failed';
-        setIsExecuting(false);
-        setExecutionStep(message);
-        toast.error('Paint auto-chaining failed', { description: message });
-      }
-    }, [textureSettings.maxNumView, textureSettings.paintResolution, generationSettings.image, generationSettings.imageFileId, generationSettings.generateTexture, generationSettings.generatePBR, generationSettings.generateCollision, generationSettings.physics, startTask]);
-
-  useEffect(() => {
-    let stopped = false;
-    let timer: number | null = null;
-
-    const pollOtherJobs = async () => {
-      const activeId = activeTaskRef.current?.id;
-      const ids = Object.keys(jobsByIdRef.current).filter((id) => {
-        const task = jobsByIdRef.current[id];
-        return id !== activeId &&
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) &&
-          task.status !== 'completed' &&
-          task.status !== 'failed' &&
-          task.status !== 'interrupted';
-      });
-      await Promise.all(ids.map(async (id) => {
-        try {
-          const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' });
-          if (!res.ok) return;
-          const data = normalizeBackendJob(await res.json());
-          const status: ActiveTask['status'] =
-            data.status === 'processing' ? 'running' :
-            data.status === 'completed' ? 'completed' :
-            data.status === 'failed' ? 'failed' :
-            data.status === 'cancelled' ? 'interrupted' : 'queued';
-          setJobsById(prev => {
-            const task = prev[id];
-            return task ? {
-              ...prev,
-              [id]: {
-                ...task,
-                status,
-                progress: data.progress,
-                currentStep: data.message || data.stage || task.currentStep,
-                stage: data.stage || task.stage,
-                logs: data.logs || task.logs,
-                errorMessage: data.error_message || task.errorMessage,
-                errorCode: (data as any).error_code || task.errorCode,
-                result: data.result || task.result,
-              },
-            } : prev;
-          });
-        } catch {
-          // Active-job polling is the authoritative UI path; secondary polling is best-effort.
-        }
-      }));
-      if (!stopped) timer = window.setTimeout(() => void pollOtherJobs(), 1500);
-    };
-
-    void pollOtherJobs();
-    return () => {
-      stopped = true;
-      if (timer) window.clearTimeout(timer);
-    };
-  }, [activeTask?.id]);
-
-  useEffect(() => {
-    const task = activeTaskRef.current;
-    if (!task) return;
-    const postprocessStatus = (task.result as any)?.postprocess_status;
-    const terminalButStillPostprocessing = task.status === 'completed' && (postprocessStatus === 'pending' || postprocessStatus === 'running');
-    if ((task.status === 'completed' && !terminalButStillPostprocessing) || task.status === 'failed' || task.status === 'interrupted') return;
-    const jobId = task.id;
-    const isBackendJob = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId);
-    if (!isBackendJob) return;
-
-    let stopped = false;
-    let timerId: number | null = null;
-
-    const scheduleNext = (intervalMs: number) => {
-      if (stopped) return;
-      if (timerId) window.clearTimeout(timerId);
-      timerId = window.setTimeout(() => void poll(), intervalMs);
-    };
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`, { cache: 'no-store' });
-        if (!res.ok) throw await parseApiError(res);
-        const raw = await parseApiData<BackendJobPayload>(res);
-        if (stopped) return;
-
-        // Normalize backend job contract to the UI's expected shape:
-        // - backend progress is 0..1 fraction, UI wants 0..100
-        // - backend result.mesh_url → UI result.model_url / active_model_url
-        // - backend result.thumbnail_url stays as thumbnail_url (rewritten to proxy path)
-        // - backend error → UI error_message
-        const data = normalizeBackendJob(raw);
-        const result = data.result;
-
-        const progress = Math.max(0, Math.min(100, Number(data.progress ?? 0)));
-        const startedAt = activeTaskRef.current?.startedAt;
-        const elapsedSec = startedAt ? Math.max(0, (Date.now() - startedAt) / 1000) : 0;
-        const etaSec = progress > 1 && progress < 99 && elapsedSec > 2
-          ? Math.max(1, Math.round(elapsedSec * ((100 - progress) / progress)))
-          : undefined;
-        const currentMsg = data.message || data.stage || 'Processing';
-        setExecutionProgress(progress);
-        setExecutionStep(currentMsg);
-        setActiveTask(prev => prev ? {
-          ...prev,
-          progress,
-          currentStep: currentMsg,
-          result: data.result || prev.result,
-          errorCode: (data as any).error_code || prev.errorCode,
-          stage: data.stage || prev.stage,
-          estimatedRemainingSec: etaSec,
-          logs: data.logs || prev.logs,
-        } : null);
-
-        if (data.status === 'completed') {
-          const alreadyMarkedCompleted = activeTaskRef.current?.status === 'completed';
-          const priorPostprocessStatus = (activeTaskRef.current?.result as any)?.postprocess_status;
-          const currentPostprocessStatus = data.result?.postprocess_status;
-          const postprocessPending = currentPostprocessStatus === 'pending' || currentPostprocessStatus === 'running';
-
-          if (postprocessPending) {
-            setIsExecuting(true);
-            const postprocessFrac = Math.min(96, Math.max(progress, 75));
-            setExecutionProgress(postprocessFrac);
-            setExecutionStep(currentMsg || 'Finishing production post-processing...');
-            setActiveTask(prev => prev ? {
-              ...prev,
-              status: 'running',
-              progress: postprocessFrac,
-              currentStep: currentMsg || 'Finishing production post-processing...',
-              logs: data.logs || prev.logs,
-              result: data.result || prev.result,
-              stage: data.stage || 'postprocess',
-            } : null);
-            scheduleNext(document.visibilityState === 'hidden' ? 2500 : 1100);
-            return;
-          }
-
-          const postprocessFailed =
-            currentPostprocessStatus === 'failed' && priorPostprocessStatus !== 'failed';
-          const postprocessJustCompleted =
-            currentPostprocessStatus === 'completed' && priorPostprocessStatus !== 'completed';
-          const shouldHydrateAsset = !alreadyMarkedCompleted || postprocessJustCompleted;
-
-          setIsExecuting(false);
-          setExecutionProgress(100);
-          setExecutionStep(
-            postprocessFailed
-              ? 'Production post-processing failed; raw result retained'
-              : 'Completed'
-          );
-          setActiveTask(prev => prev ? {
-            ...prev,
-            status: 'completed',
-            progress: 100,
-            currentStep: postprocessFailed
-              ? 'Production post-processing failed; raw result retained'
-              : 'Completed',
-            logs: data.logs || prev.logs,
-            result: data.result || prev.result,
-            stage: 'completed',
-            errorCode: (data as any).error_code || prev.errorCode,
-          } : null);
-
-          if (shouldHydrateAsset && (result?.model_url || result?.active_model_url)) {
-            const currentLatestTask = activeTaskRef.current || task;
-            const modelUrl = (result.active_model_url || result.model_url) as string;
-            const promptTitle =
-              currentLatestTask.title &&
-              currentLatestTask.title !== 'Image-to-3D generation' &&
-              currentLatestTask.title !== 'generate'
-                ? currentLatestTask.title
-                : null;
-            const rawName =
-              promptTitle ||
-              currentLatestTask.inputImageName ||
-              (currentLatestTask.inputImage
-                ? currentLatestTask.inputImage
-                    .split('/')
-                    .pop()
-                    ?.replace(/\.[^/.]+$/, '')
-                    .replace(/[-_]/g, ' ')
-                : null) ||
-              `Model_${jobId.slice(0, 6)}`;
-            const cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-
-            void prefetchGLB(modelUrl);
-
-            const qaReport = (result as any).qa_report;
-            const qaScore =
-              typeof qaReport?.score === 'number'
-                ? Math.round(qaReport.score)
-                : typeof qaReport?.game_ready_score === 'number'
-                  ? Math.round(qaReport.game_ready_score)
-                  : undefined;
-            const qaStatus =
-              qaReport?.status ??
-              (qaScore !== undefined
-                ? qaScore >= 80
-                  ? 'pass'
-                  : qaScore >= 60
-                    ? 'warn'
-                    : 'fail'
-                : undefined);
-            const qaWarnings =
-              qaReport?.warnings ??
-              (Array.isArray(qaReport?.checks)
-                ? qaReport.checks
-                    .filter((check: any) => check?.status === 'warn' || check?.status === 'fail')
-                    .map((check: any) => check?.detail || check?.label)
-                    .filter(Boolean)
-                : []);
-
-            const outputAsset = normalizeModelAsset({
-              id: jobId,
-              name: cleanName,
-              category: 'generation',
-              thumbnail: result.thumbnail_url || '',
-              polygon_count: result.polygon_count,
-              vertex_count: result.vertex_count,
-              faces: result.polygon_count ?? 0,
-              vertices: result.vertex_count ?? 0,
-              triangles: result.polygon_count ?? 0,
-              statsAvailable: ((result.polygon_count ?? 0) > 0 || (result.vertex_count ?? 0) > 0),
-              source: { filename: `${cleanName || jobId}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
-              topology: (result.topology as any) || 'Triangle',
-              format: 'GLB',
-              dimensions: result.dimensions,
-              boundingBox: result.bounding_box,
-              objectCount: result.object_count,
-              componentCount: result.component_count,
-              materialCount: result.material_count,
-              meshDetails: (result.mesh_details || result.segmentation_info)
-                ? {
-                    ...(result.mesh_details || {}),
-                    ...(result.segmentation_info
-                      ? { segmentation_info: result.segmentation_info }
-                      : {}),
-                  }
-                : undefined,
-              postprocessStatus: result.postprocess_status || data.status,
-              dateCreated: new Date().toISOString().split('T')[0],
-              tags: ['AI Generated'],
-              meshType: 'custom',
-              artifacts: {
-                source: (result as any).source_model_url,
-                gameReady: (result as any).game_ready_url,
-                lods: (result as any).lod_urls,
-                collision: (result as any).collision_url,
-                qaReport,
-                pbrMaps: (result as any).pbr_maps,
-                gameReadyFormats: (result as any).game_ready_formats,
-                zipUrl: (result as any).zip_url,
-                physicsUrl: (result as any).physics_url,
-                physicsReady: Boolean((result as any).physics_ready),
-                physics: (result as any).physics,
-              },
-              qaScore,
-              qaStatus,
-              qaWarnings,
-            });
-            addAsset(outputAsset);
-            setSelectedAssetId(outputAsset.id);
-            setViewportResetTrigger(prev => prev + 1);
-            loadModelInViewer(modelUrl, cleanName, outputAsset as any);
-          }
-
-          if (!alreadyMarkedCompleted) {
-            if (postprocessFailed) {
-              toast.error(
-                'Production post-processing failed',
-                {
-                  description:
-                    (result as any)?.postprocess_error ||
-                    'The raw generated model is retained; production artifacts were not completed.',
-                }
-              );
-            } else {
-              toast.success(
-              'Generation complete',
-              {
-                description: postprocessPending
-                  ? 'The raw 3D model is ready; production processing is finishing in the background.'
-                  : 'The 3D model is ready and loaded in the viewer.',
-              }
-            );
-
-            const latestTask = activeTaskRef.current || task;
-              if (
-                modelDetails[latestTask?.provider || '']?.capabilities?.paint_autochain === true &&
-                generationSettings.generateTexture !== false
-              ) {
-                void runPaintAutoChaining(
-                  typeof data.result?.file_id === 'string'
-                    ? data.result.file_id
-                    : undefined
-                );
-              }
-            }
-          }
-
-          return;
-        } else if (data.status === 'failed' || data.status === 'cancelled') {
-          const currentLatestTask = activeTaskRef.current || task;
-          const message = data.error_message || data.message || (data.status === 'cancelled' ? 'Generation cancelled' : 'Generation failed');
-          setIsExecuting(false);
-          setExecutionStep(message);
-          const diagnostic = data.status === 'failed' ? diagnoseJobError({
-            id: jobId,
-            status: 'failed',
-            error: message,
-            error_message: message,
-            provider: currentLatestTask.provider || '',
-          } as any) : null;
-          setActiveTask(prev => prev ? {
-            ...prev,
-            status: data.status === 'cancelled' ? 'interrupted' : 'failed',
-            currentStep: message,
-            errorMessage: message,
-            diagnostic,
-            progress,
-            logs: data.logs || prev.logs,
-          } : null);
-          if (data.status === 'failed') toast.error('Generation failed', { description: message });
-          return;
-        }
-
-        // Keep telemetry responsive without creating a polling storm; pause aggressively while the tab is hidden.
-        if (document.visibilityState === 'hidden') {
-          scheduleNext(2500);
-        } else {
-          const fastStage = data.stage === 'generating' || data.stage === 'texturing';
-          const postStage = data.stage === 'postprocess' || data.stage === 'repair' || data.stage === 'optimize' ||
-            data.stage === 'uv' || data.stage === 'game_ready' || data.stage === 'lod' ||
-            data.stage === 'collision' || data.stage === 'qa';
-          const nextInterval = fastStage ? 700 : postStage ? 1100 : progress > 0 ? 1600 : 2200;
-          scheduleNext(nextInterval);
-        }
-      } catch (error) {
-        if (stopped) return;
-        if (error instanceof Error) setExecutionStep(`Syncing job status… ${error.message}`);
-        scheduleNext(document.visibilityState === 'hidden' ? 3000 : 1800);
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (!stopped && document.visibilityState === 'visible') {
-        void poll();
-      }
-    };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    void poll();
-    return () => {
-      stopped = true;
-      if (timerId) window.clearTimeout(timerId);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [activeTask?.id, activeTask?.status, addAsset, runPaintAutoChaining, generationSettings.generateTexture]);
 
    const runUVUnwrapGeneration = useCallback(async (customSettings?: {
     distortionThreshold?: number;

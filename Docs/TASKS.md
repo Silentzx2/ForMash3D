@@ -12,9 +12,9 @@
 - [x] Current model adapter registry implemented and lazily loaded from `backend/adapters/__init__.py`
 - [x] 23 model configurations in `backend/config/models.yaml`
 - [x] VRAM-aware multiprocess scheduler with GPU mutual exclusion
-- [x] Redis job queue for multi-worker mode
+- [x] Redis job queue for multi-worker mode with SQL-backed terminal history
 - [x] GPU monitor with VRAM/temperature polling
-- [x] All API routers (system, file-upload, mesh-generation, mesh-editing, auto-rigging, segmentation, retopology, UV, motion)
+- [x] All API routers plus the in-process mesh-tools surface (system, file-upload, mesh-generation, mesh-editing, auto-rigging, segmentation, retopology, UV, motion)
 - [x] ORJSONResponse with graceful fallback
 - [x] GZipMiddleware, SSE streaming
 - [x] Install script with all dependencies
@@ -50,15 +50,15 @@
 - [x] 3D Viewport with Three.js / R3F (continuous background MeshViewer preserved)
 - [x] Workspace Shell with unified left navigation rail and right property inspector
 - [x] Focused 3D Studio Architecture (clean excision of experimental building, tree, vfx, assembly modules and ViewCube)
-- [x] Dedicated Zero-Placeholder `/settings` Page & Rebuilt `SettingsModal.tsx` (Backend/FastAPI, 3D Viewport, Sculpting & AI Pipeline)
+- [x] Single `/admin` Settings information architecture; stale `/settings` implementation removed
 - [x] Precision Brush Reticle Cursor (dynamic floating SVG ring, size preview, click pulse, and center dot)
 - [x] Real-Time Sculpt Heatmap Feedback (dynamic vertex color highlights on deformation with natural 350ms smooth decay)
 - [x] Smooth Cubic Camera Tweening for Detail Mirror Zoom Peek (380ms ease-out cubic interpolation)
 - [x] Interactive Sculpt Brushes tab in `MeshEditPanel.tsx` (7 brushes, bilateral symmetry, stroke stabilizer, and falloff)
 - [x] Interactive 3D Surface Paint tab in `TexturePanel.tsx` (drawing/erasing, color swatches, opacity, flow, tip profiles, and GPU texture bake)
 - [x] Instant mesh file upload in `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, and `MeshSegmentPanel.tsx`
-- [x] Two-Way PostProcess Pipeline (automatic AI generation chaining in scheduler + manual user panel triggers)
-- [x] Standalone PostProcess microservice on port 8200 (`scripts/start_postprocess_service.sh`)
+- [x] Backend-owned production post-processing for every mesh-producing job
+- [x] Canonical in-process mesh-tools API; obsolete port 8200 sidecar removed
 - [x] Cross-module import resolution matrix and compatibility symlinks (`features/utils/`, `features/config.js`)
 - [x] GeneratePanel with model selector, FlashVDM toggle, VRAM stats
 - [x] TexturePanel with PBR controls and systemStats
@@ -66,7 +66,14 @@
 - [x] Zustand stores, TanStack Query, unified apiClient
 - [x] Studio gold design system with dark theme
 
-### Documentation
+### Deep Bug-Resolution Completion
+- [x] Canonical artifact manifest and truthful required/optional artifact status
+- [x] Post-process retry from immutable master without re-running inference
+- [x] Deterministic SQLite path and durable Redis/SQL terminal job state
+- [x] Canonical asset workspace cleanup on job deletion
+- [x] Browser-independent Shape→Paint parent/child workflow
+
+## Documentation
 - [x] README.md fully updated with Paint-v2-1 info, model catalog, and documentation index
 - [x] CHANGELOG.md maintained as chronological project history
 - [x] ARCHITECTURE.md with Paint-v2-1 pipeline details and flow charts

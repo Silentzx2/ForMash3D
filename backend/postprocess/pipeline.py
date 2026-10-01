@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 GenerationProgress = Optional[Callable[[float, str, str], None]]
 
+MAX_PRODUCTION_FACES = 50_000
 _FORMATS = ("glb", "gltf", "fbx", "obj", "stl", "ply")
 
 
@@ -227,13 +228,15 @@ def _build_result(
     asset_name: str,
     qa_report: Dict[str, Any],
     generated: Dict[str, Any],
+    target_polycount: int = MAX_PRODUCTION_FACES,
+    lod_enabled: bool = True,
 ) -> Dict[str, Any]:
     primary = generated["game_ready"].get("glb") or generated["game_ready"].get("obj")
     base_url = f"/api/v1/system/jobs/{job_id}"
     rel_model_dir = asset_dir.name
     primary_name = Path(primary).name if primary else f"{asset_name}.glb"
-    static_model_url = f"/static/models/{rel_model_dir}/game_ready/{primary_name}"
-    static_master_url = f"/static/models/{rel_model_dir}/master/source.glb"
+    download_model_url = f"{base_url}/download?artifact_format=glb"
+    download_master_url = f"{base_url}/download?artifact_format=master"
 
     lod_urls = [
         f"{base_url}/download?artifact_format=lod{idx}"
@@ -247,12 +250,12 @@ def _build_result(
     return {
         "success": True,
         "output_mesh_path": primary,
-        "static_url": static_model_url,
-        "model_url": static_model_url,
-        "active_model_url": static_model_url,
+        "static_url": None,
+        "model_url": download_model_url,
+        "active_model_url": download_model_url,
         "download_url": f"{base_url}/download?artifact_format=glb",
-        "source_model_url": static_master_url,
-        "game_ready_url": static_model_url,
+        "source_model_url": download_master_url,
+        "game_ready_url": download_model_url,
         "game_ready_formats": {
             fmt: f"{base_url}/download?artifact_format={fmt}"
             for fmt in generated["game_ready"]
@@ -272,11 +275,7 @@ def _build_result(
         "physics": generated.get("physics_metadata"),
         "pbr_maps": pbr_urls,
         "texture_status": generated.get("texture_status", "not_generated"),
-        "thumbnail_url": (
-            f"/static/models/{rel_model_dir}/previews/{Path(generated['thumbnail']).name}"
-            if generated.get("thumbnail")
-            else None
-        ),
+        "thumbnail_url": f"{base_url}/thumbnail" if generated.get("thumbnail") else None,
         "thumbnail_download_url": (
             f"{base_url}/download?artifact_format=thumbnail"
             if generated.get("thumbnail")
@@ -286,6 +285,37 @@ def _build_result(
         "asset_root": str(asset_dir),
         "asset_name": asset_name,
         "postprocess_status": "completed",
+        "artifacts": {
+            "master": {"status": "ready", "url": download_master_url, "required": True},
+            "game_ready": {
+                fmt: {
+                    "status": "ready" if fmt in generated["game_ready"] else "unavailable",
+                    "url": f"{base_url}/download?artifact_format={fmt}" if fmt in generated["game_ready"] else None,
+                    "required": fmt == "glb",
+                }
+                for fmt in _FORMATS
+            },
+            "lods": {
+                f"lod{idx}": {
+                    "status": "ready",
+                    "url": f"{base_url}/download?artifact_format=lod{idx}",
+                    "required": False,
+                }
+                for idx in sorted(generated["lods"])
+            } if lod_enabled else {},
+            "collision": {
+                "status": "ready" if generated.get("collision") else "skipped",
+                "url": f"{base_url}/download?artifact_format=collision" if generated.get("collision") else None,
+                "required": False,
+            },
+            "physics": {
+                "status": "ready" if generated.get("physics") else "skipped",
+                "url": f"{base_url}/download?artifact_format=physics_json" if generated.get("physics") else None,
+                "required": False,
+            },
+            "qa_report": {"status": "ready", "url": f"{base_url}/download?artifact_format=qa_report", "required": True},
+            "zip": {"status": "ready", "url": f"{base_url}/download?artifact_format=zip", "required": False},
+        },
         "qa_report": qa_report,
         "postprocess": {
             "asset_dir": str(asset_dir),
@@ -395,7 +425,7 @@ def run_postprocess_job(
             scene,
             mesh,
             InspectOptions(
-                tri_budget=50_000,
+                tri_budget=MAX_PRODUCTION_FACES,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -444,7 +474,7 @@ def run_postprocess_job(
 
     if is_quad_requested:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
-        retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), 60_000, max(50, int(len(repaired.faces))))
+        retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
@@ -467,7 +497,7 @@ def run_postprocess_job(
             logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
     elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
-        retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), 60_000, max(50, int(len(repaired.faces))))
+        retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
@@ -490,7 +520,7 @@ def run_postprocess_job(
         optimized = repaired
         optimize_stats = {"passthrough": True, "reason": "Quad-dominant topology preserved from retopology pass"}
     else:
-        target_faces = min(50_000, max(5_000, int(job_inputs.get("target_polycount") or 50_000)))
+        target_faces = min(MAX_PRODUCTION_FACES, max(5_000, int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)))
         optimized, optimize_stats = run_optimize(
             repaired,
             OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
@@ -566,22 +596,34 @@ def run_postprocess_job(
     except Exception as exc:
         logger.warning("GLTF embedded export skipped: %s", exc)
 
-    _emit(progress, 0.72, "lod", "Generating LOD chain.")
-    source_faces = max(1, len(uv_mesh.faces))
-    target_faces = int(job_inputs.get("target_polycount") or 50_000)
-    target_ratio = min(1.0, max(0.05, target_faces / source_faces))
-    lod_ratios = [
-        1.0,
-        max(0.05, target_ratio * 0.50),
-        max(0.025, target_ratio * 0.25),
-        max(0.0125, target_ratio * 0.125),
-    ]
-    lod_levels = run_lods(
-        uv_mesh,
-        LODOptions(ratios=lod_ratios),
-    )
     lods: Dict[int, str] = {}
     lod_quality: Dict[str, Dict[str, Any]] = {}
+    lod_enabled = bool(job_inputs.get("generateLOD", True))
+    if lod_enabled:
+        _emit(progress, 0.72, "lod", "Generating LOD chain.")
+        source_faces = max(1, len(uv_mesh.faces))
+        target_faces = int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)
+        target_ratio = min(1.0, max(0.05, target_faces / source_faces))
+        preset = str(job_inputs.get("lodPreset") or "high").lower()
+        preset_ratios = {
+            "mobile": [1.0, 0.35, 0.12, 0.05],
+            "low": [1.0, 0.5, 0.2, 0.08],
+            "medium": [1.0, 0.5, 0.25, 0.125],
+            "high": [1.0, 0.6, 0.3, 0.15],
+            "cinematic": [1.0, 0.75, 0.5, 0.25],
+        }.get(preset, [1.0, 0.6, 0.3, 0.15])
+        ratios = job_inputs.get("lod_ratios")
+        lod_ratios = ratios if isinstance(ratios, list) and ratios else [
+            1.0 if i == 0 else max(0.025, target_ratio * ratio)
+            for i, ratio in enumerate(preset_ratios)
+        ]
+        try:
+            lod_count = max(1, min(4, int(job_inputs.get("lodCount") or len(lod_ratios))))
+        except (TypeError, ValueError):
+            lod_count = min(4, len(lod_ratios))
+        lod_levels = run_lods(uv_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])))
+    else:
+        lod_levels = []
     for level in lod_levels:
         idx = int(level["level"])
         level_mesh = level["mesh"]
@@ -650,7 +692,7 @@ def run_postprocess_job(
             final_scene,
             uv_mesh,
             InspectOptions(
-                tri_budget=50_000,
+                tri_budget=MAX_PRODUCTION_FACES,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -726,7 +768,7 @@ def run_postprocess_job(
         "texture_status": texture_status,
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
     }
-    final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated)
+    final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=min(MAX_PRODUCTION_FACES, max(5_000, int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES))), lod_enabled=lod_enabled)
     final_result["model_url"] = final_result["game_ready_url"]
     _write_json(asset_manifest, final_result)
 

@@ -91,7 +91,7 @@ export const DccBridgeModal: React.FC = () => {
 
   const currentPreset = DCC_PRESETS.find(p => p.id === selectedApp)!;
   const assetName = currentAsset?.name || 'ForMash3D_Asset';
-  const assetUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || '/static/models/HeroAsset.glb';
+  const assetUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || '';
 
   const blenderScript = `# Run inside Blender's Scripting workspace or install as add-on
 import bpy, urllib.request, tempfile, os
