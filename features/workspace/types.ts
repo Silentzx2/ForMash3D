@@ -11,11 +11,7 @@ export type ToolType =
   | 'pbr'
   | 'environment'
   | 'animation'
-  | 'rigging'
-  | 'vfx'
-  | 'tree'
-  | 'building'
-  | 'assembly';
+  | 'rigging';
 
 export interface ActiveTask {
   id: string;

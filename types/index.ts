@@ -331,7 +331,3 @@ export interface ProjectAsset {
     thumbnailUrl?: string | null;
   };
 }
-
-export * from './vfx';
-export * from './building';
-export * from './assembly';

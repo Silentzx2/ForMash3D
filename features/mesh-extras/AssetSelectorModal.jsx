@@ -37,22 +37,9 @@ const TYPE_CONFIG = {
   brush: {
     libraryKey: 'brushes', title: 'Brush', plural: 'brushes', emptyIcon: 'brush',
     preview: 'image', childBadge: 'EDIT'
-  },
-  tree: {
-    libraryKey: 'trees', title: 'Tree Preset', plural: 'tree presets', emptyIcon: 'forest',
-    preview: 'thumbnail', placeholderIcon: 'forest', placeholderLabel: 'TREE PRESET', childBadge: 'VERSION'
-  },
   image: {
     libraryKey: 'images', title: 'Image', plural: 'images', emptyIcon: 'image_not_supported',
     preview: 'image', childBadge: 'EDIT'
-  },
-  vfx: {
-    libraryKey: 'vfx', title: 'VFX Effect', plural: 'effects', emptyIcon: 'auto_awesome',
-    preview: 'thumbnail', placeholderIcon: 'auto_awesome', placeholderLabel: 'VFX', childBadge: 'VERSION'
-  },
-  building: {
-    libraryKey: 'buildings', title: 'Building', plural: 'buildings', emptyIcon: 'apartment',
-    preview: 'thumbnail', placeholderIcon: 'apartment', placeholderLabel: 'BUILDING', childBadge: 'VERSION'
   }
 };
 

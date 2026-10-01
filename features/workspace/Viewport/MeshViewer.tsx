@@ -631,6 +631,37 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   }, [activeTool, sculptSettings, paintBrushSettings]);
 
+  // Dynamic Brush Size Preview HUD overlay state
+  const [brushPreviewVisible, setBrushPreviewVisible] = useState(false);
+  const [brushPreviewRadius, setBrushPreviewRadius] = useState(24);
+  const [brushPreviewColor, setBrushPreviewColor] = useState('#FFCC00');
+  const brushPreviewTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Dynamic 2D Brush Ring Pointer tracking
+  const [brushPointer, setBrushPointer] = useState<{ x: number; y: number; visible: boolean; isDown: boolean }>({
+    x: 0,
+    y: 0,
+    visible: false,
+    isDown: false,
+  });
+
+  useEffect(() => {
+    if (activeTool === 'edit') {
+      const px = Math.max(16, Math.min(220, (sculptSettings?.radius || 0.15) * 450));
+      setBrushPreviewRadius(px);
+      setBrushPreviewColor('#FFCC00');
+      setBrushPreviewVisible(true);
+      if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
+      brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
+    } else if (activeTool === 'texture') {
+      setBrushPreviewRadius(Math.max(8, Math.min(200, (paintBrushSettings?.size || 24) * 1.5)));
+      setBrushPreviewColor(paintBrushSettings?.color || '#FFCC00');
+      setBrushPreviewVisible(true);
+      if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
+      brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
+    }
+  }, [sculptSettings?.radius, paintBrushSettings?.size, paintBrushSettings?.color, activeTool]);
+
   useEffect(() => {
     const checkScreenSize = () => {
       if (typeof window !== 'undefined') {
@@ -699,6 +730,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [reflectionPeekFocused, setReflectionPeekFocused] = useState(false);
   const reflectionPreviewUrlRef = useRef<string | null>(null);
   const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const reflectionPeekTweenRef = useRef<number | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
   const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
   const physicsViewerReady = Boolean(physicsStatus?.toLowerCase().includes('ready'));
@@ -1610,6 +1642,24 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         const normAttr = geom.attributes.normal;
         let changed = false;
 
+        // Dynamic sculpt visual heatmap feedback on mesh
+        let colorAttr = geom.attributes.color as THREE.BufferAttribute | undefined;
+        if (!colorAttr) {
+          const colors = new Float32Array(count * 3).fill(1.0);
+          colorAttr = new THREE.BufferAttribute(colors, 3);
+          geom.setAttribute('color', colorAttr);
+          if (Array.isArray(targetMesh.material)) {
+            targetMesh.material.forEach((m: any) => { if (m) { m.vertexColors = true; m.needsUpdate = true; } });
+          } else if (targetMesh.material) {
+            (targetMesh.material as any).vertexColors = true;
+            targetMesh.material.needsUpdate = true;
+          }
+        }
+
+        const hlR = brush === 'smooth' ? 0.2 : (dir > 0 ? 1.0 : 0.25);
+        const hlG = brush === 'smooth' ? 0.95 : (dir > 0 ? 0.8 : 0.75);
+        const hlB = brush === 'smooth' ? 0.5 : (dir > 0 ? 0.15 : 1.0);
+
         const deform = (center: THREE.Vector3, centerNorm: THREE.Vector3) => {
           for (let i = 0; i < count; i++) {
             p.fromBufferAttribute(posAttr, i);
@@ -1637,6 +1687,20 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 p.addScaledVector(centerNorm, amount);
               }
 
+              // Apply dynamic sculpt heatmap tint
+              if (colorAttr) {
+                const curR = colorAttr.getX(i);
+                const curG = colorAttr.getY(i);
+                const curB = colorAttr.getZ(i);
+                const blend = falloff * 0.75;
+                colorAttr.setXYZ(
+                  i,
+                  curR * (1 - blend) + hlR * blend,
+                  curG * (1 - blend) + hlG * blend,
+                  curB * (1 - blend) + hlB * blend
+                );
+              }
+
               posAttr.setXYZ(i, p.x, p.y, p.z);
               changed = true;
             }
@@ -1650,6 +1714,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
         if (changed) {
           posAttr.needsUpdate = true;
+          if (colorAttr) colorAttr.needsUpdate = true;
           geom.computeVertexNormals();
           if (normAttr) normAttr.needsUpdate = true;
           geom.computeBoundingSphere();
@@ -1931,6 +1996,35 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
       if (rigArmatureGroupRef.current && rigArmatureGroupRef.current.visible) {
         rigArmatureGroupRef.current.updateMatrixWorld();
+      }
+
+      // Smoothly fade sculpt highlight vertex colors back to neutral
+      if (currentMeshGroupRef.current && !isBrushingRef.current) {
+        currentMeshGroupRef.current.traverse((child) => {
+          if (child instanceof THREE.Mesh && child.geometry?.attributes?.color) {
+            const cAttr = child.geometry.attributes.color as THREE.BufferAttribute;
+            let stillHighlighted = false;
+            const decay = Math.min(1, delta * 3.5);
+            for (let i = 0; i < cAttr.count; i++) {
+              const r = cAttr.getX(i);
+              const g = cAttr.getY(i);
+              const b = cAttr.getZ(i);
+              if (r < 0.98 || g < 0.98 || b < 0.98) {
+                cAttr.setXYZ(
+                  i,
+                  r + (1.0 - r) * decay,
+                  g + (1.0 - g) * decay,
+                  b + (1.0 - b) * decay
+                );
+                stillHighlighted = true;
+              }
+            }
+            if (stillHighlighted) {
+              cAttr.needsUpdate = true;
+              idleFrames = 0;
+            }
+          }
+        });
       }
 
       const controlsChanged = controls.update();
@@ -2583,6 +2677,35 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     currentAsset?.materialConfig?.normalScale,
   ]);
 
+  const tweenCameraTo = useCallback((toPos: THREE.Vector3, toTarget: THREE.Vector3, durationMs = 380, onDone?: () => void) => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    if (reflectionPeekTweenRef.current) cancelAnimationFrame(reflectionPeekTweenRef.current);
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const startPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const ease = 1 - Math.pow(1 - progress, 3);
+
+      camera.position.lerpVectors(startPos, toPos, ease);
+      controls.target.lerpVectors(startTarget, toTarget, ease);
+      camera.updateProjectionMatrix();
+      controls.update();
+
+      if (progress < 1) {
+        reflectionPeekTweenRef.current = requestAnimationFrame(animate);
+      } else {
+        reflectionPeekTweenRef.current = null;
+        onDone?.();
+      }
+    };
+    reflectionPeekTweenRef.current = requestAnimationFrame(animate);
+  }, []);
+
   const handleReflectionPeekEnter = useCallback(() => {
     if (!currentMeshGroupRef.current || !cameraRef.current || !controlsRef.current) return;
     if (!reflectionFocusBackupRef.current) {
@@ -2598,28 +2721,22 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const controls = controlsRef.current;
     const direction = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
     const targetDistance = Math.max(controls.minDistance * 1.4, Math.min(controls.maxDistance * 0.55, sphere.radius * 1.15));
-    controls.target.copy(sphere.center);
-    camera.position.copy(sphere.center).add(direction.multiplyScalar(targetDistance));
-    camera.updateProjectionMatrix();
-    controls.update();
+    const targetPos = sphere.center.clone().add(direction.multiplyScalar(targetDistance));
     setReflectionPeekFocused(true);
-  }, []);
+    tweenCameraTo(targetPos, sphere.center, 380);
+  }, [tweenCameraTo]);
 
   const handleReflectionPeekLeave = useCallback(() => {
     const backup = reflectionFocusBackupRef.current;
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!backup || !camera || !controls) {
+    if (!backup || !cameraRef.current || !controlsRef.current) {
       setReflectionPeekFocused(false);
       return;
     }
-    camera.position.copy(backup.position);
-    controls.target.copy(backup.target);
-    camera.updateProjectionMatrix();
-    controls.update();
-    reflectionFocusBackupRef.current = null;
+    tweenCameraTo(backup.position, backup.target, 380, () => {
+      reflectionFocusBackupRef.current = null;
+    });
     setReflectionPeekFocused(false);
-  }, []);
+  }, [tweenCameraTo]);
 
   useEffect(() => {
     if (!reflectionPeekEnabled || !currentAsset) {
@@ -3027,7 +3144,110 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       onDrop={handleDrop}
     >
       {/* 3D Canvas Container */}
-      <div ref={containerRef} className="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing" />
+      <div 
+        ref={containerRef} 
+        onPointerMove={(e) => {
+          if (activeTool === 'edit' || activeTool === 'texture') {
+            setBrushPointer({
+              x: e.clientX,
+              y: e.clientY,
+              visible: true,
+              isDown: e.buttons > 0,
+            });
+          }
+        }}
+        onPointerDown={(e) => {
+          if (activeTool === 'edit' || activeTool === 'texture') {
+            setBrushPointer(prev => ({ ...prev, x: e.clientX, y: e.clientY, isDown: true }));
+          }
+        }}
+        onPointerUp={() => {
+          setBrushPointer(prev => ({ ...prev, isDown: false }));
+        }}
+        onPointerLeave={() => {
+          setBrushPointer(prev => ({ ...prev, visible: false, isDown: false }));
+        }}
+        className={`w-full h-full absolute inset-0 ${
+          activeTool === 'edit' || activeTool === 'texture'
+            ? 'cursor-none'
+            : 'cursor-grab active:cursor-grabbing'
+        }`} 
+      />
+
+      {/* Floating Precision Brush Reticle Cursor */}
+      {(activeTool === 'edit' || activeTool === 'texture') && brushPointer.visible && (
+        <div
+          className="fixed pointer-events-none z-50 transition-transform duration-75 ease-out"
+          style={{
+            left: `${brushPointer.x}px`,
+            top: `${brushPointer.y}px`,
+            transform: `translate(-50%, -50%) scale(${brushPointer.isDown ? 0.94 : 1})`,
+          }}
+        >
+          <div
+            className="rounded-full border-2 transition-all duration-100 flex items-center justify-center"
+            style={{
+              width: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
+              height: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
+              borderColor: activeTool === 'texture' 
+                ? (paintBrushSettings?.color || '#FFCC00') 
+                : (brushPointer.isDown ? '#FFAA00' : '#FFCC00'),
+              backgroundColor: activeTool === 'texture' 
+                ? `${paintBrushSettings?.color || '#FFCC00'}22` 
+                : (brushPointer.isDown ? 'rgba(255, 170, 0, 0.16)' : 'rgba(255, 204, 0, 0.07)'),
+              boxShadow: brushPointer.isDown 
+                ? '0 0 18px rgba(255, 204, 0, 0.65), inset 0 0 10px rgba(255, 204, 0, 0.35)' 
+                : '0 0 10px rgba(255, 204, 0, 0.3)',
+            }}
+          >
+            {/* Center Reticle Crosshair Dot */}
+            <div 
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00'
+              }}
+            />
+          </div>
+
+          {/* Floating Brush Type & Radius Badge */}
+          <div className="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md bg-black/85 backdrop-blur-md border border-white/10 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
+            <span 
+              className="w-1.5 h-1.5 rounded-full animate-pulse" 
+              style={{ backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00' }} 
+            />
+            <span>
+              {activeTool === 'edit' 
+                ? `${sculptSettings?.brush?.toUpperCase() || 'STANDARD'} • R:${(sculptSettings?.radius || 0.15).toFixed(2)}` 
+                : `PAINT • ${paintBrushSettings?.size || 24}px`}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Dynamic Brush Size Preview HUD */}
+      {brushPreviewVisible && (activeTool === 'edit' || activeTool === 'texture') && (
+        <div className="absolute inset-0 pointer-events-none z-40 flex items-center justify-center animate-in fade-in zoom-in-95 duration-150">
+          <div className="relative flex flex-col items-center justify-center">
+            <div
+              className="rounded-full border-2 border-dashed shadow-[0_0_25px_rgba(255,204,0,0.5)]"
+              style={{
+                width: `${brushPreviewRadius * 2}px`,
+                height: `${brushPreviewRadius * 2}px`,
+                borderColor: brushPreviewColor,
+                backgroundColor: `${brushPreviewColor}18`,
+              }}
+            />
+            <div className="mt-2.5 px-3 py-1 rounded-full bg-black/85 backdrop-blur-md border border-white/[0.16] text-[10px] font-mono font-bold text-white shadow-2xl flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brushPreviewColor }} />
+              <span>
+                {activeTool === 'edit' 
+                  ? `Sculpt Radius: ${sculptSettings?.radius?.toFixed(2)}` 
+                  : `Paint Brush Size: ${paintBrushSettings?.size}px`}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Drag & Drop Visual Dropzone Overlay */}
       {isDragOver && (
@@ -3362,6 +3582,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 <button
                   type="button"
                   onClick={() => setReflectionPeekEnabled(prev => !prev)}
+                  onMouseEnter={() => { if (reflectionPeekEnabled) handleReflectionPeekEnter(); }}
+                  onMouseLeave={() => { if (reflectionPeekEnabled) handleReflectionPeekLeave(); }}
                   disabled={!currentAsset}
                   className={"flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed " + (reflectionPeekEnabled ? "bg-primary/15 text-primary" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]")}
                 >

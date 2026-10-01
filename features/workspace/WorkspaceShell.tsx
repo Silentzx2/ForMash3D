@@ -62,22 +62,6 @@ const RiggingStudio = dynamic(() => import('./Rigging/RiggingStudio').then(mod =
   ssr: false,
   loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
 });
-const VfxStudio = dynamic(() => import('@/features/vfx/VfxStudio').then(mod => mod.VfxStudio), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
-});
-const TreeStudio = dynamic(() => import('@/features/tree/TreeStudio').then(mod => mod.TreeStudio), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
-});
-const BuildingStudio = dynamic(() => import('@/features/building/BuildingStudio').then(mod => mod.BuildingStudio), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
-});
-const AssemblyStudio = dynamic(() => import('@/features/assembly/AssemblyStudio').then(mod => mod.AssemblyStudio), {
-  ssr: false,
-  loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
-});
 
 const OutputsPage = dynamic(() => import('./Dashboard/OutputsPage').then(mod => mod.OutputsPage), {
   ssr: false,
@@ -120,12 +104,6 @@ const ROUTE_SEGMENT_TO_TOOL: Record<string, ToolType> = {
   'animation': 'animation',
   'animate': 'animation',
   'rigging': 'rigging',
-  'vfx': 'vfx',
-  'tree': 'tree',
-  'trees': 'tree',
-  'building': 'building',
-  'buildings': 'building',
-  'assembly': 'assembly',
 };
 
 export const WorkspaceShell: React.FC = () => {
@@ -264,13 +242,6 @@ export const WorkspaceShell: React.FC = () => {
       return;
     }
 
-    // VFX routes: /vfx or /workspace/vfx
-    if (cleanPath === '/vfx' || cleanPath.startsWith('/vfx')) {
-      setMainNav('workspace');
-      setActiveTool('vfx');
-      return;
-    }
-
     // Workspace tool routes: /workspace/[tool] or /workspace
     setMainNav('workspace');
     if (cleanPath.startsWith('/workspace/')) {
@@ -406,22 +377,6 @@ export const WorkspaceShell: React.FC = () => {
           ) : mainNav === 'workspace' && activeTool === 'rigging' ? (
             <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
               <RiggingStudio />
-            </main>
-          ) : mainNav === 'workspace' && activeTool === 'vfx' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
-              <VfxStudio />
-            </main>
-          ) : mainNav === 'workspace' && activeTool === 'tree' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
-              <TreeStudio />
-            </main>
-          ) : mainNav === 'workspace' && activeTool === 'building' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
-              <BuildingStudio />
-            </main>
-          ) : mainNav === 'workspace' && activeTool === 'assembly' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
-              <AssemblyStudio />
             </main>
           ) : (
             <>

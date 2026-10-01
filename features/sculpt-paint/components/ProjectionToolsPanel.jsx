@@ -1,6 +1,5 @@
 import { getWorkflowValueType } from '../../utils/meshTexturing'
 import { getWorkflowEnumOptions, resolveWorkflowEnumValue } from '../../utils/workflowEnums'
-import ComfyTextButton from '../comfy/ComfyTextButton'
 
 // Projection-mode left panel (projection setup, AI workflow + image-input
 // config) extracted from MeshEditorPage.jsx. Presentational: state + handlers
@@ -246,13 +245,6 @@ export default function ProjectionToolsPanel({
                       [parameter.id]: event.target.value
                     }))}
                     disabled={!!texturingUnavailableReason || projecting || projectionRebuilding}
-                  />
-                  <ComfyTextButton
-                    className="comfy-text-btn--corner"
-                    onResult={text => setProjectionWorkflowInputs(current => ({
-                      ...current,
-                      [parameter.id]: text
-                    }))}
                   />
                 </span>
               ) : (

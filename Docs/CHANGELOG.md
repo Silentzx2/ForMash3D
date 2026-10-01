@@ -1,3 +1,13 @@
+## 2026-10-01 — [Production Clean Architecture] Modular Cleanup, Real Settings Page, Interactive Sculpt Visuals & Precision Brushes
+- **Complete Decoupling of Foreign Procedural Modules:** Completely excised `building`, `tree`, `vfx`, and `assembly` modules, along with experimental `ViewCube`, from the codebase, routes, navigation rails, and types to maintain a focused, high-performance 3D AI generator architecture.
+- **Zero-Placeholder Settings & Dedicated Route (`/settings`):** Rebuilt `SettingsModal.tsx` and introduced a full-page `/settings` route with 4 dedicated functional categories (Backend & FastAPI Server with live connection testing and hardware telemetry, 3D Viewport & Studio Lighting, Sculpting & Precision Brushes, AI Pipeline & Polycount Budgets) directly persisted to `localStorage` and `useWorkspace()`.
+- **Custom Precision Brush Reticle:** Replaced standard crosshairs with a smooth floating SVG brush reticle cursor matching active brush diameter, brush mode badge, center reticle dot, and dynamic click-pulse feedback.
+- **Real-Time Sculpt Heatmap Feedback:** Added dynamic vertex color highlights on sculpted mesh surfaces (warm amber for pull/inflate, cool cyan for push/invert, emerald green for smooth) that naturally decay and dissolve smoothly back to base within 350ms.
+- **Smooth Cubic Camera Tweening for Detail Mirror Peek:** Upgraded reflection peek enter/exit from instant jumps to smooth 380ms cubic camera tweening with ease-out interpolation and dynamic preview zoom.
+- **Complete ComfyUI Removal:** Ensured zero references, buttons, or dependencies to ComfyUI across all components and pipelines.
+- **Zero Hardcoded Paths:** Verified zero hardcoded `/teamspace/` studio paths across the entire repository.
+- **Production Build Clean:** Verified `npm run build` succeeds cleanly with exit code 0 across all 14 static and dynamic routes.
+
 ## 2026-10-01 — [Active Development] Procedural Studios & Character Assembly Integration: TreeStudio, BuildingStudio, AssemblyStudio
 - **Tree Studio Integration:** Created `features/tree/TreeStudio.tsx` and route `app/trees/page.tsx` featuring real-time parameter tweaking, live branch skeleton polyline preview, seed re-rolling, texture slots (trunk, branches, leaves), and full 3D GLB mesh generation.
 - **Building Studio Integration:** Created `features/building/BuildingStudio.tsx` and route `app/buildings/page.tsx` with dual 2D footprint polygon editor and 3D architectural viewport, procedural grammar compilation, stylepacks, and texture rows.

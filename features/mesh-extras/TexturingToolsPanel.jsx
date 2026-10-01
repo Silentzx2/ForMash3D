@@ -1,6 +1,5 @@
 import { getWorkflowValueType } from '../utils/meshTexturing'
 import { getWorkflowEnumOptions, resolveWorkflowEnumValue } from '../utils/workflowEnums'
-import ComfyTextButton from '../comfy/ComfyTextButton'
 
 // Texturing-mode left panel (brush/crop/feather, AI workflow + image-input
 // config, patch review sliders) extracted from MeshEditorPage.jsx.
@@ -198,10 +197,6 @@ export default function TexturingToolsPanel({
                     value={currentValue ?? ''}
                     onChange={event => handleTextureWorkflowInputChange(parameter, event.target.value)}
                     disabled={!!texturingUnavailableReason || !!pendingPatch}
-                  />
-                  <ComfyTextButton
-                    className="comfy-text-btn--corner"
-                    onResult={text => handleTextureWorkflowInputChange(parameter, text)}
                   />
                 </span>
               ) : (

@@ -12,10 +12,6 @@ import {
   Sparkles,
   Bone,
   ListOrdered,
-  Flame,
-  Trees,
-  Building2,
-  Shirt,
 } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
@@ -152,43 +148,6 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       icon: Bone,
       active: isActive('rigging'),
       onClick: () => handleToolClick('rigging'),
-      isExecuting: isExecuting && activeTask?.type === 'rigging',
-    },
-    {
-      id: 'tool-btn-vfx',
-      label: 'VFX',
-      tooltip: 'Particle VFX & Simulation Studio • V',
-      shortcut: 'V',
-      icon: Flame,
-      active: isActive('vfx'),
-      onClick: () => handleToolClick('vfx'),
-    },
-    {
-      id: 'tool-btn-tree',
-      label: 'Trees',
-      tooltip: 'Procedural Tree & Foliage Studio',
-      shortcut: '',
-      icon: Trees,
-      active: isActive('tree'),
-      onClick: () => handleToolClick('tree'),
-    },
-    {
-      id: 'tool-btn-building',
-      label: 'Building',
-      tooltip: 'Procedural Architecture & Building Studio',
-      shortcut: '',
-      icon: Building2,
-      active: isActive('building'),
-      onClick: () => handleToolClick('building'),
-    },
-    {
-      id: 'tool-btn-assembly',
-      label: 'Assembly',
-      tooltip: 'Character & Conformal Garment Fit Studio',
-      shortcut: '',
-      icon: Shirt,
-      active: isActive('assembly'),
-      onClick: () => handleToolClick('assembly'),
     },
   ];
 

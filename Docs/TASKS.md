@@ -43,10 +43,11 @@
 - [x] Next.js 16 App Router with all routes
 - [x] 3D Viewport with Three.js / R3F (continuous background MeshViewer preserved)
 - [x] Workspace Shell with unified left navigation rail and right property inspector
-- [x] VFX Studio (`VfxStudio.tsx`, `/vfx`) with live 3D particle simulation viewport dock, HUD telemetry, and React Flow board
-- [x] Procedural Tree Studio (`TreeStudio.tsx`, `/trees`) with live branch polyline preview, species presets, dice roll seed, and full mesh build
-- [x] Procedural Building Studio (`BuildingStudio.tsx`, `/buildings`) with tabbed 2D footprint plan, 3D viewport, grammar inspector, and stylepacks
-- [x] Character Assembly Studio (`AssemblyStudio.tsx`, `/assembly`) with multi-mesh kitbashing, conformal garment fit, and landmark alignment
+- [x] Focused 3D Studio Architecture (clean excision of experimental building, tree, vfx, assembly modules and ViewCube)
+- [x] Dedicated Zero-Placeholder `/settings` Page & Rebuilt `SettingsModal.tsx` (Backend/FastAPI, 3D Viewport, Sculpting & AI Pipeline)
+- [x] Precision Brush Reticle Cursor (dynamic floating SVG ring, size preview, click pulse, and center dot)
+- [x] Real-Time Sculpt Heatmap Feedback (dynamic vertex color highlights on deformation with natural 350ms smooth decay)
+- [x] Smooth Cubic Camera Tweening for Detail Mirror Zoom Peek (380ms ease-out cubic interpolation)
 - [x] Interactive Sculpt Brushes tab in `MeshEditPanel.tsx` (7 brushes, bilateral symmetry, stroke stabilizer, and falloff)
 - [x] Interactive 3D Surface Paint tab in `TexturePanel.tsx` (drawing/erasing, color swatches, opacity, flow, tip profiles, and GPU texture bake)
 - [x] Instant mesh file upload in `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, and `MeshSegmentPanel.tsx`
