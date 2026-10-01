@@ -1,31 +1,15 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Sliders,
-  RotateCcw,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  Layers,
-  Eye,
-  Camera,
-  Download,
-  FileCode,
-  ArrowRight,
-  ShieldCheck,
-  Zap,
-  Box,
-  Compass,
-  Move,
-  Bone,
-} from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { useAnimationStore, InspectorTab } from '@/stores/useAnimationStore';
 import { useViewerStore } from '@/stores/useViewerStore';
 import { toast } from 'sonner';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowRight, Bone, Box, ChevronDown, ChevronUp, Download, Eye, FileCode, ShieldCheck } from '@hugeicons/core-free-icons';
 export const AnimationRightInspector: React.FC = () => {
   const router = useRouter();
   const { currentAsset } = useWorkspace();
@@ -205,7 +189,7 @@ export const AnimationRightInspector: React.FC = () => {
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span>ARDY Controls</span>
                 </div>
-                {openSections.ardyControls ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+                {openSections.ardyControls ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
               </button>
 
               {openSections.ardyControls && (
@@ -223,7 +207,7 @@ export const AnimationRightInspector: React.FC = () => {
                         <option value="ardy-unitree-g1">ardy-unitree-g1</option>
                         <option value="ardy-rp-20fps">ardy-rp-20fps-horizon40</option>
                       </select>
-                      <ChevronDown className="w-3 h-3 text-zinc-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                      <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400 absolute right-2.5 top-2.5 pointer-events-none" />
                     </div>
                   </div>
 
@@ -304,7 +288,7 @@ export const AnimationRightInspector: React.FC = () => {
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span>Initial Body Transform</span>
                 </div>
-                {openSections.initialTransform ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+                {openSections.initialTransform ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
               </button>
 
               {openSections.initialTransform && (
@@ -381,7 +365,7 @@ export const AnimationRightInspector: React.FC = () => {
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span>Waypoints &amp; Constraints</span>
                 </div>
-                {openSections.waypoints ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+                {openSections.waypoints ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
               </button>
 
               {openSections.waypoints && (
@@ -465,7 +449,7 @@ export const AnimationRightInspector: React.FC = () => {
                         <option value="Hands + Feet">Hands + Feet</option>
                         <option value="Sparse Joints">Sparse Joints</option>
                       </select>
-                      <ChevronDown className="w-3 h-3 text-zinc-400 absolute right-2.5 top-2.5 pointer-events-none" />
+                      <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400 absolute right-2.5 top-2.5 pointer-events-none" />
                     </div>
                   </div>
 
@@ -506,7 +490,7 @@ export const AnimationRightInspector: React.FC = () => {
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span>Kinematic Constraints</span>
                 </div>
-                {openSections.kinematics ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+                {openSections.kinematics ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
               </button>
 
               {openSections.kinematics && (
@@ -548,7 +532,7 @@ export const AnimationRightInspector: React.FC = () => {
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span>Motion Post-Processing</span>
                 </div>
-                {openSections.postProcessing ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+                {openSections.postProcessing ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
               </button>
 
               {openSections.postProcessing && (
@@ -610,7 +594,7 @@ export const AnimationRightInspector: React.FC = () => {
                   <div className="w-1.5 h-1.5 rounded-full bg-primary" />
                   <span>Advanced</span>
                 </div>
-                {openSections.advanced ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+                {openSections.advanced ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
               </button>
 
               {openSections.advanced && (
@@ -675,13 +659,13 @@ export const AnimationRightInspector: React.FC = () => {
             <div className="p-3 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-3">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center text-primary">
-                  <Box className="w-6 h-6" />
+                  <HugeiconsIcon icon={Box} size={16} className="w-6 h-6" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-xs font-bold text-white truncate">{modelName}</h4>
                   <p className="text-[11px] text-zinc-400">{polysText}</p>
                   <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                    <ShieldCheck className="w-3 h-3" /> ARDY Core Compatible
+                    <HugeiconsIcon icon={ShieldCheck} size={16} className="w-3 h-3" /> ARDY Core Compatible
                   </span>
                 </div>
               </div>
@@ -707,9 +691,9 @@ export const AnimationRightInspector: React.FC = () => {
                 onClick={handleOpenRigging}
                 className="w-full flex items-center justify-center gap-2 py-2.5 px-3 bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-bold text-xs rounded-xl shadow-lg transition-all cursor-pointer active:scale-98"
               >
-                <Bone className="w-4 h-4" />
+                <HugeiconsIcon icon={Bone} size={16} className="w-4 h-4" />
                 <span>Open in Rigging Workspace</span>
-                <ArrowRight className="w-3.5 h-3.5 ml-0.5" />
+                <HugeiconsIcon icon={ArrowRight} size={16} className="w-3.5 h-3.5 ml-0.5" />
               </button>
             </div>
 
@@ -717,7 +701,7 @@ export const AnimationRightInspector: React.FC = () => {
             <div className="p-3 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                  <Bone className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Bone} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Joint Hierarchy ({bones.length})</span>
                 </span>
                 <button
@@ -758,7 +742,7 @@ export const AnimationRightInspector: React.FC = () => {
           <div className="space-y-3">
             <div className="p-3 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-3">
               <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                <Eye className="w-3.5 h-3.5 text-primary" />
+                <HugeiconsIcon icon={Eye} size={16} className="w-3.5 h-3.5 text-primary" />
                 <span>Viewport Overlays</span>
               </h4>
 
@@ -820,7 +804,7 @@ export const AnimationRightInspector: React.FC = () => {
           <div className="space-y-3">
             <div className="p-3 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-3">
               <h4 className="text-xs font-bold text-white flex items-center gap-2">
-                <Download className="w-3.5 h-3.5 text-primary" />
+                <HugeiconsIcon icon={Download} size={16} className="w-3.5 h-3.5 text-primary" />
                 <span>Export Motion Assets</span>
               </h4>
 
@@ -830,13 +814,13 @@ export const AnimationRightInspector: React.FC = () => {
                   className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] transition-all cursor-pointer group"
                 >
                   <div className="flex items-center gap-2.5">
-                    <Box className="w-4 h-4 text-primary" />
+                    <HugeiconsIcon icon={Box} size={16} className="w-4 h-4 text-primary" />
                     <div className="text-left">
                       <p className="text-xs font-semibold text-white">Animated Mesh (GLB)</p>
                       <p className="text-[10px] text-zinc-400">Baked mesh with skeletal animation</p>
                     </div>
                   </div>
-                  <Download className="w-3.5 h-3.5 text-zinc-400 group-hover:text-primary transition-colors" />
+                  <HugeiconsIcon icon={Download} size={16} className="w-3.5 h-3.5 text-zinc-400 group-hover:text-primary transition-colors" />
                 </button>
 
                 <button
@@ -844,13 +828,13 @@ export const AnimationRightInspector: React.FC = () => {
                   className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] transition-all cursor-pointer group"
                 >
                   <div className="flex items-center gap-2.5">
-                    <Bone className="w-4 h-4 text-primary" />
+                    <HugeiconsIcon icon={Bone} size={16} className="w-4 h-4 text-primary" />
                     <div className="text-left">
                       <p className="text-xs font-semibold text-white">Motion Capture (BVH)</p>
                       <p className="text-[10px] text-zinc-400">Industry standard skeletal trajectory</p>
                     </div>
                   </div>
-                  <Download className="w-3.5 h-3.5 text-zinc-400 group-hover:text-primary transition-colors" />
+                  <HugeiconsIcon icon={Download} size={16} className="w-3.5 h-3.5 text-zinc-400 group-hover:text-primary transition-colors" />
                 </button>
 
                 <button
@@ -858,13 +842,13 @@ export const AnimationRightInspector: React.FC = () => {
                   className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] transition-all cursor-pointer group"
                 >
                   <div className="flex items-center gap-2.5">
-                    <FileCode className="w-4 h-4 text-primary" />
+                    <HugeiconsIcon icon={FileCode} size={16} className="w-4 h-4 text-primary" />
                     <div className="text-left">
                       <p className="text-xs font-semibold text-white">ARDY Session (JSON)</p>
                       <p className="text-[10px] text-zinc-400">Waypoints, constraints and prompt state</p>
                     </div>
                   </div>
-                  <Download className="w-3.5 h-3.5 text-zinc-400 group-hover:text-primary transition-colors" />
+                  <HugeiconsIcon icon={Download} size={16} className="w-3.5 h-3.5 text-zinc-400 group-hover:text-primary transition-colors" />
                 </button>
               </div>
             </div>

@@ -1,16 +1,7 @@
 import React, { useState, useCallback } from 'react';
-import {
-  X,
-  Search,
-  Copy,
-  Check,
-  AlertTriangle,
-  CheckCircle2,
-  FileBox,
-  Send,
-  Reply,
-  Lightbulb
-} from 'lucide-react';
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Cancel, Check, CheckmarkCircle02Icon, Copy, FileBoxIcon, Lightbulb, Reply, Search, Send, TriangleAlertIcon } from '@hugeicons/core-free-icons';
 import {
   diagnoseUpload,
   createSampleGlbFile,
@@ -91,7 +82,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
         <div className="flex items-center justify-between px-5 py-4 bg-[hsl(var(--surface-1))] border-b border-[hsl(var(--border))]">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] flex items-center justify-center text-[hsl(var(--primary))]">
-              <Search className="w-4 h-4" />
+              <HugeiconsIcon icon={Search} size={16} className="w-4 h-4" />
             </div>
             <div>
               <h3 className="font-bold text-sm text-[hsl(var(--foreground))]">Upload Diagnostics</h3>
@@ -102,7 +93,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
             onClick={onClose}
             className="p-1.5 rounded-lg text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-2))]"
           >
-            <X className="w-4 h-4" />
+            <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
           </button>
         </div>
 
@@ -113,7 +104,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
             <label className="font-medium text-[hsl(var(--foreground))]">File to Diagnose</label>
             <div className="flex gap-2">
               <label className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] cursor-pointer hover:border-[hsl(var(--primary))]/50 transition-colors">
-                <FileBox className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
+                <HugeiconsIcon icon={FileBoxIcon} size={16} className="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
                 <span className="text-[hsl(var(--foreground))] truncate">
                   {selectedFile ? `${selectedFile.name} (${(selectedFile.size / 1024).toFixed(1)} KB)` : 'Select a GLB file...'}
                 </span>
@@ -144,7 +135,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
                 </>
               ) : (
                 <>
-                  <Search className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={Search} size={16} className="w-3.5 h-3.5" />
                   <span>Run Diagnostic</span>
                 </>
               )}
@@ -154,7 +145,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
                 onClick={copyReport}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] font-medium text-xs transition-colors"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-[hsl(var(--neon-green))]" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-[hsl(var(--neon-green))]" /> : <HugeiconsIcon icon={Copy} size={16} className="w-3.5 h-3.5" />}
                 <span>{copied ? 'Copied!' : 'Copy Report'}</span>
               </button>
             )}
@@ -170,8 +161,8 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
                   : 'bg-[hsl(var(--destructive)/0.1)] border-[hsl(var(--destructive))]/40'
               }`}>
                 {result.success
-                  ? <CheckCircle2 className="w-4 h-4 text-[hsl(var(--neon-green))] flex-shrink-0" />
-                  : <AlertTriangle className="w-4 h-4 text-[hsl(var(--destructive))] flex-shrink-0" />
+                  ? <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4 text-[hsl(var(--neon-green))] flex-shrink-0" />
+                  : <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-4 h-4 text-[hsl(var(--destructive))] flex-shrink-0" />
                 }
                 <span className={`text-xs font-medium ${result.success ? 'text-[hsl(var(--neon-green))]' : 'text-[hsl(var(--destructive))]'}`}>
                   {result.success ? 'Upload succeeded' : 'Upload failed — see details below'}
@@ -181,7 +172,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
               {/* Request Section */}
               <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden">
                 <div className="px-3 py-2 bg-[hsl(var(--surface-1))] border-b border-[hsl(var(--border))] flex items-center gap-2">
-                  <Send className="w-3.5 h-3.5 text-[hsl(var(--primary))]" />
+                  <HugeiconsIcon icon={Send} size={16} className="w-3.5 h-3.5 text-[hsl(var(--primary))]" />
                   <span className="font-semibold text-[hsl(var(--foreground))]">Request</span>
                 </div>
                 <div className="p-3 space-y-2 bg-[hsl(var(--surface-1))]">
@@ -223,7 +214,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
               {result.response && (
                 <div className="rounded-xl border border-[hsl(var(--border))] overflow-hidden">
                   <div className="px-3 py-2 bg-[hsl(var(--surface-1))] border-b border-[hsl(var(--border))] flex items-center gap-2">
-                    <Reply className="w-3.5 h-3.5 text-[hsl(var(--primary))]" />
+                    <HugeiconsIcon icon={Reply} size={16} className="w-3.5 h-3.5 text-[hsl(var(--primary))]" />
                     <span className="font-semibold text-[hsl(var(--foreground))]">Response</span>
                     {result.response.isHtml && (
                       <span className="ml-auto px-2 py-0.5 rounded-md bg-[hsl(var(--destructive))]/20 text-[hsl(var(--destructive))] text-[10px] font-bold">
@@ -272,7 +263,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
               {result.errors.length > 0 && (
                 <div className="rounded-xl border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--surface-1))] p-3 space-y-1">
                   <div className="flex items-center gap-2 text-[hsl(var(--destructive))] font-semibold">
-                    <AlertTriangle className="w-3.5 h-3.5" />
+                    <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-3.5 h-3.5" />
                     <span>Errors</span>
                   </div>
                   {result.errors.map((error, i) => (
@@ -285,7 +276,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
               {result.recommendations.length > 0 && (
                 <div className="rounded-xl border border-[hsl(var(--primary))]/30 bg-[hsl(var(--surface-1))] p-3 space-y-1">
                   <div className="flex items-center gap-2 text-[hsl(var(--primary))] font-semibold">
-                    <Lightbulb className="w-3.5 h-3.5" />
+                    <HugeiconsIcon icon={Lightbulb} size={16} className="w-3.5 h-3.5" />
                     <span>Recommendations</span>
                   </div>
                   {result.recommendations.map((rec, i) => (

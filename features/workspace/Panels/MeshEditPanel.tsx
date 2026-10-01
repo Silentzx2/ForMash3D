@@ -1,29 +1,9 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Box,
-  Layers,
-  Upload,
-  FolderOpen,
-  X,
-  PlusSquare,
-  MinusSquare,
-  RefreshCw,
-  BoxSelect,
-  CircleDot,
-  Brush,
-  Lasso,
-  ChevronDown,
-  ChevronUp,
-  Sparkles,
-  Sliders,
-  Image as ImageIcon,
-  Zap,
-  Loader2,
-  Check,
-  Scissors,
-} from 'lucide-react';
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, Brush, Cancel, Check, ChevronDown, ChevronUp, CircleDot, FolderOpen, ImageIcon, Lasso, LassoSelect, LoaderCircle, Minus, Plus, RefreshCw, Scissors, Sparkles, Upload } from '@hugeicons/core-free-icons';
 import {
   StandardBrushIcon,
   ClayBrushIcon,
@@ -207,7 +187,7 @@ export const MeshEditPanel: React.FC = () => {
         <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-              <Box className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
               <span>Target Mesh</span>
             </span>
             <div className="flex items-center gap-1.5">
@@ -216,7 +196,7 @@ export const MeshEditPanel: React.FC = () => {
                 onClick={() => setShowAssetPicker(!showAssetPicker)}
                 className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <FolderOpen className="w-3 h-3 text-primary" />
+                <HugeiconsIcon icon={FolderOpen} size={16} className="w-3 h-3 text-primary" />
                 <span>Assets</span>
               </button>
               <input
@@ -231,7 +211,7 @@ export const MeshEditPanel: React.FC = () => {
                 onClick={() => fileInputRef.current?.click()}
                 className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <Upload className="w-3 h-3 text-primary" />
+                <HugeiconsIcon icon={Upload} size={16} className="w-3 h-3 text-primary" />
                 <span>Upload</span>
               </button>
             </div>
@@ -241,7 +221,7 @@ export const MeshEditPanel: React.FC = () => {
             <div className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] relative group flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0 pr-2">
                 <div className="w-7 h-7 rounded bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center flex-shrink-0">
-                  <Box className="w-4 h-4 text-primary" />
+                  <HugeiconsIcon icon={Box} size={16} className="w-4 h-4 text-primary" />
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-white truncate max-w-[170px]">{currentAsset.name || 'mesh.glb'}</div>
@@ -256,7 +236,7 @@ export const MeshEditPanel: React.FC = () => {
                 className="p-1 rounded-md text-zinc-400 hover:text-rose-400 hover:bg-white/[0.06] transition-colors cursor-pointer"
                 title="Remove selected mesh"
               >
-                <X className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
               </button>
             </div>
           ) : (
@@ -298,9 +278,9 @@ export const MeshEditPanel: React.FC = () => {
           </div>
           <div className="grid grid-cols-3 gap-1.5">
             {[
-              { id: 'add', label: 'Add / Modify', icon: PlusSquare },
-              { id: 'remove', label: 'Remove', icon: MinusSquare },
-              { id: 'replace', label: 'Replace', icon: RefreshCw },
+              { id: 'add', label: 'Add / Modify', icon: (props: any) => <HugeiconsIcon icon={Plus} size={16} {...props} /> },
+              { id: 'remove', label: 'Remove', icon: (props: any) => <HugeiconsIcon icon={Minus} size={16} {...props} /> },
+              { id: 'replace', label: 'Replace', icon: (props: any) => <HugeiconsIcon icon={RefreshCw} size={16} {...props} /> },
             ].map((m) => {
               const Icon = m.icon;
               const isActive = editMode === m.id;
@@ -340,10 +320,10 @@ export const MeshEditPanel: React.FC = () => {
           </div>
           <div className="grid grid-cols-4 gap-1">
             {[
-              { id: 'box', label: 'Box', icon: BoxSelect },
-              { id: 'sphere', label: 'Sphere', icon: CircleDot },
-              { id: 'brush', label: 'Brush', icon: Brush },
-              { id: 'lasso', label: 'Lasso', icon: Lasso },
+              { id: 'box', label: 'Box', icon: (props: any) => <HugeiconsIcon icon={LassoSelect} size={16} {...props} /> },
+              { id: 'sphere', label: 'Sphere', icon: (props: any) => <HugeiconsIcon icon={CircleDot} size={16} {...props} /> },
+              { id: 'brush', label: 'Brush', icon: (props: any) => <HugeiconsIcon icon={Brush} size={16} {...props} /> },
+              { id: 'lasso', label: 'Lasso', icon: (props: any) => <HugeiconsIcon icon={Lasso} size={16} {...props} /> },
             ].map((t) => {
               const Icon = t.icon;
               const isActive = selectionTool === t.id;
@@ -405,7 +385,7 @@ export const MeshEditPanel: React.FC = () => {
                 className="w-full py-1 flex items-center justify-between text-[11px] font-bold text-zinc-400 hover:text-white cursor-pointer"
               >
                 <span>Advanced Parameters</span>
-                {isAdvancedOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {isAdvancedOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5" />}
               </button>
 
               {isAdvancedOpen && (
@@ -502,7 +482,7 @@ export const MeshEditPanel: React.FC = () => {
                 onClick={() => imageInputRef.current?.click()}
                 className="w-full py-3 px-2 rounded-lg border border-dashed border-white/[0.12] bg-[hsl(var(--surface-1))]/50 hover:bg-[hsl(var(--surface-1))] text-center cursor-pointer transition-colors block"
               >
-                <ImageIcon className="w-4 h-4 text-primary mx-auto mb-1" />
+                <HugeiconsIcon icon={ImageIcon} size={16} className="w-4 h-4 text-primary mx-auto mb-1" />
                 <div className="text-xs font-semibold text-zinc-200">Upload Reference Image</div>
                 <div className="text-[9.5px] text-zinc-500">PNG, JPG or WEBP for shape alignment</div>
               </button>
@@ -572,7 +552,7 @@ export const MeshEditPanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
-                  <Brush className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Brush} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Sculpt Brush</span>
                 </span>
                 <span className="text-[10px] font-mono text-primary font-bold uppercase">{sculptBrush}</span>
@@ -609,7 +589,7 @@ export const MeshEditPanel: React.FC = () => {
                         <div className="min-w-0 flex-1">
                           <div className="text-[10.5px] font-bold leading-tight flex items-center justify-between">
                             <span className="truncate">{b.label}</span>
-                            {isActive && <Check className="w-3 h-3 text-black flex-shrink-0 ml-1" />}
+                            {isActive && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-black flex-shrink-0 ml-1" />}
                           </div>
                           <div className={`text-[8.5px] mt-0.5 truncate ${isActive ? 'text-black/80 font-medium' : 'text-zinc-400'}`}>
                             {b.desc}
@@ -794,7 +774,7 @@ export const MeshEditPanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
-                  <Scissors className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Scissors} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Boolean Operation</span>
                 </span>
                 <span className="text-[10px] font-mono text-primary font-bold uppercase">{booleanOp}</span>
@@ -939,7 +919,7 @@ export const MeshEditPanel: React.FC = () => {
             disabled={!hasTargetMesh}
             className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Brush className="w-4 h-4 text-black stroke-[2.5]" />
+            <HugeiconsIcon icon={Brush} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
             <span>INTERACTIVE SCULPT ACTIVE: {sculptBrush.toUpperCase()}</span>
           </button>
         ) : inputTab === 'boolean' ? (
@@ -951,7 +931,7 @@ export const MeshEditPanel: React.FC = () => {
             disabled={!hasTargetMesh}
             className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Scissors className="w-4 h-4 text-black stroke-[2.5]" />
+            <HugeiconsIcon icon={Scissors} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
             <span>APPLY CSG BOOLEAN {booleanOp.toUpperCase()}</span>
           </button>
         ) : (
@@ -976,12 +956,12 @@ export const MeshEditPanel: React.FC = () => {
           >
             {isRunning ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
                 <span>Editing 3D Mesh...</span>
               </>
             ) : (
               <>
-                <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
+                <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>{inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
               </>
             )}

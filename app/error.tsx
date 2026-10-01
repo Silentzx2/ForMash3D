@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, RefreshCw, ArrowLeft } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { TriangleAlertIcon, RefreshCwIcon, ArrowLeft01Icon } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
 
 export default function Error({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
@@ -52,7 +53,9 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
           <div className="relative z-10 flex items-center justify-center w-20 h-20 rounded-2xl bg-[hsl(var(--destructive)/0.1)] border border-[hsl(var(--destructive)/0.3)] backdrop-blur-sm shadow-[0_0_40px_hsl(var(--destructive)/0.2)]"
                style={{ animation: 'fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards', opacity: 0 }}
           >
-            <AlertTriangle 
+            <HugeiconsIcon 
+              icon={TriangleAlertIcon} 
+              size={40} 
               className="w-10 h-10 text-[hsl(var(--destructive))]" 
               style={{ animation: 'icon-glitch 0.6s infinite linear' }}
             />
@@ -115,13 +118,13 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
             disabled={isRetrying}
             className="border border-[hsl(var(--border)/0.5)] hover:bg-[hsl(var(--surface-2))] hover:border-foreground/20 transition-all duration-300 w-full sm:w-auto"
           >
-            <RefreshCw className={`w-4 h-4 mr-2 transition-transform duration-500 ${isRetrying ? 'animate-spin' : ''}`} />
+            <HugeiconsIcon icon={RefreshCwIcon} size={16} className={`w-4 h-4 mr-2 transition-transform duration-500 ${isRetrying ? 'animate-spin' : ''}`} />
             {isRetrying ? 'Rebooting...' : 'Try Again'}
           </Button>
           
           <Link href="/" className="w-full sm:w-auto group">
             <Button className="w-full bg-primary text-[#080808] hover:bg-primary/90 font-bold shadow-sm transition-all duration-300 hover:scale-105">
-              <ArrowLeft className="w-4 h-4 mr-2 transition-transform group-hover:-translate-x-1" />
+              <HugeiconsIcon icon={ArrowLeft01Icon} size={16} className="w-4 h-4 mr-2 transition-transform group-hover:-translate-x-1" />
               Abort to Home
             </Button>
           </Link>

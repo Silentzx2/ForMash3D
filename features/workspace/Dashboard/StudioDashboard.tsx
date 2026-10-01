@@ -1,16 +1,11 @@
 import React from 'react';
-import {
-  Box,
-  Sparkles,
-  Layers,
-  Sliders,
-  ArrowRight,
-  FolderOpen
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { GpuVramLineChart } from '@/components/premium/GpuVramLineChart';
 import { Skeleton } from '@/components/ui/skeleton';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowRight, Box, FolderOpen, Layers, SlidersHorizontal, Sparkles } from '@hugeicons/core-free-icons';
 export const StudioDashboard: React.FC = () => {
   const { 
     setMainNav, 
@@ -59,7 +54,7 @@ export const StudioDashboard: React.FC = () => {
               onClick={() => handleLaunchTool('model')}
               className="relative px-5 py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center gap-2 shadow-[0_4px_20px_-2px_rgba(255,204,0,0.45),inset_0_1px_0_rgba(255,255,255,0.6)] hover:shadow-[0_6px_28px_rgba(255,204,0,0.65),inset_0_1px_0_rgba(255,255,255,0.8)] hover:brightness-105 transition-all active:scale-95 cursor-pointer border-t border-white/60 btn-lighting-shine"
             >
-              <Sparkles className="w-4 h-4 fill-current stroke-[2.2]" />
+              <HugeiconsIcon icon={Sparkles} size={16} className="w-4 h-4 fill-current stroke-[2.2]" />
               <span>New 3D Generation</span>
             </button>
           </div>
@@ -74,7 +69,7 @@ export const StudioDashboard: React.FC = () => {
           >
             <div className="space-y-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center text-primary group-hover:scale-110 group-hover:border-primary/60 group-hover:shadow-[0_0_16px_rgba(255,204,0,0.35)] transition-all">
-                <Box className="w-5 h-5 stroke-[2.2]" />
+                <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 stroke-[2.2]" />
               </div>
               <div>
                 <h3 className="font-bold text-sm text-[#F5F5F5] group-hover:text-primary transition-colors">3D Mesh Generation</h3>
@@ -83,7 +78,7 @@ export const StudioDashboard: React.FC = () => {
             </div>
             <div className="flex items-center gap-1.5 text-primary group-hover:text-[#FFE066] font-bold text-xs pt-4 transition-colors">
               <span>Launch Tool</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform stroke-[2.2]" />
+              <HugeiconsIcon icon={ArrowRight} size={16} className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform stroke-[2.2]" />
             </div>
           </div>
 
@@ -94,7 +89,7 @@ export const StudioDashboard: React.FC = () => {
           >
             <div className="space-y-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center text-primary group-hover:scale-110 group-hover:border-primary/60 group-hover:shadow-[0_0_16px_rgba(255,204,0,0.35)] transition-all">
-                <Layers className="w-5 h-5 stroke-[2.2]" />
+                <HugeiconsIcon icon={Layers} size={16} className="w-5 h-5 stroke-[2.2]" />
               </div>
               <div>
                 <h3 className="font-bold text-sm text-[#F5F5F5] group-hover:text-primary transition-colors">PBR Texture Studio</h3>
@@ -103,7 +98,7 @@ export const StudioDashboard: React.FC = () => {
             </div>
             <div className="flex items-center gap-1.5 text-primary group-hover:text-[#FFE066] font-bold text-xs pt-4 transition-colors">
               <span>Launch Tool</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform stroke-[2.2]" />
+              <HugeiconsIcon icon={ArrowRight} size={16} className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform stroke-[2.2]" />
             </div>
           </div>
 
@@ -114,7 +109,7 @@ export const StudioDashboard: React.FC = () => {
           >
             <div className="space-y-3">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 border border-primary/30 flex items-center justify-center text-primary group-hover:scale-110 group-hover:border-primary/60 group-hover:shadow-[0_0_16px_rgba(255,204,0,0.35)] transition-all">
-                <Sliders className="w-5 h-5 stroke-[2.2]" />
+                <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-5 h-5 stroke-[2.2]" />
               </div>
               <div>
                 <h3 className="font-bold text-sm text-[#F5F5F5] group-hover:text-primary transition-colors">Adaptive Remesh</h3>
@@ -123,7 +118,7 @@ export const StudioDashboard: React.FC = () => {
             </div>
             <div className="flex items-center gap-1.5 text-primary group-hover:text-[#FFE066] font-bold text-xs pt-4 transition-colors">
               <span>Launch Tool</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform stroke-[2.2]" />
+              <HugeiconsIcon icon={ArrowRight} size={16} className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform stroke-[2.2]" />
             </div>
           </div>
         </div>
@@ -137,7 +132,7 @@ export const StudioDashboard: React.FC = () => {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <FolderOpen className="w-4 h-4 text-primary stroke-[2.2]" />
+              <HugeiconsIcon icon={FolderOpen} size={16} className="w-4 h-4 text-primary stroke-[2.2]" />
               <h2 className="font-bold text-sm text-white">Recent 3D Studio Assets</h2>
             </div>
             <span className="text-[11px] text-zinc-400">Click any asset to open in 3D Viewport</span>
@@ -171,7 +166,7 @@ export const StudioDashboard: React.FC = () => {
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <Box className="w-8 h-8 text-zinc-400 stroke-[2.2]" />
+                      <HugeiconsIcon icon={Box} size={16} className="w-8 h-8 text-zinc-400 stroke-[2.2]" />
                     </div>
                   )}
                   <span className="absolute bottom-1.5 right-1.5 text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/80 backdrop-blur-md text-primary border border-primary/30 font-bold">

@@ -1,24 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Sliders,
-  ChevronDown,
-  ChevronUp,
-  Box,
-  Layers,
-  Sparkles,
-  Info,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  MoreVertical,
-  ExternalLink,
-  Cpu,
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { toast } from 'sonner';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, ChevronDown, ChevronUp, Clock, MoreVertical, SlidersHorizontal } from '@hugeicons/core-free-icons';
 interface RecentEditItem {
   id: string;
   title: string;
@@ -93,7 +81,7 @@ export const MeshEditInspector: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-primary" />
               <span>Selection Info</span>
             </div>
-            {isSelectionOpen ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+            {isSelectionOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
           </button>
 
           {isSelectionOpen && (
@@ -126,10 +114,10 @@ export const MeshEditInspector: React.FC = () => {
             className="w-full flex items-center justify-between p-3 text-xs font-bold text-white hover:bg-white/[0.02] cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <Sliders className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-3.5 h-3.5 text-primary" />
               <span>Edit Parameters</span>
             </div>
-            {isParametersOpen ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+            {isParametersOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
           </button>
 
           {isParametersOpen && (
@@ -274,7 +262,7 @@ export const MeshEditInspector: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-primary" />
               <span>Model</span>
             </div>
-            {isModelOpen ? <ChevronUp className="w-3.5 h-3.5 text-zinc-400" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />}
+            {isModelOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
           </button>
 
           {isModelOpen && (
@@ -296,7 +284,7 @@ export const MeshEditInspector: React.FC = () => {
                   className="flex items-center justify-between w-full text-[11px] text-zinc-400 hover:text-white cursor-pointer py-1"
                 >
                   <span>Model Details</span>
-                  <ChevronDown className={`w-3 h-3 transition-transform ${isModelDetailsOpen ? 'rotate-180 text-white' : ''}`} />
+                  <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 transition-transform ${isModelDetailsOpen ? 'rotate-180 text-white' : ''}`} />
                 </button>
                 {isModelDetailsOpen && (
                   <div className="p-2 mt-1 rounded bg-[hsl(var(--surface-2))] text-[10px] font-mono space-y-1 text-zinc-400 border border-white/[0.04]">
@@ -315,7 +303,7 @@ export const MeshEditInspector: React.FC = () => {
         <div className="rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] overflow-hidden">
           <div className="flex items-center justify-between p-3 border-b border-white/[0.04]">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
-              <Clock className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={Clock} size={16} className="w-3.5 h-3.5 text-primary" />
               <span>Recent Edits</span>
             </div>
             <button
@@ -335,7 +323,7 @@ export const MeshEditInspector: React.FC = () => {
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="w-7 h-7 rounded-md bg-[hsl(var(--surface-1))] flex items-center justify-center flex-shrink-0">
-                    <Box className="w-3.5 h-3.5 text-zinc-400" />
+                    <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-zinc-400" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-[11px] font-semibold text-white truncate max-w-[130px]">
@@ -361,7 +349,7 @@ export const MeshEditInspector: React.FC = () => {
                     onClick={() => toast.info(`Options for ${item.title}`)}
                     className="p-1 rounded text-zinc-500 hover:text-white hover:bg-white/[0.06] cursor-pointer"
                   >
-                    <MoreVertical className="w-3 h-3" />
+                    <HugeiconsIcon icon={MoreVertical} size={16} className="w-3 h-3" />
                   </button>
                 </div>
               </div>

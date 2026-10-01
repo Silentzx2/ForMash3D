@@ -3,7 +3,8 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Download, Upload, AlertCircle, Check, Copy } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Download01Icon, Upload01Icon, AlertCircleIcon, CheckIcon, Copy01Icon } from '@hugeicons/core-free-icons';
 import { useSystemSettings } from '@/hooks/useBackendData';
 import { toast } from 'sonner';
 
@@ -157,7 +158,7 @@ export function ExportBackupSection() {
           <p className="text-muted-foreground mt-2">Export your environment settings or restore from a previous backup.</p>
         </div>
         <Button onClick={handleCopyConfig} variant="outline" className="flex items-center gap-2 self-start">
-          <Copy className="w-4 h-4" />
+          <HugeiconsIcon icon={Copy01Icon} size={16} className="w-4 h-4" />
           Copy Configuration
         </Button>
       </div>
@@ -166,7 +167,7 @@ export function ExportBackupSection() {
         <div className={`p-4 rounded-lg flex items-start gap-3 border ${
           status.type === 'success' ? 'bg-[hsl(var(--neon-green))]/10 border-[hsl(var(--neon-green))]/20 text-[hsl(var(--neon-green))]' : 'bg-[hsl(var(--destructive))]/10 border-[hsl(var(--destructive))]/20 text-[hsl(var(--destructive))]'
         }`}>
-          {status.type === 'success' ? <Check className="w-5 h-5 mt-0.5" /> : <AlertCircle className="w-5 h-5 mt-0.5" />}
+          {status.type === 'success' ? <HugeiconsIcon icon={CheckIcon} size={16} className="w-5 h-5 mt-0.5" /> : <HugeiconsIcon icon={AlertCircleIcon} size={16} className="w-5 h-5 mt-0.5" />}
           <div>
             <p className="font-medium">{status.type === 'success' ? 'Success' : 'Error'}</p>
             <p className="text-sm mt-1">{status.message}</p>
@@ -178,7 +179,7 @@ export function ExportBackupSection() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Download className="w-5 h-5" />
+              <HugeiconsIcon icon={Download01Icon} size={16} className="w-5 h-5" />
               Export Settings
             </CardTitle>
             <CardDescription>Download a JSON backup of your current configurations and preferences.</CardDescription>
@@ -188,15 +189,15 @@ export function ExportBackupSection() {
               This will include your general settings, UI preferences, and generation parameters. It does NOT include any 3D models or generated assets.
             </p>
              <Button variant="default" onClick={handleExport} disabled={exporting} className="w-full">
-               {exporting ? 'Exporting...' : 'Download Backup File'}
-             </Button>
+                {exporting ? 'Exporting...' : 'Download Backup File'}
+              </Button>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5" />
+              <HugeiconsIcon icon={Upload01Icon} size={16} className="w-5 h-5" />
               Restore Backup
             </CardTitle>
             <CardDescription>Upload a previously exported JSON backup file to restore settings.</CardDescription>

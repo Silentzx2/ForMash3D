@@ -1,29 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Server, 
-  X, 
-  CheckCircle2, 
-  AlertCircle, 
-  RefreshCw, 
-  Sliders, 
-  Monitor, 
-  Sparkles, 
-  Layers, 
-  Cpu, 
-  Check, 
-  Sun, 
-  Grid as GridIcon,
-  Brush,
-  Download,
-  ShieldCheck,
-  Zap
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { apiClient } from '../lib/api';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { AlertCircle, Brush, Cancel, Check, CheckmarkCircle02Icon, GridIcon, Monitor, RefreshCw, Server, SlidersHorizontal, Sparkles } from '@hugeicons/core-free-icons';
 type SettingsTab = 'server' | 'viewport' | 'sculpt' | 'ai';
 
 export const SettingsModal: React.FC = () => {
@@ -137,7 +121,7 @@ export const SettingsModal: React.FC = () => {
         <div className="flex items-center justify-between px-5 py-3.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
-              <Sliders className="w-4 h-4 stroke-[2.2]" />
+              <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-4 h-4 stroke-[2.2]" />
             </div>
             <div>
               <h3 className="font-bold text-sm text-white">Studio Settings</h3>
@@ -148,17 +132,17 @@ export const SettingsModal: React.FC = () => {
             onClick={() => setIsSettingsOpen(false)}
             className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
           >
-            <X className="w-4 h-4" />
+            <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
           </button>
         </div>
 
         {/* Tab Navigation */}
         <div className="flex items-center gap-1 px-5 pt-2.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
           {[
-            { id: 'server' as const, label: 'Backend & Server', icon: Server },
-            { id: 'viewport' as const, label: '3D Viewport', icon: Monitor },
-            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: Brush },
-            { id: 'ai' as const, label: 'AI Inference', icon: Sparkles },
+            { id: 'server' as const, label: 'Backend & Server', icon: (props: any) => <HugeiconsIcon icon={Server} size={16} {...props} /> },
+            { id: 'viewport' as const, label: '3D Viewport', icon: (props: any) => <HugeiconsIcon icon={Monitor} size={16} {...props} /> },
+            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: (props: any) => <HugeiconsIcon icon={Brush} size={16} {...props} /> },
+            { id: 'ai' as const, label: 'AI Inference', icon: (props: any) => <HugeiconsIcon icon={Sparkles} size={16} {...props} /> },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -202,7 +186,7 @@ export const SettingsModal: React.FC = () => {
                     disabled={testing}
                     className="px-3.5 py-2 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.1] text-primary font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
+                    <HugeiconsIcon icon={RefreshCw} size={16} className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
                     <span>{testing ? 'Testing...' : 'Test Connection'}</span>
                   </button>
                 </div>
@@ -217,9 +201,9 @@ export const SettingsModal: React.FC = () => {
                   }`}
                 >
                   {testResult.success ? (
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4 flex-shrink-0" />
                   ) : (
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <HugeiconsIcon icon={AlertCircle} size={16} className="w-4 h-4 flex-shrink-0" />
                   )}
                   <span className="text-xs">{testResult.msg}</span>
                 </div>
@@ -331,7 +315,7 @@ export const SettingsModal: React.FC = () => {
                           <span className="w-3.5 h-3.5 rounded-full border border-white/20" style={{ background: preset.bg }} />
                           <span className="text-[11px] font-medium">{preset.label}</span>
                         </div>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-primary" />}
+                        {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
                       </button>
                     );
                   })}
@@ -342,7 +326,7 @@ export const SettingsModal: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <GridIcon className="w-4 h-4 text-primary" />
+                    <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4 text-primary" />
                     <div>
                       <div className="font-semibold text-zinc-200">Floor Reference Grid</div>
                       <div className="text-[10.5px] text-zinc-400">Display infinite metric grid plane in 3D viewport</div>
@@ -502,7 +486,7 @@ export const SettingsModal: React.FC = () => {
                       >
                         <div className="font-bold text-xs text-white flex items-center justify-between">
                           <span>{m.title}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-primary" />}
+                          {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
                         </div>
                         <div className="text-[10px] text-zinc-400 mt-1">{m.desc}</div>
                       </button>

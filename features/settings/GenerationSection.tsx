@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/premium/Spinner';
-import { Cpu, Sliders, Box, Sparkles, Zap, Gauge, ListOrdered } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { CpuIcon, SlidersHorizontalIcon, Box01Icon, SparklesIcon, ZapIcon, GaugeIcon, ListOrderedIcon } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/useAppStore';
@@ -156,7 +157,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Cpu className="w-5 h-5 text-primary" />
+            <HugeiconsIcon icon={CpuIcon} size={16} className="w-5 h-5 text-primary" />
             Default 3D Model Provider
           </CardTitle>
           <CardDescription>Select the primary model engine for text-to-3D and image-to-3D generation.</CardDescription>
@@ -180,7 +181,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Box className="w-5 h-5 text-primary" />
+            <HugeiconsIcon icon={Box01Icon} size={16} className="w-5 h-5 text-primary" />
             Output Format & Quality
           </CardTitle>
           <CardDescription>Specify standard 3D export file formats and render target resolution.</CardDescription>
@@ -221,7 +222,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Sliders className="w-5 h-5 text-emerald-400" />
+            <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-5 h-5 text-emerald-400" />
             Inference & Sampling Parameters
           </CardTitle>
           <CardDescription>Control quality vs speed trade-offs during diffusion generation.</CardDescription>
@@ -271,7 +272,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <Gauge className="w-5 h-5 text-primary" />
+                <HugeiconsIcon icon={GaugeIcon} size={16} className="w-5 h-5 text-primary" />
                 Low VRAM Execution Mode (&lt;8GB GPUs)
               </CardTitle>
               <div className="flex items-center gap-2">
@@ -289,7 +290,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
             <div className="p-4 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-1">
                 <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-primary" />
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
                   Target Provider Compatibility: {selectedModelObj?.label || provider || 'Default Model'}
                 </span>
                 <p className="text-xs text-[hsl(var(--muted-foreground))]">
@@ -313,7 +314,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <ListOrdered className="w-5 h-5 text-primary" />
+              <HugeiconsIcon icon={ListOrderedIcon} size={16} className="w-5 h-5 text-primary" />
               Batch Generation &amp; Queue Pipelining
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -331,7 +332,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
           <div className="p-4 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
-                <Zap className="w-4 h-4 text-primary" />
+                <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 text-primary" />
                 Consecutive Job Queueing
               </span>
               <p className="text-xs text-[hsl(var(--muted-foreground))]">

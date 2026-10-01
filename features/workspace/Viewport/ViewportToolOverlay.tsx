@@ -1,28 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import {
-  Maximize2,
-  Minimize2,
-  Box,
-  Layers,
-  ChevronDown,
-  RotateCcw,
-  Camera,
-  Grid,
-  Sparkles,
-  Move,
-  ZoomIn,
-  ZoomOut,
-  Hand,
-  Check,
-  ArrowRight,
-  Eye,
-  Sliders,
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { toast } from 'sonner';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, Camera, Check, Grid, Layers, Maximize2, Move, RotateCcw } from '@hugeicons/core-free-icons';
 export const ViewportToolOverlay: React.FC = () => {
   const {
     activeTool,
@@ -139,16 +123,16 @@ export const ViewportToolOverlay: React.FC = () => {
             <span className="text-xs font-bold">▲</span>
           </button>
           <button type="button" title="Move Manipulator" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
-            <Move className="w-4 h-4" />
+            <HugeiconsIcon icon={Move} size={16} className="w-4 h-4" />
           </button>
           <button type="button" title="Rotate Selection" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
-            <RotateCcw className="w-4 h-4" />
+            <HugeiconsIcon icon={RotateCcw} size={16} className="w-4 h-4" />
           </button>
           <button type="button" title="Scale Selection" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
-            <Maximize2 className="w-4 h-4" />
+            <HugeiconsIcon icon={Maximize2} size={16} className="w-4 h-4" />
           </button>
           <button type="button" title="Toggle Grid" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
-            <Grid className="w-4 h-4" />
+            <HugeiconsIcon icon={Grid} size={16} className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -180,7 +164,7 @@ export const ViewportToolOverlay: React.FC = () => {
             <div className="grid grid-cols-4 gap-2.5">
               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.06] hover:border-primary/50 transition-all cursor-pointer text-center group">
                 <div className="h-16 rounded-lg bg-[hsl(var(--surface-2))] mb-1.5 flex items-center justify-center text-zinc-500 group-hover:text-white">
-                  <Box className="w-6 h-6" />
+                  <HugeiconsIcon icon={Box} size={16} className="w-6 h-6" />
                 </div>
                 <div className="text-[11px] font-bold text-white">Original Mesh</div>
                 <div className="text-[9px] text-zinc-400 font-mono">248,864 faces</div>
@@ -188,7 +172,7 @@ export const ViewportToolOverlay: React.FC = () => {
 
               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.06] hover:border-primary/50 transition-all cursor-pointer text-center group">
                 <div className="h-16 rounded-lg bg-[hsl(var(--surface-2))] mb-1.5 flex items-center justify-center text-primary">
-                  <Layers className="w-6 h-6" />
+                  <HugeiconsIcon icon={Layers} size={16} className="w-6 h-6" />
                 </div>
                 <div className="text-[11px] font-bold text-white">Part Visualization</div>
                 <div className="text-[9px] text-zinc-400 font-mono">8 parts</div>
@@ -196,7 +180,7 @@ export const ViewportToolOverlay: React.FC = () => {
 
               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.06] hover:border-primary/50 transition-all cursor-pointer text-center group">
                 <div className="h-16 rounded-lg bg-[hsl(var(--surface-2))] mb-1.5 flex items-center justify-center text-zinc-400 group-hover:text-white">
-                  <Grid className="w-6 h-6" />
+                  <HugeiconsIcon icon={Grid} size={16} className="w-6 h-6" />
                 </div>
                 <div className="text-[11px] font-bold text-white">UV Checker</div>
                 <div className="text-[9px] text-zinc-400 font-mono">2048 resolution</div>
@@ -204,7 +188,7 @@ export const ViewportToolOverlay: React.FC = () => {
 
               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.06] hover:border-primary/50 transition-all cursor-pointer text-center group">
                 <div className="h-16 rounded-lg bg-[hsl(var(--surface-2))] mb-1.5 flex items-center justify-center text-emerald-400">
-                  <Check className="w-6 h-6" />
+                  <HugeiconsIcon icon={Check} size={16} className="w-6 h-6" />
                 </div>
                 <div className="text-[11px] font-bold text-white">UV Wireframe</div>
                 <div className="text-[9px] text-zinc-400 font-mono">Clean topology</div>
@@ -238,21 +222,21 @@ export const ViewportToolOverlay: React.FC = () => {
             <div className="grid grid-cols-4 gap-2.5">
               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.06] hover:border-primary/50 transition-all cursor-pointer text-center group">
                 <div className="h-16 rounded-lg bg-[hsl(var(--surface-2))] mb-1.5 flex items-center justify-center text-zinc-400 group-hover:text-white">
-                  <Camera className="w-6 h-6" />
+                  <HugeiconsIcon icon={Camera} size={16} className="w-6 h-6" />
                 </div>
                 <div className="text-[11px] font-bold text-white">Front View</div>
               </div>
 
               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.06] hover:border-primary/50 transition-all cursor-pointer text-center group">
                 <div className="h-16 rounded-lg bg-[hsl(var(--surface-2))] mb-1.5 flex items-center justify-center text-zinc-400 group-hover:text-white">
-                  <Camera className="w-6 h-6" />
+                  <HugeiconsIcon icon={Camera} size={16} className="w-6 h-6" />
                 </div>
                 <div className="text-[11px] font-bold text-white">Side View</div>
               </div>
 
               <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.06] hover:border-primary/50 transition-all cursor-pointer text-center group">
                 <div className="h-16 rounded-lg bg-[hsl(var(--surface-2))] mb-1.5 flex items-center justify-center text-zinc-400 group-hover:text-white">
-                  <Camera className="w-6 h-6" />
+                  <HugeiconsIcon icon={Camera} size={16} className="w-6 h-6" />
                 </div>
                 <div className="text-[11px] font-bold text-white">Back View</div>
               </div>

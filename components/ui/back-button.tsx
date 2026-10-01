@@ -2,7 +2,8 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -45,7 +46,7 @@ export function BackButton({ className, variant = 'ghost', label = 'Back', ...pr
       aria-label="Go back"
       {...props}
     >
-      <ArrowLeft className="w-4 h-4 transition-transform duration-200 group-hover:-translate-x-1" />
+      <HugeiconsIcon icon={ArrowLeft01Icon} size={16} className="w-4 h-4 transition-transform duration-200 group-hover:-translate-x-1" />
       {label}
     </Button>
   );

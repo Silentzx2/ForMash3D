@@ -1,21 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import {
-  Sparkles,
-  Upload,
-  Image as ImageIcon,
-  RefreshCw,
-  Info,
-  X,
-  Loader2,
-  Box,
-  AlertTriangle,
-  Plus,
-  ChevronDown,
-  ChevronUp,
-  Check,
-  Settings2,
-  Zap,
-} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import type { PhysicsSettings } from '../types';
@@ -25,6 +8,9 @@ import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, Cancel, Check, ChevronDown, ChevronUp, ImageIcon, Info, LoaderCircle, Plus, RefreshCw, Settings2, Sparkles, TriangleAlertIcon, Upload, Zap } from '@hugeicons/core-free-icons';
 export interface MeshQualityPreset {
   id: 'low' | 'medium' | 'high' | 'ultra';
   label: string;
@@ -537,12 +523,12 @@ export const GeneratePanel: React.FC = () => {
       {/* Panel Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
-          <Sparkles className="w-4 h-4 text-primary" />
+          <HugeiconsIcon icon={Sparkles} size={16} className="w-4 h-4 text-primary" />
           <span>Generate 3D Model</span>
         </span>
         {statusInfo && (
           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold">
-            <AlertTriangle className="w-3 h-3" />
+            <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-3 h-3" />
             {statusInfo.label}
           </span>
         )}
@@ -560,14 +546,14 @@ export const GeneratePanel: React.FC = () => {
               className="p-2 rounded-xl bg-primary/15 border border-primary/40 text-primary text-[10.5px] flex items-center justify-between gap-1.5 overflow-hidden"
             >
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <Info className="w-4 h-4 flex-shrink-0" />
+                <HugeiconsIcon icon={Info} size={16} className="w-4 h-4 flex-shrink-0" />
                 <span className="leading-tight font-medium">{noticeMessage}</span>
               </div>
               <button 
                 onClick={() => setNoticeMessage(null)}
                 className="text-zinc-400 hover:text-white p-0.5 rounded transition-colors cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
               </button>
             </motion.div>
           )}
@@ -584,7 +570,7 @@ export const GeneratePanel: React.FC = () => {
                     domId: 'subaction-btn-upload',
                     label: 'Single Image',
                     tooltip: 'Single Image to 3D Mesh',
-                    icon: ImageIcon,
+                    icon: (props: any) => <HugeiconsIcon icon={ImageIcon} size={16} {...props} />,
                     onClick: () => {
                       setSubAction('upload');
                       setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
@@ -596,7 +582,7 @@ export const GeneratePanel: React.FC = () => {
                     domId: 'subaction-btn-crop',
                     label: 'Multiview (Unavailable)',
                     tooltip: 'Multiview is disabled until a model-specific backend contract is available.',
-                    icon: Box,
+                    icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
                     onClick: () => {
                       setNoticeMessage('Multiview is disabled until the backend exposes a real multi-view generation contract.');
                       setTimeout(() => setNoticeMessage(null), 5000);
@@ -656,7 +642,7 @@ export const GeneratePanel: React.FC = () => {
                   >
                     {uploadProgress.active ? (
                       <div className="text-center space-y-1.5 w-full px-2 z-10">
-                        <Loader2 className="w-5 h-5 mx-auto animate-spin text-primary" />
+                        <HugeiconsIcon icon={LoaderCircle} size={16} className="w-5 h-5 mx-auto animate-spin text-primary" />
                         <div className="font-bold text-[10px] text-white">Uploading...</div>
                         <div className="w-full bg-[hsl(var(--surface-2))] rounded-full h-1.5 overflow-hidden">
                           <motion.div
@@ -680,7 +666,7 @@ export const GeneratePanel: React.FC = () => {
                           }}
                           className="absolute bottom-1.5 right-1.5 bg-black/80 hover:bg-black border border-white/20 text-primary px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer z-20 transition-all opacity-0 group-hover:opacity-100 shadow-md"
                         >
-                          <RefreshCw className="w-3 h-3" />
+                          <HugeiconsIcon icon={RefreshCw} size={16} className="w-3 h-3" />
                           <span>Replace</span>
                         </div>
                       </div>
@@ -689,7 +675,7 @@ export const GeneratePanel: React.FC = () => {
                         <div className={`w-8 h-8 mx-auto rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center transition-all ${
                           isDragOver ? 'text-primary border-primary' : 'text-zinc-400 group-hover/dropzone:text-primary'
                         }`}>
-                          <Upload className="w-4 h-4" />
+                          <HugeiconsIcon icon={Upload} size={16} className="w-4 h-4" />
                         </div>
                         <div className="space-y-0.5">
                           <div className="font-bold text-xs text-zinc-100">
@@ -758,7 +744,7 @@ export const GeneratePanel: React.FC = () => {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
-                        <Box className="w-3.5 h-3.5 text-primary" />
+                        <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
                         <span>Multiview Perspective Angles</span>
                       </span>
                       <span className="text-[9px] text-zinc-400 font-mono">
@@ -817,12 +803,12 @@ export const GeneratePanel: React.FC = () => {
                                   className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 hover:bg-rose-600 text-white transition-colors cursor-pointer"
                                   title={`Remove ${label} view`}
                                 >
-                                  <X className="w-2.5 h-2.5" />
+                                  <HugeiconsIcon icon={Cancel} size={16} className="w-2.5 h-2.5" />
                                 </button>
                               </>
                             ) : (
                               <div className="text-center space-y-0.5">
-                                <Plus className="w-4 h-4 mx-auto text-zinc-500 group-hover:text-primary transition-colors" />
+                                <HugeiconsIcon icon={Plus} size={16} className="w-4 h-4 mx-auto text-zinc-500 group-hover:text-primary transition-colors" />
                                 <span className="text-[8px] text-zinc-400 font-medium block">{label}</span>
                               </div>
                             )}
@@ -878,7 +864,7 @@ export const GeneratePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2 relative">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>AI 3D Engine</span>
                 </span>
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
@@ -909,7 +895,7 @@ export const GeneratePanel: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <ChevronDown className={`w-4 h-4 text-zinc-400 flex-shrink-0 transition-transform ${modelDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
+                <HugeiconsIcon icon={ChevronDown} size={16} className={`w-4 h-4 text-zinc-400 flex-shrink-0 transition-transform ${modelDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
               </button>
 
               {/* Clean Dropdown Menu */}
@@ -965,7 +951,7 @@ export const GeneratePanel: React.FC = () => {
                             </span>
                           </div>
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}
+                        {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}
                       </button>
                     );
                   })}
@@ -1072,7 +1058,7 @@ export const GeneratePanel: React.FC = () => {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                    <Settings2 className="w-3.5 h-3.5" />
+                    <HugeiconsIcon icon={Settings2} size={16} className="w-3.5 h-3.5" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-[11px] font-bold text-white">Advanced Generation</div>
@@ -1081,7 +1067,7 @@ export const GeneratePanel: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+                <HugeiconsIcon icon={ChevronDown} size={16} className="w-4 h-4 text-zinc-400 shrink-0" />
               </div>
             </button>
           </div>
@@ -1104,7 +1090,7 @@ export const GeneratePanel: React.FC = () => {
             >
               <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Settings2 className="w-4 h-4 text-primary shrink-0" />
+                  <HugeiconsIcon icon={Settings2} size={16} className="w-4 h-4 text-primary shrink-0" />
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-white">Advanced Generation</div>
                     <div className="text-[9px] text-zinc-500 truncate">Physics, quality budget and topology</div>
@@ -1116,7 +1102,7 @@ export const GeneratePanel: React.FC = () => {
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
                   aria-label="Close advanced generation settings"
                 >
-                  <ChevronUp className="w-4 h-4" />
+                  <HugeiconsIcon icon={ChevronUp} size={16} className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
@@ -1124,7 +1110,7 @@ export const GeneratePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <Zap className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Zap} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Physics Preparation</span>
                 </div>
                 <span className="text-[9px] text-zinc-500">Post-process · no extra AI model</span>
@@ -1224,7 +1210,7 @@ export const GeneratePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <Box className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Mesh Settings</span>
                 </div>
                 <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
@@ -1351,7 +1337,7 @@ export const GeneratePanel: React.FC = () => {
                   onClick={() => setAdvancedSettingsOpen(false)}
                   className="w-full h-9 rounded-xl bg-primary text-black text-[10px] font-black tracking-wide hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  <Check className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5" />
                   APPLY & CLOSE
                 </button>
               </div>
@@ -1404,12 +1390,12 @@ export const GeneratePanel: React.FC = () => {
         >
           {isExecuting ? (
             <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+              <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
               <span className="tracking-wide">{executionStep || 'Generating 3D Model...'}</span>
             </>
           ) : (
             <>
-              <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
+              <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
               <span className="tracking-wider">{isExecuting ? 'GENERATE ANOTHER' : 'GENERATE 3D MODEL'}</span>
             </>
           )}

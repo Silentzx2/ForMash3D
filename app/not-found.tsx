@@ -1,7 +1,8 @@
 "use client";
 
 import Link from 'next/link';
-import { Box, ArrowLeft, Sparkles } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { BoxIcon, ArrowLeft01Icon, SparklesIcon } from '@hugeicons/core-free-icons';
 import { Button } from '@/components/ui/button';
 
 export default function NotFound() {
@@ -32,7 +33,7 @@ export default function NotFound() {
             className="flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 animate-fade-up delay-100"
             style={{ animation: 'float 4s ease-in-out infinite, fade-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards', opacity: 0 }}
           >
-            <Box className="w-10 h-10 text-primary" />
+            <HugeiconsIcon icon={BoxIcon} size={40} className="w-10 h-10 text-primary" />
           </div>
 
           {/* Text Content */}
@@ -55,7 +56,7 @@ export default function NotFound() {
                 variant="ghost" 
                 className="w-full border border-[hsl(var(--border)/0.5)] hover:bg-[hsl(var(--surface-2))] hover:border-foreground/20 transition-all duration-300 group-hover:-translate-x-1"
               >
-                <ArrowLeft className="w-4 h-4 mr-2 transition-transform group-hover:-translate-x-1" />
+                <HugeiconsIcon icon={ArrowLeft01Icon} size={16} className="w-4 h-4 mr-2 transition-transform group-hover:-translate-x-1" />
                 Back to Home
               </Button>
             </Link>
@@ -64,7 +65,7 @@ export default function NotFound() {
               <Button 
                 className="w-full bg-primary text-[#080808] hover:bg-primary/90 font-bold shadow-sm transition-all duration-300 hover:scale-105"
               >
-                <Sparkles className="w-4 h-4 mr-2" />
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 mr-2" />
                 Open Workspace
               </Button>
             </Link>

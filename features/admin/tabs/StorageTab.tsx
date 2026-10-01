@@ -3,10 +3,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  HardDrive, Loader2, AlertCircle, Trash2, RefreshCw, CheckCircle2,
-  FolderArchive, Database, Layers, Sparkles
-} from 'lucide-react';
+  HardDriveIcon, LoaderCircleIcon, AlertCircleIcon, Trash02Icon, RefreshCwIcon, CheckmarkCircle02Icon,
+  FolderArchiveIcon, Database01Icon, Layers01Icon, SparklesIcon
+} from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 
@@ -109,7 +110,7 @@ export function StorageTab() {
   if (loading && !data) {
     return (
       <div className="flex h-64 items-center justify-center flex-col gap-3">
-        <Loader2 className="w-8 h-8 animate-spin text-[hsl(var(--primary))]" />
+        <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-8 h-8 animate-spin text-[hsl(var(--primary))]" />
         <p className="text-xs text-[hsl(var(--muted-foreground))]">Scanning disk storage metrics...</p>
       </div>
     );
@@ -120,7 +121,7 @@ export function StorageTab() {
       <div className="p-6">
         <div className="p-4 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5" />
+            <HugeiconsIcon icon={AlertCircleIcon} size={16} className="w-5 h-5" />
             <span className="text-sm font-medium">{error}</span>
           </div>
           <Button variant="outline" size="sm" onClick={() => fetchStorage()}>
@@ -139,7 +140,7 @@ export function StorageTab() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-[hsl(var(--foreground))] flex items-center gap-2">
-            <HardDrive className="w-6 h-6 text-[hsl(var(--primary))]" />
+             <HugeiconsIcon icon={HardDriveIcon} size={16} className="w-6 h-6 text-[hsl(var(--primary))]" />
             Disk Space &amp; Storage Monitoring
           </h2>
           <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
@@ -155,7 +156,7 @@ export function StorageTab() {
             disabled={loading}
             className="text-xs font-semibold"
           >
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+            <HugeiconsIcon icon={RefreshCwIcon} size={16} />
             Refresh Stats
           </Button>
 
@@ -168,12 +169,12 @@ export function StorageTab() {
           >
             {clearing ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-3.5 h-3.5 mr-1.5 animate-spin" />
                 Clearing...
               </>
             ) : (
               <>
-                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                <HugeiconsIcon icon={Trash02Icon} size={16} className="w-3.5 h-3.5 mr-1.5" />
                 Clear Cache
               </>
             )}
@@ -246,7 +247,7 @@ export function StorageTab() {
             <div className="p-3 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
               <span className="text-[10px] uppercase font-bold text-[hsl(var(--muted-foreground))] tracking-wider">Storage Health</span>
               <p className="text-xs font-bold text-emerald-400 mt-1 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Normal
+                 <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-3.5 h-3.5" /> Normal
               </p>
             </div>
           </div>
@@ -264,7 +265,7 @@ export function StorageTab() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-                  <Database className="w-4 h-4 text-primary" />
+                   <HugeiconsIcon icon={Database01Icon} size={16} className="w-4 h-4 text-primary" />
                   AI Models
                 </CardTitle>
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]">/models</span>
@@ -284,7 +285,7 @@ export function StorageTab() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-primary" />
+                   <HugeiconsIcon icon={Layers01Icon} size={16} className="w-4 h-4 text-primary" />
                   Generated 3D
                 </CardTitle>
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]">/exports</span>
@@ -304,7 +305,7 @@ export function StorageTab() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-                  <FolderArchive className="w-4 h-4 text-muted-foreground" />
+                   <HugeiconsIcon icon={FolderArchiveIcon} size={16} className="w-4 h-4 text-muted-foreground" />
                   Uploads
                 </CardTitle>
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]">/uploads</span>
@@ -324,7 +325,7 @@ export function StorageTab() {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-primary" />
+                   <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
                   Temp &amp; Cache
                 </CardTitle>
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]">/temp</span>

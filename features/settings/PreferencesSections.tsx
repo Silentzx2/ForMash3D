@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Bell, Keyboard, Network, RotateCcw, AlertTriangle } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { BellIcon, KeyboardIcon, NetworkIcon, RotateCcwIcon, TriangleAlertIcon } from '@hugeicons/core-free-icons';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -57,7 +58,7 @@ export function NotificationsSection({ onSaveRegister }: { onSaveRegister?: (sav
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="w-5 h-5" />
+            <HugeiconsIcon icon={BellIcon} size={16} className="w-5 h-5" />
             Alert Preferences
           </CardTitle>
           <CardDescription>Choose what events trigger a notification.</CardDescription>
@@ -108,7 +109,7 @@ export function ShortcutsSection() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Keyboard className="w-5 h-5" />
+            <HugeiconsIcon icon={KeyboardIcon} size={16} className="w-5 h-5" />
             Active Shortcuts
           </CardTitle>
           <CardDescription>Default keyboard shortcuts available in the workspace.</CardDescription>
@@ -175,7 +176,7 @@ export function NetworkSection({ onSaveRegister }: { onSaveRegister?: (save: () 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Network className="w-5 h-5" />
+            <HugeiconsIcon icon={NetworkIcon} size={16} className="w-5 h-5" />
             Connectivity
           </CardTitle>
           <CardDescription>Manage how the application connects to remote services.</CardDescription>
@@ -263,7 +264,7 @@ export function AdvancedSection({ onSaveRegister }: { onSaveRegister?: (save: ()
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <RotateCcw className="w-5 h-5" />
+            <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-5 h-5" />
             System Behaviors
           </CardTitle>
           <CardDescription>Warning: These settings can affect performance and stability.</CardDescription>
@@ -301,7 +302,7 @@ export function AdvancedSection({ onSaveRegister }: { onSaveRegister?: (save: ()
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" className="w-fit gap-2">
-                  <AlertTriangle className="w-4 h-4" />
+                  <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-4 h-4" />
                   Reset to Defaults
                 </Button>
               </AlertDialogTrigger>

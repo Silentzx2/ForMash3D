@@ -3,11 +3,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Cpu, HardDrive, Zap, Activity, Box,
-  XCircle, Server,
-  MemoryStick, Thermometer, Gauge, ScrollText, RefreshCw
-} from 'lucide-react';
+  Cpu, HardDrive, Zap, Activity01, BoxIcon,
+  CancelCircle, ServerIcon, MemoryStick, Thermometer, Gauge, ScrollText, RefreshCw
+} from '@hugeicons/core-free-icons';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { MetricCard } from '@/components/premium/MetricCard';
 import { ProgressBar } from '@/components/premium/ProgressBar';
@@ -65,9 +65,9 @@ export function OverviewTab() {
   }, [load]);
 
   const quickActions = [
-    { label: 'New Generation', icon: Box, color: 'amber' as const, href: '/workspace' },
+    { label: 'New Generation', icon: BoxIcon, color: 'amber' as const, href: '/workspace' },
     { label: 'Manage Models', icon: HardDrive, color: 'blue' as const, href: '/admin' },
-    { label: 'View Runtime', icon: Activity, color: 'amber' as const, href: '/admin' },
+    { label: 'View Runtime', icon: Activity01, color: 'amber' as const, href: '/admin' },
     { label: 'System Logs', icon: ScrollText, color: 'green' as const, href: '/admin' },
   ];
 
@@ -82,10 +82,10 @@ export function OverviewTab() {
   if (error && !overview && !runtime) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
-        <XCircle className="w-10 h-10 text-[hsl(var(--destructive))]" />
+        <HugeiconsIcon icon={CancelCircle} size={24} className="w-10 h-10 text-[hsl(var(--destructive))]" />
         <p className="text-sm text-muted-foreground">{error}</p>
         <button onClick={() => { setLoading(true); load(); }} className="text-xs text-primary hover:underline flex items-center gap-1.5 cursor-pointer">
-          <RefreshCw className="w-3.5 h-3.5" /> Retry
+          <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" /> Retry
         </button>
       </div>
     );
@@ -156,7 +156,7 @@ export function OverviewTab() {
               className="flex items-center gap-3 p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-border hover:border-primary/50 hover:bg-[hsl(var(--surface-2))] transition-all"
             >
               <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-[hsl(var(--surface-0))] text-primary">
-                <Icon className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={Icon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </div>
               <span className="text-xs font-bold text-white">{action.label}</span>
             </motion.a>
@@ -171,7 +171,7 @@ export function OverviewTab() {
         <MetricCard label="VRAM" value={`${(vram / 1024).toFixed(1)}`} unit={`/ ${(vramTotal / 1024).toFixed(0)} GB`} icon={Zap} color="blue" delay={0.15}>
           <div className="mt-3"><ProgressBar value={(vram / vramTotal) * 100} color="blue" size="sm" /></div>
         </MetricCard>
-        <MetricCard label="CPU" value={Math.round(cpu)} unit="%" icon={Server} color="amber" delay={0.2}>
+        <MetricCard label="CPU" value={Math.round(cpu)} unit="%" icon={ServerIcon} color="amber" delay={0.2}>
           <div className="mt-3"><ProgressBar value={cpu} color="amber" size="sm" /></div>
         </MetricCard>
         <MetricCard label="RAM" value={Math.round(ram)} unit="%" icon={MemoryStick} color="green" delay={0.25}>
@@ -187,7 +187,7 @@ export function OverviewTab() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <GlassCard className="p-5" delay={0.4}>
           <div className="flex items-center gap-2 mb-3">
-            <HardDrive className="w-4 h-4 text-primary" />
+            <HugeiconsIcon icon={HardDrive} size={16} className="w-4 h-4 text-primary" />
             <h3 className="text-sm font-semibold">Storage</h3>
           </div>
           <div className="flex items-baseline gap-1 mb-2">
@@ -203,7 +203,7 @@ export function OverviewTab() {
 
         <GlassCard className="p-5" delay={0.45}>
           <div className="flex items-center gap-2 mb-3">
-            <Thermometer className="w-4 h-4 text-primary" />
+            <HugeiconsIcon icon={Thermometer} size={16} className="w-4 h-4 text-primary" />
             <h3 className="text-sm font-semibold">Temperature</h3>
           </div>
           <div className="flex items-baseline gap-1 mb-2">
@@ -221,7 +221,7 @@ export function OverviewTab() {
 
         <GlassCard className="p-5" delay={0.5}>
           <div className="flex items-center gap-2 mb-3">
-            <Gauge className="w-4 h-4 text-primary" />
+            <HugeiconsIcon icon={Gauge} size={16} className="w-4 h-4 text-primary" />
             <h3 className="text-sm font-semibold">System Status</h3>
           </div>
           <div className="space-y-2">

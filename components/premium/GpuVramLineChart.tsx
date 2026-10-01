@@ -11,7 +11,8 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
-import { Cpu, Zap, Activity, RefreshCw, Flame } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Cpu, Zap, Activity01, RefreshCw, Flame } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { useWorkspace } from '@/features/workspace/store/WorkspaceContext';
 import type { RealtimeGpuData } from '@/hooks/useRealtime';
@@ -235,7 +236,7 @@ export function GpuVramLineChart({
         {current.temp > 0 && (
           <div className="flex items-center justify-between text-[hsl(var(--chart-temp))] pt-0.5 border-t border-[hsl(var(--border))]">
             <span className="flex items-center gap-1.5 font-sans font-medium">
-              <Flame className="w-3 h-3 text-[hsl(var(--chart-temp))]" /> Temp:
+              <HugeiconsIcon icon={Flame} size={16} className="w-3 h-3 text-[hsl(var(--chart-temp))]" /> Temp:
             </span>
             <span className="font-bold">{current.temp}°C</span>
           </div>
@@ -252,7 +253,7 @@ export function GpuVramLineChart({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-[hsl(var(--chart-gpu))]/15 border border-[hsl(var(--chart-gpu))]/30 text-[hsl(var(--chart-gpu))]">
-                <Activity className="w-4 h-4" />
+                <HugeiconsIcon icon={Activity01} size={16} className="w-4 h-4" />
               </div>
               <div>
                 <h3 className="text-xs lg:text-sm font-bold text-[hsl(var(--foreground))] flex items-center gap-2">
@@ -273,7 +274,7 @@ export function GpuVramLineChart({
           <div className="flex items-center gap-2 flex-wrap">
             {/* GPU Badge */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[hsl(var(--chart-gpu))]/10 border border-[hsl(var(--chart-gpu))]/30 text-xs">
-              <Cpu className="w-3.5 h-3.5 text-[hsl(var(--chart-gpu))]" />
+              <HugeiconsIcon icon={Cpu} size={16} className="w-3.5 h-3.5 text-[hsl(var(--chart-gpu))]" />
               <span className="text-[hsl(var(--muted-foreground))] text-[11px]">GPU:</span>
               <span className="font-mono font-bold text-[hsl(var(--chart-gpu))]">{latest.gpu}%</span>
               <span className="text-[10px] text-[hsl(var(--chart-gpu))]/70 font-mono">(Peak {peakGpu}%)</span>
@@ -281,7 +282,7 @@ export function GpuVramLineChart({
 
             {/* VRAM Badge */}
             <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[hsl(var(--chart-vram))]/10 border border-[hsl(var(--chart-vram))]/30 text-xs">
-              <Zap className="w-3.5 h-3.5 text-[hsl(var(--chart-vram))]" />
+              <HugeiconsIcon icon={Zap} size={16} className="w-3.5 h-3.5 text-[hsl(var(--chart-vram))]" />
               <span className="text-[hsl(var(--muted-foreground))] text-[11px]">VRAM:</span>
               <span className="font-mono font-bold text-[hsl(var(--chart-vram))]">
                 {latest.vramTotalGb > 0 ? `${latest.vramUsedGb} / ${latest.vramTotalGb} GB (${latest.vram}%)` : 'Unavailable'}
@@ -291,7 +292,7 @@ export function GpuVramLineChart({
             {/* Temp Badge if available */}
             {latest.temp > 0 && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-[hsl(var(--chart-temp))]/10 border border-[hsl(var(--chart-temp))]/30 text-xs">
-                <Flame className="w-3.5 h-3.5 text-[hsl(var(--chart-temp))]" />
+                <HugeiconsIcon icon={Flame} size={16} className="w-3.5 h-3.5 text-[hsl(var(--chart-temp))]" />
                 <span className="font-mono font-bold text-[hsl(var(--chart-temp))]">{latest.temp}°C</span>
               </div>
             )}
@@ -315,7 +316,7 @@ export function GpuVramLineChart({
               className="p-1 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors disabled:opacity-50"
               title="Refresh now"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[hsl(var(--chart-vram))]' : ''}`} />
+              <HugeiconsIcon icon={RefreshCw} size={16} className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[hsl(var(--chart-vram))]' : ''}`} />
             </button>
           </div>
         </div>

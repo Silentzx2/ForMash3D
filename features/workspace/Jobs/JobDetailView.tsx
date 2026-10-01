@@ -1,37 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Cpu,
-  HardDrive,
-  Download,
-  Trash2,
-  StopCircle,
-  RotateCcw,
-  Sparkles,
-  Maximize2,
-  Box,
-  Layers,
-  Terminal,
-  Activity,
-  ChevronRight,
-  ArrowRight,
-  Copy,
-  Check,
-  RefreshCw,
-  Search,
-  Filter,
-  ExternalLink,
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Activity, AlertCircle, Box, Check, CheckmarkCircle02Icon, Copy, Download, Layers, RefreshCw, Search, Sparkles, StopCircleIcon, Trash2 } from '@hugeicons/core-free-icons';
 const MeshViewer = dynamic(() => import('../Viewport/MeshViewer').then(mod => mod.MeshViewer), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse flex items-center justify-center text-xs text-zinc-500">Loading 3D Output...</div>
@@ -226,7 +203,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
-            <Box className="w-4 h-4" />
+            <HugeiconsIcon icon={Box} size={16} className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -249,7 +226,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
             onClick={fetchJobs}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] hover:border-white/[0.16] text-xs text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" />
             <span>Refresh</span>
           </button>
         </div>
@@ -261,7 +238,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         <div className="w-80 border-r border-white/[0.08] bg-[hsl(var(--surface-1))]/50 flex flex-col flex-shrink-0">
           <div className="p-3 border-b border-white/[0.06] space-y-2">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <HugeiconsIcon icon={Search} size={16} className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="Search job ID or model..."
@@ -293,7 +270,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
           <div className="flex-1 overflow-y-auto divide-y divide-white/[0.04]">
             {filteredJobs.length === 0 ? (
               <div className="p-6 text-center text-xs text-zinc-500 space-y-1">
-                <Box className="w-6 h-6 text-zinc-600 mx-auto mb-2 opacity-50" />
+                <HugeiconsIcon icon={Box} size={16} className="w-6 h-6 text-zinc-600 mx-auto mb-2 opacity-50" />
                 <p>No jobs found</p>
                 <p className="text-[10px]">Generate a 3D model to see jobs here</p>
               </div>
@@ -349,7 +326,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         <div className="flex-1 overflow-y-auto p-5">
           {!selectedJob ? (
             <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-2">
-              <Box className="w-10 h-10 stroke-[1.5] text-zinc-600" />
+              <HugeiconsIcon icon={Box} size={16} className="w-10 h-10 stroke-[1.5] text-zinc-600" />
               <p className="text-xs">Select a job from the list to view its real parameters and output</p>
             </div>
           ) : (
@@ -363,7 +340,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       onClick={handleCopyId}
                       className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
                     >
-                      {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedId ? <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-emerald-400" /> : <HugeiconsIcon icon={Copy} size={16} className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                   <div className="text-xs text-zinc-400">
@@ -390,7 +367,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                     className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/[0.06] transition-colors cursor-pointer"
                     title={selectedJobIsRunning ? 'Cancel Job' : 'Delete Job'}
                   >
-                    {selectedJobIsRunning ? <StopCircle className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+                    {selectedJobIsRunning ? <HugeiconsIcon icon={StopCircleIcon} size={16} className="w-4 h-4" /> : <HugeiconsIcon icon={Trash2} size={16} className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
@@ -400,7 +377,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-zinc-300 font-medium flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                      <HugeiconsIcon icon={Sparkles} size={16} className="w-4 h-4 text-primary animate-pulse" />
                       <span>{selectedJob.stage || 'GPU Synthesis active...'}</span>
                     </span>
                     <span className="font-mono font-bold text-primary">{Math.round(selectedJob.progress || 0)}%</span>
@@ -417,7 +394,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
               {isFailed && (
                 <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
-                    <AlertCircle className="w-4 h-4" />
+                    <HugeiconsIcon icon={AlertCircle} size={16} className="w-4 h-4" />
                     <span>Generation Error Diagnostics</span>
                   </div>
                   <p className="text-xs text-rose-200 font-mono bg-black/40 p-2.5 rounded-lg border border-rose-500/20 whitespace-pre-wrap">
@@ -431,7 +408,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="space-y-1 text-left w-full sm:w-auto">
                     <div className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4" />
+                      <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4" />
                       <span>3D Mesh Generation Succeeded</span>
                     </div>
                     <p className="text-[11px] text-zinc-300">The GLB asset is compiled and available for preview and export.</p>
@@ -441,7 +418,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       onClick={handleLoadResultToViewport}
                       className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-primary hover:brightness-105 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5" />
                       <span>Load into Viewport</span>
                     </button>
                     <a
@@ -449,7 +426,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       download
                       className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-white/[0.12] text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-white/[0.08] transition-colors"
                     >
-                      <Download className="w-3.5 h-3.5" />
+                      <HugeiconsIcon icon={Download} size={16} className="w-3.5 h-3.5" />
                       <span>Download GLB</span>
                     </a>
                   </div>
@@ -462,7 +439,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
                   <div className="flex items-center justify-between text-xs font-bold text-white">
                     <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-primary" />
+                      <HugeiconsIcon icon={Layers} size={16} className="w-4 h-4 text-primary" />
                       <span>Job Parameters</span>
                     </div>
                     <button
@@ -495,7 +472,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 {/* Input Asset & Telemetry */}
                 <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
                   <div className="flex items-center gap-2 text-xs font-bold text-white">
-                    <Activity className="w-4 h-4 text-primary" />
+                    <HugeiconsIcon icon={Activity} size={16} className="w-4 h-4 text-primary" />
                     <span>Input Asset & Pipeline Details</span>
                   </div>
 
@@ -509,7 +486,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
-                      <Box className="w-5 h-5 text-zinc-500" />
+                      <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-zinc-500" />
                     </div>
                     <div className="min-w-0 flex-1 text-xs">
                       <div className="font-bold text-white truncate">Input Reference</div>

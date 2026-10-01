@@ -2,25 +2,21 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { HugeiconsIcon } from '@hugeicons/react';
 import { 
-  ArrowLeft, 
-  Server, 
-  Monitor, 
-  Brush, 
+  ArrowLeft01Icon, 
+  ServerIcon, 
+  MonitorIcon, 
+  BrushIcon, 
   Sparkles, 
   Check, 
   RefreshCw, 
-  CheckCircle2, 
+  CheckmarkCircle02, 
   AlertCircle, 
-  Sliders, 
-  Grid as GridIcon,
-  Sun,
-  ShieldCheck,
-  Cpu,
-  Layers,
-  Save,
-  CheckCheck
-} from 'lucide-react';
+  SlidersHorizontal, 
+  Save, 
+  CheckCheckIcon
+} from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
@@ -118,13 +114,13 @@ export default function SettingsPage() {
             href="/"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[hsl(var(--surface-2))] border border-white/[0.08] text-xs font-semibold text-zinc-300 hover:text-white hover:border-primary/40 transition-all cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4 text-primary" />
+            <HugeiconsIcon icon={ArrowLeft01Icon} size={16} className="w-4 h-4 text-primary" />
             <span>Back to 3D Workspace</span>
           </Link>
           <div className="h-4 w-px bg-white/[0.1] mx-1" />
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
-              <Sliders className="w-4 h-4 stroke-[2.2]" />
+              <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-4 h-4 stroke-[2.2]" />
             </div>
             <div>
               <h1 className="text-sm font-bold text-white tracking-wide">Workspace Settings</h1>
@@ -136,7 +132,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-2">
           {savedSuccess && (
             <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl animate-in fade-in duration-150">
-              <CheckCheck className="w-4 h-4" />
+              <HugeiconsIcon icon={CheckCheckIcon} size={16} className="w-4 h-4" />
               <span>Settings Saved</span>
             </div>
           )}
@@ -144,7 +140,7 @@ export default function SettingsPage() {
             onClick={handleSave}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs shadow-lg shadow-primary/20 transition-all cursor-pointer active:scale-95"
           >
-            <Save className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={Save} size={14} className="w-3.5 h-3.5" />
             <span>Save Preferences</span>
           </button>
         </div>
@@ -155,12 +151,12 @@ export default function SettingsPage() {
         {/* Left Subnav */}
         <aside className="w-56 flex-shrink-0 flex flex-col gap-1">
           {[
-            { id: 'server' as const, label: 'Backend & Server', icon: Server, desc: 'API endpoint & status' },
-            { id: 'viewport' as const, label: '3D Viewport', icon: Monitor, desc: 'Lighting & canvas' },
-            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: Brush, desc: 'Brush defaults & radius' },
+            { id: 'server' as const, label: 'Backend & Server', icon: ServerIcon, desc: 'API endpoint & status' },
+            { id: 'viewport' as const, label: '3D Viewport', icon: MonitorIcon, desc: 'Lighting & canvas' },
+            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: BrushIcon, desc: 'Brush defaults & radius' },
             { id: 'ai' as const, label: 'AI Inference', icon: Sparkles, desc: 'Model & polycount target' },
           ].map((tab) => {
-            const Icon = tab.icon;
+            const IconComponent = tab.icon;
             const active = activeTab === tab.id;
             return (
               <button
@@ -173,7 +169,7 @@ export default function SettingsPage() {
                 }`}
               >
                 <div className={`p-1.5 rounded-lg ${active ? 'bg-primary text-black' : 'bg-white/[0.06] text-zinc-400'}`}>
-                  <Icon className="w-4 h-4" />
+                  <HugeiconsIcon icon={IconComponent} size={16} className="w-4 h-4" />
                 </div>
                 <div>
                   <div className={`text-xs font-bold ${active ? 'text-white' : 'text-zinc-300'}`}>{tab.label}</div>
@@ -208,7 +204,7 @@ export default function SettingsPage() {
                     disabled={testing}
                     className="px-4 py-2.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.1] text-primary font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
+                    <HugeiconsIcon icon={RefreshCw} size={14} className={`w-3.5 h-3.5 ${testing ? 'animate-spin' : ''}`} />
                     <span>{testing ? 'Testing...' : 'Test Link'}</span>
                   </button>
                 </div>
@@ -223,9 +219,9 @@ export default function SettingsPage() {
                   }`}
                 >
                   {testResult.success ? (
-                    <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    <HugeiconsIcon icon={CheckmarkCircle02} size={16} className="w-4 h-4 flex-shrink-0" />
                   ) : (
-                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <HugeiconsIcon icon={AlertCircle} size={16} className="w-4 h-4 flex-shrink-0" />
                   )}
                   <span className="text-xs">{testResult.msg}</span>
                 </div>
@@ -297,7 +293,7 @@ export default function SettingsPage() {
                       >
                         <div className="font-bold text-xs text-white flex items-center justify-between">
                           <span>{p.label}</span>
-                          {active && <Check className="w-3.5 h-3.5 text-primary" />}
+                          {active && <HugeiconsIcon icon={Check} size={14} className="w-3.5 h-3.5 text-primary" />}
                         </div>
                         <div className="text-[10.5px] text-zinc-500 mt-1">{p.desc}</div>
                       </button>
@@ -454,7 +450,7 @@ export default function SettingsPage() {
                       >
                         <div className="font-bold text-xs text-white flex items-center justify-between">
                           <span>{m.title}</span>
-                          {active && <Check className="w-3.5 h-3.5 text-primary" />}
+                          {active && <HugeiconsIcon icon={Check} size={14} className="w-3.5 h-3.5 text-primary" />}
                         </div>
                         <div className="text-[10px] text-zinc-500 mt-1">{m.desc}</div>
                       </button>

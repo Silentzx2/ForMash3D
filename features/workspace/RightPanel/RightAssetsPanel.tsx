@@ -1,22 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { getApiClient } from '@/services/apiClient';
-import {
-  MoreVertical,
-  ChevronLeft,
-  ChevronRight,
-  Box,
-  Grid as GridIcon,
-  Star,
-  Filter,
-  Check,
-  Copy,
-  Trash2,
-  FolderOpen,
-  AlertCircle,
-  Loader2,
-  Search,
-  ZoomIn
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { ModelAsset, normalizeModelAsset } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
@@ -24,6 +7,9 @@ import { UploadDiagnosticModal } from '../Modals/UploadDiagnosticModal';
 import { validate3DFile } from '../lib/fileValidation';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { AlertCircle, Box, Check, ChevronLeft, ChevronRight, Copy, Filter, FolderOpen, GridIcon, LoaderCircle, MoreVertical, Star, Trash2, ZoomIn } from '@hugeicons/core-free-icons';
 export const RightAssetsPanel: React.FC = () => {
   const { 
     assets, 
@@ -235,7 +221,7 @@ export const RightAssetsPanel: React.FC = () => {
                     : 'text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                 }`}
               >
-                <GridIcon className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={GridIcon} size={16} className="w-3.5 h-3.5" />
               </button>
             </SimpleTooltip>
 
@@ -249,7 +235,7 @@ export const RightAssetsPanel: React.FC = () => {
                     : 'text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                 }`}
               >
-                <Star className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Star} size={16} className="w-3.5 h-3.5" />
               </button>
             </SimpleTooltip>
 
@@ -264,7 +250,7 @@ export const RightAssetsPanel: React.FC = () => {
                       : 'text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                   }`}
                 >
-                  <Filter className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={Filter} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
 
@@ -275,21 +261,21 @@ export const RightAssetsPanel: React.FC = () => {
                     className="w-full text-left px-3 py-1.5 hover:bg-[hsl(var(--surface-3))] text-zinc-200 cursor-pointer flex items-center justify-between"
                   >
                     <span>All Assets</span>
-                    {assetFilter === 'all' && <Check className="w-3 h-3 text-primary" />}
+                    {assetFilter === 'all' && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
                   </button>
                   <button
                     onClick={() => { setAssetFilter('models'); setFilterMenuOpen(false); }}
                     className="w-full text-left px-3 py-1.5 hover:bg-[hsl(var(--surface-3))] text-zinc-200 cursor-pointer flex items-center justify-between"
                   >
                     <span>3D Models</span>
-                    {assetFilter === 'models' && <Check className="w-3 h-3 text-primary" />}
+                    {assetFilter === 'models' && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
                   </button>
                   <button
                     onClick={() => { setAssetFilter('textures'); setFilterMenuOpen(false); }}
                     className="w-full text-left px-3 py-1.5 hover:bg-[hsl(var(--surface-3))] text-zinc-200 cursor-pointer flex items-center justify-between"
                   >
                     <span>PBR Textures</span>
-                    {assetFilter === 'textures' && <Check className="w-3 h-3 text-primary" />}
+                    {assetFilter === 'textures' && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
                   </button>
                 </div>
               )}
@@ -325,7 +311,7 @@ export const RightAssetsPanel: React.FC = () => {
         >
           {uploadProgress.active ? (
             <div className="flex flex-col items-center justify-center space-y-1.5 w-full px-2">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <HugeiconsIcon icon={LoaderCircle} size={16} className="w-5 h-5 animate-spin text-primary" />
               <div className="w-full bg-[hsl(var(--surface-2))] rounded-full h-1.5 overflow-hidden">
                 <div
                   className="bg-primary h-full rounded-full transition-all duration-200"
@@ -341,7 +327,7 @@ export const RightAssetsPanel: React.FC = () => {
               <div className={`w-9 h-9 rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center transition-all mb-1.5 ${
                 isDragOver ? 'text-primary border-primary' : 'text-zinc-400 group-hover:text-primary group-hover:border-primary/40'
               }`}>
-                <Box className="w-4 h-4" />
+                <HugeiconsIcon icon={Box} size={16} className="w-4 h-4" />
               </div>
               <span className="text-xs font-bold text-white leading-tight">
                 {isDragOver ? 'Drop 3D Model Here' : 'Import 3D Model'}
@@ -355,14 +341,14 @@ export const RightAssetsPanel: React.FC = () => {
 
         {uploadError && (
           <div className="flex items-center gap-1.5 text-[10px] text-rose-400 px-2 py-1.5 bg-rose-500/10 rounded-lg border border-rose-500/20">
-            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            <HugeiconsIcon icon={AlertCircle} size={16} className="w-3.5 h-3.5 flex-shrink-0" />
             <span>{uploadError}</span>
           </div>
         )}
 
         {filteredAssets.length === 0 ? (
           <div className="py-6 px-2 text-center text-zinc-400">
-            <FolderOpen className="w-8 h-8 mx-auto mb-2 text-zinc-500" />
+            <HugeiconsIcon icon={FolderOpen} size={16} className="w-8 h-8 mx-auto mb-2 text-zinc-500" />
             <div className="text-xs font-bold text-zinc-300">No outputs yet</div>
             <div className="text-[11px] mt-1 text-zinc-500">Run a generation workflow or import a 3D file above.</div>
           </div>
@@ -402,7 +388,7 @@ export const RightAssetsPanel: React.FC = () => {
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-[hsl(var(--surface-1))] gap-1 p-1">
                       <div className="w-7 h-7 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center">
-                        <Box className="w-4 h-4 text-zinc-400" />
+                        <HugeiconsIcon icon={Box} size={16} className="w-4 h-4 text-zinc-400" />
                       </div>
                       <span className="text-[9px] font-bold text-zinc-400 uppercase">
                         {asset.format}
@@ -422,14 +408,14 @@ export const RightAssetsPanel: React.FC = () => {
                         className="p-1 rounded-md bg-black/70 hover:bg-black text-zinc-300 hover:text-primary border border-white/20 shadow transition-colors"
                         title="Zoom preview"
                       >
-                        <ZoomIn className="w-3 h-3" />
+                        <HugeiconsIcon icon={ZoomIn} size={16} className="w-3 h-3" />
                       </a>
                     </div>
                   )}
 
                   {isSelected && (
                     <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-black shadow">
-                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      <HugeiconsIcon icon={Check} size={16} className="w-2.5 h-2.5 stroke-[3]" />
                     </div>
                   )}
                 </div>
@@ -449,7 +435,7 @@ export const RightAssetsPanel: React.FC = () => {
                       }}
                       className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))] transition-colors cursor-pointer"
                     >
-                      <MoreVertical className="w-3.5 h-3.5" />
+                      <HugeiconsIcon icon={MoreVertical} size={16} className="w-3.5 h-3.5" />
                     </button>
 
                       {activeMenuAssetId === asset.id && (
@@ -462,7 +448,7 @@ export const RightAssetsPanel: React.FC = () => {
                             }}
                            className="w-full text-left px-2.5 py-1.5 text-zinc-200 hover:bg-[hsl(var(--surface-3))] flex items-center gap-1.5 cursor-pointer"
                          >
-                           <Copy className="w-3 h-3 text-primary" />
+                           <HugeiconsIcon icon={Copy} size={16} className="w-3 h-3 text-primary" />
                            <span>Duplicate</span>
                          </button>
                          <button
@@ -473,7 +459,7 @@ export const RightAssetsPanel: React.FC = () => {
                            }}
                            className="w-full text-left px-2.5 py-1.5 text-rose-400 hover:bg-rose-500/10 flex items-center gap-1.5 cursor-pointer"
                          >
-                           <Trash2 className="w-3 h-3" />
+                           <HugeiconsIcon icon={Trash2} size={16} className="w-3 h-3" />
                            <span>Delete</span>
                          </button>
                         </div>
@@ -498,7 +484,7 @@ export const RightAssetsPanel: React.FC = () => {
             disabled={activePage <= 1}
             className="p-1 rounded-lg hover:text-white hover:bg-[hsl(var(--surface-2))] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
           >
-            <ChevronLeft className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={ChevronLeft} size={16} className="w-3.5 h-3.5" />
           </button>
 
           {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
@@ -518,7 +504,7 @@ export const RightAssetsPanel: React.FC = () => {
             disabled={activePage >= totalPages}
             className="p-1 rounded-lg hover:text-white hover:bg-[hsl(var(--surface-2))] disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer"
           >
-            <ChevronRight className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={ChevronRight} size={16} className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

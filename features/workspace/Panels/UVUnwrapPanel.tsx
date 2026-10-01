@@ -1,16 +1,10 @@
 import React, { useState } from 'react';
-import {
-  Box,
-  Upload,
-  FolderOpen,
-  X,
-  Sparkles,
-  ChevronDown,
-  Zap,
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { createUploadedMeshAsset } from '../types';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, Cancel, FolderOpen, Sparkles, Upload, Zap } from '@hugeicons/core-free-icons';
 export const UVUnwrapPanel: React.FC = () => {
   const {
     currentAsset,
@@ -55,7 +49,7 @@ export const UVUnwrapPanel: React.FC = () => {
       {/* Top Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
+          <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
           <span>Smart UV Unwrapping</span>
         </span>
         <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
@@ -85,11 +79,11 @@ export const UVUnwrapPanel: React.FC = () => {
                     className="absolute top-2 right-2 p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors"
                     title="Remove selected mesh"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
                   </button>
                   <div className="flex items-center gap-2.5">
                     <div className="w-10 h-10 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center flex-shrink-0">
-                      <Box className="w-5 h-5 text-primary" />
+                      <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-primary" />
                     </div>
                     <div className="min-w-0 flex-1 pr-6">
                       <div className="text-xs font-bold text-white truncate">{currentAsset.name || 'knight_character.glb'}</div>
@@ -101,7 +95,7 @@ export const UVUnwrapPanel: React.FC = () => {
                 </div>
               ) : (
                 <div className="p-4 rounded-xl border border-dashed border-white/[0.15] bg-[hsl(var(--surface-0))] text-center space-y-1">
-                  <Box className="w-6 h-6 text-zinc-500 mx-auto" />
+                  <HugeiconsIcon icon={Box} size={16} className="w-6 h-6 text-zinc-500 mx-auto" />
                   <div className="text-xs font-semibold text-zinc-300">No mesh selected</div>
                   <div className="text-[10px] text-zinc-500">Pick from assets below or upload a GLB/OBJ</div>
                 </div>
@@ -113,7 +107,7 @@ export const UVUnwrapPanel: React.FC = () => {
                   onClick={() => setShowAssetPicker(!showAssetPicker)}
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <FolderOpen className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={FolderOpen} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>From Assets</span>
                 </button>
                 <input
@@ -128,7 +122,7 @@ export const UVUnwrapPanel: React.FC = () => {
                   onClick={() => fileInputRef.current?.click()}
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <Upload className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Upload} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Upload New</span>
                 </button>
               </div>
@@ -219,7 +213,7 @@ export const UVUnwrapPanel: React.FC = () => {
               {/* Auto Pipeline Details Badge */}
               <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 space-y-1">
                 <div className="flex items-center gap-1.5 text-primary text-[11px] font-bold">
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5" />
                   <span>Automatic Studio Packing Pipeline</span>
                 </div>
                 <div className="text-[10px] text-zinc-400 leading-relaxed">
@@ -237,7 +231,7 @@ export const UVUnwrapPanel: React.FC = () => {
                 disabled={isRunning || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
                 className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                <Zap className="w-4 h-4 fill-current" />
+                <HugeiconsIcon icon={Zap} size={16} className="w-4 h-4 fill-current" />
                 <span>{isRunning ? 'Unwrapping & Packing Mesh...' : 'Start Smart UV Unwrap'}</span>
               </button>
             </div>

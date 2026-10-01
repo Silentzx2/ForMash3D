@@ -1,24 +1,13 @@
 import React from 'react';
-import {
-  LayoutDashboard,
-  Box,
-  Scissors,
-  CircleDashed,
-  Layers,
-  Film,
-  FolderOpen,
-  Cpu,
-  Grid,
-  Sparkles,
-  Bone,
-  ListOrdered,
-} from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { ToolType } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { motion, LayoutGroup } from 'motion/react';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Bone, Box, CircleDashed, Film, FolderOpen, Grid, Layers, LayoutDashboard, ListOrdered, Scissors, Sparkles } from '@hugeicons/core-free-icons';
 interface LeftNavigationProps {
   /** When true, renders as a wide drawer with full labels instead of icon rail */
   isMobileDrawer?: boolean;
@@ -78,7 +67,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Model',
       tooltip: '3D Model Generation (Image & Text to 3D) • G',
       shortcut: 'G',
-      icon: Box,
+      icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
       active: isActive('model'),
       onClick: () => handleToolClick('model'),
       isExecuting: isModelExecuting,
@@ -88,7 +77,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Poly',
       tooltip: 'Retopology & Quad Remesh • R',
       shortcut: 'R',
-      icon: CircleDashed,
+      icon: (props: any) => <HugeiconsIcon icon={CircleDashed} size={16} {...props} />,
       active: isActive('remesh'),
       onClick: () => handleToolClick('remesh'),
       isExecuting: isRemeshExecuting,
@@ -98,7 +87,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Texture',
       tooltip: 'PBR Texture Maps Generation • T',
       shortcut: 'T',
-      icon: Layers,
+      icon: (props: any) => <HugeiconsIcon icon={Layers} size={16} {...props} />,
       active: isActive('texture'),
       onClick: () => handleToolClick('texture'),
       isExecuting: isTextureExecuting,
@@ -108,7 +97,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'UV',
       tooltip: 'UV Unwrapping & Seam Packing • U',
       shortcut: 'U',
-      icon: Grid,
+      icon: (props: any) => <HugeiconsIcon icon={Grid} size={16} {...props} />,
       active: isActive('uv'),
       onClick: () => handleToolClick('uv'),
     },
@@ -117,7 +106,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Segment',
       tooltip: 'Mesh Segmentation & Part Splitting • S',
       shortcut: 'S',
-      icon: Scissors,
+      icon: (props: any) => <HugeiconsIcon icon={Scissors} size={16} {...props} />,
       active: isActive('segment'),
       onClick: () => handleToolClick('segment'),
     },
@@ -126,7 +115,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Edit',
       tooltip: 'Neural Mesh Editing & Inpainting • E',
       shortcut: 'E',
-      icon: Sparkles,
+      icon: (props: any) => <HugeiconsIcon icon={Sparkles} size={16} {...props} />,
       active: isActive('edit'),
       onClick: () => handleToolClick('edit'),
     },
@@ -135,7 +124,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Animate',
       tooltip: 'ARDY Motion Animation Studio • A',
       shortcut: 'A',
-      icon: Film,
+      icon: (props: any) => <HugeiconsIcon icon={Film} size={16} {...props} />,
       active: isActive('animation'),
       onClick: () => handleToolClick('animation'),
       isExecuting: isAnimationExecuting,
@@ -145,7 +134,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Rigging',
       tooltip: 'Character Rigging Studio (UniRig AI / Manual Rig)',
       shortcut: 'K',
-      icon: Bone,
+      icon: (props: any) => <HugeiconsIcon icon={Bone} size={16} {...props} />,
       active: isActive('rigging'),
       onClick: () => handleToolClick('rigging'),
     },
@@ -158,7 +147,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Overview',
       tooltip: 'Studio Overview & Hub • ⌘1',
       shortcut: '⌘1',
-      icon: LayoutDashboard,
+      icon: (props: any) => <HugeiconsIcon icon={LayoutDashboard} size={16} {...props} />,
       active: isOverviewActive,
       onClick: () => handleMainNavClick('dashboard'),
     },
@@ -167,7 +156,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Assets',
       tooltip: 'Outputs & Asset History • ⌘2',
       shortcut: '⌘2',
-      icon: FolderOpen,
+      icon: (props: any) => <HugeiconsIcon icon={FolderOpen} size={16} {...props} />,
       active: isAssetsActive,
       onClick: () => handleMainNavClick('assets'),
     },
@@ -176,7 +165,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Jobs',
       tooltip: 'Generation Jobs & Run Inspector • ⌘3',
       shortcut: '⌘3',
-      icon: ListOrdered,
+      icon: (props: any) => <HugeiconsIcon icon={ListOrdered} size={16} {...props} />,
       active: isJobsActive,
       onClick: () => handleMainNavClick('jobs'),
     },

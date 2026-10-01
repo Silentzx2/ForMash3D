@@ -5,7 +5,8 @@ import React, { useState, useEffect } from 'react';
 import { getApiClient } from '@/services/apiClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Loader2, Check, FolderOpen } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { AlertCircleIcon, LoaderCircleIcon, CheckIcon, FolderOpenIcon } from '@hugeicons/core-free-icons';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 
@@ -92,7 +93,7 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
     return (
       <div className="p-6">
         <div className="flex items-center justify-center h-40">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-8 h-8 animate-spin text-primary" />
         </div>
       </div>
     );
@@ -107,14 +108,14 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
 
       {error && (
         <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <HugeiconsIcon icon={AlertCircleIcon} size={16} className="w-5 h-5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {success && (
         <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/20 text-success">
-          <Check className="w-5 h-5 flex-shrink-0" />
+          <HugeiconsIcon icon={CheckIcon} size={16} className="w-5 h-5 flex-shrink-0" />
           <span>Settings saved successfully</span>
         </div>
       )}
@@ -136,7 +137,7 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
                   className="flex-1"
                 />
                 <Button variant="outline" size="sm">
-                  <FolderOpen className="w-4 h-4" />
+                  <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-4 h-4" />
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">

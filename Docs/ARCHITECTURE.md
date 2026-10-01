@@ -94,6 +94,12 @@ flowchart TB
 | **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | Three.js WebGL viewport with orbit controls, wireframe/matcap shading, physics smoke test, and opt-in mirror inspection |
 | **State Stores** | `stores/` | Zustand stores for global client state (`useAppStore`, `useViewerStore`, `useAnimationStore`, `useRiggingStore`, `useUIStore`) |
 | **Data Fetching** | hooks + TanStack Query | Server-state caching and synchronization for job status |
+| **Icon System** | `@hugeicons/react` + `@hugeicons/core-free-icons` | Primary icon library; replaces `lucide-react`. Mapping documented in `components/icons/hugeicons-mapping.ts` |
+
+### ADR-009: Hugeicons as Frontend Icon Library
+**Decision**: Migrate frontend icon system from `lucide-react` to Hugeicons.
+**Reason**: Consistent icon weight, broader free icon set, no external font dependency, and first-class React tree-shaking.
+**Scope**: 75+ files migrated including all `components/ui/*`, `features/workspace/**`, `features/admin/**`, and `features/settings/**`.
 
 ### 2.2 API Gateway Layer (FastAPI)
 

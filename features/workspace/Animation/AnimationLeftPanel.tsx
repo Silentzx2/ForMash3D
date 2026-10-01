@@ -1,34 +1,15 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import {
-  Sparkles,
-  Sliders,
-  ChevronDown,
-  ChevronUp,
-  RotateCcw,
-  Check,
-  Wand2,
-  Clock,
-  Gauge,
-  Layers,
-  Shield,
-  Loader2,
-  AlertCircle,
-  Play,
-  Film,
-  Upload,
-  RefreshCw,
-  Key,
-  RotateCw,
-  Bone,
-} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAnimationStore, AnimationClipItem } from '@/stores/useAnimationStore';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { AlertCircle, Bone, ChevronDown, ChevronUp, Key, LoaderCircle, Play, RefreshCw, RotateCw, SlidersHorizontal, Sparkles } from '@hugeicons/core-free-icons';
 export const AnimationLeftPanel: React.FC = () => {
   const { currentAsset } = useWorkspace();
   const {
@@ -211,7 +192,7 @@ export const AnimationLeftPanel: React.FC = () => {
             onClick={() => setIsSectionOpen(!isSectionOpen)}
             className="p-1 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer"
           >
-            {isSectionOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {isSectionOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5" />}
           </button>
         </div>
 
@@ -223,7 +204,7 @@ export const AnimationLeftPanel: React.FC = () => {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-bold text-zinc-200 flex items-center gap-1.5">
-                    <Bone className="w-3.5 h-3.5 text-primary" />
+                    <HugeiconsIcon icon={Bone} size={16} className="w-3.5 h-3.5 text-primary" />
                     <span>Selected Bone</span>
                   </label>
                   <span className="text-[10px] font-mono text-zinc-400">{bones.length} Bones</span>
@@ -240,7 +221,7 @@ export const AnimationLeftPanel: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-3 h-3 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
 
@@ -265,7 +246,7 @@ export const AnimationLeftPanel: React.FC = () => {
                 <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <RotateCw className="w-3.5 h-3.5 text-primary" />
+                      <HugeiconsIcon icon={RotateCw} size={16} className="w-3.5 h-3.5 text-primary" />
                       <span>{selectedBone} Rotation</span>
                     </span>
                     <button
@@ -373,7 +354,7 @@ export const AnimationLeftPanel: React.FC = () => {
                   }}
                   className="w-full py-2.5 px-3 rounded-xl bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-extrabold text-xs shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
                 >
-                  <Key className="w-3.5 h-3.5 fill-current" />
+                  <HugeiconsIcon icon={Key} size={16} className="w-3.5 h-3.5 fill-current" />
                   <span>Keyframe Pose (Frame {Math.round(currentTime * 24)})</span>
                 </button>
 
@@ -451,7 +432,7 @@ export const AnimationLeftPanel: React.FC = () => {
                 }}
                 className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-extrabold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
               >
-                <RefreshCw className="w-4 h-4" />
+                <HugeiconsIcon icon={RefreshCw} size={16} className="w-4 h-4" />
                 <span>Apply Retarget to Character</span>
               </button>
             </div>
@@ -462,7 +443,7 @@ export const AnimationLeftPanel: React.FC = () => {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <label className="font-bold text-zinc-200 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Motion Prompt</span>
                 </label>
                 <button
@@ -515,7 +496,7 @@ export const AnimationLeftPanel: React.FC = () => {
                   <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-primary pointer-events-none">
                     <span className="text-xs">▲</span>
                   </div>
-                  <ChevronDown className="w-3 h-3 text-zinc-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
 
                 {/* Specific Checkpoint Variant */}
@@ -533,7 +514,7 @@ export const AnimationLeftPanel: React.FC = () => {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-3 h-3 text-zinc-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>
             </div>
@@ -592,7 +573,7 @@ export const AnimationLeftPanel: React.FC = () => {
             {/* Error Banner */}
             {motionAiError && (
               <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                <HugeiconsIcon icon={AlertCircle} size={16} className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 break-words leading-relaxed">{motionAiError}</div>
               </div>
             )}
@@ -602,7 +583,7 @@ export const AnimationLeftPanel: React.FC = () => {
               <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-primary/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-zinc-200 flex items-center gap-1.5">
-                    <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                    <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 text-primary animate-spin" />
                     <span>{motionAiStage || 'Synthesizing motion...'}</span>
                   </span>
                   <span className="font-mono text-primary font-bold">{motionAiProgress}%</span>
@@ -625,12 +606,12 @@ export const AnimationLeftPanel: React.FC = () => {
               >
                 {motionAiIsGenerating ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-black" />
+                    <HugeiconsIcon icon={LoaderCircle} size={16} className="w-4 h-4 animate-spin text-black" />
                     <span>Generating...</span>
                   </>
                 ) : (
                   <>
-                    <Play className="w-4 h-4 fill-current" />
+                    <HugeiconsIcon icon={Play} size={16} className="w-4 h-4 fill-current" />
                     <span>Generate Motion</span>
                   </>
                 )}
@@ -641,7 +622,7 @@ export const AnimationLeftPanel: React.FC = () => {
                 className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
                 title="Open Advanced ARDY Settings"
               >
-                <Sliders className="w-4 h-4 text-primary" />
+                <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-4 h-4 text-primary" />
               </button>
             </div>
           </div>

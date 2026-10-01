@@ -2,11 +2,12 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Settings, Key, Save, Trash2, Cpu, HardDrive, Server, Wifi, RefreshCw,
-  Settings2, Sparkles, LayoutGrid, Download, Keyboard, Bell, SlidersHorizontal,
-  Sliders, ShieldCheck, Database, Check, AlertCircle,
-} from 'lucide-react';
+  Settings01Icon, KeyIcon, SaveIcon, Trash02Icon, CpuIcon, HardDriveIcon, Server01Icon, NetworkIcon, RefreshCwIcon,
+  Settings02Icon, SparklesIcon, LayoutGridIcon, Download01Icon, KeyboardIcon, BellIcon, SlidersHorizontalIcon,
+  SlidersIcon, ShieldCheckIcon, Database01Icon, CheckIcon, AlertCircleIcon,
+} from '@hugeicons/core-free-icons';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { Badge } from '@/components/premium/Badge';
 import { NeonButton } from '@/components/premium/NeonButton';
@@ -45,16 +46,16 @@ interface SubTabItem {
   description: string;
 }
 
-const SETTINGS_SUB_TABS: SubTabItem[] = [
-  { id: 'general', label: 'General', icon: Settings2, description: 'App info, theme & auto-save' },
-  { id: 'generation', label: 'Generation', icon: Sparkles, description: 'Providers, polycounts & quality' },
-  { id: 'workspace', label: 'Workspace', icon: LayoutGrid, description: '3D viewport defaults & controls' },
-  { id: 'export', label: 'Export & Backup', icon: Download, description: 'File formats, ZIP packaging & backup' },
-  { id: 'api', label: 'API & Tokens', icon: Key, description: 'HuggingFace token & system runtime' },
-  { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard, description: 'Keyboard shortcuts & navigation' },
-  { id: 'notifications', label: 'Notifications', icon: Bell, description: 'Alerts & toast preferences' },
-  { id: 'advanced', label: 'Advanced', icon: SlidersHorizontal, description: 'Network, proxy & debug options' },
-];
+  const SETTINGS_SUB_TABS: SubTabItem[] = [
+  { id: 'general', label: 'General', icon: Settings02Icon, description: 'App info, theme & auto-save' },
+  { id: 'generation', label: 'Generation', icon: SparklesIcon, description: 'Providers, polycounts & quality' },
+  { id: 'workspace', label: 'Workspace', icon: LayoutGridIcon, description: '3D viewport defaults & controls' },
+  { id: 'export', label: 'Export & Backup', icon: Download01Icon, description: 'File formats, ZIP packaging & backup' },
+  { id: 'api', label: 'API & Tokens', icon: KeyIcon, description: 'HuggingFace token & system runtime' },
+  { id: 'shortcuts', label: 'Shortcuts', icon: KeyboardIcon, description: 'Keyboard shortcuts & navigation' },
+  { id: 'notifications', label: 'Notifications', icon: BellIcon, description: 'Alerts & toast preferences' },
+  { id: 'advanced', label: 'Advanced', icon: SlidersHorizontalIcon, description: 'Network, proxy & debug options' },
+  ];
 
 const VALID_SUB_TABS: Record<string, SettingsSubTab> = {
   general: 'general',
@@ -136,12 +137,12 @@ const load = useCallback(async () => {
   };
 
   const systemInfo = [
-    { label: 'OS', value: runtime?.os ?? 'Linux', icon: Server },
-    { label: 'CPU', value: runtime?.cpu_name ?? 'x86_64 CPU', icon: Cpu },
-    { label: 'RAM', value: runtime?.ram_total ? `${(runtime.ram_total / 1024).toFixed(0)} GB` : '—', icon: HardDrive },
-    { label: 'GPU', value: runtime?.gpu_name ?? (runtime?.cuda_available ? 'CUDA GPU' : 'None'), icon: Cpu },
-    { label: 'CUDA', value: runtime?.cuda_version ?? '12.x', icon: Server },
-    { label: 'Driver', value: runtime?.driver_version ?? '—', icon: Wifi },
+    { label: 'OS', value: runtime?.os ?? 'Linux', icon: Server01Icon, color: 'text-foreground' },
+    { label: 'CPU', value: runtime?.cpu_name ?? 'x86_64 CPU', icon: CpuIcon, color: 'text-emerald-400' },
+    { label: 'RAM', value: runtime?.ram_total ? `${(runtime.ram_total / 1024).toFixed(0)} GB` : '—', icon: HardDriveIcon, color: 'text-primary' },
+    { label: 'GPU', value: runtime?.gpu_name ?? (runtime?.cuda_available ? 'CUDA GPU' : 'None'), icon: CpuIcon, color: 'text-emerald-400' },
+    { label: 'CUDA', value: runtime?.cuda_version ?? '12.x', icon: Server01Icon, color: 'text-primary' },
+    { label: 'Driver', value: runtime?.driver_version ?? '—', icon: NetworkIcon, color: 'text-primary' },
   ];
 
   const runtimeConfig = settings
@@ -157,7 +158,7 @@ const load = useCallback(async () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-            <Settings className="w-6 h-6 text-primary" />
+            <HugeiconsIcon icon={Settings01Icon} size={16} className="w-6 h-6 text-primary" />
             Settings & Configuration
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -226,13 +227,13 @@ const load = useCallback(async () => {
               {/* System Information */}
               <GlassCard className="p-5" delay={0.05}>
                 <div className="flex items-center gap-2 mb-4">
-                  <Server className="w-4 h-4 text-primary" />
+                   <HugeiconsIcon icon={Server01Icon} size={16} className="w-4 h-4 text-primary" />
                   <h3 className="text-sm font-semibold">System Hardware & Environment</h3>
                   <button
                     onClick={load}
                     className="ml-auto p-1.5 rounded-lg hover:bg-[hsl(var(--surface-2))] text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
+                     <HugeiconsIcon icon={RefreshCwIcon} size={16} className="w-3.5 h-3.5" />
                   </button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -260,7 +261,7 @@ const load = useCallback(async () => {
               <GlassCard className="p-5" delay={0.1}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Key className="w-4 h-4 text-primary" />
+                     <HugeiconsIcon icon={KeyIcon} size={16} className="w-4 h-4 text-primary" />
                     <h3 className="text-sm font-semibold">HuggingFace API Token</h3>
                   </div>
                   <Badge variant={hfStatus.configured ? (hfStatus.valid ? 'success' : 'warning') : 'default'}>
@@ -284,12 +285,12 @@ const load = useCallback(async () => {
                     className="flex-1 h-10 px-4 rounded-xl glass text-sm border border-[hsl(var(--border))] focus:border-primary/50 focus:outline-none font-mono placeholder:text-muted-foreground/50"
                   />
                   <NeonButton variant="primary" size="md" onClick={handleSaveToken} disabled={saving || !hfToken.trim()}>
-                    <Save className="w-3.5 h-3.5 mr-1.5" />
+                     <HugeiconsIcon icon={SaveIcon} size={16} className="w-3.5 h-3.5 mr-1.5" />
                     Save Token
                   </NeonButton>
                   {hfStatus.configured && (
                     <NeonButton variant="destructive" size="md" onClick={handleRemoveToken}>
-                      <Trash2 className="w-3.5 h-3.5" />
+                       <HugeiconsIcon icon={Trash02Icon} size={16} className="w-3.5 h-3.5" />
                     </NeonButton>
                   )}
                 </div>
@@ -299,7 +300,7 @@ const load = useCallback(async () => {
               {runtimeConfig.length > 0 && (
                 <GlassCard className="p-5" delay={0.15}>
                   <div className="flex items-center gap-2 mb-4">
-                    <Settings className="w-4 h-4 text-primary" />
+                    <HugeiconsIcon icon={Settings01Icon} size={16} className="w-4 h-4 text-primary" />
                     <h3 className="text-sm font-semibold">Backend Engine Configuration</h3>
                   </div>
                   <div className="space-y-2">
