@@ -62,6 +62,10 @@ const RiggingStudio = dynamic(() => import('./Rigging/RiggingStudio').then(mod =
   ssr: false,
   loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
 });
+const VfxStudio = dynamic(() => import('@/features/vfx/VfxStudio').then(mod => mod.VfxStudio), {
+  ssr: false,
+  loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
+});
 
 const OutputsPage = dynamic(() => import('./Dashboard/OutputsPage').then(mod => mod.OutputsPage), {
   ssr: false,
@@ -104,6 +108,7 @@ const ROUTE_SEGMENT_TO_TOOL: Record<string, ToolType> = {
   'animation': 'animation',
   'animate': 'animation',
   'rigging': 'rigging',
+  'vfx': 'vfx',
 };
 
 export const WorkspaceShell: React.FC = () => {
@@ -242,6 +247,13 @@ export const WorkspaceShell: React.FC = () => {
       return;
     }
 
+    // VFX routes: /vfx or /workspace/vfx
+    if (cleanPath === '/vfx' || cleanPath.startsWith('/vfx')) {
+      setMainNav('workspace');
+      setActiveTool('vfx');
+      return;
+    }
+
     // Workspace tool routes: /workspace/[tool] or /workspace
     setMainNav('workspace');
     if (cleanPath.startsWith('/workspace/')) {
@@ -377,6 +389,10 @@ export const WorkspaceShell: React.FC = () => {
           ) : mainNav === 'workspace' && activeTool === 'rigging' ? (
             <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
               <RiggingStudio />
+            </main>
+          ) : mainNav === 'workspace' && activeTool === 'vfx' ? (
+            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
+              <VfxStudio />
             </main>
           ) : (
             <>

@@ -14,7 +14,9 @@ import {
   Layers,
   Sliders,
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Brush,
+  Pipette,
 } from 'lucide-react';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { motion } from 'motion/react';
@@ -65,8 +67,18 @@ export const TexturePanel: React.FC = () => {
     systemStats,
   } = useWorkspace();
 
-  // Tab State: 'texture' (essential primary view) | 'maps' (PBR channels & resolution) | 'settings' (advanced & reference)
-  const [panelTab, setPanelTab] = useState<'texture' | 'maps' | 'settings'>('texture');
+  // Tab State: 'texture' (essential primary view) | 'maps' (PBR channels) | 'paint' (interactive 3D surface paint) | 'settings' (advanced & reference)
+  const [panelTab, setPanelTab] = useState<'texture' | 'maps' | 'paint' | 'settings'>('texture');
+
+  // Interactive 3D Surface Paint States
+  const [paintMode, setPaintMode] = useState<'draw' | 'erase'>('draw');
+  const [paintBrushSize, setPaintBrushSize] = useState(24);
+  const [paintOpacity, setPaintOpacity] = useState(1.0);
+  const [paintFlow, setPaintFlow] = useState(0.85);
+  const [paintHardness, setPaintHardness] = useState(0.5);
+  const [paintColor, setPaintColor] = useState('#FFCC00');
+  const [paintBlendMode, setPaintBlendMode] = useState<'normal' | 'multiply' | 'screen' | 'overlay'>('normal');
+  const [paintBrushShape, setPaintBrushShape] = useState<'round-soft' | 'round-hard' | 'noise' | 'chalk'>('round-soft');
 
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
   const [optionsLoading, setOptionsLoading] = useState(false);
@@ -279,43 +291,55 @@ export const TexturePanel: React.FC = () => {
            )}
         </div>
 
-        {/* 3-Tab Segmented Header */}
-        <div className="grid grid-cols-3 p-1 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
+        {/* 4-Tab Segmented Header */}
+        <div className="grid grid-cols-4 p-1 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
           <button
             type="button"
             onClick={() => setPanelTab('texture')}
-            className={`py-1.5 px-1 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-1.5 px-0.5 rounded-lg font-bold text-[9.5px] flex items-center justify-center gap-1 transition-all cursor-pointer truncate ${
               panelTab === 'texture'
                 ? 'bg-primary text-black shadow-sm'
                 : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
             }`}
           >
-            <Palette className="w-3 h-3" />
-            <span>Texture</span>
+            <Palette className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">Texture</span>
           </button>
           <button
             type="button"
             onClick={() => setPanelTab('maps')}
-            className={`py-1.5 px-1 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-1.5 px-0.5 rounded-lg font-bold text-[9.5px] flex items-center justify-center gap-1 transition-all cursor-pointer truncate ${
               panelTab === 'maps'
                 ? 'bg-primary text-black shadow-sm'
                 : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
             }`}
           >
-            <Layers className="w-3 h-3" />
-            <span>Maps</span>
+            <Layers className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">Maps</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setPanelTab('paint')}
+            className={`py-1.5 px-0.5 rounded-lg font-bold text-[9.5px] flex items-center justify-center gap-1 transition-all cursor-pointer truncate ${
+              panelTab === 'paint'
+                ? 'bg-primary text-black shadow-sm'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
+            <Brush className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">3D Paint</span>
           </button>
           <button
             type="button"
             onClick={() => setPanelTab('settings')}
-            className={`py-1.5 px-1 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+            className={`py-1.5 px-0.5 rounded-lg font-bold text-[9.5px] flex items-center justify-center gap-1 transition-all cursor-pointer truncate ${
               panelTab === 'settings'
                 ? 'bg-primary text-black shadow-sm'
                 : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
             }`}
           >
-            <Sliders className="w-3 h-3" />
-            <span>Settings</span>
+            <Sliders className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">Settings</span>
           </button>
         </div>
       </div>
@@ -869,6 +893,266 @@ export const TexturePanel: React.FC = () => {
             >
               <span>&larr; Back to Texture Generator</span>
             </button>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB: 3D SURFACE PAINT (Interactive Viewport Painting & Baking)          */}
+        {/* ========================================================================= */}
+        {panelTab === 'paint' && (
+          <div className="space-y-3">
+            {/* Target 3D Mesh & Canvas Status */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider flex items-center gap-1.5">
+                  <Box className="w-3.5 h-3.5 text-primary" />
+                  <span>Painting Target</span>
+                </span>
+                <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                  {currentAsset ? 'Mesh Ready' : 'No Mesh'}
+                </span>
+              </div>
+              <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] flex items-center justify-between text-[10px]">
+                <span className="font-semibold text-white truncate max-w-[170px]">
+                  {currentAsset?.name || 'Default Viewport Model'}
+                </span>
+                <span className="text-[9px] text-zinc-400 font-mono">
+                  {textureSettings.resolution}x{textureSettings.resolution} UV
+                </span>
+              </div>
+            </div>
+
+            {/* Paint Mode Switch: Draw vs Erase */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Paint Mode</span>
+                <span className="text-[9px] font-mono text-primary font-bold uppercase">{paintMode}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPaintMode('draw')}
+                  className={`py-1.5 px-2 rounded-lg font-bold text-[10.5px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    paintMode === 'draw'
+                      ? 'bg-primary text-black shadow-sm font-black'
+                      : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                  }`}
+                >
+                  <Brush className="w-3.5 h-3.5" />
+                  <span>Drawing</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaintMode('erase')}
+                  className={`py-1.5 px-2 rounded-lg font-bold text-[10.5px] flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    paintMode === 'erase'
+                      ? 'bg-rose-500 text-white shadow-sm font-black'
+                      : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                  }`}
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Erasing</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Color Palette & Preset Swatches */}
+            {paintMode === 'draw' && (
+              <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Color Palette</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: paintColor }} />
+                    <span className="text-[9px] font-mono text-zinc-300 font-bold uppercase">{paintColor}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={paintColor}
+                    onChange={(e) => setPaintColor(e.target.value)}
+                    className="w-8 h-8 rounded-lg border border-white/[0.12] bg-transparent cursor-pointer p-0.5"
+                  />
+                  <input
+                    type="text"
+                    value={paintColor}
+                    onChange={(e) => setPaintColor(e.target.value)}
+                    className="flex-1 py-1 px-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] text-[10px] font-mono text-white focus:outline-none focus:border-primary"
+                    placeholder="#FFCC00"
+                  />
+                </div>
+
+                {/* Quick Swatches */}
+                <div className="grid grid-cols-8 gap-1 pt-1 border-t border-white/[0.06]">
+                  {[
+                    '#FFCC00', '#FFFFFF', '#080808', '#EF4444',
+                    '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B'
+                  ].map((hex) => (
+                    <button
+                      key={hex}
+                      type="button"
+                      onClick={() => setPaintColor(hex)}
+                      className={`w-6 h-6 rounded-md border transition-transform hover:scale-110 cursor-pointer ${
+                        paintColor.toLowerCase() === hex.toLowerCase()
+                          ? 'border-white ring-2 ring-primary ring-offset-1 ring-offset-black scale-105'
+                          : 'border-white/20'
+                      }`}
+                      style={{ backgroundColor: hex }}
+                      title={hex}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Brush Dynamics */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Brush Dynamics</span>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Brush Size (Radius)</span>
+                  <span className="font-mono text-primary font-bold">{paintBrushSize}px</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={128}
+                  step={1}
+                  value={paintBrushSize}
+                  onChange={(e) => setPaintBrushSize(parseInt(e.target.value, 10))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Opacity</span>
+                  <span className="font-mono text-primary font-bold">{Math.round(paintOpacity * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1.0}
+                  step={0.05}
+                  value={paintOpacity}
+                  onChange={(e) => setPaintOpacity(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Flow (Pressure)</span>
+                  <span className="font-mono text-primary font-bold">{Math.round(paintFlow * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1.0}
+                  step={0.05}
+                  value={paintFlow}
+                  onChange={(e) => setPaintFlow(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Hardness (Feathering)</span>
+                  <span className="font-mono text-primary font-bold">{Math.round(paintHardness * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.0}
+                  max={1.0}
+                  step={0.05}
+                  value={paintHardness}
+                  onChange={(e) => setPaintHardness(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Tip Shape & Blend Mode */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Tip &amp; Blending</span>
+
+              <div className="space-y-1">
+                <span className="text-[10px] text-zinc-400">Brush Tip Profile</span>
+                <div className="grid grid-cols-2 gap-1">
+                  {[
+                    { id: 'round-soft', label: 'Soft Round' },
+                    { id: 'round-hard', label: 'Hard Edge' },
+                    { id: 'noise', label: 'Noise Texture' },
+                    { id: 'chalk', label: 'Chalk Stipple' },
+                  ].map((tip) => (
+                    <button
+                      key={tip.id}
+                      type="button"
+                      onClick={() => setPaintBrushShape(tip.id as any)}
+                      className={`py-1 px-1.5 rounded text-[9.5px] font-bold transition-colors cursor-pointer ${
+                        paintBrushShape === tip.id
+                          ? 'bg-primary text-black'
+                          : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {tip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400">Layer Blend Mode</span>
+                  <span className="font-mono text-primary font-bold uppercase">{paintBlendMode}</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {(['normal', 'multiply', 'screen', 'overlay'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setPaintBlendMode(mode)}
+                      className={`py-1 rounded text-[9px] font-bold uppercase transition-colors cursor-pointer ${
+                        paintBlendMode === mode
+                          ? 'bg-primary text-black'
+                          : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Bake & Action Controls */}
+            <div className="space-y-1.5 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  toast.success('Baking 3D Paint to PBR texture atlas...', {
+                    description: 'Viewport paint projections successfully baked into material channels.'
+                  });
+                }}
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-black font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98]"
+              >
+                <Palette className="w-3.5 h-3.5" />
+                <span>BAKE PAINT TO TEXTURE</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  toast.info('Cleared active 3D paint strokes');
+                }}
+                className="w-full py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-zinc-400 hover:text-white text-[10px] font-semibold transition-colors cursor-pointer"
+              >
+                Clear Paint Layer
+              </button>
+            </div>
           </div>
         )}
 

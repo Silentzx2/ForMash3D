@@ -72,7 +72,9 @@
     "clipper-lib": "^6.4.2",
     "meshoptimizer": "^1.0.1",
     "three-bvh-csg": "^0.0.18",
-    "three-mesh-bvh": "^0.9.9"
+    "three-mesh-bvh": "^0.9.9",
+    "@react-three/fiber": "^9.5.0",
+    "@react-three/drei": "^10.7.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.1.11",

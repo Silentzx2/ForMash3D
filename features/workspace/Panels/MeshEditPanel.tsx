@@ -21,6 +21,7 @@ import {
   Image as ImageIcon,
   Zap,
   Loader2,
+  Check,
 } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { createUploadedMeshAsset } from '../types';
@@ -37,10 +38,22 @@ export const MeshEditPanel: React.FC = () => {
     runMeshEditing,
   } = useWorkspace();
 
-  const [inputTab, setInputTab] = useState<'text' | 'image'>('text');
+  const [inputTab, setInputTab] = useState<'text' | 'image' | 'sculpt'>('text');
   const [editMode, setEditMode] = useState<'add' | 'remove' | 'replace'>('add');
   const [selectionTool, setSelectionTool] = useState<'box' | 'sphere' | 'brush' | 'lasso'>('box');
   const [showManipulator, setShowManipulator] = useState(true);
+
+  // Interactive Sculpting states
+  const [sculptBrush, setSculptBrush] = useState<'standard' | 'clay' | 'inflate' | 'smooth' | 'flatten' | 'pinch' | 'grab'>('standard');
+  const [sculptRadius, setSculptRadius] = useState(0.15);
+  const [sculptStrength, setSculptStrength] = useState(0.50);
+  const [sculptHardness, setSculptHardness] = useState(0.50);
+  const [sculptSpacing, setSculptSpacing] = useState(0.10);
+  const [sculptDirection, setSculptDirection] = useState<1 | -1>(1); // 1 = Add, -1 = Subtract
+  const [sculptFrontOnly, setSculptFrontOnly] = useState(true);
+  const [sculptSymmetry, setSculptSymmetry] = useState({ x: true, y: false, z: false });
+  const [sculptSteadyStroke, setSculptSteadyStroke] = useState(0.20);
+  const [sculptAutoSmooth, setSculptAutoSmooth] = useState(0.10);
 
   // Text-guided editing states
   const [sourcePrompt, setSourcePrompt] = useState('A medieval knight with a steel armor');
@@ -133,22 +146,26 @@ export const MeshEditPanel: React.FC = () => {
 
   return (
     <div id="panel-mesh-edit" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white select-none overflow-x-hidden overflow-y-hidden">
-      {/* Top Header Tabs: Text Sculpt vs Image Sculpt */}
+      {/* Top Header Tabs: Text Sculpt vs Image Sculpt vs Sculpt Brushes */}
       <div className="px-3 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
         <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] rounded-lg border border-white/[0.06]">
-          {(['text', 'image'] as const).map((tab) => (
+          {[
+            { id: 'text', label: 'Text Inpaint' },
+            { id: 'image', label: 'Image Guided' },
+            { id: 'sculpt', label: 'Sculpt Brushes' },
+          ].map((tab) => (
             <button
-              key={tab}
+              key={tab.id}
               type="button"
-              id={`tab-edit-${tab}`}
-              onClick={() => setInputTab(tab)}
-              className={`flex-1 py-1 px-2 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                inputTab === tab
+              id={`tab-edit-${tab.id}`}
+              onClick={() => setInputTab(tab.id as any)}
+              className={`flex-1 py-1 px-1 rounded-md text-[10px] font-bold transition-all cursor-pointer truncate ${
+                inputTab === tab.id
                   ? 'bg-primary text-black shadow-sm'
                   : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
               }`}
             >
-              {tab === 'text' ? 'Text Sculpt' : 'Image Sculpt'}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -518,6 +535,218 @@ export const MeshEditPanel: React.FC = () => {
             </div>
           </div>
         )}
+
+        {inputTab === 'sculpt' && (
+          <div className="space-y-2.5">
+            {/* Brush Selector */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                  <Brush className="w-3.5 h-3.5 text-primary" />
+                  <span>Sculpt Brush</span>
+                </span>
+                <span className="text-[10px] font-mono text-primary font-bold uppercase">{sculptBrush}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { id: 'standard', label: 'Standard', desc: 'Displace surface' },
+                  { id: 'clay', label: 'Clay', desc: 'Build up strips' },
+                  { id: 'inflate', label: 'Inflate', desc: 'Expand outward' },
+                  { id: 'smooth', label: 'Smooth', desc: 'Relax geometry' },
+                  { id: 'flatten', label: 'Flatten', desc: 'Planar surface' },
+                  { id: 'pinch', label: 'Pinch', desc: 'Sharpen crease' },
+                  { id: 'grab', label: 'Grab', desc: 'Pull / Move' },
+                ].map((b) => {
+                  const isActive = sculptBrush === b.id;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setSculptBrush(b.id as any)}
+                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary text-black font-bold shadow-sm border-primary'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))]'
+                      }`}
+                    >
+                      <div className="text-[10.5px] font-bold leading-tight flex items-center justify-between">
+                        <span>{b.label}</span>
+                        {isActive && <Check className="w-3 h-3 text-black" />}
+                      </div>
+                      <div className={`text-[8.5px] mt-0.5 ${isActive ? 'text-black/80' : 'text-zinc-400'}`}>
+                        {b.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Brush Dynamics Sliders */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Brush Dynamics</span>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Brush Radius (Size)</span>
+                  <span className="font-mono text-primary font-bold">{sculptRadius.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.01}
+                  max={1.0}
+                  step={0.01}
+                  value={sculptRadius}
+                  onChange={(e) => setSculptRadius(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Brush Strength</span>
+                  <span className="font-mono text-primary font-bold">{sculptStrength.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.01}
+                  max={1.0}
+                  step={0.02}
+                  value={sculptStrength}
+                  onChange={(e) => setSculptStrength(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Hardness (Falloff)</span>
+                  <span className="font-mono text-primary font-bold">{sculptHardness.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.01}
+                  max={1.0}
+                  step={0.02}
+                  value={sculptHardness}
+                  onChange={(e) => setSculptHardness(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Stroke Spacing</span>
+                  <span className="font-mono text-primary font-bold">{sculptSpacing.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={0.50}
+                  step={0.01}
+                  value={sculptSpacing}
+                  onChange={(e) => setSculptSpacing(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Direction & Symmetry */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Deformation &amp; Symmetry</span>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSculptDirection(sculptDirection === 1 ? -1 : 1)}
+                  className={`p-1.5 rounded-lg border text-center font-bold text-[10px] transition-all cursor-pointer ${
+                    sculptDirection === 1
+                      ? 'bg-primary/20 text-primary border-primary/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}
+                >
+                  {sculptDirection === 1 ? '▲ Direction: Add (+)' : '▼ Direction: Subtract (-)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSculptFrontOnly(!sculptFrontOnly)}
+                  className={`p-1.5 rounded-lg border text-center font-bold text-[10px] transition-all cursor-pointer ${
+                    sculptFrontOnly
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-white/[0.04] text-zinc-400 border-white/[0.08]'
+                  }`}
+                >
+                  {sculptFrontOnly ? 'Front Faces Only' : 'Pass-Through'}
+                </button>
+              </div>
+
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400">Bilateral Mirror Symmetry</span>
+                  <span className="text-[9px] text-zinc-500 font-mono">
+                    {sculptSymmetry.x ? 'X-Axis' : 'None'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['x', 'y', 'z'] as const).map((axis) => {
+                    const isSym = sculptSymmetry[axis];
+                    return (
+                      <button
+                        key={axis}
+                        type="button"
+                        onClick={() => setSculptSymmetry(prev => ({ ...prev, [axis]: !prev[axis] }))}
+                        className={`py-1 rounded font-bold text-[10px] uppercase transition-all cursor-pointer ${
+                          isSym
+                            ? 'bg-primary text-black'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 border border-white/[0.06]'
+                        }`}
+                      >
+                        {axis} Mirror
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Steady Mouse & Stroke */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stabilizer &amp; Smooth</span>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Steady Stroke (Lazy Mouse)</span>
+                  <span className="font-mono text-primary font-bold">{sculptSteadyStroke.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.0}
+                  max={0.95}
+                  step={0.05}
+                  value={sculptSteadyStroke}
+                  onChange={(e) => setSculptSteadyStroke(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Auto-Smooth Factor</span>
+                  <span className="font-mono text-primary font-bold">{sculptAutoSmooth.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.0}
+                  max={1.0}
+                  step={0.05}
+                  value={sculptAutoSmooth}
+                  onChange={(e) => setSculptAutoSmooth(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom Sticky Action Footer */}
@@ -530,46 +759,60 @@ export const MeshEditPanel: React.FC = () => {
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {editMode}
+              {inputTab === 'sculpt' ? sculptBrush : editMode}
             </span>
           </div>
           <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex-shrink-0 uppercase">
-            {inputTab === 'text' ? 'TEXT' : 'IMAGE'}
+            {inputTab === 'text' ? 'TEXT' : inputTab === 'image' ? 'IMAGE' : 'SCULPT BRUSH'}
           </span>
         </div>
 
         {/* Sticky Action Button */}
-        <ShimmerButton
-          id={inputTab === 'text' ? 'btn-generate-edit' : 'btn-generate-image-edit'}
-          onClick={inputTab === 'text' ? handleStartTextEdit : handleStartImageEdit}
-          disabled={isRunning || !canExecute}
-          shimmerColor="hsl(var(--neon-amber))"
-          shimmerSize="0.1em"
-          shimmerDuration="2.5s"
-          borderRadius="12px"
-          background={
-            isRunning
-              ? "hsl(var(--surface-2))"
-              : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
-          }
-          className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-            isRunning 
-              ? 'text-primary border border-primary/30' 
-              : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
-          }`}
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-              <span>Editing 3D Mesh...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>{inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
-            </>
-          )}
-        </ShimmerButton>
+        {inputTab === 'sculpt' ? (
+          <button
+            type="button"
+            onClick={() => toast.success(`Interactive sculpt active: ${sculptBrush.toUpperCase()} brush`, {
+              description: 'Click and drag on the 3D mesh in the viewport to sculpt.'
+            })}
+            disabled={!hasTargetMesh}
+            className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Brush className="w-4 h-4 text-black stroke-[2.5]" />
+            <span>INTERACTIVE SCULPT ACTIVE: {sculptBrush.toUpperCase()}</span>
+          </button>
+        ) : (
+          <ShimmerButton
+            id={inputTab === 'text' ? 'btn-generate-edit' : 'btn-generate-image-edit'}
+            onClick={inputTab === 'text' ? handleStartTextEdit : handleStartImageEdit}
+            disabled={isRunning || !canExecute}
+            shimmerColor="hsl(var(--neon-amber))"
+            shimmerSize="0.1em"
+            shimmerDuration="2.5s"
+            borderRadius="12px"
+            background={
+              isRunning
+                ? "hsl(var(--surface-2))"
+                : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
+            }
+            className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              isRunning 
+                ? 'text-primary border border-primary/30' 
+                : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
+            }`}
+          >
+            {isRunning ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+                <span>Editing 3D Mesh...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>{inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
+              </>
+            )}
+          </ShimmerButton>
+        )}
       </div>
     </div>
   );

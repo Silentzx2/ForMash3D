@@ -6,25 +6,41 @@
 
 ---
 
-## 0. Microservice Architecture: Standalone PostProcess Service (Port 8200)
+## 0. Two-Way PostProcess Architecture & Microservice (Port 8200)
 
-Unlike the main ForMash3D backend (`:7842`), the high-performance mesh-processing engine runs as a **separate dedicated microservice on Port 8200**:
+The production post-processing pipeline in ForMash3D operates in **two distinct execution modes**:
+
+### Mode 1: Automatic AI Generation Chaining
+When an AI generative model (`text_to_raw_mesh`, `image_to_raw_mesh`, `text_to_textured_mesh`, etc.) produces a raw 3D mesh:
+1. `backend/core/scheduler/multiprocess_scheduler.py` (lines 1177–1235) intercepts the completed inference result.
+2. It automatically invokes `postprocess.pipeline.run_postprocess_job` in a non-blocking background thread.
+3. The job performs canonical production passes:
+   * **Manifold Repair & Hole Filling:** Cleans zero-area faces and non-manifold edges.
+   * **Automated Quad/Tri Retopology:** Decimates and optimizes polycount.
+   * **Parametric UV Unwrapping:** Generates distortion-minimized seams and packs atlas.
+   * **Multi-LOD Optimization:** Employs `meshoptimizer` to generate LOD0–LOD3.
+   * **Physics Collision Hulls:** Computes convex hulls and discrete bounding geometry.
+   * **Format Conversion:** Generates production GLB, OBJ, and game-ready snapshots.
+4. Telemetry is streamed to `features/workspace/store/WorkspaceContext.tsx` (lines 1416–1435) until all production artifacts are loaded into the viewer.
+
+### Mode 2: Manual User-Triggered PostProcess
+Users can also invoke post-processing on demand at any time without running AI generation:
+1. **Target Selection or Instant Upload:** Users can select any existing workspace mesh or click **"Upload"** directly in `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to load an external `.glb`, `.obj`, `.stl`, or `.ply` file.
+2. **Dedicated Endpoints:**
+   * Quad Remesh & Retopo: `POST /api/v1/mesh-retopology/retopologize-mesh`
+   * Smart UV Unwrapping: `POST /api/v1/mesh-uv-unwrapping/unwrap-mesh`
+   * Semantic Mesh Segmentation: `POST /api/v1/mesh-segmentation/segment-mesh`
+3. **Progress Tracking:** The job is queued in the background, reported via the bottom execution status bar, and automatically bound to the 3D viewer upon completion.
+
+### Microservice Isolation (Port 8200)
+For standalone high-throughput pipelines, the processing engine can also run as an isolated microservice:
 * **Directory:** `backend/postprocess/`
 * **Entrypoint:** `backend/postprocess/main.py` (FastAPI with Uvicorn)
 * **Launcher Script:** `scripts/start_postprocess_service.sh`
 * **Dedicated Port:** `MESHTOOLS_PORT=8200`
-* **Key Microservice Endpoints:**
-  * `POST /api/meshes/auto-uv` — Parametric UV unwrapping and atlas packing
-  * `POST /api/meshes/auto-retopo` — Quad retopology with CuPy / Warp GPU acceleration
-  * `POST /api/meshes/repair` — Manifold hole filling and vertex welding
-  * `POST /api/meshes/bake` — Normal, AO, and curvature map baking
-  * `POST /api/meshes/collision` — Convex hull and discrete collision geometry
-  * `POST /api/meshes/segment` — Semantic part segmentation
-  * `POST /api/tree/generate` — Procedural tree skeleton and foliage generator
-* **Frontend / Proxy Pattern:**
-  Requests from the Next.js frontend route to `http://localhost:8200` directly or via Next.js API proxy (`/api/meshes/*`). Progress is streamed via Server-Sent Events (SSE).
+* **Key Microservice Endpoints:** `POST /api/meshes/auto-uv`, `POST /api/meshes/auto-retopo`, `POST /api/meshes/repair`, `POST /api/meshes/bake`, `POST /api/meshes/collision`, `POST /api/meshes/segment`.
 
-> 💡 **Note on AI Generation:** ForMash3D does **NOT** use ComfyUI. All AI generations (Text-to-3D, Image-to-3D, Texturing) run through ForMash3D's native VRAM-aware multiprocess scheduler and adapters (`TRELLIS`, `Hunyuan3D-2.1`, `TripoSR`, `FastMesh`).
+> 💡 **Note on AI Generation:** ForMash3D does **NOT** use ComfyUI. All AI generations run through native VRAM-aware multiprocess schedulers and adapters (`TRELLIS`, `Hunyuan3D-2.1`, `TripoSR`, `FastMesh`).
 
 ---
 
@@ -306,6 +322,11 @@ const response = await apiClient.post('/meshes/auto-retopo', formData, {
 
 - [x] Full sync of VFX engine, plugins, probe scripts, presets, and documentation.
 - [x] Full migration of VFX Studio UI (`features/vfx/`).
+- [x] Live 3D particle simulation viewport dock wired into `VfxStudio.tsx` (`VfxViewport`, R3F Canvas, Grid, CameraRig, HUD telemetry).
+- [x] Injected interactive "Sculpt Brushes" into `features/workspace/Panels/MeshEditPanel.tsx` (7 brushes, bilateral symmetry, stroke stabilizer, and falloff).
+- [x] Injected interactive "3D Surface Paint" into `features/workspace/Panels/TexturePanel.tsx` (draw/erase modes, color swatches, opacity, flow, tip shapes, and GPU bake trigger).
+- [x] Integrated instant 3D mesh upload into `features/workspace/Panels/RemeshPanel.tsx`.
+- [x] Verified and documented Two-Way PostProcess Pipeline (Automatic AI trigger + Manual user panel trigger).
 - [x] Full migration of Procedural Tree Studio UI (`features/tree/`).
 - [x] Full migration of Procedural Building Studio UI & compiler (`features/building/`, `building/`).
 - [x] Full migration of Character Assembly & Garment Fit UI (`features/assembly/`).

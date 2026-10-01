@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sliders,
   ChevronDown,
@@ -9,19 +9,23 @@ import {
   Activity,
   CheckCircle2,
   Terminal,
-  ArrowUpRight
+  ArrowUpRight,
+  Upload,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
+import { createUploadedMeshAsset } from '../types';
 
 export const RemeshPanel: React.FC = () => {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const {
     remeshSettings,
     setRemeshSettings,
     runRemeshGeneration,
     isExecuting,
     currentAsset,
+    setCurrentAsset,
     assets,
     selectAsset,
     activeTask,
@@ -45,6 +49,14 @@ export const RemeshPanel: React.FC = () => {
       selectAsset(assets[0].id);
     }
   }, [currentAsset, assets, selectAsset]);
+
+  const handleUploadNew = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCurrentAsset(createUploadedMeshAsset(file));
+      setMeshDropdownOpen(false);
+    }
+  };
 
   const handleVariantClick = (variant: 'V1K' | 'V4K') => {
     setRemeshSettings(prev => ({ ...prev, variant }));
@@ -80,15 +92,32 @@ export const RemeshPanel: React.FC = () => {
                   <Box className="w-3.5 h-3.5 text-primary" />
                   <span>Target 3D Mesh</span>
                 </span>
-                {currentAsset ? (
-                  <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
-                    Active
-                  </span>
-                ) : (
-                  <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                    None
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".glb,.gltf,.obj,.ply,.stl"
+                    onChange={handleUploadNew}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[9px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Upload className="w-2.5 h-2.5 text-primary" />
+                    <span>Upload</span>
+                  </button>
+                  {currentAsset ? (
+                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
+                      Active
+                    </span>
+                  ) : (
+                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                      None
+                    </span>
+                  )}
+                </div>
               </div>
 
               {currentAsset ? (
@@ -145,15 +174,25 @@ export const RemeshPanel: React.FC = () => {
                   )}
                 </div>
               ) : (
-                <div className="p-2 rounded-lg bg-white/[0.02] border border-dashed border-white/[0.1] text-center space-y-1">
-                  <div className="text-[10px] text-zinc-400">Generate or upload a model first</div>
-                  <button
-                    type="button"
-                    onClick={() => router.push('/workspace/generate')}
-                    className="px-2.5 py-1 rounded-md bg-primary text-black font-bold text-[9px] hover:bg-[hsl(var(--primary)/0.9)] transition-colors cursor-pointer"
-                  >
-                    Go to Generate 3D Model
-                  </button>
+                <div className="p-2 rounded-lg bg-white/[0.02] border border-dashed border-white/[0.1] text-center space-y-1.5">
+                  <div className="text-[10px] text-zinc-400">Select a model from workspace or upload a 3D mesh</div>
+                  <div className="flex items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-2.5 py-1 rounded-md bg-white/[0.08] hover:bg-white/[0.14] text-white font-bold text-[9px] transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Upload className="w-2.5 h-2.5 text-primary" />
+                      <span>Upload Mesh</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push('/workspace/generate')}
+                      className="px-2.5 py-1 rounded-md bg-primary text-black font-bold text-[9px] hover:bg-[hsl(var(--primary)/0.9)] transition-colors cursor-pointer"
+                    >
+                      Generate New
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

@@ -12,6 +12,7 @@ import {
   Sparkles,
   Bone,
   ListOrdered,
+  Flame,
 } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
@@ -149,6 +150,15 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       active: isActive('rigging'),
       onClick: () => handleToolClick('rigging'),
       isExecuting: isExecuting && activeTask?.type === 'rigging',
+    },
+    {
+      id: 'tool-btn-vfx',
+      label: 'VFX',
+      tooltip: 'Particle VFX & Simulation Studio • V',
+      shortcut: 'V',
+      icon: Flame,
+      active: isActive('vfx'),
+      onClick: () => handleToolClick('vfx'),
     },
   ];
 
