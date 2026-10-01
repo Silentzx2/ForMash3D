@@ -44,11 +44,15 @@
 - [x] 3D Viewport with Three.js / R3F (continuous background MeshViewer preserved)
 - [x] Workspace Shell with unified left navigation rail and right property inspector
 - [x] VFX Studio (`VfxStudio.tsx`, `/vfx`) with live 3D particle simulation viewport dock, HUD telemetry, and React Flow board
+- [x] Procedural Tree Studio (`TreeStudio.tsx`, `/trees`) with live branch polyline preview, species presets, dice roll seed, and full mesh build
+- [x] Procedural Building Studio (`BuildingStudio.tsx`, `/buildings`) with tabbed 2D footprint plan, 3D viewport, grammar inspector, and stylepacks
+- [x] Character Assembly Studio (`AssemblyStudio.tsx`, `/assembly`) with multi-mesh kitbashing, conformal garment fit, and landmark alignment
 - [x] Interactive Sculpt Brushes tab in `MeshEditPanel.tsx` (7 brushes, bilateral symmetry, stroke stabilizer, and falloff)
 - [x] Interactive 3D Surface Paint tab in `TexturePanel.tsx` (drawing/erasing, color swatches, opacity, flow, tip profiles, and GPU texture bake)
 - [x] Instant mesh file upload in `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, and `MeshSegmentPanel.tsx`
 - [x] Two-Way PostProcess Pipeline (automatic AI generation chaining in scheduler + manual user panel triggers)
 - [x] Standalone PostProcess microservice on port 8200 (`scripts/start_postprocess_service.sh`)
+- [x] Cross-module import resolution matrix and compatibility symlinks (`features/utils/`, `features/config.js`)
 - [x] GeneratePanel with model selector, FlashVDM toggle, VRAM stats
 - [x] TexturePanel with PBR controls and systemStats
 - [x] All workspace panels (Remesh, UV, Segment, Edit, Animation, Jobs)

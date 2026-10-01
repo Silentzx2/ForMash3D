@@ -12,7 +12,10 @@ export type ToolType =
   | 'environment'
   | 'animation'
   | 'rigging'
-  | 'vfx';
+  | 'vfx'
+  | 'tree'
+  | 'building'
+  | 'assembly';
 
 export interface ActiveTask {
   id: string;

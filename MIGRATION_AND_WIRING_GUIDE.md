@@ -323,18 +323,14 @@ const response = await apiClient.post('/meshes/auto-retopo', formData, {
 - [x] Full sync of VFX engine, plugins, probe scripts, presets, and documentation.
 - [x] Full migration of VFX Studio UI (`features/vfx/`).
 - [x] Live 3D particle simulation viewport dock wired into `VfxStudio.tsx` (`VfxViewport`, R3F Canvas, Grid, CameraRig, HUD telemetry).
+- [x] Procedural Tree Studio wired into `TreeStudio.tsx` and route `/trees` (`features/tree/TreeStudio.tsx`, `app/trees/page.tsx`).
+- [x] Procedural Building Studio wired into `BuildingStudio.tsx` and route `/buildings` (`features/building/BuildingStudio.tsx`, `app/buildings/page.tsx`).
+- [x] Character Assembly & Garment Fit Studio wired into `AssemblyStudio.tsx` and route `/assembly` (`features/assembly/AssemblyStudio.tsx`, `app/assembly/page.tsx`).
 - [x] Injected interactive "Sculpt Brushes" into `features/workspace/Panels/MeshEditPanel.tsx` (7 brushes, bilateral symmetry, stroke stabilizer, and falloff).
 - [x] Injected interactive "3D Surface Paint" into `features/workspace/Panels/TexturePanel.tsx` (draw/erase modes, color swatches, opacity, flow, tip shapes, and GPU bake trigger).
 - [x] Integrated instant 3D mesh upload into `features/workspace/Panels/RemeshPanel.tsx`.
 - [x] Verified and documented Two-Way PostProcess Pipeline (Automatic AI trigger + Manual user panel trigger).
-- [x] Full migration of Procedural Tree Studio UI (`features/tree/`).
-- [x] Full migration of Procedural Building Studio UI & compiler (`features/building/`, `building/`).
-- [x] Full migration of Character Assembly & Garment Fit UI (`features/assembly/`).
-- [x] Full migration of Advanced Sculpting Brushes, 3D Paint, and CSG Booleans (`features/sculpt-paint/`).
-- [x] Full migration of Visual Workflow Node Graph (`features/graph/`).
-- [x] Full migration of 2D Image Editor & Inpainter (`features/image-editor/`).
-- [x] Full migration of Concept Whiteboard & Wiki (`features/board/`, `features/wiki/`).
-- [x] Full migration of Mesh Extras: LOD optimizer, PBR bake, game-ready audit (`features/mesh-extras/`).
+- [x] Resolved cross-module relative imports, symlinks, and shared utilities across `features/utils/` and `features/config.js`.
 - [x] Added all missing npm dependencies to `package.json`.
 - [x] Preserved all existing ForMash3D components without duplication or overwriting.
 

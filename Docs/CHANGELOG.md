@@ -1,3 +1,10 @@
+## 2026-10-01 — [Active Development] Procedural Studios & Character Assembly Integration: TreeStudio, BuildingStudio, AssemblyStudio
+- **Tree Studio Integration:** Created `features/tree/TreeStudio.tsx` and route `app/trees/page.tsx` featuring real-time parameter tweaking, live branch skeleton polyline preview, seed re-rolling, texture slots (trunk, branches, leaves), and full 3D GLB mesh generation.
+- **Building Studio Integration:** Created `features/building/BuildingStudio.tsx` and route `app/buildings/page.tsx` with dual 2D footprint polygon editor and 3D architectural viewport, procedural grammar compilation, stylepacks, and texture rows.
+- **Character & Garment Assembly Studio:** Created `features/assembly/AssemblyStudio.tsx` and route `app/assembly/page.tsx` for multi-mesh kitbashing, conformal garment fitting, anatomical 3D landmark pins, transform gizmos, and atlas texture baking.
+- **App Shell & Navigation Wiring:** Added `tree`, `building`, and `assembly` to `ToolType`, `ROUTE_SEGMENT_TO_TOOL`, `WorkspaceShell.tsx` dynamic stage rendering, and `LeftNavigation.tsx` icon rail with full responsive mobile drawer support.
+- **Cross-Module Import Resolution:** Resolved missing shared utilities and relative path imports across all feature modules (`features/utils/`, `features/mesh-extras/`, `config.js` bridges).
+
 ## 2026-10-01 — [Active Development] Studio Wiring: VfxStudio, Sculpt Brushes, 3D Paint & Two-Way PostProcess Pipeline
 - **Two-Way PostProcess Pipeline:** Verified and integrated automatic postprocessing on raw AI mesh completion in `multiprocess_scheduler.py` alongside on-demand manual triggers in `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, and `MeshSegmentPanel.tsx` with instant mesh file upload support (`.glb`, `.obj`, `.stl`, `.ply`).
 - **Interactive Sculpt Brushes:** Injected 7 interactive 3D sculpting brushes (`Standard`, `Clay`, `Inflate`, `Smooth`, `Flatten`, `Pinch`, `Grab`) into `MeshEditPanel.tsx` with bilateral mirror symmetry (X/Y/Z), lazy-mouse stabilization, and auto-smooth factor.
@@ -12,9 +19,3 @@
 - **Advanced Sculpt & Mesh Extras:** Staged 7 interactive sculpting brushes, 3D surface paint, CSG booleans, gltfpack LOD generation, semantic mesh segmentation, and game-readiness audits.
 - **Standalone PostProcess Microservice (Port 8200):** Formalized mesh processing tools into dedicated FastAPI microservice on port 8200 with `scripts/start_postprocess_service.sh`.
 - **Comprehensive Guide:** Added `MIGRATION_AND_WIRING_GUIDE.md` detailing App Router integration, TypeScript conversion roadmap, and relative import resolution matrix.
-
-## 2026-09-30 — README Overhaul, 3DGenStudio Attribution & SaaS Advisory
-- Revamped README.md: eliminated hype claims (#1/alternatives), framed platform respectfully as inspired by Tripo AI and Meshy workflows.
-- Restyled Mermaid architecture diagram with vibrant Studio Gold theme and verified node-to-node rendering compatibility.
-- Documented post-processing provenance (ported from visualbruno/3DGenStudio under Community License).
-- Added explicit legal warning: Apache 2.0 applies only to ForMash3D core code; third-party models and 3DGenStudio carry non-commercial/SaaS-hosting restrictions.
