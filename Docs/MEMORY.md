@@ -1,3 +1,11 @@
+## 2026-10-01 Hugeicons Standardization & Type System Remediation
+- Remediated 47 TypeScript compilation errors across 11 files after migrating from `lucide-react` to `@hugeicons/react` and `@hugeicons/core-free-icons`.
+- Replaced direct JSX rendering of `IconSvgObject` definitions with `<HugeiconsIcon icon={...} />` wrappers across admin tabs (`QueueTab`, `RuntimeTab`, `StorageTab`, `SettingsTab`).
+- Fixed MetricCard icon prop contract across tabs to accept valid ReactNodes (`<HugeiconsIcon icon={...} size={16} className="..." />`).
+- Reverted unintentional `THREE.Bone` -> `THREE.BoneIcon` replacement in `MeshViewer.tsx`.
+- Restored `components/icons/hugeicons-mapping.ts` providing legacy lucide-to-hugeicons lookup reference.
+- Verified 100% clean type-checking with `npx tsc --noEmit` and production build with `npm run build`.
+
 ## 2026-09-30 README Overhaul & Commercial SaaS License Boundary
 - Eliminated all "#1" and "alternative of Tripo" claims; positioned ForMash3D respectfully as inspired by Tripo AI and Meshy workflows.
 - Restyled Mermaid architecture diagram with vibrant Studio Gold theme, high-contrast dark/light mode compatibility, and strict node-to-node links.

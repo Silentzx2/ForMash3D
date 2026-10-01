@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   CpuIcon, ZapIcon, MemoryStickIcon, ThermometerIcon, HardDriveIcon, Activity01Icon,
-  Server01Icon, NetworkIcon, RefreshCwIcon, Trash02Icon, CheckmarkCircle01Icon,
+  ServerIcon, NetworkIcon, RefreshCwIcon, TrashIcon, CheckmarkCircle01Icon,
   GaugeIcon, CancelCircleIcon
 } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
@@ -111,7 +111,7 @@ export function RuntimeTab() {
         </div>
         <div className="flex items-center gap-2">
           <NeonButton variant="secondary" size="sm" onClick={handleClearCache}>
-            <HugeiconsIcon icon={Trash02Icon} size={16} className="w-3.5 h-3.5" /> Clear Cache
+            <HugeiconsIcon icon={TrashIcon} size={16} className="w-3.5 h-3.5" /> Clear Cache
           </NeonButton>
           <NeonButton variant="secondary" size="sm" onClick={handleClearVRAM}>
             <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5" /> Clear VRAM
@@ -126,14 +126,13 @@ export function RuntimeTab() {
         <div className="flex flex-wrap items-center gap-4 lg:gap-6">
           {[
              { label: 'CUDA', value: status?.cuda_version ?? '—', icon: CpuIcon, color: 'text-emerald-400' },
-             { label: 'Driver', value: status?.driver_version ?? '—', icon: Server01Icon, color: 'text-foreground' },
+             { label: 'Driver', value: status?.driver_version ?? '—', icon: ServerIcon, color: 'text-foreground' },
              { label: 'Network In', value: (status?.network_in ?? 0) > 0 ? `${(status?.network_in ?? 0).toFixed(1)} MB` : '—', icon: NetworkIcon, color: 'text-primary' },
              { label: 'Network Out', value: (status?.network_out ?? 0) > 0 ? `${(status?.network_out ?? 0).toFixed(1)} MB` : '—', icon: Activity01Icon, color: 'text-primary' },
           ].map((item) => {
-            const Icon = item.icon;
             return (
               <div key={item.label} className="flex items-center gap-2">
-                <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                <HugeiconsIcon icon={item.icon} size={14} className="w-3.5 h-3.5 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">{item.label}</span>
                 <span className={`text-xs font-mono ${item.color}`}>{item.value}</span>
               </div>
@@ -164,7 +163,7 @@ export function RuntimeTab() {
           {/* CPU Detail Card */}
           <div className="flex items-center gap-3 p-3 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-[hsl(var(--surface-3))]">
-               <HugeiconsIcon icon={Server01Icon} size={16} className="w-5 h-5 text-muted-foreground" />
+               <HugeiconsIcon icon={ServerIcon} size={16} className="w-5 h-5 text-muted-foreground" />
              </div>
             <div className="min-w-0 flex-1">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">CPU</span>
@@ -200,19 +199,19 @@ export function RuntimeTab() {
       </GlassCard>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard label="GPU" value={Math.round(gpu)} unit="%" icon={CpuIcon} color="amber" delay={0.1}>
+        <MetricCard label="GPU" value={Math.round(gpu)} unit="%" icon={<HugeiconsIcon icon={CpuIcon} size={16} className="w-4 h-4 text-primary" />} color="amber" delay={0.1}>
           <div className="mt-3"><ProgressBar value={gpu} color="amber" size="sm" showGlow /></div>
         </MetricCard>
-        <MetricCard label="VRAM" value={vramTotal > 0 ? Math.round((vram / vramTotal) * 100) : 0} unit="%" icon={ZapIcon} color="blue" delay={0.15}>
+        <MetricCard label="VRAM" value={vramTotal > 0 ? Math.round((vram / vramTotal) * 100) : 0} unit="%" icon={<HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 text-primary" />} color="blue" delay={0.15}>
           <div className="mt-3"><ProgressBar value={(vram / vramTotal) * 100} color="blue" size="sm" showGlow /></div>
           <div className="mt-2 text-[10px] text-center text-muted-foreground font-mono">
             {(vram / 1024).toFixed(1)} / {(vramTotal / 1024).toFixed(0)} GB
           </div>
         </MetricCard>
-        <MetricCard label="CPU" value={Math.round(cpu)} unit="%" icon={Server01Icon} color="amber" delay={0.2}>
+        <MetricCard label="CPU" value={Math.round(cpu)} unit="%" icon={<HugeiconsIcon icon={ServerIcon} size={16} className="w-4 h-4 text-primary" />} color="amber" delay={0.2}>
           <div className="mt-3"><ProgressBar value={cpu} color="amber" size="sm" showGlow /></div>
         </MetricCard>
-        <MetricCard label="RAM" value={Math.round(ram)} unit="%" icon={MemoryStickIcon} color="green" delay={0.25}>
+        <MetricCard label="RAM" value={Math.round(ram)} unit="%" icon={<HugeiconsIcon icon={MemoryStickIcon} size={16} className="w-4 h-4 text-primary" />} color="green" delay={0.25}>
           <div className="mt-3"><ProgressBar value={ram} color="green" size="sm" showGlow /></div>
           <div className="mt-2 text-[10px] text-center text-muted-foreground font-mono">
             {((status?.ram_total ?? 0) * ram / 100 / 1024).toFixed(1)} / {((status?.ram_total ?? 0) / 1024).toFixed(1)} GB

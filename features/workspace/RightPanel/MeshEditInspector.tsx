@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, ChevronDown, ChevronUp, Clock, MoreVertical, SlidersHorizontal } from '@hugeicons/core-free-icons';
+import { Box, ChevronDown, ChevronUp, ClockIcon, MoreVerticalIcon, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 interface RecentEditItem {
   id: string;
   title: string;
@@ -70,7 +70,7 @@ export const MeshEditInspector: React.FC = () => {
   return (
     <div id="mesh-edit-inspector" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white overflow-y-auto scrollbar-thin select-none">
       <div className="p-3 space-y-3">
-        {/* SECTION 1: Selection Info */}
+        {/* SECTION 1: Selection InfoIcon */}
         <div className="rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] overflow-hidden">
           <button
             type="button"
@@ -79,7 +79,7 @@ export const MeshEditInspector: React.FC = () => {
           >
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-primary" />
-              <span>Selection Info</span>
+              <span>Selection InfoIcon</span>
             </div>
             {isSelectionOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
           </button>
@@ -114,7 +114,7 @@ export const MeshEditInspector: React.FC = () => {
             className="w-full flex items-center justify-between p-3 text-xs font-bold text-white hover:bg-white/[0.02] cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               <span>Edit Parameters</span>
             </div>
             {isParametersOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
@@ -303,7 +303,7 @@ export const MeshEditInspector: React.FC = () => {
         <div className="rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] overflow-hidden">
           <div className="flex items-center justify-between p-3 border-b border-white/[0.04]">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
-              <HugeiconsIcon icon={Clock} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={ClockIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               <span>Recent Edits</span>
             </div>
             <button
@@ -349,7 +349,7 @@ export const MeshEditInspector: React.FC = () => {
                     onClick={() => toast.info(`Options for ${item.title}`)}
                     className="p-1 rounded text-zinc-500 hover:text-white hover:bg-white/[0.06] cursor-pointer"
                   >
-                    <HugeiconsIcon icon={MoreVertical} size={16} className="w-3 h-3" />
+                    <HugeiconsIcon icon={MoreVerticalIcon} size={16} className="w-3 h-3" />
                   </button>
                 </div>
               </div>

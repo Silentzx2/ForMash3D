@@ -100,7 +100,7 @@ export function ExportBackupSection() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
       
-      setStatus({ type: 'success', message: 'Settings exported successfully.' });
+      setStatus({ type: 'success', message: 'SettingsIcon exported successfully.' });
     } catch (error) {
       console.error(error);
       setStatus({ type: 'error', message: 'Failed to export settings.' });
@@ -135,7 +135,7 @@ export function ExportBackupSection() {
           });
         }
         
-        setStatus({ type: 'success', message: 'Settings restored successfully. Please refresh the page.' });
+        setStatus({ type: 'success', message: 'SettingsIcon restored successfully. Please refresh the page.' });
       } catch (error) {
         console.error(error);
         setStatus({ type: 'error', message: 'Failed to restore settings. Invalid file format.' });
@@ -180,16 +180,16 @@ export function ExportBackupSection() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <HugeiconsIcon icon={Download01Icon} size={16} className="w-5 h-5" />
-              Export Settings
+              Export SettingsIcon
             </CardTitle>
-            <CardDescription>Download a JSON backup of your current configurations and preferences.</CardDescription>
+            <CardDescription>DownloadIcon a JSON backup of your current configurations and preferences.</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">
               This will include your general settings, UI preferences, and generation parameters. It does NOT include any 3D models or generated assets.
             </p>
              <Button variant="default" onClick={handleExport} disabled={exporting} className="w-full">
-                {exporting ? 'Exporting...' : 'Download Backup File'}
+                {exporting ? 'Exporting...' : 'DownloadIcon Backup File'}
               </Button>
           </CardContent>
         </Card>
@@ -200,7 +200,7 @@ export function ExportBackupSection() {
               <HugeiconsIcon icon={Upload01Icon} size={16} className="w-5 h-5" />
               Restore Backup
             </CardTitle>
-            <CardDescription>Upload a previously exported JSON backup file to restore settings.</CardDescription>
+            <CardDescription>UploadIcon a previously exported JSON backup file to restore settings.</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground mb-4">

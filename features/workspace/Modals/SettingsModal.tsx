@@ -7,7 +7,7 @@ import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AlertCircle, Brush, Cancel, Check, CheckmarkCircle02Icon, GridIcon, Monitor, RefreshCw, Server, SlidersHorizontal, Sparkles } from '@hugeicons/core-free-icons';
+import { AlertCircle, BrushIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, GridIcon, Monitor, RefreshCw, ServerIcon, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 type SettingsTab = 'server' | 'viewport' | 'sculpt' | 'ai';
 
 export const SettingsModal: React.FC = () => {
@@ -40,7 +40,7 @@ export const SettingsModal: React.FC = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isSettingsOpen, setIsSettingsOpen]);
 
-  // Server settings state
+  // ServerIcon settings state
   const [host, setHost] = useState(() => {
     try {
       return localStorage.getItem('ai3d_api_host') || apiClient.getBaseUrl();
@@ -81,7 +81,7 @@ export const SettingsModal: React.FC = () => {
       } else {
         setTestResult({
           success: false,
-          msg: 'Backend server returned offline status. Check your FastAPI service.',
+          msg: 'Backend server returned offline status. CheckIcon your FastAPI service.',
         });
         refreshSystemStats();
       }
@@ -121,10 +121,10 @@ export const SettingsModal: React.FC = () => {
         <div className="flex items-center justify-between px-5 py-3.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
-              <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-4 h-4 stroke-[2.2]" />
+              <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-white">Studio Settings</h3>
+              <h3 className="font-bold text-sm text-white">Studio SettingsIcon</h3>
               <p className="text-[10.5px] text-zinc-400">Configure viewport, pipeline defaults, and local AI runtime</p>
             </div>
           </div>
@@ -139,10 +139,10 @@ export const SettingsModal: React.FC = () => {
         {/* Tab Navigation */}
         <div className="flex items-center gap-1 px-5 pt-2.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
           {[
-            { id: 'server' as const, label: 'Backend & Server', icon: (props: any) => <HugeiconsIcon icon={Server} size={16} {...props} /> },
+            { id: 'server' as const, label: 'Backend & ServerIcon', icon: (props: any) => <HugeiconsIcon icon={ServerIcon} size={16} {...props} /> },
             { id: 'viewport' as const, label: '3D Viewport', icon: (props: any) => <HugeiconsIcon icon={Monitor} size={16} {...props} /> },
-            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: (props: any) => <HugeiconsIcon icon={Brush} size={16} {...props} /> },
-            { id: 'ai' as const, label: 'AI Inference', icon: (props: any) => <HugeiconsIcon icon={Sparkles} size={16} {...props} /> },
+            { id: 'sculpt' as const, label: 'Sculpt & BrushIcon', icon: (props: any) => <HugeiconsIcon icon={BrushIcon} size={16} {...props} /> },
+            { id: 'ai' as const, label: 'AI Inference', icon: (props: any) => <HugeiconsIcon icon={SparklesIcon} size={16} {...props} /> },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -165,12 +165,12 @@ export const SettingsModal: React.FC = () => {
 
         {/* Body Content */}
         <div className="p-5 space-y-4 text-xs bg-[hsl(var(--surface-0))] flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
-          {/* TAB 1: Server & Backend */}
+          {/* TAB 1: ServerIcon & Backend */}
           {activeTab === 'server' && (
             <div className="space-y-4 animate-in fade-in duration-100">
               <div className="space-y-1.5">
                 <label className="font-semibold text-zinc-300 flex items-center justify-between">
-                  <span>FastAPI Backend Server URL</span>
+                  <span>FastAPI Backend ServerIcon URL</span>
                   <span className="text-[10px] text-zinc-500 font-mono">Default: /api/v1</span>
                 </label>
                 <div className="flex gap-2">
@@ -258,10 +258,10 @@ export const SettingsModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Auto-Save Configuration */}
+              {/* Auto-SaveIcon Configuration */}
               <div className="flex items-center justify-between p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08]">
                 <div>
-                  <div className="font-semibold text-zinc-200">Continuous Auto-Save</div>
+                  <div className="font-semibold text-zinc-200">Continuous Auto-SaveIcon</div>
                   <div className="text-[11px] text-zinc-400">Automatically save modified meshes &amp; scene state</div>
                 </div>
                 <button
@@ -315,20 +315,20 @@ export const SettingsModal: React.FC = () => {
                           <span className="w-3.5 h-3.5 rounded-full border border-white/20" style={{ background: preset.bg }} />
                           <span className="text-[11px] font-medium">{preset.label}</span>
                         </div>
-                        {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
+                        {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Grid & Lighting Controls */}
+              {/* GridIcon & Lighting Controls */}
               <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4 text-primary" />
                     <div>
-                      <div className="font-semibold text-zinc-200">Floor Reference Grid</div>
+                      <div className="font-semibold text-zinc-200">Floor Reference GridIcon</div>
                       <div className="text-[10.5px] text-zinc-400">Display infinite metric grid plane in 3D viewport</div>
                     </div>
                   </div>
@@ -349,7 +349,7 @@ export const SettingsModal: React.FC = () => {
 
                 <div className="pt-2 border-t border-white/[0.08] space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300">Studio Key Light Intensity</span>
+                    <span className="text-zinc-300">Studio KeyIcon Light Intensity</span>
                     <span className="font-mono text-primary font-bold">{(environmentSettings.keyLightIntensity || 1.0).toFixed(1)}x</span>
                   </div>
                   <input
@@ -371,11 +371,11 @@ export const SettingsModal: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 3: Sculpt & Brush */}
+          {/* TAB 3: Sculpt & BrushIcon */}
           {activeTab === 'sculpt' && (
             <div className="space-y-4 animate-in fade-in duration-100">
               <div className="space-y-2">
-                <label className="font-semibold text-zinc-300">Default Sculpt Brush</label>
+                <label className="font-semibold text-zinc-300">Default Sculpt BrushIcon</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {['standard', 'inflate', 'smooth', 'flatten'].map((b) => (
                     <button
@@ -397,7 +397,7 @@ export const SettingsModal: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-3.5">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300">Default Brush Radius</span>
+                    <span className="text-zinc-300">Default BrushIcon Radius</span>
                     <span className="font-mono text-primary font-bold">{(sculptSettings.radius || 0.15).toFixed(2)}</span>
                   </div>
                   <input
@@ -439,7 +439,7 @@ export const SettingsModal: React.FC = () => {
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300">Brush Hardness / Sharp Falloff</span>
+                    <span className="text-zinc-300">BrushIcon Hardness / Sharp Falloff</span>
                     <span className="font-mono text-primary font-bold">{(sculptSettings.hardness || 0.50).toFixed(2)}</span>
                   </div>
                   <input
@@ -486,7 +486,7 @@ export const SettingsModal: React.FC = () => {
                       >
                         <div className="font-bold text-xs text-white flex items-center justify-between">
                           <span>{m.title}</span>
-                          {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
+                          {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
                         </div>
                         <div className="text-[10px] text-zinc-400 mt-1">{m.desc}</div>
                       </button>
@@ -498,7 +498,7 @@ export const SettingsModal: React.FC = () => {
               {/* Polycount Slider */}
               <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-300 font-semibold">Default Target Polycount</span>
+                  <span className="text-zinc-300 font-semibold">Default TargetIcon Polycount</span>
                   <span className="font-mono text-primary font-bold">
                     {generationSettings.autoOptimizeSettings.targetPolycount.toLocaleString()} triangles
                   </span>
@@ -568,7 +568,7 @@ export const SettingsModal: React.FC = () => {
             onClick={handleSave}
             className="px-5 py-2 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-black font-extrabold text-xs shadow-md shadow-primary/20 transition-all cursor-pointer"
           >
-            Save Settings
+            SaveIcon SettingsIcon
           </button>
         </div>
       </div>

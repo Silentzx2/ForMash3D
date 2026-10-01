@@ -12,7 +12,7 @@ interface MetricCardProps {
   label: string;
   value: string | number;
   unit?: string;
-  icon?: React.ComponentType<{ className?: string }>;
+  icon?: React.ReactNode;
   trend?: { value: number; positive: boolean };
   color?: MetricColor;
   delay?: number;
@@ -152,7 +152,7 @@ export function MetricCard({
   label,
   value,
   unit,
-  icon: Icon,
+  icon,
   trend,
   color = 'amber',
   delay = 0,
@@ -169,13 +169,13 @@ export function MetricCard({
     <div className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--surface-1))] p-5 shadow-sm transition-all hover:border-[hsl(var(--border))/0.8]">
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2.5">
-          {Icon && (
+          {icon && (
             <motion.div
               className={cn('flex items-center justify-center w-8 h-8 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-300 border border-[hsl(var(--border)/0.5)]')}
               whileHover={{ scale: 1.08 }}
               transition={{ type: 'spring', stiffness: 400, damping: 15 }}
             >
-              <Icon className="w-4 h-4 text-primary" />
+              {icon}
             </motion.div>
           )}
           <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">

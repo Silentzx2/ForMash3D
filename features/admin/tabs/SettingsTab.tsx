@@ -4,9 +4,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Settings01Icon, KeyIcon, SaveIcon, Trash02Icon, CpuIcon, HardDriveIcon, Server01Icon, NetworkIcon, RefreshCwIcon,
+  Settings01Icon, KeyIcon, SaveIcon, TrashIcon, CpuIcon, HardDriveIcon, ServerIcon, NetworkIcon, RefreshCwIcon,
   Settings02Icon, SparklesIcon, LayoutGridIcon, Download01Icon, KeyboardIcon, BellIcon, SlidersHorizontalIcon,
-  SlidersIcon, ShieldCheckIcon, Database01Icon, CheckIcon, AlertCircleIcon,
+  ShieldCheckIcon, Database01Icon, CheckIcon, AlertCircleIcon,
 } from '@hugeicons/core-free-icons';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { Badge } from '@/components/premium/Badge';
@@ -52,7 +52,7 @@ interface SubTabItem {
   { id: 'workspace', label: 'Workspace', icon: LayoutGridIcon, description: '3D viewport defaults & controls' },
   { id: 'export', label: 'Export & Backup', icon: Download01Icon, description: 'File formats, ZIP packaging & backup' },
   { id: 'api', label: 'API & Tokens', icon: KeyIcon, description: 'HuggingFace token & system runtime' },
-  { id: 'shortcuts', label: 'Shortcuts', icon: KeyboardIcon, description: 'Keyboard shortcuts & navigation' },
+  { id: 'shortcuts', label: 'Shortcuts', icon: KeyboardIcon, description: 'KeyboardIcon shortcuts & navigation' },
   { id: 'notifications', label: 'Notifications', icon: BellIcon, description: 'Alerts & toast preferences' },
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontalIcon, description: 'Network, proxy & debug options' },
   ];
@@ -82,7 +82,7 @@ export function SettingsTab({ initialSection }: { initialSection?: string }) {
     }
   }, [initialSection]);
 
-  // HF Token & System Info states
+  // HF Token & System InfoIcon states
   const [hfToken, setHfToken] = useState('');
   const [hfStatus, setHfStatus] = useState<{ configured: boolean; valid: boolean }>({ configured: false, valid: false });
   const [saving, setSaving] = useState(false);
@@ -137,11 +137,11 @@ const load = useCallback(async () => {
   };
 
   const systemInfo = [
-    { label: 'OS', value: runtime?.os ?? 'Linux', icon: Server01Icon, color: 'text-foreground' },
+    { label: 'OS', value: runtime?.os ?? 'Linux', icon: ServerIcon, color: 'text-foreground' },
     { label: 'CPU', value: runtime?.cpu_name ?? 'x86_64 CPU', icon: CpuIcon, color: 'text-emerald-400' },
     { label: 'RAM', value: runtime?.ram_total ? `${(runtime.ram_total / 1024).toFixed(0)} GB` : '—', icon: HardDriveIcon, color: 'text-primary' },
     { label: 'GPU', value: runtime?.gpu_name ?? (runtime?.cuda_available ? 'CUDA GPU' : 'None'), icon: CpuIcon, color: 'text-emerald-400' },
-    { label: 'CUDA', value: runtime?.cuda_version ?? '12.x', icon: Server01Icon, color: 'text-primary' },
+    { label: 'CUDA', value: runtime?.cuda_version ?? '12.x', icon: ServerIcon, color: 'text-primary' },
     { label: 'Driver', value: runtime?.driver_version ?? '—', icon: NetworkIcon, color: 'text-primary' },
   ];
 
@@ -159,7 +159,7 @@ const load = useCallback(async () => {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
             <HugeiconsIcon icon={Settings01Icon} size={16} className="w-6 h-6 text-primary" />
-            Settings & Configuration
+            SettingsIcon & Configuration
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Manage application preferences, generation pipelines, 3D viewport, and system credentials.
@@ -227,7 +227,7 @@ const load = useCallback(async () => {
               {/* System Information */}
               <GlassCard className="p-5" delay={0.05}>
                 <div className="flex items-center gap-2 mb-4">
-                   <HugeiconsIcon icon={Server01Icon} size={16} className="w-4 h-4 text-primary" />
+                   <HugeiconsIcon icon={ServerIcon} size={16} className="w-4 h-4 text-primary" />
                   <h3 className="text-sm font-semibold">System Hardware & Environment</h3>
                   <button
                     onClick={load}
@@ -245,7 +245,7 @@ const load = useCallback(async () => {
                         className="flex items-center gap-3 p-3 rounded-xl glass border border-[hsl(var(--border)/0.4)]"
                       >
                         <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-[hsl(var(--surface-2))]">
-                          <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                          <HugeiconsIcon icon={Icon} size={14} className="w-3.5 h-3.5 text-muted-foreground" />
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">{info.label}</p>
@@ -286,11 +286,11 @@ const load = useCallback(async () => {
                   />
                   <NeonButton variant="primary" size="md" onClick={handleSaveToken} disabled={saving || !hfToken.trim()}>
                      <HugeiconsIcon icon={SaveIcon} size={16} className="w-3.5 h-3.5 mr-1.5" />
-                    Save Token
+                    SaveIcon Token
                   </NeonButton>
                   {hfStatus.configured && (
                     <NeonButton variant="destructive" size="md" onClick={handleRemoveToken}>
-                       <HugeiconsIcon icon={Trash02Icon} size={16} className="w-3.5 h-3.5" />
+                       <HugeiconsIcon icon={TrashIcon} size={16} className="w-3.5 h-3.5" />
                     </NeonButton>
                   )}
                 </div>

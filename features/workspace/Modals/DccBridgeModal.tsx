@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Cable, Cancel, Check, CheckmarkCircle02Icon, Copy, RefreshCw, Send, Terminal } from '@hugeicons/core-free-icons';
+import { CableIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, Copy, RefreshCw, SendIcon, TerminalIcon } from '@hugeicons/core-free-icons';
 type DccApp = 'blender' | 'unreal' | 'maya' | 'unity';
 
 interface DccPreset {
@@ -156,7 +156,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[hsl(var(--surface-1))]/80 backdrop-blur">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-primary/15 text-primary border border-primary/25">
-                <HugeiconsIcon icon={Cable} size={16} className="w-5 h-5" />
+                <HugeiconsIcon icon={CableIcon} size={16} className="w-5 h-5" />
               </div>
               <div>
                 <h2 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
@@ -179,10 +179,10 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
 
           {/* Body */}
           <div className="p-6 overflow-y-auto space-y-5 custom-scrollbar">
-            {/* Target Software Select */}
+            {/* TargetIcon Software Select */}
             <div>
               <label className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider block mb-2">
-                Target Creative Environment
+                TargetIcon Creative Environment
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {DCC_PRESETS.map((preset) => {
@@ -203,7 +203,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
                         }`}>
                           {preset.iconTag}
                         </span>
-                        {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
+                        {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
                       </div>
                       <span className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-zinc-300'}`}>
                         {preset.name.split(' ')[0]}
@@ -307,14 +307,14 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <HugeiconsIcon icon={Terminal} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={TerminalIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   Quick Ingestion Script
                 </span>
                 <button
                   onClick={handleCopyCode}
                   className="flex items-center gap-1 text-[11px] text-primary hover:underline font-mono"
                 >
-                  {copiedCode ? <HugeiconsIcon icon={Check} size={16} className="w-3 h-3" /> : <HugeiconsIcon icon={Copy} size={16} className="w-3 h-3" />}
+                  {copiedCode ? <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3" /> : <HugeiconsIcon icon={Copy} size={16} className="w-3 h-3" />}
                   <span>{copiedCode ? 'Copied to Clipboard!' : 'Copy Script'}</span>
                 </button>
               </div>
@@ -350,8 +350,8 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
                   </>
                 ) : (
                   <>
-                    <HugeiconsIcon icon={Send} size={16} className={`w-4 h-4 ${isSending ? 'animate-bounce' : ''}`} />
-                    <span>{isSending ? 'Transmitting Mesh...' : `Send to ${currentPreset.name.split(' ')[0]}`}</span>
+                    <HugeiconsIcon icon={SendIcon} size={16} className={`w-4 h-4 ${isSending ? 'animate-bounce' : ''}`} />
+                    <span>{isSending ? 'Transmitting Mesh...' : `SendIcon to ${currentPreset.name.split(' ')[0]}`}</span>
                   </>
                 )}
               </button>

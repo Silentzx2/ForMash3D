@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowLeft, BookOpen, Cancel, ChevronDown, SlidersHorizontal } from '@hugeicons/core-free-icons';
+import { ArrowLeft, BookOpenIcon, Cancel, ChevronDown, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 export const AnimationStudio: React.FC = () => {
   const { navigateToTool } = useWorkspace();
   const {
@@ -119,7 +119,7 @@ export const AnimationStudio: React.FC = () => {
               onClick={() => setPresetsDropdownOpen(!presetsDropdownOpen)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] rounded-xl text-xs font-semibold text-zinc-200 hover:text-white transition-colors cursor-pointer shadow-xs"
             >
-              <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-3.5 h-3.5 text-zinc-400" />
+              <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-3.5 h-3.5 text-zinc-400" />
               <span>Presets</span>
               <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400" />
             </button>
@@ -150,7 +150,7 @@ export const AnimationStudio: React.FC = () => {
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] rounded-xl text-xs font-semibold text-zinc-200 hover:text-white transition-colors cursor-pointer shadow-xs"
           >
-            <HugeiconsIcon icon={BookOpen} size={16} className="w-3.5 h-3.5 text-zinc-400" />
+            <HugeiconsIcon icon={BookOpenIcon} size={16} className="w-3.5 h-3.5 text-zinc-400" />
             <span>Docs</span>
           </button>
         </div>

@@ -40,6 +40,7 @@
 - [x] Fix dead RGB/background-removal branches in project-owned Hunyuan helpers
 
 ### Frontend & Studios
+- [x] Hugeicons Migration & Type System Stabilization (remediated all import issues, restored mapping reference, and wrapped icon objects)
 - [x] Bespoke Studio-Grade Vector SVG Brush Icons (`components/icons/BrushIcons.tsx` across panels, floating HUD, and cursor reticle)
 - [x] Precision 3D Surface Paint with dynamic Three.js `flipY` orientation alignment, sub-texel DDA stroke interpolation, and canvas flood fill
 - [x] Blazing Fast 60+ FPS Viewport Engine with indexed vertex color tracking and throttled normal recalculations

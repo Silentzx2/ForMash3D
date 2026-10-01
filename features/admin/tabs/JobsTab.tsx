@@ -7,14 +7,14 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import {
   Briefcase,
   Clock,
-  CheckmarkCircle01,
-  CancelCircle,
+  CheckmarkCircle01Icon,
+  CancelCircleIcon,
   LoaderCircle,
   RefreshCw,
   AlertCircle,
-  TriangleAlert,
+  TriangleAlertIcon,
   ExternalLink,
-  ArrowRight01,
+  ArrowRight,
 } from '@hugeicons/core-free-icons';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { Badge } from '@/components/premium/Badge';
@@ -26,11 +26,11 @@ import type { AdminJob } from '@/types';
 import { cn } from '@/lib/utils';
 
   const STATUS_CONFIG = {
-    completed: { icon: CheckmarkCircle01, color: 'text-emerald-400', bg: 'bg-emerald-500/10', label: 'Completed' },
+    completed: { icon: CheckmarkCircle01Icon, color: 'text-emerald-400', bg: 'bg-emerald-500/10', label: 'Completed' },
     generating: { icon: LoaderCircle, color: 'text-primary', bg: 'bg-primary/10', label: 'Running' },
     queued: { icon: Clock, color: 'text-primary', bg: 'bg-primary/10', label: 'Queued' },
-    failed: { icon: CancelCircle, color: 'text-[hsl(var(--destructive))]', bg: 'bg-[hsl(var(--destructive)/0.1)]', label: 'Failed' },
-    cancelled: { icon: CancelCircle, color: 'text-zinc-400', bg: 'bg-zinc-500/10', label: 'Cancelled' },
+    failed: { icon: CancelCircleIcon, color: 'text-[hsl(var(--destructive))]', bg: 'bg-[hsl(var(--destructive)/0.1)]', label: 'Failed' },
+    cancelled: { icon: CancelCircleIcon, color: 'text-zinc-400', bg: 'bg-zinc-500/10', label: 'Cancelled' },
   };
 
 export function JobsTab() {
@@ -113,7 +113,7 @@ export function JobsTab() {
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[hsl(var(--admin-accent))] hover:bg-[hsl(var(--admin-accent)/0.9)] text-white text-xs font-semibold shadow-sm transition-all whitespace-nowrap cursor-pointer"
         >
           <span>Open Jobs View</span>
-           <HugeiconsIcon icon={ArrowRight01} size={16} className="w-3.5 h-3.5" />
+           <HugeiconsIcon icon={ArrowRight} size={16} className="w-3.5 h-3.5" />
         </button>
       </GlassCard>
 
@@ -126,7 +126,7 @@ export function JobsTab() {
         </div>
         <button
           onClick={() => { setLoading(true); load(); }}
-          title="Refresh jobs"
+          title="RefreshIcon jobs"
           className="p-2 rounded-xl glass border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           <HugeiconsIcon icon={RefreshCw} size={16} className="w-4 h-4" />
@@ -195,7 +195,7 @@ export function JobsTab() {
                     {diag && (
                       <div className="mt-2.5 p-3 rounded-xl bg-[hsl(var(--destructive)/0.08)] border border-[hsl(var(--destructive)/0.25)] space-y-1">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-[hsl(var(--destructive))]">
-                           <HugeiconsIcon icon={TriangleAlert} size={16} className="w-4 h-4 flex-shrink-0" />
+                           <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-4 h-4 flex-shrink-0" />
                           <span>{diag.issueDescription}</span>
                         </div>
                         <p className="text-[11px] text-muted-foreground font-mono break-all pl-5">

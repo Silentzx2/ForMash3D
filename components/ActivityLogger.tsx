@@ -13,9 +13,9 @@ const FALLBACK_TIMESTAMP = Date.now();
 import React, { useEffect, useState, useMemo } from 'react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Clock, CheckmarkCircle02, AlertCircle, LoaderCircle, Play, HeartIcon,
-  Search01Icon, Layers01, BoxIcon, Cpu,
-  RefreshCw, Eye, FileCode, Copy01
+  ClockIcon, CheckmarkCircle02Icon, AlertCircle, LoaderCircle, PlayIcon, HeartIcon,
+  Search01Icon, Layers01Icon, BoxIcon, CpuIcon,
+  RefreshCw, EyeIcon, FileCodeIcon, Copy01Icon
 } from '@hugeicons/core-free-icons';
 import { getApiUrl } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
@@ -251,7 +251,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             <div className="text-xl font-black mt-0.5">{totalCount}</div>
           </div>
           <div className="w-9 h-9 rounded-xl bg-[hsl(var(--primary)/0.1)] border border-[hsl(var(--primary)/0.2)] flex items-center justify-center text-[hsl(var(--primary))]">
-            <HugeiconsIcon icon={Layers01} size={16} className="w-[18px] h-[18px]" />
+            <HugeiconsIcon icon={Layers01Icon} size={16} className="w-[18px] h-[18px]" />
           </div>
         </div>
 
@@ -261,7 +261,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             <div className="text-xl font-black text-[hsl(var(--neon-green))] mt-0.5">{successRate}%</div>
           </div>
           <div className="w-9 h-9 rounded-xl bg-[hsl(var(--neon-green)/0.1)] border border-[hsl(var(--neon-green)/0.2)] flex items-center justify-center text-[hsl(var(--neon-green))]">
-            <HugeiconsIcon icon={CheckmarkCircle02} size={16} className="w-[18px] h-[18px]" />
+            <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-[18px] h-[18px]" />
           </div>
         </div>
 
@@ -271,7 +271,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             <div className="text-xl font-black text-primary mt-0.5">{activeCount}</div>
           </div>
           <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-            <HugeiconsIcon icon={Cpu} size={16} className="w-[18px] h-[18px]" />
+            <HugeiconsIcon icon={CpuIcon} size={16} className="w-[18px] h-[18px]" />
           </div>
         </div>
 
@@ -281,12 +281,12 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             <div className="text-xl font-black text-primary mt-0.5">~22s</div>
           </div>
           <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-            <HugeiconsIcon icon={Clock} size={16} className="w-[18px] h-[18px]" />
+            <HugeiconsIcon icon={ClockIcon} size={16} className="w-[18px] h-[18px]" />
           </div>
         </div>
       </div>
 
-      {/* Search & Status Filters */}
+      {/* SearchIcon & Status Filters */}
       <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-2xl p-3">
         <div className="relative flex-1 max-w-md">
           <HugeiconsIcon icon={Search01Icon} size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" />
@@ -294,12 +294,12 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search timeline by prompt, model, or title..."
+            placeholder="SearchIcon timeline by prompt, model, or title..."
             className="w-full bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-xl py-2 pl-9 pr-3 text-xs text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:border-[hsl(var(--primary))] transition-all"
           />
         </div>
 
-        {/* Filter Pills */}
+        {/* FilterIcon Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           {(['all', 'completed', 'generating', 'queued', 'failed'] as const).map((filter) => (
             <button
@@ -320,7 +320,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             onClick={() => loadHistory()}
             disabled={isLoadingHistory}
             className="p-2 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-all"
-            title="Refresh Timeline"
+            title="RefreshIcon Timeline"
           >
             <HugeiconsIcon icon={RefreshCw} size={13} className={isLoadingHistory ? 'animate-spin' : ''} />
           </button>
@@ -353,10 +353,10 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
                     : 'bg-[hsl(var(--surface-0))] border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]'
                 )}
               >
-                {isCompleted && <HugeiconsIcon icon={CheckmarkCircle02} size={12} />}
+                {isCompleted && <HugeiconsIcon icon={CheckmarkCircle02Icon} size={12} />}
                 {isGenerating && <HugeiconsIcon icon={LoaderCircle} size={12} className="animate-spin" />}
                 {isFailed && <HugeiconsIcon icon={AlertCircle} size={12} />}
-                {isQueued && <HugeiconsIcon icon={Clock} size={12} />}
+                {isQueued && <HugeiconsIcon icon={ClockIcon} size={12} />}
               </div>
 
               {/* Timeline Card */}
@@ -415,7 +415,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
 
                     <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-[hsl(var(--muted-foreground))]/70 pt-0.5">
                       <span className="flex items-center gap-1">
-                        <HugeiconsIcon icon={Clock} size={16} /> {item.timestamp}
+                        <HugeiconsIcon icon={ClockIcon} size={16} /> {item.timestamp}
                       </span>
                       {item.duration && <span>Duration: {item.duration}</span>}
                       {item.model && <span>Model: {item.model}</span>}
@@ -429,7 +429,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
                     onClick={() => handleOpenModel(item)}
                     className="px-3 py-1.5 rounded-xl bg-[hsl(var(--primary))] hover:brightness-110 active:scale-95 text-[hsl(var(--foreground))] text-[11px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-sm"
                   >
-                    <HugeiconsIcon icon={Play} size={11} /> Open
+                    <HugeiconsIcon icon={PlayIcon} size={11} /> Open
                   </button>
 
                   <button
@@ -437,7 +437,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
                     className="px-2.5 py-1.5 rounded-xl bg-[hsl(var(--surface-3))] hover:bg-[hsl(var(--surface-3)/0.8)] text-[hsl(var(--foreground))] text-[11px] font-bold transition-all"
                     title="View Job Metadata"
                   >
-                    <HugeiconsIcon icon={Eye} size={13} />
+                    <HugeiconsIcon icon={EyeIcon} size={13} />
                   </button>
                 </div>
               </div>
@@ -447,7 +447,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
 
         {filteredItems.length === 0 && (
           <div className="p-12 rounded-2xl bg-[hsl(var(--surface-1))] border border-dashed border-[hsl(var(--border))] text-center flex flex-col items-center justify-center text-[hsl(var(--muted-foreground))]">
-            <HugeiconsIcon icon={Clock} size={36} className="text-[hsl(var(--border))] mb-3" />
+            <HugeiconsIcon icon={ClockIcon} size={36} className="text-[hsl(var(--border))] mb-3" />
             <p className="text-xs font-bold text-[hsl(var(--foreground))] uppercase">No Timeline Activities</p>
             <p className="text-[11px] mt-1 max-w-sm">No past generation jobs match your current filter criteria. Start a generation to track your project milestones!</p>
           </div>
@@ -460,7 +460,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
           <div className="w-full max-w-lg bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-2xl p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between border-b border-[hsl(var(--border)/0.5)] pb-3">
               <div className="flex items-center gap-2">
-                <HugeiconsIcon icon={FileCode} size={16} className="text-[hsl(var(--primary))]" />
+                <HugeiconsIcon icon={FileCodeIcon} size={16} className="text-[hsl(var(--primary))]" />
                 <h3 className="text-sm font-bold text-[hsl(var(--foreground))]">Job Metadata Inspection</h3>
               </div>
               <button
@@ -500,7 +500,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
                 }}
                 className="px-3 py-1.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] text-xs font-bold flex items-center gap-1.5"
               >
-                <HugeiconsIcon icon={Copy01} size={12} /> Copy JSON
+                <HugeiconsIcon icon={Copy01Icon} size={12} /> Copy JSON
               </button>
               <button
                 onClick={() => setSelectedJobDetails(null)}

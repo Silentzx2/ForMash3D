@@ -4,7 +4,7 @@ import { createUploadedMeshAsset } from '../types';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Cancel, FolderOpen, Sparkles, Upload, Zap } from '@hugeicons/core-free-icons';
+import { Box, Cancel, FolderOpenIcon, SparklesIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
 export const UVUnwrapPanel: React.FC = () => {
   const {
     currentAsset,
@@ -49,7 +49,7 @@ export const UVUnwrapPanel: React.FC = () => {
       {/* Top Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
-          <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
+          <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
           <span>Smart UV Unwrapping</span>
         </span>
         <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
@@ -107,7 +107,7 @@ export const UVUnwrapPanel: React.FC = () => {
                   onClick={() => setShowAssetPicker(!showAssetPicker)}
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <HugeiconsIcon icon={FolderOpen} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>From Assets</span>
                 </button>
                 <input
@@ -122,8 +122,8 @@ export const UVUnwrapPanel: React.FC = () => {
                   onClick={() => fileInputRef.current?.click()}
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <HugeiconsIcon icon={Upload} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>Upload New</span>
+                  <HugeiconsIcon icon={UploadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>UploadIcon New</span>
                 </button>
               </div>
 
@@ -148,14 +148,14 @@ export const UVUnwrapPanel: React.FC = () => {
               )}
             </div>
 
-            {/* Step 2: Smart Auto Settings */}
+            {/* Step 2: Smart Auto SettingsIcon */}
             <div className="space-y-3 pt-2 border-t border-white/[0.06]">
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-primary text-black font-black text-[11px] flex items-center justify-center">
                   2
                 </span>
                 <div>
-                  <div className="text-xs font-bold text-white">Smart UV & Texture Target</div>
+                  <div className="text-xs font-bold text-white">Smart UV & Texture TargetIcon</div>
                   <div className="text-[10px] text-zinc-400">Automatic conformal seam cutting & packed atlas</div>
                 </div>
               </div>
@@ -213,7 +213,7 @@ export const UVUnwrapPanel: React.FC = () => {
               {/* Auto Pipeline Details Badge */}
               <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 space-y-1">
                 <div className="flex items-center gap-1.5 text-primary text-[11px] font-bold">
-                  <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
                   <span>Automatic Studio Packing Pipeline</span>
                 </div>
                 <div className="text-[10px] text-zinc-400 leading-relaxed">
@@ -231,7 +231,7 @@ export const UVUnwrapPanel: React.FC = () => {
                 disabled={isRunning || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
                 className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                <HugeiconsIcon icon={Zap} size={16} className="w-4 h-4 fill-current" />
+                <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 fill-current" />
                 <span>{isRunning ? 'Unwrapping & Packing Mesh...' : 'Start Smart UV Unwrap'}</span>
               </button>
             </div>

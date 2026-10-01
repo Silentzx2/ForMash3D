@@ -157,7 +157,7 @@ export function GeneralSection() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">General Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight">General SettingsIcon</h1>
         <p className="text-muted-foreground mt-2">Application information and environment details</p>
       </div>
 
@@ -260,11 +260,11 @@ export function GeneralSection() {
               className="bg-primary text-primary-foreground"
             >
               {isChecking ? <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-4 h-4 mr-2 animate-spin" /> : <HugeiconsIcon icon={Activity01Icon} size={16} className="w-4 h-4 mr-2" />}
-              {isChecking ? 'Running Checks...' : 'Run Initialization Check'}
+              {isChecking ? 'Running Checks...' : 'Run Initialization CheckIcon'}
             </Button>
             <Button variant="default" onClick={fetchSystemInfo} disabled={loading}>
               <HugeiconsIcon icon={RefreshCwIcon} size={16} className="w-4 h-4 mr-2" />
-              Refresh Information
+              RefreshIcon Information
             </Button>
           </div>
 

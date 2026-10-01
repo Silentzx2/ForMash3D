@@ -4,7 +4,7 @@ import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { FolderOpen, PanelRightClose, SlidersHorizontal } from '@hugeicons/core-free-icons';
+import { FolderOpenIcon, PanelRightClose, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 // Import panels
 import { RightPropertyPanel } from './RightPropertyPanel';
 import { RightAssetsPanel } from './RightAssetsPanel';
@@ -56,8 +56,8 @@ export const RightWorkspacePanel: React.FC = () => {
         <div className="flex-1 min-w-0 mr-2">
           <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] border border-white/[0.06] rounded-lg">
             {([
-              { id: 'assets', label: 'Assets', icon: (props: any) => <HugeiconsIcon icon={FolderOpen} size={16} {...props} /> },
-                { id: 'properties', label: 'Properties', icon: (props: any) => <HugeiconsIcon icon={SlidersHorizontal} size={16} {...props} /> },
+              { id: 'assets', label: 'Assets', icon: (props: any) => <HugeiconsIcon icon={FolderOpenIcon} size={16} {...props} /> },
+                { id: 'properties', label: 'Properties', icon: (props: any) => <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} {...props} /> },
               ] as Array<{ id: string; label: string; icon: any }>).map((tab) => {
                 const Icon = tab.icon;
                 const isActive = currentActiveTab === tab.id;

@@ -9,7 +9,7 @@ import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AlertCircle, Box, Check, ChevronLeft, ChevronRight, Copy, Filter, FolderOpen, GridIcon, LoaderCircle, MoreVertical, Star, Trash2, ZoomIn } from '@hugeicons/core-free-icons';
+import { AlertCircle, Box, CheckIcon, ChevronLeft, ChevronRight, Copy, FilterIcon, FolderOpenIcon, GridIcon, LoaderCircle, MoreVerticalIcon, StarIcon, Trash2, ZoomInIcon } from '@hugeicons/core-free-icons';
 export const RightAssetsPanel: React.FC = () => {
   const { 
     assets, 
@@ -91,7 +91,7 @@ export const RightAssetsPanel: React.FC = () => {
     startUpload(file.name, file.size);
 
     try {
-      // Upload file to backend with real-time progress
+      // UploadIcon file to backend with real-time progress
       const formData = new FormData();
       formData.append('file', file);
       const result = await getApiClient().post<{
@@ -147,7 +147,7 @@ export const RightAssetsPanel: React.FC = () => {
         materialCount: meshStats?.material_count,
         meshDetails: meshStats?.mesh_details,
         dateCreated: '',
-        tags: ['Custom', 'User-Upload', 'Mesh']
+        tags: ['Custom', 'UserIcon-UploadIcon', 'Mesh']
       });
       addAsset(newAsset);
       setCurrentAsset(newAsset);
@@ -211,7 +211,7 @@ export const RightAssetsPanel: React.FC = () => {
       <div className="px-2.5 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-1))]">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            {/* Grid / All View */}
+            {/* GridIcon / All View */}
             <SimpleTooltip label="All Assets">
               <button
                 onClick={() => { setShowFavoritesOnly(false); setAssetFilter('all'); }}
@@ -225,7 +225,7 @@ export const RightAssetsPanel: React.FC = () => {
               </button>
             </SimpleTooltip>
 
-            {/* Favorite Filter */}
+            {/* Favorite FilterIcon */}
             <SimpleTooltip label="Favorites Only">
               <button
                 onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
@@ -235,13 +235,13 @@ export const RightAssetsPanel: React.FC = () => {
                     : 'text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                 }`}
               >
-                <HugeiconsIcon icon={Star} size={16} className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={StarIcon} size={16} className="w-3.5 h-3.5" />
               </button>
             </SimpleTooltip>
 
-            {/* Category Filter */}
+            {/* Category FilterIcon */}
             <div className="relative" ref={filterMenuRef}>
-              <SimpleTooltip label="Filter by Category">
+              <SimpleTooltip label="FilterIcon by Category">
                 <button
                   onClick={() => setFilterMenuOpen(!filterMenuOpen)}
                   className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -250,7 +250,7 @@ export const RightAssetsPanel: React.FC = () => {
                       : 'text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))]'
                   }`}
                 >
-                  <HugeiconsIcon icon={Filter} size={16} className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={FilterIcon} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
 
@@ -261,21 +261,21 @@ export const RightAssetsPanel: React.FC = () => {
                     className="w-full text-left px-3 py-1.5 hover:bg-[hsl(var(--surface-3))] text-zinc-200 cursor-pointer flex items-center justify-between"
                   >
                     <span>All Assets</span>
-                    {assetFilter === 'all' && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
+                    {assetFilter === 'all' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                   </button>
                   <button
                     onClick={() => { setAssetFilter('models'); setFilterMenuOpen(false); }}
                     className="w-full text-left px-3 py-1.5 hover:bg-[hsl(var(--surface-3))] text-zinc-200 cursor-pointer flex items-center justify-between"
                   >
                     <span>3D Models</span>
-                    {assetFilter === 'models' && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
+                    {assetFilter === 'models' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                   </button>
                   <button
                     onClick={() => { setAssetFilter('textures'); setFilterMenuOpen(false); }}
                     className="w-full text-left px-3 py-1.5 hover:bg-[hsl(var(--surface-3))] text-zinc-200 cursor-pointer flex items-center justify-between"
                   >
                     <span>PBR Textures</span>
-                    {assetFilter === 'textures' && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
+                    {assetFilter === 'textures' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                   </button>
                 </div>
               )}
@@ -294,9 +294,9 @@ export const RightAssetsPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Asset Grid Body */}
+      {/* Main Asset GridIcon Body */}
       <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5 no-scrollbar">
-        {/* Upload 3D Model Card - Centered Dropzone */}
+        {/* UploadIcon 3D Model Card - Centered Dropzone */}
         <div
           id="btn-upload-3d-model-card"
           onDragOver={handleDragOver}
@@ -348,7 +348,7 @@ export const RightAssetsPanel: React.FC = () => {
 
         {filteredAssets.length === 0 ? (
           <div className="py-6 px-2 text-center text-zinc-400">
-            <HugeiconsIcon icon={FolderOpen} size={16} className="w-8 h-8 mx-auto mb-2 text-zinc-500" />
+            <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-8 h-8 mx-auto mb-2 text-zinc-500" />
             <div className="text-xs font-bold text-zinc-300">No outputs yet</div>
             <div className="text-[11px] mt-1 text-zinc-500">Run a generation workflow or import a 3D file above.</div>
           </div>
@@ -408,14 +408,14 @@ export const RightAssetsPanel: React.FC = () => {
                         className="p-1 rounded-md bg-black/70 hover:bg-black text-zinc-300 hover:text-primary border border-white/20 shadow transition-colors"
                         title="Zoom preview"
                       >
-                        <HugeiconsIcon icon={ZoomIn} size={16} className="w-3 h-3" />
+                        <HugeiconsIcon icon={ZoomInIcon} size={16} className="w-3 h-3" />
                       </a>
                     </div>
                   )}
 
                   {isSelected && (
                     <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center text-black shadow">
-                      <HugeiconsIcon icon={Check} size={16} className="w-2.5 h-2.5 stroke-[3]" />
+                      <HugeiconsIcon icon={CheckIcon} size={16} className="w-2.5 h-2.5 stroke-[3]" />
                     </div>
                   )}
                 </div>
@@ -435,7 +435,7 @@ export const RightAssetsPanel: React.FC = () => {
                       }}
                       className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))] transition-colors cursor-pointer"
                     >
-                      <HugeiconsIcon icon={MoreVertical} size={16} className="w-3.5 h-3.5" />
+                      <HugeiconsIcon icon={MoreVerticalIcon} size={16} className="w-3.5 h-3.5" />
                     </button>
 
                       {activeMenuAssetId === asset.id && (
@@ -509,7 +509,7 @@ export const RightAssetsPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Upload Diagnostic Modal */}
+      {/* UploadIcon Diagnostic Modal */}
       <UploadDiagnosticModal
         isOpen={isDiagnosticOpen}
         onClose={() => {

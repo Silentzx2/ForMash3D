@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Cancel, Check, ChevronDown, ExternalLink, FolderOpen, RotateCcw, Settings2, Upload, Zap } from '@hugeicons/core-free-icons';
+import { Box, Cancel, CheckIcon, ChevronDown, ExternalLinkIcon, FolderOpenIcon, RotateCcwIcon, Settings2, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
 export const MeshSegmentPanel: React.FC = () => {
   const {
     currentAsset,
@@ -31,7 +31,7 @@ export const MeshSegmentPanel: React.FC = () => {
   const [outputFormat, setOutputFormat] = useState('glb');
   const [showAssetPicker, setShowAssetPicker] = useState(false);
 
-  // Settings Tab State (Post-processing & Advanced constraints)
+  // SettingsIcon Tab State (Post-processing & Advanced constraints)
   const [minPartFaces, setMinPartFaces] = useState(250);
   const [smoothingPasses, setSmoothingPasses] = useState(3);
   const [maxHierarchyDepth, setMaxHierarchyDepth] = useState(2);
@@ -74,7 +74,7 @@ export const MeshSegmentPanel: React.FC = () => {
     setSymmetryDetection(true);
     setAutoWatertightRepair(true);
     setConvexDecomposition(false);
-    toast.info('Settings restored to defaults');
+    toast.info('SettingsIcon restored to defaults');
   };
 
   const handleUploadNew = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -84,7 +84,7 @@ export const MeshSegmentPanel: React.FC = () => {
 
   return (
     <div id="panel-mesh-segment" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white overflow-y-auto scrollbar-thin select-none">
-      {/* Top Header Pill Tabs: Segment / Settings */}
+      {/* Top Header Pill Tabs: Segment / SettingsIcon */}
       <div className="p-3 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
         <div className="flex gap-1 p-1 bg-[hsl(var(--surface-0))] rounded-xl border border-white/[0.08]">
           {(['segment', 'settings'] as const).map((tab) => (
@@ -159,7 +159,7 @@ export const MeshSegmentPanel: React.FC = () => {
                   onClick={() => setShowAssetPicker(!showAssetPicker)}
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <HugeiconsIcon icon={FolderOpen} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>From Assets</span>
                 </button>
                 <input
@@ -174,8 +174,8 @@ export const MeshSegmentPanel: React.FC = () => {
                   onClick={() => fileInputRef.current?.click()}
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
-                  <HugeiconsIcon icon={Upload} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>Upload New</span>
+                  <HugeiconsIcon icon={UploadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>UploadIcon New</span>
                 </button>
               </div>
 
@@ -231,7 +231,7 @@ export const MeshSegmentPanel: React.FC = () => {
                     className="inline-flex items-center gap-1 font-semibold text-primary hover:underline ml-2 shrink-0"
                   >
                     <span>Details</span>
-                    <HugeiconsIcon icon={ExternalLink} size={16} className="w-2.5 h-2.5" />
+                    <HugeiconsIcon icon={ExternalLinkIcon} size={16} className="w-2.5 h-2.5" />
                   </a>
                 </div>
               </div>
@@ -248,10 +248,10 @@ export const MeshSegmentPanel: React.FC = () => {
                 </div>
               </div>
 
-              {/* Target Parts Slider */}
+              {/* TargetIcon Parts Slider */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-medium text-zinc-300">Target Parts</span>
+                  <span className="font-medium text-zinc-300">TargetIcon Parts</span>
                   <span className="font-mono text-primary font-bold text-xs">{targetParts} parts</span>
                 </div>
                 <input
@@ -386,7 +386,7 @@ export const MeshSegmentPanel: React.FC = () => {
                 disabled={isRunning || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
                 className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
-                <HugeiconsIcon icon={Zap} size={16} className="w-4 h-4 fill-current" />
+                <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 fill-current" />
                 <span>{isRunning ? 'Segmenting Mesh...' : 'Start Segmentation'}</span>
               </button>
             </div>
@@ -404,7 +404,7 @@ export const MeshSegmentPanel: React.FC = () => {
                 <span className="text-xs font-bold text-white">Post-Processing Configuration</span>
               </div>
               <p className="text-[10px] text-zinc-400 leading-relaxed">
-                Filter noise shards, smooth part boundary contours, and guide semantic classification with custom keywords.
+                FilterIcon noise shards, smooth part boundary contours, and guide semantic classification with custom keywords.
               </p>
             </div>
 
@@ -531,15 +531,15 @@ export const MeshSegmentPanel: React.FC = () => {
               </div>
             </div>
 
-            {/* Save & Reset Buttons */}
+            {/* SaveIcon & Reset Buttons */}
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
                 onClick={handleSaveSettings}
                 className="flex-1 h-10 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
-                <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>Save Settings</span>
+                <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>SaveIcon SettingsIcon</span>
               </button>
               <button
                 type="button"
@@ -547,7 +547,7 @@ export const MeshSegmentPanel: React.FC = () => {
                 className="h-10 px-3 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-400 hover:text-white text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 title="Reset to defaults"
               >
-                <HugeiconsIcon icon={RotateCcw} size={16} className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-3.5 h-3.5" />
                 <span>Reset</span>
               </button>
             </div>

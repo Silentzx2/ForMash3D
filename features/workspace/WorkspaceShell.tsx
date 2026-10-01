@@ -10,7 +10,7 @@ import { LeftNavigation } from './Navigation/LeftNavigation';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Cancel, FolderOpen, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontal } from '@hugeicons/core-free-icons';
+import { Cancel, FolderOpenIcon, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 // Dynamic imports for heavy 3D components and panels
 const MeshViewer = dynamic(() => import('./Viewport/MeshViewer').then(mod => mod.MeshViewer), {
   ssr: false,
@@ -123,7 +123,7 @@ export const WorkspaceShell: React.FC = () => {
   // Mobile menu state: left navigation drawer
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Global Workspace Navigation Keyboard Shortcuts (⌘1, ⌘2, ⌘3, ⌘4, G, R, T, A, S, ⌘,)
+  // Global Workspace Navigation KeyboardIcon Shortcuts (⌘1, ⌘2, ⌘3, ⌘4, G, R, T, A, S, ⌘,)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting keystrokes in inputs, textareas, or content-editable elements
@@ -504,7 +504,7 @@ export const WorkspaceShell: React.FC = () => {
                 className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-primary text-black font-black text-xs shadow-xl shadow-black/50 hover:bg-primary/90 transition-all active:scale-95 cursor-pointer border border-primary/40"
                 aria-label="Open tool panel"
               >
-                <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-4 h-4 stroke-[2.5]" />
+                <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 stroke-[2.5]" />
                 <span>Tools</span>
               </button>
 
@@ -513,7 +513,7 @@ export const WorkspaceShell: React.FC = () => {
                 className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[hsl(var(--surface-1))]/95 backdrop-blur-md border border-white/[0.15] text-zinc-200 hover:text-white font-bold text-xs shadow-xl shadow-black/50 transition-all active:scale-95 cursor-pointer"
                 aria-label="Open inspector and assets"
               >
-                <HugeiconsIcon icon={FolderOpen} size={16} className="w-4 h-4 stroke-[2.2] text-primary" />
+                <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-4 h-4 stroke-[2.2] text-primary" />
                 <span>Inspector</span>
               </button>
             </div>

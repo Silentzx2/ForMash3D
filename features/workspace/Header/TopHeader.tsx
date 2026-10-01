@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Cable, Check, ChevronDown, Hexagon, Layers, Menu, Package, Settings, Sparkles, User } from '@hugeicons/core-free-icons';
+import { Box, CableIcon, CheckIcon, ChevronDown, HexagonIcon, LayersIcon, Menu, PackageIcon, SettingsIcon, SparklesIcon, UserIcon } from '@hugeicons/core-free-icons';
 interface TopHeaderProps {
   onMobileMenuToggle?: () => void;
   isMobileNavOpen?: boolean;
@@ -109,7 +109,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                   <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>3D Model Studio</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'model' && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'model' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
               <button
                 onClick={() => { navigateToTool('remesh'); setWorkspaceMenuOpen(false); }}
@@ -120,10 +120,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <HugeiconsIcon icon={Hexagon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={HexagonIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Quad Remesh (Poly)</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'remesh' && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'remesh' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
               <button
                 onClick={() => { navigateToTool('texture'); setWorkspaceMenuOpen(false); }}
@@ -134,10 +134,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <HugeiconsIcon icon={Layers} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={LayersIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>PBR Texture Studio</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'texture' && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'texture' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
               <button
                 onClick={() => { navigateToTool('animation'); setWorkspaceMenuOpen(false); }}
@@ -148,10 +148,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Animation & Rigging</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'animation' && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'animation' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
             </div>
           )}
@@ -220,7 +220,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
         </nav>
       </div>
 
-      {/* Right: FastAPI Status Pill, AI Models, DCC Bridge, Settings, Profile */}
+      {/* Right: FastAPI Status Pill, AI Models, DCC Bridge, SettingsIcon, Profile */}
       <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
         {/* Restored FastAPI Status Pill - text hidden on small screens */}
         <SimpleTooltip
@@ -249,7 +249,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
             onClick={() => router.push('/admin?tab=models')}
             className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
           >
-            <HugeiconsIcon icon={Package} size={16} className="w-3 h-3 text-primary" />
+            <HugeiconsIcon icon={PackageIcon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold hidden md:inline">AI Models</span>
           </button>
         </SimpleTooltip>
@@ -261,30 +261,30 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
             onClick={() => setIsDccBridgeOpen(true)}
             className="hidden md:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
           >
-            <HugeiconsIcon icon={Cable} size={16} className="w-3 h-3 text-primary" />
+            <HugeiconsIcon icon={CableIcon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold">DCC Bridge</span>
           </button>
         </SimpleTooltip>
 
-        {/* Quick Settings Icon */}
-        <SimpleTooltip label="Quick Settings" side="bottom">
+        {/* Quick SettingsIcon Icon */}
+        <SimpleTooltip label="Quick SettingsIcon" side="bottom">
           <button
             id="btn-header-settings"
             onClick={() => setIsSettingsOpen(true)}
             className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-1))] transition-colors cursor-pointer"
           >
-            <HugeiconsIcon icon={Settings} size={16} className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={SettingsIcon} size={16} className="w-3.5 h-3.5" />
           </button>
         </SimpleTooltip>
 
         {/* Profile Avatar */}
-        <SimpleTooltip label="Admin & Settings" side="bottom">
+        <SimpleTooltip label="Admin & SettingsIcon" side="bottom">
           <div
             id="btn-header-profile"
             onClick={() => router.push('/admin?tab=settings')}
             className="w-6 h-6 rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.12] flex items-center justify-center text-[10px] font-bold text-primary cursor-pointer hover:border-primary transition-colors overflow-hidden"
           >
-            <HugeiconsIcon icon={User} size={16} className="w-3.5 h-3.5 text-zinc-300" />
+            <HugeiconsIcon icon={UserIcon} size={16} className="w-3.5 h-3.5 text-zinc-300" />
           </div>
         </SimpleTooltip>
       </div>

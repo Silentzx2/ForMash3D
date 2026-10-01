@@ -21,7 +21,7 @@ import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Camera, Cancel, Check, ChevronDown, CloudUpload, Compass, Download, FlipHorizontal2, GridIcon, Hand, Maximize2, Move, RotateCcw, RotateCw, Search, Sparkles, Sun, Zap, ZoomIn, ZoomOut } from '@hugeicons/core-free-icons';
+import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
 import {
   StandardBrushIcon,
   ClayBrushIcon,
@@ -642,13 +642,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   }, [activeTool, sculptSettings, paintBrushSettings]);
 
-  // Dynamic Brush Size Preview HUD overlay state
+  // Dynamic BrushIcon Size Preview HUD overlay state
   const [brushPreviewVisible, setBrushPreviewVisible] = useState(false);
   const [brushPreviewRadius, setBrushPreviewRadius] = useState(24);
   const [brushPreviewColor, setBrushPreviewColor] = useState('#FFCC00');
   const brushPreviewTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Dynamic 2D Brush Ring Pointer tracking
+  // Dynamic 2D BrushIcon Ring Pointer tracking
   const [brushPointer, setBrushPointer] = useState<{ x: number; y: number; visible: boolean; isDown: boolean }>({
     x: 0,
     y: 0,
@@ -1481,7 +1481,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // 2. Camera
+    // 2. CameraIcon
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     camera.position.set(0, 1.2, 3.8);
     cameraRef.current = camera;
@@ -1581,7 +1581,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scene.add(floor);
     floorRef.current = floor;
 
-    // 7. Grid Helper
+    // 7. GridIcon Helper
     const grid = new THREE.GridHelper(20, 40, 0xFFCC00, 0x222222);
     grid.position.y = 0;
     (grid.material as THREE.Material).opacity = 0.25;
@@ -1608,7 +1608,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scene.add(rigGroup);
     rigArmatureGroupRef.current = rigGroup;
 
-    // 7e. Interactive 3D Brush Cursor Ring for Sculpt & Paint
+    // 7e. Interactive 3D BrushIcon Cursor Ring for Sculpt & Paint
     const brushRingGeo = new THREE.RingGeometry(0.92, 1.0, 36);
     const brushRingMat = new THREE.MeshBasicMaterial({
       color: 0xffcc00,
@@ -1991,7 +1991,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mouse, camera);
 
-      // Check if user is placing a new bone on the 3D model surface
+      // CheckIcon if user is placing a new bone on the 3D model surface
       if (state.isPlacingBone || state.activeViewportTool === 'bone') {
         const group = currentMeshGroupRef.current;
         if (group && group.children.length > 0) {
@@ -2020,7 +2020,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         }
       }
 
-      // Check if clicking an existing joint handle in 3D
+      // CheckIcon if clicking an existing joint handle in 3D
       if (rigArmatureGroupRef.current) {
         const intersects = raycaster.intersectObjects(rigArmatureGroupRef.current.children, true);
         const hit = intersects.find((i) => i.object.userData?.isJoint);
@@ -2912,7 +2912,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   }, [currentAsset]);
 
-  // Camera preset switcher
+  // CameraIcon preset switcher
   const applyCameraPreset = useCallback((preset: CameraViewPreset | 'side') => {
     if (!cameraRef.current || !controlsRef.current) return;
     const effectivePreset: CameraViewPreset = preset === 'side' ? 'right' : preset;
@@ -3114,7 +3114,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     e.preventDefault();
     setIsDragOver(false);
 
-    // 1. Check if dropped from Assets library
+    // 1. CheckIcon if dropped from Assets library
     const assetJson = e.dataTransfer.getData('application/json');
     const assetId = e.dataTransfer.getData('text/plain');
 
@@ -3140,7 +3140,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
     }
 
-    // 2. Check if local 3D files were dropped from desktop (OBJ, GLB, STL, FBX)
+    // 2. CheckIcon if local 3D files were dropped from desktop (OBJ, GLB, STL, FBX)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       const ext = file.name.split('.').pop()?.toUpperCase() || '';
@@ -3271,7 +3271,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         }`} 
       />
 
-      {/* Floating Precision Brush Reticle Cursor */}
+      {/* Floating Precision BrushIcon Reticle Cursor */}
       {(activeTool === 'edit' || activeTool === 'texture') && brushPointer.visible && (
         <div
           className="fixed pointer-events-none z-50 transition-transform duration-75 ease-out"
@@ -3306,7 +3306,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             />
           </div>
 
-          {/* Floating Brush Type & Radius Badge */}
+          {/* Floating BrushIcon Type & Radius Badge */}
           <div className="absolute top-[calc(100%+6px)] left-1/2 -translate-x-1/2 px-2.5 py-1 rounded-lg bg-black/90 backdrop-blur-md border border-white/15 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
             {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush), {
               className: "w-3.5 h-3.5 text-primary flex-shrink-0"
@@ -3320,7 +3320,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         </div>
       )}
 
-      {/* Floating Dynamic Brush Size Preview HUD */}
+      {/* Floating Dynamic BrushIcon Size Preview HUD */}
       {brushPreviewVisible && (activeTool === 'edit' || activeTool === 'texture') && (
         <div className="absolute inset-0 pointer-events-none z-40 flex items-center justify-center animate-in fade-in zoom-in-95 duration-150">
           <div className="relative flex flex-col items-center justify-center">
@@ -3338,7 +3338,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               <span>
                 {activeTool === 'edit' 
                   ? `Sculpt Radius: ${sculptSettings?.radius?.toFixed(2)}` 
-                  : `Paint Brush Size: ${paintBrushSettings?.size}px`}
+                  : `Paint BrushIcon Size: ${paintBrushSettings?.size}px`}
               </span>
             </div>
           </div>
@@ -3364,9 +3364,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       {dropToastMessage && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-[#141414] border border-primary/50 shadow-2xl flex items-center gap-2 text-xs font-semibold text-white animate-in fade-in slide-in-from-top-2 duration-300 max-w-md">
           {dropToastIsHtmlError ? (
-            <HugeiconsIcon icon={Search} size={16} className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <HugeiconsIcon icon={SearchIcon} size={16} className="w-4 h-4 text-rose-400 flex-shrink-0" />
           ) : (
-            <HugeiconsIcon icon={Sparkles} size={16} className="w-4 h-4 text-primary" />
+            <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
           )}
           <span className="truncate">{dropToastMessage}</span>
           {dropToastIsHtmlError && (
@@ -3403,7 +3403,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
             <div className="flex items-center justify-between text-xs px-0.5">
               <span className="text-zinc-200 truncate pr-2 text-left text-[11px] font-medium flex items-center gap-1.5">
-                <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary flex-shrink-0 animate-pulse" />
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary flex-shrink-0 animate-pulse" />
                 <span className="truncate">{executionStep || activeTask?.currentStep || 'Synthesizing 3D mesh representation...'}</span>
               </span>
               <span className="font-mono font-black text-xs text-primary flex-shrink-0">
@@ -3441,11 +3441,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           <div className="bg-[hsl(var(--surface-1))]/90 border border-zinc-800/80 rounded-2xl px-6 py-5 flex flex-col items-center shadow-2xl max-w-xs w-full">
             <div className="relative flex items-center justify-center mb-3">
               <div className="w-12 h-12 rounded-full border-2 border-zinc-800 border-t-[hsl(var(--primary))] animate-spin" />
-              <HugeiconsIcon icon={Sparkles} size={16} className="w-4 h-4 text-primary absolute animate-pulse" />
+              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary absolute animate-pulse" />
             </div>
             <span className="text-xs font-bold text-zinc-100 tracking-wide block mb-1">
               {loadProgress && loadProgress.percent === 100
-                ? 'Processing & GPU Upload...'
+                ? 'Processing & GPU UploadIcon...'
                 : 'Loading 3D Model...'}
             </span>
             {loadProgress && loadProgress.total > 0 ? (
@@ -3528,7 +3528,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                       setPhysicsRunning(running);
                     }}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
-                  >{physicsRunning ? 'Pause' : 'Play'}</button>
+                  >{physicsRunning ? 'PauseIcon' : 'PlayIcon'}</button>
                   <button type="button" disabled={!physicsViewerReady}
                     onClick={() => physicsRuntimeRef.current?.isReady() && physicsRuntimeRef.current.step()}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
@@ -3590,7 +3590,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 }}
                 className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] active:scale-95 cursor-pointer btn-lighting-shine"
               >
-                <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
                 <span>Generate 3D Asset</span>
               </button>
             </div>
@@ -3619,7 +3619,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                       : 'bg-[#181818] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  <HugeiconsIcon icon={Compass} size={16} className="w-3 h-3 text-primary" />
+                  <HugeiconsIcon icon={CompassIcon} size={16} className="w-3 h-3 text-primary" />
                   <span className="capitalize">{interactionMode}</span>
                 </button>
               </SimpleTooltip>
@@ -3633,7 +3633,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={handleZoomIn}
                   className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[#181818] transition-all cursor-pointer"
                 >
-                  <HugeiconsIcon icon={ZoomIn} size={16} className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={ZoomInIcon} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
 
@@ -3644,7 +3644,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={handleZoomOut}
                   className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[#181818] transition-all cursor-pointer"
                 >
-                  <HugeiconsIcon icon={ZoomOut} size={16} className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={ZoomOutIcon} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
 
@@ -3655,7 +3655,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={resetCamera}
                   className="p-1 rounded-lg text-zinc-400 hover:text-primary hover:bg-[#181818] transition-all cursor-pointer"
                 >
-                  <HugeiconsIcon icon={Maximize2} size={16} className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={Maximize02Icon} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
             </div>
@@ -3668,7 +3668,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   disabled={!currentAsset || isLoading}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-zinc-200 hover:text-primary hover:bg-white/[0.05] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
-                  <HugeiconsIcon icon={Zap} size={16} className="w-3 h-3 text-primary" />
+                  <HugeiconsIcon icon={ZapIcon} size={16} className="w-3 h-3 text-primary" />
                   <span className="hidden sm:inline">Test Physics</span>
                 </button>
               </SimpleTooltip>
@@ -3682,7 +3682,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   disabled={!currentAsset}
                   className={"flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed " + (reflectionPeekEnabled ? "bg-primary/15 text-primary" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]")}
                 >
-                  <HugeiconsIcon icon={FlipHorizontal2} size={16} className="w-3 h-3" />
+                  <HugeiconsIcon icon={FlipHorizontalIcon} size={16} className="w-3 h-3" />
                   <span className="hidden sm:inline">Mirror</span>
                 </button>
               </SimpleTooltip>
@@ -3736,7 +3736,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
                 }`}
               >
-                <HugeiconsIcon icon={Move} size={16} className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3758,7 +3758,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 onClick={handleScreenshot}
                 className="p-2 rounded-xl text-zinc-300 hover:text-primary hover:bg-[#1f222a] transition-all"
               >
-                <HugeiconsIcon icon={Camera} size={16} className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={CameraIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3780,7 +3780,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 onClick={resetCamera}
                 className="p-2 rounded-xl text-zinc-300 hover:text-white hover:bg-[#1f222a] transition-all"
               >
-                <HugeiconsIcon icon={RotateCcw} size={16} className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3794,7 +3794,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
                 }`}
               >
-                <HugeiconsIcon icon={Sun} size={16} className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={SunIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
           </div>
@@ -3809,7 +3809,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               {/* Header */}
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
                 <div className="flex items-center gap-1.5">
-                  <HugeiconsIcon icon={Sun} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={SunIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <h3 className="text-[11px] font-bold tracking-wider text-white uppercase">Studio Environment</h3>
                 </div>
                 <button
@@ -4141,7 +4141,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                         }`}
                       >
                         <span>{p}</span>
-                        {cameraPreset === p && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
+                        {cameraPreset === p && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                       </button>
                     ))}
                   </div>
@@ -4190,7 +4190,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                           <div className={`w-2 h-2 rounded-full ${s.dot}`} />
                           <span>{s.label}</span>
                         </div>
-                        {shadingMode === s.id && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-primary" />}
+                        {shadingMode === s.id && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                       </button>
                     ))}
                   </div>
@@ -4233,7 +4233,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 onClick={() => setIsExportModalOpen(true)}
                 className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 active:scale-95 text-[#080808] text-xs font-black shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] transition-all cursor-pointer border border-white/20 btn-lighting-shine"
               >
-                <HugeiconsIcon icon={Download} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
+                <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Export</span>
               </button>
             </div>

@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AlertCircle, Bone, ChevronDown, ChevronUp, Key, LoaderCircle, Play, RefreshCw, RotateCw, SlidersHorizontal, Sparkles } from '@hugeicons/core-free-icons';
+import { AlertCircle, BoneIcon, ChevronDown, ChevronUp, KeyIcon, LoaderCircle, PlayIcon, RefreshCw, RotateCw, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 export const AnimationLeftPanel: React.FC = () => {
   const { currentAsset } = useWorkspace();
   const {
@@ -182,7 +182,7 @@ export const AnimationLeftPanel: React.FC = () => {
             </div>
             <h2 className="text-xs font-black tracking-wider uppercase text-white truncate">
               {activeMode === 'editing'
-                ? 'Pose & Bone Editor'
+                ? 'Pose & BoneIcon Editor'
                 : activeMode === 'retarget'
                 ? 'Skeleton Retargeting'
                 : 'Motion Generation'}
@@ -200,12 +200,12 @@ export const AnimationLeftPanel: React.FC = () => {
           activeMode === 'editing' ? (
             /* 1. BONE POSE & EDITING MODE */
             <div className="space-y-4">
-              {/* Bone Selector Dropdown */}
+              {/* BoneIcon Selector Dropdown */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <label className="font-bold text-zinc-200 flex items-center gap-1.5">
-                    <HugeiconsIcon icon={Bone} size={16} className="w-3.5 h-3.5 text-primary" />
-                    <span>Selected Bone</span>
+                    <HugeiconsIcon icon={BoneIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                    <span>Selected BoneIcon</span>
                   </label>
                   <span className="text-[10px] font-mono text-zinc-400">{bones.length} Bones</span>
                 </div>
@@ -241,7 +241,7 @@ export const AnimationLeftPanel: React.FC = () => {
                 </button>
               </div>
 
-              {/* Rotation Euler Controls for Selected Bone */}
+              {/* Rotation Euler Controls for Selected BoneIcon */}
               {selectedBone && (
                 <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-3">
                   <div className="flex items-center justify-between">
@@ -253,7 +253,7 @@ export const AnimationLeftPanel: React.FC = () => {
                       onClick={() => setBoneRotation(selectedBone, [0, 0, 0])}
                       className="text-[10px] text-zinc-400 hover:text-white transition-colors cursor-pointer"
                     >
-                      Reset Bone
+                      Reset BoneIcon
                     </button>
                   </div>
 
@@ -354,7 +354,7 @@ export const AnimationLeftPanel: React.FC = () => {
                   }}
                   className="w-full py-2.5 px-3 rounded-xl bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-extrabold text-xs shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
                 >
-                  <HugeiconsIcon icon={Key} size={16} className="w-3.5 h-3.5 fill-current" />
+                  <HugeiconsIcon icon={KeyIcon} size={16} className="w-3.5 h-3.5 fill-current" />
                   <span>Keyframe Pose (Frame {Math.round(currentTime * 24)})</span>
                 </button>
 
@@ -397,7 +397,7 @@ export const AnimationLeftPanel: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-zinc-200">Target Character</label>
+                <label className="text-xs font-bold text-zinc-200">TargetIcon Character</label>
                 <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
                   <div>
                     <span className="text-xs font-bold text-white">{currentAsset?.name || 'Character Mannequin'}</span>
@@ -443,7 +443,7 @@ export const AnimationLeftPanel: React.FC = () => {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
                 <label className="font-bold text-zinc-200 flex items-center gap-1.5">
-                  <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Motion Prompt</span>
                 </label>
                 <button
@@ -611,7 +611,7 @@ export const AnimationLeftPanel: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <HugeiconsIcon icon={Play} size={16} className="w-4 h-4 fill-current" />
+                    <HugeiconsIcon icon={PlayIcon} size={16} className="w-4 h-4 fill-current" />
                     <span>Generate Motion</span>
                   </>
                 )}
@@ -620,9 +620,9 @@ export const AnimationLeftPanel: React.FC = () => {
               <button
                 onClick={() => setInspectorTab('animation')}
                 className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white transition-colors cursor-pointer"
-                title="Open Advanced ARDY Settings"
+                title="Open Advanced ARDY SettingsIcon"
               >
-                <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-4 h-4 text-primary" />
+                <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 text-primary" />
               </button>
             </div>
           </div>
@@ -630,10 +630,10 @@ export const AnimationLeftPanel: React.FC = () => {
         )}
       </div>
 
-      {/* Target Asset Footer */}
+      {/* TargetIcon Asset Footer */}
       <div className="p-3 border-t border-white/[0.08] bg-[hsl(var(--surface-0))] text-xs text-zinc-400 flex items-center justify-between">
         <div className="truncate">
-          <span className="text-[10px] text-zinc-400 block uppercase font-bold tracking-wider">Target Character</span>
+          <span className="text-[10px] text-zinc-400 block uppercase font-bold tracking-wider">TargetIcon Character</span>
           <span className="text-zinc-200 font-semibold truncate block">
             {currentAsset?.name || 'Character Mannequin (Default)'}
           </span>

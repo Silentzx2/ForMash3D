@@ -5,7 +5,7 @@ import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { FileCode, RefreshCw, Trash2 } from '@hugeicons/core-free-icons';
+import { FileCodeIcon, RefreshCw, Trash2 } from '@hugeicons/core-free-icons';
 export const RightPromptPanel: React.FC = () => {
   const { currentAsset } = useWorkspace();
   const [historyItem, setHistoryItem] = useState<HistoryItem | null>(null);
@@ -56,11 +56,11 @@ export const RightPromptPanel: React.FC = () => {
     <div className="flex h-full flex-col bg-[hsl(var(--surface-1))] text-xs">
       <div className="flex items-center justify-between border-b border-[hsl(var(--border))] p-2.5">
         <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={FileCode} size={16} className="h-4 w-4 text-[hsl(var(--primary))]" />
+          <HugeiconsIcon icon={FileCodeIcon} size={16} className="h-4 w-4 text-[hsl(var(--primary))]" />
           <span className="font-bold text-[hsl(var(--foreground))]">Prompt</span>
         </div>
         <div className="flex items-center gap-1">
-          <SimpleTooltip label="Refresh prompt">
+          <SimpleTooltip label="RefreshIcon prompt">
             <button onClick={() => void load()} className="rounded-lg p-1.5 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--surface-2))] hover:text-[hsl(var(--foreground))]">
               <HugeiconsIcon icon={RefreshCw} size={16} className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>

@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Archive, Cancel, Download, FileBoxIcon, LoaderCircle, ShieldCheck, TriangleAlertIcon } from '@hugeicons/core-free-icons';
+import { Archive, Cancel, DownloadIcon, FileBoxIcon, LoaderCircle, ShieldCheckIcon, TriangleAlertIcon } from '@hugeicons/core-free-icons';
 export const ExportModal: React.FC = () => {
   const { isExportModalOpen, setIsExportModalOpen, currentAsset } = useWorkspace();
   const [isExporting, setIsExporting] = useState(false);
@@ -119,7 +119,7 @@ export const ExportModal: React.FC = () => {
                 : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
             }`}>
               <div className="flex items-center gap-2">
-                <HugeiconsIcon icon={ShieldCheck} size={16} className="w-4 h-4 text-[hsl(var(--neon-green))]" />
+                <HugeiconsIcon icon={ShieldCheckIcon} size={16} className="w-4 h-4 text-[hsl(var(--neon-green))]" />
                 <div>
                   <div className="font-bold text-xs flex items-center gap-1.5">
                     <span>Quality Score: {qaScore}/100</span>
@@ -145,7 +145,7 @@ export const ExportModal: React.FC = () => {
               {[
                 { id: 'game_ready', label: 'Game-Ready', tip: 'Optimized budget' },
                 { id: 'source', label: 'Source Master', tip: 'Uncompressed raw' },
-                { id: 'lod_package', label: 'LOD Package', tip: 'LOD0–LOD3 cascade' },
+                { id: 'lod_package', label: 'LOD PackageIcon', tip: 'LOD0–LOD3 cascade' },
               ].map(v => (
                 <button
                   key={v.id}
@@ -166,10 +166,10 @@ export const ExportModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Target Platform Budget (when Game-Ready is active) */}
+          {/* TargetIcon Platform Budget (when Game-Ready is active) */}
           {variant === 'game_ready' && (
             <div className="space-y-1.5 p-3 rounded-xl bg-black/20 border border-white/[0.06]">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Optimization Target</span>
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Optimization TargetIcon</span>
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
                 {[
                   { id: 'mobile', label: 'Mobile', desc: '~18k' },
@@ -198,7 +198,7 @@ export const ExportModal: React.FC = () => {
 
           {/* Section 2: Format Selector */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Target Format</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">TargetIcon Format</label>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
               {[
                 { id: 'glb', label: 'GLB', tip: 'Binary' },
@@ -238,7 +238,7 @@ export const ExportModal: React.FC = () => {
               </div>
             </div>
             <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
-              <span>Package complete workspace</span>
+              <span>PackageIcon complete workspace</span>
               <input
                 type="checkbox"
                 checked={packageZip}
@@ -280,7 +280,7 @@ export const ExportModal: React.FC = () => {
               </>
             ) : (
               <>
-                <HugeiconsIcon icon={Download} size={16} className="h-4 w-4 stroke-[2.5]" />
+                <HugeiconsIcon icon={DownloadIcon} size={16} className="h-4 w-4 stroke-[2.5]" />
                 <span>Export {packageZip ? 'ZIP' : exportFormat.toUpperCase()}</span>
               </>
             )}

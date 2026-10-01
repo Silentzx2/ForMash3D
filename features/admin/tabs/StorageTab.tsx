@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  HardDriveIcon, LoaderCircleIcon, AlertCircleIcon, Trash02Icon, RefreshCwIcon, CheckmarkCircle02Icon,
+  HardDriveIcon, LoaderCircleIcon, AlertCircleIcon, TrashIcon, RefreshCwIcon, CheckmarkCircle02Icon,
   FolderArchiveIcon, Database01Icon, Layers01Icon, SparklesIcon
 } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
@@ -125,7 +125,7 @@ export function StorageTab() {
             <span className="text-sm font-medium">{error}</span>
           </div>
           <Button variant="outline" size="sm" onClick={() => fetchStorage()}>
-            <RefreshCw className="w-3.5 h-3.5 mr-1" /> Retry
+            <HugeiconsIcon icon={RefreshCwIcon} className="w-3.5 h-3.5 mr-1" /> Retry
           </Button>
         </div>
       </div>
@@ -157,7 +157,7 @@ export function StorageTab() {
             className="text-xs font-semibold"
           >
             <HugeiconsIcon icon={RefreshCwIcon} size={16} />
-            Refresh Stats
+            RefreshIcon Stats
           </Button>
 
           <Button
@@ -174,7 +174,7 @@ export function StorageTab() {
               </>
             ) : (
               <>
-                <HugeiconsIcon icon={Trash02Icon} size={16} className="w-3.5 h-3.5 mr-1.5" />
+                <HugeiconsIcon icon={TrashIcon} size={16} className="w-3.5 h-3.5 mr-1.5" />
                 Clear Cache
               </>
             )}
@@ -230,7 +230,7 @@ export function StorageTab() {
             </div>
           </div>
 
-          {/* Quick Metrics Grid */}
+          {/* Quick Metrics GridIcon */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
             <div className="p-3 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
               <span className="text-[10px] uppercase font-bold text-[hsl(var(--muted-foreground))] tracking-wider">Used Space</span>
@@ -342,7 +342,7 @@ export function StorageTab() {
         </div>
       </div>
 
-      {/* Footer Info */}
+      {/* Footer InfoIcon */}
       <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-2 border-t border-[hsl(var(--border)/0.4)]">
         <span>Auto-refreshes every 15s • Temporary artifacts can be cleared safely anytime without losing installed models.</span>
         <span>Last synced: {lastRefreshed.toLocaleTimeString()}</span>

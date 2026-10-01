@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AlertCircle, Box, Brush, Cancel, Check, ChevronDown, GaugeIcon, ImageIcon, Layers, LoaderCircle, Package, Palette, SlidersHorizontal, Sparkles, TriangleAlertIcon, Upload } from '@hugeicons/core-free-icons';
+import { AlertCircle, Box, BrushIcon, Cancel, CheckIcon, ChevronDown, GaugeIcon, ImageIcon, LayersIcon, LoaderCircle, PackageIcon, PaletteIcon, SlidersHorizontalIcon, SparklesIcon, TriangleAlertIcon, UploadIcon } from '@hugeicons/core-free-icons';
 import {
   PaintBrushToolIcon,
   AirbrushIcon,
@@ -268,7 +268,7 @@ export const TexturePanel: React.FC = () => {
       <div className="px-2.5 pt-2.5 pb-2 border-b border-white/[0.08] flex-shrink-0 space-y-2 bg-[#17181B]">
         <div className="flex items-center justify-between">
           <span className="font-bold text-xs text-white flex items-center gap-1.5">
-            <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
+            <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
             <span>Texture Studio</span>
           </span>
 {textureStatusInfo && (
@@ -285,7 +285,7 @@ export const TexturePanel: React.FC = () => {
            )}
            {vramStatus && vramStatus.sufficient && (
              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[9px] font-bold">
-               <HugeiconsIcon icon={Check} size={16} className="w-2.5 h-2.5" />
+               <HugeiconsIcon icon={CheckIcon} size={16} className="w-2.5 h-2.5" />
                VRAM OK ({Math.round(vramStatus.available_mb / 1024)}GB)
              </span>
            )}
@@ -302,7 +302,7 @@ export const TexturePanel: React.FC = () => {
                 : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
             }`}
           >
-            <HugeiconsIcon icon={Palette} size={16} className="w-3 h-3 flex-shrink-0" />
+            <HugeiconsIcon icon={PaletteIcon} size={16} className="w-3 h-3 flex-shrink-0" />
             <span className="truncate">Texture</span>
           </button>
           <button
@@ -314,7 +314,7 @@ export const TexturePanel: React.FC = () => {
                 : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
             }`}
           >
-            <HugeiconsIcon icon={Layers} size={16} className="w-3 h-3 flex-shrink-0" />
+            <HugeiconsIcon icon={LayersIcon} size={16} className="w-3 h-3 flex-shrink-0" />
             <span className="truncate">Maps</span>
           </button>
           <button
@@ -326,7 +326,7 @@ export const TexturePanel: React.FC = () => {
                 : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
             }`}
           >
-            <HugeiconsIcon icon={Brush} size={16} className="w-3 h-3 flex-shrink-0" />
+            <HugeiconsIcon icon={BrushIcon} size={16} className="w-3 h-3 flex-shrink-0" />
             <span className="truncate">3D Paint</span>
           </button>
           <button
@@ -338,8 +338,8 @@ export const TexturePanel: React.FC = () => {
                 : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
             }`}
           >
-            <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-3 h-3 flex-shrink-0" />
-            <span className="truncate">Settings</span>
+            <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-3 h-3 flex-shrink-0" />
+            <span className="truncate">SettingsIcon</span>
           </button>
         </div>
       </div>
@@ -352,12 +352,12 @@ export const TexturePanel: React.FC = () => {
         {/* ========================================================================= */}
         {panelTab === 'texture' && (
           <div className="space-y-2.5">
-            {/* Target 3D Mesh Compact Selector */}
+            {/* TargetIcon 3D Mesh Compact Selector */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-zinc-300 flex items-center gap-1.5">
                   <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>Target Mesh</span>
+                  <span>TargetIcon Mesh</span>
                 </span>
                 {currentAsset ? (
                   <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
@@ -416,7 +416,7 @@ export const TexturePanel: React.FC = () => {
                             }`}
                           >
                             <span className="truncate">{asset.name}</span>
-                            {isSel && <HugeiconsIcon icon={Check} size={16} className="w-3 h-3 text-black flex-shrink-0" />}
+                            {isSel && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-black flex-shrink-0" />}
                           </button>
                         );
                       })}
@@ -448,7 +448,7 @@ export const TexturePanel: React.FC = () => {
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                <HugeiconsIcon icon={Sparkles} size={16} className="w-3 h-3 stroke-[2.2]" />
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3 h-3 stroke-[2.2]" />
                 <span>AI Texture</span>
               </button>
               <button
@@ -460,7 +460,7 @@ export const TexturePanel: React.FC = () => {
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                <HugeiconsIcon icon={Palette} size={16} className="w-3 h-3 stroke-[2.2]" />
+                <HugeiconsIcon icon={PaletteIcon} size={16} className="w-3 h-3 stroke-[2.2]" />
                 <span>Manual Paint</span>
               </button>
             </div>
@@ -474,7 +474,7 @@ export const TexturePanel: React.FC = () => {
                   onClick={() => router.push('/admin?tab=models')}
                   className="text-[9px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
                 >
-                  <HugeiconsIcon icon={Package} size={16} className="w-2.5 h-2.5" />
+                  <HugeiconsIcon icon={PackageIcon} size={16} className="w-2.5 h-2.5" />
                   <span>Manage</span>
                 </button>
               </div>
@@ -545,7 +545,7 @@ export const TexturePanel: React.FC = () => {
                               {m.low_vram_supported ? 'Low VRAM supported' : `${Math.round((m.vram_required_mb || 0) / 1024)}GB VRAM`}
                             </span>
                           </div>
-                          {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5 text-black flex-shrink-0" />}
+                          {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-black flex-shrink-0" />}
                         </button>
                       );
                     })
@@ -625,7 +625,7 @@ export const TexturePanel: React.FC = () => {
                 </div>
                 <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
                   <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
-                    <HugeiconsIcon icon={Package} size={16} className="w-3.5 h-3.5 text-primary" />
+                    <HugeiconsIcon icon={PackageIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                     <span>PBR Texture</span>
                   </span>
                   <button
@@ -705,7 +705,7 @@ export const TexturePanel: React.FC = () => {
               </div>
             </div>
 
-            {/* Reference Image Quick Status or Upload Row */}
+            {/* Reference Image Quick Status or UploadIcon Row */}
             {textureSettings.referenceImage ? (
               <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
                 <div className="flex items-center gap-2 min-w-0">
@@ -731,8 +731,8 @@ export const TexturePanel: React.FC = () => {
                   onClick={() => fileInputRef.current?.click()}
                   className="flex-1 py-1 px-2 rounded-lg bg-[hsl(var(--surface-0))] border border-dashed border-white/[0.12] hover:border-primary/50 text-zinc-400 hover:text-zinc-200 text-[9px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <HugeiconsIcon icon={Upload} size={16} className="w-3 h-3 text-primary" />
-                  <span>Upload Reference Image (Optional)</span>
+                  <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
+                  <span>UploadIcon Reference Image (Optional)</span>
                 </button>
               </div>
             )}
@@ -752,7 +752,7 @@ export const TexturePanel: React.FC = () => {
                 onClick={() => setPanelTab('settings')}
                 className="hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
               >
-                <span>Settings</span>
+                <span>SettingsIcon</span>
                 <span>&rarr;</span>
               </button>
             </div>
@@ -775,14 +775,14 @@ export const TexturePanel: React.FC = () => {
                   <span>SELECT A MODEL FIRST</span>
                 ) : (
                   <>
-                    <HugeiconsIcon icon={Sparkles} size={16} className="w-4 h-4 stroke-[2.5]" />
+                    <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 stroke-[2.5]" />
                     <span>GENERATE TEXTURE</span>
                   </>
                 )}
               </button>
               {!currentAsset && (
                 <p className="text-[8px] text-amber-400/80 text-center mt-1">
-                  Target mesh required. Select or generate a model above.
+                  TargetIcon mesh required. Select or generate a model above.
                 </p>
               )}
             </div>
@@ -876,7 +876,7 @@ export const TexturePanel: React.FC = () => {
                       <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border transition-colors ${
                         checked ? 'bg-primary border-primary text-black' : 'border-white/[0.15]'
                       }`}>
-                        {checked && <HugeiconsIcon icon={Check} size={16} className="w-2.5 h-2.5 stroke-[3]" />}
+                        {checked && <HugeiconsIcon icon={CheckIcon} size={16} className="w-2.5 h-2.5 stroke-[3]" />}
                       </div>
                       <span className="font-bold text-[10px] truncate">{label}</span>
                     </button>
@@ -901,12 +901,12 @@ export const TexturePanel: React.FC = () => {
         {/* ========================================================================= */}
         {panelTab === 'paint' && (
           <div className="space-y-3">
-            {/* Target 3D Mesh & Canvas Status */}
+            {/* TargetIcon 3D Mesh & Canvas Status */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider flex items-center gap-1.5">
                   <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>Painting Target</span>
+                  <span>Painting TargetIcon</span>
                 </span>
                 <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
                   {currentAsset ? 'Mesh Ready' : 'No Mesh'}
@@ -943,7 +943,7 @@ export const TexturePanel: React.FC = () => {
                   }`}
                 >
                   <PaintBrushToolIcon className="w-4 h-4" />
-                  <span>Brush</span>
+                  <span>BrushIcon</span>
                 </button>
                 <button
                   type="button"
@@ -976,11 +976,11 @@ export const TexturePanel: React.FC = () => {
               </div>
             </div>
 
-            {/* Color Palette & Preset Swatches */}
+            {/* Color PaletteIcon & Preset Swatches */}
             {paintMode === 'draw' && (
               <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Color Palette</span>
+                  <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Color PaletteIcon</span>
                   <div className="flex items-center gap-1.5">
                     <span className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: paintColor }} />
                     <span className="text-[9px] font-mono text-zinc-300 font-bold uppercase">{paintColor}</span>
@@ -1041,13 +1041,13 @@ export const TexturePanel: React.FC = () => {
               </div>
             )}
 
-            {/* Brush Dynamics */}
+            {/* BrushIcon Dynamics */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
-              <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Brush Dynamics</span>
+              <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">BrushIcon Dynamics</span>
 
               <div className="space-y-1">
                 <div className="flex justify-between text-[10px]">
-                  <span className="text-zinc-400">Brush Size (Radius)</span>
+                  <span className="text-zinc-400">BrushIcon Size (Radius)</span>
                   <span className="font-mono text-primary font-bold">{paintBrushSize}px</span>
                 </div>
                 <input
@@ -1115,7 +1115,7 @@ export const TexturePanel: React.FC = () => {
               <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Tip &amp; Blending</span>
 
               <div className="space-y-1">
-                <span className="text-[10px] text-zinc-400">Brush Tip Profile</span>
+                <span className="text-[10px] text-zinc-400">BrushIcon Tip Profile</span>
                 <div className="grid grid-cols-2 gap-1">
                   {[
                     { id: 'round-soft', label: 'Soft Round' },
@@ -1174,7 +1174,7 @@ export const TexturePanel: React.FC = () => {
                 }}
                 className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-black font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98]"
               >
-                <HugeiconsIcon icon={Palette} size={16} className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={PaletteIcon} size={16} className="w-3.5 h-3.5" />
                 <span>BAKE PAINT TO TEXTURE</span>
               </button>
 
@@ -1253,7 +1253,7 @@ export const TexturePanel: React.FC = () => {
                   </div>
                 ) : (
                   <>
-                    <HugeiconsIcon icon={Upload} size={16} className={`w-5 h-5 mb-1 ${isDragOver ? 'text-primary' : 'text-zinc-400'}`} />
+                    <HugeiconsIcon icon={UploadIcon} size={16} className={`w-5 h-5 mb-1 ${isDragOver ? 'text-primary' : 'text-zinc-400'}`} />
                     <span className="text-white font-bold text-[10px]">
                       {isDragOver ? 'Drop image here' : 'Drop or browse reference'}
                     </span>
@@ -1273,7 +1273,7 @@ export const TexturePanel: React.FC = () => {
             {/* Model Weights Link */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <HugeiconsIcon icon={Package} size={16} className="w-3.5 h-3.5 text-primary" />
+                <HugeiconsIcon icon={PackageIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                 <span className="text-[10px] text-zinc-300 font-medium">Model Weights &amp; Cache</span>
               </div>
               <button
@@ -1298,7 +1298,7 @@ export const TexturePanel: React.FC = () => {
 
       </div>
 
-      {/* Hidden File Input for Reference Upload */}
+      {/* Hidden File Input for Reference UploadIcon */}
       <input
         ref={fileInputRef}
         type="file"

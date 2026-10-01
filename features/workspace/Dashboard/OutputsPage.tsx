@@ -4,7 +4,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ModelAsset } from '../types';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, FolderOpen, GripVertical, Sparkles } from '@hugeicons/core-free-icons';
+import { Box, FolderOpenIcon, GripVerticalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 import {
   DndContext,
   closestCenter,
@@ -57,7 +57,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
         className="absolute top-2 left-2 z-10 p-1 rounded-md bg-black/60 hover:bg-black/80 backdrop-blur-md text-zinc-400 hover:text-white cursor-grab active:cursor-grabbing border border-white/[0.1] opacity-0 group-hover:opacity-100 transition-opacity"
         title="Drag to reorder"
       >
-        <HugeiconsIcon icon={GripVertical} size={16} className="w-3.5 h-3.5" />
+        <HugeiconsIcon icon={GripVerticalIcon} size={16} className="w-3.5 h-3.5" />
       </div>
 
       <button 
@@ -145,7 +145,7 @@ export const OutputsPage: React.FC = () => {
             }}
             className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-primary/20 active:scale-95 transition-all cursor-pointer"
           >
-            <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 fill-current stroke-current" />
+            <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 fill-current stroke-current" />
             <span>New Generation</span>
           </button>
         </div>
@@ -166,7 +166,7 @@ export const OutputsPage: React.FC = () => {
         ) : items.length === 0 ? (
           <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-12 text-center shadow-xl space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center mx-auto text-zinc-400">
-              <HugeiconsIcon icon={FolderOpen} size={16} className="h-6 w-6" />
+              <HugeiconsIcon icon={FolderOpenIcon} size={16} className="h-6 w-6" />
             </div>
             <div className="text-sm font-bold text-white">No outputs available yet</div>
             <div className="text-xs text-zinc-400 max-w-sm mx-auto">

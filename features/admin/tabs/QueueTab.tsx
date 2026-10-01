@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Trash02Icon,
+  TrashIcon,
   Activity01Icon,
   UsersIcon,
   ClockIcon,
@@ -101,10 +101,10 @@ const handlePurge = async () => {
   if (error && !queue) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
-        <AlertCircleIcon className="w-10 h-10 text-muted-foreground/50" />
+        <HugeiconsIcon icon={AlertCircleIcon} className="w-10 h-10 text-muted-foreground/50" />
         <p className="text-sm text-muted-foreground">{error}</p>
         <button onClick={() => { setLoading(true); load(); }} className="text-xs text-primary hover:underline flex items-center gap-1.5 cursor-pointer">
-          <RefreshCwIcon className="w-3.5 h-3.5" /> Retry
+          <HugeiconsIcon icon={RefreshCwIcon} className="w-3.5 h-3.5" /> Retry
         </button>
       </div>
     );
@@ -120,22 +120,22 @@ const handlePurge = async () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setLoading(true); load(); }}
-            title="Refresh queue"
+            title="RefreshIcon queue"
             className="p-2 rounded-xl glass border border-[hsl(var(--border)/0.5)] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
-            <RefreshCwIcon className="w-4 h-4" />
+            <HugeiconsIcon icon={RefreshCwIcon} className="w-4 h-4" />
           </button>
           <NeonButton variant="destructive" size="sm" onClick={handlePurge}>
-            <Trash02Icon className="w-3.5 h-3.5" /> Purge Queue
+            <HugeiconsIcon icon={TrashIcon} className="w-3.5 h-3.5" /> Purge Queue
           </NeonButton>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard label="Active" value={queue?.active ?? 0} icon={Activity01Icon} color="amber" delay={0.05} />
-        <MetricCard label="Queued" value={queue?.queued ?? 0} icon={ClockIcon} color="blue" delay={0.1} />
-        <MetricCard label="Reserved" value={queue?.reserved ?? 0} icon={ZapIcon} color="amber" delay={0.15} />
-        <MetricCard label="Workers" value={queue?.workers ?? 0} icon={UsersIcon} color="green" delay={0.2} />
+        <MetricCard label="Active" value={queue?.active ?? 0} icon={<HugeiconsIcon icon={Activity01Icon} size={16} className="w-4 h-4 text-primary" />} color="amber" delay={0.05} />
+        <MetricCard label="Queued" value={queue?.queued ?? 0} icon={<HugeiconsIcon icon={ClockIcon} size={16} className="w-4 h-4 text-primary" />} color="blue" delay={0.1} />
+        <MetricCard label="Reserved" value={queue?.reserved ?? 0} icon={<HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 text-primary" />} color="amber" delay={0.15} />
+        <MetricCard label="Workers" value={queue?.workers ?? 0} icon={<HugeiconsIcon icon={UsersIcon} size={16} className="w-4 h-4 text-primary" />} color="green" delay={0.2} />
       </div>
 
       {/* Runtime Errors & Repair Actions */}
@@ -143,7 +143,7 @@ const handlePurge = async () => {
         <GlassCard className="p-5 border-[hsl(var(--destructive)/0.3)] bg-[hsl(var(--destructive)/0.04)] space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold text-[hsl(var(--destructive))]">
-              <TriangleAlertIcon className="w-4 h-4 flex-shrink-0" />
+              <HugeiconsIcon icon={TriangleAlertIcon} className="w-4 h-4 flex-shrink-0" />
               <span>Provider Runtime Errors ({repairableJobs.length})</span>
             </div>
             <span className="text-xs text-muted-foreground">Requires environment re-initialization</span>
@@ -176,7 +176,7 @@ const handlePurge = async () => {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {isRepaired && !isRepairing && (
                       <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-medium">
-                         <CheckmarkCircle02Icon className="w-3.5 h-3.5" /> Repaired
+                         <HugeiconsIcon icon={CheckmarkCircle02Icon} className="w-3.5 h-3.5" /> Repaired
                       </span>
                     )}
                     <button
@@ -187,12 +187,12 @@ const handlePurge = async () => {
                     >
                       {isRepairing ? (
                         <>
-                           <LoaderCircleIcon className="w-3.5 h-3.5 animate-spin" />
+                           <HugeiconsIcon icon={LoaderCircleIcon} className="w-3.5 h-3.5 animate-spin" />
                           <span>Repairing...</span>
                         </>
                       ) : (
                         <>
-                           <WrenchIcon className="w-3.5 h-3.5" />
+                           <HugeiconsIcon icon={WrenchIcon} className="w-3.5 h-3.5" />
                           <span>Try Repair ({diag.providerLabel})</span>
                         </>
                       )}
@@ -224,7 +224,7 @@ const handlePurge = async () => {
             >
               <div className="flex items-center gap-3">
                   <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-surface-2">
-                   <UsersIcon className="w-4 h-4 text-muted-foreground" />
+                   <HugeiconsIcon icon={UsersIcon} className="w-4 h-4 text-muted-foreground" />
                  </div>
                 <div>
                   <p className="text-sm font-medium text-foreground">Worker {i + 1}</p>
@@ -241,7 +241,7 @@ const handlePurge = async () => {
           ))}
           {(queue?.workers ?? 0) === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
-               <UsersIcon className="w-10 h-10 text-muted-foreground/30 mb-2" />
+               <HugeiconsIcon icon={UsersIcon} className="w-10 h-10 text-muted-foreground/30 mb-2" />
               <p className="text-sm text-muted-foreground">No active workers</p>
             </div>
           )}

@@ -4,7 +4,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { HeartPulse, CheckmarkCircle01, CancelCircle, TriangleAlert, RefreshCw } from '@hugeicons/core-free-icons';
+import { HeartPulseIcon, CheckmarkCircle01Icon, CancelCircleIcon, TriangleAlertIcon, RefreshCw } from '@hugeicons/core-free-icons';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { Badge } from '@/components/premium/Badge';
 import { NeonButton } from '@/components/premium/NeonButton';
@@ -91,7 +91,7 @@ export function HealthTab() {
   if (error && checks.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
-        <HugeiconsIcon icon={CancelCircle} size={16} className="w-10 h-10 text-[hsl(var(--destructive))]" />
+        <HugeiconsIcon icon={CancelCircleIcon} size={16} className="w-10 h-10 text-[hsl(var(--destructive))]" />
         <p className="text-sm text-muted-foreground">{error}</p>
         <NeonButton variant="secondary" size="sm" onClick={load}>
           <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" /> Retry
@@ -112,7 +112,7 @@ export function HealthTab() {
         </div>
         <NeonButton variant="secondary" size="sm" onClick={() => { load(); toast.info('Running health checks...'); }}>
           <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" />
-          Refresh
+          RefreshIcon
         </NeonButton>
       </div>
 
@@ -122,7 +122,7 @@ export function HealthTab() {
             'flex items-center justify-center w-16 h-16 rounded-2xl',
             down > 0 ? 'bg-destructive/10' : degraded > 0 ? 'bg-primary/10' : 'bg-emerald-500/10'
           )}>
-            <HugeiconsIcon icon={HeartPulse} size={16} className={cn('w-8 h-8', down > 0 ? 'text-destructive' : degraded > 0 ? 'text-primary' : 'text-emerald-400')} />
+            <HugeiconsIcon icon={HeartPulseIcon} size={16} className={cn('w-8 h-8', down > 0 ? 'text-destructive' : degraded > 0 ? 'text-primary' : 'text-emerald-400')} />
           </div>
           <div>
             <h2 className="text-xl font-bold">
@@ -146,9 +146,9 @@ export function HealthTab() {
                     check.status === 'healthy' ? 'bg-emerald-500/10' :
                     check.status === 'degraded' ? 'bg-primary/10' : 'bg-destructive/10'
                   )}>
-                    {check.status === 'healthy' ? <HugeiconsIcon icon={CheckmarkCircle01} size={16} className="w-4 h-4 text-emerald-400" /> :
-                     check.status === 'degraded' ? <HugeiconsIcon icon={TriangleAlert} size={16} className="w-4 h-4 text-primary" /> :
-                     <HugeiconsIcon icon={CancelCircle} size={16} className="w-4 h-4 text-destructive" />}
+                    {check.status === 'healthy' ? <HugeiconsIcon icon={CheckmarkCircle01Icon} size={16} className="w-4 h-4 text-emerald-400" /> :
+                     check.status === 'degraded' ? <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-4 h-4 text-primary" /> :
+                     <HugeiconsIcon icon={CancelCircleIcon} size={16} className="w-4 h-4 text-destructive" />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
@@ -176,7 +176,7 @@ export function HealthTab() {
 
       {checks.length === 0 && !loading && (
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <HugeiconsIcon icon={HeartPulse} size={16} className="w-12 h-12 text-muted-foreground/30 mb-3" />
+          <HugeiconsIcon icon={HeartPulseIcon} size={16} className="w-12 h-12 text-muted-foreground/30 mb-3" />
           <p className="text-sm text-muted-foreground">No health data available</p>
         </div>
       )}

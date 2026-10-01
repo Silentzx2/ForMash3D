@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Check, Download, Eye, Hexagon, Lock, Move, Palette, RefreshCw, ShieldCheck, SlidersHorizontal, Sparkles, Unlock } from '@hugeicons/core-free-icons';
+import { Box, CheckIcon, DownloadIcon, EyeIcon, HexagonIcon, Lock, MoveIcon, PaletteIcon, RefreshCw, ShieldCheckIcon, SlidersHorizontalIcon, SparklesIcon, Unlock } from '@hugeicons/core-free-icons';
 export const RightPropertyPanel: React.FC = () => {
   const { 
     currentAsset, 
@@ -42,7 +42,7 @@ export const RightPropertyPanel: React.FC = () => {
     lockScale: true
   });
 
-  // Material & PBR Shader Settings
+  // Material & PBR Shader SettingsIcon
   const [materialSettings, setMaterialSettings] = useState({
     albedoColor: 'hsl(0, 0%, 100%)',
     roughness: 0.45,
@@ -136,7 +136,7 @@ export const RightPropertyPanel: React.FC = () => {
       <div className="p-2.5 border-b border-[hsl(var(--border))] flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-[hsl(var(--surface-3))] border border-[hsl(var(--border))] flex items-center justify-center text-primary flex-shrink-0">
-            <HugeiconsIcon icon={SlidersHorizontal} size={16} className="w-4 h-4" />
+            <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4" />
           </div>
           <div className="min-w-0">
             <h2 className="font-bold text-sm text-[hsl(var(--foreground))] truncate">{currentAsset.name}</h2>
@@ -153,7 +153,7 @@ export const RightPropertyPanel: React.FC = () => {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
-              <HugeiconsIcon icon={Move} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={MoveIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               Object Transform
             </span>
             <button
@@ -299,7 +299,7 @@ export const RightPropertyPanel: React.FC = () => {
               Geometry Topology
             </span>
             <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--neon-green))] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--neon-green))]/10 border border-[hsl(var(--neon-green))]/30">
-              <HugeiconsIcon icon={ShieldCheck} size={16} className="w-3 h-3" />
+              <HugeiconsIcon icon={ShieldCheckIcon} size={16} className="w-3 h-3" />
               Manifold OK
             </span>
           </div>
@@ -359,7 +359,7 @@ export const RightPropertyPanel: React.FC = () => {
         {(activeTool === 'texture' || activeTool === 'pbr') && (
           <div className="space-y-3 p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))]">
             <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
-              <HugeiconsIcon icon={Palette} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={PaletteIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               PBR Material Channels
             </span>
 
@@ -477,7 +477,7 @@ export const RightPropertyPanel: React.FC = () => {
                       className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] text-[11px] font-medium text-[hsl(var(--foreground))] flex items-center justify-between border border-[hsl(var(--border))] transition-colors"
                     >
                       <span className="capitalize">{mapType}</span>
-                      <HugeiconsIcon icon={Download} size={16} className="w-3 h-3 text-[hsl(var(--muted-foreground))]" />
+                      <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3 h-3 text-[hsl(var(--muted-foreground))]" />
                     </a>
                   ))}
                 </div>
@@ -490,7 +490,7 @@ export const RightPropertyPanel: React.FC = () => {
         {(activeTool === 'remesh') && (
           <div className="space-y-3 p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))]">
             <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
-              <HugeiconsIcon icon={Hexagon} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={HexagonIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               Quad Retopology Inspector
             </span>
 
@@ -515,7 +515,7 @@ export const RightPropertyPanel: React.FC = () => {
         {activeTool === 'model' && (
           <div className="space-y-3 p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))]">
             <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
-              <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               3D AI Generator Pipeline
             </span>
 
@@ -543,7 +543,7 @@ export const RightPropertyPanel: React.FC = () => {
         {/* 4. Shading & Render Viewport Overrides */}
         <div className="space-y-2 pt-1">
           <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
-            <HugeiconsIcon icon={Eye} size={16} className="w-3.5 h-3.5 text-primary" />
+            <HugeiconsIcon icon={EyeIcon} size={16} className="w-3.5 h-3.5 text-primary" />
             Viewport Shading
           </span>
 
@@ -619,11 +619,11 @@ export const RightPropertyPanel: React.FC = () => {
         {/* 5. Production Export Section */}
         <div className="pt-3 border-t border-[hsl(var(--border))] space-y-3">
           <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
-            <HugeiconsIcon icon={Download} size={16} className="w-3.5 h-3.5 text-primary" />
+            <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
             Quick Export Asset
           </span>
 
-          {/* Formats Grid */}
+          {/* Formats GridIcon */}
           <div className="grid grid-cols-6 gap-1">
             {(['glb', 'gltf', 'fbx', 'obj', 'stl', 'ply'] as const).map((fmt) => (
               <button
@@ -662,7 +662,7 @@ export const RightPropertyPanel: React.FC = () => {
             </label>
           </div>
 
-          {/* Download Button */}
+          {/* DownloadIcon Button */}
           <button
             id="btn-export-download"
             onClick={handleExportDownload}
@@ -672,12 +672,12 @@ export const RightPropertyPanel: React.FC = () => {
             {isExporting ? (
               <HugeiconsIcon icon={RefreshCw} size={16} className="w-4 h-4 animate-spin text-primary" />
             ) : exportSuccess ? (
-              <HugeiconsIcon icon={Check} size={16} className="w-4 h-4 text-[hsl(var(--neon-green))]" />
+              <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 text-[hsl(var(--neon-green))]" />
             ) : (
-              <HugeiconsIcon icon={Download} size={16} className="w-4 h-4 text-primary" />
+              <HugeiconsIcon icon={DownloadIcon} size={16} className="w-4 h-4 text-primary" />
             )}
             <span>
-              {isExporting ? 'Packing 3D Bundle...' : exportSuccess ? 'Export Saved!' : `Download ${exportFormat.toUpperCase()} Asset`}
+              {isExporting ? 'Packing 3D Bundle...' : exportSuccess ? 'Export Saved!' : `DownloadIcon ${exportFormat.toUpperCase()} Asset`}
             </span>
           </button>
         </div>

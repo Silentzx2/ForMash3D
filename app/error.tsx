@@ -85,7 +85,7 @@ export default function Error({ error, reset }: { error: Error & { digest?: stri
             A critical error disrupted the neural engine. The system state has been corrupted.
           </p>
 
-          {/* Terminal Style Error Message */}
+          {/* TerminalIcon Style Error Message */}
           {error.message && (
             <div 
               className="relative mt-4 px-5 py-4 rounded-xl bg-black/50 border border-[hsl(var(--destructive)/0.2)] max-w-md text-left overflow-hidden"

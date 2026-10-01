@@ -3,27 +3,27 @@ import Link from 'next/link';
 import type { AdminTab } from './AdminShell';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  LayoutDashboardIcon, Layers01, Package, ListOrdered,
-  Cpu, ScrollText, Settings01, Activity01,
-  BriefcaseBusiness, ChevronRight, ExternalLink,
-  Boxes, HardDrive,
+  LayoutDashboardIcon, Layers01Icon, PackageIcon, ListOrderedIcon,
+  CpuIcon, ScrollTextIcon, Settings01Icon, Activity01Icon,
+  BriefcaseBusinessIcon, ChevronRight, ExternalLinkIcon,
+  BoxesIcon, HardDriveIcon,
 } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 
 const PRIMARY_NAV: { id: AdminTab | null; label: string; icon: any; href?: string; badge?: string }[] = [
   { id: 'overview', label: 'Dashboard', icon: LayoutDashboardIcon },
-  { id: null, label: 'Workspace', icon: Layers01, href: '/workspace' },
-  { id: 'models', label: 'Models', icon: Package },
-  { id: 'queue', label: 'Queue', icon: ListOrdered },
-  { id: 'runtime', label: 'Runtime', icon: Cpu },
-  { id: 'logs', label: 'Live Logs', icon: ScrollText },
-  { id: 'settings', label: 'Settings', icon: Settings01 },
+  { id: null, label: 'Workspace', icon: Layers01Icon, href: '/workspace' },
+  { id: 'models', label: 'Models', icon: PackageIcon },
+  { id: 'queue', label: 'Queue', icon: ListOrderedIcon },
+  { id: 'runtime', label: 'Runtime', icon: CpuIcon },
+  { id: 'logs', label: 'Live Logs', icon: ScrollTextIcon },
+  { id: 'settings', label: 'SettingsIcon', icon: Settings01Icon },
 ];
 
 const ADMIN_NAV: { id: AdminTab; label: string; icon: any }[] = [
-  { id: 'health', label: 'Health', icon: Activity01 },
-  { id: 'jobs', label: 'Jobs', icon: BriefcaseBusiness },
-  { id: 'storage', label: 'Storage', icon: HardDrive },
+  { id: 'health', label: 'Health', icon: Activity01Icon },
+  { id: 'jobs', label: 'Jobs', icon: BriefcaseBusinessIcon },
+  { id: 'storage', label: 'Storage', icon: HardDriveIcon },
 ];
 
 export default function AdminSidebar({
@@ -52,7 +52,7 @@ export default function AdminSidebar({
               boxShadow: '0 0 16px hsl(var(--admin-accent) / 0.40)',
             }}
           >
-             <HugeiconsIcon icon={Boxes} size={16} className="w-[18px] h-[18px] text-[hsl(var(--foreground))]" />
+             <HugeiconsIcon icon={BoxesIcon} size={16} className="w-[18px] h-[18px] text-[hsl(var(--foreground))]" />
           </div>
           <div>
             <p className="text-[11px] font-bold tracking-[0.15em] text-primary uppercase">ForMash 3D</p>
@@ -89,7 +89,7 @@ export default function AdminSidebar({
                   {badge}
                 </span>
               )}
-               {href && <HugeiconsIcon icon={ExternalLink} size={12} className="text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--muted-foreground))] transition-colors" />}
+               {href && <HugeiconsIcon icon={ExternalLinkIcon} size={12} className="text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--muted-foreground))] transition-colors" />}
                {isActive && <HugeiconsIcon icon={ChevronRight} size={12} className="text-primary" />}
             </>
           );
@@ -175,7 +175,7 @@ export default function AdminSidebar({
         </div>
       </div>
 
-      {/* User footer */}
+      {/* UserIcon footer */}
       <div className="px-3 py-3" style={{ borderTop: '1px solid hsl(var(--border) / 0.5)' }}>
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[hsl(var(--primary)/0.05)] transition-colors cursor-pointer group">
           <div
@@ -189,7 +189,7 @@ export default function AdminSidebar({
             <p className="text-[10px] text-[hsl(var(--muted-foreground))] truncate">Administrator</p>
           </div>
           <Link href="/" className="text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--muted-foreground))] transition-colors" title="Back to app">
-             <HugeiconsIcon icon={ExternalLink} size={12} />
+             <HugeiconsIcon icon={ExternalLinkIcon} size={12} />
           </Link>
         </div>
       </div>

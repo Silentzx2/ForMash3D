@@ -4,7 +4,7 @@ import { GpuVramLineChart } from '@/components/premium/GpuVramLineChart';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Activity, Cpu, HardDrive, Server, Terminal } from '@hugeicons/core-free-icons';
+import { ActivityIcon, CpuIcon, HardDriveIcon, ServerIcon, TerminalIcon } from '@hugeicons/core-free-icons';
 const value = (v: unknown) => v == null ? 'Unavailable' : String(v);
 
 export const SystemPage: React.FC = () => {
@@ -18,10 +18,10 @@ export const SystemPage: React.FC = () => {
           <p className="mt-1 text-xs text-zinc-400">Live hardware acceleration and FastAPI runtime status.</p>
         </div>
 
-        {/* 4 Cards Stat Grid */}
+        {/* 4 Cards Stat GridIcon */}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-4 shadow-lg space-y-1">
-            <HugeiconsIcon icon={Server} size={16} className="mb-2 h-4 w-4 text-primary" />
+            <HugeiconsIcon icon={ServerIcon} size={16} className="mb-2 h-4 w-4 text-primary" />
             <div className="text-[10px] uppercase font-bold text-zinc-500">Service Status</div>
             <div className={`mt-1 text-sm font-black flex items-center gap-1.5 ${systemStats.status === 'online' ? 'text-emerald-400' : 'text-rose-400'}`}>
               <span className={`w-2 h-2 rounded-full ${systemStats.status === 'online' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
@@ -30,13 +30,13 @@ export const SystemPage: React.FC = () => {
           </div>
 
           <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-4 shadow-lg space-y-1">
-            <HugeiconsIcon icon={Cpu} size={16} className="mb-2 h-4 w-4 text-primary" />
+            <HugeiconsIcon icon={CpuIcon} size={16} className="mb-2 h-4 w-4 text-primary" />
             <div className="text-[10px] uppercase font-bold text-zinc-500">GPU Device</div>
             <div className="mt-1 truncate text-sm font-black text-white">{value(systemStats.gpu)}</div>
           </div>
 
           <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-4 shadow-lg space-y-1">
-            <HugeiconsIcon icon={Activity} size={16} className="mb-2 h-4 w-4 text-primary" />
+            <HugeiconsIcon icon={ActivityIcon} size={16} className="mb-2 h-4 w-4 text-primary" />
             <div className="text-[10px] uppercase font-bold text-zinc-500">VRAM Allocation</div>
 <div className="mt-1 text-sm font-black text-primary font-mono">
                 {systemStats.vramUsedGb != null && systemStats.vramTotalGb != null ? (
@@ -51,7 +51,7 @@ export const SystemPage: React.FC = () => {
           </div>
 
           <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-4 shadow-lg space-y-1">
-            <HugeiconsIcon icon={HardDrive} size={16} className="mb-2 h-4 w-4 text-primary" />
+            <HugeiconsIcon icon={HardDriveIcon} size={16} className="mb-2 h-4 w-4 text-primary" />
             <div className="text-[10px] uppercase font-bold text-zinc-500">Outputs Cached</div>
             <div className="mt-1 text-sm font-black text-white font-mono flex items-center gap-1">
               <span>{assets.length}</span> <span>Assets</span>
@@ -63,7 +63,7 @@ export const SystemPage: React.FC = () => {
         <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-5 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <div className="font-bold text-xs text-white flex items-center gap-2">
-              <HugeiconsIcon icon={Activity} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={ActivityIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               <span>Real-Time VRAM & GPU Utilization</span>
             </div>
             <span className="text-[10px] font-mono text-zinc-500">Polling every 3000ms</span>
@@ -74,7 +74,7 @@ export const SystemPage: React.FC = () => {
         {/* System Specs Table */}
         <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-5 shadow-xl space-y-2.5 text-xs">
           <div className="font-bold text-xs text-white flex items-center gap-2 pb-2 border-b border-white/[0.08]">
-            <HugeiconsIcon icon={Terminal} size={16} className="w-3.5 h-3.5 text-primary" />
+            <HugeiconsIcon icon={TerminalIcon} size={16} className="w-3.5 h-3.5 text-primary" />
             <span>Environment Specs</span>
           </div>
           <div className="flex justify-between py-1 border-b border-white/[0.04]">

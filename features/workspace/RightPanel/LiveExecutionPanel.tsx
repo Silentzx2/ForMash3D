@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { ArrowRight, Box, CancelCircleIcon, Check, CheckmarkCircle02Icon, ChevronDown, ChevronRight, Clock, Copy, Cpu, ExternalLink, RotateCcw, ShieldAlert, Sparkles, StopCircleIcon, Terminal } from '@hugeicons/core-free-icons';
+import { ArrowRight, Box, CancelCircleIcon, CheckIcon, CheckmarkCircle02Icon, ChevronDown, ChevronRight, ClockIcon, Copy, CpuIcon, ExternalLinkIcon, RotateCcwIcon, ShieldAlert, SparklesIcon, StopCircleIcon, TerminalIcon } from '@hugeicons/core-free-icons';
 interface PipelineStep {
   id: string;
   name: string;
@@ -76,7 +76,7 @@ export const LiveExecutionPanel: React.FC = () => {
     return (
       <div className="flex flex-col h-full items-center justify-center p-6 text-center text-zinc-400 bg-[hsl(var(--surface-1))] select-none">
         <div className="w-10 h-10 rounded-xl bg-[#1B1E24] border border-white/[0.08] flex items-center justify-center text-zinc-500 mb-2">
-          <HugeiconsIcon icon={Clock} size={16} className="w-5 h-5 stroke-[1.5]" />
+          <HugeiconsIcon icon={ClockIcon} size={16} className="w-5 h-5 stroke-[1.5]" />
         </div>
         <div className="text-xs font-semibold text-white">No Active Generation</div>
         <p className="text-[11px] text-zinc-400 mt-1 max-w-[200px]">
@@ -234,12 +234,12 @@ export const LiveExecutionPanel: React.FC = () => {
       {/* Header Bar */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0 bg-[hsl(var(--surface-1))]">
         <div className="flex items-center gap-2">
-          <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
+          <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
           <span className="font-bold text-xs text-white">Pipeline Execution</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="text-[10px] font-mono text-zinc-400 flex items-center gap-1">
-            <HugeiconsIcon icon={Clock} size={16} className="w-3 h-3 text-zinc-500" />
+            <HugeiconsIcon icon={ClockIcon} size={16} className="w-3 h-3 text-zinc-500" />
             <span className="flex items-center">
               <span>{String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}</span>
               <span>:</span>
@@ -261,7 +261,7 @@ export const LiveExecutionPanel: React.FC = () => {
             className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] transition-colors cursor-pointer"
             title="Inspect Full Run in Job Details"
           >
-            <HugeiconsIcon icon={ExternalLink} size={16} className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={ExternalLinkIcon} size={16} className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -310,7 +310,7 @@ export const LiveExecutionPanel: React.FC = () => {
         {/* Hardware Status Note */}
         <div className="p-2 rounded-lg bg-[#181B20] border border-white/[0.06] flex items-center justify-between text-[10px] font-mono text-zinc-400">
           <span className="flex items-center gap-1.5">
-            <HugeiconsIcon icon={Cpu} size={16} className="w-3.5 h-3.5 text-zinc-500" />
+            <HugeiconsIcon icon={CpuIcon} size={16} className="w-3.5 h-3.5 text-zinc-500" />
             <span>{systemStats.gpu || 'GPU Accelerated'}</span>
           </span>
           {systemStats.vramUsedGb != null ? (
@@ -434,7 +434,7 @@ export const LiveExecutionPanel: React.FC = () => {
         <div className="space-y-1.5">
           <div className="flex items-center justify-between px-0.5">
             <div className="flex items-center gap-1.5">
-              <HugeiconsIcon icon={Terminal} size={16} className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={TerminalIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                 Live Execution Logs
               </span>
@@ -449,7 +449,7 @@ export const LiveExecutionPanel: React.FC = () => {
               >
                 {logsCopied ? (
                   <span className="text-emerald-400 flex items-center gap-1">
-                    <HugeiconsIcon icon={Check} size={16} className="w-3 h-3" />
+                    <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3" />
                     <span>Copied</span>
                   </span>
                 ) : (
@@ -542,7 +542,7 @@ export const LiveExecutionPanel: React.FC = () => {
                   }}
                   className="w-full py-1.5 px-2 rounded-lg bg-primary text-black font-bold text-[10px] hover:bg-[hsl(var(--primary)/0.9)] transition-colors flex items-center justify-center gap-1 cursor-pointer"
                 >
-                  <HugeiconsIcon icon={RotateCcw} size={16} className="w-3 h-3" />
+                  <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-3 h-3" />
                   <span>Enable Low VRAM Mode (&lt;8GB) &amp; Retry</span>
                 </button>
               )}
@@ -552,7 +552,7 @@ export const LiveExecutionPanel: React.FC = () => {
                 onClick={() => void generate3DModel()}
                 className="w-full py-1.5 px-2 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] text-white font-bold text-[10px] transition-colors flex items-center justify-center gap-1 cursor-pointer"
               >
-                <HugeiconsIcon icon={RotateCcw} size={16} className="w-3 h-3" />
+                <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-3 h-3" />
                 <span>Retry Generation</span>
               </button>
             </div>

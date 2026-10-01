@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/premium/Spinner';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { CpuIcon, SlidersHorizontalIcon, Box01Icon, SparklesIcon, ZapIcon, GaugeIcon, ListOrderedIcon } from '@hugeicons/core-free-icons';
+import { CpuIcon, SlidersHorizontalIcon, BoxIcon, SparklesIcon, ZapIcon, GaugeIcon, ListOrderedIcon } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/useAppStore';
@@ -147,7 +147,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Generation Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Generation SettingsIcon</h1>
         <p className="text-muted-foreground mt-2">
           Configure default AI models, output formats, and generation parameters.
         </p>
@@ -181,7 +181,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <HugeiconsIcon icon={Box01Icon} size={16} className="w-5 h-5 text-primary" />
+            <HugeiconsIcon icon={BoxIcon} size={16} className="w-5 h-5 text-primary" />
             Output Format & Quality
           </CardTitle>
           <CardDescription>Specify standard 3D export file formats and render target resolution.</CardDescription>
@@ -291,7 +291,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
               <div className="space-y-1">
                 <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
                   <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
-                  Target Provider Compatibility: {selectedModelObj?.label || provider || 'Default Model'}
+                  TargetIcon Provider Compatibility: {selectedModelObj?.label || provider || 'Default Model'}
                 </span>
                 <p className="text-xs text-[hsl(var(--muted-foreground))]">
                   Supported by {selectedModelObj.label} with memory requirement of {selectedModelObj.low_vram_required_mb ? Math.round(selectedModelObj.low_vram_required_mb / 1024) : 4}GB.

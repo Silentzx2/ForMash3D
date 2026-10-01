@@ -10,7 +10,7 @@ import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Cancel, Check, ChevronDown, ChevronUp, ImageIcon, Info, LoaderCircle, Plus, RefreshCw, Settings2, Sparkles, TriangleAlertIcon, Upload, Zap } from '@hugeicons/core-free-icons';
+import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
 export interface MeshQualityPreset {
   id: 'low' | 'medium' | 'high' | 'ultra';
   label: string;
@@ -523,7 +523,7 @@ export const GeneratePanel: React.FC = () => {
       {/* Panel Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
-          <HugeiconsIcon icon={Sparkles} size={16} className="w-4 h-4 text-primary" />
+          <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
           <span>Generate 3D Model</span>
         </span>
         {statusInfo && (
@@ -546,7 +546,7 @@ export const GeneratePanel: React.FC = () => {
               className="p-2 rounded-xl bg-primary/15 border border-primary/40 text-primary text-[10.5px] flex items-center justify-between gap-1.5 overflow-hidden"
             >
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <HugeiconsIcon icon={Info} size={16} className="w-4 h-4 flex-shrink-0" />
+                <HugeiconsIcon icon={InfoIcon} size={16} className="w-4 h-4 flex-shrink-0" />
                 <span className="leading-tight font-medium">{noticeMessage}</span>
               </div>
               <button 
@@ -617,7 +617,7 @@ export const GeneratePanel: React.FC = () => {
                 })}
               </div>
 
-              {/* Mode 1: Single Image Upload */}
+              {/* Mode 1: Single Image UploadIcon */}
               {subAction === 'upload' && (
                 <>
                   <input 
@@ -675,7 +675,7 @@ export const GeneratePanel: React.FC = () => {
                         <div className={`w-8 h-8 mx-auto rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center transition-all ${
                           isDragOver ? 'text-primary border-primary' : 'text-zinc-400 group-hover/dropzone:text-primary'
                         }`}>
-                          <HugeiconsIcon icon={Upload} size={16} className="w-4 h-4" />
+                          <HugeiconsIcon icon={UploadIcon} size={16} className="w-4 h-4" />
                         </div>
                         <div className="space-y-0.5">
                           <div className="font-bold text-xs text-zinc-100">
@@ -731,7 +731,7 @@ export const GeneratePanel: React.FC = () => {
                 </>
               )}
 
-              {/* Mode 2: Multi-View Grid */}
+              {/* Mode 2: Multi-View GridIcon */}
               {subAction === 'crop' && (
                 <>
                   <input
@@ -864,7 +864,7 @@ export const GeneratePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2 relative">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>AI 3D Engine</span>
                 </span>
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
@@ -951,7 +951,7 @@ export const GeneratePanel: React.FC = () => {
                             </span>
                           </div>
                         </div>
-                        {isSelected && <HugeiconsIcon icon={Check} size={16} className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}
+                        {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}
                       </button>
                     );
                   })}
@@ -1110,7 +1110,7 @@ export const GeneratePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <HugeiconsIcon icon={Zap} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Physics Preparation</span>
                 </div>
                 <span className="text-[9px] text-zinc-500">Post-process · no extra AI model</span>
@@ -1206,12 +1206,12 @@ export const GeneratePanel: React.FC = () => {
               )}
             </div>
 
-            {/* Streamlined Mesh Settings Card (Target Polycount + Triangle / Quad Topology ONLY) */}
+            {/* Streamlined Mesh SettingsIcon Card (TargetIcon Polycount + Triangle / Quad Topology ONLY) */}
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
                   <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>Mesh Settings</span>
+                  <span>Mesh SettingsIcon</span>
                 </div>
                 <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -1219,10 +1219,10 @@ export const GeneratePanel: React.FC = () => {
                 </span>
               </div>
 
-              {/* 1. Target Polycount Budget */}
+              {/* 1. TargetIcon Polycount Budget */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Target Polycount</span>
+                  <span className="text-zinc-200 font-medium">TargetIcon Polycount</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
                     {((generationSettings.autoOptimizeSettings?.targetPolycount || 60000)).toLocaleString()} tris
                   </span>
@@ -1287,7 +1287,7 @@ export const GeneratePanel: React.FC = () => {
               {/* 2. Topology Selection: Triangles vs Quads */}
               <div className="space-y-1 pt-1 border-t border-white/[0.04]">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Topology Target</span>
+                  <span className="text-zinc-200 font-medium">Topology TargetIcon</span>
                   <span className="text-[10px] text-zinc-400 font-mono uppercase">
                     {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'Quads (post-process)' : 'Triangles'}
                   </span>
@@ -1337,7 +1337,7 @@ export const GeneratePanel: React.FC = () => {
                   onClick={() => setAdvancedSettingsOpen(false)}
                   className="w-full h-9 rounded-xl bg-primary text-black text-[10px] font-black tracking-wide hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  <HugeiconsIcon icon={Check} size={16} className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5" />
                   APPLY & CLOSE
                 </button>
               </div>
@@ -1395,7 +1395,7 @@ export const GeneratePanel: React.FC = () => {
             </>
           ) : (
             <>
-              <HugeiconsIcon icon={Sparkles} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
+              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
               <span className="tracking-wider">{isExecuting ? 'GENERATE ANOTHER' : 'GENERATE 3D MODEL'}</span>
             </>
           )}
