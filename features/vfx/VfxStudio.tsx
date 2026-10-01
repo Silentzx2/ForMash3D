@@ -35,7 +35,7 @@ import VfxViewport from './components/VfxViewport';
 import useVfxDocument from './hooks/useVfxDocument';
 import useVfxRuntime from './hooks/useVfxRuntime';
 import { compileVfxGraph } from '@/vfx/compile.js';
-import { createEmptyVfxDoc } from './doc';
+import { createEmptyVfxDoc } from '@/vfx/doc.js';
 import { reset, seekTo } from './utils/vfx/system';
 
 export const VfxStudio: React.FC = () => {

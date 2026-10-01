@@ -1,1 +1,1 @@
-../utils/meshTools.js
+export * from '../utils/meshTools.js';
