@@ -100,6 +100,15 @@ async def system_status(
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
 
+    mesh_tools_status = {"status": "ready", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools"}
+    try:
+        import postprocess.services.auto_retopo  # noqa: F401
+        import postprocess.services.auto_uv  # noqa: F401
+        import postprocess.services.repair  # noqa: F401
+        import postprocess.services.collision  # noqa: F401
+    except Exception as exc:
+        mesh_tools_status = {"status": "unavailable", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools", "error": str(exc)}
+
     status = {
         "timestamp": datetime.utcnow().isoformat(),
         "system": {
@@ -120,7 +129,7 @@ async def system_status(
         "gpu": [],
         "models": {"loaded": 0, "available": 0, "total_vram_used": 0},
         "queue": {"pending_jobs": 0, "processing_jobs": 0, "completed_jobs": 0},
-        "mesh_tools": {"status": "ready", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools"},
+        "mesh_tools": mesh_tools_status,
     }
 
     # Try to get GPU information

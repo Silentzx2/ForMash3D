@@ -1149,6 +1149,12 @@ class MultiprocessModelScheduler:
                             "mesh_path": final_result["output_mesh_path"],
                             "output_format": "glb",
                             "texture_resolution": int(job_request.inputs.get("paint_resolution") or 512),
+                            "target_polycount": job_request.inputs.get("target_polycount"),
+                            "generateLOD": job_request.inputs.get("generateLOD"),
+                            "lodPreset": job_request.inputs.get("lodPreset"),
+                            "lodCount": job_request.inputs.get("lodCount"),
+                            "topology_mode": job_request.inputs.get("topology_mode"),
+                            "quad_topology": job_request.inputs.get("quad_topology"),
                             "resolution": int(job_request.inputs.get("paint_resolution") or 512),
                             "max_num_view": int(job_request.inputs.get("max_num_view") or 6),
                         },
@@ -1188,7 +1194,12 @@ class MultiprocessModelScheduler:
                     )
                     logger.info(f"[POSTPROCESS PROGRESS] job_id={job_id} progress=75% stage=postprocess message='Running production post-processing'")
                     try:
-                        from postprocess.pipeline import run_postprocess_job
+                        from postprocess.pipeline import canonical_asset_workspace, run_postprocess_job
+                        canonical_root = canonical_asset_workspace(job_id, final_result, job_request.inputs)
+                        final_result = {**final_result, "asset_root": str(canonical_root), "postprocess_status": "running", "postprocess_progress": 0.0}
+                        job_request.result = final_result
+                        if not await self.job_queue.update_job_result(job_id, final_result):
+                            raise RuntimeError("Failed to persist post-process retry metadata")
 
                         loop = asyncio.get_running_loop()
 

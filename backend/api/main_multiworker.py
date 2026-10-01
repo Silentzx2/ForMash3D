@@ -141,7 +141,7 @@ async def lifespan(app: FastAPI):
         file_store = FileStore(
             redis_client=file_store_redis,
             key_prefix="3daigc",
-            default_ttl_seconds=86400,  # 24 hours
+            default_ttl_seconds=None,  # use FILE_METADATA_TTL_SECONDS; default is persistent metadata
         )
         app.state.file_store = file_store
         logger.info("✓ File store initialized")

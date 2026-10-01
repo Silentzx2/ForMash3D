@@ -1,11 +1,13 @@
 import asyncio
 import copy
 import logging
+import shutil
 import time
 import uuid
 from collections import deque
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .database_manager import DatabaseManager
@@ -13,6 +15,25 @@ from .database_models import JobModel
 from .database_models import JobStatus as DBJobStatus
 
 logger = logging.getLogger(__name__)
+
+def cleanup_canonical_asset_workspace(result: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Remove a canonical asset workspace safely during retention cleanup."""
+    asset_root = (result or {}).get("asset_root")
+    if not asset_root:
+        return None
+    models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+    candidate = Path(asset_root).resolve()
+    if candidate == models_root or models_root not in candidate.parents:
+        logger.warning("Skipping retention cleanup for invalid asset workspace: %s", candidate)
+        return "invalid_asset_workspace"
+    try:
+        shutil.rmtree(candidate)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        logger.warning("Failed to remove retained asset workspace %s: %s", candidate, exc)
+        return str(exc)
+    return None
 
 
 def classify_job_error(error: str) -> str:
@@ -388,6 +409,9 @@ class JobQueue:
                         )
 
                         jobs_to_keep = sorted_completed[: self.max_completed_jobs]
+                        evicted_jobs = sorted_completed[self.max_completed_jobs :]
+                        for evicted_job in evicted_jobs:
+                            cleanup_canonical_asset_workspace(evicted_job.result)
                         self._completed_cache = {
                             job.job_id: job for job in jobs_to_keep
                         }
@@ -690,6 +714,26 @@ class JobQueue:
                 self._completed_cache[job_id] = job
                 return None
             return job
+
+    async def update_job_result(self, job_id: str, result: Dict[str, Any]) -> bool:
+        """Merge result metadata into an in-flight job and persist it durably."""
+        async with self._cache_lock:
+            job = self._processing_cache.get(job_id) or self._completed_cache.get(job_id)
+            if job is None:
+                job_model = await asyncio.to_thread(self.db_manager.get_job, job_id)
+                if not job_model:
+                    return False
+                job = JobRequest.from_job_model(job_model)
+            current = dict(job.result or {})
+            current.update(result)
+            job.result = current
+            if not await asyncio.to_thread(self.db_manager.save_job, job):
+                return False
+            if job.status == JobStatus.PROCESSING:
+                self._processing_cache[job_id] = job
+            else:
+                self._completed_cache[job_id] = job
+            return True
 
     async def get_queue_status(self) -> Dict[str, Any]:
         """Get queue statistics"""

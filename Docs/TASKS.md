@@ -142,7 +142,7 @@
 - [ ] After every code change, update all relevant .md documentation files
 - [ ] Keep CHANGELOG.md to last 3 changes only
 - [ ] Keep RULES.md synchronized with actual project state
-- [ ] Keep MEMORY.md updated with current status
+- [x] Keep MEMORY.md updated with current status
 
 ## Completed — Production Post-Processing Integration
 - Ported the 3DGenStudio post-processing engine into backend/postprocess/.
@@ -210,7 +210,7 @@ Completed in the deep second pass:
 
 Runtime-gated:
 - [ ] NVIDIA/CUDA model inference and visual-quality validation.
-- [ ] Full dependency/build validation in the unavailable cloned repository environment.
+- [ ] Full dependency/build validation on the supported target runtime.
 
 ## Review Audit — Final Implementation Pass (2026-09-30)
 
@@ -238,4 +238,4 @@ Testing/build/GPU stress verification remains intentionally outside this pass.
 - [x] Raw inference completion separated from background production post-processing with owned input cleanup and shutdown lifecycle.
 - [x] Remaining model adapter paths and VRAM declarations reconciled with the canonical manifest; FastMesh/TRELLIS variants cannot override manifest VRAM.
 - [x] Frontend post-processing state, QA score units, capability-based routing, L1 LRU accounting, and failure messaging synchronized with backend contracts.
-- [ ] Runtime/GPU/test/build validation intentionally deferred for this review pass.
+- [ ] Runtime/GPU/test/build validation remains required after this source-level fix pass.

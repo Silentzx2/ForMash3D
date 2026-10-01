@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from '@hugeicons/react'
+import { SparklesIcon } from '@hugeicons/core-free-icons'
 // Smart Segmentation mode left panel.
 //
 // Two-stage tool, and the split matters to how this reads: "Analyze" is the only
@@ -90,7 +92,7 @@ export default function SegmentationToolsPanel({
           disabled={busy}
           title="Measure the mesh and build the part hierarchy. Run once — the Parts slider is free afterwards"
         >
-          <span className="material-symbols-outlined">{running ? 'progress_activity' : 'shape_line'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{running ? 'Analyzing…' : analyzed ? 'Re-analyze' : 'Analyze Mesh'}</span>
         </button>
         <MeshToolProgress progress={progress} />
@@ -103,13 +105,13 @@ export default function SegmentationToolsPanel({
               {' · '}{analysis.faceCount.toLocaleString()} faces mapped
             </div>
             {analysis.escapeRatio > 0.35 && (
-              <div className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+              <div className="mesh-editor-panel__hint" className="text-amber-400">
                 {Math.round(analysis.escapeRatio * 100)}% of the thickness rays escaped — the mesh is
                 open, so the parts are guessed from creases alone. Repair it for a better split.
               </div>
             )}
             {analysis.note && (
-              <div className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>{analysis.note}</div>
+              <div className="mesh-editor-panel__hint" className="text-amber-400">{analysis.note}</div>
             )}
           </>
         )}
@@ -146,7 +148,7 @@ export default function SegmentationToolsPanel({
               ? `Jump to ${analysis.suggestedParts} — the largest jump in merge cost`
               : 'Not enough hierarchy to suggest a part count'}
           >
-            <span className="material-symbols-outlined">auto_awesome</span>
+            <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
             <span>{analysis.suggestedParts ? `Auto (${analysis.suggestedParts})` : 'Auto'}</span>
           </button>
           <div className="mesh-editor-panel__hint">
@@ -171,7 +173,7 @@ export default function SegmentationToolsPanel({
               onClick={() => onExplodeChange(0)}
               disabled={running}
             >
-              <span className="material-symbols-outlined">compress</span>
+              <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
               <span>Reassemble</span>
             </button>
           )}
@@ -186,7 +188,7 @@ export default function SegmentationToolsPanel({
             moving the Parts slider afterwards.
           </span>
           {explode > 0 && (
-            <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+            <span className="mesh-editor-panel__hint" className="text-amber-400">
               Reassemble first — while the parts are exploded the cursor no longer
               lands where the mesh is drawn.
             </span>
@@ -201,7 +203,7 @@ export default function SegmentationToolsPanel({
                 disabled={running || explode > 0}
                 title={explode > 0 ? 'Set Explode back to 0 to correct parts' : entry.hint}
               >
-                <span className="material-symbols-outlined">{entry.icon}</span>
+                <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
                 <span>{entry.label}</span>
               </button>
             ))}
@@ -214,7 +216,7 @@ export default function SegmentationToolsPanel({
                   <span>Sweeping into</span>
                   <span
                     style={{
-                      width: 22, height: 22, borderRadius: 4, background: targetSwatch || '#888',
+                      width: 22, height: 22, borderRadius: 4, background: targetSwatch || 'hsl(var(--surface-3))',
                       border: '1px solid rgba(255,255,255,0.25)'
                     }}
                   />
@@ -242,7 +244,7 @@ export default function SegmentationToolsPanel({
                   disabled={!canUndo || running}
                   title="Undo the last stroke"
                 >
-                  <span className="material-symbols-outlined">undo</span>
+                  <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
                   <span>Undo Stroke</span>
                 </button>
               </div>
@@ -257,7 +259,7 @@ export default function SegmentationToolsPanel({
                     onClick={onClearPaint}
                     disabled={running}
                   >
-                    <span className="material-symbols-outlined">layers_clear</span>
+                    <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
                     <span>Clear All Strokes</span>
                   </button>
                 </>
@@ -277,7 +279,7 @@ export default function SegmentationToolsPanel({
                 onClick={onApplyMerge}
                 disabled={mergePicks < 2 || running}
               >
-                <span className="material-symbols-outlined">join_inner</span>
+                <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
                 <span>{mergePicks < 2 ? 'Pick 2 or more parts' : `Fuse ${mergePicks} Parts`}</span>
               </button>
             </>
@@ -302,7 +304,7 @@ export default function SegmentationToolsPanel({
                 onClick={onApplyFocus}
                 disabled={pendingSplits < 1 || running}
               >
-                <span className="material-symbols-outlined">check</span>
+                <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
                 <span>Apply &amp; Pick Next</span>
               </button>
               <button
@@ -311,7 +313,7 @@ export default function SegmentationToolsPanel({
                 onClick={onClearFocus}
                 disabled={running}
               >
-                <span className="material-symbols-outlined">close</span>
+                <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
                 <span>Cancel Focus</span>
               </button>
             </>
@@ -330,7 +332,7 @@ export default function SegmentationToolsPanel({
               onClick={onResetMerges}
               disabled={running}
             >
-              <span className="material-symbols-outlined">loop</span>
+              <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
               <span>Reset Merges</span>
             </button>
           )}
@@ -341,7 +343,7 @@ export default function SegmentationToolsPanel({
               onClick={onResetSplits}
               disabled={running}
             >
-              <span className="material-symbols-outlined">loop</span>
+              <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
               <span>Reset Splits</span>
             </button>
           )}
@@ -410,7 +412,7 @@ export default function SegmentationToolsPanel({
             disabled={running || exporting || keptParts < 1}
             title="Download a GLB containing one named object per part"
           >
-            <span className="material-symbols-outlined">{exporting ? 'progress_activity' : 'download'}</span>
+            <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
             <span>{exporting ? 'Exporting…' : `Export ${keptParts} Part${keptParts === 1 ? '' : 's'}`}</span>
           </button>
           {dropped > 0 && (
@@ -434,7 +436,7 @@ export default function SegmentationToolsPanel({
             disabled={running}
             title="Drop the analysis and go back to the normal shaded view"
           >
-            <span className="material-symbols-outlined">layers_clear</span>
+            <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
             <span>Clear Segmentation</span>
           </button>
         </div>

@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from '@hugeicons/react'
+import { SparklesIcon } from '@hugeicons/core-free-icons'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import FolderBrowserDialog from './FolderBrowserDialog'
 import {
@@ -100,11 +102,7 @@ export default function ExportFilesFlow({ items, onClose }) {
   return (
     <div className="export-files-card" role="status">
       <div className="export-files-card__header">
-        <span className={`material-symbols-outlined export-files-card__icon${
-          phase === 'running' ? ' export-files-card__icon--running' : result?.failed.length ? ' export-files-card__icon--warn' : ''
-        }`}>
-          {phase === 'running' ? 'progress_activity' : result?.failed.length ? 'warning' : 'check_circle'}
-        </span>
+        <HugeiconsIcon icon={SparklesIcon} size={18} className="export-files-card__icon" />
         <span className="export-files-card__title">
           {phase === 'running'
             ? `Exporting ${total} file${total === 1 ? '' : 's'}…`
@@ -112,7 +110,7 @@ export default function ExportFilesFlow({ items, onClose }) {
         </span>
         {phase === 'done' && (
           <button type="button" className="export-files-card__close" onClick={onClose} title="Close">
-            <span className="material-symbols-outlined">close</span>
+            <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4" />
           </button>
         )}
       </div>

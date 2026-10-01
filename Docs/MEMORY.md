@@ -282,3 +282,18 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - Adapter VRAM is manifest-only and remaining repository/model paths are CWD-independent; UUID naming closes timestamp collision windows.
 - Frontend uses backend model capabilities for routing, treats QA scores as 0–100, and refreshes the same asset when post-processing completes or fails.
 - Tests/build/GPU stress/load validation remain intentionally unrun in this pass.
+
+
+## 2026-10-02 Deep Bug Closure
+- Canonical asset roots are persisted before production post-processing so failed processing remains retryable from immutable `master/source.glb`.
+- Shape→Paint child jobs inherit target polycount, LOD, and topology settings from the parent workflow.
+- Optional export failures are explicit `failed` artifact states with error messages.
+- Final QA uses the same resolved production triangle budget as optimization.
+- Retention cleanup removes canonical asset workspaces before terminal job history is deleted.
+- Multi-worker file metadata follows `FILE_METADATA_TTL_SECONDS` instead of a hidden 24-hour override.
+- System status reports mesh-tools readiness instead of hard-coding success.
+- GPU/end-to-end verification still requires the supported target runtime.
+
+
+## Verification Status — 2026-10-02
+The latest deep-audit fixes are source-level. Full compile, frontend build/lint/typecheck, and supported-GPU end-to-end verification must be rerun after this commit; older dated entries above describe earlier verification runs and are not evidence for this new commit.

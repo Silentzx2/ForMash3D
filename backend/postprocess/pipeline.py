@@ -66,6 +66,29 @@ def _safe_name(value: str) -> str:
 def _job_hash(job_id: str) -> str:
     return hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:8]
 
+def canonical_asset_workspace(
+    job_id: str,
+    generation_result: Dict[str, Any],
+    job_inputs: Optional[Dict[str, Any]] = None,
+) -> Path:
+    """Resolve the canonical workspace path used by run_postprocess_job()."""
+    job_inputs = job_inputs or {}
+    raw_candidate = (
+        generation_result.get("output_mesh_path")
+        or generation_result.get("mesh_path")
+        or generation_result.get("output_path")
+        or generation_result.get("file_path")
+    )
+    raw_path = resolve_server_file_path(raw_candidate)
+    source_stem = (
+        job_inputs.get("asset_name")
+        or job_inputs.get("image_path")
+        or job_inputs.get("text_prompt")
+        or (Path(raw_path).stem if raw_path else "asset")
+    )
+    asset_name = _safe_name(Path(str(source_stem)).stem)
+    return _storage_root() / f"{asset_name}_{_job_hash(job_id)}"
+
 
 def _sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -234,6 +257,7 @@ def _build_result(
     primary = generated["game_ready"].get("glb") or generated["game_ready"].get("obj")
     base_url = f"/api/v1/system/jobs/{job_id}"
     rel_model_dir = asset_dir.name
+    artifact_errors = generated.get("artifact_errors", {})
     primary_name = Path(primary).name if primary else f"{asset_name}.glb"
     download_model_url = f"{base_url}/download?artifact_format=glb"
     download_master_url = f"{base_url}/download?artifact_format=master"
@@ -291,8 +315,13 @@ def _build_result(
             "master": {"status": "ready", "url": download_master_url, "required": True},
             "game_ready": {
                 fmt: {
-                    "status": "ready" if fmt in generated["game_ready"] else "unavailable",
+                    "status": (
+                        "ready" if fmt in generated["game_ready"]
+                        else "failed" if fmt in artifact_errors
+                        else "unavailable"
+                    ),
                     "url": f"{base_url}/download?artifact_format={fmt}" if fmt in generated["game_ready"] else None,
+                    "error": artifact_errors.get(fmt),
                     "required": fmt == "glb",
                 }
                 for fmt in _FORMATS
@@ -319,6 +348,7 @@ def _build_result(
             "zip": {"status": "ready", "url": f"{base_url}/download?artifact_format=zip", "required": False},
         },
         "qa_report": qa_report,
+        "artifact_errors": artifact_errors,
         "postprocess": {
             "asset_dir": str(asset_dir),
             "master": "master/source.glb",
@@ -568,6 +598,7 @@ def run_postprocess_job(
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     base_name = f"{asset_name}_{asset_hash}"
     game_ready: Dict[str, str] = {}
+    artifact_errors: Dict[str, str] = {}
     glb_path = game_ready_dir / f"{base_name}.glb"
     _save_file(glb_path, _export_glb(uv_mesh))
     game_ready["glb"] = str(glb_path)
@@ -582,7 +613,8 @@ def run_postprocess_job(
                 _save_file(target, _export_bytes(uv_mesh, fmt))
             game_ready[fmt] = str(target)
         except Exception as exc:
-            logger.warning("Game-ready %s export skipped: %s", fmt, exc)
+            artifact_errors[fmt] = str(exc)
+            logger.warning("Game-ready %s export failed: %s", fmt, exc)
 
     try:
         fbx_bytes, _ = run_convert_fbx(
@@ -596,14 +628,16 @@ def run_postprocess_job(
         fbx_path.write_bytes(fbx_bytes)
         game_ready["fbx"] = str(fbx_path)
     except Exception as exc:
-        logger.warning("FBX export skipped: %s", exc)
+        artifact_errors["fbx"] = str(exc)
+        logger.warning("FBX export failed: %s", exc)
 
     try:
         gltf_path = game_ready_dir / f"{base_name}.gltf"
         _export_gltf_embedded(glb_path.read_bytes(), gltf_path)
         game_ready["gltf"] = str(gltf_path)
     except Exception as exc:
-        logger.warning("GLTF embedded export skipped: %s", exc)
+        artifact_errors["gltf"] = str(exc)
+        logger.warning("GLTF embedded export failed: %s", exc)
 
     lods: Dict[int, str] = {}
     lod_quality: Dict[str, Dict[str, Any]] = {}
@@ -701,7 +735,7 @@ def run_postprocess_job(
             final_scene,
             uv_mesh,
             InspectOptions(
-                tri_budget=MAX_PRODUCTION_FACES,
+                tri_budget=resolved_target_polycount,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -783,6 +817,7 @@ def run_postprocess_job(
         "textures": texture_paths,
         "texture_status": texture_status,
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
+        "artifact_errors": artifact_errors,
     }
     final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=resolved_target_polycount, lod_enabled=lod_enabled)
     final_result["model_url"] = final_result["game_ready_url"]

@@ -5,24 +5,26 @@
 // the mode that fixes them.
 // Presentational: option state + handlers come from MeshEditorPage.
 import { NumberField, ToggleField } from './MeshToolField'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { ActivityIcon, AlertCircle, CheckmarkCircle02Icon, SparklesIcon } from '@hugeicons/core-free-icons'
 
 const STATUS_META = {
-  pass: { icon: 'check_circle', color: '#4caf50', label: 'Pass' },
-  warn: { icon: 'warning', color: '#e0a030', label: 'Warning' },
-  fail: { icon: 'cancel', color: '#e35d5d', label: 'Fail' },
-  info: { icon: 'info', color: '#7f8ea3', label: 'Info' },
+  pass: { icon: CheckmarkCircle02Icon, tone: 'text-emerald-400', label: 'Pass' },
+  warn: { icon: AlertCircle, tone: 'text-amber-400', label: 'Warning' },
+  fail: { icon: AlertCircle, tone: 'text-rose-400', label: 'Fail' },
+  info: { icon: ActivityIcon, tone: 'text-zinc-400', label: 'Info' },
 }
 
 // What a finding's fix button does. `mode` hands the user off to the tool that
 // resolves it; `action` applies the correction there and then, for findings whose
 // fix is a single unambiguous operation with no parameters to choose.
 const FIXES = {
-  optimize: { kind: 'mode', label: 'Optimize', icon: 'build' },
-  autouv: { kind: 'mode', label: 'Auto UV', icon: 'build' },
-  autoretopo: { kind: 'mode', label: 'Auto Retopo', icon: 'build' },
-  repair: { kind: 'mode', label: 'Repair', icon: 'build' },
-  ground_pivot: { kind: 'action', label: 'Set pivot on the ground', icon: 'vertical_align_bottom' },
-  centre_pivot: { kind: 'action', label: 'Centre the pivot', icon: 'filter_center_focus' },
+  optimize: { kind: 'mode', label: 'Optimize', icon: SparklesIcon },
+  autouv: { kind: 'mode', label: 'Auto UV', icon: SparklesIcon },
+  autoretopo: { kind: 'mode', label: 'Auto Retopo', icon: SparklesIcon },
+  repair: { kind: 'mode', label: 'Repair', icon: SparklesIcon },
+  ground_pivot: { kind: 'action', label: 'Set pivot on the ground', icon: ActivityIcon },
+  centre_pivot: { kind: 'action', label: 'Centre the pivot', icon: ActivityIcon },
 }
 
 function CheckRow({ check, onFix, disabled }) {
@@ -32,7 +34,7 @@ function CheckRow({ check, onFix, disabled }) {
   return (
     <div className="mesh-editor-check-row">
       <span
-        className="material-symbols-outlined mesh-editor-check-row__icon"
+        className="mesh-editor-check-row__icon text-zinc-400"
         style={{ color: meta.color }}
         title={meta.label}
       >
@@ -54,7 +56,7 @@ function CheckRow({ check, onFix, disabled }) {
               ? `${fix.label} — applies straight away, undoable`
               : `Switch to ${fix.label} to fix this`}
           >
-            <span className="material-symbols-outlined">{fix.icon}</span>
+            <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
             <span>{fix.kind === 'action' ? fix.label : `Fix in ${fix.label}`}</span>
           </button>
         )}
@@ -69,12 +71,9 @@ function CheckRow({ check, onFix, disabled }) {
 // ground — that is what a prop dropped into a level needs — and a second press
 // then centres it.
 const PIVOT_ACTIONS = {
-  ground: { fix: 'centre_pivot', label: 'Center Pivot', icon: 'filter_center_focus',
-    state: 'The pivot is on the ground at the origin.' },
-  centre: { fix: 'ground_pivot', label: 'Set Pivot on the Ground', icon: 'vertical_align_bottom',
-    state: 'The pivot is at the centre of the mesh.' },
-  off: { fix: 'ground_pivot', label: 'Set Pivot on the Ground', icon: 'vertical_align_bottom',
-    state: 'The pivot is off the mesh — neither grounded nor centred.' },
+  ground: { fix: 'centre_pivot', label: 'Center Pivot', icon: ActivityIcon, state: 'The pivot is on the ground at the origin.' },
+  centre: { fix: 'ground_pivot', label: 'Set Pivot on the Ground', icon: ActivityIcon, state: 'The pivot is at the centre of the mesh.' },
+  off: { fix: 'ground_pivot', label: 'Set Pivot on the Ground', icon: ActivityIcon, state: 'The pivot is off the mesh — neither grounded nor centred.' },
 }
 
 export default function GameReadyPanel({
@@ -118,21 +117,17 @@ export default function GameReadyPanel({
           disabled={disabled || running}
           title="Analyze the mesh against the budgets below — nothing is modified"
         >
-          <span className="material-symbols-outlined">{running ? 'progress_activity' : 'fact_check'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{running ? 'Checking…' : 'Run Check'}</span>
         </button>
 
         {report && !running && (
           <div
             className="mesh-editor-check-summary"
-            style={{ borderColor: blocking ? '#e35d5d' : warnings ? '#e0a030' : '#4caf50' }}
+            className={`mesh-editor-check-summary ${blocking ? 'border-rose-500/50' : warnings ? 'border-amber-500/50' : 'border-emerald-500/50'}`}
           >
             <span
-              className="material-symbols-outlined"
-              style={{ color: blocking ? '#e35d5d' : warnings ? '#e0a030' : '#4caf50' }}
-            >
-              {blocking ? 'cancel' : warnings ? 'warning' : 'check_circle'}
-            </span>
+              <HugeiconsIcon icon={blocking ? AlertCircle : warnings ? AlertCircle : CheckmarkCircle02Icon} size={18} className={blocking ? 'text-rose-400' : warnings ? 'text-amber-400' : 'text-emerald-400'} />
             <span>
               {blocking
                 ? `${blocking} blocking issue${blocking === 1 ? '' : 's'}`
@@ -155,7 +150,7 @@ export default function GameReadyPanel({
             ? `${pivot.label} — applies straight away, undoable with Ctrl+Z`
             : 'Load a mesh to move its pivot'}
         >
-          <span className="material-symbols-outlined">{pivot ? pivot.icon : 'adjust'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{pivot ? pivot.label : 'Center Pivot'}</span>
         </button>
         {pivot && <span className="mesh-editor-panel__hint">{pivot.state}</span>}

@@ -15,7 +15,7 @@ from typing import Any, Dict, Optional
 import redis.asyncio as aioredis
 
 from .database_manager import DatabaseManager
-from .job_queue import JobRequest, JobStatus, classify_job_error
+from .job_queue import JobRequest, JobStatus, classify_job_error, cleanup_canonical_asset_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +277,27 @@ class RedisJobQueue:
         # Redis remains a queue/cache; terminal history is durable in SQL.
         await self.redis.set(f"{self.results_prefix}{job_id}", json.dumps(result))
 
+    async def update_job_result(self, job_id: str, result: Dict[str, Any]) -> bool:
+        """Merge result metadata into an in-flight Redis job and durable SQL history."""
+        if not self.redis:
+            raise RuntimeError("Redis not connected")
+        raw = await self.redis.hget(self.jobs_hash_key, job_id)
+        if not raw:
+            return False
+        job_data = json.loads(raw)
+        current = job_data.get("result") or {}
+        if isinstance(current, str):
+            current = json.loads(current)
+        current.update(result)
+        job_data["result"] = current
+        await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+        job_request = await self._load_job_request_for_persistence(job_id)
+        if job_request is not None:
+            job_request.result = current
+            if not await asyncio.to_thread(self.db_manager.save_job, job_request):
+                return False
+        return True
+
     async def update_completed_result(self, job_id: str, result: Dict[str, Any]) -> bool:
         """Merge background post-processing results into a completed Redis job."""
         if not self.redis:
@@ -340,6 +361,8 @@ class RedisJobQueue:
         job.job_id = job_id
         if data.get("created_at"):
             job.created_at = datetime.fromisoformat(data["created_at"])
+        job.result = data.get("result")
+        job.error = data.get("error")
         return job
 
     async def update_job_progress(self, job_id: str, progress: float, stage: Optional[str] = None, message: Optional[str] = None):
@@ -458,6 +481,8 @@ class RedisJobQueue:
 
         deleted_count = 0
         for job_id in old_job_ids:
+            retained_job = await self._load_job_request_for_persistence(job_id)
+            cleanup_canonical_asset_workspace(retained_job.result if retained_job else None)
             await self.redis.hdel(self.jobs_hash_key, job_id)
             await self.redis.hdel(self.progress_hash_key, job_id)
             await self.redis.hdel(self.stage_hash_key, job_id)

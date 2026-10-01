@@ -293,6 +293,13 @@ class ApiClient {
     return response.data;
   }
 
+  async retryPostprocess(jobId: string): Promise<{ job_id: string; status: string; postprocess_status: string; result?: any }> {
+    const response = await this.client.post<{ job_id: string; status: string; postprocess_status: string; result?: any }>(
+      `/api/v1/system/jobs/${encodeURIComponent(jobId)}/postprocess/retry`
+    );
+    return response.data;
+  }
+
   async deleteJob(jobId: string): Promise<BaseApiResponse> {
     const response = await this.client.delete<BaseApiResponse>(
       `/api/v1/system/jobs/${jobId}`

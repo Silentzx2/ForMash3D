@@ -17,3 +17,10 @@
 - **Multi-Subagent Concurrent Remediation:** Dispatched 5 concurrent subagents to autonomously fix distinct subsystems (admin jobs/models, queue, runtime/settings/storage, workspace views, viewport mesh viewer) with 100% type check verification (`npx tsc --noEmit` exit code 0).
 - **Production Clean Build:** Confirmed `npm run build` succeeds cleanly with Turbopack in 18.9s across all 14 routes.
 
+
+
+## 2026-10-02 — Deep Bug Closure
+- Fixed durable post-process retry metadata and added the Job Detail retry action.
+- Propagated Shape→Paint production settings and made optional export failures explicit.
+- Aligned final QA with the resolved target budget and canonical asset retention cleanup.
+- Removed remaining migrated mesh-tool Material Symbols/direct color tokens and synchronized runtime documentation.

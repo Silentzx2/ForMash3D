@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from '@hugeicons/react'
+import { SparklesIcon } from '@hugeicons/core-free-icons'
 // Optimize / LOD mode left panel. Runs the bundled gltfpack (meshoptimizer)
 // binary server-side — either once at a chosen ratio, or as a whole LOD ladder —
 // and offers Keep/Revert on the result.
@@ -57,7 +59,7 @@ export default function OptimizeToolsPanel({
           disabled={disabled || running}
           title="Simplify the mesh with gltfpack (meshoptimizer)"
         >
-          <span className="material-symbols-outlined">{running ? 'progress_activity' : 'compress'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{running ? 'Optimizing…' : 'Run Optimize'}</span>
         </button>
 
@@ -97,7 +99,7 @@ export default function OptimizeToolsPanel({
           onChange={v => setOption('simplify_error', v / 100)} disabled={fieldsDisabled}
           hint="How far the simplifier may move the surface away from the original. This, not the UV seams, is usually what stops a mesh short of its target — raising it reaches the target without touching normals or UVs. gltfpack's own default is 1%." />
         {(o.simplify_error ?? 0.05) >= 0.3 && (
-          <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+          <span className="mesh-editor-panel__hint" className="text-amber-400">
             Budgets this large deform the silhouette, and at the extreme they collapse
             the mesh outright — a run that empties the mesh is refused rather than kept.
           </span>
@@ -127,7 +129,7 @@ export default function OptimizeToolsPanel({
               onChange={v => setOption('aggressive', v)} disabled={fieldsDisabled}
               hint="gltfpack's -sa: reach the ratio regardless of quality. It is the only thing that breaks a real seam floor, and it does so by rebuilding the vertex set — normals and UVs are both reassigned, so hard edges smooth over and the texture scrambles. Turn it off to keep the shading and accept a coarser mesh." />
             {o.aggressive ? (
-              <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+              <span className="mesh-editor-panel__hint" className="text-amber-400">
                 On a mesh that needs this pass, hard edges and the texture are both rebuilt.
                 This is the setting that makes a simplified mesh come back wrongly shaded.
               </span>
@@ -161,14 +163,14 @@ export default function OptimizeToolsPanel({
           disabled={disabled || running || lodGenerating}
           title="Build every level and report its real triangle count"
         >
-          <span className="material-symbols-outlined">{lodGenerating ? 'progress_activity' : 'stacked_bar_chart'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{lodGenerating ? 'Generating…' : 'Generate LOD chain'}</span>
         </button>
 
         {lodGenerating && <MeshToolProgress progress={lodProgress} />}
 
         {chainStale && (
-          <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+          <span className="mesh-editor-panel__hint" className="text-amber-400">
             Built from a {lodSourceFaces.toLocaleString()}-face mesh; the current one has{' '}
             {currentFaces.toLocaleString()}. Regenerate to match.
           </span>
@@ -186,9 +188,7 @@ export default function OptimizeToolsPanel({
                   </span>
                   <strong className="mesh-editor-lod-row__count">
                     {lod.seamLimited && (
-                      <span className="material-symbols-outlined mesh-editor-lod-row__warn" title="Stopped early to protect the UVs">
-                        warning
-                      </span>
+                      <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
                     )}
                     {lod.triangles != null ? `${lod.triangles.toLocaleString()} tris` : `${lodSourceFaces.toLocaleString()} tris`}
                   </strong>
@@ -210,7 +210,7 @@ export default function OptimizeToolsPanel({
             </div>
 
             {lodChain.some(lod => lod.seamLimited) && (
-              <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+              <span className="mesh-editor-panel__hint" className="text-amber-400">
                 Marked levels stopped short of their target. Raise the <em>Error budget</em> first —
                 that is the usual limit, and it costs nothing in normals or UVs. If they still stop
                 short, the mesh has a real attribute-seam floor and only “Allow attribute seams to
@@ -218,7 +218,7 @@ export default function OptimizeToolsPanel({
               </span>
             )}
             {lodChain.some(lod => lod.seamsBroken) && (
-              <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+              <span className="mesh-editor-panel__hint" className="text-amber-400">
                 Some levels welded attribute seams to reach their target — check the texture
                 <em>and the hard edges</em> on those.
               </span>

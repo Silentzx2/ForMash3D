@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from '@hugeicons/react'
+import { SparklesIcon } from '@hugeicons/core-free-icons'
 // Auto UV mode left panel. Exposes every autouv.unwrap() parameter, runs the
 // unwrap via the Python mesh-tools service, and offers Keep/Revert on the result.
 // Presentational: option state + handlers come from MeshEditorPage.
@@ -30,7 +32,7 @@ export default function AutoUvToolsPanel({
           disabled={disabled || running}
           title="Unwrap UVs with the Python service"
         >
-          <span className="material-symbols-outlined">{running ? 'progress_activity' : 'auto_awesome'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{running ? 'Unwrapping…' : 'Run Auto UV'}</span>
         </button>
 

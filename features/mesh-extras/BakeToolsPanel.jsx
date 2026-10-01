@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from '@hugeicons/react'
+import { SparklesIcon } from '@hugeicons/core-free-icons'
 // Bake mode left panel. Captures a high-poly source's detail onto the current
 // mesh's UVs via headless Blender, then applies the result to the mesh.
 //
@@ -62,7 +64,7 @@ export default function BakeToolsPanel({
         <span className="mesh-editor-panel__section-title">Bake</span>
 
         {!hasUvs && (
-          <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+          <span className="mesh-editor-panel__hint" className="text-amber-400">
             This mesh has no UVs, so there is nowhere to bake to. Run Auto UV first.
           </span>
         )}
@@ -85,7 +87,7 @@ export default function BakeToolsPanel({
           disabled={fieldsDisabled}
           title="Pick a mesh from the asset library — versions count, so an earlier high-poly version of this mesh works"
         >
-          <span className="material-symbols-outlined">{loadingSource ? 'progress_activity' : 'inventory_2'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{loadingSource ? 'Loading asset…' : 'Choose a mesh asset…'}</span>
         </button>
 
@@ -96,7 +98,7 @@ export default function BakeToolsPanel({
           disabled={disabled || running || !hasUvs || sources.length === 0}
           title="Bake the source's detail onto this mesh's UVs"
         >
-          <span className="material-symbols-outlined">{running ? 'progress_activity' : 'flare'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{running ? 'Baking…' : 'Run Bake'}</span>
         </button>
 
@@ -123,7 +125,7 @@ export default function BakeToolsPanel({
                   because a number that only appears when it is bad is a number
                   nobody learns to read. */}
               {typeof result.stats.coverage === 'number' && (
-                <span style={coverageIsLow ? { color: '#e0603a' } : undefined}>
+                <span className={coverageIsLow ? 'text-orange-400' : undefined}>
                   <strong>Coverage:</strong> {(result.stats.coverage * 100).toFixed(coverageIsLow ? 0 : 1)}% of the UVs
                 </span>
               )}
@@ -134,7 +136,7 @@ export default function BakeToolsPanel({
           )}
 
           {coverageIsLow && (
-            <span className="mesh-editor-panel__hint" style={{ color: '#e0603a' }}>
+            <span className="mesh-editor-panel__hint" className="text-orange-400">
               The rays only reached {(result.stats.coverage * 100).toFixed(0)}% of the UV layout — the
               remaining {(100 - result.stats.coverage * 100).toFixed(0)}% came back blank. Applying this
               leaves those texels as they are rather than blacking them out, but the mesh will still be
@@ -160,7 +162,7 @@ export default function BakeToolsPanel({
           )}
 
           {result.stats?.alignment?.mode === 'skipped-scale' && (
-            <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+            <span className="mesh-editor-panel__hint" className="text-amber-400">
               The source is a different size from this mesh
               {result.stats.alignment.scale_axes
                 ? ` by a different amount on each axis (${result.stats.alignment.scale_axes
@@ -173,14 +175,14 @@ export default function BakeToolsPanel({
           )}
 
           {result.stats?.low_objects_ignored > 0 && (
-            <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+            <span className="mesh-editor-panel__hint" className="text-amber-400">
               This mesh arrived as {result.stats.low_objects_ignored + 1} separate objects and only the
               first was baked to. Baking writes to one UV layout, so the others were skipped.
             </span>
           )}
 
           {result.stats?.flat_channels?.length > 0 && (
-            <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+            <span className="mesh-editor-panel__hint" className="text-amber-400">
               {result.stats.flat_channels.join(' and ')} came from a constant on the source
               material, not a texture, so {result.stats.flat_channels.length === 1 ? 'that map is' : 'those maps are'} flat.
               The material&apos;s own value is better than baking it — leave{' '}
@@ -194,7 +196,7 @@ export default function BakeToolsPanel({
             disabled={running}
             title="Attach normal/AO to the material and draw a base-colour transfer into the texture"
           >
-            <span className="material-symbols-outlined">done_all</span>
+            <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
             <span>Apply to mesh</span>
           </button>
           <span className="mesh-editor-panel__hint">

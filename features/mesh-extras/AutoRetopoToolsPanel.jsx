@@ -1,3 +1,5 @@
+import { HugeiconsIcon } from '@hugeicons/react'
+import { SparklesIcon } from '@hugeicons/core-free-icons'
 // Auto Retopo mode left panel. Exposes every autoretopo.RetopoConfig field, runs
 // the retopology via the Python mesh-tools service, and offers Keep/Revert on the
 // result. Presentational: option state + handlers come from MeshEditorPage.
@@ -64,7 +66,7 @@ export default function AutoRetopoToolsPanel({
           disabled={disabled || running || watertightChecking}
           title="Analyze the current mesh topology for open or non-manifold edges"
         >
-          <span className="material-symbols-outlined">{watertightChecking ? 'progress_activity' : 'water_drop'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{watertightChecking ? 'Checking…' : 'Check if Watertight'}</span>
         </button>
 
@@ -75,7 +77,7 @@ export default function AutoRetopoToolsPanel({
           >
             <span
               className="material-symbols-outlined"
-              style={{ fontSize: '1.1em', color: watertight.watertight ? '#4caf50' : '#e0a030' }}
+              className="text-sm"
             >
               {watertight.watertight ? 'check_circle' : 'warning'}
             </span>
@@ -92,7 +94,7 @@ export default function AutoRetopoToolsPanel({
               disabled={disabled || running || repairRunning}
               title={repairTitle}
             >
-              <span className="material-symbols-outlined">{repairRunning ? 'progress_activity' : 'cleaning_services'}</span>
+              <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
               <span>{repairRunning ? 'Repairing…' : repairLabel}</span>
             </button>
             {repairOptions && (
@@ -101,7 +103,7 @@ export default function AutoRetopoToolsPanel({
                   onChange={v => setRepairOption('preserve_uv', v)} disabled={fieldsDisabled || repairRunning}
                   hint="Repair only the faces that form the defect, leaving every other vertex — and its UV — untouched. Uncheck only if the mesh is too broken for that: the fallback rebuilds the mesh and discards all UVs (and the texture with them)." />
                 {!repairOptions.preserve_uv && (
-                  <span className="mesh-editor-panel__hint" style={{ color: '#e0a030' }}>
+                  <span className="mesh-editor-panel__hint" className="text-amber-400">
                     The texture will be lost — the fallback welds across UV seams.
                   </span>
                 )}
@@ -164,7 +166,7 @@ export default function AutoRetopoToolsPanel({
           disabled={disabled || running}
           title="Rebuild clean topology with the Python service"
         >
-          <span className="material-symbols-outlined">{running ? 'progress_activity' : 'grain'}</span>
+          <HugeiconsIcon icon={SparklesIcon} size={18} className="w-[1em] h-[1em]" />
           <span>{running ? 'Retopologizing…' : 'Run Auto Retopo'}</span>
         </button>
 

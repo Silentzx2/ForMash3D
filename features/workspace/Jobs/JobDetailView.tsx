@@ -49,6 +49,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
   const [copiedId, setCopiedId] = useState(false);
   const [isRawJsonOpen, setIsRawJsonOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [retryingPostprocess, setRetryingPostprocess] = useState(false);
 
   // 1. Fetch real jobs list from backend
   const fetchJobs = useCallback(async () => {
@@ -154,6 +155,21 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
       }
     } catch (e: any) {
       toast.error(selectedJobIsRunning ? 'Failed to cancel job' : 'Failed to delete job', { description: e?.message });
+    }
+  };
+
+  const handleRetryPostprocess = async () => {
+    if (!selectedJobId || retryingPostprocess) return;
+    setRetryingPostprocess(true);
+    try {
+      await getApiClient().retryPostprocess(selectedJobId);
+      toast.success('Production processing restarted from the immutable master');
+      await fetchSelectedJobDetails(selectedJobId);
+      await fetchJobs();
+    } catch (e: any) {
+      toast.error('Failed to retry production processing', { description: e?.message });
+    } finally {
+      setRetryingPostprocess(false);
     }
   };
 
@@ -409,9 +425,9 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                   <div className="space-y-1 text-left w-full sm:w-auto">
                     <div className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
                       <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4" />
-                      <span>3D Mesh Generation Succeeded</span>
+                      <span>Production Asset Ready</span>
                     </div>
-                    <p className="text-[11px] text-zinc-300">The GLB asset is compiled and available for preview and export.</p>
+                    <p className="text-[11px] text-zinc-300">The canonical production artifacts are available for preview and export.</p>
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
@@ -433,11 +449,24 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 </div>
               )}
 
+              {isFailed && (selectedJob.result as any)?.asset_root && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-amber-200">Production processing failed</div>
+                    <div className="text-[10px] text-amber-100/70 mt-0.5">The immutable master is preserved, so production processing can be retried without rerunning AI inference.</div>
+                  </div>
+                  <button type="button" onClick={() => void handleRetryPostprocess()} disabled={retryingPostprocess} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[10px] font-bold text-black disabled:opacity-50">
+                    <HugeiconsIcon icon={RefreshCw} size={16} className={retryingPostprocess ? 'animate-spin' : ''} />
+                    {retryingPostprocess ? 'Retrying…' : 'Retry Production Processing'}
+                  </button>
+                </div>
+              )}
+
               {(selectedJob.result as any)?.artifacts && (
                 <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3 md:col-span-2">
                   <div className="flex items-center gap-2 text-xs font-bold text-white">
                     <HugeiconsIcon icon={LayersIcon} size={16} className="w-4 h-4 text-primary" />
-                    <span>Artifacts</span>
+                    <span>Artifacts</span><span className="ml-auto text-[9px] text-zinc-500">Backend artifact manifest</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     {Object.entries((selectedJob.result as any).artifacts).flatMap(([group, value]: [string, any]) => {

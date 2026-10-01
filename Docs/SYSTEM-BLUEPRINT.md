@@ -321,3 +321,9 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - Model readiness is based on canonical manifest paths, real local checkpoint payloads, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract.
 - The workspace uses backend capability metadata for route selection, keeps unsupported multiview gated, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
 - Artifact naming is UUID-based across generation/segmentation/rig outputs, and stale request temp directories are removed during scheduler recovery.
+
+
+## Runtime Contract Update — 2026-10-02
+- Interactive mesh tools run in-process through `/api/v1/mesh-tools/*`; the default runtime does not launch a browser-facing port 8200 sidecar.
+- Durable job polling owns generation progress; mesh-tool operations may use SSE for operation-level progress.
+- Failed production post-processing keeps the canonical asset root and immutable master so the job can retry without model inference.

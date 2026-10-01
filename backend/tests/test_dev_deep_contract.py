@@ -49,3 +49,35 @@ def test_canonical_result_manifest_marks_optional_exports_truthfully():
     assert result["artifacts"]["game_ready"]["fbx"]["status"] == "unavailable"
     assert result["artifacts"]["collision"]["status"] == "skipped"
     assert result["artifacts"]["qa_report"]["status"] == "ready"
+
+
+def test_canonical_workspace_is_deterministic(monkeypatch, tmp_path):
+    from postprocess import pipeline
+    monkeypatch.setattr(pipeline, "_storage_root", lambda: tmp_path)
+    result = {"output_mesh_path": str(tmp_path / "dragon.glb")}
+    first = pipeline.canonical_asset_workspace("job-123", result, {"asset_name": "Dragon"})
+    second = pipeline.canonical_asset_workspace("job-123", result, {"asset_name": "Dragon"})
+    assert first == second
+    assert first.parent == tmp_path
+
+
+def test_artifact_manifest_marks_optional_export_failure():
+    from pathlib import Path
+    from postprocess.pipeline import _build_result
+    result = _build_result(
+        "job-1",
+        Path("/tmp/asset_job-1"),
+        "asset",
+        {},
+        {
+            "game_ready": {"glb": "/tmp/a.glb"},
+            "lods": {},
+            "collision": None,
+            "physics": None,
+            "textures": {},
+            "thumbnail": None,
+            "artifact_errors": {"fbx": "Blender unavailable"},
+        },
+    )
+    assert result["artifacts"]["game_ready"]["fbx"]["status"] == "failed"
+    assert result["artifacts"]["game_ready"]["fbx"]["error"] == "Blender unavailable"
