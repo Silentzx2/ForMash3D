@@ -223,8 +223,9 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 self.model_id, base_name, output_format
             )
 
+            use_remesh = bool(inputs.get("use_remesh", False))
             final_mesh_path = self.paint_pipeline(
-                str(mesh_path), str(image_path), str(output_path)
+                str(mesh_path), str(image_path), str(output_path), use_remesh=use_remesh
             )
 
             if final_mesh_path != str(output_path):

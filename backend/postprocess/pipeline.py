@@ -5,11 +5,13 @@ in the ported services under backend/postprocess/services/.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -46,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 GenerationProgress = Optional[Callable[[float, str, str], None]]
 
-MAX_PRODUCTION_FACES = 50_000
+MAX_PRODUCTION_FACES = 200_000
 _FORMATS = ("glb", "gltf", "fbx", "obj", "stl", "ply")
 
 
@@ -193,25 +195,57 @@ def _export_glb(mesh: trimesh.Trimesh) -> bytes:
 
 
 def _export_gltf_embedded(glb_bytes: bytes, target: Path) -> None:
-    with tempfile.TemporaryDirectory(prefix="formash3d-gltf-") as temp_dir:
-        temp_root = Path(temp_dir)
-        input_path = temp_root / "mesh.glb"
-        input_path.write_bytes(glb_bytes)
-        expr = (
-            "import bpy; "
-            "bpy.ops.wm.read_factory_settings(use_empty=True); "
-            f"bpy.ops.import_scene.gltf(filepath={str(input_path)!r}); "
-            f"bpy.ops.export_scene.gltf(filepath={str(target)!r}, export_format='GLTF_EMBEDDED')"
-        )
-        result = subprocess.run(
-            [BLENDER_EXECUTABLE, "--background", "--python-expr", expr],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0 or not target.exists():
+    # 1. Try pure python glb-to-embedded-gltf first (no external binary dependency)
+    try:
+        if len(glb_bytes) >= 12:
+            magic, version, length = struct.unpack_from("<4sII", glb_bytes, 0)
+            if magic == b"glTF":
+                offset = 12
+                json_data = None
+                bin_data = b""
+                while offset < len(glb_bytes):
+                    chunk_len, chunk_type = struct.unpack_from("<I4s", glb_bytes, offset)
+                    offset += 8
+                    chunk_payload = glb_bytes[offset : offset + chunk_len]
+                    offset += chunk_len
+                    if chunk_type == b"JSON":
+                        json_data = json.loads(chunk_payload.decode("utf-8"))
+                    elif chunk_type in (b"BIN\x00", b"BIN"):
+                        bin_data = chunk_payload
+
+                if json_data is not None:
+                    if bin_data and "buffers" in json_data and len(json_data["buffers"]) > 0:
+                        b64_uri = "data:application/octet-stream;base64," + base64.b64encode(bin_data).decode("ascii")
+                        json_data["buffers"][0]["uri"] = b64_uri
+                    target.write_text(json.dumps(json_data, indent=2), encoding="utf-8")
+                    return
+    except Exception as exc:
+        logger.debug("Pure Python GLTF embedded conversion failed: %s; trying Blender fallback", exc)
+
+    # 2. Blender fallback if installed
+    if shutil.which(BLENDER_EXECUTABLE):
+        with tempfile.TemporaryDirectory(prefix="formash3d-gltf-") as temp_dir:
+            temp_root = Path(temp_dir)
+            input_path = temp_root / "mesh.glb"
+            input_path.write_bytes(glb_bytes)
+            expr = (
+                "import bpy; "
+                "bpy.ops.wm.read_factory_settings(use_empty=True); "
+                f"bpy.ops.import_scene.gltf(filepath={str(input_path)!r}); "
+                f"bpy.ops.export_scene.gltf(filepath={str(target)!r}, export_format='GLTF_EMBEDDED')"
+            )
+            result = subprocess.run(
+                [BLENDER_EXECUTABLE, "--background", "--python-expr", expr],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0 and target.exists():
+                return
             detail = (result.stderr or result.stdout or "").strip()[-2000:]
             raise RuntimeError(f"Embedded GLTF export failed: {detail}")
+
+    raise RuntimeError("Unable to export embedded GLTF: conversion failed and Blender is not installed.")
 
 
 def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
@@ -226,6 +260,9 @@ def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
     material = getattr(visual, "material", None)
     if material is None:
         return False
+
+    if getattr(material, "image", None) is not None:
+        return True
 
     return any(
         getattr(material, attribute, None) is not None
@@ -527,7 +564,7 @@ def run_postprocess_job(
         or bool(job_inputs.get("quad_topology"))
     )
 
-    if is_quad_requested:
+    if is_quad_requested and not native_textures:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
         retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
         try:
@@ -550,6 +587,8 @@ def run_postprocess_job(
         except Exception as exc:
             retopo_stats = {"status": "failed", "trigger": "quad_requested", "error": str(exc)}
             logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
+    elif is_quad_requested and native_textures:
+        retopo_stats = {"status": "skipped", "reason": "Native textures are preserved; quad retopology would strip UV and material mapping."}
     elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
         retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
@@ -571,23 +610,44 @@ def run_postprocess_job(
         retopo_stats = {"status": "skipped", "reason": "Asset feature does not declare a solid AI-generation contract."}
 
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
+    auto_optimize = bool(job_inputs.get("auto_optimize", False))
+    raw_target_polycount = job_inputs.get("target_polycount")
+    has_explicit_target = raw_target_polycount is not None and int(raw_target_polycount) > 0
+    repaired_face_count = len(repaired.faces)
+
     if is_quad_requested and retopo_stats.get("status") == "completed":
         optimized = repaired
         optimize_stats = {"passthrough": True, "reason": "Quad-dominant topology preserved from retopology pass"}
+    elif not auto_optimize and not has_explicit_target:
+        # Native/raw resolution requested without auto-decimation
+        optimized = repaired
+        optimize_stats = {"passthrough": True, "reason": "Native resolution preserved (auto_optimize is false and no target_polycount specified)"}
     else:
-        target_faces = min(MAX_PRODUCTION_FACES, max(5_000, int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)))
-        optimized, optimize_stats = run_optimize(
-            repaired,
-            OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
-                            permissive=False, aggressive=False, lock_border=False),
-        )
+        target_faces = min(MAX_PRODUCTION_FACES, max(5_000, int(raw_target_polycount or MAX_PRODUCTION_FACES)))
+        if repaired_face_count <= target_faces and not auto_optimize:
+            optimized = repaired
+            optimize_stats = {"passthrough": True, "reason": f"Repaired mesh face count ({repaired_face_count}) already within target ({target_faces})"}
+        else:
+            optimized, optimize_stats = run_optimize(
+                repaired,
+                OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
+                                permissive=False, aggressive=False, lock_border=False),
+            )
     quality_trace["optimized"] = {
         **mesh_stats(optimized).model_dump(),
         "native_textures": _has_native_textures(optimized),
     }
     if native_textures:
         if not _has_native_textures(optimized):
-            raise RuntimeError("Texture-aware optimization lost native material data.")
+            logger.warning(
+                "Texture-aware optimization lost native material data for %s; safely falling back to repaired mesh to preserve textures.",
+                job_id,
+            )
+            optimized = repaired
+            optimize_stats = {
+                "passthrough": True,
+                "reason": "Retained repaired mesh because decimation lost material data",
+            }
         uv_mesh = optimized
         uv_stats = {"preserved": True, "native_textures": True,
                     "texture_aware_decimation": bool(not optimize_stats.get("passthrough"))}
@@ -673,7 +733,7 @@ def run_postprocess_job(
         }.get(preset, [1.0, 0.6, 0.3, 0.15])
         ratios = job_inputs.get("lod_ratios")
         lod_ratios = ratios if isinstance(ratios, list) and ratios else [
-            1.0 if i == 0 else max(0.025, target_ratio * ratio)
+            1.0 if i == 0 else max(0.025, float(ratio))
             for i, ratio in enumerate(preset_ratios)
         ]
         try:
@@ -837,6 +897,8 @@ def run_postprocess_job(
     }
     final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=resolved_target_polycount, lod_enabled=lod_enabled)
     final_result["model_url"] = final_result["game_ready_url"]
+    final_result["quality_trace"] = quality_trace
+    final_result["optimize"] = optimize_stats
     _write_json(asset_manifest, final_result)
 
     if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():

@@ -143,11 +143,11 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
 
             # Extract parameters
             output_format = inputs.get("output_format", "glb")
-            num_steps = inputs.get("num_steps", 30)
+            num_steps = int(inputs.get("num_steps", 50))
             cfg_scale = inputs.get("cfg_scale", 7.0)
             grid_resolution = inputs.get("grid_resolution", 384)
             auto_optimize = bool(inputs.get("auto_optimize", False))
-            num_faces = inputs.get("num_faces", -1 if not auto_optimize else 50000)
+            num_faces = int(inputs.get("num_faces", -1))
             seed = inputs.get("seed", None)
             return_parts = inputs.get("return_parts", True)
             return_volumes = inputs.get("return_volumes", False)
@@ -281,7 +281,7 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
                 "num_steps": {
                     "type": "integer",
                     "description": "Number of diffusion sampling steps",
-                    "default": 30,
+                    "default": 50,
                     "minimum": 10,
                     "maximum": 100,
                     "required": False
@@ -303,9 +303,9 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "num_faces": {
                     "type": "integer",
-                    "description": "Target number of faces for output mesh",
-                    "default": 50000,
-                    "minimum": 10000,
+                    "description": "Target number of faces for output mesh (-1 for raw full resolution)",
+                    "default": -1,
+                    "minimum": -1,
                     "maximum": 200000,
                     "required": False
                 },

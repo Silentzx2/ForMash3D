@@ -51,7 +51,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
         if ultrashape_root is None:
             ultrashape_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "UltraShape")
         if hunyuan3d_root is None:
-            hunyuan3d_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "Hunyuan3D-2.1")
+            hunyuan3d_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "hunyuan3d-shape-v2-1")
         if feature_type is None:
             feature_type = self.FEATURE_TYPE
         if supported_output_formats is None:
@@ -205,8 +205,8 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 raise ValueError(f"Unsupported output format: {output_format}")
             
             num_inference_steps = inputs.get("num_inference_steps", 50)
-            num_latents = inputs.get("num_latents", 16384)
-            octree_res = inputs.get("octree_res", 512)
+            num_latents = int(inputs.get("num_latents", 32768))
+            octree_res = int(inputs.get("octree_res", 1024))
             chunk_size = inputs.get("chunk_size", 8000)
             scale = inputs.get("scale", 0.99)
             seed = inputs.get("seed", 42)
@@ -244,7 +244,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             if not refined_mesh_path.endswith(output_format):
                 logger.info(f"Converting mesh to {output_format} format...")
                 mesh = self.mesh_processor.load_mesh(refined_mesh_path)
-                self.mesh_processor.save_mesh(mesh, final_output_path)
+                self.mesh_processor.save_mesh(mesh, final_output_path, do_normalise=False)
             else:
                 # Just move to final location
                 import shutil
@@ -310,7 +310,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 "num_latents": {
                     "type": "integer",
                     "description": "Number of latent tokens for shape representation",
-                    "default": 16384,# 32768,
+                    "default": 32768,
                     "minimum": 8192,
                     "maximum": 65536,
                     "required": False
@@ -318,7 +318,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 "octree_res": {
                     "type": "integer",
                     "description": "Octree resolution for marching cubes extraction",
-                    "default": 512,
+                    "default": 1024,
                     "enum": [512, 1024, 2048],
                     "required": False
                 },

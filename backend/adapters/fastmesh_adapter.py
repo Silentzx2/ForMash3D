@@ -176,7 +176,7 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
             # Save retopologized mesh
             retopo_mesh = generation_result["mesh"]
             if retopo_mesh is not None:
-                self.mesh_processor.save_mesh(retopo_mesh, output_path)
+                self.mesh_processor.save_mesh(retopo_mesh, output_path, do_normalise=False)
                 if poly_type == "quad":
                     self.mesh_processor.tri2quad(output_path)
             else:

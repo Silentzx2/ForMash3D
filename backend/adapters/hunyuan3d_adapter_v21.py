@@ -408,9 +408,9 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
                 base_name = f"{self.model_id}_{image_path.stem}"
                 output_path = self._generate_output_path(base_name, output_format)
 
-                # Run texture painting
+                # Run texture painting (preserve full geometry without 40k decimation)
                 final_mesh_path = self.paint_pipeline(
-                    temp_mesh_path, str(image_path), str(output_path)
+                    temp_mesh_path, str(image_path), str(output_path), use_remesh=False
                 )
 
                 # Ensure the output is at our desired path

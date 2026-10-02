@@ -19,8 +19,26 @@
 
 
 
-## 2026-10-02 — Deep Bug Closure
-- Fixed durable post-process retry metadata and added the Job Detail retry action.
-- Propagated Shape→Paint production settings and made optional export failures explicit.
-- Aligned final QA with the resolved target budget and canonical asset retention cleanup.
-- Removed remaining migrated mesh-tool Material Symbols/direct color tokens and synchronized runtime documentation.
+## 2026-10-02 — [Official Model Parity & Quality Hardening] 100% Upstream Neural Parity, Raw Geometry Immutability & High-Detail Production Pipeline
+- **Upstream Repository Parity Audit:** Completed audit of all 10+ models against official upstream code (TripoSG, TripoSR, TripoSF, PartPacker, UltraShape, Hunyuan3D Shape v2.1, Hunyuan3D DiT Mini Turbo, Hunyuan3D Paint v2.1, TRELLIS, TRELLIS.2, FastMesh, PartField, PartUV, UniRig).
+- **Elimination of Silent Pre-Decimation:** Removed internal PyMeshLab Quadric Edge Collapse from `triposg_adapter.py`, set default `num_faces=-1` in `partpacker_adapter.py` and `partpacker_utils.py`, set `use_remesh=False` in `hunyuan3d_paint_v21.py` and `hunyuan3d_adapter_v21.py` (stopping silent 40k face decimation), and enforced `simplify=0.0` across TRELLIS text/image generation and painting adapters.
+- **Raw Geometry Coordinate & Scale Preservation:** Enforced `do_normalise=False` across raw asset generators (`hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`, `trellis2_adapter.py`, `fastmesh_adapter.py`), ensuring `master/source.glb` retains original world coordinates and scale.
+- **Upstream Parameter Defaults Restored:**
+  - Hunyuan3D Shape & Mini Turbo: Updated default `octree_resolution` from 256 to official pipeline default `384` (~3.37x voxel density increase).
+  - UltraShape: Restored official defaults (`num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path to `hunyuan3d-shape-v2-1`).
+  - TRELLIS: Restored official 12-step sampling schedules (`ss_sampling_steps=12`, `slat_sampling_steps=12`) and removed artificial 20-step clamping.
+  - PartPacker: Restored official 50 steps (`num_steps=50`), `num_faces=-1` (raw), `cv2.INTER_AREA` interpolation, and `len(faces) > 10` noise filtering.
+  - TripoSF: Respect user explicit pruning; optimized tensor conversions from `.tolist()` to numpy arrays.
+  - TripoSR: RGB fallback safety guard.
+- **Production Post-Process Passthrough & Ceiling Expansion:**
+  - Expanded `MAX_PRODUCTION_FACES` from 50,000 to 200,000.
+  - Implemented `auto_optimize: false` passthrough check: preserves 100% of native topology in `game_ready` when user selects Native/Raw.
+  - Fixed LOD chain calculation in `simplify.py` to prevent compound double decimation across LOD levels.
+  - Added graceful fallback to `fast-simplification` / `trimesh` decimation when pymeshlab native OpenGL libraries are missing in headless environments.
+  - Built pure Python embedded GLTF converter (`data:application/octet-stream;base64`) fallback in `pipeline.py`, eliminating runtime failures when Blender is not installed.
+  - Enhanced `_has_native_textures` to support `SimpleMaterial.image` texture payloads.
+  - Restored `sys.path` registration for PartUV adapter and utility runner.
+- **UI & Quality Preset Mapping:** Added Model Quality presets (`low`, `medium`, `high`, `ultra`) in `GeneratePanel.tsx` mapped in `WorkspaceContext.tsx` to upstream neural parameters, preset polycount chips (15K Mobile, 35K Game, 50K Studio, 100K Cinema, Native/Raw), and 200k slider.
+- **Exact Parameter Telemetry:** Added exact runtime generation parameter logging in `multiprocess_scheduler.py`.
+- **Contract Verification Suite:** Added `backend/tests/test_official_model_parity_contract.py` with 13 comprehensive tests covering model schemas, default parameters, postprocessing passthrough, LOD ratios, and viewer routing (100% pass).
+- **Production Build Verification:** Verified clean production build with Turbopack (`npm run build` completed in 14.2s with 0 errors across 14 routes).

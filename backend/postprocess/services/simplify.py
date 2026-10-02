@@ -112,7 +112,23 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
                 "seam_limited": False, "seams_broken": False, "passthrough": True,
                 "texture_preserved": True, "texture_decimator_error": str(exc),
             }
-        raise
+        try:
+            reduced = mesh.simplify_quadric_decimation(face_count=int(target_faces))
+            triangles = int(len(reduced.faces))
+            return reduced, {
+                "input_triangles": input_faces, "triangles": triangles,
+                "target_faces": int(target_faces), "achieved_ratio": round(triangles / input_faces, 6) if input_faces else 1.0,
+                "seam_limited": triangles > target_faces, "seams_broken": False,
+                "passthrough": False,
+                "texture_preserved": False,
+            }
+        except Exception:
+            return mesh, {
+                "input_triangles": input_faces, "triangles": input_faces,
+                "target_faces": int(target_faces), "achieved_ratio": 1.0,
+                "seam_limited": False, "seams_broken": False, "passthrough": True,
+                "texture_preserved": False, "decimator_error": str(exc),
+            }
     triangles = int(len(result.faces))
     return result, {
         "input_triangles": input_faces, "triangles": triangles,

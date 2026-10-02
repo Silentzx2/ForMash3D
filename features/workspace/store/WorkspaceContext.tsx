@@ -622,7 +622,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const off4 = apiClient.on('execution_error', onError);
     return () => { off1(); off2(); off3(); off4(); };
   }, []);
-
   const addAsset = useCallback((asset: ModelAsset) => {
     setLocalAssets(prev => {
       const idx = prev.findIndex(a =>
@@ -653,6 +652,130 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setSelectedAssetId(asset.id);
     setViewportResetTrigger(prev => prev + 1);
   }, []);
+
+  // Poll activeTask from backend so UI pipeline steps, progress, and failure update in real time
+  useEffect(() => {
+    const jobId = activeTask?.id;
+    if (!jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {
+      return;
+    }
+    if (activeTask?.status === 'completed' || activeTask?.status === 'failed' || activeTask?.status === 'interrupted') {
+      return;
+    }
+
+    let stopped = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
+      if (stopped) return;
+      try {
+        const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`);
+        if (!res.ok) {
+          if (!stopped) timerId = setTimeout(poll, 2500);
+          return;
+        }
+        const payload = await res.json();
+        const raw = payload?.data ?? payload;
+        if (!raw || stopped) return;
+
+        const data = normalizeBackendJob(raw);
+        const progress = data.progress;
+        const currentMessage = data.message || (data.status === 'processing' ? 'Processing...' : 'Queued on backend');
+
+        setExecutionProgress(progress);
+        setExecutionStep(currentMessage);
+
+        setActiveTask(prev => {
+          if (!prev || prev.id !== jobId) return prev;
+          const nextStatus = data.status === 'completed' ? 'completed'
+            : data.status === 'failed' ? 'failed'
+            : data.status === 'cancelled' ? 'interrupted'
+            : 'running';
+          return {
+            ...prev,
+            status: nextStatus,
+            progress,
+            stage: data.stage,
+            currentStep: currentMessage,
+            errorMessage: data.error_message || prev.errorMessage,
+            errorCode: (data as any).error_code || prev.errorCode,
+            logs: data.logs || prev.logs,
+            result: data.result || prev.result,
+          };
+        });
+
+        if (data.status === 'failed' || data.status === 'cancelled') {
+          setIsExecuting(false);
+          const errMsg = data.error_message || 'The job encountered an error during execution';
+          setExecutionStep(errMsg);
+          const diagnostic = diagnoseJobError({
+            id: jobId,
+            status: 'failed',
+            error: errMsg,
+            error_message: errMsg,
+            provider: activeTaskRef.current?.provider || '',
+          } as any);
+          setActiveTask(prev => prev && prev.id === jobId ? {
+            ...prev,
+            status: data.status === 'cancelled' ? 'interrupted' : 'failed',
+            currentStep: errMsg,
+            errorMessage: errMsg,
+            diagnostic,
+          } : prev);
+          toast.error('Process failed', { description: errMsg });
+          return;
+        }
+
+        if (data.status === 'completed') {
+          setIsExecuting(false);
+          setExecutionProgress(100);
+          setExecutionStep('Completed');
+          toast.success('Generation complete', {
+            description: activeTaskRef.current?.title || '3D Asset ready',
+          });
+
+          // If output has model_url, hydrate into asset viewer
+          const result = data.result;
+          if (result?.model_url || result?.active_model_url) {
+            const modelUrl = (result.active_model_url || result.model_url) as string;
+            const promptTitle = activeTaskRef.current?.title;
+            const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
+            void prefetchGLB(modelUrl);
+            const outputAsset = normalizeModelAsset({
+              id: jobId,
+              name: cleanName,
+              category: 'generation',
+              thumbnail: result.thumbnail_url || '',
+              source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
+              topology: (result.topology as any) || 'Triangle',
+              format: 'GLB',
+              postprocessStatus: result.postprocess_status || 'completed',
+              tags: ['AI Generated'],
+            });
+            addAsset(outputAsset);
+            setSelectedAssetId(outputAsset.id);
+            setViewportResetTrigger(prev => prev + 1);
+            loadModelInViewer(modelUrl, cleanName, outputAsset as any);
+          }
+          return;
+        }
+
+        if (!stopped) {
+          timerId = setTimeout(poll, document.visibilityState === 'hidden' ? 3000 : 1200);
+        }
+      } catch (err) {
+        if (!stopped) {
+          timerId = setTimeout(poll, 3000);
+        }
+      }
+    };
+
+    void poll();
+    return () => {
+      stopped = true;
+      if (timerId) clearTimeout(timerId);
+    };
+  }, [activeTask?.id, activeTask?.status, addAsset]);
 
   const selectAsset = useCallback((id: string) => {
     setSelectedAssetId(id);
@@ -868,21 +991,31 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         negative_prompt: generationSettings.negativePrompt || undefined,
       };
 
-      // Model-specific extraction settings: keep generation high-resolution while reserving
-      // decimation/retopology for post-processing. Values are conservative for the configured GPU budget.
-      const extractionResolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : 256;
+      // Model-specific extraction and inference settings: preserve official high-resolution geometry
+      // and ensure raw output is never decimated before downstream post-processing.
       if ((generationSettings.aiModel || '').includes('triposr')) {
-        modelParameters.mc_resolution = extractionResolution;
+        modelParameters.mc_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : currentQuality === 'medium' ? 256 : 128;
+      } else if ((generationSettings.aiModel || '').includes('triposg')) {
+        modelParameters.faces = -1;
+        modelParameters.num_inference_steps = currentQuality === 'ultra' ? 50 : currentQuality === 'high' ? 50 : currentQuality === 'medium' ? 35 : 25;
       } else if ((generationSettings.aiModel || '').includes('triposf')) {
-        modelParameters.resolution = extractionResolution;
+        modelParameters.resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : 256;
+        modelParameters.sample_points_num = currentQuality === 'ultra' ? 1638400 : 819200;
       } else if ((generationSettings.aiModel || '').includes('partpacker')) {
-        modelParameters.grid_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 448 : 384;
+        modelParameters.grid_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 448 : currentQuality === 'medium' ? 384 : 256;
         modelParameters.num_faces = -1;
       } else if ((generationSettings.aiModel || '').includes('ultrashape')) {
-        modelParameters.octree_res = currentQuality === 'ultra' ? 640 : 512;
+        modelParameters.octree_res = currentQuality === 'ultra' || currentQuality === 'high' ? 1024 : 512;
+        modelParameters.num_latents = 32768;
       } else if ((generationSettings.aiModel || '').includes('trellis2')) {
         modelParameters.decimation_target = -1;
         modelParameters.remesh = false;
+        modelParameters.texture_size = currentQuality === 'ultra' ? 4096 : currentQuality === 'high' ? 4096 : 2048;
+      } else if ((generationSettings.aiModel || '').includes('trellis')) {
+        modelParameters.simplify = 0.0;
+        modelParameters.texture_resolution = currentQuality === 'ultra' ? 2048 : 1024;
+      } else if ((generationSettings.aiModel || '').includes('hunyuan')) {
+        modelParameters.octree_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : currentQuality === 'medium' ? 384 : 256;
       }
 
       // Pass Paint-v2-1 parameters for shape models to enable auto-chaining

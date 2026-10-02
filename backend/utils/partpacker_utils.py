@@ -240,7 +240,7 @@ class PartPackerRunner:
 
             # Resize to target size
             image = cv2.resize(
-                image, (target_size, target_size), interpolation=cv2.INTER_LINEAR
+                image, (target_size, target_size), interpolation=cv2.INTER_AREA
             )
 
             # Convert to float and apply background
@@ -258,10 +258,10 @@ class PartPackerRunner:
     def generate_from_image(
         self,
         image_path: Union[str, Path, np.ndarray],
-        num_steps: int = 30,
+        num_steps: int = 50,
         cfg_scale: float = 7.0,
         grid_resolution: int = 384,
-        num_faces: int = 50000,
+        num_faces: int = -1,
         seed: Optional[int] = None,
         return_parts: bool = True,
         return_volumes: bool = True,
@@ -271,10 +271,10 @@ class PartPackerRunner:
 
         Args:
             image_path: Path to input image or numpy array
-            num_steps: Number of diffusion steps (default: 30)
+            num_steps: Number of diffusion steps (default: 50)
             cfg_scale: Classifier-free guidance scale (default: 7.0)
             grid_resolution: Grid resolution for mesh extraction (default: 384)
-            num_faces: Target number of faces for decimation (default: 50000)
+            num_faces: Target number of faces for decimation (default: -1, no decimation)
             seed: Random seed for reproducibility
             return_parts: Whether to return individual parts (default: True)
             return_volumes: Whether to return dual volumes (default: True)
@@ -342,13 +342,15 @@ class PartPackerRunner:
                 vertices, faces = results_part0["meshes"][0]
                 mesh_part0 = trimesh.Trimesh(vertices, faces)
                 mesh_part0.vertices = mesh_part0.vertices @ self.TRIMESH_GLB_EXPORT.T
-                mesh_part0 = postprocess_mesh(mesh_part0, num_faces)
+                if num_faces > 0:
+                    mesh_part0 = postprocess_mesh(mesh_part0, num_faces)
 
                 # Process part 1
                 vertices, faces = results_part1["meshes"][0]
                 mesh_part1 = trimesh.Trimesh(vertices, faces)
                 mesh_part1.vertices = mesh_part1.vertices @ self.TRIMESH_GLB_EXPORT.T
-                mesh_part1 = postprocess_mesh(mesh_part1, num_faces)
+                if num_faces > 0:
+                    mesh_part1 = postprocess_mesh(mesh_part1, num_faces)
 
                 # Split into connected components
                 parts = mesh_part0.split(only_watertight=False)
@@ -358,6 +360,9 @@ class PartPackerRunner:
                 if isinstance(splitted_mesh_part1, np.ndarray):
                     splitted_mesh_part1 = splitted_mesh_part1.tolist()
                 parts.extend(splitted_mesh_part1)
+
+                # Noise filter: parts with <= 10 faces are artifacts from trimesh.split
+                parts = [part for part in parts if len(part.faces) > 10]
 
                 # Assign colors to parts
                 if return_parts:
@@ -380,7 +385,8 @@ class PartPackerRunner:
                 vertices, faces = results["meshes"][0]
                 mesh = trimesh.Trimesh(vertices, faces)
                 mesh.vertices = mesh.vertices @ self.TRIMESH_GLB_EXPORT.T
-                mesh = postprocess_mesh(mesh, num_faces)
+                if num_faces > 0:
+                    mesh = postprocess_mesh(mesh, num_faces)
 
                 output["combined_mesh"] = mesh
 

@@ -27,6 +27,28 @@
 - [x] All bare `except:` clauses fixed in project code
 - [x] Current adapters import cleanly (verified by test suite)
 
+### Official Model Parity & Quality Hardening
+- [x] Complete upstream code audit comparing `backend/thirdparty/` against `backend/adapters/` across all 10+ models
+- [x] Remove destructive internal PyMeshLab decimation from `triposg_adapter.py`
+- [x] Set PartPacker defaults: `num_faces=-1` (raw), `num_steps=50`, `cv2.INTER_AREA`, noise part filtering
+- [x] Set `use_remesh=False` in Hunyuan3D Paint v2.1 to prevent silent 40,000 face quadric decimation
+- [x] Fix TRELLIS simplify defaults (`simplify=0.0` across text, image, and painting adapters)
+- [x] Fix TRELLIS 12-step sampling schedules and remove artificial 20-step clamping
+- [x] Restore TRELLIS.2 defaults: `decimation_target=-1`, `remesh=False`
+- [x] Update Hunyuan3D Shape and Mini Turbo default octree resolution to official `384`
+- [x] Restore UltraShape official defaults: `num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path
+- [x] Enforce `do_normalise=False` on raw mesh saves to preserve model coordinates and scale
+- [x] Expand `MAX_PRODUCTION_FACES` to 200,000 and enable `auto_optimize: false` native topology passthrough
+- [x] Prevent compound double decimation in LOD chain calculation
+- [x] Pure Python embedded GLTF converter fallback ensuring 100% resilient GLTF export in headless environments without Blender
+- [x] Enhanced `_has_native_textures` supporting `SimpleMaterial.image` texture payloads
+- [x] Restored `sys.path` registration for PartUV adapter and utility runner
+- [x] PyMeshLab decimation fallback to fast-simplification / trimesh when native OpenGL libraries are missing
+- [x] Add Model Quality presets (Low, Medium, High, Ultra) and expanded polycount slider in frontend UI
+- [x] Add runtime model generation parameter logging in `multiprocess_scheduler.py`
+- [x] 100% pass on parity contract test suite (`test_official_model_parity_contract.py`)
+- [x] Frontend production build verified (`npm run build` completed cleanly in 14.2s across all 14 routes)
+
 ### Runtime Contract Audit
 - [x] Remove non-functional direct Hunyuan Shape textured model registration
 - [x] Fix Shape/Mini Turbo → Paint generated mesh file-ID handoff
@@ -68,6 +90,8 @@
 
 ### Deep Bug-Resolution Completion
 - [x] Canonical artifact manifest and truthful required/optional artifact status
+- [x] Textured model post-processing protection against quad retopo stripping materials (`trellis_image_to_textured_mesh`)
+- [x] Live backend job status polling and failure propagation in `WorkspaceContext.tsx`
 - [x] Post-process retry from immutable master without re-running inference
 - [x] Deterministic SQLite path and durable Redis/SQL terminal job state
 - [x] Canonical asset workspace cleanup on job deletion

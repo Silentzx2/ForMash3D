@@ -160,7 +160,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 image = image.convert("RGBA")
 
             logger.info("Generating 3D shape with Mini Turbo...")
-            octree_res = min(512, max(64, int(inputs.get("octree_resolution", 256))))
+            octree_res = min(512, max(64, int(inputs.get("octree_resolution", 384))))
             num_steps = inputs.get("num_inference_steps", 20)
             guidance_scale = inputs.get("guidance_scale", 5.0)
             low_vram_mode = inputs.get("low_vram_mode", True)
@@ -171,13 +171,11 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
-                low_vram_mode=low_vram_mode,
-                enable_flashvdm=enable_flashvdm,
             )[0]
 
             base_name = f"{self.model_id}_{image_path.stem}"
             output_path = self._generate_output_path(base_name, output_format)
-            self.mesh_processor.save_mesh(mesh_result, output_path)
+            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False)
 
             final_mesh = self.mesh_processor.load_mesh(output_path)
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)
@@ -215,7 +213,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 "octree_resolution": {
                     "type": "integer",
                     "description": "Octree resolution for mesh decoding",
-                    "default": 256,
+                    "default": 384,
                     "required": False,
                 },
                 "num_inference_steps": {

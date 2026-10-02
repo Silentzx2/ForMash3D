@@ -513,7 +513,9 @@ export const GeneratePanel: React.FC = () => {
       removeBackground: true,
       autoOptimizeSettings: {
         ...prev.autoOptimizeSettings,
-        targetPolycount: prev.autoOptimizeSettings?.targetPolycount || 50000,
+        targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
+          ? prev.autoOptimizeSettings.targetPolycount
+          : 50000,
       },
     }));
   };
@@ -1219,26 +1221,60 @@ export const GeneratePanel: React.FC = () => {
                 </span>
               </div>
 
-              {/* 1. TargetIcon Polycount Budget */}
+              {/* 0. Model Quality Preset (Inference resolution & fidelity) */}
+              <div className="space-y-1.5 pb-1 border-b border-white/[0.04]">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-200 font-medium">Model Quality</span>
+                  <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25 capitalize">
+                    {generationSettings.meshQuality || 'high'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {(['low', 'medium', 'high', 'ultra'] as const).map((q) => {
+                    const isSelected = (generationSettings.meshQuality || 'high') === q;
+                    return (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshQuality: q }))}
+                        className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer capitalize font-bold text-[10px] ${
+                          isSelected
+                            ? 'bg-primary text-black shadow-sm font-black'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
+                        }`}
+                      >
+                        {q}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 1. Target Polycount Budget */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">TargetIcon Polycount</span>
+                  <span className="text-zinc-200 font-medium">Target Polycount</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {((generationSettings.autoOptimizeSettings?.targetPolycount || 50000)).toLocaleString()} tris
+                    {generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount || 50000) <= 0
+                      ? 'Native (Raw)'
+                      : `${((generationSettings.autoOptimizeSettings?.targetPolycount || 50000)).toLocaleString()} tris`}
                   </span>
                 </div>
 
                 {/* Preset Chips */}
-                <div className="grid grid-cols-3 gap-1">
+                <div className="grid grid-cols-5 gap-1">
                   {[
                     { label: '15K', val: 15000, desc: 'Mobile' },
                     { label: '35K', val: 35000, desc: 'Game' },
                     { label: '50K', val: 50000, desc: 'Studio' },
+                    { label: '100K', val: 100000, desc: 'Cinema' },
+                    { label: 'Native', val: -1, desc: 'Raw' },
                   ].map((preset) => {
-                    const isSelected = (generationSettings.autoOptimizeSettings?.targetPolycount || 50000) === preset.val;
+                    const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                    const isSelected = currentTarget === preset.val;
                     return (
                       <button
-                        key={preset.val}
+                        key={preset.label}
                         type="button"
                         onClick={() => {
                           setGenerationSettings(prev => ({
@@ -1255,8 +1291,8 @@ export const GeneratePanel: React.FC = () => {
                             : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
                         }`}
                       >
-                        <span className="text-[11px] font-black leading-tight">{preset.label}</span>
-                        <span className={`text-[8px] ${isSelected ? 'text-black/75 font-bold' : 'text-zinc-500'}`}>{preset.desc}</span>
+                        <span className="text-[10px] font-black leading-tight">{preset.label}</span>
+                        <span className={`text-[7.5px] ${isSelected ? 'text-black/75 font-bold' : 'text-zinc-500'}`}>{preset.desc}</span>
                       </button>
                     );
                   })}
@@ -1266,9 +1302,9 @@ export const GeneratePanel: React.FC = () => {
                 <input
                   type="range"
                   min={5000}
-                  max={50000}
+                  max={200000}
                   step={5000}
-                  value={generationSettings.autoOptimizeSettings?.targetPolycount || 50000}
+                  value={generationSettings.autoOptimizeSettings?.targetPolycount && generationSettings.autoOptimizeSettings.targetPolycount > 0 ? generationSettings.autoOptimizeSettings.targetPolycount : 50000}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     setGenerationSettings(prev => ({
@@ -1286,9 +1322,13 @@ export const GeneratePanel: React.FC = () => {
               {/* 2. Topology Selection: Triangles vs Quads */}
               <div className="space-y-1 pt-1 border-t border-white/[0.04]">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Topology TargetIcon</span>
+                  <span className="text-zinc-200 font-medium">Topology Target</span>
                   <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'Quads (post-process)' : 'Triangles'}
+                    {activeModelObj?.supports_texture
+                      ? 'Triangles (PBR Native)'
+                      : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                      ? 'Quads (post-process)'
+                      : 'Triangles'}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -1311,6 +1351,7 @@ export const GeneratePanel: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    disabled={Boolean(activeModelObj?.supports_texture && generationSettings.generateTexture !== false)}
                     onClick={() => {
                       setGenerationSettings(prev => ({
                         ...prev,
@@ -1318,13 +1359,16 @@ export const GeneratePanel: React.FC = () => {
                         quadTopology: true,
                       }));
                     }}
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
-                      generationSettings.topologyMode === 'quad' || generationSettings.quadTopology
-                        ? 'bg-primary text-black font-black shadow-sm'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08]'
+                    title={activeModelObj?.supports_texture && generationSettings.generateTexture !== false ? 'Quads only available on untextured raw meshes' : 'Convert to quad-dominant topology in post-processing'}
+                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+                      activeModelObj?.supports_texture && generationSettings.generateTexture !== false
+                        ? 'opacity-40 cursor-not-allowed bg-[hsl(var(--surface-1))] text-zinc-500 border border-white/[0.04]'
+                        : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
                     }`}
                   >
-                    <span>■ Quads (post-process)</span>
+                    <span>■ Quads (raw only)</span>
                   </button>
                 </div>
               </div>

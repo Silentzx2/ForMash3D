@@ -220,11 +220,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
 
             candidate_mesh = mesh or outputs["mesh"][0]
             if simplify is None:
-                if auto_optimize and target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
-                    simplify = max(0.0, min(0.85, 1.0 - (float(target_polycount) / float(len(candidate_mesh.faces)))))
-                else:
-                    # Raw-generation mode keeps the model-native mesh intact; optimization belongs to post-processing.
-                    simplify = 0.0
+                # Raw-generation mode keeps the model-native mesh intact; optimization belongs to post-processing.
+                simplify = 0.0
 
             # Extract mesh from Gaussian representation
             mesh = self.postprocessing_utils.to_trimesh(
@@ -331,6 +328,22 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                     "minimum": 0,
                     "required": False
                 },
+                "ss_sampling_steps": {
+                    "type": "integer",
+                    "description": "Sparse structure sampling steps (official default: 12)",
+                    "default": 12,
+                    "minimum": 1,
+                    "maximum": 50,
+                    "required": False
+                },
+                "slat_sampling_steps": {
+                    "type": "integer",
+                    "description": "Structured latent sampling steps (official default: 12)",
+                    "default": 12,
+                    "minimum": 1,
+                    "maximum": 50,
+                    "required": False
+                },
                 "texture_resolution": {
                     "type": "integer",
                     "description": "Output texture resolution",
@@ -340,9 +353,9 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 },
                 "simplify": {
                     "type": "number",
-                    "description": "Mesh simplification ratio (0-1, lower = more simplification)",
-                    "default": 0.95,
-                    "minimum": 0.01,
+                    "description": "Mesh simplification ratio (0 for raw native output, or 0.01-1.0)",
+                    "default": 0.0,
+                    "minimum": 0.0,
                     "maximum": 1.0,
                     "required": False
                 },
@@ -518,10 +531,12 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             tex_bake_mode = inputs.get("texture_bake_mode", "fast")
             guidance = inputs.get("guidance_scale", 7.5)
 
-            ss_steps = max(20, min(50, int(num_steps)))
-            slat_steps = max(20, min(50, int(num_steps)))
+            ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 12)))
+            slat_steps = int(inputs.get("slat_sampling_steps", inputs.get("num_inference_steps", 12)))
+            ss_steps = max(1, min(50, ss_steps))
+            slat_steps = max(1, min(50, slat_steps))
 
-            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (steps={ss_steps}, res={texture_resolution})")
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (ss_steps={ss_steps}, slat_steps={slat_steps}, res={texture_resolution})")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
@@ -565,11 +580,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
 
             candidate_mesh = mesh or outputs["mesh"][0]
             if simplify is None:
-                if auto_optimize and target_polycount and hasattr(candidate_mesh, "faces") and len(candidate_mesh.faces) > target_polycount:
-                    simplify = max(0.0, min(0.85, 1.0 - (float(target_polycount) / float(len(candidate_mesh.faces)))))
-                else:
-                    # Raw-generation mode keeps the model-native mesh intact; optimization belongs to post-processing.
-                    simplify = 0.0
+                # Raw-generation mode keeps the model-native mesh intact; optimization belongs to post-processing.
+                simplify = 0.0
 
             # Extract mesh from Gaussian representation
             mesh = self.postprocessing_utils.to_trimesh(
@@ -586,7 +598,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             output_path = self._generate_output_path(
                 image_path, output_format, is_prompt=False
             )
-            self.mesh_processor.save_mesh(mesh, output_path, do_normalise=True)
+            self.mesh_processor.save_mesh(mesh, output_path, do_normalise=False)
 
             # Generate thumbnail
             thumbnail_path = self._generate_thumbnail_path(output_path)
@@ -682,6 +694,22 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     "minimum": 0,
                     "required": False
                 },
+                "ss_sampling_steps": {
+                    "type": "integer",
+                    "description": "Sparse structure sampling steps (official default: 12)",
+                    "default": 12,
+                    "minimum": 1,
+                    "maximum": 50,
+                    "required": False
+                },
+                "slat_sampling_steps": {
+                    "type": "integer",
+                    "description": "Structured latent sampling steps (official default: 12)",
+                    "default": 12,
+                    "minimum": 1,
+                    "maximum": 50,
+                    "required": False
+                },
                 "texture_resolution": {
                     "type": "integer",
                     "description": "Output texture resolution",
@@ -691,9 +719,9 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 },
                 "simplify": {
                     "type": "number",
-                    "description": "Mesh simplification ratio (0-1, lower = more simplification)",
-                    "default": 0.95,
-                    "minimum": 0.01,
+                    "description": "Mesh simplification ratio (0 for raw native output, or 0.01-1.0)",
+                    "default": 0.0,
+                    "minimum": 0.0,
                     "maximum": 1.0,
                     "required": False
                 },
@@ -751,7 +779,7 @@ class TrellisTextMeshPaintingAdapter(TrellisTextToMeshAdapterCommon):
         """
         try:
             # override the simplify parameter (don't do decimation on the painting task)
-            inputs["simplify"] = 0.01
+            inputs["simplify"] = 0.0
             return super()._process_request(inputs)
         except Exception as e:
             logger.error(f"TRELLIS text-to-mesh generation failed: {str(e)}")
@@ -812,7 +840,7 @@ class TrellisImageMeshPaintingAdapter(TrellisImageToMeshAdapterCommon):
         """
         try:
             # override the simplify parameter (don't do decimation on the painting task)
-            inputs["simplify"] = 0.01
+            inputs["simplify"] = 0.0
             return super()._process_request(inputs)
         except Exception as e:
             logger.error(f"TRELLIS image-conditioned texture generation failed: {str(e)}")

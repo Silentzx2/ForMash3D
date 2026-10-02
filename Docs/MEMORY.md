@@ -1,3 +1,27 @@
+## 2026-10-02 Official Model Implementation Parity & Raw Quality Hardening
+- Performed exhaustive parity audit across 10+ models between `backend/thirdparty/` and `backend/adapters/`.
+- Key Architectural Rule Enforced:
+  - Adapters must NEVER decimate, remesh, or rescale raw models before saving `output_mesh_path`. Decimation and post-processing are strictly downstream.
+  - `master/source.glb` is immutable and byte-for-byte authentic to upstream neural output.
+- Root Cause Deviations Fixed:
+  - TripoSG: Removed PyMeshLab quadric edge collapse decimation in `triposg_adapter.py`.
+  - PartPacker: Default `num_faces=-1`, `num_steps=50`, `cv2.INTER_AREA`, and `len(faces) > 10` noise filtering in `partpacker_utils.py` and `partpacker_adapter.py`.
+  - Hunyuan3D Paint v2.1: Enforced `use_remesh=False` in `hunyuan3d_paint_v21.py` and `hunyuan3d_adapter_v21.py`, preventing silent 40,000 face decimation during texturing.
+  - TRELLIS / TRELLIS.2: Default `simplify=0.0` across text, image, and painting adapters. Restored 12-step sampling schedules (`ss_sampling_steps=12`, `slat_sampling_steps=12`) and removed artificial 20-step clamping. Set `decimation_target=-1` and `remesh=False` in TRELLIS.2.
+  - Hunyuan3D Shape & Mini Turbo: Updated default `octree_resolution` from 256 to official pipeline default `384`.
+  - UltraShape: Restored official defaults (`num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path to `hunyuan3d-shape-v2-1`).
+  - Raw Model Scale Preservation: Enforced `do_normalise=False` across raw asset generators (`hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`, `trellis2_adapter.py`, `fastmesh_adapter.py`).
+  - Production Pipeline: Expanded `MAX_PRODUCTION_FACES` from 50,000 to 200,000. Enabled `auto_optimize: false` passthrough check to preserve 100% of native topology in `game_ready` when requested. Fixed compound double decimation in LOD chain calculation. Added graceful fallback to `fast-simplification` / `trimesh` decimation when pymeshlab native OpenGL libraries are missing in headless environments.
+  - UI & Telemetry: Added Model Quality presets (`low`, `medium`, `high`, `ultra`) mapped to official parameters, Native/Raw polycount chips, and 200,000 slider. Added exact runtime parameter logging in `multiprocess_scheduler.py`.
+  - Verification: Created `backend/tests/test_official_model_parity_contract.py` covering model contracts, parameter schemas, postprocessing passthrough, LOD ratios, and viewer routing (100% pass).
+
+## 2026-10-02 Post-Processing Textured Retopo Guard & Live Job Polling
+- Fixed post-processing crash on textured meshes (`RuntimeError: Texture-aware optimization lost native material data`):
+  - In `backend/postprocess/pipeline.py`, AutoRetopo is now skipped if `native_textures` is true, recording an explicit skip reason in `retopo_stats`.
+  - Added a defensive fallback in `run_optimize`: if optimization drops native textures, the pipeline retains the `repaired` mesh rather than raising an unhandled exception.
+  - In `features/workspace/Panels/GeneratePanel.tsx`, disabled the quad topology option when a textured model is chosen (`Quads (raw only)`).
+  - In `features/workspace/store/WorkspaceContext.tsx`, added live polling against `/api/v1/system/jobs/{job_id}` for active jobs so status transitions (`failed`, `completed`, `interrupted`) and real-time step messages immediately propagate to the pipeline execution panel.
+
 ## 2026-10-01 Butter-Smooth Viewport & Real-Time Cursor Reticle
 - Replaced React state `brushPointer` with direct DOM ref `translate3d` tracking (`will-change-transform`), eliminating re-renders on mousemove and removing the 75ms CSS transition lag.
 - Integrated vector tool icons directly into the center reticle dot and badge for real-time cursor feedback.

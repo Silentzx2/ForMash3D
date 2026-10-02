@@ -42,6 +42,7 @@ DEPLOYMENT NOTE:
 """
 
 import asyncio
+import json
 import logging
 import multiprocessing as mp
 import os
@@ -429,6 +430,30 @@ def _process_job_in_worker(
         processing_job = job_id
         start_time = time.time()
         logger.info(f"[GENERATION START] job_id={job_id} model={model_id} feature={job_request.feature}")
+
+        # Section 26: Exact runtime parameter logging
+        model_inputs = job_request.inputs or {}
+        runtime_log = {
+            "model": model_id,
+            "model_version": getattr(loaded_model, "version", "1.0"),
+            "checkpoint": getattr(loaded_model, "model_path", model_config.get("model_path", "unknown")),
+            "requested_quality": model_inputs.get("quality", model_inputs.get("meshQuality", "not_specified")),
+            "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps", "not_supported")),
+            "actual_guidance": model_inputs.get("guidance_scale", model_inputs.get("cfg_scale", "not_supported")),
+            "actual_resolution": model_inputs.get("resolution", "not_supported"),
+            "actual_extraction_resolution": model_inputs.get(
+                "mc_resolution",
+                model_inputs.get("octree_resolution", model_inputs.get("octree_res", model_inputs.get("grid_resolution", "not_supported"))),
+            ),
+            "actual_seed": model_inputs.get("seed", "not_supported"),
+            "actual_dtype": "float16" if torch.cuda.is_available() else "float32",
+            "actual_device": f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu",
+            "actual_low_vram_mode": model_inputs.get("low_vram_mode", model_inputs.get("low_vram", "not_supported")),
+            "actual_target_polycount": model_inputs.get("target_polycount", "not_supported"),
+            "actual_auto_optimize": model_inputs.get("auto_optimize", False),
+            "actual_decimation_target": model_inputs.get("decimation_target", "not_supported"),
+        }
+        logger.info(f"[RUNTIME PARAMETERS] job_id={job_id} params={json.dumps(runtime_log, default=str)}")
 
         # Process job with inference mode for zero autograd tracking overhead
         with torch.inference_mode():
