@@ -524,7 +524,7 @@ export const GeneratePanel: React.FC = () => {
       mobile: { meshQuality: 'medium' as const, targetPolycount: 15000, generateLOD: true, lodPreset: 'mobile', lodCount: 4, generateCollision: true },
       game: { meshQuality: 'high' as const, targetPolycount: 35000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
       cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: false },
-      native: { meshQuality: 'ultra' as const, targetPolycount: -1, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: false },
+      native: { meshQuality: 'ultra' as const, targetPolycount: 0, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: false },
     }[recipe];
     setGenerationSettings(prev => ({ ...prev, meshQuality: presets.meshQuality, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount }, generateLOD: presets.generateLOD, lodPreset: presets.lodPreset, lodCount: presets.lodCount, generateCollision: presets.generateCollision }));
   };
@@ -1309,14 +1309,17 @@ export const GeneratePanel: React.FC = () => {
                 </span>
               </div>
 
-              {/* 0. Model Quality Preset (Inference resolution & fidelity) */}
+              {/* 0. Output Quality Preset (source geometry is always max fidelity) */}
               <div className="space-y-1.5 pb-1 border-b border-white/[0.04]">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Model Quality</span>
+                  <span className="text-zinc-200 font-medium">Texture / Output Quality</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25 capitalize">
                     {generationSettings.meshQuality || 'high'}
                   </span>
                 </div>
+                <p className="text-[10px] leading-4 text-zinc-500">
+                  Source geometry is always generated at the selected model's maximum fidelity. This control changes texture/output quality only; polycount is applied downstream.
+                </p>
                 <div className="grid grid-cols-4 gap-1">
                   {(['low', 'medium', 'high', 'ultra'] as const).map((q) => {
                     const isSelected = (generationSettings.meshQuality || 'high') === q;
@@ -1356,7 +1359,7 @@ export const GeneratePanel: React.FC = () => {
                     { label: '35K', val: 35000, desc: 'Game' },
                     { label: '50K', val: 50000, desc: 'Studio' },
                     { label: '100K', val: 100000, desc: 'Cinema' },
-                    { label: 'Native', val: -1, desc: 'Raw' },
+                    { label: 'Native', val: 0, desc: 'Raw' },
                   ].map((preset) => {
                     const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
                     const isSelected = currentTarget === preset.val;

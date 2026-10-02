@@ -40,7 +40,7 @@ Create a centralized, local AI 3D asset factory that takes an image or text prom
 ### 3. Post-Processing Pipeline
 - **Mesh Decimation**: meshoptimizer SIMD decimation to target polycounts
 - **UV Unwrapping**: xatlas conformal UV unwrapping
-- **Texture Projection Baking**: Bake textures onto simplified meshes
+- **High-to-Low Detail Baking**: Available as an explicit transfer step for projecting source detail onto simplified meshes; automatic generation never mutates the immutable source checkpoint
 - **Safe Component Guard**: Preserve anatomical features (≥0.5% vertices or ≥15 verts)
 
 ### 4. Multi-Tier LOD Generation

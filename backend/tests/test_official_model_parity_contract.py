@@ -123,6 +123,38 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["texture_size"]["default"], 4096)
 
 
+class TestGenerationProductionContract(unittest.TestCase):
+    def test_postprocess_only_controls_are_not_sent_to_model_adapters(self):
+        from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
+        filtered = _build_model_inference_inputs({
+            "target_polycount": 5000,
+            "auto_optimize": True,
+            "generateLOD": True,
+            "lodPreset": "mobile",
+            "lodCount": 4,
+            "physics_enabled": True,
+            "physics_config": {"collision_quality": "fast"},
+            "auto_paint": True,
+            "paint_model_preference": "hunyuan3d_paint_v21_image_mesh_painting",
+            "paint_resolution": 2048,
+            "octree_resolution": 512,
+            "source_quality": "max",
+            "seed": 42,
+        })
+        self.assertEqual(filtered["octree_resolution"], 512)
+        self.assertEqual(filtered["source_quality"], "max")
+        self.assertEqual(filtered["seed"], 42)
+        for key in ("target_polycount","auto_optimize","generateLOD","lodPreset","lodCount",
+                    "physics_enabled","physics_config","auto_paint","paint_model_preference","paint_resolution"):
+            self.assertNotIn(key, filtered)
+
+    def test_frontend_source_contract_is_max_fidelity_and_budgeted_later(self):
+        workspace_context = (backend_root.parent / "features/workspace/store/WorkspaceContext.tsx").read_text(encoding="utf-8")
+        self.assertIn("source_quality: 'max'", workspace_context)
+        self.assertIn("target_polycount: targetPoly", workspace_context)
+        self.assertIn("const octreeRes = 512", workspace_context)
+
+
 class TestRetopologyProductionBudget(unittest.TestCase):
     """Verify FastMesh variant targets stay fixed while final triangle budget is independent."""
 

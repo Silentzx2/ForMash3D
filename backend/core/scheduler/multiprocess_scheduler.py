@@ -68,6 +68,18 @@ logger = logging.getLogger(__name__)
 
 RETRY_TRANSIENT_ERRORS = os.environ.get("RETRY_TRANSIENT_ERRORS", "false").lower() == "true"
 
+# Production budgets belong to post-processing. Never let them reach model inference.
+_POSTPROCESS_ONLY_INPUTS = frozenset({
+    "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
+    "physics_enabled", "physics_config", "auto_paint", "paint_model_preference", "paint_resolution",
+})
+
+
+def _build_model_inference_inputs(inputs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Keep post-process-only controls out of neural adapter inference."""
+    source = inputs or {}
+    return {key: value for key, value in source.items() if key not in _POSTPROCESS_ONLY_INPUTS}
+
 
 class WorkerConfig:
     """Configuration for a worker process - simplified to one model per worker"""
@@ -432,12 +444,15 @@ def _process_job_in_worker(
         logger.info(f"[GENERATION START] job_id={job_id} model={model_id} feature={job_request.feature}")
 
         # Section 26: Exact runtime parameter logging
-        model_inputs = job_request.inputs or {}
+        request_inputs = job_request.inputs or {}
+        model_inputs = _build_model_inference_inputs(request_inputs)
         runtime_log = {
             "model": model_id,
             "model_version": getattr(loaded_model, "version", "1.0"),
             "checkpoint": getattr(loaded_model, "model_path", model_config.get("model_path", "unknown")),
             "requested_quality": model_inputs.get("quality", model_inputs.get("meshQuality", "not_specified")),
+            "source_quality_contract": model_inputs.get("source_quality", "max"),
+            "postprocess_target_polycount": request_inputs.get("target_polycount", "native"),
             "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps", "not_supported")),
             "actual_guidance": model_inputs.get("guidance_scale", model_inputs.get("cfg_scale", "not_supported")),
             "actual_resolution": model_inputs.get("resolution", "not_supported"),
@@ -449,15 +464,17 @@ def _process_job_in_worker(
             "actual_dtype": "float16" if torch.cuda.is_available() else "float32",
             "actual_device": f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu",
             "actual_low_vram_mode": model_inputs.get("low_vram_mode", model_inputs.get("low_vram", "not_supported")),
-            "actual_target_polycount": model_inputs.get("target_polycount", "not_supported"),
-            "actual_auto_optimize": model_inputs.get("auto_optimize", False),
+            "requested_target_polycount": request_inputs.get("target_polycount", "native"),
+            "requested_auto_optimize": request_inputs.get("auto_optimize", False),
+            "adapter_received_target_polycount": "not_sent",
+            "adapter_received_auto_optimize": "not_sent",
             "actual_decimation_target": model_inputs.get("decimation_target", "not_supported"),
         }
         logger.info(f"[RUNTIME PARAMETERS] job_id={job_id} params={json.dumps(runtime_log, default=str)}")
 
         # Process job with inference mode for zero autograd tracking overhead
         with torch.inference_mode():
-            result = loaded_model._process_request(job_request.inputs)
+            result = loaded_model._process_request(model_inputs)
 
         elapsed = time.time() - start_time
         logger.info(f"[GENERATION SUCCESS] job_id={job_id} model={model_id} elapsed={elapsed:.2f}s")

@@ -71,7 +71,7 @@ graph TD
     subgraph PostProcess["⚙️ Production Post-Processing"]
         direction TB
         CHECK["master/source.glb<br/>Immutable Master Checkpoint"]:::green
-        FINISH["Repair • Retopo • UV • Bake<br/>LOD0-LOD3 • CoACD Colliders"]:::green
+        FINISH["Repair • Retopo • UV<br/>Optional high-to-low Bake • LOD0-LOD3 • CoACD"]:::green
     end
 
     subgraph Storage["📦 Persistent Storage & Export"]
@@ -291,10 +291,8 @@ bun run build
 ## Production Asset Lifecycle & Two-Way PostProcess Pipeline
 
 ForMash3D executes post-processing via two complementary pathways:
-1. **Automatic Chaining:** Generation -> master/source.glb -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> quad retopo -> Auto UV -> LOD cascade -> collision hulls -> game-ready formats) -> background progress streaming to `WorkspaceContext.tsx` -> artifacts loaded into 3D viewer.
-2. **Manual On-Demand PostProcess:** Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
-3. **Standalone Microservice (Port 8200):** High-throughput deployments can run `scripts/start_postprocess_service.sh` (`backend/postprocess/main.py`) on dedicated port 8200 for isolated GPU-accelerated mesh processing.
-
+1. **Automatic Chaining:** Generation -> maximum-fidelity model output -> immutable `master/source.glb` -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> conditional retopo -> downstream target polycount -> Auto UV -> LOD cascade -> collision hulls -> game-ready formats) -> production completion -> `WorkspaceContext.tsx` artifacts.
+2. **Manual On-Demand PostProcess: Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
 The post-processing stage runs in `asyncio.to_thread` so CPU/GPU mesh operations do not block FastAPI's event loop.
 
 ## Physics path
@@ -302,7 +300,7 @@ Generation requests may carry a physics intent and provider-neutral controller v
 
 ## Review Audit — Current Job Lifecycle
 
-Browser JobStore / Workspace jobs → FastAPI submit → scheduler → GPU worker → **raw result ready** → completed job becomes user-visible → background postprocess → canonical master/game-ready artifacts.
+Browser JobStore / Workspace jobs → FastAPI submit → scheduler → GPU worker → **raw model result** → immutable master → production postprocess → game-ready/LOD/physics/QA artifacts → terminal completion.
 
 Batch submissions use a scheduler-owned batch identifier and `max_parallel`; blocked batch items remain queued without consuming another worker slot.
 

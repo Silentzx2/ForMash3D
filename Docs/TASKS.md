@@ -13,6 +13,9 @@
 - [x] Add Mobile/Game Ready/Cinematic/Native generation recipes.
 - [x] Add Source/Game Ready/LOD artifact switching in the viewport.
 - [x] Add Auto/Fast/Detail heavy-mesh viewport performance modes.
+- [x] Enforce maximum-fidelity source generation independent of final polycount.
+- [x] Firewall postprocess-only poly/LOD/physics controls from neural adapter inference.
+- [x] Preserve immutable source while applying production poly budgets downstream.
 - [ ] Full NVIDIA/CUDA visual-quality and long-run stress validation remains runtime-gated.
 ### Contract & Workflow Audit — 2026-10-03
 - [x] Sync Hunyuan Shape/Mini-Turbo schema defaults and frontend mappings to fixed raw extraction `octree_resolution=512`.

@@ -451,13 +451,23 @@ def run_postprocess_job(
     """Create the canonical asset workspace and run production post-processing."""
     job_inputs = job_inputs or {}
     job_metadata = job_metadata or {}
+    raw_target_polycount = job_inputs.get("target_polycount")
     try:
-        resolved_target_polycount = min(
-            MAX_PRODUCTION_FACES,
-            max(5_000, int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)),
-        )
+        parsed_target_polycount = int(raw_target_polycount) if raw_target_polycount is not None else None
     except (TypeError, ValueError):
-        resolved_target_polycount = MAX_PRODUCTION_FACES
+        parsed_target_polycount = None
+
+    # <= 0 is the explicit Native/Raw sentinel. Positive values are downstream-only budgets.
+    if parsed_target_polycount is not None and parsed_target_polycount <= 0:
+        resolved_target_polycount = 0
+    else:
+        try:
+            resolved_target_polycount = min(
+                MAX_PRODUCTION_FACES,
+                max(5_000, int(parsed_target_polycount or MAX_PRODUCTION_FACES)),
+            )
+        except (TypeError, ValueError):
+            resolved_target_polycount = MAX_PRODUCTION_FACES
 
     raw_candidate = (
         generation_result.get("output_mesh_path")
@@ -537,7 +547,7 @@ def run_postprocess_job(
             scene,
             mesh,
             InspectOptions(
-                tri_budget=resolved_target_polycount,
+                tri_budget=resolved_target_polycount or MAX_PRODUCTION_FACES,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -836,7 +846,7 @@ def run_postprocess_job(
             final_scene,
             uv_mesh,
             InspectOptions(
-                tri_budget=resolved_target_polycount,
+                tri_budget=resolved_target_polycount or MAX_PRODUCTION_FACES,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -872,6 +882,7 @@ def run_postprocess_job(
             "feature": job_metadata.get("feature"),
             "seed": job_inputs.get("seed"),
             "target_polycount": resolved_target_polycount,
+            "source_policy": "model-native maximum geometry fidelity; target_polycount is downstream-only",
             "lod": {
                 "enabled": lod_enabled,
                 "preset": job_inputs.get("lodPreset") or "high",
@@ -907,6 +918,7 @@ def run_postprocess_job(
             "collision": collision_stats,
             "physics": physics_metadata,
             "target_polycount": resolved_target_polycount,
+            "source_policy": "immutable source.glb is the model-native maximum-fidelity checkpoint; production budget applies only to derived outputs",
         },
     )
 

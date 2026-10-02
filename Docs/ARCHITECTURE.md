@@ -169,13 +169,13 @@ sequenceDiagram
     participant PostProcess as Production Post-Processing
     participant Storage as backend/storage/
 
-    User->>Frontend: Select prompt / image + Platform budget
+    User->>Frontend: Select prompt / image + production triangle budget
     Frontend->>API: POST /api/v1/mesh-generation/text-to-textured-mesh
     API->>SCHED: Submit job (VRAM-aware)
-    SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
-    Adapter-->>SCHED: Raw 3D mesh output
+    SCHED->>Adapter: Run maximum-fidelity model inference; strip production-only budget flags
+    Adapter-->>SCHED: Raw model-native mesh output
     SCHED->>Storage: Preserve master/source.glb byte-for-byte
-    SCHED->>PostProcess: Repair -> Optimize/Preserve -> Auto UV/Preserve -> QA
+    SCHED->>PostProcess: Repair -> conditional Retopo -> apply target polycount -> Auto UV/Preserve -> QA
     PostProcess->>Storage: Save game_ready/* final formats
     PostProcess->>Storage: Save lods/lod0..3.glb
     PostProcess->>Storage: Save collision/collision.glb

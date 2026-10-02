@@ -977,11 +977,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName);
 
     const currentQuality = generationSettings.meshQuality || 'high';
-    // Studio Ultra-HD pipeline: auto-tune to high-resolution voxel grid and diffusion steps
-    const octreeRes =
-      currentQuality === 'ultra' || currentQuality === 'high' ? 512 :
-      currentQuality === 'medium' ? 384 : 256;
-    const infSteps = currentQuality === 'ultra' ? 75 : 50;
+    // Source geometry is decoupled from the user polycount budget and always uses
+    // the selected model's maximum supported geometry fidelity.
+    const sourceQuality = 'ultra' as const;
+    const octreeRes = 512;
+    const infSteps = 75;
     const infGuidance = generationSettings.guidanceScale ?? 7.5;
 
     try {
@@ -1020,23 +1020,23 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         lodPreset: generationSettings.lodPreset || 'high',
         lodCount: generationSettings.lodCount || 4,
         negative_prompt: generationSettings.negativePrompt || undefined,
+        source_quality: 'max',
       };
 
-      // Model-specific extraction and inference settings: preserve official high-resolution geometry
-      // and ensure raw output is never decimated before downstream post-processing.
-      if ((generationSettings.aiModel || '').includes('triposr')) {
-        modelParameters.mc_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : currentQuality === 'medium' ? 256 : 128;
-      } else if ((generationSettings.aiModel || '').includes('triposg')) {
+      // Geometry settings are always maximum-fidelity; texture/output settings can vary.
+      if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposr')) {
+        modelParameters.mc_resolution = 512;
+      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposg')) {
         modelParameters.faces = -1;
-        modelParameters.num_inference_steps = currentQuality === 'ultra' ? 50 : currentQuality === 'high' ? 50 : currentQuality === 'medium' ? 35 : 25;
-      } else if ((generationSettings.aiModel || '').includes('triposf')) {
-        modelParameters.resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : 256;
-        modelParameters.sample_points_num = currentQuality === 'ultra' ? 1638400 : 819200;
-      } else if ((generationSettings.aiModel || '').includes('partpacker')) {
-        modelParameters.grid_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 448 : currentQuality === 'medium' ? 384 : 256;
+        modelParameters.num_inference_steps = 50;
+      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposf')) {
+        modelParameters.resolution = 512;
+        modelParameters.sample_points_num = 1638400;
+      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('partpacker')) {
+        modelParameters.grid_resolution = 512;
         modelParameters.num_faces = -1;
-      } else if ((generationSettings.aiModel || '').includes('ultrashape')) {
-        modelParameters.octree_res = currentQuality === 'ultra' || currentQuality === 'high' ? 1024 : 512;
+      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('ultrashape')) {
+        modelParameters.octree_res = 1024;
         modelParameters.num_latents = 32768;
       } else if ((generationSettings.aiModel || '').includes('trellis2')) {
         modelParameters.decimation_target = -1;
@@ -1046,7 +1046,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         modelParameters.simplify = 0.0;
         modelParameters.texture_resolution = currentQuality === 'ultra' ? 2048 : 1024;
       } else if ((generationSettings.aiModel || '').includes('hunyuan')) {
-        // ponytail: raw extraction stays at maximum detail; target polycount is post-processing.
         modelParameters.octree_resolution = 512;
         modelParameters.enable_realesrgan = generationSettings.enableRealESRGAN !== false;
       }
@@ -1149,10 +1148,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const localTaskId = startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
 
       const currentQuality = generationSettings.meshQuality || 'high';
-      const octreeRes =
-      currentQuality === 'ultra' || currentQuality === 'high' ? 512 :
-      currentQuality === 'medium' ? 384 : 256;
-      const infSteps = currentQuality === 'ultra' ? 75 : 50;
+      // Text generation also keeps source geometry at maximum fidelity.
+      const octreeRes = 512;
+      const infSteps = 75;
       const infGuidance = generationSettings.guidanceScale ?? 7.5;
 
       try {
@@ -1185,6 +1183,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           lodPreset: generationSettings.lodPreset || 'high',
           lodCount: generationSettings.lodCount || 4,
           negative_prompt: generationSettings.negativePrompt || undefined,
+          source_quality: 'max',
         };
 
         if (batchItems.length > 0) {

@@ -1,3 +1,9 @@
+## 2026-10-03 — [Source Fidelity Contract] Maximum-Quality Generation + Downstream Poly Budget
+- Fixed the critical generation contract: the UI polycount is strictly a **post-generation production budget**.
+- The scheduler strips target_polycount, auto_optimize, LOD, physics, and auto-paint controls before neural adapter inference, preventing adapters such as TripoSG/TRELLIS/PartPacker from pre-decimating the source.
+- Image/text generation now requests maximum supported geometry fidelity regardless of visible output-quality/polycount controls; those controls affect texture/output settings only.
+- master/source.glb remains byte-for-byte immutable; Native/Raw now uses a stable 0 sentinel.
+- Added regression coverage for the scheduler input firewall and frontend max-source contract.
 ## 2026-10-03 — [Workspace Production UX] Poly Budget, Recipes, Artifact Review & Performance
 - Added a real final triangle-budget slider to Remesh/Retopology and wired `target_polycount` through the API into canonical post-processing.
 - Added production recipes for Mobile, Game Ready, Cinematic, and Native workflows, applying mesh quality, poly budget, LOD, and physics together.
