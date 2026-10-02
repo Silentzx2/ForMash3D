@@ -300,8 +300,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       return files.map((m: any) => {
         const cleanName = m.filename?.replace(/\.[^.]+$/, '') || '3D Model';
         const formattedName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
+        const ext = m.filename?.split('.').pop()?.toUpperCase() || (m.file_type === 'mesh' ? 'GLB' : 'GLB');
+        const viewUrl = m.file_id ? `/api/v1/file-upload/download/${m.file_id}` : '';
         return normalizeModelAsset({
           id: m.file_id || m.filename,
+          fileId: m.file_id,
           name: formattedName,
           category: 'mesh',
           meshType: 'custom',
@@ -312,9 +315,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           vertices: 0,
           triangles: 0,
           statsAvailable: false,
-          source: { filename: m.filename, subfolder: '', type: 'upload', viewUrl: '' },
+          source: { filename: m.filename, subfolder: '', type: 'upload', viewUrl },
           topology: 'Triangle',
-          format: m.file_type?.toUpperCase() || 'FILE',
+          format: ext,
           dateCreated: m.upload_time || '',
           tags: ['Uploaded', 'Model'],
         });
@@ -448,6 +451,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     maxNumView: 6,
     resolution: 1024,
     generateCollision: false,
+    enableRealESRGAN: true,
     physics: {
       bodyType: 'auto',
       massMode: 'auto',
@@ -477,6 +481,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
     maxNumView: 6,
     generatePBR: true,
+    enableRealESRGAN: true,
   });
 
   const [sculptSettings, setSculptSettings] = useState<SculptSettings>({
@@ -983,7 +988,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         low_vram: Boolean(generationSettings.lowVram),
         enable_flashvdm: generationSettings.enableFlashVDM ?? false,
         low_vram_mode: generationSettings.lowVramMode ?? 'auto',
-        auto_optimize: false,
+        auto_optimize: targetPoly === 0 || (targetPoly > 0 && targetPoly < 200000),
         target_polycount: targetPoly,
         generateLOD: generationSettings.generateLOD !== false,
         lodPreset: generationSettings.lodPreset || 'high',
@@ -1016,6 +1021,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         modelParameters.texture_resolution = currentQuality === 'ultra' ? 2048 : 1024;
       } else if ((generationSettings.aiModel || '').includes('hunyuan')) {
         modelParameters.octree_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : currentQuality === 'medium' ? 384 : 256;
+        modelParameters.enable_realesrgan = generationSettings.enableRealESRGAN !== false;
       }
 
       // Pass Paint-v2-1 parameters for shape models to enable auto-chaining
@@ -1146,8 +1152,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           low_vram: Boolean(generationSettings.lowVram),
         enable_flashvdm: generationSettings.enableFlashVDM ?? false,
         low_vram_mode: generationSettings.lowVramMode ?? 'auto',
-        auto_optimize: false,
-          target_polycount: targetPoly,
+        auto_optimize: targetPoly === 0 || (targetPoly > 0 && targetPoly < 200000),
+        target_polycount: targetPoly,
           generateLOD: generationSettings.generateLOD !== false,
           lodPreset: generationSettings.lodPreset || 'high',
           lodCount: generationSettings.lodCount || 4,
@@ -1364,6 +1370,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         body.model_parameters = {
           max_num_view: textureSettings.maxNumView ?? 6,
           resolution: paintResolution ?? 512,
+          enable_realesrgan: textureSettings.enableRealESRGAN !== false,
         };
       }
 

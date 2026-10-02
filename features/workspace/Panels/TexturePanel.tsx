@@ -644,6 +644,27 @@ export const TexturePanel: React.FC = () => {
                     />
                   </button>
                 </div>
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
+                  <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
+                    <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                    <span>Real-ESRGAN (4x Enhance)</span>
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={textureSettings.enableRealESRGAN !== false}
+                    onClick={() => setTextureSettings(prev => ({ ...prev, enableRealESRGAN: prev.enableRealESRGAN === false ? true : false }))}
+                    className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
+                      textureSettings.enableRealESRGAN !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                    }`}
+                  >
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                        textureSettings.enableRealESRGAN !== false ? 'translate-x-3.5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             )}
 

@@ -1371,6 +1371,30 @@ export const GeneratePanel: React.FC = () => {
                     <span>■ Quads (raw only)</span>
                   </button>
                 </div>
+                {/* 3. Real-ESRGAN 4x Super-Resolution enhancement for Hunyuan3D */}
+                {(generationSettings.aiModel?.includes('hunyuan') || generationSettings.aiModel?.includes('paint')) && (
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between mt-2">
+                    <span className="text-zinc-300 flex items-center gap-1.5 text-xs font-semibold">
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                      <span>Real-ESRGAN (4x Texture Enhance)</span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={generationSettings.enableRealESRGAN !== false}
+                      onClick={() => setGenerationSettings(prev => ({ ...prev, enableRealESRGAN: prev.enableRealESRGAN === false ? true : false }))}
+                      className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
+                        generationSettings.enableRealESRGAN !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                      }`}
+                    >
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                          generationSettings.enableRealESRGAN !== false ? 'translate-x-3.5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                )}
               </div>
               </div>
               </div>

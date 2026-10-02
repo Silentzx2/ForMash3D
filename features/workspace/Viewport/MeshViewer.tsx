@@ -3226,16 +3226,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         uploadFormData.append('file', file);
         const uploadRes = await getApiClient().post<{
           url: string;
+          file_id?: string;
           id?: string;
           filename: string;
           stored_filename?: string;
           size: number;
-        }>('/api/v1/file-upload/image', uploadFormData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        }>('/api/v1/file-upload/mesh', uploadFormData);
 
-        const serverUrl = uploadRes?.url || (uploadRes?.id ? `/api/v1/file-upload/download/${uploadRes.id}` : '');
+        const serverUrl = uploadRes?.url || (uploadRes?.file_id ? `/api/v1/file-upload/download/${uploadRes.file_id}` : uploadRes?.id ? `/api/v1/file-upload/download/${uploadRes.id}` : '');
         const finalAsset: ModelAsset = {
           ...tempAsset,
-          id: uploadRes?.stored_filename || uploadRes?.id || tempId,
+          id: uploadRes?.file_id || uploadRes?.stored_filename || uploadRes?.id || tempId,
+          fileId: uploadRes?.file_id,
           tags: ['Saved to Storage', '3D Model', ext],
           source: {
             filename: uploadRes?.stored_filename || file.name,

@@ -171,7 +171,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             target_polycount = inputs.get("target_polycount", None)
             simplify = inputs.get("simplify", None)
             auto_optimize = bool(inputs.get("auto_optimize", False))
-            texture_bake_mode = inputs.get("texture_bake_mode", "fast")
+            texture_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
 
             ss_steps = max(20, min(50, int(num_steps)))
@@ -362,7 +362,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 "texture_bake_mode": {
                     "type": "string",
                     "description": "Texture baking quality mode",
-                    "default": "fast",
+                    "default": "opt",
                     "enum": ["fast", "opt"],
                     "required": False
                 }
@@ -528,7 +528,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             mesh_path = inputs.get("mesh_path", None)
             simplify = inputs.get("simplify", None)
             auto_optimize = bool(inputs.get("auto_optimize", False))
-            tex_bake_mode = inputs.get("texture_bake_mode", "fast")
+            tex_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
 
             ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 12)))
@@ -728,7 +728,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 "texture_bake_mode": {
                     "type": "string",
                     "description": "Texture baking quality mode",
-                    "default": "fast",
+                    "default": "opt",
                     "enum": ["fast", "opt"],
                     "required": False
                 }

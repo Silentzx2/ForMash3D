@@ -91,46 +91,43 @@ export const RightAssetsPanel: React.FC = () => {
     startUpload(file.name, file.size);
 
     try {
-      // UploadIcon file to backend with real-time progress
+      // Upload file to backend with real-time progress
       const formData = new FormData();
       formData.append('file', file);
       const result = await getApiClient().post<{
         url: string;
+        file_id?: string;
         thumbnail_url?: string;
         id?: string;
         filename: string;
         stored_filename?: string;
         size: number;
         mesh_stats?: { polygon_count: number; vertex_count: number };
-      }>('/api/v1/file-upload/image', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      }>('/api/v1/file-upload/mesh', formData, {
+        onUploadProgress: (progressEvent) => {
+          updateProgress(progressEvent.loaded);
+        },
+      });
 
       finishUpload();
 
-      // Resolve relative URLs: /static/* paths go through the /static proxy route
-      const resolveUrl = (url: string | undefined) => {
-        if (!url) return '';
-        if (url.startsWith('/static/')) {
-          // Return as same-origin relative URL - the /static/* proxy route
-          // will forward to the backend
-          return url;
-        }
-        return url;
-      };
-
+      const downloadUrl = result?.url || (result?.file_id ? `/api/v1/file-upload/download/${result.file_id}` : '');
+      const thumbnailUrl = result?.thumbnail_url || '';
       const meshStats = result?.mesh_stats as any;
       const newAsset = normalizeModelAsset({
-        id: result?.id || result?.stored_filename || `user-upload-${Date.now()}`,
+        id: result?.file_id || result?.id || result?.stored_filename || `user-upload-${Date.now()}`,
+        fileId: result?.file_id,
         name: file.name.replace(/\.[^/.]+$/, ""),
         category: 'mesh',
         meshType: 'custom',
-        thumbnail: resolveUrl(result?.thumbnail_url),
+        thumbnail: thumbnailUrl,
         polygon_count: meshStats?.polygon_count,
         vertex_count: meshStats?.vertex_count,
         faces: meshStats?.polygon_count || 0,
         vertices: meshStats?.vertex_count || 0,
         triangles: meshStats?.polygon_count || 0,
         statsAvailable: !!(meshStats && ((meshStats.polygon_count ?? 0) > 0 || (meshStats.vertex_count ?? 0) > 0)),
-        source: { filename: result?.stored_filename || file.name, subfolder: 'models', type: 'upload', viewUrl: resolveUrl(result?.url) },
+        source: { filename: result?.filename || file.name, subfolder: 'models', type: 'upload', viewUrl: downloadUrl },
         topology: meshStats?.topology || 'Triangle',
         format: (() => {
           if (ext === 'obj') return 'OBJ';
@@ -138,7 +135,7 @@ export const RightAssetsPanel: React.FC = () => {
           if (ext === 'glb' || ext === 'gltf') return 'GLB';
           if (ext === 'fbx') return 'FBX';
           if (ext === 'stl') return 'STL';
-          return 'FILE';
+          return 'GLB';
         })(),
         dimensions: meshStats?.dimensions,
         boundingBox: meshStats?.bounding_box,

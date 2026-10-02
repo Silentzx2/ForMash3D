@@ -174,9 +174,12 @@ export async function POST(
     const auth = request.headers.get('authorization');
     if (auth) headers['authorization'] = auth;
     
-    if (contentType.includes('multipart/form-data')) {
-      body = request.body as BodyInit;
+    const isMultipart = contentType.includes('multipart/form-data');
+    if (isMultipart) {
+      const arrayBuf = await request.arrayBuffer();
+      body = Buffer.from(arrayBuf);
       headers['content-type'] = contentType;
+      headers['content-length'] = arrayBuf.byteLength.toString();
     } else {
       body = await request.text();
       if (contentType) headers['content-type'] = contentType;
@@ -186,7 +189,7 @@ export async function POST(
       method: 'POST',
       headers,
       body: body || undefined,
-      duplex: contentType.includes('multipart/form-data') ? 'half' : undefined,
+      duplex: isMultipart ? undefined : undefined,
       signal: AbortSignal.timeout(600000), // 10 minutes for generation/uploads
     });
     

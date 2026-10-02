@@ -1762,6 +1762,98 @@ async def retry_job_postprocess(
         raise HTTPException(status_code=500, detail=f"Error retrying post-processing: {exc}") from exc
 
 
+def _dir_size_bytes(path: Path) -> int:
+    total = 0
+    if not path.is_dir():
+        return 0
+    try:
+        for entry in path.rglob("*"):
+            if entry.is_file():
+                try:
+                    total += entry.stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+@router.get("/storage", summary="Get system storage usage")
+async def get_system_storage():
+    """Retrieve storage breakdown and system disk usage."""
+    from core.utils.file_utils import get_storage_base_dir
+    import shutil
+
+    storage_base_dir = get_storage_base_dir()
+    stat = shutil.disk_usage(storage_base_dir)
+    total_gb = round(stat.total / (1024**3), 2)
+    used_gb = round(stat.used / (1024**3), 2)
+    free_gb = round(stat.free / (1024**3), 2)
+    used_percent = round((stat.used / stat.total) * 100, 1) if stat.total > 0 else 0.0
+
+    directories = {}
+    for sub in ["models", "uploads", "exports", "thumbnails", "temp"]:
+        sub_path = storage_base_dir / sub
+        size_bytes = _dir_size_bytes(sub_path)
+        directories[sub] = {
+            "path": str(sub_path),
+            "size_gb": round(size_bytes / (1024**3), 3),
+            "size_mb": round(size_bytes / (1024**2), 2),
+        }
+
+    return {
+        "success": True,
+        "data": {
+            "root_path": str(storage_base_dir),
+            "total_gb": total_gb,
+            "used_gb": used_gb,
+            "free_gb": free_gb,
+            "used_percent": used_percent,
+            "directories": directories,
+        },
+    }
+
+
+@router.post("/cache/clear", summary="Clear system temporary files and cache")
+async def clear_system_cache():
+    """Clear temporary files from storage/temp and stale cache files."""
+    from core.utils.file_utils import get_storage_base_dir
+    import shutil
+
+    storage_base_dir = get_storage_base_dir()
+    freed_bytes = 0
+    files_removed = 0
+
+    temp_dirs = [
+        storage_base_dir / "temp",
+        storage_base_dir / "exports",
+    ]
+
+    for temp_dir in temp_dirs:
+        if temp_dir.is_dir():
+            for p in list(temp_dir.iterdir()):
+                try:
+                    if p.is_file() or p.is_symlink():
+                        freed_bytes += p.stat().st_size
+                        p.unlink()
+                        files_removed += 1
+                    elif p.is_dir():
+                        dsize = _dir_size_bytes(p)
+                        shutil.rmtree(p, ignore_errors=True)
+                        freed_bytes += dsize
+                        files_removed += 1
+                except Exception as e:
+                    logger.debug("Could not remove temp file %s: %s", p, e)
+
+    freed_mb = round(freed_bytes / (1024 * 1024), 2)
+    return {
+        "success": True,
+        "freed_mb": freed_mb,
+        "files_removed": files_removed,
+        "message": f"Cache cleared! Removed {files_removed} temporary files ({freed_mb} MB freed).",
+    }
+
+
 @router.delete("/jobs/{job_id}/result", summary="Delete job result file")
 async def delete_job_result(
     job_id: str, request: Request, _: bool = Depends(verify_api_key)

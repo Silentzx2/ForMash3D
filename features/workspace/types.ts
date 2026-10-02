@@ -56,6 +56,7 @@ export type CameraViewPreset = 'perspective' | 'front' | 'back' | 'top' | 'botto
 
 export interface ModelAsset {
   id: string;
+  fileId?: string;
   name: string;
   category: 'all' | 'mesh' | 'texture' | 'generation';
   thumbnail: string;
@@ -242,6 +243,7 @@ export interface TextureSettings {
   lowVram?: boolean;
   maxNumView?: number;
   generatePBR?: boolean;
+  enableRealESRGAN?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -303,6 +305,7 @@ export interface GenerationSettings {
   maxNumView?: number;
   resolution?: number;
   paintResolution?: 512 | 768;
+  enableRealESRGAN?: boolean;
 }
 
 

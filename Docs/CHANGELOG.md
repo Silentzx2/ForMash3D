@@ -19,6 +19,16 @@
 
 
 
+## 2026-10-02 — [Bugfix: Upload, Simplify & Asset Panel Hardening] Thumbnail Generation, Simplify Stats, Upload Timeouts & Auto-Optimize Fixes
+- **Mesh upload thumbnail generation:** Added async thumbnail generation to `/api/v1/file-upload/mesh` using `generate_mesh_thumbnail`. Upload response now includes `thumbnail_url`; new `GET /file-upload/thumbnail/{file_id}` serves the generated PNG. Fixes broken mesh previews in the asset panel.
+- **Simplify fallback stats fix:** Fixed `passthrough: True` → `passthrough: False` in double-failure fallback path of `_simplify()` (`backend/postprocess/services/simplify.py`). The incorrect flag caused the UI to display "0 changes shown" even when simplification had been attempted and failed.
+- **Textured simplification fallback:** Replaced single-shot textured failure with proper fallback chain: primary `meshing_decimation_quadric_edge_collapse_with_texture` → `_simplify_textured_fallback()` (fast_simplification + cKDTree UV transfer) → non-textured fallback. Eliminates silent texture loss on headless PyMeshLab failures.
+- **Upload timeout alignment:** Increased frontend FormData timeout in `services/apiClient.ts` from 120s to 600s to match Next.js proxy timeout, preventing premature aborts on slow mesh uploads.
+- **Auto-optimize condition fix:** Changed `auto_optimize` from `targetPoly > 0 && targetPoly < 200000` to `targetPoly === 0 || (targetPoly > 0 && targetPoly < 200000)` so auto mode is preserved when target polycount is 0.
+- **Real-ESRGAN parameter cleanup:** Removed redundant `realeg` alias in `WorkspaceContext.tsx`; unified model parameters to use only `enable_realesrgan`.
+- **Asset panel upload URL fix:** Updated `RightAssetsPanel.tsx` and `MeshViewer.tsx` to use `/api/v1/file-upload/mesh`, removed broken `/static/` proxy URL resolution, and added `onUploadProgress` for real-time progress tracking.
+- **Client-side file validation:** Added GLB truncation check, GLTF JSON structure check, and OBJ vertex-data check in `fileValidation.ts` to catch corrupted files before backend processing.
+
 ## 2026-10-02 — [Viewer & Network Resilience Hardening] Large Model Stream Proxy, Multi-Tier Asset Deduplication & WebGL Crash Protection
 - **API Proxy Dynamic Timeouts & Stream Resilience:** Increased GET timeout from 30s to 10 minutes (`600000ms`) for binary asset endpoints (`download`, `thumbnail`, `export`, `file-upload`, `artifact_format`), eliminating Next.js proxy timeout aborts on heavy 50–100MB 3D meshes. Wrapped response streams in `TransformStream` with `.catch()` to absorb client disconnects and cancellations without unhandled `failed to pipe response` / `TimeoutError` exceptions. Forward `Content-Length` for binary assets when uncompressed to enable accurate browser progress tracking.
 - **In-Flight Request Deduplication & Retry:** Enhanced `glbCache.ts` with in-flight request tracking (`inFlightRequests`) and progress listeners, preventing duplicate simultaneous network streams when prefetch and MeshViewer load the same asset. Added exponential backoff retry (up to 3 attempts with 120s timeout) and transparent fallback to standard `arrayBuffer` fetch if chunked stream readers encounter network interruptions.

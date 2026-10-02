@@ -217,6 +217,9 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 self.paint_pipeline.config.max_selected_view_num = max_num_view
             if hasattr(self.paint_pipeline.config, "resolution"):
                 self.paint_pipeline.config.resolution = resolution
+            enable_realesrgan = bool(inputs.get("enable_realesrgan", inputs.get("realeg", True)))
+            if hasattr(self.paint_pipeline.config, "enable_realesrgan"):
+                self.paint_pipeline.config.enable_realesrgan = enable_realesrgan
 
             base_name = f"{self.model_id}_{mesh_path.stem}_{image_path.stem}"
             output_path = self.path_generator.generate_mesh_path(
@@ -277,6 +280,12 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     "description": "Texture generation resolution per view",
                     "default": 512,
                     "enum": [512, 768],
+                    "required": False,
+                },
+                "enable_realesrgan": {
+                    "type": "boolean",
+                    "description": "Enable RealESRGAN 4x Super-Resolution enhancement",
+                    "default": True,
                     "required": False,
                 },
             },

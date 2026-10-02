@@ -67,6 +67,18 @@ class ApiClient {
     // Request interceptor
     this.client.interceptors.request.use(
       (config) => {
+        // If uploading FormData, ensure Content-Type is not forced to application/json
+        // or raw multipart/form-data without boundary, allowing the browser/axios to set
+        // the correct multipart/form-data; boundary=----... header automatically.
+        if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+          if (config.headers) {
+            delete config.headers['Content-Type'];
+            delete (config.headers as any)['content-type'];
+          }
+          if (!config.timeout || config.timeout < 600000) {
+            config.timeout = 600000;
+          }
+        }
         console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
