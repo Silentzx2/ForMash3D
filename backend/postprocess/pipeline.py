@@ -337,6 +337,7 @@ def _build_result(
         "pbr_maps": pbr_urls,
         "texture_status": generated.get("texture_status", "not_generated"),
         "thumbnail_url": f"{base_url}/thumbnail" if generated.get("thumbnail") else None,
+        "thumbnail_path": str(generated["thumbnail"]) if generated.get("thumbnail") else None,
         "thumbnail_download_url": (
             f"{base_url}/download?artifact_format=thumbnail"
             if generated.get("thumbnail")

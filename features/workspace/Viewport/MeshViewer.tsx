@@ -1501,6 +1501,20 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // WebGL resilience: prevent browser crash when loading heavy geometry or during memory spikes
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      console.warn('[MeshViewer] WebGL context lost - prevented browser crash, awaiting restore.');
+    };
+    const handleContextRestored = () => {
+      console.info('[MeshViewer] WebGL context restored - recovering renderer state.');
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      renderer.setSize(container.clientWidth || width, container.clientHeight || height);
+      idleFrames = 0;
+    };
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost, false);
+    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored, false);
+
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -2167,6 +2181,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     return () => {
       resizeObserver.disconnect();
       renderer.setAnimationLoop(null);
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
       renderer.domElement.removeEventListener('pointerdown', onCanvasPointerDown);
       renderer.domElement.removeEventListener('pointerdown', onBrushPointerDown);
       renderer.domElement.removeEventListener('pointermove', onBrushPointerMove);

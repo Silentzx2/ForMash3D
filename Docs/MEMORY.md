@@ -1,3 +1,15 @@
+## 2026-10-02 Viewer & Network Resilience Hardening (Large Model Load & Stream Protection)
+- **Root Cause of Viewer / Proxy Crash:**
+  - `app/api/v1/[...path]/route.ts` used a 30s `AbortSignal.timeout(30000)` on all GET requests. For 50-100MB textured GLB files over network or tunnel, the stream exceeded 30s, causing an abort that broke the pipe and threw an unhandled Next.js `failed to pipe response: TimeoutError`.
+  - Duplicate concurrent fetches from `prefetchGLB` and `MeshViewer` doubled the proxy load.
+  - Job thumbnails generated in `asset_root / "previews" / "thumbnail.png"` were not exposed under `result["thumbnail_path"]`, causing `GET /api/v1/system/jobs/{job_id}/thumbnail` to return 404.
+  - Heavy polygon meshes (>150K faces) could trigger WebGL context loss, which without `event.preventDefault()` permanently crashed the browser viewport.
+- **Remediation Implemented:**
+  - In `route.ts`: 10-minute dynamic timeout for binary assets; response stream wrapped in `TransformStream` with `.catch()` to absorb client cancellations cleanly.
+  - In `glbCache.ts`: In-flight Promise deduplication prevents duplicate downloads of the same URL; 3-attempt exponential backoff retry with 120s timeout and stream fallback.
+  - In `pipeline.py` & `system.py`: Added `thumbnail_path` to `_build_result` and fallback search across `asset_root / previews / thumbnail.png`, `preview.jpg`, and adjacent `*_thumb.png`.
+  - In `MeshViewer.tsx`: Attached `webglcontextlost` and `webglcontextrestored` handlers to `renderer.domElement`.
+
 ## 2026-10-02 Official Model Implementation Parity & Raw Quality Hardening
 - Performed exhaustive parity audit across 10+ models between `backend/thirdparty/` and `backend/adapters/`.
 - Key Architectural Rule Enforced:

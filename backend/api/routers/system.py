@@ -1020,7 +1020,25 @@ async def get_job_status(job_id: str, request: Request):
                     result["file_id"] = f"job-{job_id}"
 
             # Convert thumbnail path to URL
-            thumbnail_path = result.get("thumbnail_path")
+            thumbnail_path = result.get("thumbnail_path") or result.get("thumbnail")
+            if not thumbnail_path and result.get("asset_root"):
+                root = Path(result["asset_root"])
+                for candidate in [
+                    root / "previews" / "thumbnail.png",
+                    root / "previews" / "preview.jpg",
+                    root / "previews" / "thumbnail.jpg",
+                ]:
+                    if candidate.exists():
+                        thumbnail_path = str(candidate)
+                        result["thumbnail_path"] = thumbnail_path
+                        break
+            if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
+                m_path = Path(result.get("mesh_path") or result.get("output_path"))
+                candidate = m_path.parent / f"{m_path.stem}_thumb.png"
+                if candidate.exists():
+                    thumbnail_path = str(candidate)
+                    result["thumbnail_path"] = thumbnail_path
+
             if thumbnail_path and os.path.exists(thumbnail_path):
                 # Create URL for thumbnail
                 thumbnail_url = (
@@ -1383,16 +1401,27 @@ async def download_job_thumbnail(
             )
 
         # Get thumbnail path
-        thumbnail_path = result.get("thumbnail_path")
-        if not thumbnail_path:
-            raise HTTPException(
-                status_code=404, detail="No thumbnail available for this job"
-            )
+        thumbnail_path = result.get("thumbnail_path") or result.get("thumbnail")
+        if not thumbnail_path and result.get("asset_root"):
+            root = Path(result["asset_root"])
+            for candidate in [
+                root / "previews" / "thumbnail.png",
+                root / "previews" / "preview.jpg",
+                root / "previews" / "thumbnail.jpg",
+            ]:
+                if candidate.exists():
+                    thumbnail_path = str(candidate)
+                    break
+        if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
+            m_path = Path(result.get("mesh_path") or result.get("output_path"))
+            candidate = m_path.parent / f"{m_path.stem}_thumb.png"
+            if candidate.exists():
+                thumbnail_path = str(candidate)
 
-        if not os.path.exists(thumbnail_path):
+        if not thumbnail_path or not os.path.exists(thumbnail_path):
             raise HTTPException(
                 status_code=404,
-                detail=f"Thumbnail file not found at path: {thumbnail_path}",
+                detail=f"Thumbnail file not found for job: {job_id}",
             )
 
         # Determine the response format

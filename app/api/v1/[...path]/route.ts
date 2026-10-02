@@ -119,15 +119,32 @@ export async function GET(
     return streamResponse(targetUrl, request);
   }
   
+  // Dynamic timeout: large binary downloads/exports get 10 minutes (600000ms), other endpoints get 3 minutes (180000ms)
+  const isLargeAssetPath =
+    fullPath.includes('download') ||
+    fullPath.includes('export') ||
+    fullPath.includes('thumbnail') ||
+    fullPath.includes('file-upload') ||
+    fullPath.includes('artifact_format') ||
+    fullPath.includes('assets') ||
+    fullPath.endsWith('.glb') ||
+    fullPath.endsWith('.gltf') ||
+    fullPath.endsWith('.obj') ||
+    fullPath.endsWith('.zip') ||
+    fullPath.endsWith('.png');
+
+  const timeoutMs = isLargeAssetPath ? 600000 : 180000;
+
   try {
     const response = await fetchWithBackendFallback(targetUrl, {
       method: 'GET',
       headers: getForwardingHeaders(request),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     
     return await createProxyResponse(response, request);
-  } catch {
+  } catch (error) {
+    console.error(`[API Proxy] GET ${fullPath} failed:`, error);
     return corsJson(
       { success: false, message: `Backend unavailable or timed out at ${BACKEND_URL}` },
       { status: 504 },
@@ -314,6 +331,13 @@ async function createProxyResponse(response: Response, request?: NextRequest): P
     if (value) headers.set(header, value);
   }
 
+  // Forward content-length for binary assets if content-encoding is absent (allows download progress)
+  const contentEncoding = response.headers.get('content-encoding');
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && !contentEncoding) {
+    headers.set('content-length', contentLength);
+  }
+
   const origin = request?.headers.get('origin');
   if (origin) {
     headers.set('Access-Control-Allow-Origin', origin);
@@ -322,8 +346,19 @@ async function createProxyResponse(response: Response, request?: NextRequest): P
     headers.set('Access-Control-Allow-Credentials', 'true');
   }
 
-  // Stream response body directly to avoid buffering large GLB/OBJ files in memory
-  return new NextResponse(response.body, {
+  // Stream response body directly through a TransformStream to absorb client aborts gracefully without unhandled Next.js pipe errors
+  if (response.body) {
+    const transform = new TransformStream();
+    response.body.pipeTo(transform.writable).catch(() => {
+      // Stream aborted by client or upstream timeout - safely absorbed
+    });
+    return new NextResponse(transform.readable, {
+      status: response.status,
+      headers,
+    });
+  }
+
+  return new NextResponse(null, {
     status: response.status,
     headers,
   });

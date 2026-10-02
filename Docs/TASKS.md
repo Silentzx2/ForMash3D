@@ -49,6 +49,13 @@
 - [x] 100% pass on parity contract test suite (`test_official_model_parity_contract.py`)
 - [x] Frontend production build verified (`npm run build` completed cleanly in 14.2s across all 14 routes)
 
+### Viewer & Network Resilience Hardening
+- [x] Dynamic API proxy timeouts (10 min for large assets/downloads/thumbnails, 3 min for general APIs)
+- [x] Stream proxy error absorption using `TransformStream` to eliminate Next.js `failed to pipe response` crashes
+- [x] Multi-tier asset download deduplication and exponential backoff retry in `glbCache.ts`
+- [x] Robust fallback thumbnail resolution in `pipeline.py` and `system.py` (`previews/thumbnail.png`, `preview.jpg`, `*_thumb.png`)
+- [x] Three.js WebGL context loss protection (`event.preventDefault()`) and recovery in `MeshViewer.tsx`
+
 ### Runtime Contract Audit
 - [x] Remove non-functional direct Hunyuan Shape textured model registration
 - [x] Fix Shape/Mini Turbo → Paint generated mesh file-ID handoff
