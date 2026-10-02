@@ -271,6 +271,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 f"TripoSG raw extraction completed: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
             )
 
+            # Apply Y-up orientation transform (-90 deg on X, +90 deg on Y)
+            mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
+            mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+
             # Save output
             output_path = self.path_generator.generate_mesh_path(
                 self.model_id, image_path.stem, output_format

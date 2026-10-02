@@ -228,7 +228,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             unique_id = uuid.uuid4().hex
             safe_name = f"motion_{skeleton_id}_{unique_id}"
             
-            output_dir = Path("outputs") / "motions" / safe_name
+            output_dir = Path(self.path_generator.base_output_dir) / "motions" / safe_name
             output_dir.mkdir(parents=True, exist_ok=True)
 
             npz_path = output_dir / f"{safe_name}.npz"

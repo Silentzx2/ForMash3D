@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import torch
 from PIL import Image
 
@@ -153,13 +154,14 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Generating raw mesh with Hunyuan3D-Shape-v2-1 from: {image_path}")
 
             image = Image.open(image_path)
-            if image.mode == "RGB":
-                image = self.bg_remover(image)
-            else:
+            has_useful_alpha = image.mode in ("RGBA", "LA", "PA") and np.array(image.getchannel("A")).min() < 255
+            if has_useful_alpha:
                 image = image.convert("RGBA")
+            else:
+                image = self.bg_remover(image.convert("RGB"))
 
             logger.info("Generating 3D shape...")
-            octree_res = min(512, max(64, int(inputs.get("octree_resolution", 384))))
+            octree_res = 512
             num_steps = inputs.get("num_inference_steps", 50)
             guidance_scale = inputs.get("guidance_scale", 5.0)
 
@@ -201,6 +203,19 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             self.status = ModelStatus.ERROR
             logger.error(f"Hunyuan3D-Shape-v2-1 raw mesh generation failed: {str(e)}")
             raise Exception(f"Hunyuan3D-Shape-v2-1 raw mesh generation failed: {str(e)}")
+
+    def _get_output_mesh_path(self, safe_name: str, output_format: str) -> Path:
+        return Path(
+            self.path_generator.generate_mesh_path(
+                self.model_id, safe_name, output_format
+            )
+        )
+
+    def _generate_output_path(self, base_name: str, output_format: str) -> Path:
+        safe_name = "".join(
+            c for c in base_name[:50] if c.isalnum() or c in (" ", "_")
+        ).strip().replace(" ", "_")
+        return self._get_output_mesh_path(safe_name or "mesh", output_format)
 
     def get_parameter_schema(self) -> Dict[str, Any]:
         return {

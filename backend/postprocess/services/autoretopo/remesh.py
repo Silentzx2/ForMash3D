@@ -19,7 +19,10 @@ from __future__ import annotations
 import shutil, subprocess, tempfile, os
 import numpy as np
 import trimesh
-import pymeshlab as ml
+try:
+    import pymeshlab as ml
+except Exception:
+    ml = None
 
 
 def _edge_len_for_faces(V, F, target_faces):

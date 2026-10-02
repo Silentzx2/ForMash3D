@@ -119,7 +119,7 @@ Located at `backend/api/`:
 | **GPU Monitor** | `backend/core/scheduler/gpu_monitor.py` | Real-time VRAM and temperature polling |
 | **Job Queue** | `backend/core/scheduler/job_queue.py` | Job request models and types |
 | **Redis Job Queue** | `backend/core/scheduler/redis_job_queue.py` | Redis-backed distributed job queue (multi-worker with bounded 20-connection pool) |
-| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer) |
+| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer). All raw outputs route through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). NeRF/camera-aligned models (TripoSR, TripoSG) enforce Y-up coordinate orientation before saving. |
 | **Paint-v2-1 Pipeline** | `backend/adapters/hunyuan3d_paint_v21.py` | Hunyuan3D-Paint-v2-1 adapter with RealESRGAN x4+ super-resolution, DifferentiableRenderer for PBR validation, VRAM status tracking, and Shape→Paint automatic chaining support |
 
 ### 2.4 Storage Layer
@@ -127,7 +127,7 @@ Located at `backend/api/`:
 Located at `backend/storage/`:
 - **Uploads** (`uploads/`): User-uploaded reference images (`.png`, `.jpg`, `.webp`).
 - **Models** (`models/<asset_name>_<job_hash>/`): Canonical per-generation asset workspaces.
-- **Asset workspace**: `master/`, `game_ready/`, `lods/`, `collision/`, `textures/`, `previews/`, and `metadata/`.
+- **Asset workspace**: `master/` (`source.glb` immutable master), `game_ready/` (engine-optimized final output), `lods/` (LOD0..3), `collision/` (CoACD convex decomposition derived from final `game_ready.glb`), `textures/`, `previews/`, and `metadata/` (`quality_report.json`, `asset.json`, `physics.json`). Directory creation is deferred until writing begins.
 - **ZIP delivery**: Generated on demand from the canonical workspace; no persistent `exports/` tree is required.
 
 ### 2.5 Local Wheelhouse

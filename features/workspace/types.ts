@@ -110,6 +110,51 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     (typeof vertCount === 'number' && vertCount > 0)
   );
 
+  const rawArtifacts = (raw.artifacts || {}) as Record<string, any>;
+  const collisionUrl =
+    typeof rawArtifacts.collision === 'string'
+      ? rawArtifacts.collision
+      : (rawArtifacts.collision?.url || raw.collision_url || raw.collision || undefined);
+
+  const physics = rawArtifacts.physics || raw.physics || undefined;
+  const physicsUrl =
+    typeof rawArtifacts.physicsUrl === 'string'
+      ? rawArtifacts.physicsUrl
+      : (raw.physics_url || undefined);
+
+  const physicsReady = Boolean(
+    rawArtifacts.physicsReady ??
+    raw.physics_ready ??
+    (collisionUrl && physics)
+  );
+
+  const qaReport = rawArtifacts.qaReport || raw.qa_report || raw.quality_trace?.game_ready?.qa || undefined;
+  const sourceUrl = rawArtifacts.source || raw.source_model_url || rawArtifacts.master?.url || undefined;
+  const gameReadyUrl = rawArtifacts.gameReady || raw.game_ready_url || raw.model_url || rawArtifacts.game_ready?.glb?.url || undefined;
+  const lods = rawArtifacts.lods || raw.lod_urls || (rawArtifacts.lods && typeof rawArtifacts.lods === 'object' ? Object.values(rawArtifacts.lods).map((l: any) => l?.url).filter(Boolean) : undefined);
+  const pbrMaps = rawArtifacts.pbrMaps || raw.pbr_maps || undefined;
+  const gameReadyFormats = rawArtifacts.gameReadyFormats || raw.game_ready_formats || (rawArtifacts.game_ready && typeof rawArtifacts.game_ready === 'object' ? Object.fromEntries(Object.entries(rawArtifacts.game_ready).map(([k, v]: [string, any]) => [k, v?.url || v]).filter(([, u]) => Boolean(u))) : undefined);
+  const zipUrl = rawArtifacts.zipUrl || raw.zip_url || undefined;
+
+  const hasArtifacts = Boolean(
+    raw.artifacts || collisionUrl || physicsReady || physics || qaReport || sourceUrl || gameReadyUrl || lods || pbrMaps || gameReadyFormats || zipUrl
+  );
+
+  const artifacts = hasArtifacts ? {
+    ...(typeof raw.artifacts === 'object' ? raw.artifacts : {}),
+    source: sourceUrl,
+    gameReady: gameReadyUrl,
+    lods,
+    collision: collisionUrl,
+    qaReport,
+    pbrMaps,
+    gameReadyFormats,
+    zipUrl,
+    physicsUrl,
+    physicsReady,
+    physics,
+  } : undefined;
+
   return {
     id: String(raw.id || `asset-${Date.now()}`),
     name: String(raw.name || '3D Model'),
@@ -137,10 +182,10 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     materials: Array.isArray(raw.materials) ? raw.materials : [],
     createdAt: raw.createdAt || raw.created_at,
     source: raw.source,
-    artifacts: raw.artifacts,
-    qaScore: raw.qaScore,
-    qaStatus: raw.qaStatus,
-    qaWarnings: raw.qaWarnings,
+    artifacts,
+    qaScore: raw.qaScore ?? qaReport?.game_ready_score ?? qaReport?.score,
+    qaStatus: raw.qaStatus ?? qaReport?.status,
+    qaWarnings: raw.qaWarnings ?? qaReport?.warnings,
   };
 }
 

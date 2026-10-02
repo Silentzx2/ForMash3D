@@ -56,6 +56,15 @@
 - [x] Robust fallback thumbnail resolution in `pipeline.py` and `system.py` (`previews/thumbnail.png`, `preview.jpg`, `*_thumb.png`)
 - [x] Three.js WebGL context loss protection (`event.preventDefault()`) and recovery in `MeshViewer.tsx`
 
+### Storage Contracts, Detail Retention, Physics & UI/UX Hardening (BUG-001 through BUG-004)
+- [x] BUG-001: Standardized raw mesh output directories across TRELLIS & TRELLIS.2 using canonical `OutputPathGenerator`
+- [x] BUG-002A: Deferred non-master directory creation in `pipeline.py` until files are written
+- [x] BUG-002B: Preserved single-geometry Scene visuals in `load_mesh`, added `uv_seam_vertex_delta` quality metrics, and pre-inspected scene textures
+- [x] BUG-003: Prevented detail loss from background contamination across Hunyuan and TripoSR with `min(alpha) < 255` useful-alpha checks and hardcoded 512 max octree extraction resolution
+- [x] BUG-004: Added Y-up coordinate rotation (-90° on X, +90° on Y) before mesh export in TripoSG normal and scribble paths
+- [x] Physics/Collision: Derived collision mesh from final `game_ready.glb`, maintained `master/source.glb` immutability, and eliminated silent placeholder fallback when CoACD is requested
+- [x] UI/UX Wiring: Normalized artifact URLs (collision, physics, QA inspection, PBR maps, multi-format exports) and hydrated live/history assets in `WorkspaceContext.tsx` and `types.ts`, lighting up Viewport Physics and Export controls
+
 ### Runtime Contract Audit
 - [x] Remove non-functional direct Hunyuan Shape textured model registration
 - [x] Fix Shape/Mini Turbo → Paint generated mesh file-ID handoff

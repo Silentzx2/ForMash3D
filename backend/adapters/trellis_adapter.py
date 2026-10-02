@@ -17,6 +17,7 @@ from PIL import Image
 
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel, TextToMeshModel
+from core.utils.file_utils import OutputPathGenerator
 from core.utils.thumbnail_utils import generate_mesh_thumbnail
 from core.utils.mesh_utils import MeshProcessor
 
@@ -45,9 +46,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
         trellis_root: Optional[str] = None,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            vram_requirement = 12000
         # Set default paths
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS")
@@ -70,6 +69,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
         ]  # Skip some models conditionally to save VRAM
         self.pipeline = None
         self.mesh_processor = MeshProcessor()
+        self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
         # Add TRELLIS to Python path if not already there
         if str(self.trellis_root) not in sys.path:
@@ -278,35 +278,30 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             logger.error(f"TRELLIS mesh generation failed: {str(e)}")
             raise Exception(f"TRELLIS mesh generation failed: {str(e)}")
 
+    def _get_output_mesh_path(self, safe_name: str, output_format: str) -> Path:
+        return Path(
+            self.path_generator.generate_mesh_path(
+                self.model_id, safe_name, output_format
+            )
+        )
+
     def _generate_output_path(self, prompt: str, output_format: str) -> Path:
         """Generate output file path based on prompt and format."""
-        # Create safe filename from prompt
         safe_name = "".join(
             c for c in prompt[:50] if c.isalnum() or c in (" ", "_")
-        ).strip()
-        safe_name = safe_name.replace(" ", "_")
-
-        # Create output directory if it doesn't exist
-        output_dir = Path(__file__).resolve().parents[1] / "outputs" / "meshes"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate unique filename
-        import uuid
-
-        unique_id = uuid.uuid4().hex
-        filename = f"trellis_{safe_name}_{unique_id}.{output_format}"
-
-        return output_dir / filename
+        ).strip().replace(" ", "_")
+        return self._get_output_mesh_path(safe_name or "mesh", output_format)
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for TRELLIS."""
@@ -388,9 +383,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         trellis_root: Optional[str] = None,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            vram_requirement = 12000
         # Set default paths
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS")
@@ -412,6 +405,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         self.skip_models = ["slat_decoder_rf"]
         self.pipeline = None
         self.mesh_processor = MeshProcessor()
+        self.path_generator = OutputPathGenerator(base_output_dir="outputs")
         # Add TRELLIS to Python path if not already there
         if str(self.trellis_root) not in sys.path:
             sys.path.insert(0, str(self.trellis_root))
@@ -637,42 +631,36 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             logger.error(f"TRELLIS mesh generation failed: {str(e)}")
             raise Exception(f"TRELLIS mesh generation failed: {str(e)}")
 
+    def _get_output_mesh_path(self, safe_name: str, output_format: str) -> Path:
+        return Path(
+            self.path_generator.generate_mesh_path(
+                self.model_id, safe_name, output_format
+            )
+        )
+
     def _generate_output_path(
         self, prompt: str, output_format: str, is_prompt: bool = True
     ) -> Path:
         """Generate output file path based on prompt and format."""
-        # Create safe filename from prompt
         if is_prompt:
             safe_name = "".join(
                 c for c in prompt[:50] if c.isalnum() or c in (" ", "_")
-            ).strip()
-            safe_name = safe_name.replace(" ", "_")
+            ).strip().replace(" ", "_")
         else:
-            safe_name = Path(prompt).stem[
-                :50
-            ]  # Use filename stem for non-prompt inputs
+            safe_name = Path(prompt).stem[:50]
 
-        # Create output directory if it doesn't exist
-        output_dir = Path(os.getcwd()) / "outputs" / "meshes"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate unique filename
-        import time
-
-        timestamp = int(time.time())
-        filename = f"trellis_{safe_name}_{timestamp}.{output_format}"
-
-        return output_dir / filename
+        return self._get_output_mesh_path(safe_name or "mesh", output_format)
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for TRELLIS."""
@@ -845,3 +833,14 @@ class TrellisImageMeshPaintingAdapter(TrellisImageToMeshAdapterCommon):
         except Exception as e:
             logger.error(f"TRELLIS image-conditioned texture generation failed: {str(e)}")
             raise Exception(f"TRELLIS image-conditioned texture generation failed: {str(e)}")
+
+
+# Aliases matching various naming conventions
+TRELLISImageToTexturedMeshAdapter = TrellisImageToTexturedMeshAdapter
+TRELLISImageToRawMeshAdapter = TrellisImageToRawMeshAdapter
+TRELLISTextToTexturedMeshAdapter = TrellisTextToTexturedMeshAdapter
+TRELLISTextToMeshAdapterCommon = TrellisTextToMeshAdapterCommon
+TRELLISImageToMeshAdapterCommon = TrellisImageToMeshAdapterCommon
+TRELLISImageMeshPaintingAdapter = TrellisImageMeshPaintingAdapter
+TRELLISTextMeshPaintingAdapter = TrellisTextMeshPaintingAdapter
+

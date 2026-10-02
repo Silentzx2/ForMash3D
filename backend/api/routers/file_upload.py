@@ -318,7 +318,7 @@ async def upload_image(
 async def upload_mesh(
     file: UploadFile = File(..., description="Mesh file to upload"),
     file_store: Optional[FileStore] = Depends(get_file_store),
-    background_tasks: BackgroundTasks = Depends(),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Upload a mesh file.

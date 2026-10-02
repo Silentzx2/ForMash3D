@@ -180,9 +180,15 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             from tsr.utils import remove_background, resize_foreground, to_gradio_3d_orientation
 
             # Preserve an existing alpha channel so pre-matted uploads are not background-removed twice.
-            raw_image = Image.open(image_path).convert("RGBA")
-            if no_remove_bg:
-                proc_image = np.array(raw_image.convert("RGB"))
+            img = Image.open(image_path)
+            has_useful_alpha = img.mode in ("RGBA", "LA", "PA") and np.array(img.getchannel("A")).min() < 255
+            raw_image = img.convert("RGBA")
+            if no_remove_bg or has_useful_alpha:
+                resized = resize_foreground(raw_image, foreground_ratio)
+                arr = np.array(resized).astype(np.float32) / 255.0
+                if arr.shape[-1] == 4:
+                    arr = arr[:, :, :3] * arr[:, :, 3:4] + (1 - arr[:, :, 3:4]) * 0.5
+                proc_image = Image.fromarray((arr * 255.0).astype(np.uint8))
             else:
                 try:
                     import rembg

@@ -265,13 +265,14 @@ class UniRigAdapter(AutoRigModel):
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def _estimate_bone_count(self, rigged_file: Path) -> int:
         """

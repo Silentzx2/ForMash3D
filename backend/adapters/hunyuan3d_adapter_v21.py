@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import torch
 from PIL import Image
 
@@ -215,13 +216,14 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for Hunyuan3D 2.1."""
@@ -270,14 +272,18 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
 
             # Load and preprocess image
             image = Image.open(image_path)
-            if image.mode == "RGB":
-                image = self.bg_remover(image)
-            else:
+            has_useful_alpha = (
+                image.mode in ("RGBA", "LA", "PA")
+                and np.array(image.getchannel("A")).min() < 255
+            )
+            if has_useful_alpha:
                 image = image.convert("RGBA")
+            else:
+                image = self.bg_remover(image.convert("RGB"))
 
             # Shape generation only
             logger.info("Generating 3D shape...")
-            octree_res = inputs.get("octree_resolution", 256)
+            octree_res = 512
             num_steps = inputs.get("num_inference_steps", 35 if inputs.get("low_vram") else 50)
             mesh_result = self.pipeline_shapegen(
                 image=image,
@@ -381,9 +387,15 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             )
 
             # Load and preprocess image
-            image = Image.open(image_path).convert("RGBA")
-            if image.mode == "RGB":
-                image = self.bg_remover(image)
+            image = Image.open(image_path)
+            has_useful_alpha = (
+                image.mode in ("RGBA", "LA", "PA")
+                and np.array(image.getchannel("A")).min() < 255
+            )
+            if has_useful_alpha:
+                image = image.convert("RGBA")
+            else:
+                image = self.bg_remover(image.convert("RGB"))
 
             # Step 1: Shape generation
             logger.info("Generating 3D shape...")

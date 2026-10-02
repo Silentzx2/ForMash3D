@@ -18,12 +18,17 @@ from .schemas import MeshStats
 SUPPORTED_INPUT_EXTS = {".glb", ".gltf", ".obj", ".ply", ".stl"}
 
 
-def load_mesh(data: bytes, filename: str) -> trimesh.Trimesh:
-    """Load a single mesh from raw bytes.
+def load_mesh(data: bytes | str | Path, filename: str | None = None) -> trimesh.Trimesh:
+    """Load a single mesh from raw bytes or a file path.
 
-    Scenes (multi-mesh GLBs) are concatenated into one mesh so downstream tools
-    receive a single Trimesh. Adjust if your scripts need the scene graph.
+    Scenes (multi-mesh GLBs) are preserved if single-geometry or concatenated so
+    downstream tools receive a single Trimesh.
     """
+    if isinstance(data, (str, Path)):
+        path = Path(data)
+        filename = filename or path.name
+        data = path.read_bytes()
+
     ext = Path(filename or "mesh.glb").suffix.lower() or ".glb"
     if ext not in SUPPORTED_INPUT_EXTS:
         raise ValueError(f"Unsupported input format '{ext}'. Supported: {sorted(SUPPORTED_INPUT_EXTS)}")
@@ -34,7 +39,16 @@ def load_mesh(data: bytes, filename: str) -> trimesh.Trimesh:
     if isinstance(loaded, trimesh.Scene):
         if len(loaded.geometry) == 0:
             raise ValueError("The uploaded file contains no geometry.")
-        loaded = trimesh.util.concatenate(tuple(loaded.geometry.values()))
+        if len(loaded.geometry) == 1:
+            loaded = next(iter(loaded.geometry.values()))
+        else:
+            first_visual = next((getattr(g, "visual", None) for g in loaded.geometry.values() if getattr(g, "visual", None) is not None), None)
+            loaded = trimesh.util.concatenate(tuple(loaded.geometry.values()))
+            if first_visual is not None and getattr(loaded, "visual", None) is not None:
+                first_mat = getattr(first_visual, "material", None)
+                if first_mat is not None and getattr(first_mat, "image", None) is not None:
+                    if getattr(getattr(loaded.visual, "material", None), "image", None) is None:
+                        loaded.visual.material = first_mat
 
     if not isinstance(loaded, trimesh.Trimesh):
         raise ValueError("The uploaded file did not resolve to a triangle mesh.")

@@ -10,7 +10,10 @@ from __future__ import annotations
 import copy
 
 import numpy as np
-import pymeshlab
+try:
+    import pymeshlab
+except Exception:
+    pymeshlab = None
 import trimesh
 
 from ..schemas import LODOptions, OptimizeOptions
@@ -111,17 +114,19 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
             "texture_preserved": _has_uv(mesh),
         }
     textured = _has_uv(mesh)
-    ms = pymeshlab.MeshSet()
-    mesh_kwargs = {
-        "vertex_matrix": np.asarray(mesh.vertices, dtype=np.float64),
-        "face_matrix": np.asarray(mesh.faces, dtype=np.int32),
-        "v_normals_matrix": np.asarray(mesh.vertex_normals, dtype=np.float64),
-    }
-    if textured:
-        uv = np.asarray(mesh.visual.uv, dtype=np.float64)
-        mesh_kwargs["w_tex_coords_matrix"] = uv[np.asarray(mesh.faces, dtype=np.int64)].reshape(-1, 2)
-    ms.add_mesh(pymeshlab.Mesh(**mesh_kwargs))
     try:
+        if pymeshlab is None:
+            raise RuntimeError("pymeshlab not available")
+        ms = pymeshlab.MeshSet()
+        mesh_kwargs = {
+            "vertex_matrix": np.asarray(mesh.vertices, dtype=np.float64),
+            "face_matrix": np.asarray(mesh.faces, dtype=np.int32),
+            "v_normals_matrix": np.asarray(mesh.vertex_normals, dtype=np.float64),
+        }
+        if textured:
+            uv = np.asarray(mesh.visual.uv, dtype=np.float64)
+            mesh_kwargs["w_tex_coords_matrix"] = uv[np.asarray(mesh.faces, dtype=np.int64)].reshape(-1, 2)
+        ms.add_mesh(pymeshlab.Mesh(**mesh_kwargs))
         if textured:
             ms.meshing_decimation_quadric_edge_collapse_with_texture(
                 targetfacenum=int(target_faces), qualitythr=0.3, extratcoordw=1.0,

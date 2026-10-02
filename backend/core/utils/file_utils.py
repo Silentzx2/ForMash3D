@@ -1,7 +1,10 @@
 """File handling utilities"""
 
 import base64
-import imghdr
+try:
+    import imghdr
+except ImportError:
+    imghdr = None
 import logging
 import mimetypes
 import os
@@ -110,9 +113,17 @@ def detect_file_type_from_content(file_path: str) -> str:
     """Detect file type from content analysis"""
     try:
         # Try to detect if it's an image
-        img_type = imghdr.what(file_path)
-        if img_type:
-            return f"image/{img_type}"
+        if imghdr is not None:
+            img_type = imghdr.what(file_path)
+            if img_type:
+                return f"image/{img_type}"
+        else:
+            try:
+                with Image.open(file_path) as img:
+                    if img.format:
+                        return f"image/{img.format.lower()}"
+            except Exception:
+                pass
 
         # Check MIME type
         mime_type, _ = mimetypes.guess_type(file_path)

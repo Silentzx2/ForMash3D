@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import logging
 import re
@@ -254,26 +255,50 @@ def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
     if visual is None:
         return False
 
-    if getattr(visual, "image", None) is not None:
+    def _is_real_image(img: Any) -> bool:
+        if img is None:
+            return False
+        size = getattr(img, "size", None)
+        if size is not None and (size[0] <= 2 or size[1] <= 2):
+            return False
+        return True
+
+    if _is_real_image(getattr(visual, "image", None)):
         return True
 
     material = getattr(visual, "material", None)
     if material is None:
         return False
 
-    if getattr(material, "image", None) is not None:
+    if _is_real_image(getattr(material, "image", None)):
         return True
 
-    return any(
-        getattr(material, attribute, None) is not None
-        for attribute in (
-            "baseColorTexture",
-            "normalTexture",
-            "metallicRoughnessTexture",
-            "occlusionTexture",
-            "emissiveTexture",
-        )
-    )
+    for attribute in (
+        "baseColorTexture",
+        "normalTexture",
+        "metallicRoughnessTexture",
+        "occlusionTexture",
+        "emissiveTexture",
+    ):
+        val = getattr(material, attribute, None)
+        if val is not None and _is_real_image(val):
+            return True
+
+    return False
+
+
+def _has_native_textures_scene(raw_bytes: bytes, filename: str = "model.glb") -> bool:
+    """Inspect the raw scene before concatenation to detect native textures."""
+    try:
+        ext = Path(filename or "mesh.glb").suffix.lower().lstrip(".") or "glb"
+        loaded = trimesh.load(io.BytesIO(raw_bytes), file_type=ext, process=False)
+        if isinstance(loaded, trimesh.Scene):
+            return any(_has_native_textures(g) for g in loaded.geometry.values() if isinstance(g, trimesh.Trimesh))
+        if isinstance(loaded, trimesh.Trimesh):
+            return _has_native_textures(loaded)
+        return False
+    except Exception:
+        return False
 
 
 def _save_file(path: Path, payload: bytes) -> str:
@@ -463,16 +488,10 @@ def run_postprocess_job(
     preview_dir = asset_dir / "previews"
     metadata_dir = asset_dir / "metadata"
 
-    for directory in (
-        master_dir,
-        game_ready_dir,
-        lod_dir,
-        collision_dir,
-        texture_dir,
-        preview_dir,
-        metadata_dir,
-    ):
-        directory.mkdir(parents=True, exist_ok=True)
+    # ponytail: create each dir immediately before its first write
+    # so filesystem state reflects pipeline progress honestly
+    master_dir.mkdir(parents=True, exist_ok=True)
+    metadata_dir.mkdir(parents=True, exist_ok=True)
 
     master_path = master_dir / "source.glb"
     if not master_path.exists():
@@ -500,8 +519,8 @@ def run_postprocess_job(
 
     raw_bytes = master_path.read_bytes()
     source_sha256 = _sha256_file(master_path)
+    native_textures = _has_native_textures_scene(raw_bytes, master_path.name)
     mesh = load_mesh(raw_bytes, master_path.name)
-    native_textures = _has_native_textures(mesh)
     quality_trace = {
         "source": {
             **mesh_stats(mesh).model_dump(),
@@ -673,6 +692,7 @@ def run_postprocess_job(
     texture_status = "native" if native_textures else "not_generated"
 
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
+    game_ready_dir.mkdir(parents=True, exist_ok=True)
     base_name = f"{asset_name}_{asset_hash}"
     game_ready: Dict[str, str] = {}
     artifact_errors: Dict[str, str] = {}
@@ -721,6 +741,7 @@ def run_postprocess_job(
     lod_enabled = bool(job_inputs.get("generateLOD", True))
     if lod_enabled:
         _emit(progress, 0.72, "lod", "Generating LOD chain.")
+        lod_dir.mkdir(parents=True, exist_ok=True)
         source_faces = max(1, len(uv_mesh.faces))
         target_faces = int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)
         target_ratio = min(1.0, max(0.05, target_faces / source_faces))
@@ -773,9 +794,11 @@ def run_postprocess_job(
         collision_quality = physics_config["collision_quality"]
         collision_options = collision_options_for_quality(collision_quality)
         _emit(progress, 0.82, "collision", "Generating collision proxy.")
+        collision_dir.mkdir(parents=True, exist_ok=True)
         try:
+            game_ready_mesh = load_mesh(glb_path)
             collision_scene, collision_stats = run_collision(
-                uv_mesh,
+                game_ready_mesh,
                 CollisionOptions(**collision_options),
             )
             collision_payload = collision_scene.export(file_type="glb")
@@ -784,7 +807,7 @@ def run_postprocess_job(
             collision_path = collision_dir / "collision.glb"
             collision_path.write_bytes(collision_payload)
             physics_metadata = build_physics_metadata(
-                uv_mesh, physics_config, collision_stats
+                game_ready_mesh, physics_config, collision_stats
             )
             _write_json(metadata_dir / "physics.json", physics_metadata)
         except Exception as exc:
@@ -792,6 +815,7 @@ def run_postprocess_job(
             raise RuntimeError(f"Collision generation failed: {exc}") from exc
 
     _emit(progress, 0.90, "preview", "Generating asset preview.")
+    preview_dir.mkdir(parents=True, exist_ok=True)
     thumbnail_path: Optional[Path] = None
     try:
         from .services.mesh_thumbnail import render_mesh_thumbnail
@@ -829,6 +853,7 @@ def run_postprocess_job(
     quality_trace["game_ready"] = {
         **mesh_stats(uv_mesh).model_dump(),
         "native_textures": _has_native_textures(uv_mesh),
+        "uv_seam_vertex_delta": len(uv_mesh.vertices) - len(mesh.vertices),
         "qa": qa_report,
     }
 
