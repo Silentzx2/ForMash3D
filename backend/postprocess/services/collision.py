@@ -100,13 +100,13 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions,
     fallback_reason = ""
 
     if method == "box":
-        emit("hull", 0.5, "Building a box proxy…")
+        emit("hull", 0.5, "Making a box proxy…")
         hulls = [mesh.bounding_box.copy()]
     elif method == "sphere":
-        emit("hull", 0.5, "Building a sphere proxy…")
+        emit("hull", 0.5, "Making a sphere proxy…")
         hulls = [mesh.bounding_sphere.copy()]
     elif method == "convex_hull":
-        emit("hull", 0.5, "Building the convex hull…")
+        emit("hull", 0.5, "Making the convex hull…")
         hulls = [mesh.convex_hull.copy()]
     else:
         if coacd is None:
@@ -137,7 +137,7 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions,
                 preprocess_resolution=int(options.preprocess_resolution),
                 seed=int(options.seed),
             )
-            emit("hulls", 0.7, f"Building {len(parts)} hulls…")
+            emit("hulls", 0.7, f"Making {len(parts)} hulls…")
             for vertices, faces in parts:
                 part = trimesh.Trimesh(np.asarray(vertices, dtype=np.float64),
                                        np.asarray(faces, dtype=np.int64), process=False)

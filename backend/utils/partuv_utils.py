@@ -59,8 +59,8 @@ class PartUVRunner:
         self.partuv_root = Path(partuv_root)
 
         # Add PartUV to Python path
-        # if str(self.partuv_root) not in sys.path:
-            # sys.path.insert(0, str(self.partuv_root))
+        if str(self.partuv_root) not in sys.path:
+            sys.path.insert(0, str(self.partuv_root))
 
         # Configuration setup
         if config_path is None:

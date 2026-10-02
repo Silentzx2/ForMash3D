@@ -266,19 +266,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 ).samples[0]
                 mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))
 
-            # Optional simplification
-            if auto_optimize and faces > 0 and mesh.faces.shape[0] > faces:
-                try:
-                    import pymeshlab
-                    m = pymeshlab.Mesh(vertex_matrix=mesh.vertices, face_matrix=mesh.faces)
-                    ms = pymeshlab.MeshSet()
-                    ms.add_mesh(m)
-                    ms.meshing_merge_close_vertices()
-                    ms.meshing_decimation_quadric_edge_collapse(targetfacenum=faces)
-                    cur = ms.current_mesh()
-                    mesh = trimesh.Trimesh(vertices=cur.vertex_matrix(), faces=cur.face_matrix())
-                except Exception as dec_err:
-                    logger.warning(f"Mesh decimation skipped ({dec_err})")
+            # Model-native mesh is preserved for source.glb; optimization belongs strictly to downstream post-processing
+            logger.info(
+                f"TripoSG raw extraction completed: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+            )
 
             # Save output
             output_path = self.path_generator.generate_mesh_path(

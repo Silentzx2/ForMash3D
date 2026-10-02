@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { FileJson, Trash2, RefreshCw } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { apiClient, HistoryItem } from '../lib/api';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { FileCodeIcon, RefreshCw, Trash2 } from '@hugeicons/core-free-icons';
 export const RightPromptPanel: React.FC = () => {
   const { currentAsset } = useWorkspace();
   const [historyItem, setHistoryItem] = useState<HistoryItem | null>(null);
@@ -54,18 +56,18 @@ export const RightPromptPanel: React.FC = () => {
     <div className="flex h-full flex-col bg-[hsl(var(--surface-1))] text-xs">
       <div className="flex items-center justify-between border-b border-[hsl(var(--border))] p-2.5">
         <div className="flex items-center gap-2">
-          <FileJson className="h-4 w-4 text-[hsl(var(--primary))]" />
+          <HugeiconsIcon icon={FileCodeIcon} size={16} className="h-4 w-4 text-[hsl(var(--primary))]" />
           <span className="font-bold text-[hsl(var(--foreground))]">Prompt</span>
         </div>
         <div className="flex items-center gap-1">
-          <SimpleTooltip label="Refresh prompt">
+          <SimpleTooltip label="RefreshIcon prompt">
             <button onClick={() => void load()} className="rounded-lg p-1.5 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--surface-2))] hover:text-[hsl(var(--foreground))]">
-              <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+              <HugeiconsIcon icon={RefreshCw} size={16} className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </SimpleTooltip>
           <SimpleTooltip label="Delete history record">
             <button onClick={() => void handleDelete()} disabled={!promptId || loading} className="rounded-lg p-1.5 text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--destructive))/10] hover:text-[hsl(var(--destructive))] disabled:opacity-40">
-              <Trash2 className="h-3.5 w-3.5" />
+              <HugeiconsIcon icon={Trash2} size={16} className="h-3.5 w-3.5" />
             </button>
           </SimpleTooltip>
         </div>

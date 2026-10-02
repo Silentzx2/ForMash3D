@@ -27,7 +27,7 @@ SUPPORTED_MESH_FORMATS = [".glb", ".obj", ".fbx", ".ply", ".stl", ".gltf"]
 SUPPORTED_TEXTURE_FORMATS = [".jpg", ".jpeg", ".png", ".tga", ".exr", ".hdr"]
 
 # Validation limits
-MAX_IMAGE_RESOLUTION = (2048, 2048)  # Maximum image resolution
+MAX_IMAGE_RESOLUTION = (8192, 8192)  # Maximum accepted upload image resolution
 MAX_MESH_VERTICES = 210000  # Maximum number of vertices
 MAX_MESH_FACES = 210000  # Maximum number of faces
 
@@ -132,19 +132,33 @@ def detect_file_type_from_content(file_path: str) -> str:
 
 
 def validate_image_file(
-    file_path: str, max_resolution: Tuple[int, int] = MAX_IMAGE_RESOLUTION
+    file_path: str, max_resolution: Tuple[int, int] = (8192, 8192)
 ) -> Dict:
-    """Validate and get info about an image file"""
+    """Validate and get info about an image file, auto-optimizing large camera photos if needed."""
     try:
         with Image.open(file_path) as img:
             width, height = img.size
-            format_name = img.format
+            format_name = img.format or "PNG"
             mode = img.mode
 
             if width > max_resolution[0] or height > max_resolution[1]:
                 raise ValueError(
                     f"Image resolution {width}x{height} exceeds maximum {max_resolution[0]}x{max_resolution[1]}"
                 )
+
+            # Auto-downscale excessively large camera photos (>2048px in either dimension)
+            # using LANCZOS to prevent GPU VRAM exhaustion while preserving crisp detail
+            TARGET_MAX = 2048
+            if width > TARGET_MAX or height > TARGET_MAX:
+                img_copy = img.copy()
+                img_copy.thumbnail((TARGET_MAX, TARGET_MAX), Image.Resampling.LANCZOS)
+                save_kwargs = {}
+                if format_name in ("JPEG", "JPG"):
+                    save_kwargs["quality"] = 95
+                elif format_name == "PNG":
+                    save_kwargs["optimize"] = True
+                img_copy.save(file_path, format=format_name, **save_kwargs)
+                width, height = img_copy.size
 
             return {
                 "valid": True,
@@ -601,7 +615,9 @@ def get_storage_base_dir() -> Path:
     if env_path:
         base = Path(env_path)
         if not base.is_absolute():
-            base = (Path(__file__).resolve().parents[2] / base).resolve()
+            # Resolve relative paths from the project root, not from the backend dir.
+            # changes made by user - fixed backend/backend/storage bug
+            base = (Path(__file__).resolve().parents[3] / base).resolve()
     else:
         base = (Path(__file__).resolve().parents[2] / "storage").resolve()
     base.mkdir(parents=True, exist_ok=True)

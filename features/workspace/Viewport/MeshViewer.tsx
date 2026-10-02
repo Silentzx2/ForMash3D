@@ -6,30 +6,6 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import {
-  Hand,
-  Camera,
-  Grid as GridIcon,
-  RotateCcw,
-  RotateCw,
-  Printer,
-  Download,
-  ChevronDown,
-  Sparkles,
-  Check,
-  UploadCloud,
-  Search,
-  Sun,
-  Move,
-  Box,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  Compass,
-  FlipHorizontal2,
-  Zap,
-  X
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { CameraViewPreset, ModelAsset } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
@@ -43,6 +19,37 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
+import {
+  StandardBrushIcon,
+  ClayBrushIcon,
+  InflateBrushIcon,
+  SmoothBrushIcon,
+  FlattenBrushIcon,
+  PinchBrushIcon,
+  GrabBrushIcon,
+  PaintBrushToolIcon,
+  AirbrushIcon,
+  EraserToolIcon,
+} from '@/components/icons/BrushIcons';
+
+function getActiveBrushIcon(activeTool: string, sculptBrush?: string, isErase?: boolean) {
+  if (activeTool === 'texture') {
+    return isErase ? EraserToolIcon : PaintBrushToolIcon;
+  }
+  switch (sculptBrush) {
+    case 'clay': return ClayBrushIcon;
+    case 'inflate': return InflateBrushIcon;
+    case 'smooth': return SmoothBrushIcon;
+    case 'flatten': return FlattenBrushIcon;
+    case 'pinch': return PinchBrushIcon;
+    case 'grab': return GrabBrushIcon;
+    case 'standard':
+    default: return StandardBrushIcon;
+  }
+}
 
 const disposeMaterial = (material: THREE.Material) => {
   const m = material as any;
@@ -605,10 +612,62 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     setIsLeftPanelOpen,
     leftPanelWidth,
     isRightPanelOpen,
-    rightPanelWidth
+    rightPanelWidth,
+    sculptSettings,
+    paintBrushSettings,
   } = useWorkspace();
 
   const [isDesktopScreen, setIsDesktopScreen] = useState(true);
+
+  const brushCursorRef = useRef<THREE.Mesh | null>(null);
+  const isBrushingRef = useRef(false);
+  const activeToolRef = useRef(activeTool);
+  const sculptSettingsRef = useRef(sculptSettings);
+  const paintBrushSettingsRef = useRef(paintBrushSettings);
+  const tintedIndicesRef = useRef<Set<number>>(new Set());
+  const lastSculptedMeshRef = useRef<THREE.Mesh | null>(null);
+  const lastNormalsUpdateRef = useRef<number>(0);
+  const lastPaintUVRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    activeToolRef.current = activeTool;
+    sculptSettingsRef.current = sculptSettings;
+    paintBrushSettingsRef.current = paintBrushSettings;
+    if (brushCursorRef.current) {
+      if (activeTool === 'texture') {
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(paintBrushSettings?.color || '#FFCC00');
+      } else {
+        (brushCursorRef.current.material as THREE.MeshBasicMaterial).color.set(0xffcc00);
+      }
+    }
+  }, [activeTool, sculptSettings, paintBrushSettings]);
+
+  // Dynamic BrushIcon Size Preview HUD overlay state
+  const [brushPreviewVisible, setBrushPreviewVisible] = useState(false);
+  const [brushPreviewRadius, setBrushPreviewRadius] = useState(24);
+  const [brushPreviewColor, setBrushPreviewColor] = useState('#FFCC00');
+  const brushPreviewTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Dynamic 2D Brush Reticle Pointer tracking (ref-based for zero React re-renders)
+  const brushReticleRef = useRef<HTMLDivElement>(null);
+  const isPointerDownRef = useRef(false);
+
+  useEffect(() => {
+    if (activeTool === 'edit') {
+      const px = Math.max(16, Math.min(220, (sculptSettings?.radius || 0.15) * 450));
+      setBrushPreviewRadius(px);
+      setBrushPreviewColor('#FFCC00');
+      setBrushPreviewVisible(true);
+      if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
+      brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
+    } else if (activeTool === 'texture') {
+      setBrushPreviewRadius(Math.max(8, Math.min(200, (paintBrushSettings?.size || 24) * 1.5)));
+      setBrushPreviewColor(paintBrushSettings?.color || '#FFCC00');
+      setBrushPreviewVisible(true);
+      if (brushPreviewTimerRef.current) clearTimeout(brushPreviewTimerRef.current);
+      brushPreviewTimerRef.current = setTimeout(() => setBrushPreviewVisible(false), 850);
+    }
+  }, [sculptSettings?.radius, paintBrushSettings?.size, paintBrushSettings?.color, activeTool]);
 
   useEffect(() => {
     const checkScreenSize = () => {
@@ -678,6 +737,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [reflectionPeekFocused, setReflectionPeekFocused] = useState(false);
   const reflectionPreviewUrlRef = useRef<string | null>(null);
   const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
+  const reflectionPeekTweenRef = useRef<number | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
   const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
   const physicsViewerReady = Boolean(physicsStatus?.toLowerCase().includes('ready'));
@@ -1417,7 +1477,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    // 2. Camera
+    // 2. CameraIcon
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
     camera.position.set(0, 1.2, 3.8);
     cameraRef.current = camera;
@@ -1440,6 +1500,20 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+
+    // WebGL resilience: prevent browser crash when loading heavy geometry or during memory spikes
+    const handleContextLost = (event: Event) => {
+      event.preventDefault();
+      console.warn('[MeshViewer] WebGL context lost - prevented browser crash, awaiting restore.');
+    };
+    const handleContextRestored = () => {
+      console.info('[MeshViewer] WebGL context restored - recovering renderer state.');
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      renderer.setSize(container.clientWidth || width, container.clientHeight || height);
+      idleFrames = 0;
+    };
+    renderer.domElement.addEventListener('webglcontextlost', handleContextLost, false);
+    renderer.domElement.addEventListener('webglcontextrestored', handleContextRestored, false);
 
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -1517,7 +1591,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scene.add(floor);
     floorRef.current = floor;
 
-    // 7. Grid Helper
+    // 7. GridIcon Helper
     const grid = new THREE.GridHelper(20, 40, 0xFFCC00, 0x222222);
     grid.position.y = 0;
     (grid.material as THREE.Material).opacity = 0.25;
@@ -1544,6 +1618,393 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scene.add(rigGroup);
     rigArmatureGroupRef.current = rigGroup;
 
+    // 7e. Interactive 3D BrushIcon Cursor Ring for Sculpt & Paint
+    const brushRingGeo = new THREE.RingGeometry(0.92, 1.0, 36);
+    const brushRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffcc00,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const brushCursor = new THREE.Mesh(brushRingGeo, brushRingMat);
+    brushCursor.renderOrder = 999;
+    brushCursor.visible = false;
+    scene.add(brushCursor);
+    brushCursorRef.current = brushCursor;
+
+    const applyBrushStroke = (hit: THREE.Intersection, isShift: boolean, isCtrl: boolean) => {
+      const tool = activeToolRef.current;
+      if (tool === 'edit') {
+        const targetMesh = hit.object as THREE.Mesh;
+        if (!targetMesh || !targetMesh.geometry) return;
+        const geom = targetMesh.geometry as THREE.BufferGeometry;
+        const posAttr = geom.attributes.position;
+        if (!posAttr) return;
+
+        lastSculptedMeshRef.current = targetMesh;
+
+        const sSettings = sculptSettingsRef.current;
+        const worldRadius = sSettings?.radius || 0.15;
+        const meshScale = targetMesh.getWorldScale(new THREE.Vector3()).x || 1.0;
+        const localRadius = worldRadius / meshScale;
+        const strength = sSettings?.strength || 0.5;
+        const hardness = sSettings?.hardness || 0.5;
+        let dir: 1 | -1 = (sSettings?.direction === -1 ? -1 : 1);
+        if (isCtrl) dir = (dir === 1 ? -1 : 1);
+        let brush = sSettings?.brush || 'standard';
+        if (isShift) brush = 'smooth';
+        const symX = Boolean(sSettings?.symmetry?.x);
+
+        const localHit = targetMesh.worldToLocal(hit.point.clone());
+        const localNormal = hit.face?.normal ? hit.face.normal.clone() : new THREE.Vector3(0, 1, 0);
+
+        const count = posAttr.count;
+        const p = new THREE.Vector3();
+        const vNorm = new THREE.Vector3();
+        const normAttr = geom.attributes.normal;
+        let changed = false;
+
+        // Dynamic sculpt visual heatmap feedback on mesh
+        let colorAttr = geom.attributes.color as THREE.BufferAttribute | undefined;
+        if (!colorAttr) {
+          const colors = new Float32Array(count * 3).fill(1.0);
+          colorAttr = new THREE.BufferAttribute(colors, 3);
+          geom.setAttribute('color', colorAttr);
+          if (Array.isArray(targetMesh.material)) {
+            targetMesh.material.forEach((m: any) => { if (m) { m.vertexColors = true; m.needsUpdate = true; } });
+          } else if (targetMesh.material) {
+            (targetMesh.material as any).vertexColors = true;
+            targetMesh.material.needsUpdate = true;
+          }
+        }
+
+        const hlR = brush === 'smooth' ? 0.2 : (dir > 0 ? 1.0 : 0.25);
+        const hlG = brush === 'smooth' ? 0.95 : (dir > 0 ? 0.8 : 0.75);
+        const hlB = brush === 'smooth' ? 0.5 : (dir > 0 ? 0.15 : 1.0);
+
+        const radiusSq = localRadius * localRadius;
+        const invRadius = 1 / localRadius;
+        const hardnessExp = 1 + (1 - hardness) * 2;
+        const tempVec = new THREE.Vector3();
+
+        const deform = (center: THREE.Vector3, centerNorm: THREE.Vector3) => {
+          const cx = center.x, cy = center.y, cz = center.z;
+          const cnx = centerNorm.x, cny = centerNorm.y, cnz = centerNorm.z;
+
+          for (let i = 0; i < count; i++) {
+            const px = posAttr.getX(i);
+            const py = posAttr.getY(i);
+            const pz = posAttr.getZ(i);
+            const dx = px - cx;
+            const dy = py - cy;
+            const dz = pz - cz;
+            const distSq = dx * dx + dy * dy + dz * dz;
+
+            if (distSq < radiusSq) {
+              const dist = Math.sqrt(distSq);
+              const t = dist * invRadius;
+              const falloff = Math.pow(Math.max(0, 1 - t), hardnessExp);
+              const amount = strength * falloff * 0.04 * dir;
+              p.set(px, py, pz);
+
+              if (brush === 'smooth') {
+                p.lerp(center, strength * falloff * 0.12);
+              } else if (brush === 'inflate') {
+                if (normAttr) {
+                  vNorm.fromBufferAttribute(normAttr, i);
+                  p.addScaledVector(vNorm, amount);
+                } else {
+                  p.addScaledVector(centerNorm, amount);
+                }
+              } else if (brush === 'flatten') {
+                const planeDist = dx * cnx + dy * cny + dz * cnz;
+                p.addScaledVector(centerNorm, -planeDist * strength * falloff * 0.35);
+              } else if (brush === 'pinch') {
+                tempVec.set(-dx, -dy, -dz);
+                p.addScaledVector(tempVec, strength * falloff * 0.2 * dir);
+              } else {
+                p.addScaledVector(centerNorm, amount);
+              }
+
+              // Apply dynamic sculpt heatmap tint & track modified index
+              if (colorAttr) {
+                const curR = colorAttr.getX(i);
+                const curG = colorAttr.getY(i);
+                const curB = colorAttr.getZ(i);
+                const blend = falloff * 0.75;
+                colorAttr.setXYZ(
+                  i,
+                  curR * (1 - blend) + hlR * blend,
+                  curG * (1 - blend) + hlG * blend,
+                  curB * (1 - blend) + hlB * blend
+                );
+                tintedIndicesRef.current.add(i);
+              }
+
+              posAttr.setXYZ(i, p.x, p.y, p.z);
+              changed = true;
+            }
+          }
+        };
+
+        deform(localHit, localNormal);
+        if (symX) {
+          deform(new THREE.Vector3(-localHit.x, localHit.y, localHit.z), new THREE.Vector3(-localNormal.x, localNormal.y, localNormal.z));
+        }
+
+        if (changed) {
+          posAttr.needsUpdate = true;
+          if (colorAttr) colorAttr.needsUpdate = true;
+          // Throttled normal update during continuous drag keeps interactions at 60+ FPS
+          const now = performance.now();
+          if (now - lastNormalsUpdateRef.current > 50) {
+            geom.computeVertexNormals();
+            if (normAttr) normAttr.needsUpdate = true;
+            lastNormalsUpdateRef.current = now;
+          }
+        }
+      } else if (tool === 'texture') {
+        if (!hit.uv) return;
+        const targetMesh = hit.object as THREE.Mesh;
+        let mat = targetMesh.material as any;
+        if (Array.isArray(mat)) mat = mat[0];
+        if (!mat) return;
+
+        let dynamicCanvas = targetMesh.userData?.paintCanvas as HTMLCanvasElement;
+        let ctx = targetMesh.userData?.paintCtx as CanvasRenderingContext2D;
+
+        if (!dynamicCanvas) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 1024;
+          canvas.height = 1024;
+          const context = canvas.getContext('2d');
+          if (context) {
+            if (mat.map && mat.map.image) {
+              try {
+                context.drawImage(mat.map.image, 0, 0, 1024, 1024);
+              } catch {
+                context.fillStyle = '#f0f0f0';
+                context.fillRect(0, 0, 1024, 1024);
+              }
+            } else {
+              context.fillStyle = mat.color ? `#${mat.color.getHexString()}` : '#ffffff';
+              context.fillRect(0, 0, 1024, 1024);
+            }
+          }
+          const canvasTex = new THREE.CanvasTexture(canvas);
+          canvasTex.colorSpace = THREE.SRGBColorSpace;
+          canvasTex.flipY = false;
+          mat.map = canvasTex;
+          mat.needsUpdate = true;
+          targetMesh.userData.paintCanvas = canvas;
+          targetMesh.userData.paintCtx = context;
+          dynamicCanvas = canvas;
+          ctx = context!;
+        }
+
+        if (ctx && dynamicCanvas) {
+          // Precise UV mapping: wrap coords to [0, 1] and match texture orientation
+          const isFlipped = Boolean(mat.map && mat.map.flipY);
+          const rawU = ((hit.uv.x % 1) + 1) % 1;
+          const rawV = ((hit.uv.y % 1) + 1) % 1;
+          const currX = rawU * dynamicCanvas.width;
+          const currY = (isFlipped ? (1 - rawV) : rawV) * dynamicCanvas.height;
+
+          const pSettings = paintBrushSettingsRef.current;
+          const radius = Math.max(1, pSettings?.size || 24);
+          const color = pSettings?.color || '#FFCC00';
+          const opacity = Math.max(0.05, Math.min(1.0, pSettings?.opacity ?? 1.0));
+          const hardness = Math.max(0.02, Math.min(0.98, pSettings?.hardness ?? 0.7));
+
+          const drawDab = (x: number, y: number) => {
+            ctx.save();
+            if (isCtrl) {
+              ctx.globalCompositeOperation = 'destination-out';
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              ctx.fillStyle = `rgba(0,0,0,${opacity})`;
+              ctx.fill();
+            } else {
+              ctx.globalCompositeOperation = 'source-over';
+              const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+              grad.addColorStop(0, color);
+              grad.addColorStop(hardness, color);
+              grad.addColorStop(1, 'transparent');
+              ctx.fillStyle = grad;
+              ctx.globalAlpha = opacity;
+              ctx.beginPath();
+              ctx.arc(x, y, radius, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          };
+
+          // Continuous interpolated stroke ensures solid coverage with zero gaps or skips
+          if (lastPaintUVRef.current) {
+            const prev = lastPaintUVRef.current;
+            const dist = Math.hypot(currX - prev.x, currY - prev.y);
+            const step = Math.max(2, radius * 0.25);
+            if (dist > step) {
+              const steps = Math.min(50, Math.ceil(dist / step));
+              for (let s = 1; s <= steps; s++) {
+                const t = s / steps;
+                drawDab(prev.x + (currX - prev.x) * t, prev.y + (currY - prev.y) * t);
+              }
+            } else {
+              drawDab(currX, currY);
+            }
+          } else {
+            drawDab(currX, currY);
+          }
+          lastPaintUVRef.current = { x: currX, y: currY };
+
+          if (mat.map) {
+            mat.map.needsUpdate = true;
+          }
+        }
+      }
+    };
+
+    const updateBrushCursor = (e: MouseEvent) => {
+      const tool = activeToolRef.current;
+      const cursor = brushCursorRef.current;
+      if (!cursor) return;
+
+      if (tool !== 'edit' && tool !== 'texture') {
+        cursor.visible = false;
+        return;
+      }
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes: THREE.Mesh[] = [];
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.geometry) {
+          meshes.push(child);
+        }
+      });
+
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        const hit = hits[0];
+        const sSettings = sculptSettingsRef.current;
+        const pSettings = paintBrushSettingsRef.current;
+        const r = tool === 'edit'
+          ? (sSettings?.radius || 0.15)
+          : ((pSettings?.size || 24) * 0.004);
+
+        const normal = hit.face?.normal
+          ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
+          : new THREE.Vector3(0, 0, 1);
+
+        cursor.position.copy(hit.point).addScaledVector(normal, 0.002);
+        cursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+        cursor.scale.set(r, r, r);
+        cursor.visible = true;
+
+        if (isBrushingRef.current) {
+          applyBrushStroke(hit, e.shiftKey, e.ctrlKey || e.metaKey);
+        }
+        idleFrames = 0;
+      } else {
+        cursor.visible = false;
+      }
+    };
+
+    const onBrushPointerDown = (e: PointerEvent) => {
+      const tool = activeToolRef.current;
+      if (e.button !== 0 || (tool !== 'edit' && tool !== 'texture')) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouse, camera);
+
+      const meshes: THREE.Mesh[] = [];
+      currentMeshGroupRef.current?.traverse((c) => {
+        if (c instanceof THREE.Mesh && c.geometry) meshes.push(c);
+      });
+      const hits = raycaster.intersectObjects(meshes, false);
+      if (hits.length > 0) {
+        isBrushingRef.current = true;
+        controls.enabled = false;
+        lastPaintUVRef.current = null;
+        applyBrushStroke(hits[0], e.shiftKey, e.ctrlKey || e.metaKey);
+        idleFrames = 0;
+      }
+    };
+
+    const onBrushPointerMove = (e: PointerEvent) => {
+      updateBrushCursor(e);
+    };
+
+    const onBrushPointerUp = () => {
+      if (isBrushingRef.current) {
+        isBrushingRef.current = false;
+        controls.enabled = true;
+        lastPaintUVRef.current = null;
+        // Final clean pass for geometry normals and bounding volume
+        if (activeToolRef.current === 'edit' && lastSculptedMeshRef.current?.geometry) {
+          const g = lastSculptedMeshRef.current.geometry;
+          g.computeVertexNormals();
+          if (g.attributes.normal) g.attributes.normal.needsUpdate = true;
+          g.computeBoundingSphere();
+        }
+        idleFrames = 0;
+      }
+    };
+
+    const onFillPaintCanvas = (e: any) => {
+      const color = e.detail?.color || '#FFCC00';
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          let mat = child.material as any;
+          if (Array.isArray(mat)) mat = mat[0];
+          if (!mat) return;
+          let dynamicCanvas = child.userData?.paintCanvas as HTMLCanvasElement;
+          let ctx = child.userData?.paintCtx as CanvasRenderingContext2D;
+          if (!dynamicCanvas) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 1024;
+            const context = canvas.getContext('2d');
+            if (context) {
+              context.fillStyle = color;
+              context.fillRect(0, 0, 1024, 1024);
+            }
+            const canvasTex = new THREE.CanvasTexture(canvas);
+            canvasTex.colorSpace = THREE.SRGBColorSpace;
+            canvasTex.flipY = false;
+            mat.map = canvasTex;
+            mat.needsUpdate = true;
+            child.userData.paintCanvas = canvas;
+            child.userData.paintCtx = context;
+          } else if (ctx) {
+            ctx.fillStyle = color;
+            ctx.fillRect(0, 0, dynamicCanvas.width, dynamicCanvas.height);
+            if (mat.map) mat.map.needsUpdate = true;
+          }
+          idleFrames = 0;
+        }
+      });
+    };
+
+    renderer.domElement.addEventListener('pointerdown', onBrushPointerDown);
+    renderer.domElement.addEventListener('pointermove', onBrushPointerMove);
+    window.addEventListener('pointerup', onBrushPointerUp);
+    window.addEventListener('pointercancel', onBrushPointerUp);
+    window.addEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
+
     // Raycast on canvas to select bone joints or place new bones in Rigging mode
     const onCanvasPointerDown = (event: MouseEvent) => {
       const state = useAnimationStore.getState();
@@ -1557,7 +2018,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const raycaster = new THREE.Raycaster();
       raycaster.setFromCamera(mouse, camera);
 
-      // Check if user is placing a new bone on the 3D model surface
+      // CheckIcon if user is placing a new bone on the 3D model surface
       if (state.isPlacingBone || state.activeViewportTool === 'bone') {
         const group = currentMeshGroupRef.current;
         if (group && group.children.length > 0) {
@@ -1586,7 +2047,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         }
       }
 
-      // Check if clicking an existing joint handle in 3D
+      // CheckIcon if clicking an existing joint handle in 3D
       if (rigArmatureGroupRef.current) {
         const intersects = raycaster.intersectObjects(rigArmatureGroupRef.current.children, true);
         const hit = intersects.find((i) => i.object.userData?.isJoint);
@@ -1660,6 +2121,35 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         rigArmatureGroupRef.current.updateMatrixWorld();
       }
 
+      // Smoothly fade sculpt highlight vertex colors back to neutral (indexed tracking for 0ms idle overhead)
+      const tinted = tintedIndicesRef.current;
+      if (tinted.size > 0 && !isBrushingRef.current && lastSculptedMeshRef.current) {
+        const cAttr = lastSculptedMeshRef.current.geometry?.attributes?.color as THREE.BufferAttribute | undefined;
+        if (cAttr) {
+          const decay = Math.min(1, delta * 4.0);
+          const toDelete: number[] = [];
+          tinted.forEach((idx) => {
+            const r = cAttr.getX(idx);
+            const g = cAttr.getY(idx);
+            const b = cAttr.getZ(idx);
+            if (r < 0.98 || g < 0.98 || b < 0.98) {
+              cAttr.setXYZ(
+                idx,
+                r + (1.0 - r) * decay,
+                g + (1.0 - g) * decay,
+                b + (1.0 - b) * decay
+              );
+            } else {
+              cAttr.setXYZ(idx, 1.0, 1.0, 1.0);
+              toDelete.push(idx);
+            }
+          });
+          toDelete.forEach((idx) => tinted.delete(idx));
+          cAttr.needsUpdate = true;
+          idleFrames = 0;
+        }
+      }
+
       const controlsChanged = controls.update();
       if (turntableActive || pointCloudActive || animationActive || controlsChanged || idleFrames < 60) {
         if (turntableActive || pointCloudActive || animationActive || controlsChanged) {
@@ -1691,7 +2181,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     return () => {
       resizeObserver.disconnect();
       renderer.setAnimationLoop(null);
+      renderer.domElement.removeEventListener('webglcontextlost', handleContextLost);
+      renderer.domElement.removeEventListener('webglcontextrestored', handleContextRestored);
       renderer.domElement.removeEventListener('pointerdown', onCanvasPointerDown);
+      renderer.domElement.removeEventListener('pointerdown', onBrushPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onBrushPointerMove);
+      window.removeEventListener('pointerup', onBrushPointerUp);
+      window.removeEventListener('pointercancel', onBrushPointerUp);
+      window.removeEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
+      if (brushCursorRef.current) {
+        scene.remove(brushCursorRef.current);
+        brushCursorRef.current = null;
+      }
       if (rigArmatureGroupRef.current) {
         scene.remove(rigArmatureGroupRef.current);
         rigArmatureGroupRef.current = null;
@@ -2302,6 +2803,35 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     currentAsset?.materialConfig?.normalScale,
   ]);
 
+  const tweenCameraTo = useCallback((toPos: THREE.Vector3, toTarget: THREE.Vector3, durationMs = 380, onDone?: () => void) => {
+    if (!cameraRef.current || !controlsRef.current) return;
+    if (reflectionPeekTweenRef.current) cancelAnimationFrame(reflectionPeekTweenRef.current);
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    const startPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const startTime = performance.now();
+
+    const animate = (currentTime: number) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(1, elapsed / durationMs);
+      const ease = 1 - Math.pow(1 - progress, 3);
+
+      camera.position.lerpVectors(startPos, toPos, ease);
+      controls.target.lerpVectors(startTarget, toTarget, ease);
+      camera.updateProjectionMatrix();
+      controls.update();
+
+      if (progress < 1) {
+        reflectionPeekTweenRef.current = requestAnimationFrame(animate);
+      } else {
+        reflectionPeekTweenRef.current = null;
+        onDone?.();
+      }
+    };
+    reflectionPeekTweenRef.current = requestAnimationFrame(animate);
+  }, []);
+
   const handleReflectionPeekEnter = useCallback(() => {
     if (!currentMeshGroupRef.current || !cameraRef.current || !controlsRef.current) return;
     if (!reflectionFocusBackupRef.current) {
@@ -2317,28 +2847,22 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const controls = controlsRef.current;
     const direction = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
     const targetDistance = Math.max(controls.minDistance * 1.4, Math.min(controls.maxDistance * 0.55, sphere.radius * 1.15));
-    controls.target.copy(sphere.center);
-    camera.position.copy(sphere.center).add(direction.multiplyScalar(targetDistance));
-    camera.updateProjectionMatrix();
-    controls.update();
+    const targetPos = sphere.center.clone().add(direction.multiplyScalar(targetDistance));
     setReflectionPeekFocused(true);
-  }, []);
+    tweenCameraTo(targetPos, sphere.center, 380);
+  }, [tweenCameraTo]);
 
   const handleReflectionPeekLeave = useCallback(() => {
     const backup = reflectionFocusBackupRef.current;
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!backup || !camera || !controls) {
+    if (!backup || !cameraRef.current || !controlsRef.current) {
       setReflectionPeekFocused(false);
       return;
     }
-    camera.position.copy(backup.position);
-    controls.target.copy(backup.target);
-    camera.updateProjectionMatrix();
-    controls.update();
-    reflectionFocusBackupRef.current = null;
+    tweenCameraTo(backup.position, backup.target, 380, () => {
+      reflectionFocusBackupRef.current = null;
+    });
     setReflectionPeekFocused(false);
-  }, []);
+  }, [tweenCameraTo]);
 
   useEffect(() => {
     if (!reflectionPeekEnabled || !currentAsset) {
@@ -2417,7 +2941,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   }, [currentAsset]);
 
-  // Camera preset switcher
+  // CameraIcon preset switcher
   const applyCameraPreset = useCallback((preset: CameraViewPreset | 'side') => {
     if (!cameraRef.current || !controlsRef.current) return;
     const effectivePreset: CameraViewPreset = preset === 'side' ? 'right' : preset;
@@ -2619,7 +3143,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     e.preventDefault();
     setIsDragOver(false);
 
-    // 1. Check if dropped from Assets library
+    // 1. CheckIcon if dropped from Assets library
     const assetJson = e.dataTransfer.getData('application/json');
     const assetId = e.dataTransfer.getData('text/plain');
 
@@ -2645,7 +3169,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
     }
 
-    // 2. Check if local 3D files were dropped from desktop (OBJ, GLB, STL, FBX)
+    // 2. CheckIcon if local 3D files were dropped from desktop (OBJ, GLB, STL, FBX)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       const ext = file.name.split('.').pop()?.toUpperCase() || '';
@@ -2702,16 +3226,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         uploadFormData.append('file', file);
         const uploadRes = await getApiClient().post<{
           url: string;
+          file_id?: string;
           id?: string;
           filename: string;
           stored_filename?: string;
           size: number;
-        }>('/api/v1/file-upload/image', uploadFormData, { headers: { 'Content-Type': 'multipart/form-data' } });
+        }>('/api/v1/file-upload/mesh', uploadFormData);
 
-        const serverUrl = uploadRes?.url || `/static/models/${uploadRes?.stored_filename || file.name}`;
+        const serverUrl = uploadRes?.url || (uploadRes?.file_id ? `/api/v1/file-upload/download/${uploadRes.file_id}` : uploadRes?.id ? `/api/v1/file-upload/download/${uploadRes.id}` : '');
         const finalAsset: ModelAsset = {
           ...tempAsset,
-          id: uploadRes?.stored_filename || uploadRes?.id || tempId,
+          id: uploadRes?.file_id || uploadRes?.stored_filename || uploadRes?.id || tempId,
+          fileId: uploadRes?.file_id,
           tags: ['Saved to Storage', '3D Model', ext],
           source: {
             filename: uploadRes?.stored_filename || file.name,
@@ -2746,13 +3272,128 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       onDrop={handleDrop}
     >
       {/* 3D Canvas Container */}
-      <div ref={containerRef} className="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing" />
+      <div 
+        ref={containerRef} 
+        onPointerMove={(e) => {
+          if (activeTool === 'edit' || activeTool === 'texture') {
+            const el = brushReticleRef.current;
+            if (el) {
+              el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%) scale(${isPointerDownRef.current ? 0.94 : 1})`;
+              if (el.style.display !== 'flex') el.style.display = 'flex';
+            }
+          }
+        }}
+        onPointerDown={(e) => {
+          isPointerDownRef.current = true;
+          if (activeTool === 'edit' || activeTool === 'texture') {
+            const el = brushReticleRef.current;
+            if (el) {
+              el.style.transform = `translate3d(${e.clientX}px, ${e.clientY}px, 0) translate(-50%, -50%) scale(0.94)`;
+            }
+          }
+        }}
+        onPointerUp={() => {
+          isPointerDownRef.current = false;
+          const el = brushReticleRef.current;
+          if (el) {
+            el.style.transform = el.style.transform.replace('scale(0.94)', 'scale(1)');
+          }
+        }}
+        onPointerLeave={() => {
+          isPointerDownRef.current = false;
+          const el = brushReticleRef.current;
+          if (el) el.style.display = 'none';
+        }}
+        className={`w-full h-full absolute inset-0 ${
+          activeTool === 'edit' || activeTool === 'texture'
+            ? 'cursor-none'
+            : activeTool === 'uv' || activeTool === 'segment'
+            ? 'cursor-crosshair'
+            : 'cursor-grab active:cursor-grabbing'
+        }`} 
+      />
+
+      {/* Floating Real-Time Zero-Lag Precision Brush Reticle Cursor */}
+      {(activeTool === 'edit' || activeTool === 'texture') && (
+        <div
+          ref={brushReticleRef}
+          className="fixed pointer-events-none z-50 will-change-transform hidden flex-col items-center justify-center"
+          style={{
+            left: 0,
+            top: 0,
+          }}
+        >
+          <div
+            className="rounded-full border-2 flex items-center justify-center"
+            style={{
+              width: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
+              height: `${Math.max(18, activeTool === 'edit' ? (sculptSettings?.radius || 0.15) * 280 : (paintBrushSettings?.size || 24) * 2)}px`,
+              borderColor: activeTool === 'texture' 
+                ? (paintBrushSettings?.color || '#FFCC00') 
+                : '#FFCC00',
+              backgroundColor: activeTool === 'texture' 
+                ? `${paintBrushSettings?.color || '#FFCC00'}22` 
+                : 'rgba(255, 204, 0, 0.08)',
+              boxShadow: '0 0 14px rgba(255, 204, 0, 0.4), inset 0 0 8px rgba(255, 204, 0, 0.2)',
+            }}
+          >
+            {/* Center Reticle Icon — Shows the actual tool/brush icon */}
+            <div 
+              className="w-4 h-4 rounded-full flex items-center justify-center shadow-sm"
+              style={{
+                backgroundColor: activeTool === 'texture' ? (paintBrushSettings?.color || '#FFCC00') : '#FFCC00'
+              }}
+            >
+              {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush, false), {
+                className: "w-2.5 h-2.5 text-black flex-shrink-0"
+              })}
+            </div>
+          </div>
+
+          {/* Floating Brush Type & Radius Badge */}
+          <div className="mt-1.5 px-2.5 py-1 rounded-lg bg-black/90 backdrop-blur-md border border-white/20 text-[9px] font-mono font-bold text-white whitespace-nowrap shadow-xl flex items-center gap-1.5">
+            {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush, false), {
+              className: "w-3.5 h-3.5 text-primary flex-shrink-0"
+            })}
+            <span>
+              {activeTool === 'edit' 
+                ? `${sculptSettings?.brush?.toUpperCase() || 'STANDARD'} • R:${(sculptSettings?.radius || 0.15).toFixed(2)}` 
+                : `PAINT • ${paintBrushSettings?.size || 24}px`}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Dynamic BrushIcon Size Preview HUD */}
+      {brushPreviewVisible && (activeTool === 'edit' || activeTool === 'texture') && (
+        <div className="absolute inset-0 pointer-events-none z-40 flex items-center justify-center animate-in fade-in zoom-in-95 duration-150">
+          <div className="relative flex flex-col items-center justify-center">
+            <div
+              className="rounded-full border-2 border-dashed shadow-[0_0_25px_rgba(255,204,0,0.5)]"
+              style={{
+                width: `${brushPreviewRadius * 2}px`,
+                height: `${brushPreviewRadius * 2}px`,
+                borderColor: brushPreviewColor,
+                backgroundColor: `${brushPreviewColor}18`,
+              }}
+            />
+            <div className="mt-2.5 px-3 py-1 rounded-full bg-black/85 backdrop-blur-md border border-white/[0.16] text-[10px] font-mono font-bold text-white shadow-2xl flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: brushPreviewColor }} />
+              <span>
+                {activeTool === 'edit' 
+                  ? `Sculpt Radius: ${sculptSettings?.radius?.toFixed(2)}` 
+                  : `Paint BrushIcon Size: ${paintBrushSettings?.size}px`}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Drag & Drop Visual Dropzone Overlay */}
       {isDragOver && (
         <div className="absolute inset-0 bg-[#0c0c0c]/95 border-2 border-dashed border-primary flex flex-col items-center justify-center z-40 transition-all pointer-events-none">
           <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/50 flex items-center justify-center text-primary shadow-[0_0_30px_rgba(255,204,0,0.3)] animate-bounce mb-3">
-            <UploadCloud className="w-8 h-8" />
+            <HugeiconsIcon icon={CloudUpload} size={16} className="w-8 h-8" />
           </div>
           <span className="text-base font-bold text-white tracking-wide">
             Drop 3D Asset to Load into Viewport
@@ -2767,9 +3408,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       {dropToastMessage && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-[#141414] border border-primary/50 shadow-2xl flex items-center gap-2 text-xs font-semibold text-white animate-in fade-in slide-in-from-top-2 duration-300 max-w-md">
           {dropToastIsHtmlError ? (
-            <Search className="w-4 h-4 text-rose-400 flex-shrink-0" />
+            <HugeiconsIcon icon={SearchIcon} size={16} className="w-4 h-4 text-rose-400 flex-shrink-0" />
           ) : (
-            <Sparkles className="w-4 h-4 text-primary" />
+            <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
           )}
           <span className="truncate">{dropToastMessage}</span>
           {dropToastIsHtmlError && (
@@ -2806,7 +3447,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
             <div className="flex items-center justify-between text-xs px-0.5">
               <span className="text-zinc-200 truncate pr-2 text-left text-[11px] font-medium flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-primary flex-shrink-0 animate-pulse" />
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary flex-shrink-0 animate-pulse" />
                 <span className="truncate">{executionStep || activeTask?.currentStep || 'Synthesizing 3D mesh representation...'}</span>
               </span>
               <span className="font-mono font-black text-xs text-primary flex-shrink-0">
@@ -2844,11 +3485,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           <div className="bg-[hsl(var(--surface-1))]/90 border border-zinc-800/80 rounded-2xl px-6 py-5 flex flex-col items-center shadow-2xl max-w-xs w-full">
             <div className="relative flex items-center justify-center mb-3">
               <div className="w-12 h-12 rounded-full border-2 border-zinc-800 border-t-[hsl(var(--primary))] animate-spin" />
-              <Sparkles className="w-4 h-4 text-primary absolute animate-pulse" />
+              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary absolute animate-pulse" />
             </div>
             <span className="text-xs font-bold text-zinc-100 tracking-wide block mb-1">
               {loadProgress && loadProgress.percent === 100
-                ? 'Processing & GPU Upload...'
+                ? 'Processing & GPU UploadIcon...'
                 : 'Loading 3D Model...'}
             </span>
             {loadProgress && loadProgress.total > 0 ? (
@@ -2874,6 +3515,41 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       )}
 
 
+      {showOverlayUI && (activeTool === 'edit' || activeTool === 'texture') && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
+          <div className="pointer-events-auto rounded-xl border border-white/[0.14] bg-[hsl(var(--surface-1))]/95 backdrop-blur-md shadow-2xl px-3.5 py-2 flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-black/60 border border-white/10 flex items-center justify-center text-primary flex-shrink-0">
+                {React.createElement(getActiveBrushIcon(activeTool, sculptSettings?.brush), { className: "w-3.5 h-3.5" })}
+              </div>
+              <span className="text-xs font-bold text-white tracking-wide uppercase">
+                {activeTool === 'edit' ? `Sculpt: ${sculptSettings?.brush || 'standard'}` : `3D Paint: ${paintBrushSettings?.color || '#FFCC00'}`}
+              </span>
+            </div>
+            <div className="h-4 w-px bg-white/10" />
+            <div className="text-[10.5px] text-zinc-300 font-mono flex items-center gap-2">
+              {activeTool === 'edit' ? (
+                <>
+                  <span>Radius: {sculptSettings?.radius?.toFixed(2) || '0.15'}</span>
+                  <span>•</span>
+                  <span>Strength: {sculptSettings?.strength?.toFixed(2) || '0.50'}</span>
+                  <span>•</span>
+                  <span className="text-primary font-bold">Drag on mesh to sculpt (Shift: Smooth, Ctrl: Invert)</span>
+                </>
+              ) : (
+                <>
+                  <span>Size: {paintBrushSettings?.size || 24}px</span>
+                  <span>•</span>
+                  <span>Opacity: {Math.round((paintBrushSettings?.opacity ?? 1) * 100)}%</span>
+                  <span>•</span>
+                  <span className="text-primary font-bold">Drag on mesh to paint (Ctrl: Erase)</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showOverlayUI && currentAsset?.artifacts?.physicsReady && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
           <div className="pointer-events-auto rounded-xl border border-white/[0.12] bg-[hsl(var(--surface-1))]/95 backdrop-blur-md shadow-2xl px-2 py-2">
@@ -2896,7 +3572,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                       setPhysicsRunning(running);
                     }}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
-                  >{physicsRunning ? 'Pause' : 'Play'}</button>
+                  >{physicsRunning ? 'PauseIcon' : 'PlayIcon'}</button>
                   <button type="button" disabled={!physicsViewerReady}
                     onClick={() => physicsRuntimeRef.current?.isReady() && physicsRuntimeRef.current.step()}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
@@ -2942,7 +3618,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none p-4">
           <div className="max-w-xs w-full p-5 rounded-2xl bg-[hsl(var(--surface-1))]/95 border border-white/[0.12] card-depth shadow-2xl backdrop-blur-md text-center pointer-events-auto space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--surface-2))] border border-white/[0.12] flex items-center justify-center mx-auto text-primary shadow-[0_0_20px_rgba(255,204,0,0.15)]">
-              <Box className="w-6 h-6 stroke-[2.2]" />
+              <HugeiconsIcon icon={Box} size={16} className="w-6 h-6 stroke-[2.2]" />
             </div>
             <div className="space-y-1">
               <h3 className="font-bold text-sm text-white">3D Viewport Ready</h3>
@@ -2958,7 +3634,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 }}
                 className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] active:scale-95 cursor-pointer btn-lighting-shine"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
                 <span>Generate 3D Asset</span>
               </button>
             </div>
@@ -2987,7 +3663,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                       : 'bg-[#181818] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  <Compass className="w-3 h-3 text-primary" />
+                  <HugeiconsIcon icon={CompassIcon} size={16} className="w-3 h-3 text-primary" />
                   <span className="capitalize">{interactionMode}</span>
                 </button>
               </SimpleTooltip>
@@ -3001,7 +3677,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={handleZoomIn}
                   className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[#181818] transition-all cursor-pointer"
                 >
-                  <ZoomIn className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={ZoomInIcon} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
 
@@ -3012,7 +3688,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={handleZoomOut}
                   className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[#181818] transition-all cursor-pointer"
                 >
-                  <ZoomOut className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={ZoomOutIcon} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
 
@@ -3023,7 +3699,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={resetCamera}
                   className="p-1 rounded-lg text-zinc-400 hover:text-primary hover:bg-[#181818] transition-all cursor-pointer"
                 >
-                  <Maximize2 className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={Maximize02Icon} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
             </div>
@@ -3036,7 +3712,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   disabled={!currentAsset || isLoading}
                   className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold text-zinc-200 hover:text-primary hover:bg-white/[0.05] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
-                  <Zap className="w-3 h-3 text-primary" />
+                  <HugeiconsIcon icon={ZapIcon} size={16} className="w-3 h-3 text-primary" />
                   <span className="hidden sm:inline">Test Physics</span>
                 </button>
               </SimpleTooltip>
@@ -3045,10 +3721,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 <button
                   type="button"
                   onClick={() => setReflectionPeekEnabled(prev => !prev)}
+                  onMouseEnter={() => { if (reflectionPeekEnabled) handleReflectionPeekEnter(); }}
+                  onMouseLeave={() => { if (reflectionPeekEnabled) handleReflectionPeekLeave(); }}
                   disabled={!currentAsset}
                   className={"flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed " + (reflectionPeekEnabled ? "bg-primary/15 text-primary" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]")}
                 >
-                  <FlipHorizontal2 className="w-3 h-3" />
+                  <HugeiconsIcon icon={FlipHorizontalIcon} size={16} className="w-3 h-3" />
                   <span className="hidden sm:inline">Mirror</span>
                 </button>
               </SimpleTooltip>
@@ -3102,7 +3780,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
                 }`}
               >
-                <Move className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3115,7 +3793,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
                 }`}
               >
-                <Hand className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={Hand} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3124,7 +3802,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 onClick={handleScreenshot}
                 className="p-2 rounded-xl text-zinc-300 hover:text-primary hover:bg-[#1f222a] transition-all"
               >
-                <Camera className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={CameraIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3137,7 +3815,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
                 }`}
               >
-                <GridIcon className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3146,7 +3824,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 onClick={resetCamera}
                 className="p-2 rounded-xl text-zinc-300 hover:text-white hover:bg-[#1f222a] transition-all"
               >
-                <RotateCcw className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
 
@@ -3160,7 +3838,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     : 'text-zinc-300 hover:text-white hover:bg-[#1f222a]'
                 }`}
               >
-                <Sun className="w-4 h-4 stroke-[2.2]" />
+                <HugeiconsIcon icon={SunIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
               </button>
             </SimpleTooltip>
           </div>
@@ -3175,14 +3853,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               {/* Header */}
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
                 <div className="flex items-center gap-1.5">
-                  <Sun className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={SunIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <h3 className="text-[11px] font-bold tracking-wider text-white uppercase">Studio Environment</h3>
                 </div>
                 <button
                   onClick={() => setShowEnvironmentPanel(false)}
                   className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
                 </button>
               </div>
 
@@ -3488,9 +4166,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   onClick={() => setCameraMenuOpen(!cameraMenuOpen)}
                   className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] text-xs font-semibold text-zinc-200 hover:text-white hover:border-primary/40 shadow-2xl transition-all cursor-pointer active:scale-95"
                 >
-                  <RotateCw className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={RotateCw} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span className="capitalize">{cameraPreset}</span>
-                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${cameraMenuOpen ? 'rotate-180 text-primary' : ''}`} />
+                  <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 text-zinc-400 transition-transform ${cameraMenuOpen ? 'rotate-180 text-primary' : ''}`} />
                 </button>
 
                 {cameraMenuOpen && (
@@ -3507,7 +4185,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                         }`}
                       >
                         <span>{p}</span>
-                        {cameraPreset === p && <Check className="w-3 h-3 text-primary" />}
+                        {cameraPreset === p && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                       </button>
                     ))}
                   </div>
@@ -3526,7 +4204,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     shadingMode === 'wireframe' ? 'bg-[hsl(var(--neon-green))]' : 'bg-sky-400'
                   }`} />
                   <span className="capitalize">{shadingMode.replace('matcap-', '')}</span>
-                  <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${shadingMenuOpen ? 'rotate-180 text-primary' : ''}`} />
+                  <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 text-zinc-400 transition-transform ${shadingMenuOpen ? 'rotate-180 text-primary' : ''}`} />
                 </button>
 
                 {shadingMenuOpen && (
@@ -3556,7 +4234,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                           <div className={`w-2 h-2 rounded-full ${s.dot}`} />
                           <span>{s.label}</span>
                         </div>
-                        {shadingMode === s.id && <Check className="w-3 h-3 text-primary" />}
+                        {shadingMode === s.id && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                       </button>
                     ))}
                   </div>
@@ -3588,7 +4266,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                       : 'bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border-white/[0.12] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  <RotateCw className={`w-3.5 h-3.5 ${isTurntable ? 'animate-spin' : ''}`} />
+                  <HugeiconsIcon icon={RotateCw} size={16} className={`w-3.5 h-3.5 ${isTurntable ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline text-[11px]">360°</span>
                 </button>
               </SimpleTooltip>
@@ -3599,7 +4277,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 onClick={() => setIsExportModalOpen(true)}
                 className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 active:scale-95 text-[#080808] text-xs font-black shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] transition-all cursor-pointer border border-white/20 btn-lighting-shine"
               >
-                <Download className="w-3.5 h-3.5 stroke-[2.5]" />
+                <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
                 <span>Export</span>
               </button>
             </div>

@@ -5,12 +5,13 @@ import { useState, useEffect, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'motion/react';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  LayoutDashboard, Boxes, Activity, ScrollText, Briefcase,
-  ListOrdered, HeartPulse, Settings, HardDrive,
-  ChevronLeft, ChevronRight, Box, Sparkles, Cpu,
-  Zap, Wifi, Search, Bell, Menu
-} from 'lucide-react';
+  LayoutDashboardIcon, BoxesIcon, Activity01Icon, ScrollTextIcon, Briefcase01Icon,
+  ListOrderedIcon, HeartPulseIcon, Settings01Icon, HardDriveIcon,
+  ChevronLeft, ChevronRight, BoxIcon, SparklesIcon, CpuIcon,
+  ZapIcon, Wifi01Icon, Search01Icon, BellIcon, Menu01Icon
+} from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 import { APP_NAME, ADMIN_NAV_ITEMS } from '@/constants';
 import { StatusDot } from '@/components/premium/StatusDot';
@@ -18,9 +19,16 @@ import { getApiClient } from '@/services/apiClient';
 import { useBackendStatus } from '@/hooks/useBackendData';
 import type { RuntimeStatus } from '@/types';
 
-const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-  LayoutDashboard, Boxes, Activity, ScrollText, Briefcase,
-  ListOrdered, HeartPulse, Settings, HardDrive,
+const ICON_MAP: Record<string, any> = {
+  LayoutDashboardIcon: LayoutDashboardIcon,
+  BoxesIcon: BoxesIcon,
+  ActivityIcon: Activity01Icon,
+  ScrollTextIcon: ScrollTextIcon,
+  BriefcaseIcon: Briefcase01Icon,
+  ListOrderedIcon: ListOrderedIcon,
+  HeartPulseIcon: HeartPulseIcon,
+  SettingsIcon: Settings01Icon,
+  HardDriveIcon: HardDriveIcon,
 };
 
 export type AdminTab =
@@ -89,7 +97,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
         <div className="flex items-center gap-3 h-16 px-4 border-b border-[hsl(var(--border))] shrink-0">
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-primary/10 border border-primary/30 group-hover:border-primary/50 transition-colors">
-              <Box className="w-5 h-5 text-primary" />
+              <HugeiconsIcon icon={BoxIcon} size={16} className="w-5 h-5 text-primary" />
               <div className="absolute inset-0 rounded-xl bg-primary/5 group-hover:bg-primary/10 transition-colors" />
             </div>
             {!collapsed && (
@@ -108,7 +116,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
             </p>
           )}
           {ADMIN_NAV_ITEMS.map((item) => {
-            const Icon = ICON_MAP[item.icon] || LayoutDashboard;
+            const IconComponent = ICON_MAP[item.icon] || LayoutDashboardIcon;
             const isActive = activeTab === item.id;
             return (
               <button
@@ -131,7 +139,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
                     className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-full bg-primary"
                   />
                 )}
-                <Icon className={cn('w-[18px] h-[18px] shrink-0', isActive && 'text-primary')} />
+                <HugeiconsIcon icon={IconComponent} size={20} className={cn('w-[18px] h-[18px] shrink-0', isActive && 'text-primary')} />
                 {!collapsed && <span className="text-sm font-medium">{item.label}</span>}
                 {isActive && !collapsed && (
                   <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
@@ -149,7 +157,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
               collapsed && 'justify-center'
             )}
           >
-            <Sparkles className="w-[18px] h-[18px] shrink-0" />
+            <HugeiconsIcon icon={SparklesIcon} size={20} className="w-[18px] h-[18px] shrink-0" />
             {!collapsed && <span className="text-sm font-medium">Workspace</span>}
           </Link>
         </div>
@@ -158,7 +166,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
           onClick={() => setCollapsed(!collapsed)}
           className="hidden lg:flex items-center justify-center h-10 border-t border-[hsl(var(--border))] text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--surface-2))] transition-colors"
         >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          {collapsed ? <HugeiconsIcon icon={ChevronRight} size={16} className="w-4 h-4" /> : <HugeiconsIcon icon={ChevronLeft} size={16} className="w-4 h-4" />}
         </button>
       </aside>
 
@@ -169,16 +177,16 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
               onClick={() => setMobileOpen(true)}
               className="lg:hidden p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--surface-2))]"
             >
-              <Menu className="w-5 h-5" />
+              <HugeiconsIcon icon={Menu01Icon} size={16} className="w-5 h-5" />
             </button>
 
             <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <HugeiconsIcon icon={Search01Icon} size={16} className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search models, jobs, logs..."
+                placeholder="SearchIcon models, jobs, logs..."
                 className="w-full h-9 pl-9 pr-4 rounded-xl glass text-sm text-foreground placeholder:text-muted-foreground/50 border border-[hsl(var(--border))] focus:border-primary/50 focus:outline-none transition-colors"
               />
               <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-surface-2 text-[10px] text-muted-foreground border border-border">
@@ -189,25 +197,25 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
 
           <div className="flex items-center gap-2 lg:gap-3">
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-[hsl(var(--border))]">
-              <Cpu className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={CpuIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-medium text-muted-foreground">GPU</span>
               <StatusDot status={gpuOnline ? 'online' : 'offline'} size="sm" />
             </div>
 
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-[hsl(var(--border))]">
-              <Wifi className="w-3.5 h-3.5 text-emerald-400" />
+              <HugeiconsIcon icon={Wifi01Icon} size={16} className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-xs font-medium text-muted-foreground">Backend</span>
               <StatusDot status={backendOnline ? 'online' : 'offline'} size="sm" />
             </div>
 
             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-[hsl(var(--border))]">
-              <Zap className="w-3.5 h-3.5 text-primary" />
+              <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-mono text-muted-foreground">VRAM</span>
               <span className="text-xs font-mono text-foreground">{vramUsed}/{vramTotal} GB</span>
             </div>
 
             <button className="relative p-2 rounded-xl glass border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground transition-colors">
-              <Bell className="w-4 h-4" />
+              <HugeiconsIcon icon={BellIcon} size={16} className="w-4 h-4" />
               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-primary" />
             </button>
 

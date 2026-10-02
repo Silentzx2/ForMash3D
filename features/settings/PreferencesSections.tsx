@@ -5,7 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Bell, Keyboard, Network, RotateCcw, AlertTriangle } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { BellIcon, KeyboardIcon, NetworkIcon, RotateCcwIcon, TriangleAlertIcon } from '@hugeicons/core-free-icons';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -57,7 +58,7 @@ export function NotificationsSection({ onSaveRegister }: { onSaveRegister?: (sav
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Bell className="w-5 h-5" />
+            <HugeiconsIcon icon={BellIcon} size={16} className="w-5 h-5" />
             Alert Preferences
           </CardTitle>
           <CardDescription>Choose what events trigger a notification.</CardDescription>
@@ -101,14 +102,14 @@ export function ShortcutsSection() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Keyboard Shortcuts</h1>
+        <h1 className="text-3xl font-bold tracking-tight">KeyboardIcon Shortcuts</h1>
         <p className="text-muted-foreground mt-2">Customize your keyboard shortcuts for faster workflow.</p>
       </div>
       
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Keyboard className="w-5 h-5" />
+            <HugeiconsIcon icon={KeyboardIcon} size={16} className="w-5 h-5" />
             Active Shortcuts
           </CardTitle>
           <CardDescription>Default keyboard shortcuts available in the workspace.</CardDescription>
@@ -116,7 +117,7 @@ export function ShortcutsSection() {
         <CardContent>
           <div className="grid gap-4">
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Open Command Palette</span>
+              <span>Open Command PaletteIcon</span>
               <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">Ctrl/Cmd + K</kbd>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
@@ -128,7 +129,7 @@ export function ShortcutsSection() {
               <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">/</kbd>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Quick Save</span>
+              <span>Quick SaveIcon</span>
               <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">Ctrl/Cmd + S</kbd>
             </div>
           </div>
@@ -175,7 +176,7 @@ export function NetworkSection({ onSaveRegister }: { onSaveRegister?: (save: () 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Network className="w-5 h-5" />
+            <HugeiconsIcon icon={NetworkIcon} size={16} className="w-5 h-5" />
             Connectivity
           </CardTitle>
           <CardDescription>Manage how the application connects to remote services.</CardDescription>
@@ -246,7 +247,7 @@ export function AdvancedSection({ onSaveRegister }: { onSaveRegister?: (save: ()
 
     if (typeof window !== 'undefined') {
       keysToReset.forEach(key => localStorage.removeItem(key));
-      toast.success("Settings have been reset to factory defaults.");
+      toast.success("SettingsIcon have been reset to factory defaults.");
       setTimeout(() => {
         window.location.reload();
       }, 1000);
@@ -263,7 +264,7 @@ export function AdvancedSection({ onSaveRegister }: { onSaveRegister?: (save: ()
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <RotateCcw className="w-5 h-5" />
+            <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-5 h-5" />
             System Behaviors
           </CardTitle>
           <CardDescription>Warning: These settings can affect performance and stability.</CardDescription>
@@ -301,7 +302,7 @@ export function AdvancedSection({ onSaveRegister }: { onSaveRegister?: (save: ()
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" className="w-fit gap-2">
-                  <AlertTriangle className="w-4 h-4" />
+                  <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-4 h-4" />
                   Reset to Defaults
                 </Button>
               </AlertDialogTrigger>

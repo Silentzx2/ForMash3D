@@ -12,9 +12,9 @@
 - [x] Current model adapter registry implemented and lazily loaded from `backend/adapters/__init__.py`
 - [x] 23 model configurations in `backend/config/models.yaml`
 - [x] VRAM-aware multiprocess scheduler with GPU mutual exclusion
-- [x] Redis job queue for multi-worker mode
+- [x] Redis job queue for multi-worker mode with SQL-backed terminal history
 - [x] GPU monitor with VRAM/temperature polling
-- [x] All API routers (system, file-upload, mesh-generation, mesh-editing, auto-rigging, segmentation, retopology, UV, motion)
+- [x] All API routers plus the in-process mesh-tools surface (system, file-upload, mesh-generation, mesh-editing, auto-rigging, segmentation, retopology, UV, motion)
 - [x] ORJSONResponse with graceful fallback
 - [x] GZipMiddleware, SSE streaming
 - [x] Install script with all dependencies
@@ -26,6 +26,35 @@
 - [x] Dockerfile Paint DifferentiableRenderer build fix
 - [x] All bare `except:` clauses fixed in project code
 - [x] Current adapters import cleanly (verified by test suite)
+
+### Official Model Parity & Quality Hardening
+- [x] Complete upstream code audit comparing `backend/thirdparty/` against `backend/adapters/` across all 10+ models
+- [x] Remove destructive internal PyMeshLab decimation from `triposg_adapter.py`
+- [x] Set PartPacker defaults: `num_faces=-1` (raw), `num_steps=50`, `cv2.INTER_AREA`, noise part filtering
+- [x] Set `use_remesh=False` in Hunyuan3D Paint v2.1 to prevent silent 40,000 face quadric decimation
+- [x] Fix TRELLIS simplify defaults (`simplify=0.0` across text, image, and painting adapters)
+- [x] Fix TRELLIS 12-step sampling schedules and remove artificial 20-step clamping
+- [x] Restore TRELLIS.2 defaults: `decimation_target=-1`, `remesh=False`
+- [x] Update Hunyuan3D Shape and Mini Turbo default octree resolution to official `384`
+- [x] Restore UltraShape official defaults: `num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path
+- [x] Enforce `do_normalise=False` on raw mesh saves to preserve model coordinates and scale
+- [x] Expand `MAX_PRODUCTION_FACES` to 200,000 and enable `auto_optimize: false` native topology passthrough
+- [x] Prevent compound double decimation in LOD chain calculation
+- [x] Pure Python embedded GLTF converter fallback ensuring 100% resilient GLTF export in headless environments without Blender
+- [x] Enhanced `_has_native_textures` supporting `SimpleMaterial.image` texture payloads
+- [x] Restored `sys.path` registration for PartUV adapter and utility runner
+- [x] PyMeshLab decimation fallback to fast-simplification / trimesh when native OpenGL libraries are missing
+- [x] Add Model Quality presets (Low, Medium, High, Ultra) and expanded polycount slider in frontend UI
+- [x] Add runtime model generation parameter logging in `multiprocess_scheduler.py`
+- [x] 100% pass on parity contract test suite (`test_official_model_parity_contract.py`)
+- [x] Frontend production build verified (`npm run build` completed cleanly in 14.2s across all 14 routes)
+
+### Viewer & Network Resilience Hardening
+- [x] Dynamic API proxy timeouts (10 min for large assets/downloads/thumbnails, 3 min for general APIs)
+- [x] Stream proxy error absorption using `TransformStream` to eliminate Next.js `failed to pipe response` crashes
+- [x] Multi-tier asset download deduplication and exponential backoff retry in `glbCache.ts`
+- [x] Robust fallback thumbnail resolution in `pipeline.py` and `system.py` (`previews/thumbnail.png`, `preview.jpg`, `*_thumb.png`)
+- [x] Three.js WebGL context loss protection (`event.preventDefault()`) and recovery in `MeshViewer.tsx`
 
 ### Runtime Contract Audit
 - [x] Remove non-functional direct Hunyuan Shape textured model registration
@@ -39,17 +68,43 @@
 - [x] Make verification scripts exercise FastAPI lifespan
 - [x] Fix dead RGB/background-removal branches in project-owned Hunyuan helpers
 
-### Frontend
+### Frontend & Studios
+- [x] Butter-Smooth Viewport & Real-Time Cursor Reticle (0ms direct DOM transform, active vector icon on cursor, zero-allocation sculpt loop)
+- [x] Hugeicons Migration & Type System Stabilization (remediated all import issues, restored mapping reference, and wrapped icon objects)
+- [x] Bespoke Studio-Grade Vector SVG Brush Icons (`components/icons/BrushIcons.tsx` across panels, floating HUD, and cursor reticle)
+- [x] Precision 3D Surface Paint with dynamic Three.js `flipY` orientation alignment, sub-texel DDA stroke interpolation, and canvas flood fill
+- [x] Blazing Fast 60+ FPS Viewport Engine with indexed vertex color tracking and throttled normal recalculations
+- [x] Preserved Plugins and Backend Integrations (`plugins/unity`, `plugins/unreal`, `backend/`)
 - [x] Next.js 16 App Router with all routes
-- [x] 3D Viewport with Three.js / R3F
-- [x] Workspace Shell with tabbed panels
+- [x] 3D Viewport with Three.js / R3F (continuous background MeshViewer preserved)
+- [x] Workspace Shell with unified left navigation rail and right property inspector
+- [x] Focused 3D Studio Architecture (clean excision of experimental building, tree, vfx, assembly modules and ViewCube)
+- [x] Single `/admin` Settings information architecture; stale `/settings` implementation removed
+- [x] Precision Brush Reticle Cursor (dynamic floating SVG ring, size preview, click pulse, and center dot)
+- [x] Real-Time Sculpt Heatmap Feedback (dynamic vertex color highlights on deformation with natural 350ms smooth decay)
+- [x] Smooth Cubic Camera Tweening for Detail Mirror Zoom Peek (380ms ease-out cubic interpolation)
+- [x] Interactive Sculpt Brushes tab in `MeshEditPanel.tsx` (7 brushes, bilateral symmetry, stroke stabilizer, and falloff)
+- [x] Interactive 3D Surface Paint tab in `TexturePanel.tsx` (drawing/erasing, color swatches, opacity, flow, tip profiles, and GPU texture bake)
+- [x] Instant mesh file upload in `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, and `MeshSegmentPanel.tsx`
+- [x] Backend-owned production post-processing for every mesh-producing job
+- [x] Canonical in-process mesh-tools API; obsolete port 8200 sidecar removed
+- [x] Cross-module import resolution matrix and compatibility symlinks (`features/utils/`, `features/config.js`)
 - [x] GeneratePanel with model selector, FlashVDM toggle, VRAM stats
 - [x] TexturePanel with PBR controls and systemStats
 - [x] All workspace panels (Remesh, UV, Segment, Edit, Animation, Jobs)
 - [x] Zustand stores, TanStack Query, unified apiClient
 - [x] Studio gold design system with dark theme
 
-### Documentation
+### Deep Bug-Resolution Completion
+- [x] Canonical artifact manifest and truthful required/optional artifact status
+- [x] Textured model post-processing protection against quad retopo stripping materials (`trellis_image_to_textured_mesh`)
+- [x] Live backend job status polling and failure propagation in `WorkspaceContext.tsx`
+- [x] Post-process retry from immutable master without re-running inference
+- [x] Deterministic SQLite path and durable Redis/SQL terminal job state
+- [x] Canonical asset workspace cleanup on job deletion
+- [x] Browser-independent Shape→Paint parent/child workflow
+
+## Documentation
 - [x] README.md fully updated with Paint-v2-1 info, model catalog, and documentation index
 - [x] CHANGELOG.md maintained as chronological project history
 - [x] ARCHITECTURE.md with Paint-v2-1 pipeline details and flow charts
@@ -118,7 +173,7 @@
 - [ ] After every code change, update all relevant .md documentation files
 - [ ] Keep CHANGELOG.md to last 3 changes only
 - [ ] Keep RULES.md synchronized with actual project state
-- [ ] Keep MEMORY.md updated with current status
+- [x] Keep MEMORY.md updated with current status
 
 ## Completed — Production Post-Processing Integration
 - Ported the 3DGenStudio post-processing engine into backend/postprocess/.
@@ -186,7 +241,7 @@ Completed in the deep second pass:
 
 Runtime-gated:
 - [ ] NVIDIA/CUDA model inference and visual-quality validation.
-- [ ] Full dependency/build validation in the unavailable cloned repository environment.
+- [ ] Full dependency/build validation on the supported target runtime.
 
 ## Review Audit — Final Implementation Pass (2026-09-30)
 
@@ -214,4 +269,4 @@ Testing/build/GPU stress verification remains intentionally outside this pass.
 - [x] Raw inference completion separated from background production post-processing with owned input cleanup and shutdown lifecycle.
 - [x] Remaining model adapter paths and VRAM declarations reconciled with the canonical manifest; FastMesh/TRELLIS variants cannot override manifest VRAM.
 - [x] Frontend post-processing state, QA score units, capability-based routing, L1 LRU accounting, and failure messaging synchronized with backend contracts.
-- [ ] Runtime/GPU/test/build validation intentionally deferred for this review pass.
+- [ ] Runtime/GPU/test/build validation remains required after this source-level fix pass.

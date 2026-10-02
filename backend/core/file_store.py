@@ -3,6 +3,7 @@ File metadata storage layer using Redis.
 """
 
 import json
+import os
 import logging
 import time
 from typing import Dict, List, Optional
@@ -22,10 +23,14 @@ class FileStore:
         - files:{file_type} -> ZSET of file_ids for a specific type, scored by upload timestamp
     """
 
-    def __init__(self, redis_client: Redis, key_prefix: str = "3daigc", default_ttl_seconds: int = 86400):
+    def __init__(self, redis_client: Redis, key_prefix: str = "3daigc", default_ttl_seconds: int | None = None):
         self.redis = redis_client
         self.prefix = key_prefix
-        self.default_ttl = default_ttl_seconds
+        self.default_ttl = (
+            int(os.getenv("FILE_METADATA_TTL_SECONDS", "0"))
+            if default_ttl_seconds is None
+            else int(default_ttl_seconds)
+        )
 
     def _key(self, *parts) -> str:
         """Generate Redis key with prefix"""
@@ -51,7 +56,10 @@ class FileStore:
 
             # Use a pipeline for atomic operations
             async with self.redis.pipeline() as pipe:
-                pipe.set(file_key, json.dumps(file_info), ex=self.default_ttl)
+                if self.default_ttl > 0:
+                    pipe.set(file_key, json.dumps(file_info), ex=self.default_ttl)
+                else:
+                    pipe.set(file_key, json.dumps(file_info))
                 pipe.zadd(all_files_key, {file_id: upload_timestamp})
                 pipe.zadd(file_type_key, {file_id: upload_timestamp})
                 await pipe.execute()

@@ -56,7 +56,7 @@ is_alive(){ [[ -n "${1:-}" ]] && kill -0 "$1" 2>/dev/null; }
 
 
 start_redis(){
-  section "1/3 Redis"
+  section "1/2 Redis"
   if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
     log "Redis is already running."
     return 0
@@ -101,7 +101,7 @@ start_redis(){
 
 
 start_backend() {
-  section "2/3 Backend API"
+  section "2/2 Backend API"
 
   local script="$PROJECT_ROOT/backend/scripts/run_server.sh"
   [[ -f "$script" ]] || fail "run_server.sh not found at $script"
@@ -168,8 +168,9 @@ start_backend() {
 }
 
 
+
 start_frontend(){
-  section "3/3 Frontend"
+  section "2/2 Frontend"
   BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
   [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
   [[ -d "$PROJECT_ROOT/node_modules" ]] || fail "Frontend dependencies are missing. Run bash scripts/setup.sh first."

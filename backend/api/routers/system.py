@@ -100,6 +100,15 @@ async def system_status(
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
 
+    mesh_tools_status = {"status": "ready", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools"}
+    try:
+        import postprocess.services.auto_retopo  # noqa: F401
+        import postprocess.services.auto_uv  # noqa: F401
+        import postprocess.services.repair  # noqa: F401
+        import postprocess.services.collision  # noqa: F401
+    except Exception as exc:
+        mesh_tools_status = {"status": "unavailable", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools", "error": str(exc)}
+
     status = {
         "timestamp": datetime.utcnow().isoformat(),
         "system": {
@@ -120,6 +129,7 @@ async def system_status(
         "gpu": [],
         "models": {"loaded": 0, "available": 0, "total_vram_used": 0},
         "queue": {"pending_jobs": 0, "processing_jobs": 0, "completed_jobs": 0},
+        "mesh_tools": mesh_tools_status,
     }
 
     # Try to get GPU information
@@ -1010,7 +1020,25 @@ async def get_job_status(job_id: str, request: Request):
                     result["file_id"] = f"job-{job_id}"
 
             # Convert thumbnail path to URL
-            thumbnail_path = result.get("thumbnail_path")
+            thumbnail_path = result.get("thumbnail_path") or result.get("thumbnail")
+            if not thumbnail_path and result.get("asset_root"):
+                root = Path(result["asset_root"])
+                for candidate in [
+                    root / "previews" / "thumbnail.png",
+                    root / "previews" / "preview.jpg",
+                    root / "previews" / "thumbnail.jpg",
+                ]:
+                    if candidate.exists():
+                        thumbnail_path = str(candidate)
+                        result["thumbnail_path"] = thumbnail_path
+                        break
+            if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
+                m_path = Path(result.get("mesh_path") or result.get("output_path"))
+                candidate = m_path.parent / f"{m_path.stem}_thumb.png"
+                if candidate.exists():
+                    thumbnail_path = str(candidate)
+                    result["thumbnail_path"] = thumbnail_path
+
             if thumbnail_path and os.path.exists(thumbnail_path):
                 # Create URL for thumbnail
                 thumbnail_url = (
@@ -1373,16 +1401,27 @@ async def download_job_thumbnail(
             )
 
         # Get thumbnail path
-        thumbnail_path = result.get("thumbnail_path")
-        if not thumbnail_path:
-            raise HTTPException(
-                status_code=404, detail="No thumbnail available for this job"
-            )
+        thumbnail_path = result.get("thumbnail_path") or result.get("thumbnail")
+        if not thumbnail_path and result.get("asset_root"):
+            root = Path(result["asset_root"])
+            for candidate in [
+                root / "previews" / "thumbnail.png",
+                root / "previews" / "preview.jpg",
+                root / "previews" / "thumbnail.jpg",
+            ]:
+                if candidate.exists():
+                    thumbnail_path = str(candidate)
+                    break
+        if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
+            m_path = Path(result.get("mesh_path") or result.get("output_path"))
+            candidate = m_path.parent / f"{m_path.stem}_thumb.png"
+            if candidate.exists():
+                thumbnail_path = str(candidate)
 
-        if not os.path.exists(thumbnail_path):
+        if not thumbnail_path or not os.path.exists(thumbnail_path):
             raise HTTPException(
                 status_code=404,
-                detail=f"Thumbnail file not found at path: {thumbnail_path}",
+                detail=f"Thumbnail file not found for job: {job_id}",
             )
 
         # Determine the response format
@@ -1658,6 +1697,163 @@ async def get_job_result_info(job_id: str, request: Request):
         )
 
 
+@router.post("/jobs/{job_id}/postprocess/retry", summary="Retry canonical production post-processing")
+async def retry_job_postprocess(
+    job_id: str, request: Request, _: bool = Depends(verify_api_key)
+):
+    """Rebuild derived production artifacts from the immutable canonical master."""
+    try:
+        from api.dependencies import get_current_user_optional
+        from core.auth.models import UserRole
+        from postprocess.pipeline import run_postprocess_job
+
+        scheduler = await get_scheduler(request)
+        job_status = await scheduler.get_job_status(job_id)
+        if job_status is None:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        current_user = await get_current_user_optional(
+            request.headers.get("authorization"), request
+        )
+        if current_user:
+            job_user_id = job_status.get("user_id")
+            if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
+                raise HTTPException(status_code=403, detail="Access denied to this job")
+
+        result = job_status.get("result") or {}
+        asset_root = result.get("asset_root")
+        if not asset_root:
+            raise HTTPException(status_code=400, detail="Job has no canonical asset workspace to retry")
+
+        asset_root_path = Path(asset_root).resolve()
+        models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+        if asset_root_path == models_root or models_root not in asset_root_path.parents:
+            raise HTTPException(status_code=400, detail="Invalid asset workspace")
+
+        master_path = asset_root_path / "master" / "source.glb"
+        if not master_path.is_file():
+            raise HTTPException(status_code=409, detail="Immutable master source.glb is missing")
+
+        job = await scheduler.job_queue.prepare_postprocess_retry(job_id)
+        if job is None:
+            raise HTTPException(status_code=409, detail="Job is not retryable from its canonical master")
+
+        for name in ("game_ready", "lods", "collision", "textures", "previews", "metadata"):
+            shutil.rmtree(asset_root_path / name, ignore_errors=True)
+
+        try:
+            final_result = await asyncio.to_thread(
+                run_postprocess_job,
+                job_id,
+                {"success": True, "output_mesh_path": str(master_path)},
+                job.inputs,
+                job.metadata,
+            )
+        except Exception as exc:
+            await scheduler.job_queue.fail_job(job_id, f"Post-process retry failed: {exc}")
+            raise HTTPException(status_code=500, detail=f"Post-process retry failed: {exc}") from exc
+
+        await scheduler.job_queue.complete_job(job_id, final_result)
+        return {"job_id": job_id, "status": "completed", "postprocess_status": "completed", "result": final_result}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Post-process retry failed for %s: %s", job_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error retrying post-processing: {exc}") from exc
+
+
+def _dir_size_bytes(path: Path) -> int:
+    total = 0
+    if not path.is_dir():
+        return 0
+    try:
+        for entry in path.rglob("*"):
+            if entry.is_file():
+                try:
+                    total += entry.stat().st_size
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    return total
+
+
+@router.get("/storage", summary="Get system storage usage")
+async def get_system_storage():
+    """Retrieve storage breakdown and system disk usage."""
+    from core.utils.file_utils import get_storage_base_dir
+    import shutil
+
+    storage_base_dir = get_storage_base_dir()
+    stat = shutil.disk_usage(storage_base_dir)
+    total_gb = round(stat.total / (1024**3), 2)
+    used_gb = round(stat.used / (1024**3), 2)
+    free_gb = round(stat.free / (1024**3), 2)
+    used_percent = round((stat.used / stat.total) * 100, 1) if stat.total > 0 else 0.0
+
+    directories = {}
+    for sub in ["models", "uploads", "exports", "thumbnails", "temp"]:
+        sub_path = storage_base_dir / sub
+        size_bytes = _dir_size_bytes(sub_path)
+        directories[sub] = {
+            "path": str(sub_path),
+            "size_gb": round(size_bytes / (1024**3), 3),
+            "size_mb": round(size_bytes / (1024**2), 2),
+        }
+
+    return {
+        "success": True,
+        "data": {
+            "root_path": str(storage_base_dir),
+            "total_gb": total_gb,
+            "used_gb": used_gb,
+            "free_gb": free_gb,
+            "used_percent": used_percent,
+            "directories": directories,
+        },
+    }
+
+
+@router.post("/cache/clear", summary="Clear system temporary files and cache")
+async def clear_system_cache():
+    """Clear temporary files from storage/temp and stale cache files."""
+    from core.utils.file_utils import get_storage_base_dir
+    import shutil
+
+    storage_base_dir = get_storage_base_dir()
+    freed_bytes = 0
+    files_removed = 0
+
+    temp_dirs = [
+        storage_base_dir / "temp",
+        storage_base_dir / "exports",
+    ]
+
+    for temp_dir in temp_dirs:
+        if temp_dir.is_dir():
+            for p in list(temp_dir.iterdir()):
+                try:
+                    if p.is_file() or p.is_symlink():
+                        freed_bytes += p.stat().st_size
+                        p.unlink()
+                        files_removed += 1
+                    elif p.is_dir():
+                        dsize = _dir_size_bytes(p)
+                        shutil.rmtree(p, ignore_errors=True)
+                        freed_bytes += dsize
+                        files_removed += 1
+                except Exception as e:
+                    logger.debug("Could not remove temp file %s: %s", p, e)
+
+    freed_mb = round(freed_bytes / (1024 * 1024), 2)
+    return {
+        "success": True,
+        "freed_mb": freed_mb,
+        "files_removed": files_removed,
+        "message": f"Cache cleared! Removed {files_removed} temporary files ({freed_mb} MB freed).",
+    }
+
+
 @router.delete("/jobs/{job_id}/result", summary="Delete job result file")
 async def delete_job_result(
     job_id: str, request: Request, _: bool = Depends(verify_api_key)
@@ -1747,11 +1943,10 @@ async def delete_job(
     job_id: str, request: Request, _: bool = Depends(verify_api_key)
 ):
     """
-    Delete a job from the database/queue system.
-    
-    This will remove the job record entirely from the system.
-    If the job has associated result files, they will NOT be automatically deleted.
-    Use /jobs/{job_id}/result endpoint first if you want to clean up files.
+    Delete a job and its canonical generated asset workspace.
+
+    The immutable source and all derived artifacts are removed only after the
+    durable job record has been deleted successfully.
 
     Args:
         job_id: The job ID to delete
@@ -1781,21 +1976,37 @@ async def delete_job(
             if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
                 raise HTTPException(status_code=403, detail="Access denied to this job")
         
-        # Get job info before deletion
+        # Get canonical workspace before deletion; client paths are never trusted.
+        asset_root = (job_status.get("result") or {}).get("asset_root")
+        asset_root_path = None
+        if asset_root:
+            asset_root_path = Path(asset_root).resolve()
+            models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+            if asset_root_path == models_root or models_root not in asset_root_path.parents:
+                raise HTTPException(status_code=400, detail="Invalid asset workspace")
+
         job_info = {
             "status": job_status.get("status"),
             "feature": job_status.get("feature"),
             "created_at": job_status.get("created_at"),
         }
-        
-        # Delete the job from the queue/database
+
         success = await scheduler.job_queue.delete_job(job_id)
-        
+
         if success:
+            cleanup_error = None
+            if asset_root_path and asset_root_path.exists():
+                try:
+                    shutil.rmtree(asset_root_path)
+                except OSError as exc:
+                    cleanup_error = str(exc)
+                    logger.warning("Deleted job %s but failed to remove canonical workspace: %s", job_id, exc)
             return {
                 "job_id": job_id,
-                "message": "Job deleted successfully from database",
+                "message": "Job deleted successfully",
                 "deleted": True,
+                "asset_workspace_deleted": cleanup_error is None,
+                "cleanup_error": cleanup_error,
                 "job_info": job_info,
             }
         else:

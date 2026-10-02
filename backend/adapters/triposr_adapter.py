@@ -196,7 +196,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                     proc_image = Image.fromarray((arr * 255.0).astype(np.uint8))
                 except Exception as bg_err:
                     logger.warning(f"Background removal failed ({bg_err}), continuing with raw image")
-                    proc_image = raw_image
+                    proc_image = raw_image.convert("RGB")
 
             # Run inference
             with torch.no_grad():

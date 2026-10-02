@@ -52,6 +52,7 @@ class Hunyuan3DPaintConfig:
         self.resolution = resolution
         self.bake_exp = 4
         self.merge_method = "fast"
+        self.enable_realesrgan = True
 
         # view selection
         self.candidate_camera_azims = [0, 90, 180, 270, 0, 180]
@@ -157,9 +158,10 @@ class Hunyuan3DPaintPipeline:
         enhance_images["albedo"] = copy.deepcopy(multiviews_pbr["albedo"])
         enhance_images["mr"] = copy.deepcopy(multiviews_pbr["mr"])
 
-        for i in range(len(enhance_images["albedo"])):
-            enhance_images["albedo"][i] = self.models["super_model"](enhance_images["albedo"][i])
-            enhance_images["mr"][i] = self.models["super_model"](enhance_images["mr"][i])
+        if getattr(self.config, "enable_realesrgan", True) and "super_model" in self.models and self.models["super_model"] is not None:
+            for i in range(len(enhance_images["albedo"])):
+                enhance_images["albedo"][i] = self.models["super_model"](enhance_images["albedo"][i])
+                enhance_images["mr"][i] = self.models["super_model"](enhance_images["mr"][i])
 
         ###########  Bake  ##########
         for i in range(len(enhance_images)):

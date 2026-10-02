@@ -106,6 +106,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
     def _load_model(self):
         """Load TripoSF VAE model from repository code."""
         try:
+            os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
             self._ensure_triposf_in_path()
             if torch.cuda.is_available():
                 major, _ = torch.cuda.get_device_capability()
@@ -218,7 +219,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
 
             if device == "cuda":
                 total_vram_mb = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)
-                if total_vram_mb < 16384:
+                if total_vram_mb < 16384 and "pruning" not in inputs:
                     pruning = True
                     sample_points_num = min(sample_points_num, 655_360)
                     logger.info(
@@ -240,9 +241,20 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                 self.model_id, f"{input_path.stem}_normalized", "obj"
             )
             Path(temp_gt_path).parent.mkdir(parents=True, exist_ok=True)
+            gt_verts = mesh_gt.vertices
+            if hasattr(gt_verts, "detach"):
+                gt_verts = gt_verts.detach().cpu().numpy()
+            elif hasattr(gt_verts, "numpy"):
+                gt_verts = gt_verts.numpy()
+            gt_faces = mesh_gt.faces
+            if hasattr(gt_faces, "detach"):
+                gt_faces = gt_faces.detach().cpu().numpy()
+            elif hasattr(gt_faces, "numpy"):
+                gt_faces = gt_faces.numpy()
+
             trimesh.Trimesh(
-                vertices=mesh_gt.vertices.tolist(),
-                faces=mesh_gt.faces.tolist(),
+                vertices=gt_verts,
+                faces=gt_faces,
             ).export(temp_gt_path)
 
             # 3. Load quantized voxels and sample points
@@ -264,6 +276,9 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             self.triposf_model.cfg.resolution = resolution
             self.triposf_model.cfg.sample_points_num = sample_points_num
 
+            if device == "cuda":
+                torch.cuda.empty_cache()
+
             with torch.no_grad():
                 if device == "cuda":
                     with torch.cuda.amp.autocast(dtype=torch.float16):
@@ -278,9 +293,20 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
+            recon_verts = mesh_recon.vertices
+            if hasattr(recon_verts, "detach"):
+                recon_verts = recon_verts.detach().cpu().numpy()
+            elif hasattr(recon_verts, "numpy"):
+                recon_verts = recon_verts.numpy()
+            recon_faces = mesh_recon.faces
+            if hasattr(recon_faces, "detach"):
+                recon_faces = recon_faces.detach().cpu().numpy()
+            elif hasattr(recon_faces, "numpy"):
+                recon_faces = recon_faces.numpy()
+
             final_trimesh = trimesh.Trimesh(
-                vertices=mesh_recon.vertices.tolist(),
-                faces=mesh_recon.faces.tolist(),
+                vertices=recon_verts,
+                faces=recon_faces,
             )
             final_trimesh.export(str(output_path))
 

@@ -84,7 +84,95 @@ flowchart TB
     TOKENS --> LAY
     LAY --> COMPS
     COMPS --> PAT
+    PAT --> ICONS["🎭 Icon System<br/>Hugeicons"]:::gold
 ```
+
+---
+
+## 2a. Icon System
+
+**Primary Icon Library**: [Hugeicons](https://hugeicons.com) (`@hugeicons/react` + `@hugeicons/core-free-icons`).
+
+> No other icon libraries are permitted. Custom SVGs are restricted to brand/logo assets only.
+
+### Icon Size Hierarchy
+
+| Size | CSS Class | Pixel Value | Usage |
+| :--- | :--- | :--- | :--- |
+| 12px | `h-3 w-3` | 12 | Inline status, compact badges |
+| 14px | `h-3.5 w-3.5` | 14 | Secondary actions, refined inline |
+| 16px | `h-4 w-4` | 16 | Default UI controls, buttons |
+| 18px | `h-[18px] w-[18px]` | 18 | Enhanced inline, refined action |
+| 20px | `h-5 w-5` | 20 | Featured actions, highlights |
+| 24px | `h-6 w-6` | 24 | Card-level, panel actions |
+| 28px+ | `h-7+ w-7+` | 28+ | Hero, empty states |
+
+### Icon Usage Patterns
+
+**With Text** (button):
+```tsx
+<HugeiconsIcon icon={PlayIcon} size={16} className="w-4 h-4 mr-2" />
+<span>Generate</span>
+```
+
+**Icon-Only** (button):
+```tsx
+<button>
+  <HugeiconsIcon icon={Settings01Icon} size={16} className="h-4 w-4" />
+</button>
+```
+
+**Decorative** (background/empty):
+```tsx
+<HugeiconsIcon icon={BoxIcon} size={20} className="text-primary opacity-80" />
+```
+
+### Accessibility Requirements
+
+- **Icon-only buttons** require `aria-label`.
+- **Decorative icons** require `aria-hidden="true"`.
+- **Interactive icons** should be wrapped in `SimpleTooltip` where appropriate.
+
+### Lucide → Hugeicons Name Mapping
+
+Key mappings (see `components/icons/hugeicons-mapping.ts` for the full list):
+
+| Lucide Name | Hugeicons Name |
+| :--- | :--- |
+| `ArrowLeft` | `ArrowLeft01` |
+| `ArrowRight` | `ArrowRight01` |
+| `ChevronDown` | `ChevronDown` |
+| `ChevronRight` | `ChevronRight` |
+| `X` | `Cancel01` |
+| `Check` | `Check` |
+| `CheckCircle` | `CheckmarkCircle01` |
+| `Loader2` | `LoaderCircle` |
+| `Search` | `Search01` |
+| `Settings` | `Settings01` |
+| `Upload` | `Upload01` |
+| `Download` | `Download01` |
+| `RefreshCw` | `RefreshCw` |
+| `Box` | `Box` |
+| `Layers` | `Layers01` |
+| `Cpu` | `Cpu` |
+| `HardDrive` | `HardDrive` |
+| `Eye` | `Eye` |
+| `EyeOff` | `EyeOff` |
+| `AlertCircle` | `AlertCircle` |
+| `AlertTriangle` | `TriangleAlert` |
+| `Zap` | `Zap` |
+| `Flame` | `Flame` |
+| `Database` | `Database01` |
+| `Gauge` | `Gauge` |
+| `Sparkles` | `Sparkles` |
+| `Wand` | `MagicWand01` |
+| `Lock` | `Lock` |
+| `LockOpen` | `LockOpen` |
+| `Shield` | `Shield01` |
+| `ShieldCheck` | `ShieldCheck` |
+| `Heart` | `Heart` |
+
+---
 
 ---
 

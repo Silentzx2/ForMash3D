@@ -1,19 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Layers,
-  CheckCircle2,
-  Lightbulb,
-  Maximize2,
-  ChevronDown,
-  ChevronUp,
-  RotateCcw,
-  Sparkles,
-  ArrowRight,
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowRight, CheckmarkCircle02Icon, ChevronDown, ChevronUp, LayersIcon, LightbulbIcon, Maximize02Icon, SparklesIcon } from '@hugeicons/core-free-icons';
 export const UVInspector: React.FC = () => {
   const { currentAsset, navigateToTool } = useWorkspace();
   const [activeTab, setActiveTab] = useState<'layout' | 'texture' | 'checker'>('layout');
@@ -182,7 +174,7 @@ export const UVInspector: React.FC = () => {
                 className="p-1 rounded-md bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-400 hover:text-white cursor-pointer"
                 title="Fullscreen UV View"
               >
-                <Maximize2 className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Maximize02Icon} size={16} className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
@@ -196,10 +188,10 @@ export const UVInspector: React.FC = () => {
             className="w-full p-2.5 flex items-center justify-between bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] text-left transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-primary" />
+              <HugeiconsIcon icon={LayersIcon} size={16} className="w-4 h-4 text-primary" />
               <span className="text-xs font-bold text-white">UV Statistics</span>
             </div>
-            {isStatsExpanded ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
+            {isStatsExpanded ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-4 h-4 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-4 h-4 text-zinc-400" />}
           </button>
 
           {isStatsExpanded && (
@@ -237,7 +229,7 @@ export const UVInspector: React.FC = () => {
         {/* Tips & Guidelines Card */}
         <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-2">
           <div className="flex items-center gap-2">
-            <Lightbulb className="w-4 h-4 text-primary" />
+            <HugeiconsIcon icon={LightbulbIcon} size={16} className="w-4 h-4 text-primary" />
             <span className="text-xs font-bold text-white">Tips &amp; Guidelines</span>
           </div>
 
@@ -245,11 +237,11 @@ export const UVInspector: React.FC = () => {
             {[
               'Use UV-free meshes for best unwrap quality',
               'Set appropriate texture resolution (1024–4096)',
-              'Check UV layout for stretched or overlapping areas',
+              'CheckIcon UV layout for stretched or overlapping areas',
               'High texel density ensures sharp texture baking',
             ].map((tip, i) => (
               <div key={i} className="flex items-start gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
+                <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-3.5 h-3.5 text-primary flex-shrink-0 mt-0.5" />
                 <span className="text-zinc-300 leading-snug">{tip}</span>
               </div>
             ))}
@@ -262,9 +254,9 @@ export const UVInspector: React.FC = () => {
           onClick={() => navigateToTool('texture')}
           className="w-full py-2.5 px-3 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
         >
-          <Sparkles className="w-3.5 h-3.5 text-primary" />
+          <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
           <span>Use in Texture Generation</span>
-          <ArrowRight className="w-3.5 h-3.5 text-zinc-400" />
+          <HugeiconsIcon icon={ArrowRight} size={16} className="w-3.5 h-3.5 text-zinc-400" />
         </button>
       </div>
     </div>

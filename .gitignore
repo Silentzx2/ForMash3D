@@ -58,6 +58,10 @@ build/
 # Machine-local MCP config — only commit if project-level registration is requested
 .mcp.json
 
+# Local planning and prompt specs
+ForMash3D_OFFICIAL_MODEL_IMPLEMENTATION_PARITY.md
+ForMash3D_FINAL_CROSS_MODEL_3D_QUALITY_BUG_FIX.md
+
 # Database
 *.db
 tsconfig.tsbuildinfo

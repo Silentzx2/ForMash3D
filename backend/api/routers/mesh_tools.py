@@ -1,0 +1,362 @@
+"""Mesh-processing endpoints: Auto UV, Auto Retopo, Repair and FBX Convert.
+
+Contract (shared by all routes):
+  Request  : multipart/form-data
+               - meshFile : the mesh to process (GLB/OBJ/PLY/STL)
+               - options  : JSON string of the operation options (optional)
+               - format   : desired output format, default "glb" (optional)
+  Response : text/event-stream (Server-Sent Events). Each event is a `data:` line
+             with a JSON object:
+               {"type":"progress","stage":"remesh","frac":0.58,"message":"…"}
+               {"type":"done","format":"glb","mesh_b64":"…","stats":{…},"preview_b64":…}
+               {"type":"error","detail":"…"}
+
+The heavy work runs in a worker thread; its progress callback pushes events onto
+a queue that the streaming generator drains. The final mesh is delivered base64
+in the terminal `done` event (these meshes are low-poly, so the overhead is
+negligible) along with stats and an optional preview image.
+"""
+from __future__ import annotations
+
+import base64
+import json
+
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
+
+from postprocess.config import MAX_UPLOAD_BYTES
+from postprocess.meshio import (export_mesh, load_mesh, load_mesh_vertex_normals, load_scene,
+                      mesh_stats, scene_to_mesh)
+from postprocess.schemas import (AutoRetopoOptions, AutoUvOptions, BakeOptions, CollisionOptions,
+                       ConvertOptions, FlattenOptions, InspectOptions, LODOptions, OptimizeOptions,
+                       RepairOptions, SegmentOptions)
+from postprocess.services.auto_retopo import run_auto_retopo
+from postprocess.services.auto_uv import run_auto_uv
+from postprocess.services.bake import run_bake, run_flatten
+from postprocess.services.collision import run_collision
+from postprocess.services.convert_fbx import run_convert_fbx
+from postprocess.services.inspect import run_inspect
+from postprocess.services.simplify import run_lods, run_optimize
+from postprocess.services.mesh_thumbnail import render_mesh_thumbnail
+from postprocess.services.repair import run_repair
+from postprocess.services.segment import run_segment
+from postprocess.streaming import stream_payload
+
+router = APIRouter(prefix="/mesh-tools", tags=["Mesh Tools"])
+
+
+def _parse_options(raw: str | None, model):
+    try:
+        data = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid options JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="options must be a JSON object.")
+    try:
+        return model(**data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+
+async def _read_upload(mesh_file: UploadFile) -> bytes:
+    data = await mesh_file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="meshFile is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="meshFile exceeds the maximum allowed size.")
+    return data
+
+
+def _envelope(mesh, fmt: str, tool_stats: dict | None, preview_png: bytes | None) -> dict:
+    fmt = (fmt or "glb").lstrip(".").lower()
+    payload = export_mesh(mesh, fmt)
+    stats = mesh_stats(mesh)
+    return {
+        "format": fmt,
+        "mesh_b64": base64.b64encode(payload).decode("ascii"),
+        "stats": {
+            "vertex_count": stats.vertex_count,
+            "face_count": stats.face_count,
+            "has_uv": stats.has_uv,
+            "tool": tool_stats,
+        },
+        "preview_b64": base64.b64encode(preview_png).decode("ascii") if preview_png else None,
+    }
+
+
+def _stream_tool(run_callable, fmt: str, label: str) -> StreamingResponse:
+    """`stream_payload` for trimesh-based tools: `run_callable(emit)` returns
+    (mesh, tool_stats, preview_png) and the envelope is built here.
+    """
+    def run(emit):
+        mesh, tool_stats, preview = run_callable(emit)
+        return _envelope(mesh, fmt, tool_stats, preview)
+
+    return stream_payload(run, label)
+
+
+@router.post("/lods")
+async def lods(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    opts = _parse_options(options, LODOptions)
+    data = await _read_upload(meshFile)
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+    return _stream_tool(lambda emit: run_lods(mesh, opts, progress=emit), format, "LOD generation")
+
+
+@router.post("/optimize")
+async def optimize(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    opts = _parse_options(options, OptimizeOptions)
+    data = await _read_upload(meshFile)
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+    return _stream_tool(lambda emit: run_optimize(mesh, opts, progress=emit), format, "Mesh optimization")
+
+
+@router.post("/auto-uv")
+async def auto_uv(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    opts = _parse_options(options, AutoUvOptions)
+    data = await _read_upload(meshFile)
+    name = meshFile.filename or "mesh.glb"
+    mesh = load_mesh(data, name)
+    # Auto UV preserves the shape, so it must preserve the shading: hand it the
+    # normals the file actually carried (load_mesh drops them — see meshio).
+    normals = load_mesh_vertex_normals(data, name)
+    return _stream_tool(
+        lambda emit: run_auto_uv(mesh, opts, progress=emit, source_normals=normals),
+        format, "Auto UV")
+
+
+@router.post("/auto-retopo")
+async def auto_retopo(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    opts = _parse_options(options, AutoRetopoOptions)
+    data = await _read_upload(meshFile)
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+    return _stream_tool(lambda emit: run_auto_retopo(mesh, opts, progress=emit), format, "Auto Retopo")
+
+
+@router.post("/repair")
+async def repair(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    opts = _parse_options(options, RepairOptions)
+    data = await _read_upload(meshFile)
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+    return _stream_tool(lambda emit: run_repair(mesh, opts, progress=emit), format, "Repair")
+
+
+@router.post("/convert")
+async def convert(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("fbx"),
+) -> StreamingResponse:
+    """GLB -> FBX engine export (headless Blender subprocess).
+
+    Deliberately bypasses trimesh (`load_mesh`/`_envelope`): trimesh cannot
+    write FBX and flattens skinned meshes, and this endpoint's whole point is
+    preserving the skeleton + animation takes. The GLB bytes go to the worker
+    untouched.
+    """
+    opts = _parse_options(options, ConvertOptions)
+    data = await _read_upload(meshFile)
+    if (format or "fbx").lstrip(".").lower() != "fbx":
+        raise HTTPException(status_code=400, detail="Only 'fbx' output is supported by /meshes/convert.")
+
+    def run(emit):
+        fbx_bytes, tool_stats = run_convert_fbx(data, opts, progress=emit)
+        return {
+            "format": "fbx",
+            "mesh_b64": base64.b64encode(fbx_bytes).decode("ascii"),
+            "stats": {
+                "vertex_count": tool_stats.get("vertices"),
+                "face_count": None,
+                "has_uv": bool(tool_stats.get("has_uv")),
+                "tool": tool_stats,
+            },
+            "preview_b64": None,
+        }
+
+    return stream_payload(run, "Convert to FBX")
+
+
+@router.post("/collision")
+async def collision(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+    format: str = Form("glb"),
+) -> StreamingResponse:
+    """Generate a convex collision proxy (CoACD decomposition or a primitive).
+
+    Returns a GLB *scene* — one node per hull — rather than a single mesh, so the
+    parts stay separable for engines that key off per-hull names. That is why it
+    builds its own envelope instead of going through `_stream_tool`, whose
+    `mesh_stats` assumes one Trimesh.
+    """
+    opts = _parse_options(options, CollisionOptions)
+    data = await _read_upload(meshFile)
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+    fmt = (format or "glb").lstrip(".").lower()
+
+    def run(emit):
+        scene, tool_stats = run_collision(mesh, opts, progress=emit)
+        payload = scene.export(file_type=fmt)
+        if not isinstance(payload, (bytes, bytearray)):
+            payload = str(payload).encode("utf-8")
+        return {
+            "format": fmt,
+            "mesh_b64": base64.b64encode(payload).decode("ascii"),
+            "stats": {
+                "vertex_count": tool_stats.get("vertices"),
+                "face_count": tool_stats.get("faces"),
+                "has_uv": False,
+                "tool": tool_stats,
+            },
+            "preview_b64": None,
+        }
+
+    return stream_payload(run, "Collision")
+
+
+@router.post("/bake")
+async def bake(
+    meshFile: UploadFile = File(...),
+    sourceFile: UploadFile = File(...),
+    options: str | None = Form(None),
+) -> StreamingResponse:
+    """Bake the detail of a high-poly source onto a low-poly mesh's UVs.
+
+    Two uploads, unlike every other route: `meshFile` is the low-poly bake target
+    (it must carry UVs) and `sourceFile` is the high-poly it samples from —
+    typically the pre-Retopo or pre-Optimize mesh.
+
+    Returns images rather than geometry, so the terminal `done` event carries a
+    `maps` dict of base64 PNGs instead of the usual `mesh_b64`.
+    """
+    opts = _parse_options(options, BakeOptions)
+    low_bytes = await _read_upload(meshFile)
+    source_bytes = await _read_upload(sourceFile)
+
+    def run(emit):
+        images, tool_stats = run_bake(low_bytes, source_bytes, opts, progress=emit)
+        return {
+            "format": "png",
+            "maps": {name: base64.b64encode(data).decode("ascii") for name, data in images.items()},
+            "stats": {"tool": tool_stats},
+        }
+
+    return stream_payload(run, "Bake")
+
+
+@router.post("/flatten")
+async def flatten(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+) -> StreamingResponse:
+    """Bake a PBR mesh's lit look into one albedo texture (mobile export).
+
+    One upload: the mesh itself, carrying its packed atlas as an extra UV set.
+    Returns images, like /bake — the terminal `done` event carries `maps`
+    ({"albedo": base64 PNG}) and the client applies it to its own geometry,
+    which is how rigs, clips and morphs survive untouched.
+    """
+    opts = _parse_options(options, FlattenOptions)
+    mesh_bytes = await _read_upload(meshFile)
+
+    def run(emit):
+        images, tool_stats = run_flatten(mesh_bytes, opts, progress=emit)
+        return {
+            "format": "png",
+            "maps": {name: base64.b64encode(data).decode("ascii") for name, data in images.items()},
+            "stats": {"tool": tool_stats},
+        }
+
+    return stream_payload(run, "Flatten")
+
+
+@router.post("/segment")
+async def segment(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+) -> StreamingResponse:
+    """Smart Segmentation — analyse the mesh into a hierarchy of parts.
+
+    Returns arrays, not geometry: the merge history, its costs, and the map from
+    each original face onto the analysis proxy. The client replays that history
+    with a union-find to whatever part count its slider asks for, so the Parts
+    slider costs no round trip and there is nothing here to stream a mesh back
+    from. Builds its own envelope for the same reason `/meshes/bake` does.
+
+    The arrays are base64 raw typed arrays rather than JSON numbers — `mapping`
+    alone is one int32 per triangle, and a 200k-face mesh would otherwise ship as
+    a megabyte and a half of decimal text for the browser to parse element by
+    element.
+    """
+    opts = _parse_options(options, SegmentOptions)
+    data = await _read_upload(meshFile)
+    # process=False inside load_mesh is what makes the face order returned here
+    # match the caller's index buffer. Do not "clean up" the load.
+    mesh = load_mesh(data, meshFile.filename or "mesh.glb")
+
+    def run(emit):
+        return run_segment(mesh, opts, progress=emit)
+
+    return stream_payload(run, "Smart Segmentation")
+
+
+@router.post("/inspect")
+async def inspect(
+    meshFile: UploadFile = File(...),
+    options: str | None = Form(None),
+) -> dict:
+    """Game-Ready check — analyse the mesh and return a pass/warn/fail report.
+
+    Single-artifact endpoint (no SSE, like /thumbnail): nothing is generated, so
+    there is no mesh to stream back and the analysis finishes in seconds. It runs
+    in a threadpool because the UV raster and topology walk are CPU-bound and
+    would otherwise stall the event loop.
+    """
+    opts = _parse_options(options, InspectOptions)
+    data = await _read_upload(meshFile)
+    scene = load_scene(data, meshFile.filename or "mesh.glb")
+    mesh = scene_to_mesh(scene)
+    try:
+        return await run_in_threadpool(run_inspect, scene, mesh, opts)
+    except Exception as exc:  # noqa: BLE001 — surface as a clean HTTP error
+        raise HTTPException(status_code=500, detail=f"Game-Ready check failed: {exc}") from exc
+
+
+@router.post("/thumbnail")
+async def thumbnail(meshFile: UploadFile = File(...)) -> dict:
+    """Render a GLB to a 512x512 PNG thumbnail (headless Blender subprocess).
+
+    Single-artifact endpoint (no SSE): returns plain JSON with the PNG base64 in
+    `preview_b64`. Used by the Node backend to give server-side-generated meshes
+    (external-API, driven over MCP) a thumbnail — those never get the
+    browser's WebGL render. The render runs in a threadpool so the bpy subprocess
+    does not block the event loop.
+    """
+    data = await _read_upload(meshFile)
+    try:
+        png = await run_in_threadpool(render_mesh_thumbnail, data)
+    except Exception as exc:  # noqa: BLE001 — surface as a clean HTTP error
+        raise HTTPException(status_code=500, detail=f"Thumbnail render failed: {exc}") from exc
+    return {"preview_b64": base64.b64encode(png).decode("ascii")}

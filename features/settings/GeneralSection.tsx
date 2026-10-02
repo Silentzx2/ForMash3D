@@ -4,7 +4,8 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Loader2, RefreshCw, CheckCircle, XCircle, Activity, Save } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { AlertCircleIcon, LoaderCircleIcon, RefreshCwIcon, CheckmarkCircle01Icon, CancelCircleIcon, Activity01Icon, SaveIcon } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { Switch } from '@/components/ui/switch';
 
@@ -147,7 +148,7 @@ export function GeneralSection() {
     return (
       <div className="p-6">
         <div className="flex items-center justify-center h-40">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-8 h-8 animate-spin text-primary" />
         </div>
       </div>
     );
@@ -156,13 +157,13 @@ export function GeneralSection() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">General Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight">General SettingsIcon</h1>
         <p className="text-muted-foreground mt-2">Application information and environment details</p>
       </div>
 
       {error && (
         <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <HugeiconsIcon icon={AlertCircleIcon} size={16} className="w-5 h-5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
@@ -225,7 +226,7 @@ export function GeneralSection() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Save className="w-5 h-5 text-primary" />
+            <HugeiconsIcon icon={SaveIcon} size={16} className="w-5 h-5 text-primary" />
             General Preferences
           </CardTitle>
           <CardDescription>Configure application-wide preferences and behaviors.</CardDescription>
@@ -258,12 +259,12 @@ export function GeneralSection() {
               disabled={isChecking}
               className="bg-primary text-primary-foreground"
             >
-              {isChecking ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Activity className="w-4 h-4 mr-2" />}
-              {isChecking ? 'Running Checks...' : 'Run Initialization Check'}
+              {isChecking ? <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-4 h-4 mr-2 animate-spin" /> : <HugeiconsIcon icon={Activity01Icon} size={16} className="w-4 h-4 mr-2" />}
+              {isChecking ? 'Running Checks...' : 'Run Initialization CheckIcon'}
             </Button>
             <Button variant="default" onClick={fetchSystemInfo} disabled={loading}>
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Refresh Information
+              <HugeiconsIcon icon={RefreshCwIcon} size={16} className="w-4 h-4 mr-2" />
+              RefreshIcon Information
             </Button>
           </div>
 
@@ -273,9 +274,9 @@ export function GeneralSection() {
                 <div key={step.id} className="flex items-start gap-4">
                   <div className="mt-0.5 flex-shrink-0">
                     {step.status === 'pending' && <div className="w-5 h-5 rounded-full border-2 border-muted-foreground/30" />}
-                    {step.status === 'loading' && <Loader2 className="w-5 h-5 animate-spin text-primary" />}
-                    {step.status === 'success' && <CheckCircle className="w-5 h-5 text-[hsl(var(--neon-green))]" />}
-                    {step.status === 'error' && <XCircle className="w-5 h-5 text-destructive" />}
+                    {step.status === 'loading' && <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-5 h-5 animate-spin text-primary" />}
+                    {step.status === 'success' && <HugeiconsIcon icon={CheckmarkCircle01Icon} size={16} className="w-5 h-5 text-[hsl(var(--neon-green))]" />}
+                    {step.status === 'error' && <HugeiconsIcon icon={CancelCircleIcon} size={16} className="w-5 h-5 text-destructive" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium ${step.status === 'pending' ? 'text-muted-foreground' : 'text-foreground'}`}>

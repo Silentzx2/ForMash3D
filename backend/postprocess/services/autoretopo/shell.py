@@ -156,7 +156,7 @@ def voxel_shell(mesh: trimesh.Trimesh, resolution: int = 256,
 
 
 def estimate_grid_voxels(mesh, resolution):
-    """Predict the occupancy grid size (voxels) for a memory guard, without building it."""
+    """Predict the occupancy grid size (voxels) for a memory guard, without constructing it."""
     diag = float(np.linalg.norm(mesh.extents))
     pitch = diag / max(32, int(resolution))
     dims = np.ceil(mesh.extents / pitch).astype(int) + 7

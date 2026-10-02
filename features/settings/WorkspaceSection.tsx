@@ -5,7 +5,8 @@ import React, { useState, useEffect } from 'react';
 import { getApiClient } from '@/services/apiClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertCircle, Loader2, Check, FolderOpen } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { AlertCircleIcon, LoaderCircleIcon, CheckIcon, FolderOpenIcon } from '@hugeicons/core-free-icons';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 
@@ -92,7 +93,7 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
     return (
       <div className="p-6">
         <div className="flex items-center justify-center h-40">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <HugeiconsIcon icon={LoaderCircleIcon} size={16} className="w-8 h-8 animate-spin text-primary" />
         </div>
       </div>
     );
@@ -101,21 +102,21 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Workspace Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Workspace SettingsIcon</h1>
         <p className="text-muted-foreground mt-2">Configure your workspace behavior and storage</p>
       </div>
 
       {error && (
         <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive">
-          <AlertCircle className="w-5 h-5 flex-shrink-0" />
+          <HugeiconsIcon icon={AlertCircleIcon} size={16} className="w-5 h-5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
       {success && (
         <div className="flex items-center gap-3 p-4 rounded-lg bg-success/10 border border-success/20 text-success">
-          <Check className="w-5 h-5 flex-shrink-0" />
-          <span>Settings saved successfully</span>
+          <HugeiconsIcon icon={CheckIcon} size={16} className="w-5 h-5 flex-shrink-0" />
+          <span>SettingsIcon saved successfully</span>
         </div>
       )}
 
@@ -136,7 +137,7 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
                   className="flex-1"
                 />
                 <Button variant="outline" size="sm">
-                  <FolderOpen className="w-4 h-4" />
+                  <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-4 h-4" />
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -145,16 +146,16 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
             </CardContent>
           </Card>
 
-          {/* Auto-Save Settings */}
+          {/* Auto-SaveIcon SettingsIcon */}
           <Card>
             <CardHeader>
-              <CardTitle>Auto-Save Settings</CardTitle>
+              <CardTitle>Auto-SaveIcon SettingsIcon</CardTitle>
               <CardDescription>Automatically save your work</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                 <div>
-                  <p className="font-medium">Enable Auto-Save</p>
+                  <p className="font-medium">Enable Auto-SaveIcon</p>
                   <p className="text-sm text-muted-foreground">Automatically save changes</p>
                 </div>
                 <Switch
@@ -166,7 +167,7 @@ export function WorkspaceSection({ onSaveRegister }: { onSaveRegister?: (save: (
               {config.autoSave && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">
-                    Auto-Save Interval (seconds)
+                    Auto-SaveIcon Interval (seconds)
                   </label>
                   <Input
                     type="number"

@@ -288,11 +288,14 @@ bun run build
 
 > **Note**: An automated `backend/tests/test_backend_e2e.py` test script referenced in earlier documentation does not currently exist. The health endpoint and TypeScript compiler provide the available self-check mechanisms.
 
-## Production Asset Lifecycle — Current
+## Production Asset Lifecycle & Two-Way PostProcess Pipeline
 
-Generation -> master/source.glb -> repair/optimize/Auto UV/bake -> game_ready/* -> LOD/collision/textures/previews/metadata -> existing job status UI -> protected artifact download.
+ForMash3D executes post-processing via two complementary pathways:
+1. **Automatic Chaining:** Generation -> master/source.glb -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> quad retopo -> Auto UV -> LOD cascade -> collision hulls -> game-ready formats) -> background progress streaming to `WorkspaceContext.tsx` -> artifacts loaded into 3D viewer.
+2. **Manual On-Demand PostProcess:** Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
+3. **Standalone Microservice (Port 8200):** High-throughput deployments can run `scripts/start_postprocess_service.sh` (`backend/postprocess/main.py`) on dedicated port 8200 for isolated GPU-accelerated mesh processing.
 
-The post-processing stage runs in asyncio.to_thread so CPU-heavy mesh operations do not block FastAPI's event loop.
+The post-processing stage runs in `asyncio.to_thread` so CPU/GPU mesh operations do not block FastAPI's event loop.
 
 ## Physics path
 Generation requests may carry a physics intent and provider-neutral controller values. The scheduler preserves those values as job metadata. Post-processing conditionally reuses the existing collision service and writes `metadata/physics.json`. The viewer consumes the canonical collision artifact and metadata through a pinned Rapier 0.19.3 browser adapter while the existing Three.js rendering pipeline remains unchanged. Physics binding waits for asset-load completion to prevent cross-asset state leakage.
@@ -318,3 +321,9 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - Model readiness is based on canonical manifest paths, real local checkpoint payloads, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract.
 - The workspace uses backend capability metadata for route selection, keeps unsupported multiview gated, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
 - Artifact naming is UUID-based across generation/segmentation/rig outputs, and stale request temp directories are removed during scheduler recovery.
+
+
+## Runtime Contract Update — 2026-10-02
+- Interactive mesh tools run in-process through `/api/v1/mesh-tools/*`; the default runtime does not launch a browser-facing port 8200 sidecar.
+- Durable job polling owns generation progress; mesh-tool operations may use SSE for operation-level progress.
+- Failed production post-processing keeps the canonical asset root and immutable master so the job can retry without model inference.

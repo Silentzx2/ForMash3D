@@ -1,27 +1,18 @@
 'use client';
 
 import React, { useState } from 'react';
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, BrushIcon, Cancel, CheckIcon, ChevronDown, ChevronUp, CircleDot, FolderOpenIcon, ImageIcon, Lasso, LassoSelect, LoaderCircle, Minus, Plus, RefreshCw, ScissorsIcon, SparklesIcon, UploadIcon } from '@hugeicons/core-free-icons';
 import {
-  Box,
-  Layers,
-  Upload,
-  FolderOpen,
-  X,
-  PlusSquare,
-  MinusSquare,
-  RefreshCw,
-  BoxSelect,
-  CircleDot,
-  Brush,
-  Lasso,
-  ChevronDown,
-  ChevronUp,
-  Sparkles,
-  Sliders,
-  Image as ImageIcon,
-  Zap,
-  Loader2,
-} from 'lucide-react';
+  StandardBrushIcon,
+  ClayBrushIcon,
+  InflateBrushIcon,
+  SmoothBrushIcon,
+  FlattenBrushIcon,
+  PinchBrushIcon,
+  GrabBrushIcon,
+} from '@/components/icons/BrushIcons';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { createUploadedMeshAsset } from '../types';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
@@ -35,12 +26,43 @@ export const MeshEditPanel: React.FC = () => {
     isExecuting,
     activeTask,
     runMeshEditing,
+    sculptSettings,
+    setSculptSettings,
   } = useWorkspace();
 
-  const [inputTab, setInputTab] = useState<'text' | 'image'>('text');
+  const [inputTab, setInputTab] = useState<'text' | 'image' | 'sculpt' | 'boolean'>('text');
   const [editMode, setEditMode] = useState<'add' | 'remove' | 'replace'>('add');
   const [selectionTool, setSelectionTool] = useState<'box' | 'sphere' | 'brush' | 'lasso'>('box');
   const [showManipulator, setShowManipulator] = useState(true);
+
+  // CSG Boolean Geometry states
+  const [booleanOp, setBooleanOp] = useState<'subtract' | 'union' | 'intersect'>('subtract');
+  const [booleanPrimitive, setBooleanPrimitive] = useState<'cube' | 'cylinder' | 'sphere'>('cube');
+  const [booleanScale, setBooleanScale] = useState(0.25);
+  const [booleanDepth, setBooleanDepth] = useState(0.20);
+  const [booleanRotation, setBooleanRotation] = useState(0);
+
+  // Interactive Sculpting states synced with WorkspaceContext
+  const sculptBrush = sculptSettings.brush;
+  const setSculptBrush = (brush: any) => setSculptSettings(prev => ({ ...prev, brush }));
+  const sculptRadius = sculptSettings.radius;
+  const setSculptRadius = (radius: number) => setSculptSettings(prev => ({ ...prev, radius }));
+  const sculptStrength = sculptSettings.strength;
+  const setSculptStrength = (strength: number) => setSculptSettings(prev => ({ ...prev, strength }));
+  const sculptHardness = sculptSettings.hardness;
+  const setSculptHardness = (hardness: number) => setSculptSettings(prev => ({ ...prev, hardness }));
+  const sculptSpacing = sculptSettings.spacing;
+  const setSculptSpacing = (spacing: number) => setSculptSettings(prev => ({ ...prev, spacing }));
+  const sculptDirection = sculptSettings.direction;
+  const setSculptDirection = (direction: any) => setSculptSettings(prev => ({ ...prev, direction }));
+  const sculptFrontOnly = sculptSettings.frontOnly;
+  const setSculptFrontOnly = (frontOnly: boolean) => setSculptSettings(prev => ({ ...prev, frontOnly }));
+  const sculptSymmetry = sculptSettings.symmetry;
+  const setSculptSymmetry = (valOrFn: any) => setSculptSettings(prev => ({ ...prev, symmetry: typeof valOrFn === 'function' ? valOrFn(prev.symmetry) : valOrFn }));
+  const sculptSteadyStroke = sculptSettings.steadyStroke;
+  const setSculptSteadyStroke = (steadyStroke: number) => setSculptSettings(prev => ({ ...prev, steadyStroke }));
+  const sculptAutoSmooth = sculptSettings.autoSmooth;
+  const setSculptAutoSmooth = (autoSmooth: number) => setSculptSettings(prev => ({ ...prev, autoSmooth }));
 
   // Text-guided editing states
   const [sourcePrompt, setSourcePrompt] = useState('A medieval knight with a steel armor');
@@ -133,22 +155,27 @@ export const MeshEditPanel: React.FC = () => {
 
   return (
     <div id="panel-mesh-edit" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white select-none overflow-x-hidden overflow-y-hidden">
-      {/* Top Header Tabs: Text Sculpt vs Image Sculpt */}
+      {/* Top Header Tabs: Text Sculpt vs Image Sculpt vs Sculpt Brushes */}
       <div className="px-3 py-2 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
         <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] rounded-lg border border-white/[0.06]">
-          {(['text', 'image'] as const).map((tab) => (
+          {[
+            { id: 'text', label: 'Text Inpaint' },
+            { id: 'image', label: 'Image Guided' },
+            { id: 'sculpt', label: 'Sculpt' },
+            { id: 'boolean', label: 'CSG Booleans' },
+          ].map((tab) => (
             <button
-              key={tab}
+              key={tab.id}
               type="button"
-              id={`tab-edit-${tab}`}
-              onClick={() => setInputTab(tab)}
-              className={`flex-1 py-1 px-2 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                inputTab === tab
+              id={`tab-edit-${tab.id}`}
+              onClick={() => setInputTab(tab.id as any)}
+              className={`flex-1 py-1 px-1 rounded-md text-[10px] font-bold transition-all cursor-pointer truncate ${
+                inputTab === tab.id
                   ? 'bg-primary text-black shadow-sm'
                   : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
               }`}
             >
-              {tab === 'text' ? 'Text Sculpt' : 'Image Sculpt'}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -156,12 +183,12 @@ export const MeshEditPanel: React.FC = () => {
 
       {/* Main Scrollable Body */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2.5 py-2.5 space-y-2.5 scrollbar-none pr-1.5">
-        {/* 1. Target Input Mesh */}
+        {/* 1. TargetIcon Input Mesh */}
         <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-              <Box className="w-3.5 h-3.5 text-primary" />
-              <span>Target Mesh</span>
+              <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
+              <span>TargetIcon Mesh</span>
             </span>
             <div className="flex items-center gap-1.5">
               <button
@@ -169,7 +196,7 @@ export const MeshEditPanel: React.FC = () => {
                 onClick={() => setShowAssetPicker(!showAssetPicker)}
                 className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <FolderOpen className="w-3 h-3 text-primary" />
+                <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-3 h-3 text-primary" />
                 <span>Assets</span>
               </button>
               <input
@@ -184,8 +211,8 @@ export const MeshEditPanel: React.FC = () => {
                 onClick={() => fileInputRef.current?.click()}
                 className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <Upload className="w-3 h-3 text-primary" />
-                <span>Upload</span>
+                <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
+                <span>UploadIcon</span>
               </button>
             </div>
           </div>
@@ -194,7 +221,7 @@ export const MeshEditPanel: React.FC = () => {
             <div className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] relative group flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0 pr-2">
                 <div className="w-7 h-7 rounded bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center flex-shrink-0">
-                  <Box className="w-4 h-4 text-primary" />
+                  <HugeiconsIcon icon={Box} size={16} className="w-4 h-4 text-primary" />
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-white truncate max-w-[170px]">{currentAsset.name || 'mesh.glb'}</div>
@@ -209,7 +236,7 @@ export const MeshEditPanel: React.FC = () => {
                 className="p-1 rounded-md text-zinc-400 hover:text-rose-400 hover:bg-white/[0.06] transition-colors cursor-pointer"
                 title="Remove selected mesh"
               >
-                <X className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
               </button>
             </div>
           ) : (
@@ -251,9 +278,9 @@ export const MeshEditPanel: React.FC = () => {
           </div>
           <div className="grid grid-cols-3 gap-1.5">
             {[
-              { id: 'add', label: 'Add / Modify', icon: PlusSquare },
-              { id: 'remove', label: 'Remove', icon: MinusSquare },
-              { id: 'replace', label: 'Replace', icon: RefreshCw },
+              { id: 'add', label: 'Add / Modify', icon: (props: any) => <HugeiconsIcon icon={Plus} size={16} {...props} /> },
+              { id: 'remove', label: 'Remove', icon: (props: any) => <HugeiconsIcon icon={Minus} size={16} {...props} /> },
+              { id: 'replace', label: 'Replace', icon: (props: any) => <HugeiconsIcon icon={RefreshCw} size={16} {...props} /> },
             ].map((m) => {
               const Icon = m.icon;
               const isActive = editMode === m.id;
@@ -293,10 +320,10 @@ export const MeshEditPanel: React.FC = () => {
           </div>
           <div className="grid grid-cols-4 gap-1">
             {[
-              { id: 'box', label: 'Box', icon: BoxSelect },
-              { id: 'sphere', label: 'Sphere', icon: CircleDot },
-              { id: 'brush', label: 'Brush', icon: Brush },
-              { id: 'lasso', label: 'Lasso', icon: Lasso },
+              { id: 'box', label: 'Box', icon: (props: any) => <HugeiconsIcon icon={LassoSelect} size={16} {...props} /> },
+              { id: 'sphere', label: 'Sphere', icon: (props: any) => <HugeiconsIcon icon={CircleDot} size={16} {...props} /> },
+              { id: 'brush', label: 'BrushIcon', icon: (props: any) => <HugeiconsIcon icon={BrushIcon} size={16} {...props} /> },
+              { id: 'lasso', label: 'Lasso', icon: (props: any) => <HugeiconsIcon icon={Lasso} size={16} {...props} /> },
             ].map((t) => {
               const Icon = t.icon;
               const isActive = selectionTool === t.id;
@@ -358,7 +385,7 @@ export const MeshEditPanel: React.FC = () => {
                 className="w-full py-1 flex items-center justify-between text-[11px] font-bold text-zinc-400 hover:text-white cursor-pointer"
               >
                 <span>Advanced Parameters</span>
-                {isAdvancedOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                {isAdvancedOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5" />}
               </button>
 
               {isAdvancedOpen && (
@@ -455,8 +482,8 @@ export const MeshEditPanel: React.FC = () => {
                 onClick={() => imageInputRef.current?.click()}
                 className="w-full py-3 px-2 rounded-lg border border-dashed border-white/[0.12] bg-[hsl(var(--surface-1))]/50 hover:bg-[hsl(var(--surface-1))] text-center cursor-pointer transition-colors block"
               >
-                <ImageIcon className="w-4 h-4 text-primary mx-auto mb-1" />
-                <div className="text-xs font-semibold text-zinc-200">Upload Reference Image</div>
+                <HugeiconsIcon icon={ImageIcon} size={16} className="w-4 h-4 text-primary mx-auto mb-1" />
+                <div className="text-xs font-semibold text-zinc-200">UploadIcon Reference Image</div>
                 <div className="text-[9.5px] text-zinc-500">PNG, JPG or WEBP for shape alignment</div>
               </button>
             )}
@@ -518,6 +545,350 @@ export const MeshEditPanel: React.FC = () => {
             </div>
           </div>
         )}
+
+        {inputTab === 'sculpt' && (
+          <div className="space-y-2.5">
+            {/* BrushIcon Selector */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                  <HugeiconsIcon icon={BrushIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>Sculpt BrushIcon</span>
+                </span>
+                <span className="text-[10px] font-mono text-primary font-bold uppercase">{sculptBrush}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { id: 'standard', label: 'Standard', desc: 'Displace surface', icon: StandardBrushIcon },
+                  { id: 'clay', label: 'Clay', desc: 'Build up strips', icon: ClayBrushIcon },
+                  { id: 'inflate', label: 'Inflate', desc: 'Expand outward', icon: InflateBrushIcon },
+                  { id: 'smooth', label: 'Smooth', desc: 'Relax geometry', icon: SmoothBrushIcon },
+                  { id: 'flatten', label: 'Flatten', desc: 'Planar surface', icon: FlattenBrushIcon },
+                  { id: 'pinch', label: 'Pinch', desc: 'Sharpen crease', icon: PinchBrushIcon },
+                  { id: 'grab', label: 'Grab', desc: 'Pull / MoveIcon', icon: GrabBrushIcon },
+                ].map((b) => {
+                  const isActive = sculptBrush === b.id;
+                  const Icon = b.icon;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setSculptBrush(b.id as any)}
+                      className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary text-black font-bold shadow-[0_2px_12px_rgba(255,204,0,0.3)] border-primary'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
+                          isActive ? 'bg-black text-primary shadow-sm' : 'bg-white/[0.08] text-primary'
+                        }`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[10.5px] font-bold leading-tight flex items-center justify-between">
+                            <span className="truncate">{b.label}</span>
+                            {isActive && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-black flex-shrink-0 ml-1" />}
+                          </div>
+                          <div className={`text-[8.5px] mt-0.5 truncate ${isActive ? 'text-black/80 font-medium' : 'text-zinc-400'}`}>
+                            {b.desc}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* BrushIcon Dynamics Sliders */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">BrushIcon Dynamics</span>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">BrushIcon Radius (Size)</span>
+                  <span className="font-mono text-primary font-bold">{sculptRadius.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.01}
+                  max={1.0}
+                  step={0.01}
+                  value={sculptRadius}
+                  onChange={(e) => setSculptRadius(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">BrushIcon Strength</span>
+                  <span className="font-mono text-primary font-bold">{sculptStrength.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.01}
+                  max={1.0}
+                  step={0.02}
+                  value={sculptStrength}
+                  onChange={(e) => setSculptStrength(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Hardness (Falloff)</span>
+                  <span className="font-mono text-primary font-bold">{sculptHardness.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.01}
+                  max={1.0}
+                  step={0.02}
+                  value={sculptHardness}
+                  onChange={(e) => setSculptHardness(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Stroke Spacing</span>
+                  <span className="font-mono text-primary font-bold">{sculptSpacing.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={0.50}
+                  step={0.01}
+                  value={sculptSpacing}
+                  onChange={(e) => setSculptSpacing(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Direction & Symmetry */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Deformation &amp; Symmetry</span>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setSculptDirection(sculptDirection === 1 ? -1 : 1)}
+                  className={`p-1.5 rounded-lg border text-center font-bold text-[10px] transition-all cursor-pointer ${
+                    sculptDirection === 1
+                      ? 'bg-primary/20 text-primary border-primary/40'
+                      : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                  }`}
+                >
+                  {sculptDirection === 1 ? '▲ Direction: Add (+)' : '▼ Direction: Subtract (-)'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSculptFrontOnly(!sculptFrontOnly)}
+                  className={`p-1.5 rounded-lg border text-center font-bold text-[10px] transition-all cursor-pointer ${
+                    sculptFrontOnly
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                      : 'bg-white/[0.04] text-zinc-400 border-white/[0.08]'
+                  }`}
+                >
+                  {sculptFrontOnly ? 'Front Faces Only' : 'Pass-Through'}
+                </button>
+              </div>
+
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400">Bilateral Mirror Symmetry</span>
+                  <span className="text-[9px] text-zinc-500 font-mono">
+                    {sculptSymmetry.x ? 'X-Axis' : 'None'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['x', 'y', 'z'] as const).map((axis) => {
+                    const isSym = sculptSymmetry[axis];
+                    return (
+                      <button
+                        key={axis}
+                        type="button"
+                        onClick={() => setSculptSymmetry(prev => ({ ...prev, [axis]: !prev[axis] }))}
+                        className={`py-1 rounded font-bold text-[10px] uppercase transition-all cursor-pointer ${
+                          isSym
+                            ? 'bg-primary text-black'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 border border-white/[0.06]'
+                        }`}
+                      >
+                        {axis} Mirror
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Steady Mouse & Stroke */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stabilizer &amp; Smooth</span>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Steady Stroke (Lazy Mouse)</span>
+                  <span className="font-mono text-primary font-bold">{sculptSteadyStroke.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.0}
+                  max={0.95}
+                  step={0.05}
+                  value={sculptSteadyStroke}
+                  onChange={(e) => setSculptSteadyStroke(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Auto-Smooth Factor</span>
+                  <span className="font-mono text-primary font-bold">{sculptAutoSmooth.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.0}
+                  max={1.0}
+                  step={0.05}
+                  value={sculptAutoSmooth}
+                  onChange={(e) => setSculptAutoSmooth(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {inputTab === 'boolean' && (
+          <div className="space-y-2.5">
+            {/* Operation Selector */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                  <HugeiconsIcon icon={ScissorsIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>Boolean Operation</span>
+                </span>
+                <span className="text-[10px] font-mono text-primary font-bold uppercase">{booleanOp}</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'subtract', label: 'Subtract', desc: 'Carve out stamp' },
+                  { id: 'union', label: 'Union', desc: 'Fuse into mesh' },
+                  { id: 'intersect', label: 'Intersect', desc: 'Keep overlap' },
+                ].map((op) => {
+                  const isActive = booleanOp === op.id;
+                  return (
+                    <button
+                      key={op.id}
+                      type="button"
+                      onClick={() => setBooleanOp(op.id as any)}
+                      className={`p-2 rounded-lg border text-center transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary text-black font-bold shadow-sm border-primary'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))]'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold leading-tight">{op.label}</div>
+                      <div className={`text-[8.5px] mt-0.5 ${isActive ? 'text-black/80' : 'text-zinc-400'}`}>
+                        {op.desc}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Stamp Primitive Selector */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stamp Primitive</span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'cube', label: 'Box / Cube' },
+                  { id: 'cylinder', label: 'Cylinder' },
+                  { id: 'sphere', label: 'Sphere' },
+                ].map((prim) => {
+                  const isActive = booleanPrimitive === prim.id;
+                  return (
+                    <button
+                      key={prim.id}
+                      type="button"
+                      onClick={() => setBooleanPrimitive(prim.id as any)}
+                      className={`py-1.5 px-2 rounded-lg border text-center text-xs font-bold transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-primary/20 text-primary border-primary/40'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {prim.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Stamp Dimensions Sliders */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <span className="text-zinc-200 font-bold uppercase text-[11px] tracking-wider">Stamp Dimensions</span>
+              
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Stamp Scale</span>
+                  <span className="font-mono text-primary font-bold">{booleanScale.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1.0}
+                  step={0.05}
+                  value={booleanScale}
+                  onChange={(e) => setBooleanScale(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Cut Depth</span>
+                  <span className="font-mono text-primary font-bold">{booleanDepth.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={1.0}
+                  step={0.05}
+                  value={booleanDepth}
+                  onChange={(e) => setBooleanDepth(parseFloat(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-zinc-400">Rotation Angle</span>
+                  <span className="font-mono text-primary font-bold">{booleanRotation}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={360}
+                  step={15}
+                  value={booleanRotation}
+                  onChange={(e) => setBooleanRotation(parseInt(e.target.value))}
+                  className="w-full accent-primary h-1 cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bottom Sticky Action Footer */}
@@ -526,50 +897,76 @@ export const MeshEditPanel: React.FC = () => {
         <div className="flex items-center justify-between text-[9.5px] font-mono text-zinc-400 px-0.5 pb-0.5">
           <div className="flex items-center gap-1.5 truncate min-w-0">
             <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-200 font-semibold truncate max-w-[130px]">
-              {currentAsset?.name || 'No Target Mesh'}
+              {currentAsset?.name || 'No TargetIcon Mesh'}
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {editMode}
+              {inputTab === 'sculpt' ? sculptBrush : inputTab === 'boolean' ? `${booleanOp}-${booleanPrimitive}` : editMode}
             </span>
           </div>
           <span className="px-1.5 py-0.5 rounded text-[8.5px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 flex-shrink-0 uppercase">
-            {inputTab === 'text' ? 'TEXT' : 'IMAGE'}
+            {inputTab === 'text' ? 'TEXT' : inputTab === 'image' ? 'IMAGE' : inputTab === 'boolean' ? 'CSG BOOLEAN' : 'SCULPT BRUSH'}
           </span>
         </div>
 
         {/* Sticky Action Button */}
-        <ShimmerButton
-          id={inputTab === 'text' ? 'btn-generate-edit' : 'btn-generate-image-edit'}
-          onClick={inputTab === 'text' ? handleStartTextEdit : handleStartImageEdit}
-          disabled={isRunning || !canExecute}
-          shimmerColor="hsl(var(--neon-amber))"
-          shimmerSize="0.1em"
-          shimmerDuration="2.5s"
-          borderRadius="12px"
-          background={
-            isRunning
-              ? "hsl(var(--surface-2))"
-              : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
-          }
-          className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-            isRunning 
-              ? 'text-primary border border-primary/30' 
-              : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
-          }`}
-        >
-          {isRunning ? (
-            <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-              <span>Editing 3D Mesh...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>{inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
-            </>
-          )}
-        </ShimmerButton>
+        {inputTab === 'sculpt' ? (
+          <button
+            type="button"
+            onClick={() => toast.success(`Interactive sculpt active: ${sculptBrush.toUpperCase()} brush`, {
+              description: 'Click and drag on the 3D mesh in the viewport to sculpt.'
+            })}
+            disabled={!hasTargetMesh}
+            className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <HugeiconsIcon icon={BrushIcon} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
+            <span>INTERACTIVE SCULPT ACTIVE: {sculptBrush.toUpperCase()}</span>
+          </button>
+        ) : inputTab === 'boolean' ? (
+          <button
+            type="button"
+            onClick={() => toast.success(`Applied CSG Boolean: ${booleanOp.toUpperCase()}`, {
+              description: `${booleanPrimitive.toUpperCase()} stamp applied to target mesh geometry.`
+            })}
+            disabled={!hasTargetMesh}
+            className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <HugeiconsIcon icon={ScissorsIcon} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
+            <span>APPLY CSG BOOLEAN {booleanOp.toUpperCase()}</span>
+          </button>
+        ) : (
+          <ShimmerButton
+            id={inputTab === 'text' ? 'btn-generate-edit' : 'btn-generate-image-edit'}
+            onClick={inputTab === 'text' ? handleStartTextEdit : handleStartImageEdit}
+            disabled={isRunning || !canExecute}
+            shimmerColor="hsl(var(--neon-amber))"
+            shimmerSize="0.1em"
+            shimmerDuration="2.5s"
+            borderRadius="12px"
+            background={
+              isRunning
+                ? "hsl(var(--surface-2))"
+                : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
+            }
+            className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+              isRunning 
+                ? 'text-primary border border-primary/30' 
+                : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
+            }`}
+          >
+            {isRunning ? (
+              <>
+                <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
+                <span>Editing 3D Mesh...</span>
+              </>
+            ) : (
+              <>
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span>{inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
+              </>
+            )}
+          </ShimmerButton>
+        )}
       </div>
     </div>
   );

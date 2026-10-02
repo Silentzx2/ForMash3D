@@ -1,3 +1,52 @@
+## 2026-10-02 Viewer & Network Resilience Hardening (Large Model Load & Stream Protection)
+- **Root Cause of Viewer / Proxy Crash:**
+  - `app/api/v1/[...path]/route.ts` used a 30s `AbortSignal.timeout(30000)` on all GET requests. For 50-100MB textured GLB files over network or tunnel, the stream exceeded 30s, causing an abort that broke the pipe and threw an unhandled Next.js `failed to pipe response: TimeoutError`.
+  - Duplicate concurrent fetches from `prefetchGLB` and `MeshViewer` doubled the proxy load.
+  - Job thumbnails generated in `asset_root / "previews" / "thumbnail.png"` were not exposed under `result["thumbnail_path"]`, causing `GET /api/v1/system/jobs/{job_id}/thumbnail` to return 404.
+  - Heavy polygon meshes (>150K faces) could trigger WebGL context loss, which without `event.preventDefault()` permanently crashed the browser viewport.
+- **Remediation Implemented:**
+  - In `route.ts`: 10-minute dynamic timeout for binary assets; response stream wrapped in `TransformStream` with `.catch()` to absorb client cancellations cleanly.
+  - In `glbCache.ts`: In-flight Promise deduplication prevents duplicate downloads of the same URL; 3-attempt exponential backoff retry with 120s timeout and stream fallback.
+  - In `pipeline.py` & `system.py`: Added `thumbnail_path` to `_build_result` and fallback search across `asset_root / previews / thumbnail.png`, `preview.jpg`, and adjacent `*_thumb.png`.
+  - In `MeshViewer.tsx`: Attached `webglcontextlost` and `webglcontextrestored` handlers to `renderer.domElement`.
+
+## 2026-10-02 Official Model Implementation Parity & Raw Quality Hardening
+- Performed exhaustive parity audit across 10+ models between `backend/thirdparty/` and `backend/adapters/`.
+- Key Architectural Rule Enforced:
+  - Adapters must NEVER decimate, remesh, or rescale raw models before saving `output_mesh_path`. Decimation and post-processing are strictly downstream.
+  - `master/source.glb` is immutable and byte-for-byte authentic to upstream neural output.
+- Root Cause Deviations Fixed:
+  - TripoSG: Removed PyMeshLab quadric edge collapse decimation in `triposg_adapter.py`.
+  - PartPacker: Default `num_faces=-1`, `num_steps=50`, `cv2.INTER_AREA`, and `len(faces) > 10` noise filtering in `partpacker_utils.py` and `partpacker_adapter.py`.
+  - Hunyuan3D Paint v2.1: Enforced `use_remesh=False` in `hunyuan3d_paint_v21.py` and `hunyuan3d_adapter_v21.py`, preventing silent 40,000 face decimation during texturing.
+  - TRELLIS / TRELLIS.2: Default `simplify=0.0` across text, image, and painting adapters. Restored 12-step sampling schedules (`ss_sampling_steps=12`, `slat_sampling_steps=12`) and removed artificial 20-step clamping. Set `decimation_target=-1` and `remesh=False` in TRELLIS.2.
+  - Hunyuan3D Shape & Mini Turbo: Updated default `octree_resolution` from 256 to official pipeline default `384`.
+  - UltraShape: Restored official defaults (`num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path to `hunyuan3d-shape-v2-1`).
+  - Raw Model Scale Preservation: Enforced `do_normalise=False` across raw asset generators (`hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`, `trellis2_adapter.py`, `fastmesh_adapter.py`).
+  - Production Pipeline: Expanded `MAX_PRODUCTION_FACES` from 50,000 to 200,000. Enabled `auto_optimize: false` passthrough check to preserve 100% of native topology in `game_ready` when requested. Fixed compound double decimation in LOD chain calculation. Added graceful fallback to `fast-simplification` / `trimesh` decimation when pymeshlab native OpenGL libraries are missing in headless environments.
+  - UI & Telemetry: Added Model Quality presets (`low`, `medium`, `high`, `ultra`) mapped to official parameters, Native/Raw polycount chips, and 200,000 slider. Added exact runtime parameter logging in `multiprocess_scheduler.py`.
+  - Verification: Created `backend/tests/test_official_model_parity_contract.py` covering model contracts, parameter schemas, postprocessing passthrough, LOD ratios, and viewer routing (100% pass).
+
+## 2026-10-02 Post-Processing Textured Retopo Guard & Live Job Polling
+- Fixed post-processing crash on textured meshes (`RuntimeError: Texture-aware optimization lost native material data`):
+  - In `backend/postprocess/pipeline.py`, AutoRetopo is now skipped if `native_textures` is true, recording an explicit skip reason in `retopo_stats`.
+  - Added a defensive fallback in `run_optimize`: if optimization drops native textures, the pipeline retains the `repaired` mesh rather than raising an unhandled exception.
+  - In `features/workspace/Panels/GeneratePanel.tsx`, disabled the quad topology option when a textured model is chosen (`Quads (raw only)`).
+  - In `features/workspace/store/WorkspaceContext.tsx`, added live polling against `/api/v1/system/jobs/{job_id}` for active jobs so status transitions (`failed`, `completed`, `interrupted`) and real-time step messages immediately propagate to the pipeline execution panel.
+
+## 2026-10-01 Butter-Smooth Viewport & Real-Time Cursor Reticle
+- Replaced React state `brushPointer` with direct DOM ref `translate3d` tracking (`will-change-transform`), eliminating re-renders on mousemove and removing the 75ms CSS transition lag.
+- Integrated vector tool icons directly into the center reticle dot and badge for real-time cursor feedback.
+- Optimized the sculpt deformation loop with squared-distance thresholding and eliminated intermediate object allocations.
+
+## 2026-10-01 Hugeicons Standardization & Type System Remediation
+- Remediated 47 TypeScript compilation errors across 11 files after migrating from `lucide-react` to `@hugeicons/react` and `@hugeicons/core-free-icons`.
+- Replaced direct JSX rendering of `IconSvgObject` definitions with `<HugeiconsIcon icon={...} />` wrappers across admin tabs (`QueueTab`, `RuntimeTab`, `StorageTab`, `SettingsTab`).
+- Fixed MetricCard icon prop contract across tabs to accept valid ReactNodes (`<HugeiconsIcon icon={...} size={16} className="..." />`).
+- Reverted unintentional `THREE.Bone` -> `THREE.BoneIcon` replacement in `MeshViewer.tsx`.
+- Restored `components/icons/hugeicons-mapping.ts` providing legacy lucide-to-hugeicons lookup reference.
+- Verified 100% clean type-checking with `npx tsc --noEmit` and production build with `npm run build`.
+
 ## 2026-09-30 README Overhaul & Commercial SaaS License Boundary
 - Eliminated all "#1" and "alternative of Tripo" claims; positioned ForMash3D respectfully as inspired by Tripo AI and Meshy workflows.
 - Restyled Mermaid architecture diagram with vibrant Studio Gold theme, high-contrast dark/light mode compatibility, and strict node-to-node links.
@@ -269,3 +318,18 @@ Deep Runtime Contract Audit completed on the current Hunyuan3D integration:
 - Adapter VRAM is manifest-only and remaining repository/model paths are CWD-independent; UUID naming closes timestamp collision windows.
 - Frontend uses backend model capabilities for routing, treats QA scores as 0–100, and refreshes the same asset when post-processing completes or fails.
 - Tests/build/GPU stress/load validation remain intentionally unrun in this pass.
+
+
+## 2026-10-02 Deep Bug Closure
+- Canonical asset roots are persisted before production post-processing so failed processing remains retryable from immutable `master/source.glb`.
+- Shape→Paint child jobs inherit target polycount, LOD, and topology settings from the parent workflow.
+- Optional export failures are explicit `failed` artifact states with error messages.
+- Final QA uses the same resolved production triangle budget as optimization.
+- Retention cleanup removes canonical asset workspaces before terminal job history is deleted.
+- Multi-worker file metadata follows `FILE_METADATA_TTL_SECONDS` instead of a hidden 24-hour override.
+- System status reports mesh-tools readiness instead of hard-coding success.
+- GPU/end-to-end verification still requires the supported target runtime.
+
+
+## Verification Status — 2026-10-02
+The latest deep-audit fixes are source-level. Full compile, frontend build/lint/typecheck, and supported-GPU end-to-end verification must be rerun after this commit; older dated entries above describe earlier verification runs and are not evidence for this new commit.

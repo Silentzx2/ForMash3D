@@ -55,7 +55,7 @@ async function validateGlbStructure(file: File): Promise<Pick<ValidationResult, 
 
   // Verify declared length matches actual file size (truncation check)
   const declaredLength = view.getUint32(8, true);
-  if (declaredLength !== file.size) {
+  if (file.size < declaredLength) {
     return {
       error: `GLB file appears truncated. Header declares ${declaredLength} bytes, but file is ${file.size} bytes.`,
     };

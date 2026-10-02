@@ -199,7 +199,7 @@ async def retopologize_mesh(
             },
             model_preference=request.model_preference,
             priority=1,
-            metadata={"feature_type": "mesh_retopology"},
+            metadata={"postprocess_mode": "production_mesh", "feature_type": "mesh_retopology"},
             user_id=user_id,
         )
 

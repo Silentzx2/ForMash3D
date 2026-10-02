@@ -1,37 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Cpu,
-  HardDrive,
-  Download,
-  Trash2,
-  StopCircle,
-  RotateCcw,
-  Sparkles,
-  Maximize2,
-  Box,
-  Layers,
-  Terminal,
-  Activity,
-  ChevronRight,
-  ArrowRight,
-  Copy,
-  Check,
-  RefreshCw,
-  Search,
-  Filter,
-  ExternalLink,
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { ActivityIcon, AlertCircle, Box, CheckIcon, CheckmarkCircle02Icon, Copy, DownloadIcon, LayersIcon, RefreshCw, SearchIcon, SparklesIcon, StopCircleIcon, Trash2 } from '@hugeicons/core-free-icons';
 const MeshViewer = dynamic(() => import('../Viewport/MeshViewer').then(mod => mod.MeshViewer), {
   ssr: false,
   loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse flex items-center justify-center text-xs text-zinc-500">Loading 3D Output...</div>
@@ -58,6 +35,7 @@ interface RealJobItem {
   inputs?: any;
   parameters?: any;
   logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
+  productionStatus?: string;
 }
 
 export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, onBack }) => {
@@ -72,6 +50,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
   const [copiedId, setCopiedId] = useState(false);
   const [isRawJsonOpen, setIsRawJsonOpen] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [retryingPostprocess, setRetryingPostprocess] = useState(false);
 
   // 1. Fetch real jobs list from backend
   const fetchJobs = useCallback(async () => {
@@ -127,6 +106,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
           inputs: (res as any).inputs,
           parameters: (res as any).parameters || (res as any).inputs?.model_parameters,
           logs: (res as any).logs || (res as any).metadata?.logs || [],
+          productionStatus: (res as any).production_status || (res.result as any)?.production_status,
         });
       }
     } catch (err) {
@@ -180,6 +160,21 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
     }
   };
 
+  const handleRetryPostprocess = async () => {
+    if (!selectedJobId || retryingPostprocess) return;
+    setRetryingPostprocess(true);
+    try {
+      await getApiClient().retryPostprocess(selectedJobId);
+      toast.success('Production processing restarted from the immutable master');
+      await fetchSelectedJobDetails(selectedJobId);
+      await fetchJobs();
+    } catch (e: any) {
+      toast.error('Failed to retry production processing', { description: e?.message });
+    } finally {
+      setRetryingPostprocess(false);
+    }
+  };
+
   const handleLoadResultToViewport = () => {
     if (!selectedJob) return;
     const downloadUrl = `/api/v1/system/jobs/${selectedJob.id}/download`;
@@ -226,7 +221,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary">
-            <Box className="w-4 h-4" />
+            <HugeiconsIcon icon={Box} size={16} className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -249,8 +244,8 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
             onClick={fetchJobs}
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] hover:border-white/[0.16] text-xs text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Refresh</span>
+            <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" />
+            <span>RefreshIcon</span>
           </button>
         </div>
       </div>
@@ -261,17 +256,17 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         <div className="w-80 border-r border-white/[0.08] bg-[hsl(var(--surface-1))]/50 flex flex-col flex-shrink-0">
           <div className="p-3 border-b border-white/[0.06] space-y-2">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <HugeiconsIcon icon={SearchIcon} size={16} className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search job ID or model..."
+                placeholder="SearchIcon job ID or model..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-primary"
               />
             </div>
 
-            {/* Filter pills */}
+            {/* FilterIcon pills */}
             <div className="flex items-center gap-1">
               {(['all', 'running', 'completed', 'failed'] as const).map((f) => (
                 <button
@@ -293,7 +288,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
           <div className="flex-1 overflow-y-auto divide-y divide-white/[0.04]">
             {filteredJobs.length === 0 ? (
               <div className="p-6 text-center text-xs text-zinc-500 space-y-1">
-                <Box className="w-6 h-6 text-zinc-600 mx-auto mb-2 opacity-50" />
+                <HugeiconsIcon icon={Box} size={16} className="w-6 h-6 text-zinc-600 mx-auto mb-2 opacity-50" />
                 <p>No jobs found</p>
                 <p className="text-[10px]">Generate a 3D model to see jobs here</p>
               </div>
@@ -349,7 +344,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         <div className="flex-1 overflow-y-auto p-5">
           {!selectedJob ? (
             <div className="flex flex-col items-center justify-center h-full text-zinc-500 space-y-2">
-              <Box className="w-10 h-10 stroke-[1.5] text-zinc-600" />
+              <HugeiconsIcon icon={Box} size={16} className="w-10 h-10 stroke-[1.5] text-zinc-600" />
               <p className="text-xs">Select a job from the list to view its real parameters and output</p>
             </div>
           ) : (
@@ -363,7 +358,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       onClick={handleCopyId}
                       className="p-1 rounded text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
                     >
-                      {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      {copiedId ? <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-emerald-400" /> : <HugeiconsIcon icon={Copy} size={16} className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                   <div className="text-xs text-zinc-400">
@@ -384,13 +379,41 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                     <span className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-400' : isRunning ? 'bg-primary' : 'bg-rose-400'}`} />
                     {selectedJob.status}
                   </span>
+                  {selectedJob.productionStatus && selectedJob.productionStatus !== 'processing' && (
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                        selectedJob.productionStatus === 'ready'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : selectedJob.productionStatus === 'degraded'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      }`}
+                    >
+                      <HugeiconsIcon
+                        icon={
+                          selectedJob.productionStatus === 'ready'
+                            ? CheckmarkCircle02Icon
+                            : selectedJob.productionStatus === 'degraded'
+                            ? AlertCircle
+                            : ActivityIcon
+                        }
+                        size={16}
+                        className="w-3.5 h-3.5"
+                      />
+                      {selectedJob.productionStatus === 'ready'
+                        ? 'Production Ready'
+                        : selectedJob.productionStatus === 'degraded'
+                        ? 'Production Ready — Some exports unavailable'
+                        : 'Production Failed'}
+                    </span>
+                  )}
 
                   <button
                     onClick={handleCancelOrDeleteJob}
                     className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/[0.06] transition-colors cursor-pointer"
                     title={selectedJobIsRunning ? 'Cancel Job' : 'Delete Job'}
                   >
-                    {selectedJobIsRunning ? <StopCircle className="w-4 h-4" /> : <Trash2 className="w-4 h-4" />}
+                    {selectedJobIsRunning ? <HugeiconsIcon icon={StopCircleIcon} size={16} className="w-4 h-4" /> : <HugeiconsIcon icon={Trash2} size={16} className="w-4 h-4" />}
                   </button>
                 </div>
               </div>
@@ -400,7 +423,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-zinc-300 font-medium flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-primary animate-pulse" />
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary animate-pulse" />
                       <span>{selectedJob.stage || 'GPU Synthesis active...'}</span>
                     </span>
                     <span className="font-mono font-bold text-primary">{Math.round(selectedJob.progress || 0)}%</span>
@@ -417,7 +440,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
               {isFailed && (
                 <div className="rounded-xl bg-rose-500/10 border border-rose-500/30 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-rose-300 font-bold text-xs">
-                    <AlertCircle className="w-4 h-4" />
+                    <HugeiconsIcon icon={AlertCircle} size={16} className="w-4 h-4" />
                     <span>Generation Error Diagnostics</span>
                   </div>
                   <p className="text-xs text-rose-200 font-mono bg-black/40 p-2.5 rounded-lg border border-rose-500/20 whitespace-pre-wrap">
@@ -431,17 +454,17 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div className="space-y-1 text-left w-full sm:w-auto">
                     <div className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>3D Mesh Generation Succeeded</span>
+                      <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4" />
+                      <span>Production Asset Ready</span>
                     </div>
-                    <p className="text-[11px] text-zinc-300">The GLB asset is compiled and available for preview and export.</p>
+                    <p className="text-[11px] text-zinc-300">The canonical production artifacts are available for preview and export.</p>
                   </div>
                   <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
                       onClick={handleLoadResultToViewport}
                       className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-primary hover:brightness-105 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5" />
                       <span>Load into Viewport</span>
                     </button>
                     <a
@@ -449,20 +472,62 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                       download
                       className="flex-1 sm:flex-none px-4 py-2 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-white/[0.12] text-white font-bold text-xs flex items-center justify-center gap-1.5 border border-white/[0.08] transition-colors"
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Download GLB</span>
+                      <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5" />
+                      <span>Download Game-ready GLB</span>
                     </a>
                   </div>
                 </div>
               )}
 
-              {/* Two Column Grid: Parameters & Telemetry */}
+              {isFailed && (selectedJob.result as any)?.asset_root && (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-amber-200">Production processing failed</div>
+                    <div className="text-[10px] text-amber-100/70 mt-0.5">The immutable master is preserved, so production processing can be retried without rerunning AI inference.</div>
+                  </div>
+                  <button type="button" onClick={() => void handleRetryPostprocess()} disabled={retryingPostprocess} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[10px] font-bold text-black disabled:opacity-50">
+                    <HugeiconsIcon icon={RefreshCw} size={16} className={retryingPostprocess ? 'animate-spin' : ''} />
+                    {retryingPostprocess ? 'Retrying…' : 'Retry Production Processing'}
+                  </button>
+                </div>
+              )}
+
+              {(selectedJob.result as any)?.artifacts && (
+                <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3 md:col-span-2">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <HugeiconsIcon icon={LayersIcon} size={16} className="w-4 h-4 text-primary" />
+                    <span>Artifacts</span><span className="ml-auto text-[9px] text-zinc-500">Backend artifact manifest</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {Object.entries((selectedJob.result as any).artifacts).flatMap(([group, value]: [string, any]) => {
+                      const entries = value && typeof value === 'object' && !('status' in value)
+                        ? Object.entries(value).map(([key, item]) => [`${group} / ${key}`, item] as const)
+                        : [[group, value] as const];
+                      return entries;
+                     }).map(([label, item]: readonly [string, any]) => (
+                      <div key={label} className="rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-2))] p-2.5 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-semibold text-zinc-200 truncate">{label}</div>
+                          <div className="text-[9px] text-zinc-500 uppercase">{item?.status || 'unknown'}</div>
+                        </div>
+                        {item?.status === 'ready' && item?.url ? (
+                          <a href={item.url} download className="text-primary hover:text-white transition-colors" aria-label={`Download ${label}`}>
+                            <HugeiconsIcon icon={DownloadIcon} size={16} className="w-4 h-4" />
+                          </a>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Two Column GridIcon: Parameters & Telemetry */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Parameters Card */}
                 <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
                   <div className="flex items-center justify-between text-xs font-bold text-white">
                     <div className="flex items-center gap-2">
-                      <Layers className="w-4 h-4 text-primary" />
+                      <HugeiconsIcon icon={LayersIcon} size={16} className="w-4 h-4 text-primary" />
                       <span>Job Parameters</span>
                     </div>
                     <button
@@ -481,7 +546,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                     <div className="space-y-1.5 text-[11px] divide-y divide-white/[0.04]">
                       <div className="flex justify-between py-1"><span className="text-zinc-400">Created At</span><span className="font-mono text-white">{selectedJob.created_at ? new Date(selectedJob.created_at).toLocaleString() : 'N/A'}</span></div>
                       <div className="flex justify-between py-1"><span className="text-zinc-400">Completed At</span><span className="font-mono text-white">{selectedJob.completed_at ? new Date(selectedJob.completed_at).toLocaleString() : 'In Progress'}</span></div>
-                      <div className="flex justify-between py-1"><span className="text-zinc-400">Output Format</span><span className="font-mono text-white uppercase">GLB</span></div>
+                      
                       {selectedJob.parameters && typeof selectedJob.parameters === 'object' && Object.entries(selectedJob.parameters).slice(0, 6).map(([k, v]) => (
                         <div key={k} className="flex justify-between py-1">
                           <span className="text-zinc-400 truncate max-w-[140px]">{k}</span>
@@ -495,7 +560,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                 {/* Input Asset & Telemetry */}
                 <div className="rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] p-4 space-y-3">
                   <div className="flex items-center gap-2 text-xs font-bold text-white">
-                    <Activity className="w-4 h-4 text-primary" />
+                    <HugeiconsIcon icon={ActivityIcon} size={16} className="w-4 h-4 text-primary" />
                     <span>Input Asset & Pipeline Details</span>
                   </div>
 
@@ -509,7 +574,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
-                      <Box className="w-5 h-5 text-zinc-500" />
+                      <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-zinc-500" />
                     </div>
                     <div className="min-w-0 flex-1 text-xs">
                       <div className="font-bold text-white truncate">Input Reference</div>
@@ -522,7 +587,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                   <div className="pt-2 border-t border-white/[0.04] space-y-1.5 text-[11px]">
                     <div className="flex justify-between"><span className="text-zinc-400">Queue Mode</span><span className="font-mono text-white">Multi-Worker Async</span></div>
                     <div className="flex justify-between"><span className="text-zinc-400">Engine Protocol</span><span className="font-mono text-white">{selectedJob.feature || 'Mesh Generation'}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-400">Target Pipeline</span><span className="font-mono text-white">{selectedJob.model_preference || 'Standard'}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">TargetIcon Pipeline</span><span className="font-mono text-white">{selectedJob.model_preference || 'Standard'}</span></div>
                   </div>
                 </div>
               </div>

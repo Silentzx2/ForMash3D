@@ -56,6 +56,7 @@ export type CameraViewPreset = 'perspective' | 'front' | 'back' | 'top' | 'botto
 
 export interface ModelAsset {
   id: string;
+  fileId?: string;
   name: string;
   category: 'all' | 'mesh' | 'texture' | 'generation';
   thumbnail: string;
@@ -242,6 +243,7 @@ export interface TextureSettings {
   lowVram?: boolean;
   maxNumView?: number;
   generatePBR?: boolean;
+  enableRealESRGAN?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -303,6 +305,7 @@ export interface GenerationSettings {
   maxNumView?: number;
   resolution?: number;
   paintResolution?: 512 | 768;
+  enableRealESRGAN?: boolean;
 }
 
 
@@ -315,3 +318,27 @@ export interface CompareSettings {
   showWireframe: boolean;
   showGrid: boolean;
 }
+
+export interface SculptSettings {
+  brush: 'standard' | 'clay' | 'inflate' | 'smooth' | 'flatten' | 'pinch' | 'grab';
+  radius: number;
+  strength: number;
+  hardness: number;
+  spacing: number;
+  direction: 1 | -1;
+  frontOnly: boolean;
+  symmetry: { x: boolean; y: boolean; z: boolean };
+  steadyStroke: number;
+  autoSmooth: number;
+}
+
+export interface PaintBrushSettings {
+  color: string;
+  size: number;
+  opacity: number;
+  flow: number;
+  hardness: number;
+  shape: 'round' | 'square' | 'spray' | 'chalk';
+  blendMode: string;
+}
+

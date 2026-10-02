@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Cable, X, Check, Copy, RefreshCw, Send, Terminal, Monitor, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { motion, AnimatePresence } from 'motion/react';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { CableIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, Copy, RefreshCw, SendIcon, TerminalIcon } from '@hugeicons/core-free-icons';
 type DccApp = 'blender' | 'unreal' | 'maya' | 'unity';
 
 interface DccPreset {
@@ -89,7 +91,7 @@ export const DccBridgeModal: React.FC = () => {
 
   const currentPreset = DCC_PRESETS.find(p => p.id === selectedApp)!;
   const assetName = currentAsset?.name || 'ForMash3D_Asset';
-  const assetUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || '/static/models/HeroAsset.glb';
+  const assetUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || '';
 
   const blenderScript = `# Run inside Blender's Scripting workspace or install as add-on
 import bpy, urllib.request, tempfile, os
@@ -154,7 +156,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
           <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-[hsl(var(--surface-1))]/80 backdrop-blur">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-primary/15 text-primary border border-primary/25">
-                <Cable className="w-5 h-5" />
+                <HugeiconsIcon icon={CableIcon} size={16} className="w-5 h-5" />
               </div>
               <div>
                 <h2 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
@@ -171,16 +173,16 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
               onClick={() => setIsDccBridgeOpen(false)}
               className="p-1.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors"
             >
-              <X className="w-5 h-5" />
+              <HugeiconsIcon icon={Cancel} size={16} className="w-5 h-5" />
             </button>
           </div>
 
           {/* Body */}
           <div className="p-6 overflow-y-auto space-y-5 custom-scrollbar">
-            {/* Target Software Select */}
+            {/* TargetIcon Software Select */}
             <div>
               <label className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider block mb-2">
-                Target Creative Environment
+                TargetIcon Creative Environment
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {DCC_PRESETS.map((preset) => {
@@ -201,7 +203,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
                         }`}>
                           {preset.iconTag}
                         </span>
-                        {isSelected && <Check className="w-3.5 h-3.5 text-primary" />}
+                        {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
                       </div>
                       <span className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-zinc-300'}`}>
                         {preset.name.split(' ')[0]}
@@ -255,7 +257,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
                   disabled={isPinging}
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 border border-white/[0.1] transition-all"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isPinging ? 'animate-spin' : ''}`} />
+                  <HugeiconsIcon icon={RefreshCw} size={16} className={`w-3 h-3 ${isPinging ? 'animate-spin' : ''}`} />
                   <span>{isPinging ? 'Testing Port...' : 'Test Connection'}</span>
                 </button>
 
@@ -305,14 +307,14 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={TerminalIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   Quick Ingestion Script
                 </span>
                 <button
                   onClick={handleCopyCode}
                   className="flex items-center gap-1 text-[11px] text-primary hover:underline font-mono"
                 >
-                  {copiedCode ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  {copiedCode ? <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3" /> : <HugeiconsIcon icon={Copy} size={16} className="w-3 h-3" />}
                   <span>{copiedCode ? 'Copied to Clipboard!' : 'Copy Script'}</span>
                 </button>
               </div>
@@ -343,13 +345,13 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
               >
                 {sendSuccess ? (
                   <>
-                    <CheckCircle2 className="w-4 h-4 text-black" />
+                    <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4 text-black" />
                     <span>Dispatched to {currentPreset.name.split(' ')[0]}!</span>
                   </>
                 ) : (
                   <>
-                    <Send className={`w-4 h-4 ${isSending ? 'animate-bounce' : ''}`} />
-                    <span>{isSending ? 'Transmitting Mesh...' : `Send to ${currentPreset.name.split(' ')[0]}`}</span>
+                    <HugeiconsIcon icon={SendIcon} size={16} className={`w-4 h-4 ${isSending ? 'animate-bounce' : ''}`} />
+                    <span>{isSending ? 'Transmitting Mesh...' : `SendIcon to ${currentPreset.name.split(' ')[0]}`}</span>
                   </>
                 )}
               </button>

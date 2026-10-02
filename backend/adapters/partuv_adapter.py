@@ -66,8 +66,8 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
             logger.info(f"Loading PartUV model from {self.partuv_root}")
 
             # Add PartUV to Python path
-            # if str(self.partuv_root) not in sys.path:
-                # sys.path.insert(0, str(self.partuv_root))
+            if str(self.partuv_root) not in sys.path:
+                sys.path.insert(0, str(self.partuv_root))
 
             ckpt_path = Path(self.model_path)
             if not ckpt_path.is_file():

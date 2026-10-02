@@ -1,24 +1,13 @@
 import React from 'react';
-import {
-  LayoutDashboard,
-  Box,
-  Scissors,
-  CircleDashed,
-  Layers,
-  Film,
-  FolderOpen,
-  Cpu,
-  Grid,
-  Sparkles,
-  Bone,
-  ListOrdered,
-} from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { ToolType } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { motion, LayoutGroup } from 'motion/react';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { BoneIcon, Box, CircleDashedIcon, FilmIcon, FolderOpenIcon, GridIcon, LayersIcon, LayoutDashboardIcon, ListOrderedIcon, ScissorsIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 interface LeftNavigationProps {
   /** When true, renders as a wide drawer with full labels instead of icon rail */
   isMobileDrawer?: boolean;
@@ -65,7 +54,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
   const isAssetsActive = mainNav === 'assets';
   const isJobsActive = mainNav === 'jobs';
 
-  // Check if a specific tool is running a background generation
+  // CheckIcon if a specific tool is running a background generation
   const isModelExecuting = isExecuting && (activeTask?.type === 'image-to-3d' || activeTask?.type === 'text-to-3d' || !activeTask?.type);
   const isRemeshExecuting = isExecuting && activeTask?.type === 'remesh';
   const isTextureExecuting = isExecuting && activeTask?.type === 'texture';
@@ -78,7 +67,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Model',
       tooltip: '3D Model Generation (Image & Text to 3D) • G',
       shortcut: 'G',
-      icon: Box,
+      icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
       active: isActive('model'),
       onClick: () => handleToolClick('model'),
       isExecuting: isModelExecuting,
@@ -88,7 +77,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Poly',
       tooltip: 'Retopology & Quad Remesh • R',
       shortcut: 'R',
-      icon: CircleDashed,
+      icon: (props: any) => <HugeiconsIcon icon={CircleDashedIcon} size={16} {...props} />,
       active: isActive('remesh'),
       onClick: () => handleToolClick('remesh'),
       isExecuting: isRemeshExecuting,
@@ -98,7 +87,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Texture',
       tooltip: 'PBR Texture Maps Generation • T',
       shortcut: 'T',
-      icon: Layers,
+      icon: (props: any) => <HugeiconsIcon icon={LayersIcon} size={16} {...props} />,
       active: isActive('texture'),
       onClick: () => handleToolClick('texture'),
       isExecuting: isTextureExecuting,
@@ -108,7 +97,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'UV',
       tooltip: 'UV Unwrapping & Seam Packing • U',
       shortcut: 'U',
-      icon: Grid,
+      icon: (props: any) => <HugeiconsIcon icon={GridIcon} size={16} {...props} />,
       active: isActive('uv'),
       onClick: () => handleToolClick('uv'),
     },
@@ -117,7 +106,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Segment',
       tooltip: 'Mesh Segmentation & Part Splitting • S',
       shortcut: 'S',
-      icon: Scissors,
+      icon: (props: any) => <HugeiconsIcon icon={ScissorsIcon} size={16} {...props} />,
       active: isActive('segment'),
       onClick: () => handleToolClick('segment'),
     },
@@ -126,7 +115,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Edit',
       tooltip: 'Neural Mesh Editing & Inpainting • E',
       shortcut: 'E',
-      icon: Sparkles,
+      icon: (props: any) => <HugeiconsIcon icon={SparklesIcon} size={16} {...props} />,
       active: isActive('edit'),
       onClick: () => handleToolClick('edit'),
     },
@@ -135,7 +124,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Animate',
       tooltip: 'ARDY Motion Animation Studio • A',
       shortcut: 'A',
-      icon: Film,
+      icon: (props: any) => <HugeiconsIcon icon={FilmIcon} size={16} {...props} />,
       active: isActive('animation'),
       onClick: () => handleToolClick('animation'),
       isExecuting: isAnimationExecuting,
@@ -145,10 +134,9 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Rigging',
       tooltip: 'Character Rigging Studio (UniRig AI / Manual Rig)',
       shortcut: 'K',
-      icon: Bone,
+      icon: (props: any) => <HugeiconsIcon icon={BoneIcon} size={16} {...props} />,
       active: isActive('rigging'),
       onClick: () => handleToolClick('rigging'),
-      isExecuting: isExecuting && activeTask?.type === 'rigging',
     },
   ];
 
@@ -159,7 +147,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Overview',
       tooltip: 'Studio Overview & Hub • ⌘1',
       shortcut: '⌘1',
-      icon: LayoutDashboard,
+      icon: (props: any) => <HugeiconsIcon icon={LayoutDashboardIcon} size={16} {...props} />,
       active: isOverviewActive,
       onClick: () => handleMainNavClick('dashboard'),
     },
@@ -168,7 +156,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Assets',
       tooltip: 'Outputs & Asset History • ⌘2',
       shortcut: '⌘2',
-      icon: FolderOpen,
+      icon: (props: any) => <HugeiconsIcon icon={FolderOpenIcon} size={16} {...props} />,
       active: isAssetsActive,
       onClick: () => handleMainNavClick('assets'),
     },
@@ -177,7 +165,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       label: 'Jobs',
       tooltip: 'Generation Jobs & Run Inspector • ⌘3',
       shortcut: '⌘3',
-      icon: ListOrdered,
+      icon: (props: any) => <HugeiconsIcon icon={ListOrderedIcon} size={16} {...props} />,
       active: isJobsActive,
       onClick: () => handleMainNavClick('jobs'),
     },

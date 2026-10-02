@@ -8,6 +8,9 @@ import { useWorkspace } from './store/WorkspaceContext';
 import { TopHeader } from './Header/TopHeader';
 import { LeftNavigation } from './Navigation/LeftNavigation';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Cancel, FolderOpenIcon, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 // Dynamic imports for heavy 3D components and panels
 const MeshViewer = dynamic(() => import('./Viewport/MeshViewer').then(mod => mod.MeshViewer), {
   ssr: false,
@@ -85,7 +88,6 @@ const SettingsModal = dynamic(() => import('./Modals/SettingsModal').then(mod =>
 const DccBridgeModal = dynamic(() => import('./Modals/DccBridgeModal').then(mod => mod.DccBridgeModal), {
   ssr: false,
 });
-import { FolderOpen, Sliders, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Menu, X } from 'lucide-react';
 import type { ToolType } from './types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
@@ -121,7 +123,7 @@ export const WorkspaceShell: React.FC = () => {
   // Mobile menu state: left navigation drawer
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Global Workspace Navigation Keyboard Shortcuts (⌘1, ⌘2, ⌘3, ⌘4, G, R, T, A, S, ⌘,)
+  // Global Workspace Navigation KeyboardIcon Shortcuts (⌘1, ⌘2, ⌘3, ⌘4, G, R, T, A, S, ⌘,)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting keystrokes in inputs, textareas, or content-editable elements
@@ -356,7 +358,7 @@ export const WorkspaceShell: React.FC = () => {
                       onClick={() => setIsMobileNavOpen(false)}
                       className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-1))] transition-colors"
                     >
-                      <X className="w-4 h-4" />
+                      <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
                     </button>
                   </div>
                   <div className="flex-1 overflow-y-auto bg-[hsl(var(--surface-0))]">
@@ -406,7 +408,7 @@ export const WorkspaceShell: React.FC = () => {
                     onClick={() => toggleLeftPanel(false)}
                     className="p-1.5 rounded-lg text-zinc-400 hover:text-primary hover:bg-[hsl(var(--surface-2))] transition-all cursor-pointer"
                   >
-                    <X className="w-4 h-4" />
+                    <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
                   </button>
                 </div>
 
@@ -418,7 +420,7 @@ export const WorkspaceShell: React.FC = () => {
                         onClick={() => toggleLeftPanel(false)}
                         className="p-1 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-400 hover:text-primary hover:bg-[hsl(var(--surface-3))] transition-all cursor-pointer"
                       >
-                        <PanelLeftClose className="w-3.5 h-3.5" />
+                        <HugeiconsIcon icon={PanelLeftClose} size={16} className="w-3.5 h-3.5" />
                       </button>
                     </SimpleTooltip>
                   </div>
@@ -448,7 +450,7 @@ export const WorkspaceShell: React.FC = () => {
                   onClick={() => toggleLeftPanel(true)}
                   className="w-5 h-11 rounded-r-lg bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-l-0 border-white/[0.1] text-zinc-400 hover:text-primary hover:border-primary/40 hover:bg-[hsl(var(--surface-2))] transition-all flex items-center justify-center shadow-xl cursor-pointer active:scale-95"
                 >
-                  <PanelLeftOpen className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={PanelLeftOpen} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
             </div>
@@ -472,7 +474,7 @@ export const WorkspaceShell: React.FC = () => {
                     onClick={() => toggleRightPanel(false)}
                     className="p-1.5 rounded-lg text-zinc-400 hover:text-primary hover:bg-[hsl(var(--surface-2))] transition-all cursor-pointer"
                   >
-                    <X className="w-4 h-4" />
+                    <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
                   </button>
                 </div>
                 <RightWorkspacePanel />
@@ -488,7 +490,7 @@ export const WorkspaceShell: React.FC = () => {
                   onClick={() => toggleRightPanel(true)}
                   className="w-5 h-11 rounded-l-lg bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-r-0 border-white/[0.1] text-zinc-400 hover:text-primary hover:border-primary/40 hover:bg-[hsl(var(--surface-2))] transition-all flex items-center justify-center shadow-xl cursor-pointer active:scale-95"
                 >
-                  <PanelRightOpen className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={PanelRightOpen} size={16} className="w-3.5 h-3.5" />
                 </button>
               </SimpleTooltip>
             </div>
@@ -502,7 +504,7 @@ export const WorkspaceShell: React.FC = () => {
                 className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-primary text-black font-black text-xs shadow-xl shadow-black/50 hover:bg-primary/90 transition-all active:scale-95 cursor-pointer border border-primary/40"
                 aria-label="Open tool panel"
               >
-                <Sliders className="w-4 h-4 stroke-[2.5]" />
+                <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 stroke-[2.5]" />
                 <span>Tools</span>
               </button>
 
@@ -511,7 +513,7 @@ export const WorkspaceShell: React.FC = () => {
                 className="pointer-events-auto flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-[hsl(var(--surface-1))]/95 backdrop-blur-md border border-white/[0.15] text-zinc-200 hover:text-white font-bold text-xs shadow-xl shadow-black/50 transition-all active:scale-95 cursor-pointer"
                 aria-label="Open inspector and assets"
               >
-                <FolderOpen className="w-4 h-4 stroke-[2.2] text-primary" />
+                <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-4 h-4 stroke-[2.2] text-primary" />
                 <span>Inspector</span>
               </button>
             </div>

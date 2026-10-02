@@ -67,6 +67,18 @@ class ApiClient {
     // Request interceptor
     this.client.interceptors.request.use(
       (config) => {
+        // If uploading FormData, ensure Content-Type is not forced to application/json
+        // or raw multipart/form-data without boundary, allowing the browser/axios to set
+        // the correct multipart/form-data; boundary=----... header automatically.
+        if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+          if (config.headers) {
+            delete config.headers['Content-Type'];
+            delete (config.headers as any)['content-type'];
+          }
+          if (!config.timeout || config.timeout < 600000) {
+            config.timeout = 600000;
+          }
+        }
         console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
         return config;
       },
@@ -289,6 +301,13 @@ class ApiClient {
   async cancelGenerationJob(jobId: string): Promise<{ job_id: string; status: string; cancelled: boolean; message: string }> {
     const response = await this.client.post<{ job_id: string; status: string; cancelled: boolean; message: string }>(
       `/api/v1/mesh-generation/cancel/${encodeURIComponent(jobId)}`
+    );
+    return response.data;
+  }
+
+  async retryPostprocess(jobId: string): Promise<{ job_id: string; status: string; postprocess_status: string; result?: any }> {
+    const response = await this.client.post<{ job_id: string; status: string; postprocess_status: string; result?: any }>(
+      `/api/v1/system/jobs/${encodeURIComponent(jobId)}/postprocess/retry`
     );
     return response.data;
   }
@@ -624,113 +643,6 @@ class ApiClient {
     } catch {
       return [];
     }
-  }
-
-  async modelAction(
-    modelId: string,
-    action: string,
-    _options?: { include_auxiliary?: boolean; auxiliary_names?: string[] },
-  ): Promise<void> {
-    throw new Error(
-      `modelAction is not supported by the current backend (model=${modelId}, action=${action}). ` +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/models/action endpoint.'
-    );
-  }
-
-  async getInstallProgress(_modelId: string): Promise<any | null> {
-    throw new Error(
-      'getInstallProgress is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/install/progress endpoint.'
-    );
-  }
-
-  async getInstallStatus(): Promise<Record<string, any> | null> {
-    throw new Error(
-      'getInstallStatus is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/install/status endpoint.'
-    );
-  }
-
-  async repairProvider(_providerName: string): Promise<any> {
-    throw new Error(
-      `repairProvider is not supported by the current backend (provider=${_providerName}). ` +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/repair or /api/v1/runtime/repair endpoint.'
-    );
-  }
-
-  async getSettings(): Promise<Record<string, unknown> | null> {
-    throw new Error(
-      'getSettings is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/settings endpoint.'
-    );
-  }
-
-  async getHFTokenStatus(): Promise<{ configured: boolean; valid: boolean }> {
-    throw new Error(
-      'getHFTokenStatus is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/settings/hf-token endpoint.'
-    );
-  }
-
-  async saveHFToken(_token: string): Promise<void> {
-    throw new Error(
-      'saveHFToken is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/settings/hf-token endpoint.'
-    );
-  }
-
-  async removeHFToken(): Promise<void> {
-    throw new Error(
-      'removeHFToken is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/settings/hf-token endpoint.'
-    );
-  }
-
-  async clearCache(): Promise<void> {
-    throw new Error(
-      'clearCache is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/runtime/clear-cache endpoint.'
-    );
-  }
-
-  async clearVRAM(): Promise<void> {
-    throw new Error(
-      'clearVRAM is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/runtime/clear-vram endpoint.'
-    );
-  }
-
-  async restartRuntime(): Promise<void> {
-    throw new Error(
-      'restartRuntime is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/runtime/restart endpoint.'
-    );
-  }
-
-  async getGenerationSettings(): Promise<any> {
-    throw new Error(
-      'getGenerationSettings is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/settings/generation endpoint.'
-    );
-  }
-
-  async saveGenerationSettings(_config: any): Promise<void> {
-    throw new Error(
-      'saveGenerationSettings is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/settings/generation endpoint.'
-    );
-  }
-
-  streamInstallProgress(
-    _modelId: string,
-    _onProgress: (progress: any) => void,
-    _onDone?: () => void,
-    _timeout: number = 3600000
-  ): () => void {
-    throw new Error(
-      'streamInstallProgress is not supported by the current backend. ' +
-      'The 3DAIGC-API backend does not expose a /api/v1/system/install/stream endpoint.'
-    );
   }
 
   // SSE streaming helper

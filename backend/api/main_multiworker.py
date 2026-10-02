@@ -28,7 +28,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 try:
     import orjson
@@ -46,6 +45,7 @@ from .routers import (
     auto_rigging,
     file_upload,
     mesh_editing,
+    mesh_tools,
     mesh_generation,
     mesh_retopology,
     mesh_segmentation,
@@ -141,7 +141,7 @@ async def lifespan(app: FastAPI):
         file_store = FileStore(
             redis_client=file_store_redis,
             key_prefix="3daigc",
-            default_ttl_seconds=86400,  # 24 hours
+            default_ttl_seconds=None,  # use FILE_METADATA_TTL_SECONDS; default is persistent metadata
         )
         app.state.file_store = file_store
         logger.info("✓ File store initialized")
@@ -353,6 +353,7 @@ app.include_router(file_upload.router, prefix="/api/v1", tags=["File Upload"])
 app.include_router(mesh_generation.router, prefix="/api/v1", tags=["Mesh Generation"])
 
 app.include_router(mesh_editing.router, prefix="/api/v1", tags=["Mesh Editing"])
+app.include_router(mesh_tools.router, prefix="/api/v1", tags=["Mesh Tools"])
 
 app.include_router(auto_rigging.router, prefix="/api/v1", tags=["Auto Rigging"])
 
@@ -377,7 +378,6 @@ try:
 except Exception:
     _storage_mount_dir = Path(__file__).resolve().parents[1] / "storage"
 _storage_mount_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(_storage_mount_dir)), name="static")
 
 
 # Health check endpoint

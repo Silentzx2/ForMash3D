@@ -71,9 +71,12 @@ export interface StreamProgressCallback {
   (loaded: number, total: number, percent: number): void;
 }
 
+const inFlightRequests = new Map<string, Promise<ArrayBuffer>>();
+const progressListeners = new Map<string, Set<StreamProgressCallback>>();
+
 /**
- * Load 3D model buffer using L1 RAM -> L2 Disk Cache -> Streaming Network Fetch.
- * Supports streaming progress callbacks for real-time loading HUD.
+ * Load 3D model buffer using L1 RAM -> L2 Disk Cache -> In-Flight Deduplication -> Streaming Network Fetch.
+ * Supports concurrent request deduplication, retry resilience, and streaming progress callbacks.
  */
 export async function loadGLBWithProgress(
   url: string,
@@ -108,52 +111,123 @@ export async function loadGLBWithProgress(
     } catch {}
   }
 
-  // 3. Network Fetch with chunked stream progress
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-  const contentType = response.headers.get('content-type') || '';
-  if (contentType.includes('text/html') || contentType.includes('application/json')) {
-    const text = await response.clone().text();
-    if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
-      throw new Error('Model file served as HTML — possible token/auth failure.');
-    }
-  }
-
-  const contentLength = response.headers.get('content-length');
-  const total = contentLength ? parseInt(contentLength, 10) : 0;
-
-  let arrayBuffer: ArrayBuffer;
-
-  if (response.body && typeof ReadableStream !== 'undefined' && total > 0) {
-    const reader = response.body.getReader();
-    let buffer = new Uint8Array(total);
-    let loaded = 0;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      if (loaded + value.byteLength > buffer.byteLength) {
-        const next = new Uint8Array(Math.max(loaded + value.byteLength, buffer.byteLength * 2));
-        next.set(buffer.subarray(0, loaded));
-        buffer = next;
+  // 3. Deduplicate in-flight requests: if another component (e.g. prefetcher) is already downloading this URL, share it!
+  if (inFlightRequests.has(url)) {
+    if (onProgress) {
+      let listeners = progressListeners.get(url);
+      if (!listeners) {
+        listeners = new Set();
+        progressListeners.set(url, listeners);
       }
-      buffer.set(value, loaded);
-      loaded += value.byteLength;
-      const percent = Math.min(99, Math.round((loaded / total) * 100));
-      onProgress?.(loaded, total, percent);
+      listeners.add(onProgress);
     }
-
-    arrayBuffer = buffer.buffer.slice(0, loaded);
-    onProgress?.(loaded, total, 100);
-  } else {
-    arrayBuffer = await response.arrayBuffer();
-    onProgress?.(arrayBuffer.byteLength, arrayBuffer.byteLength, 100);
+    return inFlightRequests.get(url)!;
   }
 
-  setCachedGLB(url, arrayBuffer);
-  return arrayBuffer;
+  // 4. Execute fetch with automatic retry and in-flight tracking
+  let listeners = progressListeners.get(url);
+  if (!listeners) {
+    listeners = new Set();
+    progressListeners.set(url, listeners);
+  }
+  if (onProgress) {
+    listeners.add(onProgress);
+  }
+
+  const broadcastProgress = (loaded: number, total: number, percent: number) => {
+    const subs = progressListeners.get(url);
+    if (subs) {
+      for (const cb of subs) {
+        try {
+          cb(loaded, total, percent);
+        } catch {}
+      }
+    }
+  };
+
+  const fetchWithRetry = async (attempt = 1, maxAttempts = 3): Promise<ArrayBuffer> => {
+    try {
+      const controller = new AbortController();
+      // Generous 120s timeout per attempt for large 3D models with 2K/4K textures
+      const timeoutId = setTimeout(() => controller.abort(), 120000);
+
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        if (attempt < maxAttempts && (response.status === 502 || response.status === 503 || response.status === 504)) {
+          await new Promise((r) => setTimeout(r, 600 * attempt));
+          return fetchWithRetry(attempt + 1, maxAttempts);
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/html') || contentType.includes('application/json')) {
+        const text = await response.clone().text();
+        if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+          throw new Error('Model file served as HTML — possible token/auth failure.');
+        }
+      }
+
+      const contentLength = response.headers.get('content-length');
+      const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+      let arrayBuffer: ArrayBuffer;
+
+      if (response.body && typeof ReadableStream !== 'undefined' && total > 0) {
+        try {
+          const reader = response.body.getReader();
+          let buffer = new Uint8Array(total);
+          let loaded = 0;
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (!value) continue;
+            if (loaded + value.byteLength > buffer.byteLength) {
+              const next = new Uint8Array(Math.max(loaded + value.byteLength, buffer.byteLength * 2));
+              next.set(buffer.subarray(0, loaded));
+              buffer = next;
+            }
+            buffer.set(value, loaded);
+            loaded += value.byteLength;
+            const percent = Math.min(99, Math.round((loaded / total) * 100));
+            broadcastProgress(loaded, total, percent);
+          }
+
+          arrayBuffer = buffer.buffer.slice(0, loaded);
+          broadcastProgress(loaded, total, 100);
+        } catch (streamErr) {
+          console.warn('[glbCache] Streaming reader failed, falling back to full arrayBuffer fetch:', streamErr);
+          const fallbackRes = await fetch(url);
+          arrayBuffer = await fallbackRes.arrayBuffer();
+          broadcastProgress(arrayBuffer.byteLength, arrayBuffer.byteLength, 100);
+        }
+      } else {
+        arrayBuffer = await response.arrayBuffer();
+        broadcastProgress(arrayBuffer.byteLength, arrayBuffer.byteLength, 100);
+      }
+
+      setCachedGLB(url, arrayBuffer);
+      return arrayBuffer;
+    } catch (err: any) {
+      if (attempt < maxAttempts && (err?.name === 'AbortError' || err?.message?.includes('network') || err?.message?.includes('fetch'))) {
+        console.warn(`[glbCache] Fetch attempt ${attempt} failed for ${url} (${err?.message}); retrying...`);
+        await new Promise((r) => setTimeout(r, 800 * attempt));
+        return fetchWithRetry(attempt + 1, maxAttempts);
+      }
+      throw err;
+    }
+  };
+
+  const task = fetchWithRetry().finally(() => {
+    inFlightRequests.delete(url);
+    progressListeners.delete(url);
+  });
+
+  inFlightRequests.set(url, task);
+  return task;
 }
 
 export async function prefetchGLB(url: string): Promise<ArrayBuffer | null> {

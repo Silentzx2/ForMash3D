@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { FolderOpen, Box, Sparkles, GripVertical } from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ModelAsset } from '../types';
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, FolderOpenIcon, GripVerticalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 import {
   DndContext,
   closestCenter,
@@ -55,7 +57,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
         className="absolute top-2 left-2 z-10 p-1 rounded-md bg-black/60 hover:bg-black/80 backdrop-blur-md text-zinc-400 hover:text-white cursor-grab active:cursor-grabbing border border-white/[0.1] opacity-0 group-hover:opacity-100 transition-opacity"
         title="Drag to reorder"
       >
-        <GripVertical className="w-3.5 h-3.5" />
+        <HugeiconsIcon icon={GripVerticalIcon} size={16} className="w-3.5 h-3.5" />
       </div>
 
       <button 
@@ -72,7 +74,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
             />
           ) : (
             <div className="flex h-full items-center justify-center text-zinc-500">
-              <Box className="h-8 w-8 text-primary" />
+              <HugeiconsIcon icon={Box} size={16} className="h-8 w-8 text-primary" />
             </div>
           )}
           <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[9px] font-mono font-bold text-primary border border-white/[0.1]">
@@ -143,7 +145,7 @@ export const OutputsPage: React.FC = () => {
             }}
             className="px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-primary/20 active:scale-95 transition-all cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 fill-current stroke-current" />
+            <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 fill-current stroke-current" />
             <span>New Generation</span>
           </button>
         </div>
@@ -164,7 +166,7 @@ export const OutputsPage: React.FC = () => {
         ) : items.length === 0 ? (
           <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-12 text-center shadow-xl space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center mx-auto text-zinc-400">
-              <FolderOpen className="h-6 w-6" />
+              <HugeiconsIcon icon={FolderOpenIcon} size={16} className="h-6 w-6" />
             </div>
             <div className="text-sm font-bold text-white">No outputs available yet</div>
             <div className="text-xs text-zinc-400 max-w-sm mx-auto">

@@ -11,7 +11,7 @@
 ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architected around a clean separation of concerns:
 
 - **Presentation Layer**: Next.js 16 frontend with interactive Three.js 3D viewport, studio workspace tooling, and model management.
-- **API Gateway**: FastAPI backend (Python 3.10, Conda env `3daigc-api`) with VRAM-aware multiprocess scheduler, request validation, rate limiting, and static file delivery.
+- **API Gateway**: FastAPI backend (Python 3.10, Conda env `3daigc-api`) with VRAM-aware multiprocess scheduler, request validation, rate limiting, and authorized artifact delivery.
 - **Model Adapters**: Python adapters for each AI model (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer). The Paint-v2-1 pipeline supports Shape→Paint automatic chaining with configurable texture resolution (512/768), max view counts (6-12), PBR state tracking, and VRAM-aware scheduling.
 - **Scheduler**: VRAM-aware scheduler with GPU monitoring and optional Redis multi-worker queue.
 
@@ -36,7 +36,7 @@ flowchart TB
         direction TB
         API["FastAPI Gateway :7842<br/>Routers + CORS + Rate Limiter"]:::cyan
         ROUTERS["API Routers<br/>/v1/system · /v1/mesh-generation<br/>/v1/mesh-retopology · /v1/auto-rigging<br/>/v1/mesh-uv-unwrapping · /v1/jobs"]:::cyan
-        STATIC["Binary Asset Delivery<br/>Static Streaming with Caching"]:::cyan
+        STATIC["Authorized Artifact Delivery<br/>Manifest + Download API"]:::cyan
     end
 
     subgraph SCHEDULER["🛡️ Hardware & Scheduling Layer"]
@@ -68,7 +68,7 @@ flowchart TB
         ZIP["Engine-Ready Delivery<br/>Unreal Engine 5 · Unity · Godot 4"]:::slate
     end
 
-    LAYER -->|"REST / SSE Streaming"| GW
+    LAYER -->|"REST + mesh-tool SSE"| GW
     API --> ROUTERS
     ROUTERS --> SCHEDULER
     SCHEDULER --> CORE
@@ -76,8 +76,8 @@ flowchart TB
     SRC_CHECK --> POST
     POST --> LOCAL
     LOCAL --> ZIP
-    LOCAL -->|"Stream GLB"| STATIC
-    STATIC -->|"View in Browser"| VPORT
+    LOCAL -->|"Authorized artifacts"| STATIC
+    STATIC -->|"View / Download"| VPORT
 ```
 
 ---
@@ -94,6 +94,12 @@ flowchart TB
 | **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | Three.js WebGL viewport with orbit controls, wireframe/matcap shading, physics smoke test, and opt-in mirror inspection |
 | **State Stores** | `stores/` | Zustand stores for global client state (`useAppStore`, `useViewerStore`, `useAnimationStore`, `useRiggingStore`, `useUIStore`) |
 | **Data Fetching** | hooks + TanStack Query | Server-state caching and synchronization for job status |
+| **Icon System** | `@hugeicons/react` + `@hugeicons/core-free-icons` | Primary icon library; replaces `lucide-react`. Mapping documented in `components/icons/hugeicons-mapping.ts` |
+
+### ADR-009: Hugeicons as Frontend Icon Library
+**Decision**: Migrate frontend icon system from `lucide-react` to Hugeicons.
+**Reason**: Consistent icon weight, broader free icon set, no external font dependency, and first-class React tree-shaking.
+**Scope**: 75+ files migrated including all `components/ui/*`, `features/workspace/**`, `features/admin/**`, and `features/settings/**`.
 
 ### 2.2 API Gateway Layer (FastAPI)
 
@@ -484,3 +490,10 @@ The final non-testing audit pass keeps the architecture split at the actual exec
 Model configuration remains canonical in `backend/config/models.yaml`. Adapter constructors reject missing manifest VRAM, repository-relative model/third-party roots are used, and variant-specific overrides do not silently replace manifest values. The system API exposes runtime readiness, weights state, capabilities, and canonical queue counters to the frontend.
 
 The workspace consumes those capabilities for routing and keeps the viewer asset synchronized when post-processing transitions from pending/running to completed or failed. The in-memory GLB cache uses bounded LRU accounting for replacement and reuse.
+
+
+## Production Workflow Contract
+
+All mesh-producing jobs carry `postprocess_mode: production_mesh` when they produce a user-owned mesh. The scheduler owns Shape→Paint dependencies; the browser only observes workflow state. Production artifacts are exposed through the authorized job download API and a structured artifact manifest. Job history is durable in SQL; Redis is a queue/cache.
+
+Mesh tools run inside the main FastAPI process under `/api/v1/mesh-tools/*`. There is no browser-direct or default-startup port 8200 sidecar.

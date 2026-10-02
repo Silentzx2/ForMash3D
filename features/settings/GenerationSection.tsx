@@ -6,7 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/premium/Spinner';
-import { Cpu, Sliders, Box, Sparkles, Zap, Gauge, ListOrdered } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { CpuIcon, SlidersHorizontalIcon, BoxIcon, SparklesIcon, ZapIcon, GaugeIcon, ListOrderedIcon } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/useAppStore';
@@ -35,18 +36,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
           localStorage.setItem('generationSettings', JSON.stringify({ provider, quality, outputFormat, resolution, steps, lowVram, batchEnabled }));
           localStorage.setItem('batchGenerationEnabled', JSON.stringify(batchEnabled));
           localStorage.setItem('lowVramMode', JSON.stringify(lowVram));
-          await Promise.all([
-            getApiClient().updateConfig({ render_quality: quality, output_format: outputFormat, resolution, low_vram: lowVram } as any),
-            getApiClient().saveGenerationSettings({
-              default_provider: provider,
-              render_quality: quality,
-              output_format: outputFormat,
-              resolution,
-              steps,
-              low_vram: lowVram,
-              batch_generation_enabled: batchEnabled,
-            }),
-          ]);
+          await getApiClient().updateConfig({ render_quality: quality, output_format: outputFormat, resolution, low_vram: lowVram } as any);
         } catch { /* ignore */ }
       });
     }
@@ -61,25 +51,8 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
   const selectedModelObj = providersList.find((p: any) => (p.id || p.name) === provider);
 
   useEffect(() => {
-    // Load saved settings from backend first, fallback to localStorage
+    // Load saved settings from localStorage
     const loadSettings = async () => {
-      try {
-        const backendGen = await getApiClient().getGenerationSettings();
-        if (backendGen) {
-          if (backendGen.default_provider) setProvider(backendGen.default_provider);
-          if (backendGen.render_quality) setQuality(backendGen.render_quality);
-          if (backendGen.output_format) setOutputFormat(backendGen.output_format);
-          if (backendGen.resolution) setResolution(backendGen.resolution);
-          if (backendGen.steps) setSteps(backendGen.steps);
-          if (backendGen.low_vram !== undefined) setLowVram(backendGen.low_vram);
-          if (backendGen.batch_generation_enabled !== undefined) {
-            setBatchEnabled(backendGen.batch_generation_enabled);
-            setBatchGenerationEnabled(backendGen.batch_generation_enabled);
-          }
-          return;
-        }
-      } catch { /* ignore */ }
-
       const savedGen = localStorage.getItem('generationSettings');
       const savedBatch = localStorage.getItem('batchGenerationEnabled');
       const savedLowVram = localStorage.getItem('lowVramMode');
@@ -146,7 +119,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Generation Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Generation SettingsIcon</h1>
         <p className="text-muted-foreground mt-2">
           Configure default AI models, output formats, and generation parameters.
         </p>
@@ -156,7 +129,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Cpu className="w-5 h-5 text-primary" />
+            <HugeiconsIcon icon={CpuIcon} size={16} className="w-5 h-5 text-primary" />
             Default 3D Model Provider
           </CardTitle>
           <CardDescription>Select the primary model engine for text-to-3D and image-to-3D generation.</CardDescription>
@@ -180,7 +153,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Box className="w-5 h-5 text-primary" />
+            <HugeiconsIcon icon={BoxIcon} size={16} className="w-5 h-5 text-primary" />
             Output Format & Quality
           </CardTitle>
           <CardDescription>Specify standard 3D export file formats and render target resolution.</CardDescription>
@@ -221,7 +194,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base font-semibold">
-            <Sliders className="w-5 h-5 text-emerald-400" />
+            <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-5 h-5 text-emerald-400" />
             Inference & Sampling Parameters
           </CardTitle>
           <CardDescription>Control quality vs speed trade-offs during diffusion generation.</CardDescription>
@@ -271,7 +244,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <Gauge className="w-5 h-5 text-primary" />
+                <HugeiconsIcon icon={GaugeIcon} size={16} className="w-5 h-5 text-primary" />
                 Low VRAM Execution Mode (&lt;8GB GPUs)
               </CardTitle>
               <div className="flex items-center gap-2">
@@ -289,8 +262,8 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
             <div className="p-4 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="space-y-1">
                 <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-primary" />
-                  Target Provider Compatibility: {selectedModelObj?.label || provider || 'Default Model'}
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
+                  TargetIcon Provider Compatibility: {selectedModelObj?.label || provider || 'Default Model'}
                 </span>
                 <p className="text-xs text-[hsl(var(--muted-foreground))]">
                   Supported by {selectedModelObj.label} with memory requirement of {selectedModelObj.low_vram_required_mb ? Math.round(selectedModelObj.low_vram_required_mb / 1024) : 4}GB.
@@ -313,7 +286,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <ListOrdered className="w-5 h-5 text-primary" />
+              <HugeiconsIcon icon={ListOrderedIcon} size={16} className="w-5 h-5 text-primary" />
               Batch Generation &amp; Queue Pipelining
             </CardTitle>
             <div className="flex items-center gap-2">
@@ -331,7 +304,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
           <div className="p-4 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
-                <Zap className="w-4 h-4 text-primary" />
+                <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 text-primary" />
                 Consecutive Job Queueing
               </span>
               <p className="text-xs text-[hsl(var(--muted-foreground))]">

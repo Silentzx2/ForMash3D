@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,7 @@ from core.utils.file_utils import (
     get_storage_base_dir,
     save_upload_file,
 )
+from core.utils.thumbnail_utils import generate_mesh_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class FileUploadResponse(BaseModel):
     upload_time: datetime = Field(..., description="Upload timestamp")
     expires_at: Optional[datetime] = Field(None, description="File expiration time")
     url: Optional[str] = Field(None, description="Direct download/view URL for the uploaded file")
+    thumbnail_url: Optional[str] = Field(None, description="URL to the generated thumbnail image (meshes only)")
 
 
 class FileMetadataResponse(BaseModel):
@@ -222,6 +224,21 @@ async def get_file_path_impl(
 # File Upload Logic
 # ============================================================================
 
+_THUMBNAIL_DIR = UPLOAD_BASE_DIR / "thumbnails"
+_THUMBNAIL_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _generate_thumbnail_for_mesh(file_path: str, file_id: str) -> Optional[str]:
+    """Generate a thumbnail PNG for a mesh file. Returns thumbnail path or None on failure."""
+    try:
+        thumbnail_path = _THUMBNAIL_DIR / f"{file_id}.png"
+        success = generate_mesh_thumbnail(file_path, str(thumbnail_path))
+        if success and thumbnail_path.exists():
+            return str(thumbnail_path)
+    except Exception as exc:
+        logger.warning(f"Thumbnail generation failed for {file_id}: {exc}")
+    return None
+
 async def upload_file_with_validation(
     file: UploadFile,
     file_type: str,
@@ -301,6 +318,7 @@ async def upload_image(
 async def upload_mesh(
     file: UploadFile = File(..., description="Mesh file to upload"),
     file_store: Optional[FileStore] = Depends(get_file_store),
+    background_tasks: BackgroundTasks = Depends(),
 ):
     """
     Upload a mesh file.
@@ -308,9 +326,19 @@ async def upload_mesh(
     Returns a unique file ID that can be used in other API endpoints.
     Supported formats: GLB, OBJ, FBX, PLY, STL, GLTF
     """
-    return await upload_file_with_validation(
+    result = await upload_file_with_validation(
         file, "mesh", SUPPORTED_MESH_FORMATS, file_store, max_size_mb=200
     )
+
+    file_path = result.get("file_path")
+    file_id = result.get("file_id")
+    if file_path and file_id:
+        background_tasks.add_task(
+            _generate_thumbnail_for_mesh, str(file_path), str(file_id)
+        )
+        result["thumbnail_url"] = f"/api/v1/file-upload/thumbnail/{file_id}"
+
+    return result
 
 
 @router.get("/metadata/{file_id}", response_model=FileMetadataResponse)
@@ -418,6 +446,18 @@ async def download_file(
         filename=filename,
         media_type=media_type or "application/octet-stream",
     )
+
+
+@router.get("/thumbnail/{file_id}", summary="Get uploaded mesh thumbnail")
+async def get_thumbnail(
+    file_id: str,
+    file_store: Optional[FileStore] = Depends(get_file_store),
+):
+    """Return the generated thumbnail PNG for an uploaded mesh."""
+    thumbnail_path = _THUMBNAIL_DIR / f"{file_id}.png"
+    if not thumbnail_path.exists():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+    return FileResponse(path=str(thumbnail_path), media_type="image/png")
 
 
 @router.get("/list")

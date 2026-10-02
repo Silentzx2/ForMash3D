@@ -5,6 +5,7 @@ Handles connection management, transactions, and CRUD operations.
 
 import logging
 import os
+from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -60,10 +61,13 @@ class DatabaseManager:
     def _get_default_database_url(self) -> str:
         """Get default database URL for SQLite."""
         # Create data directory if it doesn't exist
-        data_dir = "data"
+        data_dir = os.environ.get(
+            "DATA_DIR",
+            str(Path(__file__).resolve().parents[2] / "storage"),
+        )
         os.makedirs(data_dir, exist_ok=True)
 
-        # Use SQLite with file storage
+        # Keep the default SQLite location independent of the process working directory.
         db_path = os.path.join(data_dir, "job_queue.db")
         return f"sqlite:///{db_path}"
 

@@ -1,26 +1,6 @@
 'use client';
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import {
-  MousePointer,
-  Move,
-  RotateCw,
-  Maximize,
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  ChevronDown,
-  Maximize2,
-  Camera,
-  Box,
-  Eye,
-  EyeOff,
-  ZoomIn,
-  ZoomOut,
-  Sparkles,
-  Layers,
-} from 'lucide-react';
 import { toast } from 'sonner';
 import { MeshViewer } from '../Viewport/MeshViewer';
 import { useWorkspace } from '../store/WorkspaceContext';
@@ -28,6 +8,9 @@ import { useAnimationStore, ViewportGizmoTool, CameraPreset } from '@/stores/use
 import { useViewerStore } from '@/stores/useViewerStore';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, CameraIcon, ChevronDown, MaximizeIcon, Maximize02Icon, MousePointerIcon, MoveIcon, PauseIcon, PlayIcon, RotateCw, SkipBackIcon, SkipForwardIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
 export const AnimationViewportStage: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -158,7 +141,7 @@ export const AnimationViewportStage: React.FC = () => {
                 className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-zinc-200 hover:text-white rounded-lg hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
                 <span>{cameraMode}</span>
-                <ChevronDown className="w-3 h-3 text-zinc-400" />
+                <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400" />
               </button>
 
               {cameraDropdownOpen && (
@@ -194,7 +177,7 @@ export const AnimationViewportStage: React.FC = () => {
                 }}
                 className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-white/[0.06] transition-colors cursor-pointer"
               >
-                <Camera className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={CameraIcon} size={16} className="w-3.5 h-3.5" />
               </button>
             </SimpleTooltip>
 
@@ -210,14 +193,14 @@ export const AnimationViewportStage: React.FC = () => {
                     : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
                 }`}
               >
-                <Box className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5" />
               </button>
             </SimpleTooltip>
           </div>
 
-          {/* Center: Auto Camera + Grid + Skeleton + Contacts */}
+          {/* Center: Auto CameraIcon + GridIcon + Skeleton + Contacts */}
           <div className="pointer-events-auto flex items-center gap-2.5 p-1 bg-[hsl(var(--surface-1)/0.95)] backdrop-blur-md border border-white/[0.08] rounded-xl shadow-xl">
-            {/* Auto Camera Toggle */}
+            {/* Auto CameraIcon Toggle */}
             <button
               onClick={() => setAutoCamera(!autoCamera)}
               className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
@@ -227,10 +210,10 @@ export const AnimationViewportStage: React.FC = () => {
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${autoCamera ? 'bg-black' : 'bg-zinc-600'}`} />
-              <span>Auto Camera</span>
+              <span>Auto CameraIcon</span>
             </button>
 
-            {/* Show Grid Checkbox */}
+            {/* Show GridIcon Checkbox */}
             <label className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-300 hover:text-white cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -238,7 +221,7 @@ export const AnimationViewportStage: React.FC = () => {
                 onChange={() => toggleDisplayOption('showGrid')}
                 className="rounded border-white/20 bg-[hsl(var(--surface-2))] text-primary focus:ring-0 cursor-pointer"
               />
-              <span>Grid</span>
+              <span>GridIcon</span>
             </label>
 
             {/* Show Skeleton Checkbox */}
@@ -279,7 +262,7 @@ export const AnimationViewportStage: React.FC = () => {
                 }}
                 className="p-2 rounded-xl bg-[hsl(var(--surface-1)/0.95)] backdrop-blur-md border border-white/[0.08] text-zinc-300 hover:text-white transition-all cursor-pointer shadow-xl"
               >
-                <Maximize2 className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Maximize02Icon} size={16} className="w-3.5 h-3.5" />
               </button>
             </SimpleTooltip>
           </div>
@@ -288,10 +271,10 @@ export const AnimationViewportStage: React.FC = () => {
         {/* LEFT VIEWPORT TOOL STRIP */}
         <div className="absolute left-3 top-16 z-10 flex flex-col gap-1 p-1 bg-[hsl(var(--surface-1)/0.95)] backdrop-blur-md border border-white/[0.08] rounded-xl shadow-xl">
           {[
-            { id: 'select', icon: <MousePointer className="w-4 h-4" />, label: 'Select (Q)' },
-            { id: 'move', icon: <Move className="w-4 h-4" />, label: 'Move (W)' },
-            { id: 'rotate', icon: <RotateCw className="w-4 h-4" />, label: 'Rotate (E)' },
-            { id: 'scale', icon: <Maximize className="w-4 h-4" />, label: 'Scale (R)' },
+            { id: 'select', icon: <HugeiconsIcon icon={MousePointerIcon} size={16} className="w-4 h-4" />, label: 'Select (Q)' },
+            { id: 'move', icon: <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4" />, label: 'MoveIcon (W)' },
+            { id: 'rotate', icon: <HugeiconsIcon icon={RotateCw} size={16} className="w-4 h-4" />, label: 'Rotate (E)' },
+            { id: 'scale', icon: <HugeiconsIcon icon={MaximizeIcon} size={16} className="w-4 h-4" />, label: 'Scale (R)' },
           ].map((tool) => {
             const isActive = activeViewportTool === tool.id;
             return (
@@ -355,7 +338,7 @@ export const AnimationViewportStage: React.FC = () => {
             </div>
           </div>
 
-          {/* Center: Transport Controls + Clock / Frame Counters */}
+          {/* Center: Transport Controls + ClockIcon / Frame Counters */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1">
               <button
@@ -363,7 +346,7 @@ export const AnimationViewportStage: React.FC = () => {
                 className="p-1 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer"
                 title="Skip to start"
               >
-                <SkipBack className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={SkipBackIcon} size={16} className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => stepFrame(-1)}
@@ -375,9 +358,9 @@ export const AnimationViewportStage: React.FC = () => {
               <button
                 onClick={togglePlay}
                 className="w-7 h-7 rounded-full bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] flex items-center justify-center font-black shadow-[0_0_14px_rgba(255,204,0,0.45)] transition-transform active:scale-95 cursor-pointer mx-1"
-                title={isPlaying ? 'Pause' : 'Play'}
+                title={isPlaying ? 'PauseIcon' : 'PlayIcon'}
               >
-                {isPlaying ? <Pause className="w-3.5 h-3.5 fill-current" /> : <Play className="w-3.5 h-3.5 fill-current ml-0.5" />}
+                {isPlaying ? <HugeiconsIcon icon={PauseIcon} size={16} className="w-3.5 h-3.5 fill-current" /> : <HugeiconsIcon icon={PlayIcon} size={16} className="w-3.5 h-3.5 fill-current ml-0.5" />}
               </button>
               <button
                 onClick={() => stepFrame(1)}
@@ -391,7 +374,7 @@ export const AnimationViewportStage: React.FC = () => {
                 className="p-1 rounded text-zinc-400 hover:text-white transition-colors cursor-pointer"
                 title="Skip to end"
               >
-                <SkipForward className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={SkipForwardIcon} size={16} className="w-3.5 h-3.5" />
               </button>
             </div>
 
@@ -414,7 +397,7 @@ export const AnimationViewportStage: React.FC = () => {
                 className="flex items-center gap-1 text-[11px] font-semibold text-zinc-200 hover:text-white px-2.5 py-1 rounded-md bg-[hsl(var(--surface-0))] border border-white/[0.08] cursor-pointer"
               >
                 <span>{fps} FPS</span>
-                <ChevronDown className="w-3 h-3 text-zinc-400" />
+                <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400" />
               </button>
               {fpsDropdownOpen && (
                 <div className="absolute right-0 bottom-full mb-1 w-20 bg-[hsl(var(--surface-2))] border border-white/[0.12] rounded-lg shadow-xl p-1 z-30">
@@ -437,9 +420,9 @@ export const AnimationViewportStage: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-1.5 text-zinc-400">
-              <ZoomOut className="w-3.5 h-3.5" />
+              <HugeiconsIcon icon={ZoomOutIcon} size={16} className="w-3.5 h-3.5" />
               <input type="range" min="1" max="4" defaultValue="1" className="w-14 accent-primary h-1 bg-white/20 rounded cursor-pointer" />
-              <ZoomIn className="w-3.5 h-3.5" />
+              <HugeiconsIcon icon={ZoomInIcon} size={16} className="w-3.5 h-3.5" />
             </div>
           </div>
         </div>
@@ -490,7 +473,7 @@ export const AnimationViewportStage: React.FC = () => {
             <div className="h-11 relative flex items-center">
               <div className="w-full h-8 rounded-lg bg-gradient-to-r from-primary/20 via-[hsl(var(--surface-2))] to-[hsl(var(--surface-2)/0.8)] border border-primary/40 relative overflow-hidden flex items-center justify-between px-3 shadow-md">
                 <div className="flex items-center gap-2 truncate">
-                  <Play className="w-3 h-3 text-primary fill-current flex-shrink-0" />
+                  <HugeiconsIcon icon={PlayIcon} size={16} className="w-3 h-3 text-primary fill-current flex-shrink-0" />
                   <span className="text-xs font-semibold text-white truncate">
                     {motionAiPrompt || 'A character walks forward, looks around, then runs and jumps, landing smoothly.'}
                   </span>

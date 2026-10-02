@@ -15,3 +15,7 @@ Production mesh-finishing pipeline ported from 3DGenStudio and adapted to the Fo
 - `tools/` — isolated Blender workers used by explicit bake/FBX/thumbnail operations.
 
 The master asset is never modified by these services. The generation pipeline does not synthesize textures during post-processing: textured models keep the material/UV data produced by the selected model, while the dedicated Texture page owns AI painting. Integration code in the next stage owns the ForMash3D asset workspace and lifecycle.
+
+## Runtime boundary
+
+The root `backend/postprocess` tree is the single production implementation. Interactive mesh tools are mounted by the main FastAPI application under `/api/v1/mesh-tools/*`; the retired `backend/postprocess/app` sidecar implementation and Python 3.13 runtime are not part of the default product path.

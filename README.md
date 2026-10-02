@@ -270,7 +270,7 @@ backend/storage/models/<asset_name>_<job_hash>/
 | Component | Technology | Rationale |
 |---|---|---|
 | **Frontend Framework** | **Next.js 16** (App Router), React 19, TypeScript | Server Components, fast client routing, static optimization |
-| **UI Design System** | Tailwind CSS v4, Radix UI, Lucide Icons | Studio Gold dark theme (`hsl(48, 100%, 50%)`), accessible, responsive |
+| **UI Design System** | Tailwind CSS v4, Radix UI, Hugeicons | Studio Gold dark theme (`hsl(48, 100%, 50%)`), accessible, responsive |
 | **State & Query** | Zustand, TanStack Query | Reactive real-time stores and optimistic server-state sync |
 | **3D Rendering** | Three.js, React Three Fiber | Real-time PBR shaders, wireframe inspection, matcaps |
 | **Physics Preview** | `@dimforge/rapier3d-compat` (WebAssembly) | Fast browser physics simulation without external dependencies |
@@ -367,7 +367,9 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 | `/api/v1/mesh-editing/edit` | `POST` | Edit existing mesh using localized prompt deformation |
 | `/api/v1/auto-rigging/rig` | `POST` | Generate bipedal skeleton armature |
 | `/api/v1/motion-generation/generate` | `POST` | Synthesize motion sequence into playable JSON |
-| `/api/v1/jobs/{job_id}/stream` | `GET` | SSE real-time progress and telemetry event stream |
+| `/api/v1/system/jobs/{job_id}` | `GET` | Durable job status and production progress polling |
+| `/api/v1/system/jobs/{job_id}/postprocess/retry` | `POST` | Retry production processing from immutable master |
+| `/api/v1/mesh-tools/*` | `POST` | In-process Auto UV, Retopo, Repair, Optimize, LOD, Collision, Bake, Convert and Segment tools |
 
 ---
 
@@ -390,7 +392,7 @@ bun run lint
 bash -n backend/scripts/*.sh scripts/*.sh
 ```
 
-**Verification Status**: **25 passed, 1 skipped** (Blender smoke test skipped cleanly when blender is absent).
+**Verification status**: Runtime verification must be run on the supported Python 3.10/GPU environment; this checkout's static audit does not claim a live test result.
 
 ---
 
@@ -478,3 +480,7 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 - **Post-Processing Pipeline**: Ported and adapted from **[visualbruno/3DGenStudio](https://github.com/visualbruno/3DGenStudio)** under the **3D Gen Studio Community License**. See **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)**.
 - **Backend API Gateway Base**: Forked and modernized from **[FishWoWater/3DAIGC-API](https://github.com/FishWoWater/3DAIGC-API)**.
 - **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSR/SG/SF, PartPacker, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
+
+
+### Runtime note
+Mesh tools are part of the main FastAPI runtime at `/api/v1/mesh-tools/*`. The default startup no longer launches a separate port 8200 mesh-tools service. Job progress is read from durable job state; mesh-tool operations may stream operation-level SSE progress.

@@ -5,11 +5,13 @@ in the ported services under backend/postprocess/services/.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
 import re
 import shutil
+import struct
 import subprocess
 import tempfile
 from datetime import datetime, timezone
@@ -46,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 GenerationProgress = Optional[Callable[[float, str, str], None]]
 
+MAX_PRODUCTION_FACES = 200_000
 _FORMATS = ("glb", "gltf", "fbx", "obj", "stl", "ply")
 
 
@@ -64,6 +67,29 @@ def _safe_name(value: str) -> str:
 
 def _job_hash(job_id: str) -> str:
     return hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:8]
+
+def canonical_asset_workspace(
+    job_id: str,
+    generation_result: Dict[str, Any],
+    job_inputs: Optional[Dict[str, Any]] = None,
+) -> Path:
+    """Resolve the canonical workspace path used by run_postprocess_job()."""
+    job_inputs = job_inputs or {}
+    raw_candidate = (
+        generation_result.get("output_mesh_path")
+        or generation_result.get("mesh_path")
+        or generation_result.get("output_path")
+        or generation_result.get("file_path")
+    )
+    raw_path = resolve_server_file_path(raw_candidate)
+    source_stem = (
+        job_inputs.get("asset_name")
+        or job_inputs.get("image_path")
+        or job_inputs.get("text_prompt")
+        or (Path(raw_path).stem if raw_path else "asset")
+    )
+    asset_name = _safe_name(Path(str(source_stem)).stem)
+    return _storage_root() / f"{asset_name}_{_job_hash(job_id)}"
 
 
 def _sha256_file(path: Path) -> str:
@@ -169,25 +195,57 @@ def _export_glb(mesh: trimesh.Trimesh) -> bytes:
 
 
 def _export_gltf_embedded(glb_bytes: bytes, target: Path) -> None:
-    with tempfile.TemporaryDirectory(prefix="formash3d-gltf-") as temp_dir:
-        temp_root = Path(temp_dir)
-        input_path = temp_root / "mesh.glb"
-        input_path.write_bytes(glb_bytes)
-        expr = (
-            "import bpy; "
-            "bpy.ops.wm.read_factory_settings(use_empty=True); "
-            f"bpy.ops.import_scene.gltf(filepath={str(input_path)!r}); "
-            f"bpy.ops.export_scene.gltf(filepath={str(target)!r}, export_format='GLTF_EMBEDDED')"
-        )
-        result = subprocess.run(
-            [BLENDER_EXECUTABLE, "--background", "--python-expr", expr],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode != 0 or not target.exists():
+    # 1. Try pure python glb-to-embedded-gltf first (no external binary dependency)
+    try:
+        if len(glb_bytes) >= 12:
+            magic, version, length = struct.unpack_from("<4sII", glb_bytes, 0)
+            if magic == b"glTF":
+                offset = 12
+                json_data = None
+                bin_data = b""
+                while offset < len(glb_bytes):
+                    chunk_len, chunk_type = struct.unpack_from("<I4s", glb_bytes, offset)
+                    offset += 8
+                    chunk_payload = glb_bytes[offset : offset + chunk_len]
+                    offset += chunk_len
+                    if chunk_type == b"JSON":
+                        json_data = json.loads(chunk_payload.decode("utf-8"))
+                    elif chunk_type in (b"BIN\x00", b"BIN"):
+                        bin_data = chunk_payload
+
+                if json_data is not None:
+                    if bin_data and "buffers" in json_data and len(json_data["buffers"]) > 0:
+                        b64_uri = "data:application/octet-stream;base64," + base64.b64encode(bin_data).decode("ascii")
+                        json_data["buffers"][0]["uri"] = b64_uri
+                    target.write_text(json.dumps(json_data, indent=2), encoding="utf-8")
+                    return
+    except Exception as exc:
+        logger.debug("Pure Python GLTF embedded conversion failed: %s; trying Blender fallback", exc)
+
+    # 2. Blender fallback if installed
+    if shutil.which(BLENDER_EXECUTABLE):
+        with tempfile.TemporaryDirectory(prefix="formash3d-gltf-") as temp_dir:
+            temp_root = Path(temp_dir)
+            input_path = temp_root / "mesh.glb"
+            input_path.write_bytes(glb_bytes)
+            expr = (
+                "import bpy; "
+                "bpy.ops.wm.read_factory_settings(use_empty=True); "
+                f"bpy.ops.import_scene.gltf(filepath={str(input_path)!r}); "
+                f"bpy.ops.export_scene.gltf(filepath={str(target)!r}, export_format='GLTF_EMBEDDED')"
+            )
+            result = subprocess.run(
+                [BLENDER_EXECUTABLE, "--background", "--python-expr", expr],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0 and target.exists():
+                return
             detail = (result.stderr or result.stdout or "").strip()[-2000:]
             raise RuntimeError(f"Embedded GLTF export failed: {detail}")
+
+    raise RuntimeError("Unable to export embedded GLTF: conversion failed and Blender is not installed.")
 
 
 def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
@@ -202,6 +260,9 @@ def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
     material = getattr(visual, "material", None)
     if material is None:
         return False
+
+    if getattr(material, "image", None) is not None:
+        return True
 
     return any(
         getattr(material, attribute, None) is not None
@@ -227,13 +288,16 @@ def _build_result(
     asset_name: str,
     qa_report: Dict[str, Any],
     generated: Dict[str, Any],
+    target_polycount: int = MAX_PRODUCTION_FACES,
+    lod_enabled: bool = True,
 ) -> Dict[str, Any]:
     primary = generated["game_ready"].get("glb") or generated["game_ready"].get("obj")
     base_url = f"/api/v1/system/jobs/{job_id}"
     rel_model_dir = asset_dir.name
+    artifact_errors = generated.get("artifact_errors", {})
     primary_name = Path(primary).name if primary else f"{asset_name}.glb"
-    static_model_url = f"/static/models/{rel_model_dir}/game_ready/{primary_name}"
-    static_master_url = f"/static/models/{rel_model_dir}/master/source.glb"
+    download_model_url = f"{base_url}/download?artifact_format=glb"
+    download_master_url = f"{base_url}/download?artifact_format=master"
 
     lod_urls = [
         f"{base_url}/download?artifact_format=lod{idx}"
@@ -244,15 +308,15 @@ def _build_result(
         for name in sorted(generated["textures"])
     }
 
-    return {
+    result = {
         "success": True,
         "output_mesh_path": primary,
-        "static_url": static_model_url,
-        "model_url": static_model_url,
-        "active_model_url": static_model_url,
+        "static_url": None,
+        "model_url": download_model_url,
+        "active_model_url": download_model_url,
         "download_url": f"{base_url}/download?artifact_format=glb",
-        "source_model_url": static_master_url,
-        "game_ready_url": static_model_url,
+        "source_model_url": download_master_url,
+        "game_ready_url": download_model_url,
         "game_ready_formats": {
             fmt: f"{base_url}/download?artifact_format={fmt}"
             for fmt in generated["game_ready"]
@@ -272,11 +336,8 @@ def _build_result(
         "physics": generated.get("physics_metadata"),
         "pbr_maps": pbr_urls,
         "texture_status": generated.get("texture_status", "not_generated"),
-        "thumbnail_url": (
-            f"/static/models/{rel_model_dir}/previews/{Path(generated['thumbnail']).name}"
-            if generated.get("thumbnail")
-            else None
-        ),
+        "thumbnail_url": f"{base_url}/thumbnail" if generated.get("thumbnail") else None,
+        "thumbnail_path": str(generated["thumbnail"]) if generated.get("thumbnail") else None,
         "thumbnail_download_url": (
             f"{base_url}/download?artifact_format=thumbnail"
             if generated.get("thumbnail")
@@ -286,7 +347,46 @@ def _build_result(
         "asset_root": str(asset_dir),
         "asset_name": asset_name,
         "postprocess_status": "completed",
+        "target_polycount": target_polycount,
+        "lod_enabled": lod_enabled,
+        "artifacts": {
+            "master": {"status": "ready", "url": download_master_url, "required": True},
+            "game_ready": {
+                fmt: {
+                    "status": (
+                        "ready" if fmt in generated["game_ready"]
+                        else "failed" if fmt in artifact_errors
+                        else "unavailable"
+                    ),
+                    "url": f"{base_url}/download?artifact_format={fmt}" if fmt in generated["game_ready"] else None,
+                    "error": artifact_errors.get(fmt),
+                    "required": fmt == "glb",
+                }
+                for fmt in _FORMATS
+            },
+            "lods": {
+                f"lod{idx}": {
+                    "status": "ready",
+                    "url": f"{base_url}/download?artifact_format=lod{idx}",
+                    "required": False,
+                }
+                for idx in sorted(generated["lods"])
+            } if lod_enabled else {},
+            "collision": {
+                "status": "ready" if generated.get("collision") else "skipped",
+                "url": f"{base_url}/download?artifact_format=collision" if generated.get("collision") else None,
+                "required": False,
+            },
+            "physics": {
+                "status": "ready" if generated.get("physics") else "skipped",
+                "url": f"{base_url}/download?artifact_format=physics_json" if generated.get("physics") else None,
+                "required": False,
+            },
+            "qa_report": {"status": "ready", "url": f"{base_url}/download?artifact_format=qa_report", "required": True},
+            "zip": {"status": "ready", "url": f"{base_url}/download?artifact_format=zip", "required": False},
+        },
         "qa_report": qa_report,
+        "artifact_errors": artifact_errors,
         "postprocess": {
             "asset_dir": str(asset_dir),
             "master": "master/source.glb",
@@ -298,6 +398,22 @@ def _build_result(
             "preview": bool(generated.get("thumbnail")),
         },
     }
+    required_failed = any(
+        artifact.get("status") == "failed"
+        for group in result["artifacts"].values()
+        if isinstance(group, dict)
+        for artifact in (group.values() if isinstance(group, dict) else [])
+        if isinstance(artifact, dict) and artifact.get("required") and artifact.get("status") == "failed"
+    )
+    any_failed = any(
+        artifact.get("status") == "failed"
+        for group in result["artifacts"].values()
+        if isinstance(group, dict)
+        for artifact in (group.values() if isinstance(group, dict) else [])
+        if isinstance(artifact, dict)
+    )
+    result["production_status"] = "failed" if required_failed else "degraded" if any_failed else "ready"
+    return result
 
 
 def run_postprocess_job(
@@ -310,6 +426,13 @@ def run_postprocess_job(
     """Create the canonical asset workspace and run production post-processing."""
     job_inputs = job_inputs or {}
     job_metadata = job_metadata or {}
+    try:
+        resolved_target_polycount = min(
+            MAX_PRODUCTION_FACES,
+            max(5_000, int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)),
+        )
+    except (TypeError, ValueError):
+        resolved_target_polycount = MAX_PRODUCTION_FACES
 
     raw_candidate = (
         generation_result.get("output_mesh_path")
@@ -395,7 +518,7 @@ def run_postprocess_job(
             scene,
             mesh,
             InspectOptions(
-                tri_budget=50_000,
+                tri_budget=resolved_target_polycount,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -442,9 +565,9 @@ def run_postprocess_job(
         or bool(job_inputs.get("quad_topology"))
     )
 
-    if is_quad_requested:
+    if is_quad_requested and not native_textures:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
-        retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), 60_000, max(50, int(len(repaired.faces))))
+        retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
@@ -465,9 +588,11 @@ def run_postprocess_job(
         except Exception as exc:
             retopo_stats = {"status": "failed", "trigger": "quad_requested", "error": str(exc)}
             logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
+    elif is_quad_requested and native_textures:
+        retopo_stats = {"status": "skipped", "reason": "Native textures are preserved; quad retopology would strip UV and material mapping."}
     elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
-        retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), 60_000, max(50, int(len(repaired.faces))))
+        retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
@@ -486,23 +611,44 @@ def run_postprocess_job(
         retopo_stats = {"status": "skipped", "reason": "Asset feature does not declare a solid AI-generation contract."}
 
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
+    auto_optimize = bool(job_inputs.get("auto_optimize", False))
+    raw_target_polycount = job_inputs.get("target_polycount")
+    has_explicit_target = raw_target_polycount is not None and int(raw_target_polycount) > 0
+    repaired_face_count = len(repaired.faces)
+
     if is_quad_requested and retopo_stats.get("status") == "completed":
         optimized = repaired
         optimize_stats = {"passthrough": True, "reason": "Quad-dominant topology preserved from retopology pass"}
+    elif not auto_optimize and not has_explicit_target:
+        # Native/raw resolution requested without auto-decimation
+        optimized = repaired
+        optimize_stats = {"passthrough": True, "reason": "Native resolution preserved (auto_optimize is false and no target_polycount specified)"}
     else:
-        target_faces = min(50_000, max(5_000, int(job_inputs.get("target_polycount") or 50_000)))
-        optimized, optimize_stats = run_optimize(
-            repaired,
-            OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
-                            permissive=False, aggressive=False, lock_border=False),
-        )
+        target_faces = min(MAX_PRODUCTION_FACES, max(5_000, int(raw_target_polycount or MAX_PRODUCTION_FACES)))
+        if repaired_face_count <= target_faces and not auto_optimize:
+            optimized = repaired
+            optimize_stats = {"passthrough": True, "reason": f"Repaired mesh face count ({repaired_face_count}) already within target ({target_faces})"}
+        else:
+            optimized, optimize_stats = run_optimize(
+                repaired,
+                OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
+                                permissive=False, aggressive=False, lock_border=False),
+            )
     quality_trace["optimized"] = {
         **mesh_stats(optimized).model_dump(),
         "native_textures": _has_native_textures(optimized),
     }
     if native_textures:
         if not _has_native_textures(optimized):
-            raise RuntimeError("Texture-aware optimization lost native material data.")
+            logger.warning(
+                "Texture-aware optimization lost native material data for %s; safely falling back to repaired mesh to preserve textures.",
+                job_id,
+            )
+            optimized = repaired
+            optimize_stats = {
+                "passthrough": True,
+                "reason": "Retained repaired mesh because decimation lost material data",
+            }
         uv_mesh = optimized
         uv_stats = {"preserved": True, "native_textures": True,
                     "texture_aware_decimation": bool(not optimize_stats.get("passthrough"))}
@@ -529,6 +675,7 @@ def run_postprocess_job(
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     base_name = f"{asset_name}_{asset_hash}"
     game_ready: Dict[str, str] = {}
+    artifact_errors: Dict[str, str] = {}
     glb_path = game_ready_dir / f"{base_name}.glb"
     _save_file(glb_path, _export_glb(uv_mesh))
     game_ready["glb"] = str(glb_path)
@@ -543,7 +690,8 @@ def run_postprocess_job(
                 _save_file(target, _export_bytes(uv_mesh, fmt))
             game_ready[fmt] = str(target)
         except Exception as exc:
-            logger.warning("Game-ready %s export skipped: %s", fmt, exc)
+            artifact_errors[fmt] = str(exc)
+            logger.warning("Game-ready %s export failed: %s", fmt, exc)
 
     try:
         fbx_bytes, _ = run_convert_fbx(
@@ -557,31 +705,45 @@ def run_postprocess_job(
         fbx_path.write_bytes(fbx_bytes)
         game_ready["fbx"] = str(fbx_path)
     except Exception as exc:
-        logger.warning("FBX export skipped: %s", exc)
+        artifact_errors["fbx"] = str(exc)
+        logger.warning("FBX export failed: %s", exc)
 
     try:
         gltf_path = game_ready_dir / f"{base_name}.gltf"
         _export_gltf_embedded(glb_path.read_bytes(), gltf_path)
         game_ready["gltf"] = str(gltf_path)
     except Exception as exc:
-        logger.warning("GLTF embedded export skipped: %s", exc)
+        artifact_errors["gltf"] = str(exc)
+        logger.warning("GLTF embedded export failed: %s", exc)
 
-    _emit(progress, 0.72, "lod", "Generating LOD chain.")
-    source_faces = max(1, len(uv_mesh.faces))
-    target_faces = int(job_inputs.get("target_polycount") or 50_000)
-    target_ratio = min(1.0, max(0.05, target_faces / source_faces))
-    lod_ratios = [
-        1.0,
-        max(0.05, target_ratio * 0.50),
-        max(0.025, target_ratio * 0.25),
-        max(0.0125, target_ratio * 0.125),
-    ]
-    lod_levels = run_lods(
-        uv_mesh,
-        LODOptions(ratios=lod_ratios),
-    )
     lods: Dict[int, str] = {}
     lod_quality: Dict[str, Dict[str, Any]] = {}
+    lod_enabled = bool(job_inputs.get("generateLOD", True))
+    if lod_enabled:
+        _emit(progress, 0.72, "lod", "Generating LOD chain.")
+        source_faces = max(1, len(uv_mesh.faces))
+        target_faces = int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)
+        target_ratio = min(1.0, max(0.05, target_faces / source_faces))
+        preset = str(job_inputs.get("lodPreset") or "high").lower()
+        preset_ratios = {
+            "mobile": [1.0, 0.35, 0.12, 0.05],
+            "low": [1.0, 0.5, 0.2, 0.08],
+            "medium": [1.0, 0.5, 0.25, 0.125],
+            "high": [1.0, 0.6, 0.3, 0.15],
+            "cinematic": [1.0, 0.75, 0.5, 0.25],
+        }.get(preset, [1.0, 0.6, 0.3, 0.15])
+        ratios = job_inputs.get("lod_ratios")
+        lod_ratios = ratios if isinstance(ratios, list) and ratios else [
+            1.0 if i == 0 else max(0.025, float(ratio))
+            for i, ratio in enumerate(preset_ratios)
+        ]
+        try:
+            lod_count = max(1, min(4, int(job_inputs.get("lodCount") or len(lod_ratios))))
+        except (TypeError, ValueError):
+            lod_count = min(4, len(lod_ratios))
+        lod_levels = run_lods(uv_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])))
+    else:
+        lod_levels = []
     for level in lod_levels:
         idx = int(level["level"])
         level_mesh = level["mesh"]
@@ -650,7 +812,7 @@ def run_postprocess_job(
             final_scene,
             uv_mesh,
             InspectOptions(
-                tri_budget=50_000,
+                tri_budget=resolved_target_polycount,
                 texture_resolution=2048,
                 max_material_count=8,
                 uv_overlap_grid=512,
@@ -684,6 +846,12 @@ def run_postprocess_job(
             "model_id": job_metadata.get("model_id"),
             "feature": job_metadata.get("feature"),
             "seed": job_inputs.get("seed"),
+            "target_polycount": resolved_target_polycount,
+            "lod": {
+                "enabled": lod_enabled,
+                "preset": job_inputs.get("lodPreset") or "high",
+                "count": len(lods),
+            },
             "model_parameters": {
                 key: value
                 for key, value in job_inputs.items()
@@ -713,6 +881,7 @@ def run_postprocess_job(
             "lods": lod_quality,
             "collision": collision_stats,
             "physics": physics_metadata,
+            "target_polycount": resolved_target_polycount,
         },
     )
 
@@ -725,9 +894,12 @@ def run_postprocess_job(
         "textures": texture_paths,
         "texture_status": texture_status,
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
+        "artifact_errors": artifact_errors,
     }
-    final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated)
+    final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=resolved_target_polycount, lod_enabled=lod_enabled)
     final_result["model_url"] = final_result["game_ready_url"]
+    final_result["quality_trace"] = quality_trace
+    final_result["optimize"] = optimize_stats
     _write_json(asset_manifest, final_result)
 
     if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():

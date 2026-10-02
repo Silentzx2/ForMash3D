@@ -2,20 +2,20 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'motion/react';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  Package,
-  Layers,
-  Cpu,
-  CheckCircle2,
-  HardDrive,
-  RefreshCw,
-  Search,
-  Filter,
-  Info,
-  Sliders,
-  Sparkles,
-  ExternalLink,
-} from 'lucide-react';
+  PackageIcon,
+  Layers01Icon,
+  CpuIcon,
+  CheckmarkCircle02Icon,
+  HardDriveIcon,
+  RefreshCwIcon,
+  Search01Icon,
+  FilterIcon,
+  InfoIcon,
+  SparklesIcon,
+  ExternalLinkIcon,
+} from '@hugeicons/core-free-icons';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { Badge } from '@/components/premium/Badge';
 import { Spinner } from '@/components/premium/Spinner';
@@ -80,7 +80,7 @@ export function ModelsTab() {
         <GlassCard className="p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Total Models</span>
-            <Package className="w-4 h-4 text-[hsl(var(--admin-accent))]" />
+             <HugeiconsIcon icon={PackageIcon} size={16} className="w-4 h-4 text-[hsl(var(--admin-accent))]" />
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-foreground">{models.length}</div>
           <p className="text-[11px] text-muted-foreground mt-0.5">Configured in registry</p>
@@ -89,7 +89,7 @@ export function ModelsTab() {
         <GlassCard className="p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Capabilities</span>
-            <Layers className="w-4 h-4 text-emerald-400" />
+             <HugeiconsIcon icon={Layers01Icon} size={16} className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-foreground">{uniqueFeatures.length}</div>
           <p className="text-[11px] text-muted-foreground mt-0.5">3D processing pipelines</p>
@@ -98,7 +98,7 @@ export function ModelsTab() {
         <GlassCard className="p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">VRAM Pool</span>
-            <Cpu className="w-4 h-4 text-primary" />
+             <HugeiconsIcon icon={CpuIcon} size={16} className="w-4 h-4 text-primary" />
           </div>
           <div className="mt-2 text-2xl font-bold font-mono text-foreground">{totalVram.toFixed(0)} GB</div>
           <p className="text-[11px] text-muted-foreground mt-0.5">Peak GPU allocation</p>
@@ -107,21 +107,21 @@ export function ModelsTab() {
         <GlassCard className="p-4">
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground uppercase font-bold tracking-wider">Status</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+             <HugeiconsIcon icon={CheckmarkCircle02Icon} size={16} className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="mt-2 text-2xl font-bold text-foreground">{readinessLabel}</div>
           <p className="text-[11px] text-muted-foreground mt-0.5">Runtime model readiness from backend manifest</p>
         </GlassCard>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* FilterIcon and SearchIcon Bar */}
       <GlassCard className="p-3">
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+             <HugeiconsIcon icon={Search01Icon} size={16} className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search model by name, ID or keywords..."
+              placeholder="SearchIcon model by name, ID or keywords..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--admin-accent))]"
@@ -129,7 +129,7 @@ export function ModelsTab() {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+             <HugeiconsIcon icon={FilterIcon} size={16} className="w-4 h-4 text-muted-foreground flex-shrink-0" />
             <select
               value={featureFilter}
               onChange={(e) => setFeatureFilter(e.target.value)}
@@ -146,15 +146,15 @@ export function ModelsTab() {
               onClick={loadData}
               disabled={loading}
               className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              title="Refresh Models"
+              title="RefreshIcon Models"
             >
-              <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+               <HugeiconsIcon icon={RefreshCwIcon} size={16} />
             </button>
           </div>
         </div>
       </GlassCard>
 
-      {/* Models Grid */}
+      {/* Models GridIcon */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredModels.map((m, idx) => (
           <motion.div

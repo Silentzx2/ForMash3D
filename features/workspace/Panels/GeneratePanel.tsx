@@ -1,21 +1,4 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import {
-  Sparkles,
-  Upload,
-  Image as ImageIcon,
-  RefreshCw,
-  Info,
-  X,
-  Loader2,
-  Box,
-  AlertTriangle,
-  Plus,
-  ChevronDown,
-  ChevronUp,
-  Check,
-  Settings2,
-  Zap,
-} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import type { PhysicsSettings } from '../types';
@@ -25,6 +8,9 @@ import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
 export interface MeshQualityPreset {
   id: 'low' | 'medium' | 'high' | 'ultra';
   label: string;
@@ -527,7 +513,9 @@ export const GeneratePanel: React.FC = () => {
       removeBackground: true,
       autoOptimizeSettings: {
         ...prev.autoOptimizeSettings,
-        targetPolycount: prev.autoOptimizeSettings?.targetPolycount || 60000,
+        targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
+          ? prev.autoOptimizeSettings.targetPolycount
+          : 50000,
       },
     }));
   };
@@ -537,12 +525,12 @@ export const GeneratePanel: React.FC = () => {
       {/* Panel Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
-          <Sparkles className="w-4 h-4 text-primary" />
+          <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
           <span>Generate 3D Model</span>
         </span>
         {statusInfo && (
           <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold">
-            <AlertTriangle className="w-3 h-3" />
+            <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-3 h-3" />
             {statusInfo.label}
           </span>
         )}
@@ -560,14 +548,14 @@ export const GeneratePanel: React.FC = () => {
               className="p-2 rounded-xl bg-primary/15 border border-primary/40 text-primary text-[10.5px] flex items-center justify-between gap-1.5 overflow-hidden"
             >
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                <Info className="w-4 h-4 flex-shrink-0" />
+                <HugeiconsIcon icon={InfoIcon} size={16} className="w-4 h-4 flex-shrink-0" />
                 <span className="leading-tight font-medium">{noticeMessage}</span>
               </div>
               <button 
                 onClick={() => setNoticeMessage(null)}
                 className="text-zinc-400 hover:text-white p-0.5 rounded transition-colors cursor-pointer"
               >
-                <X className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={Cancel} size={16} className="w-3.5 h-3.5" />
               </button>
             </motion.div>
           )}
@@ -584,7 +572,7 @@ export const GeneratePanel: React.FC = () => {
                     domId: 'subaction-btn-upload',
                     label: 'Single Image',
                     tooltip: 'Single Image to 3D Mesh',
-                    icon: ImageIcon,
+                    icon: (props: any) => <HugeiconsIcon icon={ImageIcon} size={16} {...props} />,
                     onClick: () => {
                       setSubAction('upload');
                       setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
@@ -596,7 +584,7 @@ export const GeneratePanel: React.FC = () => {
                     domId: 'subaction-btn-crop',
                     label: 'Multiview (Unavailable)',
                     tooltip: 'Multiview is disabled until a model-specific backend contract is available.',
-                    icon: Box,
+                    icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
                     onClick: () => {
                       setNoticeMessage('Multiview is disabled until the backend exposes a real multi-view generation contract.');
                       setTimeout(() => setNoticeMessage(null), 5000);
@@ -631,7 +619,7 @@ export const GeneratePanel: React.FC = () => {
                 })}
               </div>
 
-              {/* Mode 1: Single Image Upload */}
+              {/* Mode 1: Single Image UploadIcon */}
               {subAction === 'upload' && (
                 <>
                   <input 
@@ -656,7 +644,7 @@ export const GeneratePanel: React.FC = () => {
                   >
                     {uploadProgress.active ? (
                       <div className="text-center space-y-1.5 w-full px-2 z-10">
-                        <Loader2 className="w-5 h-5 mx-auto animate-spin text-primary" />
+                        <HugeiconsIcon icon={LoaderCircle} size={16} className="w-5 h-5 mx-auto animate-spin text-primary" />
                         <div className="font-bold text-[10px] text-white">Uploading...</div>
                         <div className="w-full bg-[hsl(var(--surface-2))] rounded-full h-1.5 overflow-hidden">
                           <motion.div
@@ -680,7 +668,7 @@ export const GeneratePanel: React.FC = () => {
                           }}
                           className="absolute bottom-1.5 right-1.5 bg-black/80 hover:bg-black border border-white/20 text-primary px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer z-20 transition-all opacity-0 group-hover:opacity-100 shadow-md"
                         >
-                          <RefreshCw className="w-3 h-3" />
+                          <HugeiconsIcon icon={RefreshCw} size={16} className="w-3 h-3" />
                           <span>Replace</span>
                         </div>
                       </div>
@@ -689,7 +677,7 @@ export const GeneratePanel: React.FC = () => {
                         <div className={`w-8 h-8 mx-auto rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center transition-all ${
                           isDragOver ? 'text-primary border-primary' : 'text-zinc-400 group-hover/dropzone:text-primary'
                         }`}>
-                          <Upload className="w-4 h-4" />
+                          <HugeiconsIcon icon={UploadIcon} size={16} className="w-4 h-4" />
                         </div>
                         <div className="space-y-0.5">
                           <div className="font-bold text-xs text-zinc-100">
@@ -745,7 +733,7 @@ export const GeneratePanel: React.FC = () => {
                 </>
               )}
 
-              {/* Mode 2: Multi-View Grid */}
+              {/* Mode 2: Multi-View GridIcon */}
               {subAction === 'crop' && (
                 <>
                   <input
@@ -758,7 +746,7 @@ export const GeneratePanel: React.FC = () => {
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-[10px]">
                       <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
-                        <Box className="w-3.5 h-3.5 text-primary" />
+                        <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
                         <span>Multiview Perspective Angles</span>
                       </span>
                       <span className="text-[9px] text-zinc-400 font-mono">
@@ -766,7 +754,7 @@ export const GeneratePanel: React.FC = () => {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1.5">
+                    <div className="grid grid-cols-3 gap-1.5">
                       {([
                         { key: 'front', label: 'Front', req: true },
                         { key: 'right', label: 'Right', req: false },
@@ -817,12 +805,12 @@ export const GeneratePanel: React.FC = () => {
                                   className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 hover:bg-rose-600 text-white transition-colors cursor-pointer"
                                   title={`Remove ${label} view`}
                                 >
-                                  <X className="w-2.5 h-2.5" />
+                                  <HugeiconsIcon icon={Cancel} size={16} className="w-2.5 h-2.5" />
                                 </button>
                               </>
                             ) : (
                               <div className="text-center space-y-0.5">
-                                <Plus className="w-4 h-4 mx-auto text-zinc-500 group-hover:text-primary transition-colors" />
+                                <HugeiconsIcon icon={Plus} size={16} className="w-4 h-4 mx-auto text-zinc-500 group-hover:text-primary transition-colors" />
                                 <span className="text-[8px] text-zinc-400 font-medium block">{label}</span>
                               </div>
                             )}
@@ -878,7 +866,7 @@ export const GeneratePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2 relative">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>AI 3D Engine</span>
                 </span>
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
@@ -909,7 +897,7 @@ export const GeneratePanel: React.FC = () => {
                     </span>
                   </div>
                 </div>
-                <ChevronDown className={`w-4 h-4 text-zinc-400 flex-shrink-0 transition-transform ${modelDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
+                <HugeiconsIcon icon={ChevronDown} size={16} className={`w-4 h-4 text-zinc-400 flex-shrink-0 transition-transform ${modelDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
               </button>
 
               {/* Clean Dropdown Menu */}
@@ -965,7 +953,7 @@ export const GeneratePanel: React.FC = () => {
                             </span>
                           </div>
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}
+                        {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}
                       </button>
                     );
                   })}
@@ -1072,16 +1060,16 @@ export const GeneratePanel: React.FC = () => {
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                    <Settings2 className="w-3.5 h-3.5" />
+                    <HugeiconsIcon icon={Settings2} size={16} className="w-3.5 h-3.5" />
                   </div>
                   <div className="min-w-0">
                     <div className="text-[11px] font-bold text-white">Advanced Generation</div>
                     <div className="text-[9px] text-zinc-400 truncate">
-                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 60000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
+                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
                     </div>
                   </div>
                 </div>
-                <ChevronDown className="w-4 h-4 text-zinc-400 shrink-0" />
+                <HugeiconsIcon icon={ChevronDown} size={16} className="w-4 h-4 text-zinc-400 shrink-0" />
               </div>
             </button>
           </div>
@@ -1104,7 +1092,7 @@ export const GeneratePanel: React.FC = () => {
             >
               <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Settings2 className="w-4 h-4 text-primary shrink-0" />
+                  <HugeiconsIcon icon={Settings2} size={16} className="w-4 h-4 text-primary shrink-0" />
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-white">Advanced Generation</div>
                     <div className="text-[9px] text-zinc-500 truncate">Physics, quality budget and topology</div>
@@ -1116,7 +1104,7 @@ export const GeneratePanel: React.FC = () => {
                   className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.06] cursor-pointer"
                   aria-label="Close advanced generation settings"
                 >
-                  <ChevronUp className="w-4 h-4" />
+                  <HugeiconsIcon icon={ChevronUp} size={16} className="w-4 h-4" />
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
@@ -1124,7 +1112,7 @@ export const GeneratePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <Zap className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Physics Preparation</span>
                 </div>
                 <span className="text-[9px] text-zinc-500">Post-process · no extra AI model</span>
@@ -1220,12 +1208,12 @@ export const GeneratePanel: React.FC = () => {
               )}
             </div>
 
-            {/* Streamlined Mesh Settings Card (Target Polycount + Triangle / Quad Topology ONLY) */}
+            {/* Streamlined Mesh SettingsIcon Card (TargetIcon Polycount + Triangle / Quad Topology ONLY) */}
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <Box className="w-3.5 h-3.5 text-primary" />
-                  <span>Mesh Settings</span>
+                  <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>Mesh SettingsIcon</span>
                 </div>
                 <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -1233,27 +1221,60 @@ export const GeneratePanel: React.FC = () => {
                 </span>
               </div>
 
+              {/* 0. Model Quality Preset (Inference resolution & fidelity) */}
+              <div className="space-y-1.5 pb-1 border-b border-white/[0.04]">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-200 font-medium">Model Quality</span>
+                  <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25 capitalize">
+                    {generationSettings.meshQuality || 'high'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {(['low', 'medium', 'high', 'ultra'] as const).map((q) => {
+                    const isSelected = (generationSettings.meshQuality || 'high') === q;
+                    return (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshQuality: q }))}
+                        className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer capitalize font-bold text-[10px] ${
+                          isSelected
+                            ? 'bg-primary text-black shadow-sm font-black'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
+                        }`}
+                      >
+                        {q}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* 1. Target Polycount Budget */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Target Polycount</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {((generationSettings.autoOptimizeSettings?.targetPolycount || 60000)).toLocaleString()} tris
+                    {generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount || 50000) <= 0
+                      ? 'Native (Raw)'
+                      : `${((generationSettings.autoOptimizeSettings?.targetPolycount || 50000)).toLocaleString()} tris`}
                   </span>
                 </div>
 
                 {/* Preset Chips */}
-                <div className="grid grid-cols-4 gap-1">
+                <div className="grid grid-cols-5 gap-1">
                   {[
                     { label: '15K', val: 15000, desc: 'Mobile' },
                     { label: '35K', val: 35000, desc: 'Game' },
-                    { label: '60K', val: 60000, desc: 'Studio' },
-                    { label: '100K', val: 100000, desc: 'Ultra' },
+                    { label: '50K', val: 50000, desc: 'Studio' },
+                    { label: '100K', val: 100000, desc: 'Cinema' },
+                    { label: 'Native', val: -1, desc: 'Raw' },
                   ].map((preset) => {
-                    const isSelected = (generationSettings.autoOptimizeSettings?.targetPolycount || 60000) === preset.val;
+                    const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                    const isSelected = currentTarget === preset.val;
                     return (
                       <button
-                        key={preset.val}
+                        key={preset.label}
                         type="button"
                         onClick={() => {
                           setGenerationSettings(prev => ({
@@ -1266,12 +1287,12 @@ export const GeneratePanel: React.FC = () => {
                         }}
                         className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
                           isSelected
-                            ? 'bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-black font-black shadow-[0_0_8px_rgba(255,204,0,0.35)]'
+                            ? 'bg-primary text-black font-black shadow-sm'
                             : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
                         }`}
                       >
-                        <span className="text-[11px] font-black leading-tight">{preset.label}</span>
-                        <span className={`text-[8px] ${isSelected ? 'text-black/75 font-bold' : 'text-zinc-500'}`}>{preset.desc}</span>
+                        <span className="text-[10px] font-black leading-tight">{preset.label}</span>
+                        <span className={`text-[7.5px] ${isSelected ? 'text-black/75 font-bold' : 'text-zinc-500'}`}>{preset.desc}</span>
                       </button>
                     );
                   })}
@@ -1281,9 +1302,9 @@ export const GeneratePanel: React.FC = () => {
                 <input
                   type="range"
                   min={5000}
-                  max={120000}
+                  max={200000}
                   step={5000}
-                  value={generationSettings.autoOptimizeSettings?.targetPolycount || 60000}
+                  value={generationSettings.autoOptimizeSettings?.targetPolycount && generationSettings.autoOptimizeSettings.targetPolycount > 0 ? generationSettings.autoOptimizeSettings.targetPolycount : 50000}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
                     setGenerationSettings(prev => ({
@@ -1303,7 +1324,11 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Topology Target</span>
                   <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'Quads (post-process)' : 'Triangles'}
+                    {activeModelObj?.supports_texture
+                      ? 'Triangles (PBR Native)'
+                      : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                      ? 'Quads (post-process)'
+                      : 'Triangles'}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
@@ -1326,6 +1351,7 @@ export const GeneratePanel: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    disabled={Boolean(activeModelObj?.supports_texture && generationSettings.generateTexture !== false)}
                     onClick={() => {
                       setGenerationSettings(prev => ({
                         ...prev,
@@ -1333,15 +1359,42 @@ export const GeneratePanel: React.FC = () => {
                         quadTopology: true,
                       }));
                     }}
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
-                      generationSettings.topologyMode === 'quad' || generationSettings.quadTopology
-                        ? 'bg-primary text-black font-black shadow-sm'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08]'
+                    title={activeModelObj?.supports_texture && generationSettings.generateTexture !== false ? 'Quads only available on untextured raw meshes' : 'Convert to quad-dominant topology in post-processing'}
+                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+                      activeModelObj?.supports_texture && generationSettings.generateTexture !== false
+                        ? 'opacity-40 cursor-not-allowed bg-[hsl(var(--surface-1))] text-zinc-500 border border-white/[0.04]'
+                        : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
                     }`}
                   >
-                    <span>■ Quads (post-process)</span>
+                    <span>■ Quads (raw only)</span>
                   </button>
                 </div>
+                {/* 3. Real-ESRGAN 4x Super-Resolution enhancement for Hunyuan3D */}
+                {(generationSettings.aiModel?.includes('hunyuan') || generationSettings.aiModel?.includes('paint')) && (
+                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between mt-2">
+                    <span className="text-zinc-300 flex items-center gap-1.5 text-xs font-semibold">
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                      <span>Real-ESRGAN (4x Texture Enhance)</span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={generationSettings.enableRealESRGAN !== false}
+                      onClick={() => setGenerationSettings(prev => ({ ...prev, enableRealESRGAN: prev.enableRealESRGAN === false ? true : false }))}
+                      className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
+                        generationSettings.enableRealESRGAN !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                      }`}
+                    >
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                          generationSettings.enableRealESRGAN !== false ? 'translate-x-3.5' : 'translate-x-0'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                )}
               </div>
               </div>
               </div>
@@ -1351,7 +1404,7 @@ export const GeneratePanel: React.FC = () => {
                   onClick={() => setAdvancedSettingsOpen(false)}
                   className="w-full h-9 rounded-xl bg-primary text-black text-[10px] font-black tracking-wide hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  <Check className="w-3.5 h-3.5" />
+                  <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5" />
                   APPLY & CLOSE
                 </button>
               </div>
@@ -1370,7 +1423,7 @@ export const GeneratePanel: React.FC = () => {
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 60000) / 1000)}K {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
+              {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
             </span>
           </div>
           <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border flex-shrink-0 ${
@@ -1404,12 +1457,12 @@ export const GeneratePanel: React.FC = () => {
         >
           {isExecuting ? (
             <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+              <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
               <span className="tracking-wide">{executionStep || 'Generating 3D Model...'}</span>
             </>
           ) : (
             <>
-              <Sparkles className="w-3.5 h-3.5 stroke-[2.5]" />
+              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
               <span className="tracking-wider">{isExecuting ? 'GENERATE ANOTHER' : 'GENERATE 3D MODEL'}</span>
             </>
           )}

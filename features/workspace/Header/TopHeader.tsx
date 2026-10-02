@@ -1,24 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Box,
-  ChevronDown,
-  Layers,
-  Bell,
-  User,
-  Cable,
-  Hexagon,
-  Zap,
-  Package,
-  Settings,
-  Sparkles,
-  Menu,
-  Check
-} from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { motion } from 'motion/react';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, CableIcon, CheckIcon, ChevronDown, HexagonIcon, LayersIcon, Menu, PackageIcon, SettingsIcon, SparklesIcon, UserIcon } from '@hugeicons/core-free-icons';
 interface TopHeaderProps {
   onMobileMenuToggle?: () => void;
   isMobileNavOpen?: boolean;
@@ -72,7 +60,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           className="md:hidden p-1.5 rounded-lg text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-1))] transition-colors flex-shrink-0 active:scale-95"
           aria-label={isMobileNavOpen ? 'Close menu' : 'Open menu'}
         >
-          <Menu className="w-4 h-4" />
+          <HugeiconsIcon icon={Menu} size={16} className="w-4 h-4" />
         </button>
 
         {/* Brand Studio Logo (ForMash 3D) */}
@@ -100,7 +88,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           >
             <span className="text-primary text-[11px] font-bold flex gap-1.5 items-center">
               <span>3D Workspace</span>
-              <ChevronDown className={`w-3 h-3 text-zinc-400 group-hover:text-zinc-200 transition-transform duration-200 ${workspaceMenuOpen ? 'rotate-180 text-primary' : ''}`} />
+              <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 text-zinc-400 group-hover:text-zinc-200 transition-transform duration-200 ${workspaceMenuOpen ? 'rotate-180 text-primary' : ''}`} />
             </span>
           </button>
 
@@ -118,10 +106,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <Box className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>3D Model Studio</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'model' && <Check className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'model' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
               <button
                 onClick={() => { navigateToTool('remesh'); setWorkspaceMenuOpen(false); }}
@@ -132,10 +120,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <Hexagon className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={HexagonIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Quad Remesh (Poly)</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'remesh' && <Check className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'remesh' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
               <button
                 onClick={() => { navigateToTool('texture'); setWorkspaceMenuOpen(false); }}
@@ -146,10 +134,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <Layers className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={LayersIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>PBR Texture Studio</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'texture' && <Check className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'texture' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
               <button
                 onClick={() => { navigateToTool('animation'); setWorkspaceMenuOpen(false); }}
@@ -160,10 +148,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Animation & Rigging</span>
                 </div>
-                {mainNav === 'workspace' && activeTool === 'animation' && <Check className="w-3.5 h-3.5 text-primary" />}
+                {mainNav === 'workspace' && activeTool === 'animation' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-primary" />}
               </button>
             </div>
           )}
@@ -232,7 +220,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
         </nav>
       </div>
 
-      {/* Right: FastAPI Status Pill, AI Models, DCC Bridge, Settings, Profile */}
+      {/* Right: FastAPI Status Pill, AI Models, DCC Bridge, SettingsIcon, Profile */}
       <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
         {/* Restored FastAPI Status Pill - text hidden on small screens */}
         <SimpleTooltip
@@ -261,7 +249,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
             onClick={() => router.push('/admin?tab=models')}
             className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
           >
-            <Package className="w-3 h-3 text-primary" />
+            <HugeiconsIcon icon={PackageIcon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold hidden md:inline">AI Models</span>
           </button>
         </SimpleTooltip>
@@ -273,30 +261,30 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
             onClick={() => setIsDccBridgeOpen(true)}
             className="hidden md:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-white/[0.15] text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer"
           >
-            <Cable className="w-3 h-3 text-primary" />
+            <HugeiconsIcon icon={CableIcon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold">DCC Bridge</span>
           </button>
         </SimpleTooltip>
 
-        {/* Quick Settings Icon */}
-        <SimpleTooltip label="Quick Settings" side="bottom">
+        {/* Quick SettingsIcon Icon */}
+        <SimpleTooltip label="Quick SettingsIcon" side="bottom">
           <button
             id="btn-header-settings"
             onClick={() => setIsSettingsOpen(true)}
             className="w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-1))] transition-colors cursor-pointer"
           >
-            <Settings className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={SettingsIcon} size={16} className="w-3.5 h-3.5" />
           </button>
         </SimpleTooltip>
 
         {/* Profile Avatar */}
-        <SimpleTooltip label="Admin & Settings" side="bottom">
+        <SimpleTooltip label="Admin & SettingsIcon" side="bottom">
           <div
             id="btn-header-profile"
             onClick={() => router.push('/admin?tab=settings')}
             className="w-6 h-6 rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.12] flex items-center justify-center text-[10px] font-bold text-primary cursor-pointer hover:border-primary transition-colors overflow-hidden"
           >
-            <User className="w-3.5 h-3.5 text-zinc-300" />
+            <HugeiconsIcon icon={UserIcon} size={16} className="w-3.5 h-3.5 text-zinc-300" />
           </div>
         </SimpleTooltip>
       </div>

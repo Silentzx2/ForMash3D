@@ -195,7 +195,7 @@ async def unwrap_mesh(
             model_preference=request.model_preference,
             user_id=user_id,
             priority=1,
-            metadata={"feature_type": "uv_unwrapping"},
+            metadata={"postprocess_mode": "production_mesh", "feature_type": "uv_unwrapping"},
         )
 
         job_id = await scheduler.schedule_job(job_request)

@@ -93,10 +93,10 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     f"Please download weights via download_models.sh."
                 )
 
-            from hy3dshape.pipelines import (
+            from hy3dshape.hy3dshape.pipelines import (
                 Hunyuan3DDiTFlowMatchingPipeline,
             )
-            from hy3dshape.rembg import BackgroundRemover
+            from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
             logger.info("Loading shape generation pipeline...")
             self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
@@ -159,7 +159,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 image = image.convert("RGBA")
 
             logger.info("Generating 3D shape...")
-            octree_res = min(512, max(64, int(inputs.get("octree_resolution", 256))))
+            octree_res = min(512, max(64, int(inputs.get("octree_resolution", 384))))
             num_steps = inputs.get("num_inference_steps", 50)
             guidance_scale = inputs.get("guidance_scale", 5.0)
 
@@ -172,7 +172,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
 
             base_name = f"{self.model_id}_{image_path.stem}"
             output_path = self._generate_output_path(base_name, output_format)
-            self.mesh_processor.save_mesh(mesh_result, output_path)
+            self.mesh_processor.save_mesh(mesh_result, output_path, do_normalise=False)
 
             final_mesh = self.mesh_processor.load_mesh(output_path)
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)
@@ -208,7 +208,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 "octree_resolution": {
                     "type": "integer",
                     "description": "Octree resolution for mesh decoding",
-                    "default": 256,
+                    "default": 384,
                     "required": False,
                 },
                 "num_inference_steps": {

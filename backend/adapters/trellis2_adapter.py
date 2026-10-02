@@ -142,9 +142,9 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             # Extract parameters
             image_path = inputs["image_path"]
             auto_optimize = bool(inputs.get("auto_optimize", False))
-            decimation_target = inputs.get("decimation_target", -1 if not auto_optimize else 1000000)
+            decimation_target = int(inputs.get("decimation_target", -1))
             texture_size = inputs.get("texture_size", 4096)
-            remesh = inputs.get("remesh", auto_optimize)
+            remesh = bool(inputs.get("remesh", False))
             remesh_band = inputs.get("remesh_band", 1)
             remesh_project = inputs.get("remesh_project", 0)
             seed = inputs.get("seed", None)
@@ -250,9 +250,9 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "decimation_target": {
                     "type": "integer",
-                    "description": "Target number of faces after decimation",
-                    "default": 1000000,
-                    "minimum": 10000,
+                    "description": "Target number of faces after decimation (-1 for raw full resolution)",
+                    "default": -1,
+                    "minimum": -1,
                     "maximum": 10000000,
                     "required": False
                 },
@@ -266,7 +266,7 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                 "remesh": {
                     "type": "boolean",
                     "description": "Whether to remesh the output mesh",
-                    "default": True,
+                    "default": False,
                     "required": False
                 },
                 "remesh_band": {
@@ -416,7 +416,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
             
             # Save mesh in requested format
             output_path = self._generate_output_path(mesh_path, output_format, is_prompt=False)
-            self.mesh_processor.save_mesh(textured_mesh, output_path, do_normalise=True)
+            self.mesh_processor.save_mesh(textured_mesh, output_path, do_normalise=False)
             
             # Generate thumbnail
             thumbnail_path = self._generate_thumbnail_path(output_path)

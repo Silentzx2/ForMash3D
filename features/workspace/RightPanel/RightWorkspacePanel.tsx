@@ -1,13 +1,10 @@
 import React, { useEffect } from 'react';
-import {
-  Sliders,
-  FolderOpen,
-  Activity,
-  PanelRightClose
-} from 'lucide-react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
+
+import { HugeiconsIcon } from '@hugeicons/react';
+import { FolderOpenIcon, PanelRightClose, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
 // Import panels
 import { RightPropertyPanel } from './RightPropertyPanel';
 import { RightAssetsPanel } from './RightAssetsPanel';
@@ -59,8 +56,8 @@ export const RightWorkspacePanel: React.FC = () => {
         <div className="flex-1 min-w-0 mr-2">
           <div className="flex gap-1 p-0.5 bg-[hsl(var(--surface-0))] border border-white/[0.06] rounded-lg">
             {([
-              { id: 'assets', label: 'Assets', icon: FolderOpen },
-                { id: 'properties', label: 'Properties', icon: Sliders },
+              { id: 'assets', label: 'Assets', icon: (props: any) => <HugeiconsIcon icon={FolderOpenIcon} size={16} {...props} /> },
+                { id: 'properties', label: 'Properties', icon: (props: any) => <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} {...props} /> },
               ] as Array<{ id: string; label: string; icon: any }>).map((tab) => {
                 const Icon = tab.icon;
                 const isActive = currentActiveTab === tab.id;
@@ -103,7 +100,7 @@ export const RightWorkspacePanel: React.FC = () => {
             onClick={() => setIsRightPanelOpen(false)}
             className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))] transition-colors cursor-pointer flex-shrink-0"
           >
-            <PanelRightClose className="w-3.5 h-3.5" />
+            <HugeiconsIcon icon={PanelRightClose} size={16} className="w-3.5 h-3.5" />
           </button>
         </SimpleTooltip>
       </div>

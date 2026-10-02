@@ -4,7 +4,8 @@ import React, { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AdminShell } from '@/features/admin/AdminShell';
 import dynamic from 'next/dynamic';
-import { Loader2 } from 'lucide-react';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { LoaderCircleIcon } from '@hugeicons/core-free-icons';
 
 const OverviewTab = dynamic(() => import('@/features/admin/tabs/OverviewTab').then(m => m.OverviewTab), { ssr: false });
 const RuntimeTab = dynamic(() => import('@/features/admin/tabs/RuntimeTab').then(m => m.RuntimeTab), { ssr: false });
@@ -109,7 +110,7 @@ export default function AdminPage() {
     <Suspense
       fallback={
         <div className="flex h-screen w-screen items-center justify-center bg-[#0d0e12] text-zinc-400">
-          <Loader2 className="h-6 w-6 animate-spin text-purple-400" />
+          <HugeiconsIcon icon={LoaderCircleIcon} size={24} className="h-6 w-6 animate-spin text-purple-400" />
         </div>
       }
     >
