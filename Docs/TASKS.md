@@ -2,12 +2,18 @@
 
 > **Version**: 0.1.0
 > **Status**: Active development
-> **Last Updated**: September 2026
+> **Last Updated**: 2026-10-03
 
 ---
 
 ## ✅ Completed
 
+### Contract & Workflow Audit — 2026-10-03
+- [x] Sync Hunyuan Shape/Mini-Turbo schema defaults and frontend mappings to fixed raw extraction `octree_resolution=512`.
+- [x] Add parity coverage for the fixed Hunyuan extraction contract.
+- [x] Add Ctrl/Cmd+K workspace command palette using the existing local cmdk component.
+- [x] Correct production completion documentation so terminal job success means post-processing has completed.
+- [ ] NVIDIA/CUDA visual-quality validation remains runtime-gated.
 ### Backend
 - [x] Current model adapter registry implemented and lazily loaded from `backend/adapters/__init__.py`
 - [x] 23 model configurations in `backend/config/models.yaml`
@@ -35,7 +41,7 @@
 - [x] Fix TRELLIS simplify defaults (`simplify=0.0` across text, image, and painting adapters)
 - [x] Fix TRELLIS 12-step sampling schedules and remove artificial 20-step clamping
 - [x] Restore TRELLIS.2 defaults: `decimation_target=-1`, `remesh=False`
-- [x] Update Hunyuan3D Shape and Mini Turbo default octree resolution to official `384`
+- [x] Keep Hunyuan raw extraction fixed at `512`; output polycount belongs to post-processing
 - [x] Restore UltraShape official defaults: `num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path
 - [x] Enforce `do_normalise=False` on raw mesh saves to preserve model coordinates and scale
 - [x] Expand `MAX_PRODUCTION_FACES` to 200,000 and enable `auto_optimize: false` native topology passthrough
@@ -232,7 +238,7 @@ Still runtime-gated:
 - True multiview inference remains capability-dependent; the backend accepts only explicitly supported view contracts and does not silently collapse a multi-view request.
 
 ### Review Audit — Second Pass
-- [x] Raw generation completes independently from production post-processing; postprocess status is tracked separately.
+- [x] Production post-processing runs before terminal generation success; `postprocess_status` is retained for telemetry/retry state.
 - [x] Workspace maintains independent job state by backend job ID and permits another generation while one is active.
 - [x] Text batch endpoint submits independent jobs with scheduler-enforced `max_parallel`.
 - [x] Redis progress/state hot fields no longer rewrite the full job document on every telemetry tick; terminal cleanup uses a time index.
@@ -275,7 +281,7 @@ Testing/build/GPU stress verification remains intentionally outside this pass.
 ### Final Audit Gap Closure — 2026-09-30
 - [x] Production Docker and RunPod dependency paths reconciled with backend repository layout and release wheels.
 - [x] Async job-status/progress persistence bounded and non-blocking; terminal error codes remain durable.
-- [x] Raw inference completion separated from background production post-processing with owned input cleanup and shutdown lifecycle.
+- [x] Production post-processing lifecycle and owned input cleanup are synchronized with terminal job completion.
 - [x] Remaining model adapter paths and VRAM declarations reconciled with the canonical manifest; FastMesh/TRELLIS variants cannot override manifest VRAM.
 - [x] Frontend post-processing state, QA score units, capability-based routing, L1 LRU accounting, and failure messaging synchronized with backend contracts.
 - [ ] Runtime/GPU/test/build validation remains required after this source-level fix pass.

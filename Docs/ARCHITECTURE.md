@@ -463,9 +463,9 @@ Redis control state uses noeviction. Result payloads use dedicated per-job keys 
 
 Filesystem inputs are restricted to explicit asset roots by default; file uploads and base64 inputs enforce bounded ingestion. The GLB client cache applies one L1 budget to both network hydration and persistent-cache hydration.
 
-## Review Audit — Async Generation Boundary
+## Review Audit — Generation/Post-Process Completion Boundary
 
-The execution lifecycle is now split at raw inference completion. A successful GPU result is published immediately as the job result, after which canonical post-processing runs as a background task. The completed job retains `postprocess_status` and optional `postprocess_error`, so raw-model availability is independent from game-ready artifact production.
+The current production scheduler keeps generation jobs in a non-terminal state while canonical post-processing runs. The native model output is secured under the immutable master checkpoint first, then repair/retopo/optimization/UV, game-ready export, LOD, optional collision, preview, and QA are completed before the scheduler publishes terminal success. `postprocess_status` remains explicit for progress/retry observability, but it does not make a job terminal before the production artifact is ready.
 
 Workspace state is keyed by backend job ID rather than a single global active operation. Batch submissions carry a scheduler-owned `batch_id` and `batch_max_parallel`; the scheduler refuses additional workers for that batch until a slot is free.
 
@@ -473,10 +473,11 @@ Workspace state is keyed by backend job ID rather than a single global active op
 
 The backend model manifest is the source of truth for model readiness, capabilities, supported IO, VRAM reservation, and worker limits. Frontend model selectors consume the runtime model-details endpoint; static model definitions remain presentation fallbacks only.
 
-Generation is split into:
-1. raw/native result becoming visible;
-2. optional production post-processing;
-3. canonical asset/export artifacts.
+Generation completion is production-oriented:
+1. native model output is persisted as the immutable master;
+2. canonical production post-processing runs;
+3. game-ready/LOD/physics/preview/QA artifacts are written;
+4. the job reaches terminal success only after the requested production outputs are complete.
 
 Batch text generation submits independent jobs under a scheduler-owned batch ID and max-parallel limit. Redis and single-worker queues expose the same terminal semantics and error-code surface.
 

@@ -1,3 +1,9 @@
+## 2026-10-03 Contract Sync, Command Palette & Production Lifecycle Audit
+- Hunyuan Shape and Mini-Turbo schemas, frontend quality mapping, and parity tests now agree on fixed raw extraction at `octree_resolution=512`; output polycount stays downstream in post-processing.
+- Added a Ctrl/Cmd+K command palette to the persistent workspace header using the existing local Command/cmdk component. No new dependency or parallel UI framework was introduced.
+- Corrected architecture/decision documentation so terminal job success reflects the actual scheduler: production post-processing completes before terminal success.
+- Source-level audit and static contract validation are complete; NVIDIA/CUDA visual-quality validation remains runtime-gated.
+
 ## 2026-10-02 Studio Viewport Polish & Ground Contact Shadow (Empty Dark Gray Room)
 - **Empty Studio Dark Gray Room & Contact Shadow Floor:** Upgraded MeshViewer to a clean, empty dark studio room with subtle charcoal radial vignette (`#16181d` to `#08090a`) and `#111317` container bleed. Configured an invisible contact shadow floor plane (`ShadowMaterial`, opacity 0.25) directly at ground level `y = -0.001`, cleanly grounding the 3D model with realistic contact shadows without any artificial pedestal or floating appearance.
 - **Balanced 4-Point Studio Lighting Rig:** Eliminated washed-out front highlights and pitch-black rear cavities by recalibrating the lighting setup to a professional 4-point studio rig (key light 1.8 at front-right, front fill light 1.1, back rim light 1.5 at back-left, back fill light 1.1 at back-right, top-down hemisphere bounce 0.75, and camera fill 0.35) with ACES Filmic exposure 1.05.
@@ -22,7 +28,7 @@
   - PartPacker: Default `num_faces=-1`, `num_steps=50`, `cv2.INTER_AREA`, and `len(faces) > 10` noise filtering in `partpacker_utils.py` and `partpacker_adapter.py`.
   - Hunyuan3D Paint v2.1: Enforced `use_remesh=False` in `hunyuan3d_paint_v21.py` and `hunyuan3d_adapter_v21.py`, preventing silent 40,000 face decimation during texturing.
   - TRELLIS / TRELLIS.2: Default `simplify=0.0` across text, image, and painting adapters. Restored 12-step sampling schedules (`ss_sampling_steps=12`, `slat_sampling_steps=12`) and removed artificial 20-step clamping. Set `decimation_target=-1` and `remesh=False` in TRELLIS.2.
-  - Hunyuan3D Shape & Mini Turbo: Updated default `octree_resolution` from 256 to official pipeline default `384`.
+  - Hunyuan3D Shape & Mini Turbo: Raw mesh extraction is fixed at `octree_resolution=512`; output polycount is applied downstream in production post-processing.
   - UltraShape: Restored official defaults (`num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path to `hunyuan3d-shape-v2-1`).
   - Raw Model Scale Preservation: Enforced `do_normalise=False` across raw asset generators (`hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`, `trellis2_adapter.py`, `fastmesh_adapter.py`).
   - Production Pipeline: Expanded `MAX_PRODUCTION_FACES` from 50,000 to 200,000. Enabled `auto_optimize: false` passthrough check to preserve 100% of native topology in `game_ready` when requested. Fixed compound double decimation in LOD chain calculation. Added graceful fallback to `fast-simplification` / `trimesh` decimation when pymeshlab native OpenGL libraries are missing in headless environments.

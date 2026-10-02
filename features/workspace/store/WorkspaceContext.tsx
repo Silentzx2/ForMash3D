@@ -1046,7 +1046,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         modelParameters.simplify = 0.0;
         modelParameters.texture_resolution = currentQuality === 'ultra' ? 2048 : 1024;
       } else if ((generationSettings.aiModel || '').includes('hunyuan')) {
-        modelParameters.octree_resolution = currentQuality === 'ultra' ? 512 : currentQuality === 'high' ? 384 : currentQuality === 'medium' ? 384 : 256;
+        // ponytail: raw extraction stays at maximum detail; target polycount is post-processing.
+        modelParameters.octree_resolution = 512;
         modelParameters.enable_realesrgan = generationSettings.enableRealESRGAN !== false;
       }
 

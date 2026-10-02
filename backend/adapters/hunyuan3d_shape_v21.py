@@ -222,9 +222,10 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Octree resolution for mesh decoding",
-                    "default": 384,
+                    "description": "Fixed at 512 for maximum raw geometry detail; output polycount is a post-processing setting.",
+                    "default": 512,
                     "required": False,
+                    "readOnly": True,
                 },
                 "num_inference_steps": {
                     "type": "integer",

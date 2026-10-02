@@ -1,9 +1,9 @@
 # BUG.md — ForMash 3D Active Bug Registry
 
 > **Doc Version**: 1.0
-> **Last Updated**: 2026-10-02
+> **Last Updated**: 2026-10-03
 > **Status**: ✅ **Implemented & Verified (All Tasks Completed & E2E Tested)**
-> **Scope**: Storage contracts, UI/UX wiring, orientation transforms, detail retention, and physics collision hardening
+> **Scope**: Storage contracts, UI/UX wiring, orientation transforms, detail retention, physics collision hardening, and follow-up contract audit
 > **Rules**: Follows RULES.md (root-cause first, smallest fix, no new abstractions)
 
 ---

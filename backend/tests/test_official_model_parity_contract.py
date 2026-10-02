@@ -61,8 +61,9 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Official Hunyuan3D pipeline defaults to octree_resolution=384
-        self.assertEqual(schema["octree_resolution"]["default"], 384)
+        # Raw extraction is intentionally fixed at maximum 512; polycount is post-processing.
+        self.assertEqual(schema["octree_resolution"]["default"], 512)
+        self.assertTrue(schema["octree_resolution"]["readOnly"])
         self.assertEqual(schema["num_inference_steps"]["default"], 50)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
@@ -72,8 +73,9 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Official Hunyuan3D pipeline defaults to octree_resolution=384
-        self.assertEqual(schema["octree_resolution"]["default"], 384)
+        # Raw extraction is intentionally fixed at maximum 512; polycount is post-processing.
+        self.assertEqual(schema["octree_resolution"]["default"], 512)
+        self.assertTrue(schema["octree_resolution"]["readOnly"])
         self.assertEqual(schema["num_inference_steps"]["default"], 20)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 

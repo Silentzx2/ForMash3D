@@ -501,17 +501,17 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 
 ---
 
-## ADR-014: Raw Completion Before Production Post-Processing
+## ADR-014: Production Post-Processing Before Terminal Completion
 
-**Decision**: Mark GPU inference complete as soon as the native model result is durable, then execute canonical production post-processing as a background task with explicit result-level status.
+**Decision**: Persist the native model result as the immutable master checkpoint, then run canonical production post-processing before publishing terminal job success.
 
-**Reason**: Raw-model availability and game-ready artifact production have different resource/lifecycle characteristics. Keeping them coupled made a successful model inference appear incomplete and encouraged premature input cleanup.
+**Reason**: For a self-hosted personal production workflow, a completed generation must mean the requested production artifact is ready for inspection/export. This keeps job status truthful and avoids showing a raw mesh as finished while LOD, collision, preview, or QA artifacts are still pending.
 
 **Consequences**:
-- The job status can be completed while `postprocess_status` is pending/running/completed/failed.
-- Request inputs remain owned by the post-processing task until lineage metadata is written.
-- The frontend can load the raw result immediately and rehydrate the same asset when production artifacts finish.
-- Post-processing failure no longer erases or falsely invalidates a successful raw generation.
+- `master/source.glb` is durable before any destructive downstream stage.
+- `postprocess_status` remains explicit for telemetry and retry operations.
+- The live execution panel can show the real production stages through terminal completion.
+- A post-processing error is a generation failure for that job rather than a misleading success.
 
 ## ADR-015: Manifest-Only Runtime Resource Contracts
 

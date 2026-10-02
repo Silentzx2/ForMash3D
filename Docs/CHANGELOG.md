@@ -1,3 +1,9 @@
+## 2026-10-03 — [Contract & Workflow Audit] Hunyuan Fidelity Sync, Command Palette & Completion Semantics
+- Synced Hunyuan raw-detail contracts across adapter schemas, frontend mapping, and parity tests around fixed 512 extraction resolution.
+- Added Ctrl/Cmd+K workspace command palette using the existing local cmdk/Command component for tools, viewport actions, panels, assets, jobs, and settings.
+- Corrected lifecycle documentation to match the current scheduler: production post-processing finishes before terminal job success.
+- Source-level audit complete; GPU/CUDA inference and visual-quality validation remain runtime-gated.
+
 ## 2026-10-02 — [Studio Viewport Polish & Ground Contact Shadow] Studio Dark Gray Room & Balanced 4-Point Rig
 - **Empty Studio Dark Gray Room & Contact Shadow Floor:** Upgraded MeshViewer to a clean, empty dark studio room with subtle charcoal radial vignette (`#16181d` to `#08090a`) and `#111317` container bleed. Configured an invisible contact shadow floor plane (`ShadowMaterial`, opacity 0.25) directly at ground level `y = -0.001`, cleanly grounding the 3D model with realistic contact shadows without any artificial pedestal or floating appearance.
 - **Balanced 4-Point Studio Lighting Rig:** Eliminated washed-out front highlights and pitch-black rear cavities by recalibrating the lighting setup to a professional 4-point studio rig (key light 1.8 at front-right, front fill light 1.1, back rim light 1.5 at back-left, back fill light 1.1 at back-right, top-down hemisphere bounce 0.75, and camera fill 0.35) with ACES Filmic exposure 1.05.
