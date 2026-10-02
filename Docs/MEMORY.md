@@ -1,3 +1,9 @@
+## 2026-10-03 Workspace Production Controls & Viewport Performance Pass
+- **Retopology poly budget:** Added `target_polycount` to the mesh-retopology API and `RemeshSettings`. The FastMesh V1K/V4K target remains model-fixed; the new slider controls the final production triangle budget downstream.
+- **Generation workflow recipes:** Added Mobile / Game Ready / Cinematic / Native presets that synchronize model quality, final triangle budget, LOD generation, and optional physics in one action.
+- **Viewport artifact inspection:** Added quick switching between Game Ready, immutable Source, and generated LOD artifacts directly in the viewport.
+- **Viewport performance modes:** Added Auto / Fast / Detail rendering modes that adjust pixel ratio and shadow cost, with automatic heavy-mesh detection preserved for the default mode.
+- **Research basis:** Current Tripo, Meshy, and Hyper3D workflows emphasize integrated generation, remesh/retopology, texture, rigging/animation, artifact review, and fast post-generation controls; the implementation keeps only the useful local/self-hosted subset.
 ## 2026-10-03 Contract Sync, Command Palette & Production Lifecycle Audit
 - Hunyuan Shape and Mini-Turbo schemas, frontend quality mapping, and parity tests now agree on fixed raw extraction at `octree_resolution=512`; output polycount stays downstream in post-processing.
 - Added a Ctrl/Cmd+K command palette to the persistent workspace header using the existing local Command/cmdk component. No new dependency or parallel UI framework was introduced.

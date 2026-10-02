@@ -11,7 +11,7 @@ import { CameraViewPreset, ModelAsset } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
 import { useAnimationStore, BoneItem } from '@/stores/useAnimationStore';
-import { useViewerStore } from '@/stores/useViewerStore';
+import { loadModelInViewer, useViewerStore } from '@/stores/useViewerStore';
 
 import { validate3DFile } from '../lib/fileValidation';
 import { createPointCloudFromImage, disposePointCloud } from './ImagePointCloud';
@@ -737,6 +737,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [reflectionPeekEnabled, setReflectionPeekEnabled] = useState(false);
   const [reflectionPreviewUrl, setReflectionPreviewUrl] = useState<string | null>(null);
   const [reflectionPeekFocused, setReflectionPeekFocused] = useState(false);
+  const [performanceMode, setPerformanceMode] = useState<'auto' | 'smooth' | 'quality'>('auto');
+  const [artifactView, setArtifactView] = useState<'active' | 'source' | 'game-ready' | 'lod0' | 'lod1' | 'lod2' | 'lod3'>('active');
   const reflectionPreviewUrlRef = useRef<string | null>(null);
   const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const reflectionPeekTweenRef = useRef<number | null>(null);
@@ -782,9 +784,27 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     return () => window.removeEventListener('toggleBlueprintPreview', handleToggle);
   }, []);
 
+  const switchArtifactView = useCallback((view: 'active' | 'source' | 'game-ready' | 'lod0' | 'lod1' | 'lod2' | 'lod3') => {
+    if (!currentAsset) return;
+    const artifacts = currentAsset.artifacts;
+    const lodIndex = view.startsWith('lod') ? Number(view.slice(3)) : -1;
+    const url =
+      view === 'source' ? artifacts?.source :
+      view === 'game-ready' ? artifacts?.gameReady :
+      lodIndex >= 0 ? artifacts?.lods?.[lodIndex] :
+      currentAsset.source?.viewUrl || currentAsset.source?.localUrl;
+    if (typeof url !== 'string' || !url) return;
+    loadModelInViewer(url, currentAsset.name, currentAsset as any);
+    setArtifactView(view);
+  }, [currentAsset]);
+
   const patchEnv = (updates: Partial<typeof environmentSettings>) =>
     setEnvironmentSettings((p) => ({ ...p, ...updates }));
 
+  useEffect(() => {
+    setArtifactView('active');
+  }, [currentAsset?.id]);
+  
   const applyPreset = useCallback((presetId: string) => {
     const preset = ENVIRONMENT_PRESETS.find(p => p.id === presetId);
     if (!preset) return;
@@ -895,6 +915,25 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scale: number;
     baseY: number;
   } | null>(null);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const triangles = currentAsset?.triangles || meshStats?.triangles || 0;
+    const heavy = triangles >= 250_000;
+    const dpr = window.devicePixelRatio || 1;
+    const cappedDpr = performanceMode === 'smooth'
+      ? Math.min(dpr, 0.85)
+      : performanceMode === 'quality'
+        ? Math.min(dpr, 1.5)
+        : Math.min(dpr, heavy ? 1.0 : 1.25);
+    renderer.setPixelRatio(cappedDpr);
+    renderer.shadowMap.enabled = performanceMode !== 'smooth' && !(performanceMode === 'auto' && heavy);
+    if (keyLightRef.current) {
+      keyLightRef.current.castShadow = renderer.shadowMap.enabled;
+      keyLightRef.current.shadow.needsUpdate = true;
+    }
+  }, [performanceMode, currentAsset?.triangles, meshStats?.triangles]);
 
   const getMeshBounds = useCallback(() => {
     if (meshBoundsCacheRef.current) return meshBoundsCacheRef.current;
@@ -3696,6 +3735,53 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             style={{ right: `${rightOffset}px` }} 
             className="absolute top-3 z-10 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)] transition-all duration-200 pointer-events-auto"
           >
+            {currentAsset?.artifacts && (
+              <div className="flex items-center gap-1 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+                <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">Artifact</span>
+                {[
+                  { id: 'game-ready' as const, label: 'Game' },
+                  { id: 'source' as const, label: 'Source' },
+                  ...(currentAsset.artifacts.lods || []).slice(0, 4).map((_, i) => ({ id: ('lod' + i) as 'lod0' | 'lod1' | 'lod2' | 'lod3', label: 'L' + i })),
+                ].map(item => {
+                  const disabled =
+                    item.id === 'source' ? !currentAsset.artifacts?.source :
+                    item.id === 'game-ready' ? !currentAsset.artifacts?.gameReady :
+                    !currentAsset.artifacts?.lods?.[Number(item.id.slice(3))];
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => switchArtifactView(item.id)}
+                      className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed " + (
+                        artifactView === item.id
+                          ? "bg-primary text-black"
+                          : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+              <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">FPS</span>
+              {(['auto', 'smooth', 'quality'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setPerformanceMode(mode)}
+                  className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all " + (
+                    performanceMode === mode ? "bg-primary text-black" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
+                  )}
+                >
+                  {mode === 'smooth' ? 'Fast' : mode === 'quality' ? 'Detail' : 'Auto'}
+                </button>
+              ))}
+            </div>
+
             {/* Unobtrusive Corner Zoom / Orbit Controller Set */}
             <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl text-zinc-300">
               {/* Orbit/Pan Mode Toggle with Active Visual Indicator */}

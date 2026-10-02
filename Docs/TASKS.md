@@ -8,6 +8,12 @@
 
 ## ✅ Completed
 
+### Workspace Production UX Audit — 2026-10-03
+- [x] Add final `target_polycount` to Remesh/Retopology UI and backend contract.
+- [x] Add Mobile/Game Ready/Cinematic/Native generation recipes.
+- [x] Add Source/Game Ready/LOD artifact switching in the viewport.
+- [x] Add Auto/Fast/Detail heavy-mesh viewport performance modes.
+- [ ] Full NVIDIA/CUDA visual-quality and long-run stress validation remains runtime-gated.
 ### Contract & Workflow Audit — 2026-10-03
 - [x] Sync Hunyuan Shape/Mini-Turbo schema defaults and frontend mappings to fixed raw extraction `octree_resolution=512`.
 - [x] Add parity coverage for the fixed Hunyuan extraction contract.

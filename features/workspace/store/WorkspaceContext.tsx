@@ -479,7 +479,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const [remeshSettings, setRemeshSettings] = useState<RemeshSettings>({
-    tab: 'auto', variant: 'V4K', polyType: 'quad',
+    tab: 'auto', variant: 'V4K', polyType: 'quad', targetPolycount: 50000,
   });
 
   const [textureSettings, setTextureSettings] = useState<TextureSettings>({
@@ -1336,6 +1336,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           ? 'fastmesh_v4k_retopology'
           : 'fastmesh_v1k_retopology',
         poly_type: remeshSettings.polyType,
+        target_polycount: remeshSettings.targetPolycount,
       };
       if (meshFileId) {
         body.mesh_file_id = meshFileId;

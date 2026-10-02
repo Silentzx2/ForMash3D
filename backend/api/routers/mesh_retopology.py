@@ -62,7 +62,10 @@ class MeshRetopologyRequest(BaseModel):
         None, description="File ID from upload endpoint"
     )
     target_vertex_count: Optional[int] = Field(
-        None, description="Target number of vertices", ge=100, le=20000
+        None, description="FastMesh model target vertices; fixed for V1K/V4K", ge=100, le=20000
+    )
+    target_polycount: Optional[int] = Field(
+        50000, description="Final production triangle budget applied after FastMesh retopology", ge=5000, le=200000
     )
     poly_type: Optional[str] = Field(
         "tri", description="Specification of the polygon type"
@@ -192,6 +195,7 @@ async def retopologize_mesh(
             inputs={
                 "mesh_path": mesh_file_path,
                 "target_vertex_count": request.target_vertex_count,
+                "target_polycount": request.target_polycount,
                 "poly_type": request.poly_type,
                 "output_format": request.output_format,
                 "seed": request.seed,

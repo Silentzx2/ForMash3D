@@ -123,6 +123,41 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["texture_size"]["default"], 4096)
 
 
+class TestRetopologyProductionBudget(unittest.TestCase):
+    """Verify FastMesh variant targets stay fixed while final triangle budget is independent."""
+
+    def test_target_polycount_is_wired_as_postprocess_budget(self):
+        from api.routers.mesh_retopology import MeshRetopologyRequest
+
+        request = MeshRetopologyRequest(
+            mesh_file_id="mesh_test",
+            model_preference="fastmesh_v4k_retopology",
+            target_vertex_count=4000,
+            target_polycount=35000,
+            poly_type="quad",
+            output_format="glb",
+        )
+        self.assertEqual(request.target_vertex_count, 4000)
+        self.assertEqual(request.target_polycount, 35000)
+
+    def test_target_polycount_bounds_are_enforced(self):
+        from api.routers.mesh_retopology import MeshRetopologyRequest
+
+        with self.assertRaises(ValueError):
+            MeshRetopologyRequest(
+                mesh_file_id="mesh_test",
+                model_preference="fastmesh_v1k_retopology",
+                target_polycount=4000,
+            )
+
+        with self.assertRaises(ValueError):
+            MeshRetopologyRequest(
+                mesh_file_id="mesh_test",
+                model_preference="fastmesh_v1k_retopology",
+                target_polycount=250000,
+            )
+
+
 class TestPostprocessPipelineParity(unittest.TestCase):
     """Test postprocessing pipeline quality controls and passthrough behavior."""
 

@@ -214,6 +214,51 @@ export const RemeshPanel: React.FC = () => {
               </p>
             </div>
 
+            {/* Final Production Polycount Budget */} 
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-200">Final Polycount</div>
+                  <div className="text-[8px] text-zinc-500">Applied after the fixed FastMesh V1K/V4K pass</div>
+                </div>
+                <span className="font-mono font-bold text-xs text-primary">
+                  {remeshSettings.targetPolycount.toLocaleString()} tris
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  { label: '15K', value: 15000, hint: 'Mobile' },
+                  { label: '35K', value: 35000, hint: 'Game' },
+                  { label: '50K', value: 50000, hint: 'Studio' },
+                  { label: '100K', value: 100000, hint: 'Cinema' },
+                ].map((preset) => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => setRemeshSettings(prev => ({ ...prev, targetPolycount: preset.value }))}
+                    className={`py-1.5 rounded-lg text-center border transition-all ${
+                      remeshSettings.targetPolycount === preset.value
+                        ? 'bg-primary text-black border-primary font-black'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-400 border-white/[0.06] hover:text-white hover:border-primary/30'
+                    }`}
+                  >
+                    <span className="block text-[9px] font-black">{preset.label}</span>
+                    <span className="block text-[7px] opacity-70">{preset.hint}</span>
+                  </button>
+                ))}
+              </div>
+              <input
+                aria-label="Final production polycount"
+                type="range"
+                min={5000}
+                max={200000}
+                step={5000}
+                value={remeshSettings.targetPolycount}
+                onChange={(e) => setRemeshSettings(prev => ({ ...prev, targetPolycount: Number(e.target.value) }))}
+                className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
+              />
+            </div>
+
             {/* Output Polygon Type */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
               <div className="flex items-center justify-between">

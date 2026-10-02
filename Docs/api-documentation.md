@@ -592,11 +592,12 @@ Content-Type: application/json
   "model_preference": "fastmesh_v4k_retopology",
   "poly_type": "quad",
   "target_vertex_count": 4000,
+  "target_polycount": 35000,
   "output_format": "glb"
 }
 ```
 
-FastMesh does not support arbitrary vertex targets. V1K is the ~1K-vertex variant and V4K is the ~4K-vertex variant. When target_vertex_count is supplied, it must match the selected variant; poly_type controls triangle vs quad output.
+FastMesh does not support arbitrary model vertex targets. V1K is the ~1K-vertex variant and V4K is the ~4K-vertex variant; when target_vertex_count is supplied, it must match the selected variant. `target_polycount` is the final production triangle budget applied by the canonical post-processing stage after FastMesh; it accepts 5,000–200,000 triangles. `poly_type` controls triangle vs quad output.
 
 ---
 

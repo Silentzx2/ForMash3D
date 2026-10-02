@@ -1,3 +1,8 @@
+## 2026-10-03 — [Workspace Production UX] Poly Budget, Recipes, Artifact Review & Performance
+- Added a real final triangle-budget slider to Remesh/Retopology and wired `target_polycount` through the API into canonical post-processing.
+- Added production recipes for Mobile, Game Ready, Cinematic, and Native workflows, applying mesh quality, poly budget, LOD, and physics together.
+- Added viewport artifact switching for Source/Game Ready/LOD0–LOD3 plus Auto/Fast/Detail performance modes for heavy meshes.
+- Kept FastMesh V1K/V4K model contracts intact; the new budget acts only on the downstream production artifact.
 ## 2026-10-03 — [Contract & Workflow Audit] Hunyuan Fidelity Sync, Command Palette & Completion Semantics
 - Synced Hunyuan raw-detail contracts across adapter schemas, frontend mapping, and parity tests around fixed 512 extraction resolution.
 - Added Ctrl/Cmd+K workspace command palette using the existing local cmdk/Command component for tools, viewport actions, panels, assets, jobs, and settings.

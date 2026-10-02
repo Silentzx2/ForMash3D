@@ -519,6 +519,15 @@ export const GeneratePanel: React.FC = () => {
       },
     }));
   };
+  const applyWorkflowRecipe = (recipe: 'mobile' | 'game' | 'cinematic' | 'native') => {
+    const presets = {
+      mobile: { meshQuality: 'medium' as const, targetPolycount: 15000, generateLOD: true, lodPreset: 'mobile', lodCount: 4, generateCollision: true },
+      game: { meshQuality: 'high' as const, targetPolycount: 35000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
+      cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: false },
+      native: { meshQuality: 'ultra' as const, targetPolycount: -1, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: false },
+    }[recipe];
+    setGenerationSettings(prev => ({ ...prev, meshQuality: presets.meshQuality, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount }, generateLOD: presets.generateLOD, lodPreset: presets.lodPreset, lodCount: presets.lodCount, generateCollision: presets.generateCollision }));
+  };
 
   return (
     <div id="panel-generate-model" className="relative flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden">
@@ -1051,6 +1060,85 @@ export const GeneratePanel: React.FC = () => {
             </div>
 
 
+            {/* One-click production recipes */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white">Production Recipe</div>
+                  <div className="text-[9px] text-zinc-500">Preset the mesh budget, LOD, and physics pipeline together</div>
+                </div>
+                <span className="text-[9px] font-mono text-primary">{Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K budget</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  ['mobile', 'Mobile', '15K · LOD'],
+                  ['game', 'Game Ready', '35K · LOD · FX'],
+                  ['cinematic', 'Cinematic', '100K · high detail'],
+                  ['native', 'Native', 'Raw geometry'],
+                ].map(([id, label, detail]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => applyWorkflowRecipe(id as 'mobile' | 'game' | 'cinematic' | 'native')}
+                    className={"min-h-12 rounded-lg border text-left px-2 py-1.5 transition-all " + (
+                      generationSettings.meshQuality === (id === 'mobile' ? 'medium' : id === 'cinematic' || id === 'native' ? 'ultra' : 'high') &&
+                      ((generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) === (id === 'mobile' ? 15000 : id === 'game' ? 35000 : id === 'cinematic' ? 100000 : -1))
+                        ? 'bg-primary/10 border-primary/40 text-white'
+                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:border-primary/30 hover:text-white'
+                    )}
+                  >
+                    <span className="block text-[9px] font-black leading-tight">{label}</span>
+                    <span className="block text-[7px] text-zinc-500 mt-0.5">{detail}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Prominent production polycount control */}
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white">Production Polycount</div>
+                  <div className="text-[9px] text-zinc-500">Controls the final post-process triangle budget; raw AI detail stays untouched</div>
+                </div>
+                <span className="font-mono text-xs font-black text-primary">
+                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) <= 0 ? 'Native' : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000).toLocaleString() + ' tris'}
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {[
+                  ['15K', 15000, 'Mobile'],
+                  ['35K', 35000, 'Game'],
+                  ['50K', 50000, 'Studio'],
+                  ['100K', 100000, 'Cinema'],
+                  ['Native', -1, 'Raw'],
+                ].map(([label, value, hint]) => {
+                  const current = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                  const selected = current === value;
+                  return (
+                    <button
+                      key={String(value)}
+                      type="button"
+                      onClick={() => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(value) } }))}
+                      className={"py-1.5 rounded-lg border text-center transition-all " + (selected ? 'bg-primary text-black border-primary font-black' : 'bg-[hsl(var(--surface-1))] text-zinc-400 border-white/[0.06] hover:text-white hover:border-primary/30')}
+                    >
+                      <span className="block text-[9px] font-black">{String(label)}</span>
+                      <span className={"block text-[7px] " + (selected ? 'text-black/70' : 'text-zinc-500')}>{String(hint)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <input
+                aria-label="Production polycount"
+                type="range"
+                min={5000}
+                max={200000}
+                step={5000}
+                value={(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) > 0 ? generationSettings.autoOptimizeSettings!.targetPolycount : 50000}
+                onChange={(e) => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(e.target.value) } }))}
+                className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
+              />
+            </div>
             {/* Advanced generation controls are opt-in so the main workflow stays compact. */}
             <button
               type="button"

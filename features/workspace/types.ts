@@ -266,6 +266,7 @@ export interface RemeshSettings {
   tab: 'auto' | 'manual';
   variant: 'V1K' | 'V4K';
   polyType: 'tri' | 'quad';
+  targetPolycount: number;
 }
 
 export interface TextureSettings {
