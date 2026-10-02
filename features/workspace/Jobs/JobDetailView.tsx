@@ -474,7 +474,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                         ? Object.entries(value).map(([key, item]) => [`${group} / ${key}`, item] as const)
                         : [[group, value] as const];
                       return entries;
-                    }).map(([label, item]: [string, any]) => (
+                     }).map(([label, item]: readonly [string, any]) => (
                       <div key={label} className="rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-2))] p-2.5 flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="text-[10px] font-semibold text-zinc-200 truncate">{label}</div>

@@ -3216,7 +3216,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           size: number;
         }>('/api/v1/file-upload/image', uploadFormData, { headers: { 'Content-Type': 'multipart/form-data' } });
 
-        const serverUrl = uploadRes?.url || (uploadRes?.file_id ? `/api/v1/file-upload/download/${uploadRes.file_id}` : '');
+        const serverUrl = uploadRes?.url || (uploadRes?.id ? `/api/v1/file-upload/download/${uploadRes.id}` : '');
         const finalAsset: ModelAsset = {
           ...tempAsset,
           id: uploadRes?.stored_filename || uploadRes?.id || tempId,
