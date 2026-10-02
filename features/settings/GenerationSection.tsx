@@ -36,18 +36,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
           localStorage.setItem('generationSettings', JSON.stringify({ provider, quality, outputFormat, resolution, steps, lowVram, batchEnabled }));
           localStorage.setItem('batchGenerationEnabled', JSON.stringify(batchEnabled));
           localStorage.setItem('lowVramMode', JSON.stringify(lowVram));
-          await Promise.all([
-            getApiClient().updateConfig({ render_quality: quality, output_format: outputFormat, resolution, low_vram: lowVram } as any),
-            getApiClient().saveGenerationSettings({
-              default_provider: provider,
-              render_quality: quality,
-              output_format: outputFormat,
-              resolution,
-              steps,
-              low_vram: lowVram,
-              batch_generation_enabled: batchEnabled,
-            }),
-          ]);
+          await getApiClient().updateConfig({ render_quality: quality, output_format: outputFormat, resolution, low_vram: lowVram } as any);
         } catch { /* ignore */ }
       });
     }
@@ -62,25 +51,8 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
   const selectedModelObj = providersList.find((p: any) => (p.id || p.name) === provider);
 
   useEffect(() => {
-    // Load saved settings from backend first, fallback to localStorage
+    // Load saved settings from localStorage
     const loadSettings = async () => {
-      try {
-        const backendGen = await getApiClient().getGenerationSettings();
-        if (backendGen) {
-          if (backendGen.default_provider) setProvider(backendGen.default_provider);
-          if (backendGen.render_quality) setQuality(backendGen.render_quality);
-          if (backendGen.output_format) setOutputFormat(backendGen.output_format);
-          if (backendGen.resolution) setResolution(backendGen.resolution);
-          if (backendGen.steps) setSteps(backendGen.steps);
-          if (backendGen.low_vram !== undefined) setLowVram(backendGen.low_vram);
-          if (backendGen.batch_generation_enabled !== undefined) {
-            setBatchEnabled(backendGen.batch_generation_enabled);
-            setBatchGenerationEnabled(backendGen.batch_generation_enabled);
-          }
-          return;
-        }
-      } catch { /* ignore */ }
-
       const savedGen = localStorage.getItem('generationSettings');
       const savedBatch = localStorage.getItem('batchGenerationEnabled');
       const savedLowVram = localStorage.getItem('lowVramMode');

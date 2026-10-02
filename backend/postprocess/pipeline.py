@@ -271,7 +271,7 @@ def _build_result(
         for name in sorted(generated["textures"])
     }
 
-    return {
+    result = {
         "success": True,
         "output_mesh_path": primary,
         "static_url": None,
@@ -360,6 +360,22 @@ def _build_result(
             "preview": bool(generated.get("thumbnail")),
         },
     }
+    required_failed = any(
+        artifact.get("status") == "failed"
+        for group in result["artifacts"].values()
+        if isinstance(group, dict)
+        for artifact in (group.values() if isinstance(group, dict) else [])
+        if isinstance(artifact, dict) and artifact.get("required") and artifact.get("status") == "failed"
+    )
+    any_failed = any(
+        artifact.get("status") == "failed"
+        for group in result["artifacts"].values()
+        if isinstance(group, dict)
+        for artifact in (group.values() if isinstance(group, dict) else [])
+        if isinstance(artifact, dict)
+    )
+    result["production_status"] = "failed" if required_failed else "degraded" if any_failed else "ready"
+    return result
 
 
 def run_postprocess_job(

@@ -49,14 +49,18 @@ function getMimeType(filePath: string): string {
 }
 
 async function tryServeFromDisk(fullPath: string): Promise<NextResponse | null> {
+  const normalized = fullPath.replace(/^\/+/, '').replace(/\\/g, '/');
+  if (normalized.startsWith('models/') || normalized.startsWith('models\\')) {
+    return null;
+  }
   const candidates: string[] = [];
   if (process.env.STORAGE_LOCAL_PATH) {
-    candidates.push(path.resolve(process.env.STORAGE_LOCAL_PATH, fullPath));
+    candidates.push(path.resolve(process.env.STORAGE_LOCAL_PATH, normalized));
   }
   candidates.push(
-    path.join(process.cwd(), 'backend', 'storage', fullPath),
-    path.join('/backend/storage', fullPath),
-    path.resolve('backend/storage', fullPath)
+    path.join(process.cwd(), 'backend', 'storage', normalized),
+    path.join('/backend/storage', normalized),
+    path.resolve('backend/storage', normalized)
   );
 
   for (const candidate of candidates) {

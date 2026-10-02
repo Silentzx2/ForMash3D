@@ -601,7 +601,9 @@ def get_storage_base_dir() -> Path:
     if env_path:
         base = Path(env_path)
         if not base.is_absolute():
-            base = (Path(__file__).resolve().parents[2] / base).resolve()
+            # Resolve relative paths from the project root, not from the backend dir.
+            # changes made by user - fixed backend/backend/storage bug
+            base = (Path(__file__).resolve().parents[3] / base).resolve()
     else:
         base = (Path(__file__).resolve().parents[2] / "storage").resolve()
     base.mkdir(parents=True, exist_ok=True)

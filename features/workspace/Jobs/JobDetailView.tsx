@@ -35,6 +35,7 @@ interface RealJobItem {
   inputs?: any;
   parameters?: any;
   logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
+  productionStatus?: string;
 }
 
 export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, onBack }) => {
@@ -105,6 +106,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
           inputs: (res as any).inputs,
           parameters: (res as any).parameters || (res as any).inputs?.model_parameters,
           logs: (res as any).logs || (res as any).metadata?.logs || [],
+          productionStatus: (res as any).production_status || (res.result as any)?.production_status,
         });
       }
     } catch (err) {
@@ -377,6 +379,34 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                     <span className={`w-2 h-2 rounded-full ${isCompleted ? 'bg-emerald-400' : isRunning ? 'bg-primary' : 'bg-rose-400'}`} />
                     {selectedJob.status}
                   </span>
+                  {selectedJob.productionStatus && selectedJob.productionStatus !== 'processing' && (
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                        selectedJob.productionStatus === 'ready'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : selectedJob.productionStatus === 'degraded'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                      }`}
+                    >
+                      <HugeiconsIcon
+                        icon={
+                          selectedJob.productionStatus === 'ready'
+                            ? CheckmarkCircle02Icon
+                            : selectedJob.productionStatus === 'degraded'
+                            ? AlertCircle
+                            : ActivityIcon
+                        }
+                        size={16}
+                        className="w-3.5 h-3.5"
+                      />
+                      {selectedJob.productionStatus === 'ready'
+                        ? 'Production Ready'
+                        : selectedJob.productionStatus === 'degraded'
+                        ? 'Production Ready — Some exports unavailable'
+                        : 'Production Failed'}
+                    </span>
+                  )}
 
                   <button
                     onClick={handleCancelOrDeleteJob}

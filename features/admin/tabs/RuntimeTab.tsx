@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   CpuIcon, ZapIcon, MemoryStickIcon, ThermometerIcon, HardDriveIcon, Activity01Icon,
-  ServerIcon, NetworkIcon, RefreshCwIcon, TrashIcon, CheckmarkCircle01Icon,
+  ServerIcon, NetworkIcon, RefreshCwIcon, CheckmarkCircle01Icon,
   GaugeIcon, CancelCircleIcon
 } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
@@ -63,18 +63,6 @@ export function RuntimeTab() {
     }
   }, [status]);
 
-  const handleClearCache = async () => {
-    toast.info('Clear cache is not supported by the current backend.');
-  };
-
-  const handleClearVRAM = async () => {
-    toast.info('Clear VRAM is not supported by the current backend.');
-  };
-
-  const handleRestart = async () => {
-    toast.info('Runtime restart is not supported by the current backend.');
-  };
-
   if (loading && !status) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -108,17 +96,6 @@ export function RuntimeTab() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Runtime Monitor</h1>
           <p className="text-sm text-muted-foreground mt-1">Real-time system performance & GPU diagnostics</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <NeonButton variant="secondary" size="sm" onClick={handleClearCache}>
-            <HugeiconsIcon icon={TrashIcon} size={16} className="w-3.5 h-3.5" /> Clear Cache
-          </NeonButton>
-          <NeonButton variant="secondary" size="sm" onClick={handleClearVRAM}>
-            <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5" /> Clear VRAM
-          </NeonButton>
-          <NeonButton variant="primary" size="sm" onClick={handleRestart}>
-            <HugeiconsIcon icon={RefreshCwIcon} size={16} className="w-3.5 h-3.5" /> Restart
-          </NeonButton>
         </div>
       </div>
 
