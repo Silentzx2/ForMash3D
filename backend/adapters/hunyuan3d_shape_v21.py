@@ -93,10 +93,10 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     f"Please download weights via download_models.sh."
                 )
 
-            from hy3dshape.pipelines import (
+            from hy3dshape.hy3dshape.pipelines import (
                 Hunyuan3DDiTFlowMatchingPipeline,
             )
-            from hy3dshape.rembg import BackgroundRemover
+            from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
             logger.info("Loading shape generation pipeline...")
             self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(

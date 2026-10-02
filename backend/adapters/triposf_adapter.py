@@ -106,6 +106,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
     def _load_model(self):
         """Load TripoSF VAE model from repository code."""
         try:
+            os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
             self._ensure_triposf_in_path()
             if torch.cuda.is_available():
                 major, _ = torch.cuda.get_device_capability()
@@ -274,6 +275,9 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             self.triposf_model.cfg.pruning = pruning
             self.triposf_model.cfg.resolution = resolution
             self.triposf_model.cfg.sample_points_num = sample_points_num
+
+            if device == "cuda":
+                torch.cuda.empty_cache()
 
             with torch.no_grad():
                 if device == "cuda":
