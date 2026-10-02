@@ -344,7 +344,7 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
 
   displayOptions: {
     showSkeleton: false,
-    showGrid: true,
+    showGrid: false,
     showGround: true,
     showIKTargets: false,
   },

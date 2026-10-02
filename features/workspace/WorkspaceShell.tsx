@@ -373,18 +373,18 @@ export const WorkspaceShell: React.FC = () => {
         {/* Center Workspace & 3D Stage */}
         <div className="flex-1 h-full relative overflow-hidden min-w-0">
           {mainNav === 'workspace' && activeTool === 'animation' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
+            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[#111317]">
               <AnimationStudio />
             </main>
           ) : mainNav === 'workspace' && activeTool === 'rigging' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
+            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[#111317]">
               <RiggingStudio />
             </main>
           ) : (
             <>
               {/* Continuous Full-Bleed 3D Viewport in Background */}
               {mainNav === 'workspace' && (
-                <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden bg-[hsl(var(--surface-0))]">
+                <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden bg-[#111317]">
                   <MeshViewer />
                   <ViewportToolOverlay />
                 </main>
