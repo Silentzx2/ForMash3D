@@ -1,23 +1,8 @@
 services:
-  # Redis for job queue coordination (multi-worker mode)
-  redis:
-    image: redis:7-alpine
-    container_name: formash3d-redis
-    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy noeviction
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  # GPU Scheduler Service (single instance, manages all GPU workers)
-  scheduler:
-    image: formash3d/ai-engine:latest
+  # Single All-in-One Studio Container
+  # Contains Redis, Scheduler, FastAPI (7842), and Next.js Frontend (3000) under Supervisor
+  formash3d:
+    image: formash3d:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -25,66 +10,23 @@ services:
         - http_proxy=${HTTP_PROXY:-}
         - https_proxy=${HTTPS_PROXY:-}
         - no_proxy=${NO_PROXY:-localhost,127.0.0.1}
-    container_name: formash3d-scheduler
-    command: conda run --no-capture-output -n 3daigc-api python backend/scripts/scheduler_service.py --redis-url redis://redis:6379 --log-level info
-    volumes:
-      - ./backend/data:/app/backend/data
-      - ./backend/models:/app/backend/models
-      - ./backend/pretrained:/app/backend/pretrained:ro
-      - ./backend/storage:/app/backend/storage
-      - ./backend/logs:/app/backend/logs
-      - ./backend/config:/app/backend/config:ro
-    environment:
-      - PYTHONPATH=/app/backend:/app
-      - P3D_REDIS_URL=redis://redis:6379
-      - ENVIRONMENT=production
-      - STORAGE_LOCAL_PATH=/app/backend/storage
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
-      - TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX"
-      - P3D_USER_AUTH_ENABLED=${P3D_USER_AUTH_ENABLED:-false}
-      - P3D_DEBUG=${P3D_DEBUG:-false}
-    runtime: nvidia
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # FastAPI Application (HTTP API & WebSocket routes)
-  api:
-    image: formash3d/ai-engine:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        - http_proxy=${HTTP_PROXY:-}
-        - https_proxy=${HTTPS_PROXY:-}
-        - no_proxy=${NO_PROXY:-localhost,127.0.0.1}
-    container_name: formash3d-api
-    command: conda run --no-capture-output -n 3daigc-api uvicorn api.main_multiworker:app --host 0.0.0.0 --port 7842 --workers 4 --log-level info
+    container_name: formash3d
     ports:
+      - "3000:3000"
       - "7842:7842"
     volumes:
+      - ./backend/storage:/app/backend/storage
+      - ./backend/pretrained:/app/backend/pretrained
+      - ./backend/models:/app/backend/models
+      - ./backend/logs:/app/backend/logs
       - ./backend/data:/app/backend/data
       - ./backend/uploads:/app/backend/uploads
-      - ./backend/pretrained:/app/backend/pretrained:ro
-      - ./backend/storage:/app/backend/storage
-      - ./backend/logs:/app/backend/logs
-      - ./backend/config:/app/backend/config:ro
+      - ./backend/config:/app/backend/config
     environment:
-      - PYTHONPATH=/app/backend:/app
-      - P3D_REDIS_URL=redis://redis:6379
-      - ENVIRONMENT=production
-      - STORAGE_LOCAL_PATH=/app/backend/storage
-      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - CUDA_VISIBLE_DEVICES=all
       - TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX"
-      - P3D_USER_AUTH_ENABLED=${P3D_USER_AUTH_ENABLED:-false}
+      - STORAGE_LOCAL_PATH=/app/backend/storage
+      - ENVIRONMENT=production
       - P3D_DEBUG=${P3D_DEBUG:-false}
     runtime: nvidia
     deploy:
@@ -94,58 +36,10 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    depends_on:
-      redis:
-        condition: service_healthy
-      scheduler:
-        condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7842/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:7842/health && curl -f http://localhost:3000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
-
-  # Next.js Web Frontend
-  frontend:
-    image: formash3d/frontend:latest
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    container_name: formash3d-frontend
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost:7842
-      - BACKEND_URL=http://api:7842
-      - PORT=3000
-    depends_on:
-      api:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # Optional Nginx Reverse Proxy (routes all traffic through port 80/443)
-  nginx:
-    image: nginx:alpine
-    container_name: formash3d-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - api
-      - frontend
-    restart: unless-stopped
-    profiles:
-      - production
-
-volumes:
-  redis_data:
-    driver: local
-
-networks:
-  default:
-    name: formash3d-network

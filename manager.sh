@@ -124,11 +124,17 @@ render_status_pills(){
     cf_state="running"
   fi
 
-  printf "  Services:%s%s%s%s\n" \
+  local docker_state="stopped"
+  if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^formash3d$"; then
+    docker_state="running"
+  fi
+
+  printf "  Services:%s%s%s%s%s\n" \
     "$(service_pill "Redis" "$redis_state")" \
     "$(service_pill "Backend" "$backend_state")" \
     "$(service_pill "Frontend" "$frontend_state")" \
-    "$(service_pill "Tunnel" "$cf_state")"
+    "$(service_pill "Tunnel" "$cf_state")" \
+    "$(service_pill "Docker" "$docker_state")"
 }
 
 show_status(){
@@ -368,6 +374,244 @@ clean_runtime(){
   pause
 }
 
+check_docker_cli() {
+  if ! command -v docker >/dev/null 2>&1; then
+    printf "${RED}[✗] Docker is not installed or not in PATH.${NC}\n"
+    printf "    Please install Docker engine and nvidia-container-toolkit.\n"
+    return 1
+  fi
+  return 0
+}
+
+docker_build() {
+  banner
+  printf "${WHITE}${BOLD}BUILD SINGLE DOCKER IMAGE${NC}\n\n"
+  printf "  This builds the complete all-in-one image: ${CYAN}formash3d:latest${NC}\n"
+  printf "  Includes: CUDA 12.4 + Conda Python 3.10 (3daigc-api) + Backend + Next.js Frontend\n\n"
+
+  check_docker_cli || { pause; return 1; }
+
+  mkdir -p "$PROJECT_ROOT/backend/storage" "$PROJECT_ROOT/backend/pretrained" \
+           "$PROJECT_ROOT/backend/models" "$PROJECT_ROOT/backend/logs" \
+           "$PROJECT_ROOT/backend/data" "$PROJECT_ROOT/backend/uploads"
+
+  printf "${CYAN}[INFO]${NC} Starting docker build from repository root...\n"
+  printf "${GRAY}Command: docker build -t formash3d:latest -f Dockerfile .${NC}\n\n"
+
+  if docker build -t formash3d:latest -f "$PROJECT_ROOT/Dockerfile" "$PROJECT_ROOT"; then
+    printf "\n${GREEN}✓ Docker image 'formash3d:latest' built successfully!${NC}\n"
+    printf "  You can now run it using Option [2] or: ./manager.sh docker-run\n"
+  else
+    printf "\n${RED}[✗] Docker build failed.${NC}\n"
+  fi
+  pause
+}
+
+docker_run() {
+  banner
+  printf "${WHITE}${BOLD}RUN SINGLE DOCKER CONTAINER${NC}\n\n"
+  check_docker_cli || { pause; return 1; }
+
+  local image_tag="formash3d:latest"
+  if ! docker image inspect "$image_tag" >/dev/null 2>&1; then
+    printf "${YELLOW}[!] Image '$image_tag' not found locally.${NC}\n"
+    read -rp "  Build image now? [Y/n] " ans
+    if [[ "${ans,,}" != "n" ]]; then
+      docker_build
+    else
+      return 1
+    fi
+  fi
+
+  # Check if container exists
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^formash3d$"; then
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^formash3d$"; then
+      printf "${YELLOW}[!] Container 'formash3d' is already running.${NC}\n"
+      read -rp "  Restart container? [y/N] " rst
+      if [[ "${rst,,}" == "y" ]]; then
+        docker stop formash3d >/dev/null 2>&1 || true
+        docker rm formash3d >/dev/null 2>&1 || true
+      else
+        pause
+        return 0
+      fi
+    else
+      docker rm formash3d >/dev/null 2>&1 || true
+    fi
+  fi
+
+  # Determine GPU flag
+  local gpu_flag="--gpus all"
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    printf "${YELLOW}[WARN] nvidia-smi not detected on host. Attempting without GPU pass-through...${NC}\n"
+    gpu_flag=""
+  fi
+
+  printf "${CYAN}[INFO]${NC} Launching container 'formash3d'...\n"
+  mkdir -p "$PROJECT_ROOT/backend/storage" "$PROJECT_ROOT/backend/pretrained" \
+           "$PROJECT_ROOT/backend/models" "$PROJECT_ROOT/backend/logs" \
+           "$PROJECT_ROOT/backend/data" "$PROJECT_ROOT/backend/uploads"
+
+  # shellcheck disable=SC2086
+  if docker run -d \
+      --name formash3d \
+      $gpu_flag \
+      -p 3000:3000 \
+      -p 7842:7842 \
+      -v "$PROJECT_ROOT/backend/storage:/app/backend/storage" \
+      -v "$PROJECT_ROOT/backend/pretrained:/app/backend/pretrained" \
+      -v "$PROJECT_ROOT/backend/models:/app/backend/models" \
+      -v "$PROJECT_ROOT/backend/logs:/app/backend/logs" \
+      -v "$PROJECT_ROOT/backend/data:/app/backend/data" \
+      -v "$PROJECT_ROOT/backend/uploads:/app/backend/uploads" \
+      -v "$PROJECT_ROOT/backend/config:/app/backend/config" \
+      "$image_tag"; then
+    printf "\n${GREEN}✓ Container 'formash3d' launched successfully!${NC}\n\n"
+    printf "  ${BOLD}Studio Web UI:${NC}    ${CYAN}http://localhost:3000${NC}\n"
+    printf "  ${BOLD}Backend API:${NC}      ${CYAN}http://localhost:7842${NC}\n"
+    printf "  ${BOLD}Swagger Docs:${NC}     ${CYAN}http://localhost:7842/docs${NC}\n"
+    printf "  ${BOLD}Interactive Shell:${NC} docker exec -it formash3d bash\n"
+  else
+    printf "\n${RED}[✗] Failed to start Docker container.${NC}\n"
+  fi
+  pause
+}
+
+docker_stop() {
+  banner
+  printf "${WHITE}${BOLD}STOP DOCKER CONTAINER${NC}\n\n"
+  check_docker_cli || { pause; return 1; }
+
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^formash3d$"; then
+    printf "${CYAN}[INFO]${NC} Stopping container 'formash3d'...\n"
+    docker stop formash3d >/dev/null 2>&1 || true
+    docker rm formash3d >/dev/null 2>&1 || true
+    printf "${GREEN}✓ Container 'formash3d' stopped and removed.${NC}\n"
+  else
+    printf "${GRAY}No running 'formash3d' container found.${NC}\n"
+  fi
+  pause
+}
+
+docker_logs() {
+  check_docker_cli || { pause; return 1; }
+  banner
+  printf "${WHITE}${BOLD}CONTAINER LOGS (Press Ctrl+C to return)${NC}\n\n"
+  docker logs -f formash3d 2>&1 || {
+    printf "${RED}[✗] Could not fetch logs. Is 'formash3d' running?${NC}\n"
+    pause
+  }
+}
+
+docker_shell() {
+  check_docker_cli || { pause; return 1; }
+  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^formash3d$"; then
+    printf "${RED}[✗] Container 'formash3d' is not running. Start it first with Option [2].${NC}\n"
+    pause
+    return 1
+  fi
+  printf "\n${CYAN}[INFO]${NC} Entering container shell (Conda 3daigc-api active)... Type 'exit' to return.\n\n"
+  docker exec -it formash3d /bin/bash
+}
+
+docker_compose_up() {
+  banner
+  printf "${WHITE}${BOLD}DOCKER COMPOSE DEPLOYMENT${NC}\n\n"
+  check_docker_cli || { pause; return 1; }
+
+  printf "${CYAN}[INFO]${NC} Running docker compose up --build -d...\n"
+  if docker compose -f "$PROJECT_ROOT/docker-compose.yml" up --build -d; then
+    printf "\n${GREEN}✓ Docker compose services launched!${NC}\n"
+    printf "  Web UI: http://localhost:3000\n"
+    printf "  API:    http://localhost:7842\n"
+  else
+    printf "\n${RED}[✗] Docker compose failed.${NC}\n"
+  fi
+  pause
+}
+
+docker_export() {
+  banner
+  printf "${WHITE}${BOLD}EXPORT / PACKAGE DOCKER IMAGE FOR OTHER MACHINE${NC}\n\n"
+  check_docker_cli || { pause; return 1; }
+
+  local archive_path="$PROJECT_ROOT/formash3d_image.tar.gz"
+  printf "  This will save and compress 'formash3d:latest' (including Conda env,\n"
+  printf "  CUDA runtime, model libraries, and Next.js UI) into an archive file:\n"
+  printf "  ${CYAN}%s${NC}\n\n" "$archive_path"
+  read -rp "  Proceed with export? [y/N] " ans
+  [[ "${ans,,}" == "y" ]] || return 0
+
+  printf "\n${CYAN}[INFO]${NC} Exporting and compressing image... (this may take a few minutes)\n"
+  if docker save formash3d:latest | gzip > "$archive_path"; then
+    printf "\n${GREEN}✓ Export completed successfully!${NC}\n"
+    printf "  Archive saved at: %s (%s)\n\n" "$archive_path" "$(du -h "$archive_path" | cut -f1)"
+    printf "  ${BOLD}How to run on another machine:${NC}\n"
+    printf "  1. Copy %s to your new machine.\n" "$(basename "$archive_path")"
+    printf "  2. Run: ${CYAN}docker load < %s${NC}\n" "$(basename "$archive_path")"
+    printf "  3. Start: ${CYAN}docker run -d --gpus all -p 3000:3000 -p 7842:7842 formash3d:latest${NC}\n"
+  else
+    printf "\n${RED}[✗] Image export failed.${NC}\n"
+  fi
+  pause
+}
+
+cmd_docker() {
+  while true; do
+    banner
+    printf "\t ${WHITE}${BOLD}DOCKER CONTAINER & ENGINE MANAGER${NC}\n\n"
+    printf "  ${GRAY}Single All-in-One Image with Conda (3daigc-api) + GPU Backend + Frontend${NC}\n\n"
+
+    local docker_installed="no"
+    local container_state="stopped"
+    if command -v docker >/dev/null 2>&1; then
+      docker_installed="yes"
+      if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^formash3d$"; then
+        container_state="running"
+      elif docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^formash3d$"; then
+        container_state="created"
+      fi
+    fi
+
+    printf "  Docker Status: "
+    if [[ "$docker_installed" == "yes" ]]; then
+      printf "${GREEN}Installed${NC}"
+    else
+      printf "${RED}Not Installed${NC}"
+    fi
+    printf "   Container: "
+    if [[ "$container_state" == "running" ]]; then
+      printf "${GREEN}● RUNNING${NC}\n\n"
+    elif [[ "$container_state" == "created" ]]; then
+      printf "${YELLOW}▲ STOPPED${NC}\n\n"
+    else
+      printf "${GRAY}○ NOT CREATED${NC}\n\n"
+    fi
+
+    printf "  ${CYAN}[1]${NC}  Build Single Docker Image (${BOLD}formash3d:latest${NC})\n"
+    printf "  ${CYAN}[2]${NC}  Run Container with GPU (${BOLD}3000 + 7842${NC})\n"
+    printf "  ${CYAN}[3]${NC}  Stop & Remove Container\n"
+    printf "  ${CYAN}[4]${NC}  View Live Container Logs\n"
+    printf "  ${CYAN}[5]${NC}  Shell into Container (with Conda active)\n"
+    printf "  ${CYAN}[6]${NC}  Run with Docker Compose (Single Service)\n"
+    printf "  ${CYAN}[7]${NC}  Export/Package Docker Image for Other Machine (.tar.gz)\n"
+    printf "  ${CYAN}[b]${NC}  Back to Main Menu\n\n"
+
+    read -rp "  Select an action: " dchoice
+    case "$dchoice" in
+      1) docker_build ;;
+      2) docker_run ;;
+      3) docker_stop ;;
+      4) docker_logs ;;
+      5) docker_shell ;;
+      6) docker_compose_up ;;
+      7) docker_export ;;
+      b|B) return 0 ;;
+      *) printf "\n${RED}Invalid option.${NC}\n"; sleep 1 ;;
+    esac
+  done
+}
+
 main_menu(){
   while true; do
     banner
@@ -381,6 +625,7 @@ main_menu(){
     printf "  ${CYAN}[6]${NC}  Clean Runtime\n"
     printf "  ${CYAN}[7]${NC}  Cloudflare Tunnel\n"
     printf "  ${CYAN}[8]${NC}  3D Model Install\n"
+    printf "  ${CYAN}[9]${NC}  Docker Engine (Single All-in-One Image)\n"
     printf "  ${RED}[q]${NC}   Exit\n"
 
     printf "${DIM}──────────────────────────────────────────────────────────────${NC}\n"
@@ -399,10 +644,33 @@ main_menu(){
       6) clean_runtime ;;
       7) cmd_cloudflare ;;
       8) cmd_models ;;
+      9) cmd_docker ;;
       q|Q) printf "\n${CYAN}ForMash 3D manager closed.${NC}\n"; exit 0 ;;
       *) printf "\n${RED}Invalid option.${NC}\n"; sleep 1 ;;
     esac
   done
 }
+
+# CLI argument handling
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    docker) cmd_docker ;;
+    docker-build|build-docker) docker_build ;;
+    docker-run|run-docker) docker_run ;;
+    docker-stop|stop-docker) docker_stop ;;
+    docker-logs|logs-docker) docker_logs ;;
+    docker-shell|shell-docker) docker_shell ;;
+    docker-export|export-docker) docker_export ;;
+    start) run_start ;;
+    stop) run_stop ;;
+    restart) run_restart ;;
+    status) show_status ;;
+    logs) show_logs ;;
+    models) cmd_models ;;
+    setup) run_setup ;;
+    *) echo "Usage: $0 {start|stop|restart|status|logs|models|docker|docker-build|docker-run|docker-stop|docker-logs|docker-shell|docker-export}"; exit 1 ;;
+  esac
+  exit 0
+fi
 
 main_menu

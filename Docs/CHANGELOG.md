@@ -1,7 +1,10 @@
-## 2026-10-03 — [Production-Ready SOTA Asset Pipeline & Unified Root Docker Engine]
+## 2026-10-03 — [Production-Ready SOTA Asset Pipeline & Single All-in-One Docker Engine]
 - Implemented High-to-Low micro-detail and normal map baking in `backend/postprocess/pipeline.py`: rays cast from decimated/game-ready mesh UVs onto the immutable high-poly master sculpt (`source.glb`), extracting tangent-space normal maps, ambient occlusion, and ORM channels into `textures/`, and embedding them directly into the game-ready GLB material.
 - Added UI Micro-Detail Normal Map Baking toggle to `GeneratePanel.tsx` under the Target & Polycount Budget card, wired through `features/workspace/store/WorkspaceContext.tsx` and protected by `_POSTPROCESS_ONLY_INPUTS` scheduler firewall.
-- Migrated all Docker configurations to repository root: unified `Dockerfile`, `Dockerfile.runpod`, `Dockerfile.frontend` (Next.js multi-stage build), `docker-compose.yml` (orchestrating redis, GPU scheduler, API, frontend, and nginx reverse proxy), and root `.dockerignore`.
+- Designed and implemented Single All-in-One Docker Image (`Dockerfile`, `Dockerfile.runpod`, `supervisord.conf`, `docker-compose.yml`):
+  - Bundles CUDA 12.4, headless Blender 4.3+, embedded Redis (port 6380), complete Conda environment (`3daigc-api` with PyTorch 2.6.0+cu124 and all model weights/adapters), FastAPI backend (port 7842), and pre-built Next.js frontend (port 3000) into a single, fully portable, self-contained container.
+  - Auto-activates Conda environment on container shell entry (`docker exec -it formash3d bash` / `./manager.sh docker-shell`) for seamless debugging and offline portability (`docker save`).
+- Built complete Docker management lifecycle directly into `manager.sh`: interactive menu option `[9] Docker Engine` and CLI commands (`docker`, `docker-build`, `docker-run`, `docker-stop`, `docker-logs`, `docker-shell`, `docker-export`).
 - Enhanced test coverage across all modules (63 passed, 3 skipped, 0 failed), passing `npx tsc --noEmit` with 0 errors.
 
 ## 2026-10-03 — [Generation Quality, Scene Transforms & Runtime]
