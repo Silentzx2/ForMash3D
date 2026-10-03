@@ -1001,9 +1001,18 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const isRawModel = capabilities.raw_mesh === true;
       const isTextured = !isRawModel && generationSettings.generateTexture !== false;
       const isPaintModel = capabilities.paint_autochain === true;
-      const endpoint = isTextured
-        ? '/api/v1/mesh-generation/image-to-textured-mesh'
-        : '/api/v1/mesh-generation/image-to-raw-mesh';
+      const isMultiviewCapable = Boolean(capabilities.multiview);
+      const hasMvViews = Boolean(
+        generationSettings.multiviewAssetId ||
+        (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0)
+      );
+      const useMultiviewReconstruction = isMultiviewCapable && hasMvViews;
+
+      const endpoint = useMultiviewReconstruction
+        ? '/api/v1/multiview/reconstruct-3d'
+        : (isTextured
+          ? '/api/v1/mesh-generation/image-to-textured-mesh'
+          : '/api/v1/mesh-generation/image-to-raw-mesh');
 
       // Resolve image input: prefer file_id from upload, fall back to base64 data URL
       const imageInput: Record<string, unknown> = {};
@@ -1011,7 +1020,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         imageInput.image_file_id = generationSettings.imageFileId;
       } else if (typeof imageToUse === 'string' && imageToUse.startsWith('data:')) {
         imageInput.image_base64 = imageToUse;
-      } else {
+      } else if (!useMultiviewReconstruction) {
         throw new Error('No usable image input. Please upload an image first.');
       }
 
@@ -1078,20 +1087,30 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         .replace(/[^A-Za-z0-9._-]+/g, '_')
         .replace(/^_+|_+$/g, '') || 'asset';
 
-      const body: Record<string, unknown> = {
-        ...imageInput,
-        asset_name: cleanStem,
-        image_name: cleanStem,
-        output_format: 'glb',
-        model_preference: generationSettings.aiModel,
-        model_parameters: modelParameters,
-        physics_enabled: physicsForThisJob,
-        physics_config: generationSettings.physics,
-        topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
-        quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
-      };
+      const body: Record<string, unknown> = useMultiviewReconstruction
+        ? {
+            asset_id: generationSettings.multiviewAssetId || undefined,
+            images: generationSettings.multiviewViews || undefined,
+            model_preference: generationSettings.aiModel,
+            output_format: 'glb',
+            topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
+            quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
+            physics_enabled: physicsForThisJob,
+          }
+        : {
+            ...imageInput,
+            asset_name: cleanStem,
+            image_name: cleanStem,
+            output_format: 'glb',
+            model_preference: generationSettings.aiModel,
+            model_parameters: modelParameters,
+            physics_enabled: physicsForThisJob,
+            physics_config: generationSettings.physics,
+            topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
+            quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
+          };
 
-      if (isTextured) {
+      if (!useMultiviewReconstruction && isTextured) {
         body.texture_resolution = currentQuality === 'ultra' ? 4096 : 2048;
       }
 

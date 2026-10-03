@@ -1,3 +1,8 @@
+## 2026-10-03 — [Deep Audit & Contract Verification] Multi-View 3D Reconstruction Wiring & Zero-Gap Validation
+- Wired frontend Multi-View 3D reconstruction dispatch in `features/workspace/store/WorkspaceContext.tsx`: when a multi-view capable 3D model is active and multi-view views/assets exist, the generation pipeline now dispatches directly to `POST /api/v1/multiview/reconstruct-3d` with full topology, quad mesh, and physics options instead of falling back to single-image endpoints.
+- Verified complete alignment with `Docs/TASKS.md` across Zero123++ v1.2 vendor isolation, canonical `<image_name>_<job_id>/` storage hierarchy, pre-generated GLB/FBX, capability gating, Tripo orientation & VRAM protection, and job polling 404 guards.
+- Verified TypeScript build (`npx tsc --noEmit`) passes with 0 errors and all 32 backend contract & unit tests pass.
+
 ## 2026-10-03 — [Stability & Quality Hardening] Job Polling 404 Guard, Hunyuan3D Module Resolution, TripoSF VRAM Cap & Vertex Color Preservation
 - Fixed client job polling 404 error on `GET /api/v1/system/jobs/{job_id}`: isolated client-side temporary `localTaskId` with `local_` prefix and `isLocal` flag, preventing the UI from issuing polling requests until bound to real Redis/scheduler job UUIDs.
 - Fixed Hunyuan3D-Shape-v2-1 `ModuleNotFoundError: No module named 'hy3dshape.models'`: deleted bogus empty outer `__init__.py`, added automatic detection and `__path__` binding in `hunyuan3d_shape_v21.py` so dynamic submodule loading functions cleanly.
