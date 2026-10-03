@@ -19,6 +19,47 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set +a
 fi
 
+# Parse command line flags
+AUTO_MODE=0
+SKIP_CUDA=0
+ENV_MANAGER="${FORMASH3D_ENV_MANAGER:-conda}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --auto|-auto|-y|--yes|--non-interactive)
+      AUTO_MODE=1
+      export NONINTERACTIVE=1
+      shift
+      ;;
+    --skip-cuda)
+      SKIP_CUDA=1
+      shift
+      ;;
+    --conda)
+      ENV_MANAGER="conda"
+      export FORMASH3D_ENV_MANAGER="conda"
+      shift
+      ;;
+    --venv)
+      ENV_MANAGER="venv"
+      export FORMASH3D_ENV_MANAGER="venv"
+      shift
+      ;;
+    --env-manager=*)
+      ENV_MANAGER="${1#*=}"
+      export FORMASH3D_ENV_MANAGER="$ENV_MANAGER"
+      shift
+      ;;
+    --env-manager)
+      ENV_MANAGER="$2"
+      export FORMASH3D_ENV_MANAGER="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
 
 section(){ printf "\n${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n${WHITE}${BOLD}  %s${NC}\n${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n" "$*"; }
 
@@ -122,13 +163,13 @@ detect_gpu() {
     warn "No NVIDIA GPU detected — AI inference requires CUDA-capable hardware."
     warn "The stack will start, but generation jobs will fail without a GPU."
     if [[ "${REQUIRE_GPU:-}" == "1" ]]; then
-      err "REQUIRE_GPU=1 is set — aborting without GPU."
+      fail "REQUIRE_GPU=1 is set — aborting without GPU."
       exit 1
     fi
-    if [[ -t 0 ]] && [[ "${CI:-}" != "true" ]] && [[ "${NONINTERACTIVE:-}" != "1" ]]; then
+    if [[ -t 0 ]] && [[ "${CI:-}" != "true" ]] && [[ "${NONINTERACTIVE:-}" != "1" ]] && [[ "${AUTO_MODE:-0}" != "1" ]]; then
       read -rp "  Continue without GPU? [y/N] " choice
       if [[ "${choice,,}" != "y" ]]; then
-        err "Aborting. Install an NVIDIA GPU + driver and re-run."
+        fail "Aborting. Install an NVIDIA GPU + driver and re-run."
         exit 1
       fi
     else
@@ -140,6 +181,9 @@ detect_gpu() {
 
 # ── Clean up conflicting CUDA APT sources ──────────────────────────────────
 _sanitize_apt_cuda_sources() {
+  if [[ "${SKIP_CUDA:-0}" == "1" ]]; then
+    return 0
+  fi
   # Remove duplicate/conflicting NVIDIA repository lists that cause APT "Conflicting values set for option Signed-By"
   rm -f /etc/apt/sources.list.d/*cuda*.list \
         /etc/apt/sources.list.d/*nvidia*.list \
@@ -163,6 +207,12 @@ _sanitize_apt_cuda_sources() {
 
 setup_cuda_124() {
   echo "CUDA Toolkit 12.4 — Detection & Installation"
+
+  if [[ "${SKIP_CUDA:-0}" == "1" ]]; then
+    log "Skipping CUDA installation (--skip-cuda specified; using system/container CUDA)."
+    setup_cuda_env
+    return 0
+  fi
 
   # ── Detect NVIDIA driver ──────────────────────────────────────────────────
   local DRIVER_VER=""
@@ -368,11 +418,18 @@ download_release_wheels() {
 
     echo "→ Downloading wheels to: $WHEELS_DIR"
 
-    curl -fsSL "$API" |
-        jq -r '.assets[] | select(.name | endswith(".whl")) |
-               [.name, .browser_download_url] | @tsv' |
-        while IFS=$'\t' read -r NAME URL; do
+    local release_json
+    release_json=$(curl -fsSL -H "User-Agent: ForMash3D-Installer" "$API" 2>/dev/null || echo "")
+    if [[ -z "$release_json" ]]; then
+        echo "[WARN] Could not fetch release wheels list from GitHub API; continuing..."
+        return 0
+    fi
 
+    echo "$release_json" |
+        jq -r '.assets[]? | select(.name | endswith(".whl")) |
+               [.name, .browser_download_url] | @tsv' 2>/dev/null |
+        while IFS=$'\t' read -r NAME URL; do
+            [[ -z "$NAME" || -z "$URL" ]] && continue
             local FILE="$WHEELS_DIR/$NAME"
 
             if [[ -f "$FILE" && -s "$FILE" ]]; then
@@ -381,14 +438,14 @@ download_release_wheels() {
             fi
 
             echo "↓ Downloading: $NAME"
-            curl -fL --retry 3 -o "$FILE" "$URL" || {
+            curl -fL --retry 3 -o "$FILE" "$URL" 2>/dev/null || {
                 echo "✗ Failed: $NAME"
                 rm -f "$FILE"
-                return 1
+                continue
             }
-        done
+        done || true
 
-    echo "✓ All wheels downloaded to $WHEELS_DIR"
+    echo "✓ Release wheels check completed in $WHEELS_DIR"
 }
 
 # Compatibility alias
@@ -443,7 +500,14 @@ install_backend(){
   section "Backend Installation"
   log "Delegating Python env creation + backend install to backend/scripts/install.sh..."
   cd "$PROJECT_ROOT/backend"
-  bash scripts/install.sh
+  local install_flags=()
+  if [[ "${AUTO_MODE:-0}" == "1" || "${NONINTERACTIVE:-0}" == "1" ]]; then
+    install_flags+=("--auto")
+  fi
+  if [[ -n "${ENV_MANAGER:-}" ]]; then
+    install_flags+=("--env-manager" "$ENV_MANAGER")
+  fi
+  bash scripts/install.sh "${install_flags[@]}"
   log "Backend dependency installation completed."
 }
 

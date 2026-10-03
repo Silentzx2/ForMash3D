@@ -15,6 +15,43 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set +a
 fi
 
+# Parse command line flags
+AUTO_MODE=0
+ENV_MANAGER="${FORMASH3D_ENV_MANAGER:-${AI_STUDIO_ENV_MANAGER:-conda}}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --auto|-auto|-y|--yes|--non-interactive)
+      AUTO_MODE=1
+      export NONINTERACTIVE=1
+      shift
+      ;;
+    --conda)
+      ENV_MANAGER="conda"
+      export FORMASH3D_ENV_MANAGER="conda"
+      shift
+      ;;
+    --venv)
+      ENV_MANAGER="venv"
+      export FORMASH3D_ENV_MANAGER="venv"
+      shift
+      ;;
+    --env-manager=*)
+      ENV_MANAGER="${1#*=}"
+      export FORMASH3D_ENV_MANAGER="$ENV_MANAGER"
+      shift
+      ;;
+    --env-manager)
+      ENV_MANAGER="$2"
+      export FORMASH3D_ENV_MANAGER="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
 # Test whether a wheel file exists and is a valid non-corrupted zip/wheel
 _wheel_is_valid() {
     local whl="$1"
@@ -134,11 +171,13 @@ echo "The installation may take a while, please wait..."
 echo ""
 
 choose_env_manager() {
-  local default="conda"
+  local default="${ENV_MANAGER:-conda}"
   local choice=""
 
-  # Prompt user directly
-  if [ -e /dev/tty ]; then
+  if [[ "${AUTO_MODE:-0}" == "1" || "${NONINTERACTIVE:-0}" == "1" || "${CI:-}" == "true" ]]; then
+    choice="${default}"
+    echo "[INFO] Non-interactive / Auto mode: selected environment manager '${choice}'"
+  elif [ -e /dev/tty ]; then
     read -r -p "Select environment manager [conda|venv] (default: ${default}): " choice < /dev/tty || choice=""
   else
     read -r -p "Select environment manager [conda|venv] (default: ${default}): " choice || choice=""
