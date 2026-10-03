@@ -1,3 +1,9 @@
+## 2026-10-03 — [Deep Adapter Parity & Source-Fidelity Closure]
+- Centralized raw-source fidelity in the scheduler by stripping adapter-level extraction, decimation, and remesh controls before model inference.
+- Closed legacy Hunyuan3D-2.1 parity gaps: seeded 50-step / 7.5-guidance source generation is shared by raw and Shape→Paint paths.
+- Fixed TRELLIS source texture/metadata contracts and fixed maximum source texture profiles for TRELLIS/TRELLIS.2.
+- Expanded regression coverage and reconciled relevant documentation; CUDA/NVIDIA visual A/B remains runtime-gated.
+
 ## 2026-10-03 — [Adapter Raw-Quality / Official-Parity Fix]
 - Fixed raw `source.glb` quality drift caused by a global 75-step inference contract; generation now follows model-specific upstream/tuned schedules.
 - Corrected TripoSR raw extraction to 320 and TripoSF to 1024³ + 1,638,400 samples, with the existing VRAM safety cap retained.
@@ -18,23 +24,3 @@
   - Added known model signature detection (`triposf`, `mp_rank`, `hunyuan`, `partpacker`, `ultrashape`, etc.) and multi-candidate relative path resolution across repo root and `backend/`.
   - Updated `GeneratePanel.tsx` to prioritize ready engines at the top of the selector without hiding uninstalled/download-pending models, adding readiness badges (`PBR Texture`, `Raw Mesh`, `Weights Missing`, `GPU Req`) so all 3D engines remain accessible and transparent.
 - Enhanced test coverage across all modules (63 passed, 3 skipped, 0 failed), passing `npx tsc --noEmit` with 0 errors.
-
-## 2026-10-03 — [Generation Quality, Scene Transforms & Runtime]
-- Fixed scene-graph transforms being ignored when multi-part GLBs were flattened; transforms now apply in world space, with explicit errors for unsupported scenes. Added textured multi-part round-trip and end-to-end checks.
-- Fixed TripoSR's false texture-success path, TRELLIS.2's missing-voxel untextured fallback, TripoSF's proxy-mesh success fallback, and Hunyuan Paint reference-image aspect distortion.
-- Corrected Compose build context, model-weight/storage mounts, and root build-context exclusions. Backend suite: 75 passed, 3 skipped; front-end TypeScript, Compose config, and diff checks pass.
-
-## 2026-10-03 — [Deep Audit & Contract Verification] Multi-View 3D Reconstruction Wiring & Zero-Gap Validation
-- Wired frontend Multi-View 3D reconstruction dispatch in `features/workspace/store/WorkspaceContext.tsx`: when a multi-view capable 3D model is active and multi-view views/assets exist, the generation pipeline now dispatches directly to `POST /api/v1/multiview/reconstruct-3d` with full topology, quad mesh, and physics options instead of falling back to single-image endpoints.
-- Added manager options for Zero123++ weights and the optional normals ControlNet, and made the model readiness API report Zero123++ checkpoints as downloadable.
-- Moved generated/manual Multi-View workspaces under configurable `storage/models/meshes/`, kept legacy asset lookup, and routed view-image URLs through the static proxy.
-- Verified complete alignment with `Docs/TASKS.md` across Zero123++ v1.2 vendor isolation, canonical `<image_name>_<job_id>/` storage hierarchy, pre-generated GLB/FBX, capability gating, Tripo orientation & VRAM protection, and job polling 404 guards. Full backend suite: 67 passed, 3 runtime-gated skips; TypeScript check passes.
-- Verified TypeScript build (`npx tsc --noEmit`) passes with 0 errors and all 32 backend contract & unit tests pass.
-
-## 2026-10-03 — [Stability & Quality Hardening] Job Polling 404 Guard, Hunyuan3D Module Resolution, TripoSF VRAM Cap & Vertex Color Preservation
-- Fixed client job polling 404 error on `GET /api/v1/system/jobs/{job_id}`: isolated client-side temporary `localTaskId` with `local_` prefix and `isLocal` flag, preventing the UI from issuing polling requests until bound to real Redis/scheduler job UUIDs.
-- Fixed Hunyuan3D-Shape-v2-1 `ModuleNotFoundError: No module named 'hy3dshape.models'`: deleted bogus empty outer `__init__.py`, added automatic detection and `__path__` binding in `hunyuan3d_shape_v21.py` so dynamic submodule loading functions cleanly.
-- Fixed TripoSF model weights double-path bug: normalized `model_path` resolution across `backend/adapters/triposf_adapter.py` and `triposg_adapter.py` to prevent redundant `backend/backend/` nested paths when CWD is `backend/`.
-- Fixed TripoSF OOM / 5.22 GiB VRAM allocation bug: enabled `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`, added free-memory detection with automatic 409,600 sample points and 256 resolution caps under tight VRAM (<=16GB), and enforced cache cleaning before/after voxelization and inference.
-- Fixed detail smoothing and texture/color loss on Tripo models: enhanced `_has_native_textures` to detect vertex colors and preserve them through `repair.py` (`vc[used]`), `simplify.py`, and `pipeline.py` without destructive auto-uv decimation.
-- Consolidated duplicate recipe and polycount UI elements in `GeneratePanel.tsx` into a single, unified "Target & Polycount Budget" card.

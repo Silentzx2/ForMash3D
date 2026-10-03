@@ -1,7 +1,7 @@
 # Architecture — ForMash 3D
 
 > **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
-> **Last Verified**: September 30, 2026
+> **Last Verified**: October 3, 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
@@ -13,7 +13,14 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 - **Presentation Layer**: Next.js 16 frontend with interactive Three.js 3D viewport, studio workspace tooling, and model management.
 - **API Gateway**: FastAPI backend (Python 3.10, Conda env `3daigc-api`) with VRAM-aware multiprocess scheduler, request validation, rate limiting, and authorized artifact delivery.
 - **Model Adapters**: Python adapters for each AI model (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer). The Paint-v2-1 pipeline supports Shape→Paint automatic chaining with configurable texture resolution (512/768), max view counts (6-12), PBR state tracking, and VRAM-aware scheduling.
-- **Scheduler**: VRAM-aware scheduler with GPU monitoring and optional Redis multi-worker queue.
+- **Scheduler**: VRAM-aware scheduler with GPU monitoring, model-input sanitization, and optional Redis multi-worker queue.
+
+### Model-Native Source Fidelity Contract
+- Each generation model keeps its own tuned inference schedule; the frontend does not use a project-wide step count.
+- The scheduler strips downstream-only target/decimation/remesh controls before adapter inference.
+- Raw extraction ceilings remain model-specific; only explicit hardware safety guards may lower them.
+- Source texture profiles are explicit: TRELLIS 2048 and TRELLIS.2 4096. Production quality/poly budgets stay downstream.
+- master/source.glb is immutable; retopology, UV, LOD, collision, and bake operations act on derived artifacts.
 
 ```mermaid
 flowchart TB
@@ -119,7 +126,7 @@ Located at `backend/api/`:
 | **GPU Monitor** | `backend/core/scheduler/gpu_monitor.py` | Real-time VRAM and temperature polling |
 | **Job Queue** | `backend/core/scheduler/job_queue.py` | Job request models and types |
 | **Redis Job Queue** | `backend/core/scheduler/redis_job_queue.py` | Redis-backed distributed job queue (multi-worker with bounded 20-connection pool) |
-| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123PlusAdapter). All raw outputs route through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). NeRF/camera-aligned models (TripoSR, TripoSG) enforce Y-up coordinate orientation before saving. Zero123++ is isolated under `image_to_multiview` for novel viewpoint synthesis. |
+| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123PlusAdapter). All raw outputs route through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). Camera-aligned model handling is model-specific; TripoSR is normalized for the viewer, while no extra TripoSG rotation is injected beyond its upstream integration. Zero123++ is isolated under `image_to_multiview` for novel viewpoint synthesis. |
 | **Paint-v2-1 Pipeline** | `backend/adapters/hunyuan3d_paint_v21.py` | Hunyuan3D-Paint-v2-1 adapter with RealESRGAN x4+ super-resolution, DifferentiableRenderer for PBR validation, VRAM status tracking, and Shape→Paint automatic chaining support |
 | **Multi-View Router** | `backend/api/routers/multiview.py` | Dedicated API router for Zero123++ view generation, manual view sets, ZIP export, and capability-gated `/reconstruct-3d` |
 

@@ -28,6 +28,13 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 - **Queue/Broker**: Redis 7 (optional, multi-worker mode only)
 - **File Storage**: Local filesystem + Redis FileStore (multi-worker mode)
 
+### Model-Native Source Fidelity Contract
+1. Frontend sends model-specific inference schedules rather than a global step count.
+2. Scheduler removes post-process-only target, extraction/decimation/remesh, LOD, physics, and paint controls before model inference.
+3. Adapter extraction uses the highest supported source density, with only hardware safety guards allowed to reduce it.
+4. Source texture profiles are fixed at TRELLIS 2048 and TRELLIS.2 4096 for maximum source fidelity.
+5. master/source.glb is immutable; derived retopo, UV, LOD, collision, and bake artifacts cannot rewrite it.
+
 ```mermaid
 graph TD
     classDef gold fill:#1a1915,stroke:#ffcc00,stroke-width:2px,color:#ffcc00;

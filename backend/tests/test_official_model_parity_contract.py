@@ -55,6 +55,20 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertFalse(schema["pruning"]["default"])
         self.assertTrue(schema["use_normals"]["default"])
 
+    def test_hunyuan3d_legacy_v21_contract(self):
+        from adapters.hunyuan3d_adapter_v21 import Hunyuan3DV21ImageToRawMeshAdapter
+        adapter = Hunyuan3DV21ImageToRawMeshAdapter(vram_requirement=8192)
+        schema = adapter.get_parameter_schema()["parameters"]
+        self.assertEqual(schema["octree_resolution"]["default"], 512)
+        self.assertTrue(schema["octree_resolution"]["readOnly"])
+        self.assertEqual(schema["num_inference_steps"]["default"], 50)
+        self.assertEqual(schema["guidance_scale"]["default"], 7.5)
+        self.assertEqual(schema["seed"]["default"], 1234)
+        legacy_source = (backend_root / "adapters/hunyuan3d_adapter_v21.py").read_text(encoding="utf-8")
+        self.assertIn("guidance_scale=guidance_scale", legacy_source)
+        self.assertIn("generator=generator", legacy_source)
+        self.assertNotIn('35 if inputs.get("low_vram")', legacy_source)
+
     def test_hunyuan3d_shape_v21_contract(self):
         from adapters.hunyuan3d_shape_v21 import Hunyuan3DShapeV21ImageToRawMeshAdapter
 
@@ -146,6 +160,13 @@ class TestGenerationProductionContract(unittest.TestCase):
             "auto_paint": True,
             "paint_model_preference": "hunyuan3d_paint_v21_image_mesh_painting",
             "paint_resolution": 2048,
+            "faces": -1,
+            "num_faces": -1,
+            "simplify": 0.0,
+            "decimation_target": -1,
+            "remesh": False,
+            "remesh_band": 1,
+            "remesh_project": 0,
             "octree_resolution": 512,
             "source_quality": "max",
             "seed": 42,
@@ -155,7 +176,8 @@ class TestGenerationProductionContract(unittest.TestCase):
         self.assertEqual(filtered["seed"], 42)
         for key in ("target_polycount","auto_optimize","generateLOD","lodPreset","lodCount",
                     "physics_enabled","physics_config","auto_paint","paint_model_preference","paint_resolution",
-                    "bake_normal_maps", "bake_high_to_low", "bake_textures"):
+                    "faces","num_faces","simplify","decimation_target","remesh","remesh_band","remesh_project",
+                    "bake_normal_maps","bake_high_to_low","bake_textures"):
             self.assertNotIn(key, filtered)
 
     def test_frontend_source_contract_is_max_fidelity_and_budgeted_later(self):
@@ -168,7 +190,14 @@ class TestGenerationProductionContract(unittest.TestCase):
         self.assertIn("mc_resolution = 320", workspace_context)
         self.assertIn("resolution = 1024", workspace_context)
         self.assertIn("ss_sampling_steps", workspace_context)
+        self.assertIn("texture_resolution = 2048", workspace_context)
+        self.assertIn("texture_size = 4096", workspace_context)
+        self.assertIn("const infSteps = 25", workspace_context)
         self.assertNotIn("const infSteps = 75", workspace_context)
+
+        trellis_source = (backend_root / "adapters/trellis_adapter.py").read_text(encoding="utf-8")
+        self.assertIn('"num_inference_steps": ss_steps', trellis_source)
+        self.assertNotIn('"num_inference_steps": 12,', trellis_source)
 
 
 class TestRetopologyProductionBudget(unittest.TestCase):

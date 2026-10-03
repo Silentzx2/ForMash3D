@@ -55,3 +55,14 @@ The upstream TRELLIS downloadable GLB is not a raw mesh dump: its `to_glb()` pat
 ## Validation status
 
 Source-level parity review and regression-test updates were completed. CUDA/NVIDIA generation and visual A/B renders were not available in this environment, so this task does not claim runtime visual validation.
+
+
+## Deep audit closure — 2026-10-03
+| ID | Severity | Gap | Closure |
+|---|---|---|---|
+| BQ-09 | Critical | Scheduler firewall missed adapter-level source reduction controls. | Added faces/num_faces/simplify/decimation_target/remesh* to the centralized firewall. |
+| BQ-10 | High | Legacy Hunyuan3D-2.1 could lower steps under low_vram and ignored explicit seed/guidance. | Raw and Shape→Paint now share seeded 50-step / 7.5-guidance generation. |
+| BQ-11 | Medium | TRELLIS schema default and response metadata drifted from runtime behavior. | Schema uses 2048 source texture and metadata records actual sampling stages. |
+| BQ-12 | High | TRELLIS source texture inherited a lower UI quality profile. | Source texture is fixed to 2048; TRELLIS.2 source texture is fixed to 4096. |
+
+Static contracts cover these closures. Earlier speculative TripoSG rotation/Flash-Decoder/foreground-ratio changes remain rejected. CUDA/NVIDIA A/B visual validation is still required.

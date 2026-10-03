@@ -1,3 +1,10 @@
+## 2026-10-03 Deep Adapter Parity & Source-Fidelity Firewall Audit
+- Re-audited frontend generation contracts, scheduler sanitization, legacy Hunyuan3D-2.1, TRELLIS runtime metadata/schemas, PartPacker docs, and the source-fidelity documentation chain.
+- Added a centralized scheduler firewall for adapter-level source-reduction controls: faces, num_faces, simplify, decimation_target, remesh, remesh_band, and remesh_project.
+- Unified legacy Hunyuan3D-2.1 raw and Shape→Paint source generation on seeded 50-step / 7.5-guidance inference without low-VRAM step reduction.
+- Fixed TRELLIS source texture schema/metadata drift and locked source texture generation to 2048; TRELLIS.2 source texture is locked to 4096.
+- Expanded regression tests and reconciled the relevant project docs. CUDA/NVIDIA A/B visual validation remains runtime-gated.
+
 ## 2026-10-03 Adapter Raw-Quality / Official-Parity Audit
 - Confirmed root cause for the reported raw `source.glb` quality gap: the frontend used a generic 75-step inference contract across models with materially different official/tuned schedules.
 - Fixed model-specific schedules: Hunyuan Mini Turbo 5, Hunyuan Shape 50, TripoSG 50, TRELLIS image 12/12, TRELLIS text 25/25, UltraShape 50.

@@ -585,3 +585,14 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - The UI action button and backend router (`/reconstruct-3d`) enforce strict rejection when attempting multi-view 3D reconstruction with incompatible engines.
 - Views, optional masks, and optional View-Space Normals are stored in `storage/models/meshes/<safe_stem>_<job_hash>/multiview/` with deterministic hashes (`source_sha256`, `request_sha256`). New assets honor `STORAGE_LOCAL_PATH`; existing assets under the prior `storage/models/` path remain readable.
 - ZIP export delivers `<safe_stem>.zip` without extra random hashes.
+
+
+## ADR-039: Model-Native Source Fidelity Firewall
+**Decision**: Neural source generation is distinct from production optimization. The scheduler enforces the separation centrally by stripping downstream face, decimation, remesh, and other post-process controls before adapter inference.
+**Reason**: Frontend-only invariants are insufficient because direct or future callers could pass adapter-level reduction controls.
+**Consequences**:
+- faces, num_faces, simplify, decimation_target, and remesh controls are downstream-only.
+- Legacy Hunyuan3D-2.1 raw and Shape→Paint paths use seeded 50-step / 7.5-guidance source generation.
+- TRELLIS source texture is fixed to 2048 and TRELLIS.2 to 4096.
+- Production polycount, LOD, UV, collision, and baking remain downstream responsibilities.
+- CUDA/NVIDIA visual A/B remains a runtime verification gate.

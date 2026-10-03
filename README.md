@@ -10,15 +10,14 @@
 
 <p align="center">
   <strong>Open-Source Generative 3D Mesh Studio & Production Pipeline</strong><br>
-  <em>A unified, self-hosted 3D creation suite inspired by modern neural platforms like Tripo AI and Meshy</em><br>
+  <em>A unified, self-hosted 3D creation suite for neural 3D generation, asset finishing, and engine-ready delivery</em><br>
   Text-to-3D • Image-to-3D • Quad Retopology • PBR Material Painting • Auto-Rigging • Automated LODs • Game Engine Ready
 </p>
 
 <p align="center">
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Inspired_By-Tripo_AI_%7C_Meshy-FFCC00?style=for-the-badge&logo=codepen&logoColor=black" alt="Inspired by Tripo AI and Meshy"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-24_Neural_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="24 Models"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="24 Models"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -34,9 +33,9 @@
 
 **ForMash3D** is an open-source, self-hosted generative 3D asset creation and mesh-finishing platform. It bridges modern state-of-the-art open research models into a single, cohesive studio running entirely on your local workstation or private GPU cluster.
 
-Inspired by the intuitive user workflows of modern commercial platforms such as **Tripo AI** and **Meshy**, ForMash3D gives 3D technical artists, indie game developers, and researchers complete freedom:
+ForMash3D unifies neural 3D generation, asset finishing, validation, and export into one self-hosted workflow for 3D technical artists, game developers, and researchers:
 - **100% Private & Self-Hosted**: Run generation locally on NVIDIA GPUs without subscriptions, cloud queues, or uploading proprietary concept art to external servers.
-- **Zero Loss Quality Guarantee**: Model-native generation is preserved immutably at `master/source.glb` before any optimization or decimation.
+- **Immutable Source Preservation**: Model-native generation is snapshotted at `master/source.glb` before production optimization or decimation.
 - **Production Asset Finishing**: Features a complete post-processing pipeline forked and customized from **[3DGenStudio](https://github.com/visualbruno/3DGenStudio)**, delivering watertight repair, conformal UV unwrapping, PBR material baking, quad retopology, multi-tier LOD cascades, and CoACD convex physics collision hulls.
 
 ---
@@ -62,25 +61,17 @@ Inspired by the intuitive user workflows of modern commercial platforms such as 
 
 ---
 
-## 📊 Workflow & Capability Comparison
+## 📊 Core Capability Map
 
-A technical comparison of ForMash3D versus commercial cloud platforms:
-
-| Capability | **ForMash3D (This Studio)** | **Tripo AI (Cloud)** | **Meshy AI (Cloud)** | **CSM (Cloud)** |
-|---|:---:|:---:|:---:|:---:|
-| **Pricing** | **100% Free & Open-Source (Apache 2.0)** | $20 – $100+/mo | $20 – $80/mo | $30 – $120/mo |
-| **Hosting & Privacy** | **100% Private (Local NVIDIA GPU)** | Proprietary Cloud | Proprietary Cloud | Proprietary Cloud |
-| **Model Diversity** | **24 Pluggable Open-Source Adapters** | 1 Proprietary Model | 1 Proprietary Model | 1 Proprietary Model |
-| **Multi-View Synthesis** | **Zero123++ v1.2 (6-View 30° Grid)** | Paid Cloud Only | Paid Cloud Only | ❌ None |
-| **Raw Geometry Preservation** | **Yes (`master/source.glb` preserved)** | ❌ Aggressive cloud decimation | ❌ Cloud compressed | ❌ Cloud compressed |
-| **Quad Retopology** | **FastMesh (V1K/V4K) & AutoRetopo** | Basic remesh | Basic remesh | Paid add-on |
-| **Progressive LODs** | **LOD0 to LOD3 with UV preservation** | ❌ Single level | Paid add-on | ❌ Single level |
-| **PBR Texture Painting** | **Hunyuan3D-Paint-v2.1 (2B) + SuperRes** | Cloud standard | Cloud standard | Cloud standard |
-| **Physics Colliders** | **CoACD Convex Hulls + Rapier3D Wasm** | ❌ None | ❌ None | ❌ None |
-| **Rigging & Motion** | **UniRig (Bipedal) + ARDY (Motion AI)** | Basic auto-rig | Extra credit cost | ❌ None |
-| **Engine Ready Export** | **Unreal Engine 5, Unity, Godot 4, Blender** | Basic GLB | Basic GLB | Basic GLB |
-
----
+| Capability | ForMash3D Implementation |
+|---|---|
+| Neural 3D Generation | Image-to-3D and text-to-3D adapters with model-specific inference contracts |
+| Source Preservation | Immutable master/source.glb checkpoint before production processing |
+| Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
+| PBR Materials | Hunyuan3D Paint-v2.1 and model-specific textured generation |
+| Multi-View | Zero123++ v1.2 plus capability-gated 3D reconstruction |
+| QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
+| Engine Export | GLB/FBX game-ready packages plus LOD and collision artifacts |
 
 ## 🔄 End-to-End Asset Generation Pipeline
 
@@ -89,7 +80,7 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
 ```text
   INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
 ┌─────────────────────┐    ┌───────────────────────────┐    ┌──────────────────────────┐
-│  • Text Prompt      │───►│  23 Neural Adapters:      │───►│ master/source.glb        │
+│  • Text Prompt      │───►│  Neural Model Adapters:   │───►│ master/source.glb        │
 │  • Single Image     │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
 │  • Multi-View Image │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
 └─────────────────────┘    └───────────────────────────┘    └────────────┬─────────────┘
@@ -415,9 +406,9 @@ bash -n backend/scripts/*.sh scripts/*.sh
 ## 🔍 Frequently Asked Questions (FAQ)
 
 <details>
-<summary><strong>How is ForMash3D inspired by platforms like Tripo AI and Meshy?</strong></summary>
+<summary><strong>How does ForMash3D protect source quality?</strong></summary>
 
-ForMash3D draws workflow ergonomics inspiration from modern AI 3D platforms like **Tripo AI** and **Meshy**. It enables creators and game developers to go seamlessly from a single text prompt or reference photo to a fully textured, quad-retopologized, game-ready 3D model. However, unlike cloud platforms that charge recurring subscriptions and process meshes on remote servers, ForMash3D runs entirely on your local GPU, preserving complete data privacy, raw geometric fidelity, and open customization.
+Source generation uses model-specific inference schedules and source-density settings. The scheduler strips production-only face, decimation, remesh, LOD, physics, and paint orchestration controls before adapter inference. The resulting master/source.glb is immutable; downstream production budgets operate on derived artifacts only.
 </details>
 
 <details>

@@ -284,8 +284,10 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                         "text_prompt": text_prompt,
                         "texture_prompt": texture_text_prompt,
                         "seed": seed,
-                        "num_inference_steps": 12,
-                        "guidance_scale": 7.5,
+                        "num_inference_steps": ss_steps,
+                        "ss_sampling_steps": ss_steps,
+                        "slat_sampling_steps": slat_steps,
+                        "guidance_scale": guidance,
                         "vertex_count": len(mesh.vertices),
                         "face_count": len(mesh.faces),
                         "texture_resolution": texture_resolution,
@@ -368,8 +370,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 },
                 "texture_resolution": {
                     "type": "integer",
-                    "description": "Output texture resolution",
-                    "default": 1024,
+                    "description": "Output texture resolution for source generation",
+                    "default": 2048,
                     "enum": [512, 1024, 2048, 4096],
                     "required": False
                 },
@@ -727,8 +729,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 },
                 "texture_resolution": {
                     "type": "integer",
-                    "description": "Output texture resolution",
-                    "default": 1024,
+                    "description": "Output texture resolution for source generation",
+                    "default": 2048,
                     "enum": [512, 1024, 2048, 4096],
                     "required": False
                 },

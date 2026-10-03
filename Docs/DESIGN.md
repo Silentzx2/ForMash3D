@@ -1,7 +1,7 @@
 # UI Design System & Component Reference
 
 > **Design Version**: 0.1.0
-> **Last Updated**: September 2026
+> **Last Updated**: October 3, 2026
 > **Design System**: Studio Gold (`#FFCC00`, `48 100% 50%`) on Matte Black (`#080808`)
 
 ---
@@ -201,6 +201,7 @@ Universal motion specifications compatible with `motion/react`:
 ### Paint-v2-1 Texture Panel Components
 - `TexturePanel.tsx`: PBR texture controls, systemStats display, VRAM status
 - `GeneratePanel.tsx`: Model selector, FlashVDM toggle, VRAM stats
+- Source-generation controls preserve maximum model-native geometry and source texture fidelity; polycount and quality budgets are production-stage controls.
 - `systemStats`: Real-time GPU/VRAM telemetry in texture panel
 
 ---

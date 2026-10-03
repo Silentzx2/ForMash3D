@@ -1058,7 +1058,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         source_quality: 'max',
       };
 
-      // Geometry settings are always maximum-fidelity; texture/output settings can vary.
+      // Source geometry and source textures always use maximum-fidelity generation settings.
+      // UI poly/quality budgets apply only to downstream production artifacts.
       if (sourceQuality === 'ultra' && modelId.includes('triposr')) {
         modelParameters.mc_resolution = 320;
       } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposg')) {
@@ -1076,12 +1077,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } else if ((generationSettings.aiModel || '').includes('trellis2')) {
         modelParameters.decimation_target = -1;
         modelParameters.remesh = false;
-        modelParameters.texture_size = currentQuality === 'ultra' ? 4096 : currentQuality === 'high' ? 4096 : 2048;
+        modelParameters.texture_size = 4096;
       } else if (modelId.includes('trellis')) {
         modelParameters.simplify = 0.0;
         modelParameters.ss_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
         modelParameters.slat_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
-        modelParameters.texture_resolution = currentQuality === 'ultra' ? 2048 : 1024;
+        modelParameters.texture_resolution = 2048;
       } else if (modelId.includes('hunyuan')) {
         modelParameters.octree_resolution = 512;
         modelParameters.enable_realesrgan = generationSettings.enableRealESRGAN !== false;
@@ -1210,8 +1211,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // Text generation follows the official TRELLIS text sampling schedule.
       const modelId = generationSettings.aiModel || '';
       const octreeRes = 512;
-      const infSteps = modelId.includes('trellis') ? 25 : 25;
-      const infGuidance = modelId.includes('trellis') ? 7.5 : (generationSettings.guidanceScale ?? 7.5);
+      const infSteps = 25;
+      const infGuidance = 7.5;
 
       try {
         // ponytail: map UI generation settings to the real 3DAIGC-API contract.

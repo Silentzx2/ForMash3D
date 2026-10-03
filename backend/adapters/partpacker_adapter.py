@@ -120,10 +120,10 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
             inputs: Dictionary containing:
                 - image_path: Path to input image (required)
                 - output_format: Output format (default: "glb")
-                - num_steps: Number of diffusion steps (default: 30)
+                - num_steps: Number of diffusion steps (default: 50)
                 - cfg_scale: Classifier-free guidance scale (default: 7.0)
                 - grid_resolution: Grid resolution for mesh extraction (default: 384)
-                - num_faces: Target number of faces (default: 50000)
+                - num_faces: Target number of faces (-1 keeps native source resolution)
                 - seed: Random seed for reproducibility (optional)
                 - return_parts: Whether to save individual parts (default: True)
                 - return_volumes: Whether to save dual volumes (default: False)

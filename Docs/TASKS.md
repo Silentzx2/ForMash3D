@@ -1,48 +1,38 @@
-# Current Task — Adapter Raw-Quality / Official-Parity Fix
+# Current Task — Deep Adapter Parity & Source-Fidelity Audit
 
-**Status:** Complete in code and documentation  
+**Status:** Complete in code and documentation; runtime-gated validation remains open  
 **Date:** 2026-10-03  
 **Branch:** `Dev`
 
 ## Objective
+Re-audit the raw/model-native generation contract after the official-parity quality pass, close remaining gaps that can alter `master/source.glb`, and reconcile project documentation.
 
-Fix the quality gap observed in immutable `source.glb` outputs compared with upstream model examples. The scope is raw model generation and adapter/extraction behavior; downstream post-processing is not treated as the root cause.
-
-## Root causes and fixes
-
-- [x] Replace the project-wide 75-step generation contract with model-specific official/tuned schedules.
-- [x] Fix TripoSR raw extraction to the current official 320 ceiling.
-- [x] Raise TripoSF raw extraction to 1024³ + 1,638,400 samples, while retaining the existing VRAM safety guard.
-- [x] Pass deterministic seeded generators to Hunyuan Shape and Mini Turbo.
-- [x] Remove TRELLIS text's artificial 20-step minimum.
-- [x] Restore TRELLIS extraction hole filling and Z-up → Y-up conversion.
-- [x] Apply Mini Turbo FlashVDM through the official pipeline configuration method.
-- [x] Keep unsupported TripoSG rotation/Flash-Decoder changes out of the code.
-
-## Contract
-
-- [x] Source geometry is generated using model-specific quality settings.
-- [x] Production polycount remains downstream-only.
-- [x] `source.glb` remains the immutable model-native checkpoint.
-- [x] Hardware safety caps may reduce raw extraction only when required for safe execution.
+## Confirmed closures
+- [x] Scheduler strips production-only target/decimation/remesh controls before adapter inference.
+- [x] Legacy Hunyuan3D-2.1 raw generation uses seeded 50-step / 7.5-guidance inference without low-VRAM step reduction.
+- [x] Legacy Hunyuan3D-2.1 Shape→Paint uses the same source shape contract.
+- [x] TRELLIS source texture schema uses 2048 and metadata reports actual sampling stages.
+- [x] TRELLIS source texture generation no longer follows a lower UI quality profile.
+- [x] TRELLIS.2 source texture generation is fixed to 4096.
+- [x] PartPacker documentation matches executable defaults.
 
 ## Regression coverage
-
-- [x] Updated TripoSR, TripoSF, and Mini Turbo adapter schema expectations.
-- [x] Added a TRELLIS text adapter contract test.
-- [x] Added frontend assertions for model-specific schedules and extraction ceilings.
-- [x] Retained scheduler/source-quality firewall assertions.
+- [x] Firewall test passes explicit extraction/decimation/remesh controls and asserts they are stripped.
+- [x] Legacy Hunyuan contract and implementation checks added.
+- [x] TRELLIS source texture/runtime metadata assertions added.
+- [x] Frontend source-texture fidelity assertions added.
 
 ## Documentation
-
-- [x] Added `Docs/BUG-REPORT-ADAPTER-QUALITY.md`.
-- [x] Updated `Docs/MEMORY.md`.
-- [x] Updated `Docs/ARCHITECTURE.md` and `Docs/PRD.md`.
-- [x] Updated `Docs/CHANGELOG.md`.
+- [x] MEMORY.md
+- [x] ARCHITECTURE.md
+- [x] PRD.md
+- [x] DESIGN.md
+- [x] DECISIONS.md
+- [x] SYSTEM-BLUEPRINT.md
+- [x] BUG-REPORT-ADAPTER-QUALITY.md
+- [x] CHANGELOG.md
+- [x] README.md
 
 ## Runtime gate
-
 - [ ] CUDA/NVIDIA A/B generation with identical inputs, weights, and seeds.
 - [ ] Compare raw face count, silhouette, small-feature retention, normals, orientation, and UV/material state before downstream processing.
-
-The remaining runtime items are intentionally not marked complete because GPU execution was unavailable during this audit.

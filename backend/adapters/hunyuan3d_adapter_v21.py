@@ -284,11 +284,17 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             # Shape generation only
             logger.info("Generating 3D shape...")
             octree_res = 512
-            num_steps = inputs.get("num_inference_steps", 35 if inputs.get("low_vram") else 50)
+            num_steps = int(inputs.get("num_inference_steps", 50))
+            guidance_scale = float(inputs.get("guidance_scale", 7.5))
+            seed = int(inputs.get("seed", 1234))
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            generator = torch.Generator(device=device).manual_seed(seed)
             mesh_result = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
             )[0]
 
             # Generate output path
@@ -313,6 +319,9 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
                     "vertex_count": mesh_stats["vertex_count"],
                     "face_count": mesh_stats["face_count"],
                     "has_texture": False,
+                    "num_inference_steps": num_steps,
+                    "guidance_scale": guidance_scale,
+                    "seed": seed,
                 },
             }
 
@@ -333,7 +342,12 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             Parameter schema dictionary
         """
         return {
-            "parameters": {}
+            "parameters": {
+                "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
+                "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
+                "guidance_scale": {"type": "number", "default": 7.5, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
+            }
         }
 
 
@@ -397,9 +411,20 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             else:
                 image = self.bg_remover(image.convert("RGB"))
 
-            # Step 1: Shape generation
+            # Step 1: Shape generation follows the same model-specific source contract.
             logger.info("Generating 3D shape...")
-            mesh_result = self.pipeline_shapegen(image=image)[0]
+            num_steps = int(inputs.get("num_inference_steps", 50))
+            guidance_scale = float(inputs.get("guidance_scale", 7.5))
+            seed = int(inputs.get("seed", 1234))
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            generator = torch.Generator(device=device).manual_seed(seed)
+            mesh_result = self.pipeline_shapegen(
+                image=image,
+                octree_resolution=512,
+                num_inference_steps=num_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+            )[0]
 
             # Step 2: Texture painting
             logger.info("Generating texture...")
@@ -452,6 +477,9 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
                     "has_texture": True,
                     "max_num_view": max_num_view,
                     "resolution": resolution,
+                    "num_inference_steps": num_steps,
+                    "guidance_scale": guidance_scale,
+                    "seed": seed,
                 },
             }
 
@@ -475,6 +503,10 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
         """
         return {
             "parameters": {
+                "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
+                "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
+                "guidance_scale": {"type": "number", "default": 7.5, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
                 "max_num_view": {
                     "type": "integer",
                     "description": "Maximum number of views for texture generation",

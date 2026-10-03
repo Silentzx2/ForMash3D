@@ -31,6 +31,8 @@ Create a centralized, local AI 3D asset factory that takes an image or text prom
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
 - **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
+- **Central Source-Fidelity Firewall**: The scheduler removes production-only target, decimation, remesh, LOD, physics, and paint orchestration controls before model inference.
+- **Model-Native Texture Fidelity**: Textured source generation keeps explicit maximum source texture settings; downstream quality and polycount controls do not lower the immutable source.
 
 ### 2. PBR Texture Painting
 - **Image Mesh Painting**: Paint textures onto existing meshes using Hunyuan3D-Paint-v2-1
