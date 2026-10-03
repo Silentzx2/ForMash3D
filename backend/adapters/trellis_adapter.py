@@ -18,6 +18,7 @@ from PIL import Image
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel, TextToMeshModel
 from core.utils.file_utils import OutputPathGenerator
+from core.utils.log_formatters import format_box, format_bytes
 from core.utils.thumbnail_utils import generate_mesh_thumbnail
 from core.utils.mesh_utils import MeshProcessor
 
@@ -207,6 +208,20 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 # get ready for later texturing
                 mesh = input_mesh
             else:
+                logger.info(
+                    "\n" + format_box(
+                        "TRELLIS: PIPELINE SAMPLING",
+                        [
+                            ("Text Prompt", text_prompt or str(mesh_path)),
+                            ("Texture Prompt", texture_text_prompt or "None"),
+                            ("Sparse Structure Steps", ss_steps),
+                            ("SLAT Steps", slat_steps),
+                            ("Guidance Scale (CFG)", guidance),
+                            ("Seed", seed),
+                            ("Texture Resolution", f"{texture_resolution}x{texture_resolution}"),
+                        ],
+                    )
+                )
                 # Generate 3D representation
                 outputs = self.pipeline.run(
                     text_prompt,
@@ -237,6 +252,18 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             # Save mesh in requested format
             output_path = self._generate_output_path(text_prompt, output_format)
             self.mesh_processor.save_mesh(mesh, output_path, do_normalise=False)
+
+            logger.info(
+                "\n" + format_box(
+                    "TRELLIS: MESH CONVERTED",
+                    [
+                        ("Output Faces", f"{len(mesh.faces):,} faces"),
+                        ("Output Vertices", f"{len(mesh.vertices):,} vertices"),
+                        ("Output Path", str(output_path)),
+                        ("Output Size", format_bytes(os.path.getsize(output_path)) if os.path.exists(output_path) else "N/A"),
+                    ],
+                )
+            )
 
             # Generate thumbnail
             thumbnail_path = self._generate_thumbnail_path(output_path)

@@ -34,6 +34,7 @@ from PIL import Image
 
 from core.models.base import BaseModel, ModelStatus
 from core.utils.file_utils import OutputPathGenerator, get_storage_base_dir, resolve_server_file_path
+from core.utils.log_formatters import format_box, format_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -467,6 +468,20 @@ class Zero123PlusAdapter(BaseModel):
         generator = torch.Generator(device).manual_seed(seed)
         self.pipeline.set_progress_bar_config(disable=True)
 
+        logger.info(
+            "\n" + format_box(
+                "ZERO123++ MULTI-VIEW INFERENCE",
+                [
+                    ("Job ID", job_id),
+                    ("Source Image", f"{source_path.name} ({input_pil.width}x{input_pil.height})"),
+                    ("Background Removal", background_removal),
+                    ("Inference Steps", inference_steps),
+                    ("Guidance Scale (CFG)", guidance_scale),
+                    ("Seed", seed),
+                    ("Target Workspace", str(multiview_dir)),
+                ],
+            )
+        )
         logger.info(f"Running Zero123++ multi-view inference ({inference_steps} steps, cfg={guidance_scale})")
         pipeline_output = self.pipeline(
             input_pil,
@@ -575,6 +590,21 @@ class Zero123PlusAdapter(BaseModel):
         manifest_path = multiview_dir / "manifest.json"
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest_data, f, indent=2)
+
+        sheet_file = multiview_dir / "contact_sheet.png"
+        sheet_size_str = f"{format_bytes(sheet_file.stat().st_size)}" if sheet_file.exists() else "N/A"
+        logger.info(
+            "\n" + format_box(
+                "ZERO123++ VIEWS GENERATED",
+                [
+                    ("Views Exported", f"{len(views_manifest)} perspective views (320x320 PNG)"),
+                    ("Contact Sheet", f"{contact_sheet_img.size[0]}x{contact_sheet_img.size[1]} ({sheet_size_str})" if save_contact_sheet else "In-memory"),
+                    ("Normals Generated", bool(normals_dir and normals_dir.exists())),
+                    ("Masks Generated", bool(masks_dir and masks_dir.exists())),
+                    ("Output Directory", str(multiview_dir)),
+                ],
+            )
+        )
 
         # 7. Generate ZIP archive if requested or on demand
         zip_path = None

@@ -15,6 +15,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -24,6 +25,7 @@ import trimesh
 from PIL import Image
 
 from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path
+from core.utils.log_formatters import format_banner, format_box, format_bytes
 from .config import BLENDER_EXECUTABLE
 from .meshio import load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
@@ -551,6 +553,55 @@ def run_postprocess_job(
         saved["zip_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=zip"
         return saved
 
+    pipeline_start_time = time.time()
+    feature_type = str(job_metadata.get("feature") or job_inputs.get("feature") or "")
+    is_quad_requested = (
+        job_metadata.get("topology_mode") == "quad"
+        or job_inputs.get("topology_mode") == "quad"
+        or bool(job_metadata.get("quad_topology"))
+        or bool(job_inputs.get("quad_topology"))
+    )
+    auto_optimize = bool(job_inputs.get("auto_optimize", False))
+    lod_enabled = bool(job_inputs.get("generateLOD", True))
+    should_bake = (
+        bool(job_inputs.get("bake_normal_maps"))
+        or bool(job_inputs.get("bake_high_to_low"))
+        or bool(job_inputs.get("bake_textures"))
+        or bool(job_metadata.get("bake_normal_maps"))
+        or bool(job_metadata.get("bake_textures"))
+    )
+    physics_in_meta = job_metadata.get("physics_enabled")
+    physics_in_inputs = job_inputs.get("physics_enabled")
+    if physics_in_meta is not None:
+        physics_enabled = bool(physics_in_meta)
+    elif physics_in_inputs is not None:
+        physics_enabled = bool(physics_in_inputs)
+    else:
+        physics_enabled = True
+    physics_config = normalize_physics_config(
+        job_metadata.get("physics_config") or job_inputs.get("physics_config")
+    )
+    raw_file_size = master_path.stat().st_size if master_path.exists() else 0
+
+    logger.info(
+        "\n" + format_banner(
+            "POSTPROCESS: PIPELINE START",
+            [
+                ("Job ID", job_id),
+                ("Asset Name", asset_name),
+                ("Feature Type", feature_type or "standard_3d"),
+                ("Source Mesh", f"{raw_path} ({format_bytes(raw_file_size)})"),
+                ("Target Budget", f"{resolved_target_polycount:,} faces" if resolved_target_polycount else "Native / Raw (no decimation)"),
+                ("Auto-Optimize", auto_optimize),
+                ("Topology Mode", "Quad-dominant" if is_quad_requested else "Triangles"),
+                ("Physics / Collision", f"Enabled (quality: {physics_config.get('collision_quality')})" if physics_enabled else "Disabled"),
+                ("LOD Chain", f"Enabled (preset: {job_inputs.get('lodPreset') or 'high'})" if lod_enabled else "Disabled"),
+                ("Normal Map Baking", should_bake),
+                ("Asset Directory", str(asset_dir)),
+            ],
+        )
+    )
+
     _emit(progress, 0.05, "postprocess", "Master asset secured.")
 
     raw_bytes = master_path.read_bytes()
@@ -564,6 +615,7 @@ def run_postprocess_job(
         }
     }
 
+    inspect_t0 = time.time()
     _emit(progress, 0.10, "inspect", "Inspecting generated mesh.")
     try:
         scene = trimesh.load(master_path, file_type="glb", process=False)
@@ -583,24 +635,59 @@ def run_postprocess_job(
         )
     except Exception as exc:
         qa_before = {"status": "warn", "warnings": [f"Initial inspection failed: {exc}"]}
+    inspect_duration = time.time() - inspect_t0
 
-    _emit(progress, 0.18, "repair", "Repairing topology.")
-    repaired, repair_stats, _ = run_repair(
-        mesh,
-        RepairOptions(
-            method="remove",
-            preserve_uv=True,
-            close_holes=True,
-            max_hole_size=30,
-            weld=True,
-        ),
+    src_info = quality_trace["source"]
+    bbox = mesh.bounds
+    bbox_dim = (bbox[1] - bbox[0]) if (bbox is not None and len(bbox) == 2) else np.array([0, 0, 0])
+    logger.info(
+        "\n" + format_box(
+            "POSTPROCESS: STAGE 1/8 - MESH INSPECTION",
+            [
+                ("Input Triangles", f"{src_info.get('faces', 0):,}"),
+                ("Input Vertices", f"{src_info.get('vertices', 0):,}"),
+                ("Bounding Box (XYZ)", f"{bbox_dim[0]:.2f} x {bbox_dim[1]:.2f} x {bbox_dim[2]:.2f}"),
+                ("Watertight", src_info.get("watertight", False)),
+                ("Native Textures", f"{native_textures}"),
+                ("QA Status", qa_before.get("status", "ok")),
+                ("Stage Elapsed", f"{inspect_duration:.2f}s"),
+            ],
+        )
     )
+
+    repair_t0 = time.time()
+    _emit(progress, 0.18, "repair", "Repairing topology.")
+    repair_opts = RepairOptions(
+        method="remove",
+        preserve_uv=True,
+        close_holes=True,
+        max_hole_size=30,
+        weld=True,
+    )
+    repaired, repair_stats, _ = run_repair(mesh, repair_opts)
+    repair_duration = time.time() - repair_t0
 
     quality_trace["repaired"] = {
         **mesh_stats(repaired).model_dump(),
         "native_textures": _has_native_textures(repaired),
         "topology": repair_stats.get("after"),
     }
+
+    rep_after = repair_stats.get("after", {})
+    logger.info(
+        "\n" + format_box(
+            "POSTPROCESS: STAGE 2/8 - TOPOLOGY REPAIR",
+            [
+                ("Operations", f"Weld coincident verts, remove non-manifold, close holes (<= {repair_opts.max_hole_size})"),
+                ("Before Repair", f"{len(mesh.faces):,} faces | {len(mesh.vertices):,} vertices"),
+                ("After Repair", f"{len(repaired.faces):,} faces | {len(repaired.vertices):,} vertices"),
+                ("Watertight", rep_after.get("watertight", False)),
+                ("Non-manifold Edges", rep_after.get("non_manifold_edges", 0)),
+                ("Boundary Edges", rep_after.get("boundary_edges", 0)),
+                ("Stage Elapsed", f"{repair_duration:.2f}s"),
+            ],
+        )
+    )
 
     repaired_topology = repair_stats.get("after", {})
     retopo_stats: Dict[str, Any] = {"status": "skipped", "reason": "No structural retopology required."}
@@ -620,6 +707,7 @@ def run_postprocess_job(
         or bool(job_inputs.get("quad_topology"))
     )
 
+    retopo_t0 = time.time()
     if is_quad_requested and not native_textures:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
         retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
@@ -637,7 +725,10 @@ def run_postprocess_job(
                     feature_angle=25.0,
                     project=True,
                 ),
-                progress=lambda stage, frac, msg: _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
+                progress=lambda stage, frac, msg: (
+                    _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
+                    logger.debug(f"[POSTPROCESS RETOPO] {frac*100:.0f}% stage={stage} msg={msg}"),
+                ),
             )
             retopo_stats = {"status": "completed", "trigger": "quad_requested", **retopo_tool_stats}
         except Exception as exc:
@@ -654,7 +745,10 @@ def run_postprocess_job(
                 AutoRetopoOptions(target_faces=retopo_target, watertight=True, shell_smooth=0.6,
                                   shell_taubin=3, adaptive=True, preserve_features=True,
                                   feature_angle=25.0, project=True),
-                progress=lambda stage, frac, msg: _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
+                progress=lambda stage, frac, msg: (
+                    _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
+                    logger.debug(f"[POSTPROCESS RETOPO] {frac*100:.0f}% stage={stage} msg={msg}"),
+                ),
             )
             retopo_stats = {"status": "completed", "trigger": "large_open_defect", **retopo_tool_stats}
         except Exception as exc:
@@ -664,8 +758,36 @@ def run_postprocess_job(
         retopo_stats = {"status": "skipped", "reason": "Native textures are preserved; structural rebuild would require a real bake source."}
     elif not solid_generation_feature:
         retopo_stats = {"status": "skipped", "reason": "Asset feature does not declare a solid AI-generation contract."}
+    retopo_duration = time.time() - retopo_t0
+
+    if retopo_stats.get("status") == "completed":
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 3/8 - AUTO-RETOPOLOGY",
+                [
+                    ("Status", "Completed"),
+                    ("Trigger", retopo_stats.get("trigger", "requested")),
+                    ("Target Faces", f"{retopo_target:,}"),
+                    ("Result Faces", f"{len(repaired.faces):,}"),
+                    ("Watertight", retopo_stats.get("watertight", True)),
+                    ("Stage Elapsed", f"{retopo_duration:.2f}s"),
+                ],
+            )
+        )
+    else:
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 3/8 - AUTO-RETOPOLOGY",
+                [
+                    ("Status", "Skipped"),
+                    ("Reason", retopo_stats.get("reason", "Not requested or not needed")),
+                    ("Stage Elapsed", f"{retopo_duration:.2f}s"),
+                ],
+            )
+        )
 
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
+    optimize_t0 = time.time()
     auto_optimize = bool(job_inputs.get("auto_optimize", False))
     raw_target_polycount = job_inputs.get("target_polycount")
     has_explicit_target = raw_target_polycount is not None and int(raw_target_polycount) > 0
@@ -689,10 +811,32 @@ def run_postprocess_job(
                 OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
                                 permissive=False, aggressive=False, lock_border=False),
             )
+    optimize_duration = time.time() - optimize_t0
     quality_trace["optimized"] = {
         **mesh_stats(optimized).model_dump(),
         "native_textures": _has_native_textures(optimized),
     }
+
+    reduction_pct = (
+        ((repaired_face_count - len(optimized.faces)) / max(1, repaired_face_count)) * 100.0
+        if not optimize_stats.get("passthrough") else 0.0
+    )
+    logger.info(
+        "\n" + format_box(
+            "POSTPROCESS: STAGE 4/8 - MESH DECIMATION & OPTIMIZATION",
+            [
+                ("Action", "Passthrough (Native Mesh Preserved)" if optimize_stats.get("passthrough") else "Decimated with Quadric Error Metrics"),
+                ("Reason", optimize_stats.get("reason") or "Budget target reached"),
+                ("Before Decimation", f"{repaired_face_count:,} faces | {len(repaired.vertices):,} vertices"),
+                ("After Decimation", f"{len(optimized.faces):,} faces | {len(optimized.vertices):,} vertices"),
+                ("Face Reduction", f"{reduction_pct:.1f}%" if not optimize_stats.get("passthrough") else "0.0% (preserved)"),
+                ("Textures Preserved", optimize_stats.get("texture_preserved", True) if native_textures else "N/A"),
+                ("Stage Elapsed", f"{optimize_duration:.2f}s"),
+            ],
+        )
+    )
+
+    uv_t0 = time.time()
     if native_textures:
         if not _has_native_textures(optimized):
             logger.warning(
@@ -707,6 +851,18 @@ def run_postprocess_job(
         uv_mesh = optimized
         uv_stats = {"preserved": True, "native_textures": True,
                     "texture_aware_decimation": bool(not optimize_stats.get("passthrough"))}
+        uv_duration = time.time() - uv_t0
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 5/8 - UV PARAMETERIZATION",
+                [
+                    ("Status", "Preserved Native UVs and Materials"),
+                    ("Native Textures", True),
+                    ("Texture-Aware Decimation", uv_stats.get("texture_aware_decimation", False)),
+                    ("Stage Elapsed", f"{uv_duration:.2f}s"),
+                ],
+            )
+        )
     else:
         _emit(progress, 0.55, "uv", "Generating production UVs.")
         optimized_normals = np.asarray(optimized.vertex_normals)
@@ -715,6 +871,19 @@ def run_postprocess_job(
             AutoUvOptions(resolution=2048, padding_texels=4, refine=True, weld=True,
                           preserve_normals=True, normal_smooth_deg=60),
             source_normals=optimized_normals,
+        )
+        uv_duration = time.time() - uv_t0
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 5/8 - UV PARAMETERIZATION",
+                [
+                    ("Status", "Generated Production UVs"),
+                    ("Resolution", "2048x2048"),
+                    ("Chart Padding", "4 texels"),
+                    ("Normal Smoothing", "60 deg (source normals preserved)"),
+                    ("Stage Elapsed", f"{uv_duration:.2f}s"),
+                ],
+            )
         )
 
     texture_paths: Dict[str, Path] = {}
@@ -735,6 +904,7 @@ def run_postprocess_job(
         or bool(job_metadata.get("bake_textures"))
     )
 
+    bake_t0 = time.time()
     if should_bake:
         _emit(progress, 0.58, "bake", "Baking high-to-low micro-details and normal maps.")
         try:
@@ -755,8 +925,9 @@ def run_postprocess_job(
                 low_glb=low_glb_bytes,
                 high_glb=master_path.read_bytes(),
                 opts=bake_opts,
-                progress=lambda stage, frac, msg: _emit(
-                    progress, 0.58 + min(1.0, max(0.0, frac)) * 0.04, "bake", msg
+                progress=lambda stage, frac, msg: (
+                    _emit(progress, 0.58 + min(1.0, max(0.0, frac)) * 0.04, "bake", msg),
+                    logger.debug(f"[POSTPROCESS BAKE] {frac*100:.0f}% stage={stage} msg={msg}"),
                 ),
             )
             texture_dir.mkdir(parents=True, exist_ok=True)
@@ -785,7 +956,34 @@ def run_postprocess_job(
         except Exception as exc:
             bake_stats = {"status": "skipped", "reason": str(exc)}
             logger.warning("Bake step skipped or failed: %s", exc)
+    bake_duration = time.time() - bake_t0
 
+    if bake_stats.get("status") == "completed":
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 6/8 - HIGH-TO-LOW TEXTURE BAKING",
+                [
+                    ("Status", "Completed"),
+                    ("Maps Baked", list(texture_paths.keys())),
+                    ("Bake Resolution", f"{bake_res}x{bake_res}"),
+                    ("Attached to GLB", "normal" in texture_paths),
+                    ("Stage Elapsed", f"{bake_duration:.2f}s"),
+                ],
+            )
+        )
+    else:
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 6/8 - HIGH-TO-LOW TEXTURE BAKING",
+                [
+                    ("Status", "Skipped"),
+                    ("Reason", bake_stats.get("reason", "Bake not requested")),
+                    ("Stage Elapsed", f"{bake_duration:.2f}s"),
+                ],
+            )
+        )
+
+    lod_t0 = time.time()
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     game_ready_dir.mkdir(parents=True, exist_ok=True)
     base_name = f"{asset_name}_{clean_job_id}"
@@ -853,19 +1051,33 @@ def run_postprocess_job(
             "native_textures": bool(_has_native_textures(level_mesh)),
             "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
         }
+    lod_duration = time.time() - lod_t0
 
-    physics_in_meta = job_metadata.get("physics_enabled")
-    physics_in_inputs = job_inputs.get("physics_enabled")
-    if physics_in_meta is not None:
-        physics_enabled = bool(physics_in_meta)
-    elif physics_in_inputs is not None:
-        physics_enabled = bool(physics_in_inputs)
-    else:
-        physics_enabled = True
-    physics_config = normalize_physics_config(
-        job_metadata.get("physics_config") or job_inputs.get("physics_config")
+    glb_file_size = glb_path.stat().st_size if glb_path.exists() else 0
+    fbx_file_size = (
+        Path(game_ready["fbx"]).stat().st_size
+        if "fbx" in game_ready and Path(game_ready["fbx"]).exists()
+        else 0
+    )
+    lod_entries = [
+        (f"  LOD {lvl}", f"{l_info['triangles']:,} tris | {l_info['vertices']:,} verts -> lod{lvl}.glb")
+        for lvl, l_info in lod_quality.items()
+    ]
+    logger.info(
+        "\n" + format_box(
+            "POSTPROCESS: STAGE 7/8 - PRODUCTION EXPORTS & LOD CHAIN",
+            [
+                ("Production GLB", f"{glb_path} ({format_bytes(glb_file_size)})"),
+                ("Production FBX", f"{game_ready.get('fbx', 'Failed')} ({format_bytes(fbx_file_size)})" if "fbx" in game_ready else f"Skipped/Failed ({artifact_errors.get('fbx', 'N/A')})"),
+                ("LOD Preset", preset if lod_enabled else "Disabled"),
+                ("LOD Levels Built", f"{len(lods)} levels" if lod_enabled else "0"),
+                *lod_entries,
+                ("Stage Elapsed", f"{lod_duration:.2f}s"),
+            ],
+        )
     )
 
+    collision_t0 = time.time()
     # Collision is only part of the production contract when physics is requested.
     collision_path: Optional[Path] = None
     collision_stats: Optional[Dict[str, Any]] = None
@@ -893,6 +1105,33 @@ def run_postprocess_job(
         except Exception as exc:
             logger.error("Collision generation failed for %s: %s", job_id, exc, exc_info=True)
             raise RuntimeError(f"Collision generation failed: {exc}") from exc
+    collision_duration = time.time() - collision_t0
+
+    if physics_enabled and collision_path and collision_path.exists():
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 8/8 - PHYSICS & COLLISION PROXY",
+                [
+                    ("Quality Preset", collision_quality),
+                    ("Convex Hulls", collision_stats.get("hull_count", "N/A") if collision_stats else "N/A"),
+                    ("Collision Triangles", collision_stats.get("total_triangles", "N/A") if collision_stats else "N/A"),
+                    ("Proxy File", f"{collision_path} ({format_bytes(collision_path.stat().st_size)})"),
+                    ("Center of Mass", physics_metadata.get("center_of_mass", "N/A") if physics_metadata else "N/A"),
+                    ("Stage Elapsed", f"{collision_duration:.2f}s"),
+                ],
+            )
+        )
+    else:
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 8/8 - PHYSICS & COLLISION PROXY",
+                [
+                    ("Status", "Skipped"),
+                    ("Reason", "Physics disabled for this asset"),
+                    ("Stage Elapsed", f"{collision_duration:.2f}s"),
+                ],
+            )
+        )
 
     _emit(progress, 0.90, "preview", "Generating asset preview.")
     preview_dir.mkdir(parents=True, exist_ok=True)
@@ -904,6 +1143,16 @@ def run_postprocess_job(
         thumbnail_path.write_bytes(thumbnail_bytes)
         with Image.open(thumbnail_path) as preview:
             preview.convert("RGB").save(preview_dir / "preview.jpg", "JPEG", quality=92)
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: PREVIEW THUMBNAIL",
+                [
+                    ("Status", "Rendered successfully"),
+                    ("Thumbnail PNG", f"{thumbnail_path} ({format_bytes(thumbnail_path.stat().st_size)})"),
+                    ("Preview JPG", f"{preview_dir / 'preview.jpg'} ({format_bytes((preview_dir / 'preview.jpg').stat().st_size)})"),
+                ],
+            )
+        )
     except Exception as exc:
         logger.warning("Preview generation skipped: %s", exc)
 
@@ -1008,6 +1257,25 @@ def run_postprocess_job(
     final_result["quality_trace"] = quality_trace
     final_result["optimize"] = optimize_stats
     _write_json(asset_manifest, final_result)
+
+    total_pipeline_time = time.time() - pipeline_start_time
+    logger.info(
+        "\n" + format_banner(
+            "POSTPROCESS: PIPELINE COMPLETE",
+            [
+                ("Job ID", job_id),
+                ("Asset Name", asset_name),
+                ("Production Status", final_result.get("production_status", "ready").upper()),
+                ("Game-Ready GLB", f"{glb_path} ({format_bytes(glb_file_size)})"),
+                ("Game-Ready FBX", f"{game_ready.get('fbx', 'N/A')} ({format_bytes(fbx_file_size)})" if "fbx" in game_ready else "N/A"),
+                ("LOD Levels", f"{len(lods)} levels"),
+                ("Physics Proxy", str(collision_path) if collision_path else "None"),
+                ("Thumbnail", str(thumbnail_path) if thumbnail_path else "None"),
+                ("Asset Manifest", str(asset_manifest)),
+                ("Total Processing Time", f"{total_pipeline_time:.2f}s"),
+            ],
+        )
+    )
 
     if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
         try:

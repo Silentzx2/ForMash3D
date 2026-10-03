@@ -18,6 +18,7 @@ from PIL import Image
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
 from core.utils.file_utils import OutputPathGenerator
+from core.utils.log_formatters import format_box, format_bytes
 from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
@@ -204,6 +205,20 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                     logger.warning(f"Background removal failed ({bg_err}), continuing with raw image")
                     proc_image = raw_image.convert("RGB")
 
+            logger.info(
+                "\n" + format_box(
+                    "TRIPOSR: INPUT PREPROCESSING",
+                    [
+                        ("Source Image", f"{image_path.name} ({format_bytes(image_path.stat().st_size)})"),
+                        ("Dimensions", f"{raw_image.width}x{raw_image.height}"),
+                        ("Alpha Channel", f"{has_useful_alpha} (preserved)"),
+                        ("Background Removal", "Skipped" if (no_remove_bg or has_useful_alpha) else "Executed via rembg"),
+                        ("Foreground Ratio", foreground_ratio),
+                        ("Marching Cubes Res", mc_resolution),
+                    ],
+                )
+            )
+
             # Run inference
             with torch.no_grad():
                 scene_codes = self.tsr_model([proc_image], device=device)
@@ -226,6 +241,18 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 logger.warning(f"to_gradio_3d_orientation failed ({orient_err}), falling back to trimesh rotation")
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+
+            logger.info(
+                "\n" + format_box(
+                    "TRIPOSR: MESH EXTRACTED",
+                    [
+                        ("Raw Triangles", f"{len(mesh.faces):,} faces"),
+                        ("Raw Vertices", f"{len(mesh.vertices):,} vertices"),
+                        ("Texture Baking", f"Enabled ({inputs.get('texture_resolution', 2048)}px)" if bake_texture else "Disabled (vertex color)"),
+                        ("Output Target", str(output_path)),
+                    ],
+                )
+            )
 
             texture_requested = bake_texture
             texture_bake_succeeded = False

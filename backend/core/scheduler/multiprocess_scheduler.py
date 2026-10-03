@@ -60,6 +60,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 
 import core.config  # Initialize PyTorch compatibility shims & settings in worker processes
+from core.utils.log_formatters import (
+    format_banner,
+    format_box,
+    format_bytes,
+    get_gpu_memory_summary,
+)
 from ..models.base import BaseModel
 from .gpu_monitor import GPUMonitor
 from .job_queue import JobQueue, JobRequest, JobStatus
@@ -473,12 +479,82 @@ def _process_job_in_worker(
         }
         logger.info(f"[RUNTIME PARAMETERS] job_id={job_id} params={json.dumps(runtime_log, default=str)}")
 
+        # Format a clean, human-readable start box with REAL runtime values
+        input_desc = "None"
+        if request_inputs.get("text_prompt"):
+            input_desc = f"Text: \"{request_inputs.get('text_prompt')}\""
+        elif request_inputs.get("image_path") or request_inputs.get("image"):
+            input_path = str(request_inputs.get("image_path") or request_inputs.get("image"))
+            img_sz = ""
+            if os.path.isfile(input_path):
+                img_sz = f" ({format_bytes(os.path.getsize(input_path))})"
+            input_desc = f"Image: {input_path}{img_sz}"
+
+        logger.info(
+            "\n" + format_box(
+                "GENERATION: INFERENCE START",
+                [
+                    ("Job ID", job_id),
+                    ("Model ID", f"{model_id} (v{runtime_log['model_version']})"),
+                    ("Feature Type", job_request.feature),
+                    ("Device", f"{runtime_log['actual_device']} ({get_gpu_memory_summary(gpu_id)})"),
+                    ("Input Source", input_desc),
+                    ("Steps / Guidance", f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"),
+                    ("Resolution / Grid", f"{runtime_log['actual_resolution']} / {runtime_log['actual_extraction_resolution']}"),
+                    ("Seed", runtime_log["actual_seed"]),
+                    ("Quality Contract", runtime_log["source_quality_contract"]),
+                    ("Downstream Budget", runtime_log["postprocess_target_polycount"]),
+                ],
+            )
+        )
+
         # Process job with inference mode for zero autograd tracking overhead
         with torch.inference_mode():
             result = loaded_model._process_request(model_inputs)
 
         elapsed = time.time() - start_time
         logger.info(f"[GENERATION SUCCESS] job_id={job_id} model={model_id} elapsed={elapsed:.2f}s")
+
+        # Dynamically determine real output mesh / multiview statistics from output on disk
+        out_mesh = (
+            result.get("output_mesh_path")
+            or result.get("mesh_path")
+            or result.get("output_path")
+            or result.get("file_path")
+        )
+        real_output_details = "N/A"
+        if out_mesh and os.path.isfile(str(out_mesh)):
+            fsize = format_bytes(os.path.getsize(str(out_mesh)))
+            try:
+                import trimesh
+                m_peek = trimesh.load(str(out_mesh), process=False)
+                if hasattr(m_peek, "faces") and len(m_peek.faces) > 0:
+                    real_output_details = f"{len(m_peek.faces):,} faces | {len(m_peek.vertices):,} vertices ({fsize})"
+                elif hasattr(m_peek, "geometry") and m_peek.geometry:
+                    tot_f = sum(len(g.faces) for g in m_peek.geometry.values() if hasattr(g, "faces"))
+                    tot_v = sum(len(g.vertices) for g in m_peek.geometry.values() if hasattr(g, "vertices"))
+                    real_output_details = f"{tot_f:,} faces | {tot_v:,} vertices ({fsize})"
+                else:
+                    real_output_details = f"File size: {fsize}"
+            except Exception:
+                real_output_details = f"File size: {fsize}"
+        elif result.get("multiview_images") or result.get("views"):
+            views = result.get("multiview_images") or result.get("views") or []
+            real_output_details = f"{len(views)} generated view images"
+
+        logger.info(
+            "\n" + format_box(
+                "GENERATION: INFERENCE SUCCESS",
+                [
+                    ("Job ID", job_id),
+                    ("Model ID", model_id),
+                    ("Elapsed Time", f"{elapsed:.2f}s"),
+                    ("Output Artifact", str(out_mesh) if out_mesh else "In-memory result"),
+                    ("Artifact Details", real_output_details),
+                    ("GPU Memory State", get_gpu_memory_summary(gpu_id)),
+                ],
+            )
+        )
 
         if os.environ.get("AUTO_UNLOAD_AFTER_JOB", "true").lower() in {"1", "true", "yes", "on"}:
             try:
@@ -508,6 +584,17 @@ def _process_job_in_worker(
         import traceback
         tb = traceback.format_exc()
         logger.error(f"[GENERATION FAILED] job_id={job_request.job_id} model={model_config.get('model_id')}: {e}\n{tb}")
+        logger.info(
+            "\n" + format_box(
+                "GENERATION: INFERENCE FAILED",
+                [
+                    ("Job ID", job_request.job_id),
+                    ("Model ID", model_config.get("model_id")),
+                    ("Error Type", type(e).__name__),
+                    ("Error Details", str(e)),
+                ],
+            )
+        )
         if loaded_model is not None and os.environ.get("AUTO_UNLOAD_AFTER_JOB", "true").lower() in {"1", "true", "yes", "on"}:
             try:
                 logger.info(
