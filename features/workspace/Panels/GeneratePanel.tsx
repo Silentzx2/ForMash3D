@@ -193,37 +193,38 @@ export const GeneratePanel: React.FC = () => {
         'hunyuan3d_shape_v21_image_to_raw_mesh',
         'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
         'triposf_image_to_raw_mesh',
+        'trellis2_image_to_textured_mesh',
+        'partpacker_image_to_raw_mesh',
+        'ultrashape_image_to_raw_mesh',
       ];
       ids = combined.length > 0 ? combined : defaults;
     }
 
-    // Select only models that the backend currently reports as ready.
-    // This prevents a CPU-only/missing-weight machine from presenting unusable models.
-    if (modelDetails && Object.keys(modelDetails).length > 0) {
-      return ids.filter(id => modelDetails[id]?.status === 'ready');
-    }
-    if (weightsStatus && Object.keys(weightsStatus).length > 0) {
-      return ids.filter(id => weightsStatus[id] === true);
-    }
-    return ids;
+    // Prioritize ready / installed models at the top, while keeping all supported models
+    // visible in the selector so users can see available engines and their readiness status.
+    const readyIds = ids.filter(id => modelDetails[id]?.status === 'ready' || weightsStatus[id] === true);
+    const otherIds = ids.filter(id => !readyIds.includes(id));
+    return [...readyIds, ...otherIds];
   }, [modelRegistry, currentMode, weightsStatus, modelDetails]);
 
   const meshCapableModels = useMemo(() => {
-    return relevantModelIds.map(id =>
-      formatGenerateModel(id, weightsStatus[id] !== false, modelDetails[id])
-    );
+    return relevantModelIds.map(id => {
+      const isReady = modelDetails[id]?.status === 'ready' || weightsStatus[id] === true;
+      return formatGenerateModel(id, isReady, modelDetails[id]);
+    });
   }, [relevantModelIds, weightsStatus, modelDetails]);
 
   const providersList = meshCapableModels;
 
-  // Auto-correct selected model if it does not belong to the current mode / mesh generation
+  // Auto-correct selected model: if current selection is invalid, prefer the first ready model, or first available model
   useEffect(() => {
     if (providersList.length === 0) return;
     const isCurrentModelValid = providersList.some(m => m.id === generationSettings.aiModel);
     if (!isCurrentModelValid) {
+      const firstReady = providersList.find(m => m.available || m.installed);
       setGenerationSettings(prev => ({
         ...prev,
-        aiModel: providersList[0].id,
+        aiModel: firstReady ? firstReady.id : providersList[0].id,
       }));
     }
   }, [providersList, generationSettings.aiModel, setGenerationSettings]);
@@ -236,8 +237,9 @@ export const GeneratePanel: React.FC = () => {
       return null;
     }
     if (selected.available) return null; // ready → no pill
-    if (selected.status === 'weights_missing') return { label: 'Weights missing', tone: 'warn' as const };
-    if (!selected.installed) return { label: 'Model not installed', tone: 'warn' as const };
+    if (selected.status === 'weights_missing') return { label: 'Weights missing (download via manager)', tone: 'warn' as const };
+    if (selected.status === 'gpu_unavailable') return { label: 'GPU unavailable (requires CUDA)', tone: 'warn' as const };
+    if (!selected.installed) return { label: 'Model weights missing', tone: 'warn' as const };
     if (selected.status) return { label: selected.status, tone: 'warn' as const };
     return { label: 'Not ready', tone: 'warn' as const };
   };
@@ -852,6 +854,16 @@ export const GeneratePanel: React.FC = () => {
                             }`}>
                               {m.supports_texture ? 'PBR Texture' : 'Raw Mesh'}
                             </span>
+                            {!(m.available || m.installed) && (
+                              <>
+                                <span className={isSelected ? 'text-black/60' : 'text-zinc-600'}>•</span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
+                                  isSelected ? 'bg-black/20 text-black' : 'bg-amber-500/15 text-amber-300'
+                                }`}>
+                                  {m.status === 'gpu_unavailable' ? 'GPU Req' : 'Weights Missing'}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                         {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}

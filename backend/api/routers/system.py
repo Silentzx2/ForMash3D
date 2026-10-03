@@ -224,13 +224,26 @@ def _resolve_manifest_path(model_path: Optional[str]) -> Optional[Path]:
         return None
     path = Path(model_path).expanduser()
     if path.is_absolute():
-        return path
+        return path if path.exists() else None
+
     repo_root = Path(__file__).resolve().parents[3]
-    candidates = (
+    backend_root = Path(__file__).resolve().parents[2]
+
+    # Handle paths prefixed with "backend/" or without
+    sub_path = path
+    if len(path.parts) > 1 and path.parts[0] == "backend":
+        sub_path = Path(*path.parts[1:])
+
+    candidates = [
         repo_root / path,
-        repo_root / "backend" / path,
+        repo_root / sub_path,
+        backend_root / path,
+        backend_root / sub_path,
         Path.cwd() / path,
-    )
+        Path.cwd() / sub_path,
+        Path.home() / path,
+        Path.home() / sub_path,
+    ]
     return next((candidate.resolve() for candidate in candidates if candidate.exists()), None)
 
 
@@ -249,14 +262,34 @@ def _is_model_weights_available(model_config: Any) -> bool:
             ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
         }
         model_descriptors = {"config.json", "config.yaml", "model_index.json"}
-        has_checkpoint = has_descriptor = False
+
+        # Known model weight file signatures for models without a config.json/yaml
+        known_signatures = (
+            "triposf", "mp_rank", "hunyuan", "partpacker", "ultrashape",
+            "fastmesh", "objaverse", "p3sam", "model.ckpt", "trellis"
+        )
+
+        has_checkpoint = False
+        has_descriptor = False
+        has_known_model_file = False
+
         for item in path.rglob("*"):
             if not item.is_file() or item.stat().st_size == 0:
                 continue
-            has_checkpoint |= item.suffix.lower() in checkpoint_suffixes
-            has_descriptor |= item.name.lower() in model_descriptors
-            if has_checkpoint and has_descriptor:
-                return True
+            if item.name.endswith(".incomplete"):
+                continue
+            item_lower = item.name.lower()
+            if item.suffix.lower() in checkpoint_suffixes:
+                has_checkpoint = True
+                if any(sig in item_lower for sig in known_signatures):
+                    has_known_model_file = True
+            if item_lower in model_descriptors:
+                has_descriptor = True
+
+        if has_known_model_file and has_checkpoint:
+            return True
+        if has_checkpoint and has_descriptor:
+            return True
         return False
     except OSError:
         return False
@@ -265,7 +298,10 @@ def _is_model_weights_available(model_config: Any) -> bool:
 def _model_supports_download(model_id: str) -> bool:
     return any(
         token in model_id
-        for token in ("trellis", "triposr", "triposg", "triposf", "zero123plus")
+        for token in (
+            "trellis", "triposr", "triposg", "triposf", "zero123plus",
+            "hunyuan", "partpacker", "ultrashape", "partfield", "fastmesh"
+        )
     )
 
 

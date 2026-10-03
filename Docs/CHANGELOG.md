@@ -7,6 +7,10 @@
   - Container build delegates directly to native repository automation (`scripts/setup.sh --auto --skip-cuda --conda`), eliminating redundant scattered commands and automatically building the complete frontend, backend, wheels, Conda environment, and model dependencies without interactive prompts.
 - Built complete Docker management lifecycle directly into `manager.sh`: interactive menu option `[9] Docker Engine` and CLI commands (`docker`, `docker-build`, `docker-run`, `docker-stop`, `docker-logs`, `docker-shell`, `docker-export`).
 - Added non-interactive and modular flags to `scripts/setup.sh` and `backend/scripts/install.sh`: `--auto` (skips interactive prompts), `--skip-cuda` (reuses container/system CUDA without apt interference), and `--conda` / `--venv` / `--env-manager`.
+- Fixed model visibility and weight readiness detection in `backend/api/routers/system.py` and `GeneratePanel.tsx`:
+  - Resolved model weight detection bug where `_is_model_weights_available` strictly required both a descriptor (`config.json`/`model_index.json`) AND a checkpoint, which incorrectly marked standalone weights (Hunyuan3D Shape/DiT, TripoSF, UltraShape, PartPacker, PartField) as `"weights_missing"`.
+  - Added known model signature detection (`triposf`, `mp_rank`, `hunyuan`, `partpacker`, `ultrashape`, etc.) and multi-candidate relative path resolution across repo root and `backend/`.
+  - Updated `GeneratePanel.tsx` to prioritize ready engines at the top of the selector without hiding uninstalled/download-pending models, adding readiness badges (`PBR Texture`, `Raw Mesh`, `Weights Missing`, `GPU Req`) so all 3D engines remain accessible and transparent.
 - Enhanced test coverage across all modules (63 passed, 3 skipped, 0 failed), passing `npx tsc --noEmit` with 0 errors.
 
 ## 2026-10-03 — [Generation Quality, Scene Transforms & Runtime]
