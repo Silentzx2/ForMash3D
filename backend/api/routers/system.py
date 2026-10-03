@@ -235,21 +235,29 @@ def _resolve_manifest_path(model_path: Optional[str]) -> Optional[Path]:
 
 
 def _is_model_weights_available(model_config: Any) -> bool:
-    """Check for actual local checkpoint payloads; manifest paths remain canonical."""
+    """Check manifest files or a minimally complete local model directory."""
     path = _resolve_manifest_path(getattr(model_config, "model_path", None))
     if path is None:
         return False
-    if path.is_file():
-        return path.stat().st_size > 0
-
-    checkpoint_suffixes = {
-        ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
-    }
     try:
-        return any(
-            item.is_file() and item.stat().st_size > 0 and item.suffix.lower() in checkpoint_suffixes
-            for item in path.rglob("*")
-        )
+        if path.is_file():
+            return path.stat().st_size > 0
+        if not path.is_dir():
+            return False
+
+        checkpoint_suffixes = {
+            ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
+        }
+        model_descriptors = {"config.json", "config.yaml", "model_index.json"}
+        has_checkpoint = has_descriptor = False
+        for item in path.rglob("*"):
+            if not item.is_file() or item.stat().st_size == 0:
+                continue
+            has_checkpoint |= item.suffix.lower() in checkpoint_suffixes
+            has_descriptor |= item.name.lower() in model_descriptors
+            if has_checkpoint and has_descriptor:
+                return True
+        return False
     except OSError:
         return False
 
@@ -257,7 +265,7 @@ def _is_model_weights_available(model_config: Any) -> bool:
 def _model_supports_download(model_id: str) -> bool:
     return any(
         token in model_id
-        for token in ("trellis", "triposr", "triposg", "triposf")
+        for token in ("trellis", "triposr", "triposg", "triposf", "zero123plus")
     )
 
 

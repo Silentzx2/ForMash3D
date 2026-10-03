@@ -22,7 +22,7 @@ def test_normalize_physics_config_bounds_and_defaults():
 
 
 def test_collision_quality_maps_to_existing_collision_contract():
-    assert collision_options_for_quality("fast")["method"] == "convex_hull"
+    assert collision_options_for_quality("fast")["method"] == "decomposition"
     assert collision_options_for_quality("balanced")["method"] == "decomposition"
     assert collision_options_for_quality("precise")["method"] == "decomposition"
 
@@ -87,4 +87,3 @@ def test_collision_options_accepts_dict_or_schema():
 
     _, stats2 = run_collision(mesh, CollisionOptions(method="convex_hull"))
     assert stats2["method"] == "convex_hull"
-

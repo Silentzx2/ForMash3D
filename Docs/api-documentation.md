@@ -102,6 +102,9 @@ GET /api/v1/system/health
   "uptime": 12345.67
 }
 ```
+This endpoint reports service liveness only; it does not imply inference models
+are available. Use `GET /api/v1/system/models` for non-loading model readiness
+and CUDA availability.
 
 ### System Information
 

@@ -1,6 +1,6 @@
 """Post-processing runtime and opt-in end-to-end coverage.
 
-The full fixture test is opt-in because it exercises Blender and the production
+The full fixture test is opt-in because it exercises the production
 mesh-processing stack and can take materially longer than the normal test suite.
 """
 
@@ -107,6 +107,67 @@ def test_native_texture_detection_requires_real_texture_payload():
     assert _has_native_textures(mesh) is False
 
 
+def test_load_mesh_applies_scene_transforms_and_preserves_textures():
+    import io
+
+    import numpy as np
+    import trimesh
+    from PIL import Image
+    from postprocess.meshio import load_mesh
+    from postprocess.pipeline import _has_native_textures_scene
+
+    scene = trimesh.Scene()
+    for index, color in enumerate(((255, 0, 0), (0, 255, 0))):
+        mesh = trimesh.creation.box()
+        image = np.empty((16, 16, 3), dtype=np.uint8)
+        image[:] = color
+        mesh.visual = trimesh.visual.TextureVisuals(
+            uv=np.tile([0.5, 0.5], (len(mesh.vertices), 1)),
+            material=trimesh.visual.material.PBRMaterial(
+                baseColorTexture=Image.fromarray(image),
+                name=f"material-{index}",
+            ),
+        )
+        scene.add_geometry(
+            mesh,
+            node_name=f"part-{index}",
+            geom_name=f"part-{index}",
+            transform=trimesh.transformations.translation_matrix([index * 3, 0, 0]),
+        )
+
+    source = scene.export(file_type="glb")
+    source_scene = trimesh.load(io.BytesIO(source), file_type="glb", process=False)
+    flattened = load_mesh(source, "fixture.glb")
+
+    np.testing.assert_allclose(flattened.bounds, source_scene.bounds)
+    assert flattened.visual.uv is not None
+    assert _has_native_textures_scene(flattened.export(file_type="glb"))
+
+
+def test_load_mesh_vertex_normals_follow_scene_transforms():
+    import io
+
+    import numpy as np
+    import trimesh
+    from postprocess.meshio import load_mesh_vertex_normals
+
+    mesh = trimesh.creation.icosphere(subdivisions=1)
+    _ = mesh.vertex_normals
+    transform = trimesh.transformations.rotation_matrix(np.pi / 2, [0, 0, 1])
+    scene = trimesh.Scene()
+    scene.add_geometry(mesh, node_name="rotated", geom_name="rotated", transform=transform)
+    raw = scene.export(file_type="glb")
+
+    loaded_scene = trimesh.load(io.BytesIO(raw), file_type="glb", process=False)
+    geometry_name = next(iter(loaded_scene.geometry))
+    exported_normals = loaded_scene.geometry[geometry_name]._cache.cache["vertex_normals"]
+    expected = exported_normals @ np.linalg.inv(transform[:3, :3])
+    expected /= np.linalg.norm(expected, axis=1)[:, None]
+    actual = load_mesh_vertex_normals(raw, "rotated.glb")
+
+    np.testing.assert_allclose(actual, expected, atol=1e-6)
+
+
 def test_blender_runtime_smoke():
     """Blender, when installed, must be able to start headlessly and import bpy."""
     executable = os.environ.get("BLENDER_EXECUTABLE", "blender")
@@ -134,15 +195,37 @@ def test_blender_runtime_smoke():
 )
 @pytest.mark.parametrize("physics_enabled", [False, True])
 def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch, physics_enabled):
-    """Run a real generated GLB fixture through the canonical production pipeline."""
+    """Run a textured multi-part GLB fixture through the canonical pipeline."""
+    import numpy as np
     import trimesh
+    from PIL import Image
     import postprocess.pipeline as pipeline
+    from postprocess.meshio import scene_to_mesh
 
     raw_path = tmp_path / "fixture.glb"
-    fixture = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    fixture = trimesh.Scene()
+    for index, color in enumerate(((255, 0, 0), (0, 255, 0))):
+        part = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+        image = np.empty((16, 16, 3), dtype=np.uint8)
+        image[:] = color
+        part.visual = trimesh.visual.TextureVisuals(
+            uv=np.tile([0.5, 0.5], (len(part.vertices), 1)),
+            material=trimesh.visual.material.PBRMaterial(
+                baseColorTexture=Image.fromarray(image),
+                name=f"fixture-material-{index}",
+            ),
+        )
+        fixture.add_geometry(
+            part,
+            node_name=f"fixture-part-{index}",
+            geom_name=f"fixture-part-{index}",
+            transform=trimesh.transformations.translation_matrix([index * 3, 0, 0]),
+        )
     raw_bytes = fixture.export(file_type="glb")
     assert isinstance(raw_bytes, bytes)
     raw_path.write_bytes(raw_bytes)
+    source_scene = trimesh.load(raw_path, file_type="glb", process=False)
+    source_mesh = scene_to_mesh(source_scene)
 
     models_root = tmp_path / "models"
     monkeypatch.setattr(pipeline, "_storage_root", lambda: models_root)
@@ -167,11 +250,16 @@ def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch, physics_enabl
     asset_root = Path(result["asset_root"])
     master = asset_root / "master" / "source.glb"
     game_ready_glb = next((asset_root / "game_ready").glob("*.glb"))
+    game_ready_scene = trimesh.load(game_ready_glb, file_type="glb", process=False)
+    game_ready_mesh = scene_to_mesh(game_ready_scene)
     quality_report = asset_root / "metadata" / "quality_report.json"
     asset_manifest = asset_root / "metadata" / "asset.json"
     physics_metadata = asset_root / "metadata" / "physics.json"
 
     assert master.read_bytes() == raw_bytes
+    np.testing.assert_allclose(game_ready_mesh.bounds, source_mesh.bounds)
+    assert len(game_ready_mesh.faces) == len(source_mesh.faces)
+    assert pipeline._has_native_textures_scene(game_ready_glb.read_bytes())
     assert game_ready_glb.is_file()
     assert quality_report.is_file()
     assert asset_manifest.is_file()
@@ -192,3 +280,44 @@ def test_real_mesh_fixture_through_pipeline(tmp_path, monkeypatch, physics_enabl
     assert quality["collision"] is not None if physics_enabled else quality["collision"] is None
     assert len(quality["source_sha256"]) == 64
     assert set(quality["lods"]) >= {"0", "1", "2", "3"}
+
+
+def test_high_to_low_bake_integration(tmp_path, monkeypatch):
+    import io
+    import trimesh
+    from unittest.mock import MagicMock
+    from postprocess import pipeline
+
+    monkeypatch.setenv("STORAGE_LOCAL_PATH", str(tmp_path / "storage"))
+    monkeypatch.setenv("ALLOW_LOCAL_SERVER_PATH_INPUTS", "true")
+    box = trimesh.creation.box()
+    raw_path = tmp_path / "high_poly.glb"
+    box.export(str(raw_path))
+
+    mock_baked_maps = {
+        "normal": b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRmock_normal",
+        "ao": b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRmock_ao",
+    }
+    mock_stats = {"maps": {"normal": "normal.png", "ao": "ao.png"}}
+
+    with monkeypatch.context() as m:
+        m.setattr("postprocess.services.bake.run_bake", lambda **kwargs: (mock_baked_maps, mock_stats))
+        # Also patch run_bake where it's imported in pipeline
+        import postprocess.services.bake
+        postprocess.services.bake.run_bake = MagicMock(return_value=(mock_baked_maps, mock_stats))
+
+        result = pipeline.run_postprocess_job(
+            "test_bake_job",
+            {"output_mesh_path": str(raw_path)},
+            {"asset_name": "baked_asset", "bake_normal_maps": True, "generateLOD": False},
+            {"model_id": "test_model", "feature": "image_to_raw_mesh"},
+        )
+
+    asset_root = Path(result["asset_root"])
+    textures_dir = asset_root / "textures"
+    assert textures_dir.is_dir()
+    assert (textures_dir / "normal.png").read_bytes() == mock_baked_maps["normal"]
+    assert (textures_dir / "ao.png").read_bytes() == mock_baked_maps["ao"]
+    assert result["texture_status"] == "baked"
+    assert "normal" in result["textures"]
+

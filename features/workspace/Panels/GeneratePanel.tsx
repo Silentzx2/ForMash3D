@@ -1362,6 +1362,34 @@ export const GeneratePanel: React.FC = () => {
                     </button>
                   </div>
                 )}
+
+                {/* 4. High-to-Low Micro-Detail Normal Map Baking */}
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between mt-2">
+                  <div className="flex flex-col pr-2">
+                    <span className="text-zinc-300 flex items-center gap-1.5 text-xs font-semibold">
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                      <span>Bake Normal Maps (Micro-Details)</span>
+                    </span>
+                    <span className="text-[8.5px] text-zinc-500 leading-tight">
+                      Projects high-poly sculpt creases & micro-surface details onto game-ready mesh
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={generationSettings.bakeNormalMaps !== false}
+                    onClick={() => setGenerationSettings(prev => ({ ...prev, bakeNormalMaps: prev.bakeNormalMaps === false ? true : false }))}
+                    className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer shrink-0 ${
+                      generationSettings.bakeNormalMaps !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                    }`}
+                  >
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                        generationSettings.bakeNormalMaps !== false ? 'translate-x-3.5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
               </div>
               </div>

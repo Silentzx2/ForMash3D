@@ -1108,6 +1108,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             physics_config: generationSettings.physics,
             topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
             quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
+            bake_normal_maps: generationSettings.bakeNormalMaps !== false,
           };
 
       if (!useMultiviewReconstruction && isTextured) {

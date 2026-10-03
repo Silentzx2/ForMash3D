@@ -31,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.config import get_settings
 from core.scheduler.multiprocess_scheduler import JobRequest, MultiprocessModelScheduler
-from core.utils.file_utils import resolve_server_file_path, save_base64_file
+from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path, save_base64_file
 from adapters.zero123plus_adapter import Zero123PlusAdapter, CAMERA_RIG, compute_source_sha256
 
 from ..dependencies import (
@@ -118,14 +118,28 @@ class MultiViewReconstruct3DRequest(BaseModel):
 
 
 def _get_storage_models_root() -> Path:
-    from core.utils.file_utils import get_storage_base_dir
-    try:
-        base = get_storage_base_dir()
-    except Exception:
-        base = Path(__file__).resolve().parents[2] / "storage"
-    models_dir = base / "models"
+    models_dir = get_storage_base_dir() / "models" / "meshes"
     models_dir.mkdir(parents=True, exist_ok=True)
     return models_dir
+
+
+def _find_multiview_workspace(asset_id: str) -> Optional[Path]:
+    storage_base = get_storage_base_dir()
+    for models_root in (
+        _get_storage_models_root(),
+        storage_base / "models",
+    ):
+        workspace = models_root / asset_id
+        if (workspace / "multiview").is_dir():
+            return workspace
+
+        matches = sorted(
+            path for path in models_root.glob(f"*{asset_id}*")
+            if (path / "multiview").is_dir()
+        )
+        if matches:
+            return matches[0]
+    return None
 
 
 def _safe_stem(name: str) -> str:
@@ -300,18 +314,10 @@ async def get_multiview_asset(
     """
     Retrieve manifest and accessible URLs for a generated or uploaded multi-view asset.
     """
-    models_root = _get_storage_models_root()
-    workspace_dir = models_root / asset_id
+    workspace_dir = _find_multiview_workspace(asset_id)
+    if workspace_dir is None:
+        raise HTTPException(status_code=404, detail=f"Multi-view asset '{asset_id}' not found")
     multiview_dir = workspace_dir / "multiview"
-
-    if not multiview_dir.is_dir():
-        # Search for directory matching prefix
-        matches = [d for d in models_root.glob(f"*{asset_id}*") if (d / "multiview").is_dir()]
-        if matches:
-            workspace_dir = matches[0]
-            multiview_dir = workspace_dir / "multiview"
-        else:
-            raise HTTPException(status_code=404, detail=f"Multi-view asset '{asset_id}' not found")
 
     manifest_file = multiview_dir / "manifest.json"
     manifest_data = {}
@@ -322,9 +328,10 @@ async def get_multiview_asset(
         except Exception as e:
             logger.warning(f"Error reading manifest: {e}")
 
-    # Build web-accessible URLs under /storage
+    # Serve only this asset's multiview images through the frontend static proxy.
     asset_folder = workspace_dir.name
-    base_url = f"/storage/models/{asset_folder}/multiview"
+    storage_path = workspace_dir.relative_to(get_storage_base_dir()).as_posix()
+    base_url = f"/static/{storage_path}/multiview"
 
     views_output = []
     raw_views = manifest_data.get("views", [])
@@ -376,17 +383,10 @@ async def download_multiview_zip(
     Export the multi-view pack as an on-demand ZIP file.
     The filename strictly derives from the originally uploaded image stem: <stem>.zip.
     """
-    models_root = _get_storage_models_root()
-    workspace_dir = models_root / asset_id
+    workspace_dir = _find_multiview_workspace(asset_id)
+    if workspace_dir is None:
+        raise HTTPException(status_code=404, detail=f"Multi-view asset '{asset_id}' not found")
     multiview_dir = workspace_dir / "multiview"
-
-    if not multiview_dir.is_dir():
-        matches = [d for d in models_root.glob(f"*{asset_id}*") if (d / "multiview").is_dir()]
-        if matches:
-            workspace_dir = matches[0]
-            multiview_dir = workspace_dir / "multiview"
-        else:
-            raise HTTPException(status_code=404, detail=f"Multi-view asset '{asset_id}' not found")
 
     # Read manifest to extract exact original stem
     original_stem = None

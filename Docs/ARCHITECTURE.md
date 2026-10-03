@@ -64,7 +64,7 @@ flowchart TB
 
     subgraph DATA["📦 Canonical Storage Layer"]
         direction TB
-        LOCAL["Asset Workspace<br/>backend/storage/models/<asset>_<hash>/"]:::slate
+        LOCAL["Asset Workspace<br/>backend/storage/models/meshes/<asset>_<job_id>/"]:::slate
         ZIP["Engine-Ready Delivery<br/>Unreal Engine 5 · Unity · Godot 4"]:::slate
     end
 
@@ -127,7 +127,7 @@ Located at `backend/api/`:
 
 Located at `backend/storage/`:
 - **Uploads** (`uploads/`): User-uploaded reference images (`.png`, `.jpg`, `.webp`).
-- **Models** (`models/<asset_name>_<job_hash>/`): Canonical per-generation asset workspaces.
+- **Models** (`models/meshes/<asset_name>_<job_id>/`): Canonical per-generation mesh asset workspaces.
 - **Asset workspace**: `master/` (`source.glb` immutable master), `game_ready/` (engine-optimized final output), `lods/` (LOD0..3), `collision/` (CoACD convex decomposition derived from final `game_ready.glb`), `textures/`, `previews/`, `multiview/` (6 novel views, `manifest.json`, optional `masks/`, optional `normals/`), and `metadata/` (`quality_report.json`, `asset.json`, `physics.json`). Directory creation is deferred until writing begins.
 - **ZIP delivery**: Generated on demand from the canonical workspace; no persistent `exports/` tree is required. Multi-view packages derive directly as `<original_stem>.zip`.
 
@@ -196,7 +196,7 @@ flowchart LR
     classDef file fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#cbd5e1
 
     ROOT["backend/storage/"]:::dir --> UPLOADS["uploads/<br/>Reference Images"]:::dir
-    ROOT --> MODELS["models/<asset_name>_<job_hash>/<br/>Canonical Asset Workspace"]:::dir
+    ROOT --> MODELS["models/meshes/<asset_name>_<job_id>/<br/>Canonical Asset Workspace"]:::dir
     ROOT --> THUMBS["thumbnails/<br/>Preview PNGs"]:::dir
     ROOT --> DELIVERY["On-demand ZIP delivery"]:::dir
 
@@ -444,7 +444,7 @@ bash -n backend/scripts/install.sh
 
 The production post-processing engine lives under backend/postprocess/. Successful mesh-generation jobs run this engine before the job is marked completed.
 
-Pipeline: MODEL INFERENCE -> immutable master/source.glb -> Inspect/Repair -> conditional AutoRetopo for a large boundary component -> texture-aware Optimize/Preserve -> Auto UV/Preserve for raw outputs -> GAME READY -> LOD -> collision -> preview -> QA. Native textured outputs are optimized with UV/material-aware decimation; raw outputs receive geometry optimization and production UVs. High-to-low bake remains an explicit transfer operation, and post-processing does not synthesize semantic textures from an untextured source. Quality metadata records source hash, source/repaired/optimized/game-ready snapshots, topology state, texture state, and per-LOD UV/material preservation.
+Pipeline: MODEL INFERENCE -> immutable master/source.glb -> world-space scene flattening -> Inspect/Repair -> conditional AutoRetopo for a large boundary component -> texture-aware Optimize/Preserve -> Auto UV/Preserve for raw outputs -> GAME READY -> LOD -> collision -> preview -> QA. Scene flattening applies node transforms and fails explicitly for unsupported mixed geometry rather than silently processing local-space coordinates. Native textured outputs are optimized with UV/material-aware decimation; raw outputs receive geometry optimization and production UVs. UV coordinates do not generate an image texture; shape-only model outputs remain untextured unless an explicit texture-generation or bake step succeeds. High-to-low bake remains an explicit transfer operation, and post-processing does not synthesize semantic textures from an untextured source. Quality metadata records source hash, source/repaired/optimized/game-ready snapshots, topology state, texture state, and per-LOD UV/material preservation.
 
 The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE and is best-effort for generation completion.
 

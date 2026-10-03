@@ -11,6 +11,7 @@ Verifies:
 """
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -65,6 +66,12 @@ class TestZero123PlusModelIsolation(unittest.TestCase):
         self.assertIsInstance(adapter, Zero123PlusAdapter)
         self.assertEqual(adapter.model_id, "zero123plus_v12_image_to_multiview")
 
+    def test_model_weights_are_reported_downloadable(self):
+        from api.routers.system import _model_supports_download
+
+        self.assertTrue(_model_supports_download("zero123plus_v12_image_to_multiview"))
+        self.assertFalse(_model_supports_download("hunyuan3d_shape_v21_image_to_raw_mesh"))
+
 
 class TestZero123PlusAdapterContract(unittest.TestCase):
     """Verify Zero123PlusAdapter schema, parameter defaults, and camera rig."""
@@ -114,6 +121,59 @@ class TestZero123PlusAdapterContract(unittest.TestCase):
             self.assertEqual(cam["fov_deg"], 30.0)
             self.assertEqual(cam["filename"], expected_filenames[i])
 
+    def test_generation_uses_configured_mesh_storage(self):
+        from PIL import Image
+        from adapters import zero123plus_adapter
+        import torch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_root = Path(temp_dir)
+            image_path = temp_root / "source.png"
+            Image.new("RGB", (32, 32)).save(image_path)
+            storage_root = temp_root / "configured-storage"
+
+            pipeline = MagicMock()
+            pipeline.device = torch.device("cpu")
+            pipeline.return_value.images = [Image.new("RGB", (640, 960))]
+            self.adapter.pipeline = pipeline
+
+            with (
+                patch.object(zero123plus_adapter, "get_storage_base_dir", return_value=storage_root),
+                patch.object(zero123plus_adapter, "resolve_server_file_path", return_value=str(image_path)),
+            ):
+                result = self.adapter._process_request({
+                    "image_path": str(image_path),
+                    "asset_name": "source",
+                    "job_id": "storage-contract-test",
+                    "seed": 0,
+                    "save_contact_sheet": False,
+                })
+
+            self.assertTrue(
+                Path(result["multiview_dir"]).is_relative_to(storage_root / "models" / "meshes")
+            )
+            self.assertEqual(result["manifest"]["seed"], 0)
+            self.assertEqual(result["asset_id"], Path(result["asset_workspace"]).name)
+            from api.routers import multiview
+            with patch.object(multiview, "get_storage_base_dir", return_value=storage_root):
+                self.assertEqual(
+                    multiview._find_multiview_workspace(result["asset_id"]),
+                    Path(result["asset_workspace"]),
+                )
+
+    def test_configured_storage_paths_are_accepted_as_inputs(self):
+        import os
+        from core.utils.file_utils import resolve_server_file_path
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir) / "storage"
+            storage_root.mkdir()
+            image_path = storage_root / "reference.png"
+            image_path.write_bytes(b"test")
+            with patch.dict(os.environ, {"STORAGE_LOCAL_PATH": str(storage_root)}, clear=False):
+                os.environ.pop("ALLOWED_INPUT_ROOTS", None)
+                self.assertEqual(resolve_server_file_path(str(image_path)), str(image_path.resolve()))
+
 
 class TestDeterministicHashingAndNaming(unittest.TestCase):
     """Verify deterministic hash derivation and ZIP naming contracts."""
@@ -133,13 +193,16 @@ class TestDeterministicHashingAndNaming(unittest.TestCase):
         params_a = {"inference_steps": 28, "guidance_scale": 4.0, "seed": 42}
         params_b = {"guidance_scale": 4.0, "seed": 42, "inference_steps": 28}
         params_c = {"inference_steps": 30, "guidance_scale": 4.0, "seed": 42}
+        params_d = {"inference_steps": 28, "guidance_scale": 5.0, "seed": 42}
 
         hash_a = compute_request_sha256(source_hash, params_a)
         hash_b = compute_request_sha256(source_hash, params_b)
         hash_c = compute_request_sha256(source_hash, params_c)
+        hash_d = compute_request_sha256(source_hash, params_d)
 
         self.assertEqual(hash_a, hash_b)
         self.assertNotEqual(hash_a, hash_c)
+        self.assertNotEqual(hash_a, hash_d)
 
     def test_zip_filename_contract(self):
         from adapters.zero123plus_adapter import derive_zip_filename
@@ -157,6 +220,51 @@ class TestMultiViewRouterAndCapabilityGate(unittest.TestCase):
         app = FastAPI()
         app.include_router(router, prefix="/api/v1/multiview")
         self.client = TestClient(app)
+
+    def test_storage_root_uses_configured_mesh_workspace(self):
+        from api.routers import multiview
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            with patch.object(multiview, "get_storage_base_dir", return_value=storage_root):
+                self.assertEqual(
+                    multiview._get_storage_models_root(),
+                    storage_root / "models" / "meshes",
+                )
+
+    def test_existing_multiview_assets_remain_readable(self):
+        from api.routers import multiview
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            legacy_workspace = storage_root / "models" / "legacy_asset"
+            (legacy_workspace / "multiview").mkdir(parents=True)
+            with patch.object(multiview, "get_storage_base_dir", return_value=storage_root):
+                self.assertEqual(
+                    multiview._find_multiview_workspace("legacy_asset"),
+                    legacy_workspace,
+                )
+
+    def test_asset_image_urls_use_static_proxy(self):
+        import json
+        from api.routers import multiview
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            multiview_dir = storage_root / "models" / "meshes" / "asset_123" / "multiview"
+            multiview_dir.mkdir(parents=True)
+            (multiview_dir / "manifest.json").write_text(
+                json.dumps({"views": [{"file": "front.png", "label": "Front"}]}),
+                encoding="utf-8",
+            )
+            with patch.object(multiview, "get_storage_base_dir", return_value=storage_root):
+                response = self.client.get("/api/v1/multiview/asset_123")
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json()["views"][0]["url"],
+                "/static/models/meshes/asset_123/multiview/front.png",
+            )
 
     def test_router_endpoints_registered(self):
         from api.routers.multiview import router

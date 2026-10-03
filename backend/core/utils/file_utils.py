@@ -93,6 +93,7 @@ def resolve_server_file_path(path_or_url: Optional[str]) -> Optional[str]:
             (Path.cwd() / "backend" / "storage").resolve(),
             (Path.cwd().parent / "backend" / "storage").resolve(),
             (Path(__file__).resolve().parents[2] / "storage").resolve(),
+            get_storage_base_dir().resolve(),
         ]
     )
     unrestricted = os.environ.get("ALLOW_LOCAL_SERVER_PATH_INPUTS", "false").lower() in {"1","true","yes","on"}

@@ -132,6 +132,10 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
         try:
             if self.runner is None:
                 raise ValueError("TRELLIS.2 model is not loaded")
+            if getattr(self.runner, "o_voxel", None) is None:
+                raise RuntimeError(
+                    "TRELLIS.2 textured generation requires o_voxel for textured GLB export"
+                )
             
             # Validate inputs using parent class
             output_format = self._validate_common_inputs(inputs)
@@ -502,5 +506,4 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
 # Aliases
 TRELLIS2ImageToTexturedMeshAdapter = Trellis2ImageToTexturedMeshAdapter
 TRELLIS2ImageMeshPaintingAdapter = Trellis2ImageMeshPaintingAdapter
-
 

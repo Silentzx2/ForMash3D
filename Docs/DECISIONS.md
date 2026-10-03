@@ -371,13 +371,13 @@
 
 ## ADR-015: Model-Specific Dependency Overrides After the Global Baseline
 
-**Decision**: Re-apply model-specific requirements after the global backend baseline when a model pins different compatible versions.
+**Decision**: Use shared backend dependency pins that satisfy TripoSG, then install TripoSG's requirements after the backend baseline in the shell installer and both Docker builds.
 
-**Reason**: TripoSG requires diffusers 0.30.3 while the global baseline pins 0.24.0; installation order previously overwrote the model requirement.
+**Reason**: The prior backend pins (`diffusers==0.24.0`, `transformers==4.43.2`) contradicted TripoSG's `diffusers==0.30.3` and `transformers>=4.44.0`. The selected pins (`diffusers==0.30.3`, `transformers==4.44.2`, `huggingface_hub>=0.25.0,<0.26.0`) satisfy both requirement sets.
 
 **Consequences**:
-- The global dependency baseline remains unchanged.
-- TripoSG's declared compatibility is restored deterministically by the installer.
+- Python 3.10 and PyTorch 2.6.0+cu124 remain unchanged.
+- The shell installer and both Docker images apply TripoSG's requirement set after the shared backend baseline.
 
 ## ADR-028: TripoSR Output Axis for ForMash3D
 
@@ -454,7 +454,7 @@
 
 Decision: successful raw mesh-generation jobs run the production post-processing pipeline before the job is marked completed.
 
-Storage: backend/storage/models/<asset_name>_<job_hash>/ is the canonical workspace. There is no persistent export/ directory. ZIP delivery is generated on demand.
+Storage: `backend/storage/models/meshes/<asset_name>_<job_id>/` is the canonical mesh workspace. There is no persistent export/ directory. ZIP delivery is generated on demand.
 
 Runtime: post-processing runs outside the FastAPI event loop; Blender-only operations use BLENDER_EXECUTABLE subprocesses while the main environment remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4.
 
@@ -583,6 +583,5 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - Upstream repo is vendored directly in the project and `install.sh` verifies it without performing external git clones.
 - Single-image uploads are automatically shared with Multi-View mode without re-upload.
 - The UI action button and backend router (`/reconstruct-3d`) enforce strict rejection when attempting multi-view 3D reconstruction with incompatible engines.
-- Views, optional masks, and optional View-Space Normals are stored in `storage/models/<safe_stem>_<hash>/multiview/` with deterministic hashes (`source_sha256`, `request_sha256`).
+- Views, optional masks, and optional View-Space Normals are stored in `storage/models/meshes/<safe_stem>_<job_hash>/multiview/` with deterministic hashes (`source_sha256`, `request_sha256`). New assets honor `STORAGE_LOCAL_PATH`; existing assets under the prior `storage/models/` path remain readable.
 - ZIP export delivers `<safe_stem>.zip` without extra random hashes.
-

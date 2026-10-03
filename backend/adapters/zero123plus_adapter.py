@@ -33,7 +33,7 @@ import torch
 from PIL import Image
 
 from core.models.base import BaseModel, ModelStatus
-from core.utils.file_utils import OutputPathGenerator, resolve_server_file_path
+from core.utils.file_utils import OutputPathGenerator, get_storage_base_dir, resolve_server_file_path
 
 logger = logging.getLogger(__name__)
 
@@ -164,10 +164,12 @@ def compute_request_sha256(source_or_params: Union[str, Dict[str, Any]], params:
         "model_version",
         "adapter_version",
         "inference_steps",
+        "guidance_scale",
         "seed",
         "background_removal",
         "generate_masks",
         "generate_normals",
+        "save_contact_sheet",
         "output_format",
     ]
     canonical_dict = {k: p.get(k) for k in canonical_keys if k in p}
@@ -352,7 +354,8 @@ class Zero123PlusAdapter(BaseModel):
 
         inference_steps = int(inputs.get("inference_steps") or 28)
         guidance_scale = float(inputs.get("guidance_scale") or 4.0)
-        seed = int(inputs.get("seed") or 42)
+        raw_seed = inputs.get("seed")
+        seed = 42 if raw_seed is None else int(raw_seed)
         background_removal = bool(inputs.get("background_removal", False))
         generate_masks = bool(inputs.get("generate_masks", False))
         generate_normals = bool(inputs.get("generate_normals", False))
@@ -366,10 +369,12 @@ class Zero123PlusAdapter(BaseModel):
             "model_version": self.MODEL_VERSION,
             "adapter_version": self.ADAPTER_VERSION,
             "inference_steps": inference_steps,
+            "guidance_scale": guidance_scale,
             "seed": seed,
             "background_removal": background_removal,
             "generate_masks": generate_masks,
             "generate_normals": generate_normals,
+            "save_contact_sheet": save_contact_sheet,
             "output_format": output_format,
         }
         request_sha256 = compute_request_sha256(req_params)
@@ -380,7 +385,7 @@ class Zero123PlusAdapter(BaseModel):
         safe_asset_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in asset_name).strip("._-") or "asset"
         job_hash = hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:8]
 
-        storage_root = Path(__file__).resolve().parents[2] / "backend" / "storage" / "models"
+        storage_root = get_storage_base_dir() / "models" / "meshes"
         asset_workspace = storage_root / f"{safe_asset_name}_{job_hash}"
         multiview_dir = asset_workspace / "multiview"
         multiview_dir.mkdir(parents=True, exist_ok=True)
@@ -536,6 +541,7 @@ class Zero123PlusAdapter(BaseModel):
             "status": "success",
             "model_id": self.MODEL_ID,
             "asset_name": safe_asset_name,
+            "asset_id": asset_workspace.name,
             "job_id": job_id,
             "asset_workspace": str(asset_workspace.resolve()),
             "multiview_dir": str(multiview_dir.resolve()),

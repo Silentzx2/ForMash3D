@@ -114,9 +114,9 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
           // Fetch generated asset details
           try {
             const rawResult = jobStatus?.result || jobStatus?.job?.result || {};
-            const createdAssetId = rawResult?.asset_name 
+            const createdAssetId = rawResult?.asset_id || (rawResult?.asset_name
               ? `${rawResult.asset_name}_${jobId.slice(0, 8)}`
-              : `${assetStem}_${jobId.slice(0, 8)}`;
+              : `${assetStem}_${jobId.slice(0, 8)}`);
 
             // Call GET /api/v1/multiview/{asset_id}
             const res = await fetch(`/api/v1/multiview/${createdAssetId}`);
@@ -133,10 +133,16 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
             } else {
               // Direct view construction from results
               if (rawResult?.views) {
+                const multiviewBaseUrl = `/static/models/meshes/${encodeURIComponent(createdAssetId)}/multiview`;
                 setGenerationSettings(prev => ({
                   ...prev,
-                  multiviewAssetId: rawResult.asset_name || assetStem,
-                  multiviewViews: rawResult.views,
+                  multiviewAssetId: rawResult.asset_id || createdAssetId,
+                  multiviewViews: rawResult.views.map((view: any) => ({
+                    ...view,
+                    url: view.url || `${multiviewBaseUrl}/${view.file}`,
+                  })),
+                  multiviewManifest: rawResult.manifest,
+                  multiviewZipUrl: `/api/v1/multiview/${encodeURIComponent(createdAssetId)}/zip`,
                   multiviewStatus: 'ready',
                 }));
               }

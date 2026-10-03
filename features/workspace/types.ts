@@ -341,6 +341,8 @@ export interface GenerationSettings {
   generateCollision?: boolean;
   physics?: PhysicsSettings;
   generatePBR?: boolean;
+  bakeNormalMaps?: boolean;
+  bakeHighToLow?: boolean;
 
   prompt?: string;
   imageName?: string;

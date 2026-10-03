@@ -50,7 +50,9 @@ function getMimeType(filePath: string): string {
 
 async function tryServeFromDisk(fullPath: string): Promise<NextResponse | null> {
   const normalized = fullPath.replace(/^\/+/, '').replace(/\\/g, '/');
-  if (normalized.startsWith('models/') || normalized.startsWith('models\\')) {
+  const isMultiviewImage =
+    /^models\/(?:meshes\/)?[^/]+\/multiview\/(?:(?:masks|normals)\/)?[^/]+\.(?:png|jpe?g|webp)$/i.test(normalized);
+  if ((normalized.startsWith('models/') || normalized.startsWith('models\\')) && !isMultiviewImage) {
     return null;
   }
   const candidates: string[] = [];

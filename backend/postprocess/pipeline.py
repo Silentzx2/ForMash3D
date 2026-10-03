@@ -23,7 +23,7 @@ import numpy as np
 import trimesh
 from PIL import Image
 
-from core.utils.file_utils import resolve_server_file_path
+from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path
 from .config import BLENDER_EXECUTABLE
 from .meshio import load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
@@ -53,12 +53,8 @@ MAX_PRODUCTION_FACES = 200_000
 _FORMATS = ("glb", "fbx")
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def _storage_root() -> Path:
-    root = _repo_root() / "backend" / "storage" / "models" / "meshes"
+    root = get_storage_base_dir() / "models" / "meshes"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -382,6 +378,7 @@ def _build_result(
         ),
         "physics_ready": bool(generated.get("physics")),
         "physics": generated.get("physics_metadata"),
+        "textures": generated.get("textures", {}),
         "pbr_maps": pbr_urls,
         "texture_status": generated.get("texture_status", "not_generated"),
         "thumbnail_url": f"{base_url}/thumbnail" if generated.get("thumbnail") else None,
@@ -729,6 +726,65 @@ def run_postprocess_job(
         ),
     }
     texture_status = "native" if native_textures else "not_generated"
+
+    should_bake = (
+        bool(job_inputs.get("bake_normal_maps"))
+        or bool(job_inputs.get("bake_high_to_low"))
+        or bool(job_inputs.get("bake_textures"))
+        or bool(job_metadata.get("bake_normal_maps"))
+        or bool(job_metadata.get("bake_textures"))
+    )
+
+    if should_bake:
+        _emit(progress, 0.58, "bake", "Baking high-to-low micro-details and normal maps.")
+        try:
+            from .services.bake import run_bake
+            from .schemas import BakeOptions
+
+            bake_res = int(job_inputs.get("texture_resolution") or 2048)
+            maps_to_bake = ["normal", "ao"]
+            if native_textures:
+                maps_to_bake.extend(["base_color", "roughness", "metallic"])
+
+            bake_opts = BakeOptions(
+                resolution=bake_res,
+                maps=maps_to_bake,
+            )
+            low_glb_bytes = _export_glb(uv_mesh)
+            baked_images, worker_stats = run_bake(
+                low_glb=low_glb_bytes,
+                high_glb=master_path.read_bytes(),
+                opts=bake_opts,
+                progress=lambda stage, frac, msg: _emit(
+                    progress, 0.58 + min(1.0, max(0.0, frac)) * 0.04, "bake", msg
+                ),
+            )
+            texture_dir.mkdir(parents=True, exist_ok=True)
+            for map_name, img_bytes in baked_images.items():
+                target_img_path = texture_dir / f"{map_name}.png"
+                target_img_path.write_bytes(img_bytes)
+                texture_paths[map_name] = str(target_img_path)
+            bake_stats = {"status": "completed", **worker_stats}
+            texture_status = "baked"
+
+            # Attach normal map and PBR material to uv_mesh if normal was baked
+            if "normal" in baked_images:
+                try:
+                    norm_img = Image.open(io.BytesIO(baked_images["normal"]))
+                    base_img = Image.open(io.BytesIO(baked_images["base_color"])) if "base_color" in baked_images else None
+                    pbr_mat = trimesh.visual.material.PBRMaterial(
+                        name="GameReady_PBR",
+                        normalTexture=norm_img,
+                        baseColorTexture=base_img,
+                    )
+                    uvs = getattr(getattr(uv_mesh, "visual", None), "uv", None)
+                    if uvs is not None:
+                        uv_mesh.visual = trimesh.visual.TextureVisuals(uv=uvs, material=pbr_mat)
+                except Exception as mat_err:
+                    logger.warning("Could not attach baked textures to GLB material: %s", mat_err)
+        except Exception as exc:
+            bake_stats = {"status": "skipped", "reason": str(exc)}
+            logger.warning("Bake step skipped or failed: %s", exc)
 
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     game_ready_dir.mkdir(parents=True, exist_ok=True)

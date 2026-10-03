@@ -718,13 +718,6 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSF" ]; then
         exit 1
     fi
 fi
-if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
-    echo "[INFO] Installing TripoSG requirements..."
-    if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSG/requirements.txt"; then
-        echo "[ERROR] Failed to install TripoSG requirements."
-        exit 1
-    fi
-fi
 if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSR" ]; then
     echo "[INFO] Installing TripoSR requirements..."
     if ! install_local_wheel "torchmcubes-*.whl" "torchmcubes"; then
@@ -777,8 +770,8 @@ fi
 
 python "$PROJECT_ROOT/backend/scripts/verify_postprocess_runtime.py"
 
-# TripoSG declares a newer diffusers/transformers pair than the global project baseline.
-# Re-apply its model-specific requirements after the baseline install so compatibility is not silently overwritten.
+# Keep TripoSG's declared requirements installed after the shared backend baseline.
+# The shared pins satisfy its diffusers, transformers, and huggingface_hub ranges.
 if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
     echo "[INFO] Re-applying TripoSG model-specific requirements after project baseline..."
     if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSG/requirements.txt"; then
@@ -799,8 +792,8 @@ else
 fi
 
 echo "[INFO] Installing huggingface_hub for model downloading..."
-# for downloading models (pinned <0.26.0 for diffusers compatibility)
-$UV_PIP install --find-links="$WHEEL_DIR" "huggingface_hub>=0.20.0,<0.26.0"
+# Keep the final hub version inside both the backend and TripoSG ranges.
+$UV_PIP install --find-links="$WHEEL_DIR" "huggingface_hub>=0.25.0,<0.26.0"
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] huggingface_hub installed"
 else
@@ -888,6 +881,5 @@ echo "========================================"
 echo "Installation Complete!"
 echo "========================================"
 echo "All installation done successfully!"
-
 
 

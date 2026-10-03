@@ -229,25 +229,24 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
 
             texture_requested = bake_texture
             texture_bake_succeeded = False
+            texture_bake_error = None
+            untextured_mesh = mesh
 
             if texture_requested:
                 try:
-                    import xatlas
                     from tsr.bake_texture import bake_texture as do_bake
 
                     tex_res = int(inputs.get("texture_resolution", 2048))
                     bake_output = do_bake(mesh, self.tsr_model, scene_codes[0], tex_res)
-                    xatlas.export(
-                        str(output_path),
-                        mesh.vertices[bake_output["vmapping"]],
-                        bake_output["indices"],
-                        bake_output["uvs"],
-                        mesh.vertex_normals[bake_output["vmapping"]],
-                    )
+                    mesh = self._create_baked_mesh(mesh, bake_output)
+                    mesh.export(str(output_path))
                     texture_bake_succeeded = True
                 except Exception as bake_err:
-                    logger.warning(f"Texture baking failed ({bake_err}), exporting unbaked mesh")
-                    mesh.export(str(output_path))
+                    texture_bake_error = str(bake_err)
+                    logger.warning(
+                        f"Texture baking/export failed ({bake_err}), exporting unbaked mesh"
+                    )
+                    untextured_mesh.export(str(output_path))
             else:
                 mesh.export(str(output_path))
 
@@ -258,6 +257,11 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             final_mesh = self.mesh_processor.load_mesh(output_path)
             if final_mesh is None:
                 raise RuntimeError(f"TripoSR generated output mesh could not be parsed: {output_path}")
+
+            if texture_bake_succeeded and not self._has_exported_texture(final_mesh):
+                texture_bake_succeeded = False
+                texture_bake_error = "Exported mesh contains no texture image/material"
+                logger.warning(f"Texture baking/export failed: {texture_bake_error}")
 
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)
             vertex_count = mesh_stats.get("vertex_count", 0)
@@ -279,6 +283,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                     "texture_requested": texture_requested,
                     "texture_bake_succeeded": texture_bake_succeeded,
                     "has_texture": has_texture,
+                    "texture_bake_error": texture_bake_error,
                     "mc_resolution": mc_resolution,
                 },
             }
@@ -291,6 +296,38 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             self.status = ModelStatus.ERROR
             logger.error(f"TripoSR generation failed: {e}")
             raise RuntimeError(f"TripoSR generation failed: {e}") from e
+
+    @staticmethod
+    def _create_baked_mesh(mesh, bake_output):
+        colors = np.asarray(bake_output["colors"])
+        if colors.dtype != np.uint8:
+            if np.issubdtype(colors.dtype, np.floating):
+                colors = np.clip(colors, 0.0, 1.0) * 255
+            colors = np.clip(colors, 0, 255).astype(np.uint8)
+
+        textured_mesh = trimesh.Trimesh(
+            vertices=mesh.vertices[bake_output["vmapping"]],
+            faces=bake_output["indices"],
+            vertex_normals=mesh.vertex_normals[bake_output["vmapping"]],
+            process=False,
+        )
+        textured_mesh.visual = trimesh.visual.texture.TextureVisuals(
+            uv=bake_output["uvs"],
+            material=trimesh.visual.material.PBRMaterial(
+                baseColorTexture=Image.fromarray(colors),
+                metallicFactor=0.0,
+                roughnessFactor=1.0,
+            ),
+        )
+        return textured_mesh
+
+    @staticmethod
+    def _has_exported_texture(mesh):
+        material = getattr(getattr(mesh, "visual", None), "material", None)
+        return any(
+            getattr(material, attribute, None) is not None
+            for attribute in ("baseColorTexture", "image")
+        )
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         return {"input": self.supported_input_formats, "output": self.supported_output_formats}

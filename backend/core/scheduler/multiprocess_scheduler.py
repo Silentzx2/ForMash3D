@@ -72,6 +72,7 @@ RETRY_TRANSIENT_ERRORS = os.environ.get("RETRY_TRANSIENT_ERRORS", "false").lower
 _POSTPROCESS_ONLY_INPUTS = frozenset({
     "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
     "physics_enabled", "physics_config", "auto_paint", "paint_model_preference", "paint_resolution",
+    "bake_normal_maps", "bake_high_to_low", "bake_textures",
 })
 
 

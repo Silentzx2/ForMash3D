@@ -52,7 +52,7 @@ self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 ```
 
 `run_postprocess_job` in `pipeline.py` then promotes this to:
-`backend/storage/models/<image_stem>_<job_hash>/master/source.glb`
+`backend/storage/models/meshes/<image_stem>_<job_id>/master/source.glb`
 and deletes the temp file. The **canonical `<image_stem>_<job_hash>/` naming is already correct** in `pipeline.py` — it reads `job_inputs["image_path"]` stem + hashes `job_id`. No change needed in `pipeline.py`.
 
 The TRELLIS raw mesh lands in `backend/outputs/meshes/` (a sibling of `storage/`, not inside it). `resolve_server_file_path` in the scheduler may still find it if `ALLOWED_INPUT_ROOTS` includes the backend root, but the path is outside the canonical storage contract and will not survive a storage cleanup.
@@ -190,45 +190,32 @@ Then AutoUV runs, which calls `run_auto_uv(optimized, ...)`. `run_auto_uv` retur
 
 Since neither source.glb nor game_ready.glb has a visible texture applied in the viewer (both render as gray/matcap), they look **visually identical** even though game_ready.glb contains UV coordinate data that source.glb does not.
 
-This is **technically correct behavior** (source is preserved, game_ready has production UV), but the outcome is confusing because the visual result doesn't communicate the difference.
+This is **technically correct behavior** (source is preserved, game_ready has production UV), but an untextured UV channel is not visible in a normal material view. The pipeline already records `uv_seam_vertex_delta`; a vertex-count increase is diagnostic only and must not be treated as proof of better detail or valid texture output.
 
-Secondary scenario: for TRELLIS **textured** GLBs, `load_mesh` calls `trimesh.util.concatenate(loaded.geometry.values())` which **strips material/texture data** from the concatenated mesh. `_has_native_textures` on the concatenated mesh returns False, so AutoUV runs, producing a game_ready.glb with UV but no texture image — visually the textured source.glb and the gray game_ready.glb look like regression.
+### Verified scene-graph regression
 
-**Fix**
+`load_mesh()` previously concatenated `Scene.geometry` directly. That uses each geometry's local coordinates and ignores the scene graph's node transforms. A two-part textured GLB fixture with the second part translated by 3 units had source bounds `[-0.5, 3.5]` on X but flattened bounds `[-0.5, 0.5]`; post-processing therefore collapsed the separate parts and changed the model's shape. In the tested fixture the textures survived atlas concatenation, so the earlier claim that this path always strips material images was too broad.
 
-1. Add vertex-count diff to `quality_report.json` so the UV processing is visible:
-```python
-# After UV step, in quality_trace["game_ready"]:
-quality_trace["game_ready"]["uv_seam_vertex_delta"] = len(uv_mesh.vertices) - len(mesh.vertices)
-```
+**Fix and verification**
 
-2. Fix the `load_mesh` texture loss for Scene meshes by using `trimesh.load` with `process=False` and preserving the first geometry's visual where possible, or use a Scene-aware load path in the pipeline:
-```python
-# In pipeline.py: for texture detection, inspect the Scene before concatenation
-def _has_native_textures_scene(raw_bytes: bytes, filename: str) -> bool:
-    loaded = trimesh.load(io.BytesIO(raw_bytes), file_type="glb", process=False)
-    if isinstance(loaded, trimesh.Scene):
-        return any(_has_native_textures(g) for g in loaded.geometry.values())
-    return _has_native_textures(loaded)
-```
-Use `_has_native_textures_scene(raw_bytes, master_path.name)` in place of `_has_native_textures(mesh)` for the initial detection.
-
-3. When `native_textures=True` (via scene-aware check), preserve the scene-level mesh in `uv_mesh` by loading from the GLB bytes directly with `process=False`, bypassing concatenation's texture loss, so game_ready.glb retains the original textures.
+- `load_mesh()` now uses the shared `scene_to_mesh()` helper, which applies scene transforms with `Scene.to_geometry()`. It rejects non-mesh or failed scene conversion instead of silently returning geometry in incorrect local space.
+- `test_load_mesh_applies_scene_transforms_and_preserves_textures` verifies world-space bounds, UVs, and an embedded texture after a GLB round trip. The opt-in end-to-end pipeline fixture also verifies transformed bounds, unchanged face count, and texture payload for physics-enabled and physics-disabled runs.
+- A game-ready mesh may remain visually identical to its untextured source when geometry is passed through and only UVs were added. That is expected; UV presence alone does not mean an image texture was generated.
 
 ### Verification
 
 ```python
 # After fix: game_ready vertex count must differ from source
 import json, pathlib
-report = json.loads(pathlib.Path("backend/storage/models/<job_dir>/metadata/quality_report.json").read_text())
+report = json.loads(pathlib.Path("backend/storage/models/meshes/<job_dir>/metadata/quality_report.json").read_text())
 assert report["quality_trace"]["game_ready"]["vertices"] >= report["quality_trace"]["source"]["vertices"]
 # UV seam-split vertices increase the count; if equal something is wrong
 ```
 
 ```bash
 # game_ready.glb should differ from source.glb
-cmp -l backend/storage/models/<job_dir>/master/source.glb \
-       backend/storage/models/<job_dir>/game_ready/<name>.glb | wc -l
+cmp -l backend/storage/models/meshes/<job_dir>/master/source.glb \
+       backend/storage/models/meshes/<job_dir>/game_ready/<name>.glb | wc -l
 # Should be non-zero
 ```
 
@@ -450,7 +437,7 @@ Apply the same fix to the scribble path inside the same adapter (the scribble br
 # After generating a human figure with TripoSG, inspect the bounding box:
 python3 -c "
 import trimesh
-m = trimesh.load('backend/storage/models/<job_dir>/master/source.glb', process=False)
+m = trimesh.load('backend/storage/models/meshes/<job_dir>/master/source.glb', process=False)
 if isinstance(m, trimesh.Scene):
     m = trimesh.util.concatenate(list(m.geometry.values()))
 bb = m.bounding_box.extents
@@ -542,9 +529,20 @@ python3 backend/tests/test_official_model_parity_contract.py
 | BUG-003A | `hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py` | ~156–163 | Alpha validity check (4 lines each) | High | **Implemented & Resolved** |
 | BUG-003B | Same + `triposr_adapter.py` | `octree_res` line | Remove `inputs.get("octree_resolution")`, hard-code 512 | High | **Implemented & Resolved** |
 | BUG-004 | `triposg_adapter.py` | After mesh creation (~line 268) | 2 `apply_transform` lines | High | **Implemented & Resolved** |
+| BUG-005 | `postprocess/meshio.py` | `load_mesh()` scene flattening | Apply scene-graph transforms and fail explicitly when flattening is unsupported | High | **Implemented & Resolved** |
+| BUG-006 | `triposr_adapter.py` | Optional texture bake/export | Serialize baked color into a real material/image and report bake failure without claiming texture success | High | **Implemented & Resolved** |
+| BUG-007 | `trellis2_adapter.py` | Missing `o_voxel` textured export | Fail explicitly instead of returning an untextured mesh as successful textured generation | High | **Implemented & Resolved** |
+| BUG-008 | `triposf_adapter.py` | Coarse-mesh failure fallback | Remove generic icosphere proxy and preserve the real inference error | High | **Implemented & Resolved** |
+| BUG-009 | `hunyuan3d_paint_v21.py` | Reference-image preprocessing | Preserve aspect ratio with letterboxing before inference | Medium | **Implemented & Resolved** |
 | PHYSICS | `pipeline.py`, `services/collision.py` | collision wiring | Game-ready source + strict CoACD | High | **Implemented & Resolved** |
 
 ---
 
-*This document is the authoritative engineering reference for these four bug families.
+### Generation output capability contract
+
+The configured raw-geometry adapters do not all generate UVs or textures. For shape-only models, no texture in the raw output is a model capability limit, not an exporter defect. Canonical post-processing may generate UV coordinates for those meshes, but UVs alone do not create a texture image; semantic texture generation remains an explicit textured-generation or painting step. Textured adapters must not report successful texture output unless their serialized artifact actually contains its material/image payload.
+
+GPU/checkpoint quality has not been visually verified in this CPU-only environment. Inference-quality comparisons require running the configured checkpoints on the target CUDA 12.4/Python 3.10 environment with sample assets.
+
+*This document is the authoritative engineering reference for these audited bug families.
 Per RULES.md, it must be updated after each fix to reflect resolved status.*

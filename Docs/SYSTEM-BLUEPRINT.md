@@ -77,7 +77,7 @@ graph TD
 
     subgraph Storage["📦 Persistent Storage & Export"]
         direction TB
-        LOCAL["Asset Workspace<br/>backend/storage/models/<asset>_<hash>/"]:::slate
+        LOCAL["Asset Workspace<br/>backend/storage/models/meshes/<asset>_<job_id>/"]:::slate
         ZIP["Structured Game-Ready ZIP<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end
 
@@ -280,6 +280,9 @@ The backend exposes a health endpoint for runtime verification:
 curl -s http://localhost:7842/health | jq .
 # {"status": "healthy", "timestamp": ..., "version": "0.1.0"}
 ```
+`/health` is a liveness check and does not load or validate inference models. Use
+`/api/v1/system/models` for non-loading per-model readiness, which checks the
+manifest path and local weight/config files, and reports CUDA availability.
 
 The frontend can be type-checked and built with:
 ```bash
@@ -317,7 +320,7 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - Container dependency paths resolve against the repository's backend layout and the maintained Wheels release.
 - SQLite status/progress persistence is offloaded and bounded; status reads do not mutate or synchronously persist jobs.
 - Successful raw inference is terminal for GPU execution; background production post-processing carries independent status/progress/error metadata and preserves input lineage until completion.
-- Model readiness is based on canonical manifest paths, real local checkpoint payloads, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract.
+- Model readiness is based on canonical manifest paths, local checkpoint payloads plus model descriptors for directory paths, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract. Health routes remain liveness-only and never load models.
 - The workspace uses backend capability metadata for route selection, keeps unsupported multiview gated, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
 - Artifact naming is UUID-based across generation/segmentation/rig outputs, and stale request temp directories are removed during scheduler recovery.
 

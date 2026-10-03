@@ -145,7 +145,8 @@ class TestGenerationProductionContract(unittest.TestCase):
         self.assertEqual(filtered["source_quality"], "max")
         self.assertEqual(filtered["seed"], 42)
         for key in ("target_polycount","auto_optimize","generateLOD","lodPreset","lodCount",
-                    "physics_enabled","physics_config","auto_paint","paint_model_preference","paint_resolution"):
+                    "physics_enabled","physics_config","auto_paint","paint_model_preference","paint_resolution",
+                    "bake_normal_maps", "bake_high_to_low", "bake_textures"):
             self.assertNotIn(key, filtered)
 
     def test_frontend_source_contract_is_max_fidelity_and_budgeted_later(self):

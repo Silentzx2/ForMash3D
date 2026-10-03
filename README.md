@@ -169,7 +169,7 @@ flowchart TD
     end
 
     subgraph Delivery["Game Engine Ready Delivery"]
-        ASSET_STORE["backend/storage/models/<br/>Canonical Asset Hierarchy"]:::slate
+        ASSET_STORE["backend/storage/models/meshes/<br/>Canonical Asset Hierarchy"]:::slate
         ZIP["Structured ZIP Export<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end
 
@@ -232,6 +232,8 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
 | **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
 
+Zero123++ v1.2 is a separate, hidden Multi-View image-generation adapter (not a mesh generator). Its base checkpoint is available from the model download manager; the View-Space Normals ControlNet is optional.
+
 ---
 
 ## ⚙️ Production Post-Processing Engine
@@ -239,11 +241,11 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 Raw AI generative meshes typically suffer from non-manifold triangles, missing UV layouts, dense topological noise, and absence of physics colliders. ForMash3D's post-processing engine (ported and enhanced from [3DGenStudio](https://github.com/visualbruno/3DGenStudio)) automates asset finishing:
 
 ```text
-backend/storage/models/<asset_name>_<job_hash>/
+backend/storage/models/meshes/<asset_name>_<job_id>/
 ├── master/
 │   └── source.glb              # Immutable master raw mesh
 ├── game_ready/
-│   └── <asset_name>.glb        # Production engine-ready model
+│   └── <asset_name>_<job_id>.glb # Production engine-ready model
 ├── lods/
 │   ├── lod0.glb                # LOD0 (100% detail)
 │   ├── lod1.glb                # LOD1 (50% reduction)
@@ -332,6 +334,18 @@ Services:
 - Backend API: `http://localhost:7842`
 - Interactive Swagger Docs: `http://localhost:7842/docs`
 - Health Endpoint: `http://localhost:7842/health`
+
+### Docker Compose (NVIDIA GPU)
+
+From the repository root, build and start the backend stack with:
+
+```bash
+docker compose -f backend/docker-compose.yml up --build -d
+```
+
+Compose builds from the repository root. The image keeps backend code under `/app/backend`, adds it to `PYTHONPATH`, and launches the scheduler from that path. Put model weights in `backend/pretrained/`; generated assets are persisted in `backend/storage/`, shared by the API and scheduler.
+
+The single-container RunPod image uses the same repository-root build context: `docker build -f backend/Dockerfile.runpod -t formash3d-runpod .`. Its supervisor runs the API and scheduler from `/app/backend` and keeps Redis on localhost port 6380.
 
 ---
 

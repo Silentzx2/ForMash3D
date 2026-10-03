@@ -209,6 +209,8 @@ cmd_models() {
         printf "  ${CYAN}[17]${NC} TripoSG            - High-fidelity image-to-3D + RMBG\n"
         printf "  ${CYAN}[18]${NC} ARDY               - Motion AI / Animation checkpoints\n"
         printf "  ${CYAN}[19]${NC} TripoSF            - SparseFlex high-res arbitrary topology\n"
+        printf "  ${CYAN}[20]${NC} Zero123++ v1.2     - Multi-view image generation model\n"
+        printf "  ${CYAN}[21]${NC} Zero123++ Normals   - Normal generation ControlNet (optional)\n"
         printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"
@@ -262,7 +264,9 @@ cmd_models() {
                         17) models_csv="${models_csv}triposg," ;;
                         18) models_csv="${models_csv}ardy," ;;
                         19) models_csv="${models_csv}triposf," ;;
-                        *)
+                        20) models_csv="${models_csv}zero123plus," ;;
+                        21) models_csv="${models_csv}zero123plus_normal_controlnet," ;;
+                         *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1
                             continue 2

@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for 3DAIGC-API
+# Multi-stage Dockerfile for 3DAIGC-API (RunPod Optimized)
 FROM nvidia/cuda:12.4.0-devel-ubuntu20.04 AS base
 
 # Set environment variables
@@ -7,11 +7,7 @@ ENV PYTHONUNBUFFERED=1
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
-# Set CUDA architectures for compilation (needed for building CUDA extensions without GPU present)
 ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX"
-
-# Note: nvidia-smi cannot run during build time, only at runtime
-# RUN nvidia-smi
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -38,8 +34,9 @@ RUN apt-get update && apt-get install -y \
     libxkbcommon-dev \
     xvfb \
     blender \
+    redis-server \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
-
 
 # Install Miniconda
 RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && \
@@ -96,7 +93,6 @@ RUN mkdir -p /app/backend/thirdparty/wheels && \
 RUN pip install /app/backend/thirdparty/wheels/torch_scatter-2.1.2-cp310-cp310-linux_x86_64.whl --no-deps
 RUN pip install torch-sparse==0.6.18 -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
 RUN pip install torch-cluster==1.6.3 -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
-# RUN pip install torch-scatter torch_cluster -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
 
 # Install Hunyuan3D unified runtime dependencies
 WORKDIR /app/backend/thirdparty
@@ -126,7 +122,7 @@ RUN pip install meshiki kiui fpsample pymcubes einops
 # Install PartUV dependencies
 RUN pip install seaborn partuv blenderproc
 
-# Install P3-SAM (Hunyuan3D-Part) dependencies
+# Install P3-SAM dependencies
 RUN pip install numba scikit-learn fpsample
 
 # Install FastMesh dependencies
@@ -146,14 +142,19 @@ RUN pip install pysdf sentencepiece
 WORKDIR /app
 RUN pip install -r /app/backend/requirements.txt
 RUN python backend/scripts/verify_postprocess_runtime.py
+RUN pip install -r /app/backend/thirdparty/TripoSG/requirements.txt
 RUN pip install -r /app/backend/requirements-test.txt
 
 # Create necessary directories
 RUN mkdir -p /app/uploads /app/data /app/logs /app/outputs
 
+# Setup Supervisor
+COPY backend/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
 # Set environment variables for runtime
-ENV PYTHONPATH="/app:${PYTHONPATH}"
+ENV PYTHONPATH="/app/backend:/app"
 ENV CONDA_DEFAULT_ENV=3daigc-api
+ENV ENVIRONMENT=production
 
 ENV http_proxy=""
 ENV https_proxy=""
@@ -165,6 +166,5 @@ ENV NO_PROXY=""
 # Expose port for FastAPI
 EXPOSE 7842
 
-# Health check
-# HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-#   CMD python -c "import torch; assert torch.cuda.is_available()" || exit 1
+# Start Supervisor with cleanup of stale files
+CMD ["/bin/bash", "-c", "rm -f /var/run/supervisord.pid /var/run/supervisor.sock && exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"]

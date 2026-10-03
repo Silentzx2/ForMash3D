@@ -149,7 +149,7 @@ Important current behavior:
   - CUDA 12.4 wheels
 - Current project uses one shared `3daigc-api` environment.
 - Canonical mesh asset storage is:
-  `backend/storage/models/<asset_name>_<job_hash>/`
+  `backend/storage/models/meshes/<asset_name>_<job_id>/`
 - Existing ZIP delivery is on-demand, not stored as a permanent export tree.
 - `RULES.md` requires reusing existing architecture, root-cause analysis, minimal changes, and keeping documentation current.
 
@@ -681,7 +681,7 @@ The worker must not stay resident with the partially initialized pipeline.
 Extend the canonical workspace:
 
 ```text
-backend/storage/models/<asset_name>_<job_hash>/
+backend/storage/models/meshes/<asset_name>_<job_id>/
 ```
 
 to:
@@ -1198,7 +1198,7 @@ A Multi-View-only job should still create a canonical asset workspace.
 Example:
 
 ```text
-backend/storage/models/spaceship_7f3a21c9/
+backend/storage/models/meshes/spaceship_<job_id>/
 └── multiview/
     ├── source.png
     ├── ...

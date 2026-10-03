@@ -177,14 +177,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             result = tsr.generate_mesh({"image_path": str(image_path), "output_format": "obj"})
             return result["output_mesh_path"]
         except Exception as e:
-            logger.warning(f"Coarse mesh generation via TripoSR failed ({e}), creating geometric proxy")
-            proxy = trimesh.creation.icosphere(subdivisions=3, radius=0.5)
-            proxy_path = self.path_generator.generate_mesh_path(
-                self.model_id, f"{image_path.stem}_proxy", "obj"
-            )
-            Path(proxy_path).parent.mkdir(parents=True, exist_ok=True)
-            proxy.export(proxy_path)
-            return proxy_path
+            raise RuntimeError(f"Coarse mesh generation via TripoSR failed: {e}") from e
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
