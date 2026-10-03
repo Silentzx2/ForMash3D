@@ -40,7 +40,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
         vram_requirement: Optional[int] = None,
         triposr_root: Optional[str] = None,
         chunk_size: int = 8192,
-        mc_resolution: int = 256,
+        mc_resolution: int = 320,
     ):
         if vram_requirement is None:
             raise ValueError(
@@ -170,7 +170,8 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            mc_resolution = int(inputs.get("mc_resolution", self.mc_resolution))
+            # Immutable raw source uses the highest supported official extraction resolution.
+            mc_resolution = 320
             bake_texture = bool(inputs.get("bake_texture", False))
             no_remove_bg = bool(inputs.get("no_remove_bg", False))
             foreground_ratio = float(inputs.get("foreground_ratio", 0.85))
@@ -364,10 +365,11 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "mc_resolution": {
                     "type": "integer",
-                    "description": "Marching cubes resolution",
-                    "default": 256,
-                    "minimum": 64,
-                    "maximum": 512,
+                    "description": "Fixed at the official TripoSR raw-extraction maximum.",
+                    "default": 320,
+                    "minimum": 320,
+                    "maximum": 320,
+                    "readOnly": True,
                     "required": False,
                 },
                 "bake_texture": {

@@ -333,6 +333,30 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ---
 
+## 8.1 Raw Generation Fidelity / Official Parity Contract
+
+Raw generation is model-specific. ForMash3D does not apply one global inference-step contract because released models are tuned/distilled for different schedules.
+
+```
+model-specific inference settings
+        ↓
+scheduler removes post-process-only controls
+        ↓
+adapter preprocessing
+        ↓
+official/vendored model pipeline
+        ↓
+high-fidelity supported extraction
+        ↓
+immutable master/source.glb
+```
+
+Quality-critical extraction settings are aligned to the current upstream implementation wherever possible. Hardware safety guards may downshift a request only when the configured density would be unsafe on the available GPU.
+
+TRELLIS uses a vendored extraction helper that performs hole filling, UV parametrization, texture baking, and orientation conversion. The immutable source path intentionally keeps model geometry unsimplified even though the upstream downloadable GLB performs additional extraction work.
+
+---
+
 ## 9. Third-Party Source Repositories
 
 Each model integration has its own third-party source directory under `backend/thirdparty/`:

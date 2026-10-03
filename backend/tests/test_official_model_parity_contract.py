@@ -40,7 +40,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["mc_resolution"]["default"], 256)
+        self.assertEqual(schema["mc_resolution"]["default"], 320)
         self.assertEqual(schema["foreground_ratio"]["default"], 0.85)
         self.assertFalse(schema["bake_texture"]["default"])
 
@@ -50,8 +50,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TripoSFImageToRawMeshAdapter(vram_requirement=12288)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["resolution"]["default"], 256)
-        self.assertEqual(schema["sample_points_num"]["default"], 819200)
+        self.assertEqual(schema["resolution"]["default"], 1024)
+        self.assertEqual(schema["sample_points_num"]["default"], 1638400)
         self.assertFalse(schema["pruning"]["default"])
         self.assertTrue(schema["use_normals"]["default"])
 
@@ -76,7 +76,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         # Raw extraction is intentionally fixed at maximum 512; polycount is post-processing.
         self.assertEqual(schema["octree_resolution"]["default"], 512)
         self.assertTrue(schema["octree_resolution"]["readOnly"])
-        self.assertEqual(schema["num_inference_steps"]["default"], 20)
+        self.assertEqual(schema["num_inference_steps"]["default"], 5)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
     def test_ultrashape_adapter_contract(self):
@@ -111,6 +111,15 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["slat_sampling_steps"]["default"], 12)
         self.assertEqual(schema["texture_resolution"]["default"], 1024)
         self.assertEqual(schema["simplify"]["default"], 0.0)
+
+    def test_trellis_text_adapter_contract(self):
+        from adapters.trellis_adapter import TrellisTextToTexturedMeshAdapter
+
+        adapter = TrellisTextToTexturedMeshAdapter(vram_requirement=11776)
+        schema = adapter.get_parameter_schema()["parameters"]
+
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 12)
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 12)
 
     def test_trellis2_adapter_contract(self):
         from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
@@ -154,6 +163,11 @@ class TestGenerationProductionContract(unittest.TestCase):
         self.assertIn("source_quality: 'max'", workspace_context)
         self.assertIn("target_polycount: targetPoly", workspace_context)
         self.assertIn("const octreeRes = 512", workspace_context)
+        self.assertIn("modelId.includes('hunyuan3d_dit_v2_mini_turbo')", workspace_context)
+        self.assertIn("infSteps = 5", workspace_context)
+        self.assertIn("mc_resolution = 320", workspace_context)
+        self.assertIn("resolution = 1024", workspace_context)
+        self.assertIn("ss_sampling_steps", workspace_context)
 
 
 class TestRetopologyProductionBudget(unittest.TestCase):

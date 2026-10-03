@@ -987,12 +987,28 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName);
 
     const currentQuality = generationSettings.meshQuality || 'high';
-    // Source geometry is decoupled from the user polycount budget and always uses
-    // the selected model's maximum supported geometry fidelity.
+    // Source geometry follows the selected model's official/tuned inference schedule.
     const sourceQuality = 'ultra' as const;
+    const modelId = generationSettings.aiModel || '';
     const octreeRes = 512;
-    const infSteps = 75;
-    const infGuidance = generationSettings.guidanceScale ?? 7.5;
+    let infSteps = 50;
+    let infGuidance = generationSettings.guidanceScale ?? 7.5;
+
+    if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
+      infSteps = 5;
+      infGuidance = 5.0;
+    } else if (modelId.includes('triposg')) {
+      infSteps = 50;
+      infGuidance = 7.0;
+    } else if (modelId.includes('trellis')) {
+      infSteps = modelId.includes('text_to_') ? 25 : 12;
+      infGuidance = 7.5;
+    } else if (modelId.includes('hunyuan3d_shape_v21')) {
+      infSteps = 50;
+      infGuidance = generationSettings.guidanceScale ?? 5.0;
+    } else if (modelId.includes('ultrashape')) {
+      infSteps = 50;
+    }
 
     try {
       // Route dynamically: raw models (Hunyuan3D Raw, PartPacker, UltraShape) must go to image-to-raw-mesh
@@ -1043,13 +1059,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       };
 
       // Geometry settings are always maximum-fidelity; texture/output settings can vary.
-      if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposr')) {
-        modelParameters.mc_resolution = 512;
+      if (sourceQuality === 'ultra' && modelId.includes('triposr')) {
+        modelParameters.mc_resolution = 320;
       } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposg')) {
         modelParameters.faces = -1;
         modelParameters.num_inference_steps = 50;
-      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposf')) {
-        modelParameters.resolution = 512;
+      } else if (sourceQuality === 'ultra' && modelId.includes('triposf')) {
+        modelParameters.resolution = 1024;
         modelParameters.sample_points_num = 1638400;
       } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('partpacker')) {
         modelParameters.grid_resolution = 512;
@@ -1061,12 +1077,18 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         modelParameters.decimation_target = -1;
         modelParameters.remesh = false;
         modelParameters.texture_size = currentQuality === 'ultra' ? 4096 : currentQuality === 'high' ? 4096 : 2048;
-      } else if ((generationSettings.aiModel || '').includes('trellis')) {
+      } else if (modelId.includes('trellis')) {
         modelParameters.simplify = 0.0;
+        modelParameters.ss_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
+        modelParameters.slat_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
         modelParameters.texture_resolution = currentQuality === 'ultra' ? 2048 : 1024;
-      } else if ((generationSettings.aiModel || '').includes('hunyuan')) {
+      } else if (modelId.includes('hunyuan')) {
         modelParameters.octree_resolution = 512;
         modelParameters.enable_realesrgan = generationSettings.enableRealESRGAN !== false;
+      }
+
+      if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
+        modelParameters.enable_flashvdm = true;
       }
 
       // Pass Paint-v2-1 parameters for shape models to enable auto-chaining

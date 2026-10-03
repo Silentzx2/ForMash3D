@@ -1,3 +1,9 @@
+## 2026-10-03 — [Adapter Raw-Quality / Official-Parity Fix]
+- Fixed raw `source.glb` quality drift caused by a global 75-step inference contract; generation now follows model-specific upstream/tuned schedules.
+- Corrected TripoSR raw extraction to 320 and TripoSF to 1024³ + 1,638,400 samples, with the existing VRAM safety cap retained.
+- Added Hunyuan seeded generators, connected Mini Turbo FlashVDM to its official pipeline method, and restored TRELLIS hole filling + Z-up→Y-up extraction parity.
+- Added the adapter quality bug report, replaced `Docs/TASKS.md`, and expanded official-parity regression coverage.
+
 ## 2026-10-03 — [Production-Ready SOTA Asset Pipeline & Single All-in-One Docker Engine]
 - Implemented High-to-Low micro-detail and normal map baking in `backend/postprocess/pipeline.py`: rays cast from decimated/game-ready mesh UVs onto the immutable high-poly master sculpt (`source.glb`), extracting tangent-space normal maps, ambient occlusion, and ORM channels into `textures/`, and embedding them directly into the game-ready GLB material.
 - Added UI Micro-Detail Normal Map Baking toggle to `GeneratePanel.tsx` under the Target & Polycount Budget card, wired through `features/workspace/store/WorkspaceContext.tsx` and protected by `_POSTPROCESS_ONLY_INPUTS` scheduler firewall.

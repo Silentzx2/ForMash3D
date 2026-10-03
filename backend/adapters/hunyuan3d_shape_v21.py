@@ -198,12 +198,16 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             octree_res = 512
             num_steps = inputs.get("num_inference_steps", 50)
             guidance_scale = inputs.get("guidance_scale", 5.0)
+            seed = int(inputs.get("seed", 42))
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            generator = torch.Generator(device=device).manual_seed(seed)
 
             mesh_result = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
+                generator=generator,
             )[0]
 
             base_name = f"{self.model_id}_{image_path.stem}"
@@ -226,6 +230,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "octree_resolution": octree_res,
                     "num_inference_steps": num_steps,
                     "guidance_scale": guidance_scale,
+                    "seed": seed,
                 },
             }
 
@@ -271,6 +276,13 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "number",
                     "description": "Guidance scale for generation",
                     "default": 5.0,
+                    "required": False,
+                },
+                "seed": {
+                    "type": "integer",
+                    "description": "Random seed for deterministic raw geometry generation",
+                    "default": 42,
+                    "minimum": 0,
                     "required": False,
                 },
             }

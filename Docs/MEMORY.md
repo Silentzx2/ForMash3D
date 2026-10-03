@@ -1,3 +1,12 @@
+## 2026-10-03 Adapter Raw-Quality / Official-Parity Audit
+- Confirmed root cause for the reported raw `source.glb` quality gap: the frontend used a generic 75-step inference contract across models with materially different official/tuned schedules.
+- Fixed model-specific schedules: Hunyuan Mini Turbo 5, Hunyuan Shape 50, TripoSG 50, TRELLIS image 12/12, TRELLIS text 25/25, UltraShape 50.
+- Fixed raw extraction ceilings: TripoSR 320; TripoSF 1024³ + 1,638,400 samples, while preserving the existing constrained-VRAM safety downshift.
+- Added deterministic generators to Hunyuan Shape and Mini Turbo; Mini Turbo now applies FlashVDM through the official pipeline method.
+- TRELLIS extraction now enables hole filling and the official forward Z-up→Y-up conversion while keeping source simplification disabled.
+- Rejected unsupported earlier TripoSG rotation/Flash-Decoder changes and the blanket TripoSR 0.9 foreground-ratio claim after checking current upstream code.
+- CUDA/visual A/B validation remains runtime-gated.
+
 ## 2026-10-03 Zero123++ Multi-View Architecture, Canonical Mesh Storage, Physics & Tripo Alignment
 - Vendored upstream Zero123++ v1.2 into `backend/thirdparty/zero123plus` without `.git` repository metadata; verified authoritative PyTorch 2.6 / CUDA 12.4 environment. Dependency installation simplified via cleaned requirements without temp files.
 - Canonical storage layout: models are stored in separate directories under `storage/models/meshes/<image_name>_<job_id>/`. Game-ready exports produce exclusively `glb` and `fbx` named `<image_name>_<job_id>.glb` and `<image_name>_<job_id>.fbx`. Legacy formats (`obj`, `stl`, `ply`, `gltf`) convert on-demand on download.

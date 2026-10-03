@@ -163,16 +163,25 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
 
             logger.info("Generating 3D shape with Mini Turbo...")
             octree_res = 512
-            num_steps = inputs.get("num_inference_steps", 20)
+            num_steps = inputs.get("num_inference_steps", 5)
             guidance_scale = inputs.get("guidance_scale", 5.0)
-            low_vram_mode = inputs.get("low_vram_mode", True)
-            enable_flashvdm = inputs.get("enable_flashvdm", True)
+            low_vram_mode = bool(inputs.get("low_vram_mode", True))
+            enable_flashvdm = bool(inputs.get("enable_flashvdm", True))
+            seed = int(inputs.get("seed", 42))
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            generator = torch.Generator(device=device).manual_seed(seed)
+
+            # Tencent exposes FlashVDM as a pipeline configuration method, not an
+            # inference keyword. Match the official Turbo launch contract.
+            if hasattr(self.pipeline, "enable_flashvdm"):
+                self.pipeline.enable_flashvdm(enabled=enable_flashvdm)
 
             mesh_result = self.pipeline(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
+                generator=generator,
             )[0]
 
             base_name = f"{self.model_id}_{image_path.stem}"
@@ -197,6 +206,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "guidance_scale": guidance_scale,
                     "low_vram_mode": low_vram_mode,
                     "enable_flashvdm": enable_flashvdm,
+                    "seed": seed,
                 },
             }
 
@@ -234,8 +244,8 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Number of inference steps (Turbo uses fewer steps)",
-                    "default": 20,
+                    "description": "Number of inference steps; Tencent's Turbo preset uses 5.",
+                    "default": 5,
                     "required": False,
                 },
                 "guidance_scale": {
@@ -248,6 +258,13 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "boolean",
                     "description": "Enable low-VRAM mode for reduced memory usage",
                     "default": True,
+                    "required": False,
+                },
+                "seed": {
+                    "type": "integer",
+                    "description": "Random seed for deterministic raw geometry generation",
+                    "default": 42,
+                    "minimum": 0,
                     "required": False,
                 },
                 "enable_flashvdm": {

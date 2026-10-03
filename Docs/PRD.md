@@ -29,6 +29,8 @@ Create a centralized, local AI 3D asset factory that takes an image or text prom
 - **Image-to-3D**: Generate raw meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
 - **Text-to-3D**: Generate meshes from text prompts using TRELLIS
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
+- **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
+- **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
 
 ### 2. PBR Texture Painting
 - **Image Mesh Painting**: Paint textures onto existing meshes using Hunyuan3D-Paint-v2-1

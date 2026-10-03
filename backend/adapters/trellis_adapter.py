@@ -175,8 +175,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             texture_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
 
-            ss_steps = max(20, min(50, int(num_steps)))
-            slat_steps = max(20, min(50, int(num_steps)))
+            ss_steps = max(1, min(50, int(num_steps)))
+            slat_steps = max(1, min(50, int(num_steps)))
 
             logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, res={texture_resolution})")
 
@@ -243,10 +243,10 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 outputs["gaussian"][0],
                 candidate_mesh,
                 simplify=simplify,
-                fill_holes=bool(auto_optimize or simplify > 0),
+                fill_holes=True,
                 texture_size=texture_resolution,
                 texture_bake_mode=texture_bake_mode,
-                forward_rot=False,
+                forward_rot=True,
             )
 
             # Save mesh in requested format
@@ -609,10 +609,10 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 outputs["gaussian"][0],
                 candidate_mesh,
                 simplify=simplify,
-                fill_holes=bool(auto_optimize or simplify > 0),
+                fill_holes=True,
                 texture_size=texture_resolution,
                 texture_bake_mode=tex_bake_mode,
-                forward_rot=False,
+                forward_rot=True,
             )
 
             # Save mesh in requested format

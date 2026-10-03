@@ -39,8 +39,8 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         model_path: Optional[str] = None,
         vram_requirement: Optional[int] = None,
         triposf_root: Optional[str] = None,
-        resolution: int = 256,
-        sample_points_num: int = 819200,
+        resolution: int = 1024,
+        sample_points_num: int = 1638400,
         pruning: bool = False,
         use_normals: bool = True,
     ):
@@ -222,8 +222,10 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            resolution = int(inputs.get("resolution", self.resolution))
-            sample_points_num = int(inputs.get("sample_points_num", self.sample_points_num))
+            # Start raw extraction at the highest configured density. The existing
+            # VRAM safety guard may downshift these values on constrained hardware.
+            resolution = 1024
+            sample_points_num = 1_638_400
             pruning = bool(inputs.get("pruning", self.pruning))
             use_normals = bool(inputs.get("use_normals", self.use_normals))
 
@@ -369,18 +371,20 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "resolution": {
                     "type": "integer",
-                    "description": "Voxel volume resolution (256, 512, 1024)",
-                    "default": 256,
-                    "minimum": 128,
+                    "description": "Fixed at the official 1024 raw-extraction ceiling; constrained GPUs may be downshifted by the runtime guard.",
+                    "default": 1024,
+                    "minimum": 1024,
                     "maximum": 1024,
+                    "readOnly": True,
                     "required": False,
                 },
                 "sample_points_num": {
                     "type": "integer",
-                    "description": "Number of point cloud samples",
-                    "default": 819200,
-                    "minimum": 100000,
-                    "maximum": 4096000,
+                    "description": "Fixed at the high-density 1,638,400 raw-extraction path.",
+                    "default": 1638400,
+                    "minimum": 1638400,
+                    "maximum": 1638400,
+                    "readOnly": True,
                     "required": False,
                 },
                 "pruning": {
