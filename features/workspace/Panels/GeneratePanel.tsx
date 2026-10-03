@@ -526,7 +526,7 @@ export const GeneratePanel: React.FC = () => {
       cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: false },
       native: { meshQuality: 'ultra' as const, targetPolycount: 0, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: false },
     }[recipe];
-    setGenerationSettings(prev => ({ ...prev, meshQuality: presets.meshQuality, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount }, generateLOD: presets.generateLOD, lodPreset: presets.lodPreset, lodCount: presets.lodCount, generateCollision: presets.generateCollision }));
+    setGenerationSettings(prev => ({ ...prev, meshQuality: presets.meshQuality, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount }, generateLOD: presets.generateLOD, lodPreset: presets.lodPreset as 'mobile' | 'low' | 'medium' | 'high' | 'custom' | undefined, lodCount: presets.lodCount, generateCollision: presets.generateCollision }));
   };
 
   return (

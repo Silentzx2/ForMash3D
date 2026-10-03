@@ -7,7 +7,7 @@ import { motion } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CableIcon, CheckIcon, ChevronDown, LayersIcon, Menu, PackageIcon, Search01Icon, SettingsIcon, UserIcon } from '@hugeicons/core-free-icons';
+import { Box, CableIcon, CheckIcon, ChevronDown, HexagonIcon, LayersIcon, Menu, PackageIcon, Search01Icon, SettingsIcon, SparklesIcon, UserIcon } from '@hugeicons/core-free-icons';
 interface TopHeaderProps {
   onMobileMenuToggle?: () => void;
   isMobileNavOpen?: boolean;
