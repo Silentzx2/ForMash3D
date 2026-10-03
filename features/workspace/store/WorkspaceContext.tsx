@@ -1003,9 +1003,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } else if (modelId.includes('trellis')) {
       infSteps = modelId.includes('text_to_') ? 25 : 12;
       infGuidance = 7.5;
-    } else if (modelId.includes('hunyuan3d_shape_v21')) {
+    } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
       infSteps = 50;
-      infGuidance = generationSettings.guidanceScale ?? 5.0;
+      infGuidance = 5.0;
     } else if (modelId.includes('ultrashape')) {
       infSteps = 50;
     }

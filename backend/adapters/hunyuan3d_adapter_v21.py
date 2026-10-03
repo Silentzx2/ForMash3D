@@ -285,7 +285,7 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             logger.info("Generating 3D shape...")
             octree_res = 512
             num_steps = int(inputs.get("num_inference_steps", 50))
-            guidance_scale = float(inputs.get("guidance_scale", 7.5))
+            guidance_scale = float(inputs.get("guidance_scale", 5.0))
             seed = int(inputs.get("seed", 1234))
             device = "cuda" if torch.cuda.is_available() else "cpu"
             generator = torch.Generator(device=device).manual_seed(seed)
@@ -345,7 +345,7 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             "parameters": {
                 "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
                 "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
-                "guidance_scale": {"type": "number", "default": 7.5, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
                 "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
             }
         }
@@ -414,7 +414,7 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             # Step 1: Shape generation follows the same model-specific source contract.
             logger.info("Generating 3D shape...")
             num_steps = int(inputs.get("num_inference_steps", 50))
-            guidance_scale = float(inputs.get("guidance_scale", 7.5))
+            guidance_scale = float(inputs.get("guidance_scale", 5.0))
             seed = int(inputs.get("seed", 1234))
             device = "cuda" if torch.cuda.is_available() else "cpu"
             generator = torch.Generator(device=device).manual_seed(seed)
@@ -505,7 +505,7 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             "parameters": {
                 "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
                 "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
-                "guidance_scale": {"type": "number", "default": 7.5, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
                 "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
                 "max_num_view": {
                     "type": "integer",

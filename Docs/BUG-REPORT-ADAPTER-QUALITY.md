@@ -61,7 +61,7 @@ Source-level parity review and regression-test updates were completed. CUDA/NVID
 | ID | Severity | Gap | Closure |
 |---|---|---|---|
 | BQ-09 | Critical | Scheduler firewall missed adapter-level source reduction controls. | Added faces/num_faces/simplify/decimation_target/remesh* to the centralized firewall. |
-| BQ-10 | High | Legacy Hunyuan3D-2.1 could lower steps under low_vram and ignored explicit seed/guidance. | Raw and Shape→Paint now share seeded 50-step / 7.5-guidance generation. |
+| BQ-10 | High | Legacy Hunyuan3D-2.1 could lower steps under low_vram and ignored explicit seed/guidance. | Raw and Shape→Paint now share seeded 50-step / 5.0-guidance generation. |
 | BQ-11 | Medium | TRELLIS schema default and response metadata drifted from runtime behavior. | Schema uses 2048 source texture and metadata records actual sampling stages. |
 | BQ-12 | High | TRELLIS source texture inherited a lower UI quality profile. | Source texture is fixed to 2048; TRELLIS.2 source texture is fixed to 4096. |
 

@@ -1,6 +1,6 @@
 ## 2026-10-03 — [Deep Adapter Parity & Source-Fidelity Closure]
 - Centralized raw-source fidelity in the scheduler by stripping adapter-level extraction, decimation, and remesh controls before model inference.
-- Closed legacy Hunyuan3D-2.1 parity gaps: seeded 50-step / 7.5-guidance source generation is shared by raw and Shape→Paint paths.
+- Closed legacy Hunyuan3D-2.1 parity gaps: seeded 50-step / 5.0-guidance source generation is shared by raw and Shape→Paint paths.
 - Fixed TRELLIS source texture/metadata contracts and fixed maximum source texture profiles for TRELLIS/TRELLIS.2.
 - Expanded regression coverage and reconciled relevant documentation; CUDA/NVIDIA visual A/B remains runtime-gated.
 

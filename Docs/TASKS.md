@@ -9,7 +9,7 @@ Re-audit the raw/model-native generation contract after the official-parity qual
 
 ## Confirmed closures
 - [x] Scheduler strips production-only target/decimation/remesh controls before adapter inference.
-- [x] Legacy Hunyuan3D-2.1 raw generation uses seeded 50-step / 7.5-guidance inference without low-VRAM step reduction.
+- [x] Legacy Hunyuan3D-2.1 raw generation uses seeded 50-step / 5.0-guidance inference without low-VRAM step reduction.
 - [x] Legacy Hunyuan3D-2.1 Shape→Paint uses the same source shape contract.
 - [x] TRELLIS source texture schema uses 2048 and metadata reports actual sampling stages.
 - [x] TRELLIS source texture generation no longer follows a lower UI quality profile.
