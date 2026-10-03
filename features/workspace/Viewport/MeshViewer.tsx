@@ -604,9 +604,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     cancelExecution,
     activeTask,
     generationSettings,
+    setGenerationSettings,
     textureSettings,
     activeTool,
     setActiveTool,
+    navigateToTool,
     setIsExportModalOpen,
     generate3DModel,
     viewportResetTrigger,
@@ -3298,13 +3300,55 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
     }
 
-    // 2. CheckIcon if local 3D files were dropped from desktop (OBJ, GLB, STL, FBX)
+    // 2. Check if local files were dropped from desktop (3D meshes or 2D reference images)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       const ext = file.name.split('.').pop()?.toUpperCase() || '';
       const ALLOWED_EXTENSIONS = ['GLB', 'GLTF', 'OBJ', 'PLY', 'STL'];
+      const IMAGE_EXTENSIONS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'BMP', 'TIFF', 'AVIF'];
+
+      if (IMAGE_EXTENSIONS.includes(ext) || file.type.startsWith('image/')) {
+        const previewUrl = URL.createObjectURL(file);
+        const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+        setDropToastMessage(`Uploading "${file.name}" as 3D reference image...`);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        getApiClient().post<{ file_id: string; filename?: string }>(
+          '/api/v1/file-upload/image',
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        ).then(res => {
+          setGenerationSettings(prev => ({
+            ...prev,
+            mode: 'image-to-3d',
+            image: previewUrl,
+            imageFileId: res?.file_id || '',
+            prompt: cleanPrompt,
+            imageName: cleanPrompt,
+          }));
+          navigateToTool('model');
+          setDropToastMessage(`Reference image "${file.name}" ready for 3D generation`);
+          setTimeout(() => setDropToastMessage(null), 3000);
+        }).catch(err => {
+          console.warn('Backend image upload fallback to local preview:', err);
+          setGenerationSettings(prev => ({
+            ...prev,
+            mode: 'image-to-3d',
+            image: previewUrl,
+            prompt: cleanPrompt,
+            imageName: cleanPrompt,
+          }));
+          navigateToTool('model');
+          setDropToastMessage(`Set "${file.name}" as reference image`);
+          setTimeout(() => setDropToastMessage(null), 3000);
+        });
+        return;
+      }
+
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        setDropToastMessage(`Unsupported file format "${ext}". Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`);
+        setDropToastMessage(`Unsupported file format "${ext}". Allowed: ${ALLOWED_EXTENSIONS.join(', ')} or images (${IMAGE_EXTENSIONS.join(', ')})`);
         setTimeout(() => setDropToastMessage(null), 3500);
         return;
       }

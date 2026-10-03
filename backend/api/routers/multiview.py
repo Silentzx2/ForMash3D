@@ -33,6 +33,7 @@ from core.config import get_settings
 from core.scheduler.multiprocess_scheduler import JobRequest, MultiprocessModelScheduler
 from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path, save_base64_file
 from adapters.zero123plus_adapter import Zero123PlusAdapter, CAMERA_RIG, compute_source_sha256
+from .file_upload import resolve_file_id_async
 
 from ..dependencies import (
     get_current_user_or_none,
@@ -172,15 +173,18 @@ async def generate_multiview(
             file_info = await save_base64_file(req.image_base64, temp_dir, "input.png")
             input_image_path = file_info["path"]
         elif req.image_file_id:
-            if file_store:
-                file_info = await file_store.get_file(req.image_file_id)
-                if not file_info:
-                    raise HTTPException(status_code=404, detail=f"File {req.image_file_id} not found")
-                input_image_path = file_info.file_path
-            else:
-                input_image_path = resolve_server_file_path(req.image_file_id) or req.image_file_id
-                if not Path(input_image_path).exists():
-                    raise HTTPException(status_code=404, detail=f"File ID {req.image_file_id} not found")
+            resolved_path = await resolve_file_id_async(req.image_file_id, file_store)
+            if not resolved_path:
+                resolved_path = resolve_server_file_path(req.image_file_id)
+            if not resolved_path and file_store:
+                info = await file_store.get_file(req.image_file_id)
+                if info:
+                    p = getattr(info, "file_path", None) or (info.get("file_path") if isinstance(info, dict) else None)
+                    if p and Path(p).exists():
+                        resolved_path = p
+            if not resolved_path or not Path(resolved_path).exists():
+                raise HTTPException(status_code=404, detail=f"File {req.image_file_id} not found")
+            input_image_path = str(resolved_path)
 
         # Derive safe asset name
         raw_stem = Path(input_image_path).stem
@@ -265,15 +269,18 @@ async def upload_manual_views(
 
         # Resolve image
         if v.file_id:
-            resolved = resolve_server_file_path(v.file_id)
+            resolved = await resolve_file_id_async(v.file_id, file_store)
+            if not resolved:
+                resolved = resolve_server_file_path(v.file_id)
+            if not resolved and file_store:
+                info = await file_store.get_file(v.file_id)
+                if info:
+                    p = getattr(info, "file_path", None) or (info.get("file_path") if isinstance(info, dict) else None)
+                    if p and Path(p).is_file():
+                        resolved = p
             if resolved and Path(resolved).is_file():
                 import shutil
                 shutil.copy2(resolved, target_file)
-            elif file_store:
-                info = await file_store.get_file(v.file_id)
-                if info and Path(info.file_path).is_file():
-                    import shutil
-                    shutil.copy2(info.file_path, target_file)
         elif v.image_base64:
             await save_base64_file(v.image_base64, str(multiview_dir), f"{view_stem}.png")
 

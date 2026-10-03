@@ -16,12 +16,22 @@ from typing import Any, Optional
 
 import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
 from core.utils.file_utils import encode_file_to_base64, get_file_size_mb
+
+DEFAULT_MESH_THUMBNAIL_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">'
+    '<rect width="256" height="256" fill="#181a20"/>'
+    '<polygon points="128,48 208,94 128,140 48,94" fill="#2d3340" stroke="#f9cf00" stroke-width="3"/>'
+    '<polygon points="48,94 128,140 128,212 48,166" fill="#232832" stroke="#f9cf00" stroke-width="3"/>'
+    '<polygon points="208,94 128,140 128,212 208,166" fill="#1b1f27" stroke="#f9cf00" stroke-width="3"/>'
+    '<text x="128" y="238" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="12" font-weight="bold">3D ASSET</text>'
+    '</svg>'
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1071,6 +1081,10 @@ async def get_job_status(job_id: str, request: Request):
                     root / "previews" / "thumbnail.png",
                     root / "previews" / "preview.jpg",
                     root / "previews" / "thumbnail.jpg",
+                    root / "previews" / "preview.png",
+                    root / "previews" / "reference.png",
+                    root / "reference.png",
+                    root / "input.png",
                 ]:
                     if candidate.exists():
                         thumbnail_path = str(candidate)
@@ -1078,18 +1092,32 @@ async def get_job_status(job_id: str, request: Request):
                         break
             if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
                 m_path = Path(result.get("mesh_path") or result.get("output_path"))
-                candidate = m_path.parent / f"{m_path.stem}_thumb.png"
-                if candidate.exists():
-                    thumbnail_path = str(candidate)
+                for candidate in [
+                    m_path.parent / f"{m_path.stem}_thumb.png",
+                    m_path.parent / f"{m_path.stem}_preview.png",
+                    m_path.parent / "previews" / "thumbnail.png",
+                    m_path.parent / "input.png",
+                ]:
+                    if candidate.exists():
+                        thumbnail_path = str(candidate)
+                        result["thumbnail_path"] = thumbnail_path
+                        break
+
+            # Fallback to reference input image if thumbnail is absent
+            if not thumbnail_path or not os.path.exists(thumbnail_path):
+                inputs_dict = job_status.get("inputs", {})
+                cand_input = inputs_dict.get("image_path") or inputs_dict.get("image") or inputs_dict.get("texture_image_path")
+                if cand_input and os.path.exists(cand_input):
+                    thumbnail_path = str(cand_input)
                     result["thumbnail_path"] = thumbnail_path
 
-            if thumbnail_path and os.path.exists(thumbnail_path):
-                # Create URL for thumbnail
-                thumbnail_url = (
-                    f"{request.base_url}api/v1/system/jobs/{job_id}/thumbnail"
-                )
-                result["thumbnail_url"] = thumbnail_url
+            # Always populate thumbnail_url for completed jobs
+            thumbnail_url = (
+                f"{request.base_url}api/v1/system/jobs/{job_id}/thumbnail"
+            )
+            result["thumbnail_url"] = thumbnail_url
 
+            if thumbnail_path and os.path.exists(thumbnail_path):
                 # Add thumbnail file info
                 thumb_stats = os.stat(thumbnail_path)
                 result["thumbnail_file_info"] = {
@@ -1420,6 +1448,7 @@ async def download_job_thumbnail(
         None, description="Response format: 'file' (default) or 'base64'"
     ),
     filename: Optional[str] = Query(None, description="Custom filename for download"),
+    scheduler=Depends(get_scheduler),
 ):
     """
     Download the thumbnail image of a completed job.
@@ -1436,8 +1465,11 @@ async def download_job_thumbnail(
         from api.dependencies import get_current_user_optional
         from core.auth.models import UserRole
         
-        scheduler = await get_scheduler(request)
-        job_status = await scheduler.get_job_status(job_id)
+        raw_status = scheduler.get_job_status(job_id)
+        if asyncio.iscoroutine(raw_status):
+            job_status = await raw_status
+        else:
+            job_status = raw_status
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -1473,24 +1505,62 @@ async def download_job_thumbnail(
                 root / "previews" / "thumbnail.png",
                 root / "previews" / "preview.jpg",
                 root / "previews" / "thumbnail.jpg",
+                root / "previews" / "preview.png",
+                root / "previews" / "reference.png",
+                root / "reference.png",
+                root / "input.png",
+                root / "input_image.png",
             ]:
                 if candidate.exists():
                     thumbnail_path = str(candidate)
                     break
         if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
             m_path = Path(result.get("mesh_path") or result.get("output_path"))
-            candidate = m_path.parent / f"{m_path.stem}_thumb.png"
-            if candidate.exists():
-                thumbnail_path = str(candidate)
+            for candidate in [
+                m_path.parent / f"{m_path.stem}_thumb.png",
+                m_path.parent / f"{m_path.stem}_preview.png",
+                m_path.parent / "previews" / "thumbnail.png",
+                m_path.parent / "input.png",
+            ]:
+                if candidate.exists():
+                    thumbnail_path = str(candidate)
+                    break
 
+        # Fallback to reference input image if present
         if not thumbnail_path or not os.path.exists(thumbnail_path):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Thumbnail file not found for job: {job_id}",
-            )
+            inputs_dict = job_status.get("inputs", {})
+            cand_input = inputs_dict.get("image_path") or inputs_dict.get("image") or inputs_dict.get("texture_image_path")
+            if cand_input and os.path.exists(cand_input):
+                thumbnail_path = str(cand_input)
 
         # Determine the response format
         response_format = format or "file"
+
+        if not thumbnail_path or not os.path.exists(thumbnail_path):
+            import base64
+            svg_bytes = DEFAULT_MESH_THUMBNAIL_SVG.encode("utf-8")
+            if response_format == "base64":
+                b64_str = base64.b64encode(svg_bytes).decode("utf-8")
+                return JSONResponse(
+                    {
+                        "job_id": job_id,
+                        "filename": filename or f"thumbnail_{job_id}.svg",
+                        "content_type": "image/svg+xml",
+                        "file_size_mb": round(len(svg_bytes) / (1024 * 1024), 4),
+                        "base64_data": f"data:image/svg+xml;base64,{b64_str}",
+                        "generation_info": result.get("generation_info", {}),
+                        "download_time": datetime.utcnow().isoformat(),
+                    }
+                )
+            return Response(
+                content=svg_bytes,
+                media_type="image/svg+xml",
+                headers={
+                    "X-Job-ID": job_id,
+                    "X-Thumbnail-Generated": "placeholder",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
 
         if response_format == "base64":
             # Return base64 encoded data

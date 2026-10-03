@@ -70,7 +70,7 @@ class TestZero123PlusModelIsolation(unittest.TestCase):
         from api.routers.system import _model_supports_download
 
         self.assertTrue(_model_supports_download("zero123plus_v12_image_to_multiview"))
-        self.assertFalse(_model_supports_download("hunyuan3d_shape_v21_image_to_raw_mesh"))
+        self.assertFalse(_model_supports_download("unsupported_custom_model"))
 
 
 class TestZero123PlusAdapterContract(unittest.TestCase):

@@ -336,12 +336,21 @@ export const GeneratePanel: React.FC = () => {
     }
     ownedBlobUrlsRef.current.clear();
   }, []);
-  const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/x-png', 'image/jpg', 'image/avif'];
+  const ACCEPTED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.avif'];
+
+  const isAcceptedImage = (file: File) => {
+    if (file.type && (ACCEPTED_IMAGE_TYPES.includes(file.type.toLowerCase()) || file.type.startsWith('image/'))) {
+      return true;
+    }
+    const name = (file.name || '').toLowerCase();
+    return ACCEPTED_IMAGE_EXTS.some(ext => name.endsWith(ext));
+  };
 
   const processImageFile = async (file: File) => {
     setUploadError(null);
 
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    if (!isAcceptedImage(file)) {
       setUploadError('Invalid file type. Use JPG, PNG, or WEBP.');
       return;
     }
@@ -385,7 +394,7 @@ export const GeneratePanel: React.FC = () => {
 
   const processImageFileForSlot = async (file: File, slot: 'front' | 'back' | 'left' | 'right') => {
     setUploadError(null);
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    if (!isAcceptedImage(file)) {
       setUploadError('Invalid file type. Use JPG, PNG, or WEBP.');
       return;
     }
@@ -455,6 +464,24 @@ export const GeneratePanel: React.FC = () => {
 
     const file = e.dataTransfer.files?.[0];
     if (file) processImageFile(file);
+  };
+
+  const handlePanelDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+    }
+  };
+
+  const handlePanelDrop = (e: React.DragEvent) => {
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (isAcceptedImage(file)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSubAction('upload');
+        processImageFile(file);
+      }
+    }
   };
 
   const handleImageTo3DTabClick = () => {
@@ -543,7 +570,12 @@ export const GeneratePanel: React.FC = () => {
   };
 
   return (
-    <div id="panel-generate-model" className="relative flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden">
+    <div 
+      id="panel-generate-model" 
+      onDragOver={handlePanelDragOver}
+      onDrop={handlePanelDrop}
+      className="relative flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden"
+    >
       {/* Panel Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">

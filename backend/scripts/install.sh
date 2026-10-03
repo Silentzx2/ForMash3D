@@ -174,7 +174,7 @@ choose_env_manager() {
   local default="${ENV_MANAGER:-conda}"
   local choice=""
 
-  if [[ "${AUTO_MODE:-0}" == "1" || "${NONINTERACTIVE:-0}" == "1" || "${CI:-}" == "true" ]]; then
+  if [[ "${AUTO_MODE:-0}" == "1" || "${NONINTERACTIVE:-0}" == "1" || "${CI:-}" == "true" || -n "${FORMASH3D_ENV_MANAGER:-}" || ! -t 0 ]]; then
     choice="${default}"
     echo "[INFO] Non-interactive / Auto mode: selected environment manager '${choice}'"
   elif [ -e /dev/tty ]; then
