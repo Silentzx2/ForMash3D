@@ -1207,10 +1207,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const localTaskId = startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
 
       const currentQuality = generationSettings.meshQuality || 'high';
-      // Text generation also keeps source geometry at maximum fidelity.
+      // Text generation follows the official TRELLIS text sampling schedule.
+      const modelId = generationSettings.aiModel || '';
       const octreeRes = 512;
-      const infSteps = 75;
-      const infGuidance = generationSettings.guidanceScale ?? 7.5;
+      const infSteps = modelId.includes('trellis') ? 25 : 25;
+      const infGuidance = modelId.includes('trellis') ? 7.5 : (generationSettings.guidanceScale ?? 7.5);
 
       try {
         // ponytail: map UI generation settings to the real 3DAIGC-API contract.

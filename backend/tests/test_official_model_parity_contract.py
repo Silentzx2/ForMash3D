@@ -118,8 +118,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TrellisTextToTexturedMeshAdapter(vram_requirement=11776)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["ss_sampling_steps"]["default"], 12)
-        self.assertEqual(schema["slat_sampling_steps"]["default"], 12)
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 25)
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 25)
 
     def test_trellis2_adapter_contract(self):
         from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
@@ -168,6 +168,7 @@ class TestGenerationProductionContract(unittest.TestCase):
         self.assertIn("mc_resolution = 320", workspace_context)
         self.assertIn("resolution = 1024", workspace_context)
         self.assertIn("ss_sampling_steps", workspace_context)
+        self.assertNotIn("const infSteps = 75", workspace_context)
 
 
 class TestRetopologyProductionBudget(unittest.TestCase):

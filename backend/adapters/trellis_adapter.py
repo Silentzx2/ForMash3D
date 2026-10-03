@@ -352,16 +352,16 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 },
                 "ss_sampling_steps": {
                     "type": "integer",
-                    "description": "Sparse structure sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Sparse structure sampling steps (official text demo default: 25)",
+                    "default": 25,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
-                    "description": "Structured latent sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Structured latent sampling steps (official text demo default: 25)",
+                    "default": 25,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False
