@@ -326,3 +326,22 @@ motion_generation:
       supports_postprocess: true
       fps: 20
       skeleton: "core"
+
+# Multi-view generation (Zero123++ v1.2)
+# Generates 6 novel viewpoints from a single image (3x2 grid, 30° azimuth intervals)
+image_to_multiview:
+  zero123plus_v12_image_to_multiview:
+    capabilities:
+      image_to_multiview: true
+      multiview: true
+      fixed_view_count: 6
+      view_normals: true
+      masks: true
+      image_export: true
+      hidden_from_model_selector: true
+    vram_requirement: 5120  # MB
+    supported_inputs: ["image"]
+    supported_outputs: ["png", "zip"]
+    model_path: "backend/pretrained/zero123plus-v1.2"
+    enabled: true
+    max_workers: 1

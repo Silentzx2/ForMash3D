@@ -15,6 +15,7 @@ export type ToolType =
 
 export interface ActiveTask {
   id: string;
+  isLocal?: boolean;
   type: 'image-to-3d' | 'text-to-3d' | 'segment' | 'remesh' | 'texture' | 'animation' | 'rigging' | 'uv' | 'edit';
   title: string;
   inputImage?: string;
@@ -131,7 +132,12 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
   const qaReport = rawArtifacts.qaReport || raw.qa_report || raw.quality_trace?.game_ready?.qa || undefined;
   const sourceUrl = rawArtifacts.source || raw.source_model_url || rawArtifacts.master?.url || undefined;
   const gameReadyUrl = rawArtifacts.gameReady || raw.game_ready_url || raw.model_url || rawArtifacts.game_ready?.glb?.url || undefined;
-  const lods = rawArtifacts.lods || raw.lod_urls || (rawArtifacts.lods && typeof rawArtifacts.lods === 'object' ? Object.values(rawArtifacts.lods).map((l: any) => l?.url).filter(Boolean) : undefined);
+  const rawLods = rawArtifacts.lods ?? raw.lod_urls ?? (raw.artifacts as any)?.lods;
+  const lods: string[] | undefined = Array.isArray(rawLods)
+    ? rawLods.map((l: any) => (typeof l === 'string' ? l : l?.url || '')).filter(Boolean)
+    : (rawLods && typeof rawLods === 'object')
+      ? Object.values(rawLods).map((l: any) => (typeof l === 'string' ? l : l?.url || '')).filter(Boolean)
+      : undefined;
   const pbrMaps = rawArtifacts.pbrMaps || raw.pbr_maps || undefined;
   const gameReadyFormats = rawArtifacts.gameReadyFormats || raw.game_ready_formats || (rawArtifacts.game_ready && typeof rawArtifacts.game_ready === 'object' ? Object.fromEntries(Object.entries(rawArtifacts.game_ready).map(([k, v]: [string, any]) => [k, v?.url || v]).filter(([, u]) => Boolean(u))) : undefined);
   const zipUrl = rawArtifacts.zipUrl || raw.zip_url || undefined;
@@ -345,6 +351,32 @@ export interface GenerationSettings {
     right?: string | null;
     back?: string | null;
     left?: string | null;
+  };
+  multiviewSourceFileId?: string | null;
+  multiviewJobId?: string | null;
+  multiviewAssetId?: string | null;
+  multiviewStatus?: 'idle' | 'generating' | 'ready' | 'error';
+  multiviewViews?: Array<{
+    file: string;
+    label: string;
+    azimuth_deg?: number;
+    elevation_deg?: number;
+    url?: string;
+    mask_url?: string;
+    normal_url?: string;
+  }>;
+  multiviewManifest?: any;
+  multiviewZipUrl?: string | null;
+  multiviewError?: string | null;
+  multiviewInputMode?: 'generate' | 'upload';
+  multiviewAdvanced?: {
+    inferenceSteps: number;
+    seed: number;
+    saveContactSheet: boolean;
+    transparentBackground: boolean;
+    generateMasks: boolean;
+    generateNormals: boolean;
+    includeManifest: boolean;
   };
   enableFlashVDM?: boolean;
   lowVramMode?: 'auto' | 'normal' | 'low';

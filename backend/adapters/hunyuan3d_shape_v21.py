@@ -72,10 +72,22 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
+        # Clean any spurious empty outer __init__.py if present on disk
+        outer_init = self.hunyuan3d_root / "hy3dshape" / "__init__.py"
+        if outer_init.exists() and outer_init.stat().st_size < 10:
+            try:
+                outer_init.unlink()
+            except Exception:
+                pass
+
+        # hy3dshape repository root has hy3dshape/ package inside it
+        hy3dshape_parent = str(self.hunyuan3d_root / "hy3dshape")
+        if hy3dshape_parent in sys.path:
+            sys.path.remove(hy3dshape_parent)
+        sys.path.insert(0, hy3dshape_parent)
+
         if str(self.hunyuan3d_root) not in sys.path:
             sys.path.append(str(self.hunyuan3d_root))
-        if str(self.hunyuan3d_root / "hy3dshape") not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root / "hy3dshape"))
 
     def _load_model(self):
         """Load Hunyuan3D-Shape-v2-1 pipeline."""
@@ -94,10 +106,32 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     f"Please download weights via download_models.sh."
                 )
 
-            from hy3dshape.hy3dshape.pipelines import (
-                Hunyuan3DDiTFlowMatchingPipeline,
-            )
-            from hy3dshape.hy3dshape.rembg import BackgroundRemover
+            # Ensure hy3dshape package is loaded correctly and hy3dshape.models is accessible
+            hy3dshape_parent = str(self.hunyuan3d_root / "hy3dshape")
+            if hy3dshape_parent in sys.path:
+                sys.path.remove(hy3dshape_parent)
+            sys.path.insert(0, hy3dshape_parent)
+
+            if "hy3dshape" in sys.modules and not hasattr(sys.modules["hy3dshape"], "pipelines"):
+                del sys.modules["hy3dshape"]
+
+            try:
+                from hy3dshape.pipelines import (
+                    Hunyuan3DDiTFlowMatchingPipeline,
+                )
+                from hy3dshape.rembg import BackgroundRemover
+            except ImportError:
+                from hy3dshape.hy3dshape.pipelines import (
+                    Hunyuan3DDiTFlowMatchingPipeline,
+                )
+                from hy3dshape.hy3dshape.rembg import BackgroundRemover
+
+            import hy3dshape
+            inner_pkg = self.hunyuan3d_root / "hy3dshape" / "hy3dshape"
+            if inner_pkg.exists() and hasattr(hy3dshape, "__path__"):
+                if str(inner_pkg) not in hy3dshape.__path__:
+                    hy3dshape.__path__.append(str(inner_pkg))
+            sys.modules["hy3dshape.hy3dshape"] = hy3dshape
 
             logger.info("Loading shape generation pipeline...")
             self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(

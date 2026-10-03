@@ -589,7 +589,7 @@ export const LiveExecutionPanel: React.FC = () => {
               {[
                 ['Master', Boolean(currentAsset?.artifacts?.source)],
                 ['Game Ready', Boolean(currentAsset?.artifacts?.gameReady)],
-                ['LOD', Boolean(currentAsset?.artifacts?.lods?.length)],
+                ['LOD', Boolean(Array.isArray(currentAsset?.artifacts?.lods) ? currentAsset.artifacts.lods.length : Object.keys(currentAsset?.artifacts?.lods || {}).length)],
                 ['Collision', Boolean(currentAsset?.artifacts?.collision)],
                 ['QA', Boolean(currentAsset?.qaScore ?? currentAsset?.artifacts?.qaReport)],
               ].map(([label, ready]) => (

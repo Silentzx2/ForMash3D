@@ -200,6 +200,7 @@ class TestPostprocessPipelineParity(unittest.TestCase):
 
     def test_postprocess_preserves_native_resolution_when_auto_optimize_false(self):
         import os
+        import numpy as np
         import trimesh
         from postprocess.pipeline import run_postprocess_job
 
@@ -209,6 +210,9 @@ class TestPostprocessPipelineParity(unittest.TestCase):
         icosphere = trimesh.creation.icosphere(subdivisions=6, radius=1.0)
         face_count = len(icosphere.faces)
         self.assertGreater(face_count, 50000)
+        # Give mesh vertex colors to verify vertex color preservation and avoid redundant auto-uv on huge sphere
+        icosphere.visual.vertex_colors = np.ones((len(icosphere.vertices), 4), dtype=np.uint8) * 128
+        icosphere.visual.vertex_colors[:, 0] = np.linspace(0, 255, len(icosphere.vertices), dtype=np.uint8)
 
         test_dir = backend_root / "outputs" / "test_parity"
         test_dir.mkdir(parents=True, exist_ok=True)
@@ -221,7 +225,7 @@ class TestPostprocessPipelineParity(unittest.TestCase):
             result = run_postprocess_job(
                 job_id=job_id,
                 generation_result={"output_mesh_path": str(temp_mesh)},
-                job_inputs={"auto_optimize": False, "generateLOD": False},
+                job_inputs={"auto_optimize": False, "generateLOD": False, "physics_enabled": False},
                 job_metadata={"feature": "image_to_raw_mesh"},
             )
 

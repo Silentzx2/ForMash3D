@@ -1233,6 +1233,27 @@ async def download_job_result(
                     matches = list((asset_root_path / "game_ready").glob(f"*.{canonical_format}"))
                     if matches:
                         candidate = matches[0]
+                if not candidate.exists():
+                    # On-demand conversion from game-ready GLB
+                    glb_matches = list((asset_root_path / "game_ready").glob("*.glb"))
+                    if glb_matches:
+                        src_glb = glb_matches[0]
+                        target_file = asset_root_path / "game_ready" / f"{src_glb.stem}.{canonical_format}"
+                        try:
+                            if canonical_format == "gltf":
+                                from postprocess.pipeline import _export_gltf_embedded
+                                _export_gltf_embedded(src_glb.read_bytes(), target_file)
+                            else:
+                                import trimesh
+                                from postprocess.pipeline import _export_bytes
+                                mesh = trimesh.load(src_glb, file_type="glb", process=False)
+                                if isinstance(mesh, trimesh.Scene):
+                                    mesh = trimesh.util.concatenate([g for g in mesh.geometry.values() if isinstance(g, trimesh.Trimesh)])
+                                target_file.write_bytes(_export_bytes(mesh, canonical_format))
+                            if target_file.exists():
+                                candidate = target_file
+                        except Exception as conv_err:
+                            logger.warning(f"On-demand conversion to {canonical_format} failed: {conv_err}")
                 output_path = candidate
             elif canonical_format in {"lod0", "lod1", "lod2", "lod3"}:
                 output_path = asset_root_path / "lods" / f"{canonical_format}.glb"

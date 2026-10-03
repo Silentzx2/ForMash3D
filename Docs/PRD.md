@@ -85,6 +85,13 @@ Create a centralized, local AI 3D asset factory that takes an image or text prom
 - **PartUV**: Automated seam placement and UV chart packing
 - Part-based UV unwrapping with LSCM
 
+### 13. Multi-View Generation
+- **Zero123++ v1.2**: 6 novel camera viewpoints generated at fixed 30° azimuth intervals (30°, 90°, 150°, 210°, 270°, 330°)
+- Seamless reference image reuse from Single Image mode without re-upload
+- Optional alpha masks and View-Space Normals (Normal ControlNet)
+- Multi-View Workspace with 6-view inspection gallery, pan/zoom viewer modal, and on-demand ZIP export (`<stem>.zip`)
+- Capability gating: strict restriction ensuring Multi-View 3D reconstruction only targets engines declared with `capabilities.multiview: true`
+
 ## MVP
 
 - Image-to-3D shape generation (Hunyuan3D-Shape-v2-1, TRELLIS)

@@ -47,14 +47,41 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             raise ValueError(
                 f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
             )
+        backend_dir = Path(__file__).resolve().parents[1]
         if model_path is None:
-            model_path = "backend/pretrained/TripoSG"
+            model_path = str((backend_dir / "pretrained" / "TripoSG").resolve())
+        else:
+            p = Path(model_path)
+            if not p.is_absolute():
+                parts = list(p.parts)
+                if parts and parts[0] == "backend":
+                    p = Path(*parts[1:])
+                for candidate in [backend_dir / p, backend_dir.parent / p, Path.cwd() / p]:
+                    if candidate.exists():
+                        p = candidate
+                        break
+                else:
+                    p = backend_dir / p
+                model_path = str(p.resolve())
 
         if triposg_root is None:
             triposg_root = str(Path(__file__).resolve().parent.parent / "thirdparty" / "TripoSG")
 
         if rmbg_path is None:
-            rmbg_path = "backend/pretrained/RMBG-1.4"
+            rmbg_path = str((backend_dir / "pretrained" / "RMBG-1.4").resolve())
+        else:
+            p = Path(rmbg_path)
+            if not p.is_absolute():
+                parts = list(p.parts)
+                if parts and parts[0] == "backend":
+                    p = Path(*parts[1:])
+                for candidate in [backend_dir / p, backend_dir.parent / p, Path.cwd() / p]:
+                    if candidate.exists():
+                        p = candidate
+                        break
+                else:
+                    p = backend_dir / p
+                rmbg_path = str(p.resolve())
 
         super().__init__(
             model_id=model_id,
@@ -271,9 +298,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 f"TripoSG raw extraction completed: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
             )
 
-            # Apply Y-up orientation transform (-90 deg on X, +90 deg on Y)
-            mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
-            mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+            # TripoSG extraction is natively upright Y-up; preserve standard orientation
 
             # Save output
             output_path = self.path_generator.generate_mesh_path(

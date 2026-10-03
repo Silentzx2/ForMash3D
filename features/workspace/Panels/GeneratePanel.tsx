@@ -7,7 +7,7 @@ import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
-
+import { MultiViewWorkspace } from './MultiViewWorkspace';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
@@ -85,12 +85,13 @@ interface DiscoveredModel {
   shape_vram_mb: number;
   texture_vram_mb: number;
   supports_flashvdm?: boolean;
+  capabilities?: Record<string, any>;
 }
 
 function formatGenerateModel(
   id: string,
   isAvailable = true,
-  detail?: { status?: string; vram_requirement?: number; capabilities?: Record<string, boolean> }
+  detail?: { status?: string; vram_requirement?: number; capabilities?: Record<string, any> }
 ): DiscoveredModel {
   const def = getModelDefinition(id);
   const isTextured = def?.supportsTexture ?? id.includes('textured');
@@ -125,6 +126,7 @@ function formatGenerateModel(
     shape_vram_mb: Math.round(vram * 0.6),
     texture_vram_mb: vram,
     supports_flashvdm: supportsFlashVDM,
+    capabilities: detail?.capabilities || {},
   };
 }
 
@@ -281,6 +283,7 @@ export const GeneratePanel: React.FC = () => {
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
+  const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview);
 
   const physics = generationSettings.physics ?? {
     bodyType: 'auto' as const,
@@ -498,11 +501,19 @@ export const GeneratePanel: React.FC = () => {
       setTimeout(() => setNoticeMessage(null), 4000);
       return;
     }
-    const multiviewCount = Object.values(generationSettings.multiviewImages || {}).filter(Boolean).length;
-    if (subAction === 'crop' || multiviewCount > 1) {
-      setNoticeMessage('The current backend generation contract is single-image. Use the Single Image tab; collected multiview files are not sent as a multi-view request.');
-      setTimeout(() => setNoticeMessage(null), 5000);
-      return;
+    if (subAction === 'crop') {
+      if (!isModelMultiviewCapable) {
+        setNoticeMessage(`The selected model "${activeModelObj?.label || activeModelId}" does not support multi-view reconstruction. Please choose a multi-view enabled 3D engine or use Single Image mode.`);
+        setTimeout(() => setNoticeMessage(null), 5000);
+        return;
+      }
+      const hasMvViews = (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0) ||
+        Boolean(generationSettings.multiviewAssetId);
+      if (!hasMvViews) {
+        setNoticeMessage('Please generate or upload multi-view images before running 3D reconstruction.');
+        setTimeout(() => setNoticeMessage(null), 5000);
+        return;
+      }
     }
     // Commit the request settings first; the effect above submits only after React
     // has installed this exact snapshot, avoiding stale-state generation requests.
@@ -523,8 +534,8 @@ export const GeneratePanel: React.FC = () => {
     const presets = {
       mobile: { meshQuality: 'medium' as const, targetPolycount: 15000, generateLOD: true, lodPreset: 'mobile', lodCount: 4, generateCollision: true },
       game: { meshQuality: 'high' as const, targetPolycount: 35000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
-      cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: false },
-      native: { meshQuality: 'ultra' as const, targetPolycount: 0, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: false },
+      cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
+      native: { meshQuality: 'ultra' as const, targetPolycount: 0, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: true },
     }[recipe];
     setGenerationSettings(prev => ({ ...prev, meshQuality: presets.meshQuality, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount }, generateLOD: presets.generateLOD, lodPreset: presets.lodPreset as 'mobile' | 'low' | 'medium' | 'high' | 'custom' | undefined, lodCount: presets.lodCount, generateCollision: presets.generateCollision }));
   };
@@ -591,12 +602,12 @@ export const GeneratePanel: React.FC = () => {
                   {
                     id: 'crop',
                     domId: 'subaction-btn-crop',
-                    label: 'Multiview (Unavailable)',
-                    tooltip: 'Multiview is disabled until a model-specific backend contract is available.',
+                    label: 'Multi-View',
+                    tooltip: 'Zero123++ Multi-View generation & manual view collections',
                     icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
                     onClick: () => {
-                      setNoticeMessage('Multiview is disabled until the backend exposes a real multi-view generation contract.');
-                      setTimeout(() => setNoticeMessage(null), 5000);
+                      setSubAction('crop');
+                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
                     },
                   },
                 ].map((tab) => {
@@ -608,7 +619,7 @@ export const GeneratePanel: React.FC = () => {
                         id={tab.domId}
                         type="button"
                         onClick={tab.onClick}
-                        disabled={tab.id === 'crop'}
+                        disabled={false}
                         className={`relative w-full py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95 z-10 ${
                           active ? 'text-primary font-bold' : 'text-zinc-400 hover:text-zinc-200'
                         }`}
@@ -742,132 +753,13 @@ export const GeneratePanel: React.FC = () => {
                 </>
               )}
 
-              {/* Mode 2: Multi-View GridIcon */}
+              {/* Mode 2: Multi-View Zero123++ & Manual Collections */}
               {subAction === 'crop' && (
-                <>
-                  <input
-                    ref={multiFileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handleMultiFileUpload}
-                  />
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
-                        <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-                        <span>Multiview Perspective Angles</span>
-                      </span>
-                      <span className="text-[9px] text-zinc-400 font-mono">
-                        {Object.values(generationSettings.multiviewImages || {}).filter(Boolean).length}/4 loaded
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {([
-                        { key: 'front', label: 'Front', req: true },
-                        { key: 'right', label: 'Right', req: false },
-                        { key: 'back', label: 'Back', req: false },
-                        { key: 'left', label: 'Left', req: false },
-                      ] as const).map(({ key, label, req }) => {
-                        const imgUrl = generationSettings.multiviewImages?.[key];
-                        return (
-                          <div
-                            key={key}
-                            onClick={() => {
-                              setActiveMvSlot(key);
-                              multiFileInputRef.current?.click();
-                            }}
-                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const f = e.dataTransfer.files?.[0];
-                              if (f) processImageFileForSlot(f, key);
-                            }}
-                            className={`relative h-20 rounded-lg border flex flex-col items-center justify-center p-1 cursor-pointer transition-all overflow-hidden group ${
-                              imgUrl
-                                ? 'border-primary/50 bg-[hsl(var(--surface-2))] shadow-sm'
-                                : 'border-dashed border-white/[0.14] bg-[hsl(var(--surface-1))]/60 hover:bg-[hsl(var(--surface-1))] hover:border-primary/50'
-                            }`}
-                          >
-                            {imgUrl ? (
-                              <>
-                                <img src={imgUrl} alt={`${label} view`} className="w-full h-full object-contain" />
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                  <span className="text-[8px] font-bold text-white bg-black/80 px-1.5 py-0.5 rounded">Change</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setGenerationSettings(prev => {
-                                      const nextMv = { ...(prev.multiviewImages || {}) };
-                                      delete nextMv[key];
-                                      return {
-                                        ...prev,
-                                        multiviewImages: nextMv,
-                                        image: key === 'front' ? (nextMv.right || nextMv.back || nextMv.left || null) : prev.image,
-                                      };
-                                    });
-                                  }}
-                                  className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 hover:bg-rose-600 text-white transition-colors cursor-pointer"
-                                  title={`Remove ${label} view`}
-                                >
-                                  <HugeiconsIcon icon={Cancel} size={16} className="w-2.5 h-2.5" />
-                                </button>
-                              </>
-                            ) : (
-                              <div className="text-center space-y-0.5">
-                                <HugeiconsIcon icon={Plus} size={16} className="w-4 h-4 mx-auto text-zinc-500 group-hover:text-primary transition-colors" />
-                                <span className="text-[8px] text-zinc-400 font-medium block">{label}</span>
-                              </div>
-                            )}
-                            <div className="absolute bottom-0.5 left-0.5 px-1 py-0.2 rounded text-[7px] font-bold bg-black/70 text-zinc-300">
-                              {label}{req ? ' *' : ''}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-between text-[9.5px] pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGenerationSettings(prev => ({
-                            ...prev,
-                            multiviewImages: SAMPLE_MULTIVIEW,
-                            image: SAMPLE_MULTIVIEW.front,
-                            imageName: 'Sample Multiview Set',
-                            mode: 'image-to-3d',
-                          }));
-                        }}
-                        className="text-primary hover:underline font-medium cursor-pointer"
-                      >
-                        Load 4-View Sample &gt;
-                      </button>
-                      {Boolean(generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean)) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            for (const value of Object.values(generationSettings.multiviewImages || {})) revokeOwnedBlobUrl(value || undefined);
-                            revokeOwnedBlobUrl(generationSettings.image);
-                            setGenerationSettings(prev => ({
-                              ...prev,
-                              multiviewImages: undefined,
-                              image: null,
-                              imageName: undefined,
-                            }));
-                          }}
-                          className="text-rose-400 hover:underline cursor-pointer"
-                        >
-                          Clear All Views
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </>
+                <MultiViewWorkspace
+                  fileInputRef={fileInputRef}
+                  activeModelObj={activeModelObj}
+                  setNoticeMessage={setNoticeMessage}
+                />
               )}
             </div>
 
@@ -1060,84 +952,68 @@ export const GeneratePanel: React.FC = () => {
             </div>
 
 
-            {/* One-click production recipes */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+            {/* Unified Production Target & Polycount Budget */}
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] font-bold text-white">Production Recipe</div>
-                  <div className="text-[9px] text-zinc-500">Preset the mesh budget, LOD, and physics pipeline together</div>
+                  <div className="text-[11px] font-bold text-white">Target & Polycount Budget</div>
+                  <div className="text-[9px] text-zinc-400">Presets budget, LOD, and collision together; raw AI details stay intact</div>
                 </div>
-                <span className="text-[9px] font-mono text-primary">{Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K budget</span>
+                <span className="font-mono text-xs font-black text-primary">
+                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) <= 0
+                    ? 'Native / Raw'
+                    : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000).toLocaleString()} tris`}
+                </span>
               </div>
+
               <div className="grid grid-cols-4 gap-1">
                 {[
                   ['mobile', 'Mobile', '15K · LOD'],
                   ['game', 'Game Ready', '35K · LOD · FX'],
-                  ['cinematic', 'Cinematic', '100K · high detail'],
+                  ['cinematic', 'Cinematic', '100K · Ultra'],
                   ['native', 'Native', 'Raw geometry'],
-                ].map(([id, label, detail]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => applyWorkflowRecipe(id as 'mobile' | 'game' | 'cinematic' | 'native')}
-                    className={"min-h-12 rounded-lg border text-left px-2 py-1.5 transition-all " + (
-                      generationSettings.meshQuality === (id === 'mobile' ? 'medium' : id === 'cinematic' || id === 'native' ? 'ultra' : 'high') &&
-                      ((generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) === (id === 'mobile' ? 15000 : id === 'game' ? 35000 : id === 'cinematic' ? 100000 : -1))
-                        ? 'bg-primary/10 border-primary/40 text-white'
-                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:border-primary/30 hover:text-white'
-                    )}
-                  >
-                    <span className="block text-[9px] font-black leading-tight">{label}</span>
-                    <span className="block text-[7px] text-zinc-500 mt-0.5">{detail}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Prominent production polycount control */}
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-bold text-white">Production Polycount</div>
-                  <div className="text-[9px] text-zinc-500">Controls the final post-process triangle budget; raw AI detail stays untouched</div>
-                </div>
-                <span className="font-mono text-xs font-black text-primary">
-                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) <= 0 ? 'Native' : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000).toLocaleString() + ' tris'}
-                </span>
-              </div>
-              <div className="grid grid-cols-5 gap-1">
-                {[
-                  ['15K', 15000, 'Mobile'],
-                  ['35K', 35000, 'Game'],
-                  ['50K', 50000, 'Studio'],
-                  ['100K', 100000, 'Cinema'],
-                  ['Native', -1, 'Raw'],
-                ].map(([label, value, hint]) => {
-                  const current = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
-                  const selected = current === value;
+                ].map(([id, label, detail]) => {
+                  const targetP = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                  const isMatch = (
+                    (id === 'mobile' && targetP === 15000) ||
+                    (id === 'game' && targetP === 35000) ||
+                    (id === 'cinematic' && targetP === 100000) ||
+                    (id === 'native' && targetP <= 0)
+                  );
                   return (
                     <button
-                      key={String(value)}
+                      key={id}
                       type="button"
-                      onClick={() => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(value) } }))}
-                      className={"py-1.5 rounded-lg border text-center transition-all " + (selected ? 'bg-primary text-black border-primary font-black' : 'bg-[hsl(var(--surface-1))] text-zinc-400 border-white/[0.06] hover:text-white hover:border-primary/30')}
+                      onClick={() => applyWorkflowRecipe(id as 'mobile' | 'game' | 'cinematic' | 'native')}
+                      className={"min-h-11 rounded-lg border text-left px-2 py-1.5 transition-all " + (
+                        isMatch
+                          ? 'bg-primary text-black border-primary font-bold shadow-sm'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:border-primary/30 hover:text-white'
+                      )}
                     >
-                      <span className="block text-[9px] font-black">{String(label)}</span>
-                      <span className={"block text-[7px] " + (selected ? 'text-black/70' : 'text-zinc-500')}>{String(hint)}</span>
+                      <span className="block text-[9px] font-black leading-tight">{label}</span>
+                      <span className={"block text-[7px] mt-0.5 " + (isMatch ? 'text-black/75' : 'text-zinc-500')}>{detail}</span>
                     </button>
                   );
                 })}
               </div>
-              <input
-                aria-label="Production polycount"
-                type="range"
-                min={5000}
-                max={200000}
-                step={5000}
-                value={(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) > 0 ? generationSettings.autoOptimizeSettings!.targetPolycount : 50000}
-                onChange={(e) => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(e.target.value) } }))}
-                className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
-              />
+
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                  <span>Fine-tune triangle budget</span>
+                  <span>5K - 200K</span>
+                </div>
+                <input
+                  aria-label="Production polycount"
+                  type="range"
+                  min={5000}
+                  max={200000}
+                  step={5000}
+                  value={(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) > 0 ? generationSettings.autoOptimizeSettings!.targetPolycount : 50000}
+                  onChange={(e) => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(e.target.value) } }))}
+                  className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
+                />
+              </div>
             </div>
             {/* Advanced generation controls are opt-in so the main workflow stays compact. */}
             <button
@@ -1530,7 +1406,8 @@ export const GeneratePanel: React.FC = () => {
         <ShimmerButton
           id="btn-generate-model-action"
           onClick={handleGenerate}
-          disabled={false}
+          disabled={isExecuting || (subAction === 'crop' && !isModelMultiviewCapable)}
+          title={subAction === 'crop' && !isModelMultiviewCapable ? 'Selected 3D model does not support multi-view reconstruction' : undefined}
           shimmerColor="hsl(var(--neon-amber))"
           shimmerSize="0.1em"
           shimmerDuration="2.5s"

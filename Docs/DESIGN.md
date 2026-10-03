@@ -349,7 +349,23 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 12. Component Interaction Flow
+## 12. Multi-View Workspace UX
+
+- **Single-Image Automatic Reuse**: When switching between Single Image and Multi-View modes in the Generate Panel, any reference image uploaded in Single Image mode is automatically inherited by Multi-View without requiring re-upload.
+- **Sub-Mode Switcher**: Clean dual-segment control switching between `Generate Views (Zero123++)` and `Upload View Set` (manual collections).
+- **6-View Inspection Gallery**: Responsive 3x2 grid displaying the canonical viewpoints (`front_right_30`, `right_90`, `back_right_150`, `back_left_210`, `left_270`, `front_left_330`) with azimuth degrees and badges for available masks (`MASK`) and View-Space Normals (`NORM`).
+- **Interactive Pan & Zoom Viewer Modal**:
+  - Fullscreen overlay with dark backdrop blur (`backdrop-blur-md`).
+  - Drag-to-pan with real-time translation offset.
+  - Granular zoom controls (0.5x to 4.0x) with keyboard accelerators: `+`/`=` (Zoom in), `-` (Zoom out), `0`/`1` (Reset), `ArrowLeft`/`ArrowRight` (Cycle views), and `Esc` (Close).
+- **Advanced Generation Drawer**: Compact accordion housing controls for diffusion inference steps (15-100), CFG guidance scale (1.0-10.0), seed mode (Auto vs Custom integer), optional rembg background removal, optional alpha masks, and optional View-Space Normals.
+- **Model Capability Gating Badges**: Real-time visual feedback indicating whether the currently selected 3D generation engine supports multi-view input:
+  - Multi-View Ready (`emerald-400`, `capabilities.multiview: true`)
+  - Single-Image 3D Only (`amber-400`, tooltip warning and disabled 3D generation action)
+
+---
+
+## 13. Component Interaction Flow
 
 ```mermaid
 sequenceDiagram

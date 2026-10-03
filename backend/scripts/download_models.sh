@@ -81,7 +81,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposr" "triposg" "triposf" "ardy" "misc" "all")
+AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposr" "triposg" "triposf" "ardy" "zero123plus" "zero123plus_normal_controlnet" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -113,11 +113,13 @@ Available models:
     fastmesh           - FastMesh model
     ultrashape         - UltraShape model
     triposr            - TripoSR fast single-image reconstruction model
-    triposg            - TripoSG high-fidelity image-to-3D + RMBG models
-    triposf            - TripoSF high-resolution arbitrary-topology model
-    ardy               - ARDY interactive text-to-motion checkpoints
-    misc               - Miscellaneous models (RealESRGAN, DINOv2)
-    all                - Download all models
+    triposg            - TripoSG and RMBG models
+    triposf            - TripoSF VAE checkpoint
+    ardy               - ARDY motion generation models
+    zero123plus        - Zero123++ v1.2 multi-view image generation model
+    zero123plus_normal_controlnet - Normal generation ControlNet for Zero123++ v1.2 (optional)
+    misc               - Miscellaneous utility models (RealESRGAN, DINOv2)
+    all                - All core models (excluding optional normal ControlNet)
 
 Examples:
     $0                                    # Download all models
@@ -742,6 +744,50 @@ download_ardy() {
     fi
 }
 
+# Function to download Zero123++ v1.2 multi-view model
+download_zero123plus() {
+    print_info "========================================"
+    print_info "Downloading Zero123++ v1.2 Multi-View Model"
+    print_info "========================================"
+
+    local model_dir="$PRETRAINED_DIR/zero123plus-v1.2"
+    if [ "$FORCE_DOWNLOAD" = false ] && [ -f "$model_dir/model_index.json" ] && verify_directory "$model_dir" 3; then
+        print_info "Zero123++ v1.2 model already exists and verified"
+        return 0
+    fi
+
+    mkdir -p "$model_dir"
+    print_info "Downloading Zero123++ v1.2 from sudo-ai/zero123plus-v1.2..."
+    if hf_download sudo-ai/zero123plus-v1.2 --local-dir "$model_dir"; then
+        print_success "Zero123++ v1.2 model downloaded successfully"
+    else
+        print_error "Failed to download Zero123++ v1.2 model"
+        return 1
+    fi
+}
+
+# Function to download optional normal ControlNet for Zero123++ v1.2
+download_zero123plus_normal_controlnet() {
+    print_info "========================================"
+    print_info "Downloading Zero123++ v1.2 Normal ControlNet (Optional)"
+    print_info "========================================"
+
+    local model_dir="$PRETRAINED_DIR/controlnet-zp12-normal-gen-v1"
+    if [ "$FORCE_DOWNLOAD" = false ] && [ -f "$model_dir/config.json" ] && verify_directory "$model_dir" 2; then
+        print_info "Normal ControlNet already exists and verified"
+        return 0
+    fi
+
+    mkdir -p "$model_dir"
+    print_info "Downloading normal ControlNet from sudo-ai/controlnet-zp12-normal-gen-v1..."
+    if hf_download sudo-ai/controlnet-zp12-normal-gen-v1 --local-dir "$model_dir"; then
+        print_success "Normal ControlNet downloaded successfully"
+    else
+        print_error "Failed to download Normal ControlNet"
+        return 1
+    fi
+}
+
 # Function to download miscellaneous models
 download_misc() {
     print_info "========================================"
@@ -840,6 +886,13 @@ verify_all_models() {
 
     print_info "Checking ARDY..."
     verify_directory "$PRETRAINED_DIR/ardy" 1 || all_verified=false
+
+    print_info "Checking Zero123++ v1.2..."
+    if [ -f "$PRETRAINED_DIR/zero123plus-v1.2/model_index.json" ]; then
+        verify_directory "$PRETRAINED_DIR/zero123plus-v1.2" 3 || all_verified=false
+    else
+        print_warning "Zero123++ v1.2 not found (can be downloaded via -m zero123plus)"
+    fi
 
     print_info "Checking miscellaneous models..."
     verify_file "$PRETRAINED_DIR/misc/RealESRGAN_x4plus.pth" 50000000 || all_verified=false
@@ -945,6 +998,12 @@ for model in "${MODELS_ARRAY[@]}"; do
         "ardy")
             download_ardy
             ;;
+        "zero123plus")
+            download_zero123plus
+            ;;
+        "zero123plus_normal_controlnet")
+            download_zero123plus_normal_controlnet
+            ;;
         "misc")
             download_misc
             ;;
@@ -967,6 +1026,7 @@ for model in "${MODELS_ARRAY[@]}"; do
             download_triposg
             download_triposf
             download_ardy
+            download_zero123plus
             download_misc
             ;;
         *)

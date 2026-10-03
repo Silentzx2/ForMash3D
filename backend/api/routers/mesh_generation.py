@@ -75,6 +75,7 @@ class TextToRawMeshRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    asset_name: Optional[str] = Field(None, description="Asset base stem name")
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -205,6 +206,8 @@ class ImageToRawMeshRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    asset_name: Optional[str] = Field(None, description="Asset base stem name")
+    image_name: Optional[str] = Field(None, description="Original image filename")
 
     @field_validator("output_format")
     @classmethod
@@ -267,6 +270,8 @@ class ImageToTexturedMeshRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    asset_name: Optional[str] = Field(None, description="Asset base stem name")
+    image_name: Optional[str] = Field(None, description="Original image filename")
 
     @field_validator("output_format")
     @classmethod
@@ -546,9 +551,11 @@ async def text_to_textured_mesh(
             mesh_request.model_preference, "text_to_textured_mesh", scheduler
         )
 
+        chosen_stem = mesh_request.asset_name or (mesh_request.text_prompt[:32] if mesh_request.text_prompt else "asset")
         job_request = JobRequest(
             feature="text_to_textured_mesh",
             inputs={
+                "asset_name": chosen_stem,
                 "text_prompt": mesh_request.text_prompt,
                 "texture_prompt": mesh_request.texture_prompt,
                 "texture_text_prompt": mesh_request.texture_prompt,
@@ -561,6 +568,7 @@ async def text_to_textured_mesh(
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
+                "asset_name": chosen_stem,
                 "postprocess_mode": "production_mesh",
                 "feature_type": "text_to_textured_mesh",
                 "physics_enabled": mesh_request.physics_enabled,
@@ -743,9 +751,23 @@ async def image_to_raw_mesh(
             file_store=file_store,
         )
 
+        chosen_stem = mesh_request.asset_name or mesh_request.image_name
+        if not chosen_stem and mesh_request.image_file_id:
+            from api.routers.file_upload import _local_file_metadata
+            meta = _local_file_metadata.get(mesh_request.image_file_id)
+            if meta and meta.get("filename"):
+                chosen_stem = Path(meta["filename"]).stem
+        if not chosen_stem and image_file_path:
+            p_stem = Path(image_file_path).stem
+            if not p_stem.startswith("upload_"):
+                chosen_stem = p_stem
+        chosen_stem = chosen_stem or "asset"
+
         job_request = JobRequest(
             feature="image_to_raw_mesh",
             inputs={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "image_path": image_file_path,
                 "output_format": mesh_request.output_format,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
@@ -755,6 +777,8 @@ async def image_to_raw_mesh(
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "postprocess_mode": "production_mesh",
                 "feature_type": "image_to_raw_mesh",
                 "physics_enabled": mesh_request.physics_enabled,
@@ -827,9 +851,23 @@ async def image_to_textured_mesh(
                 file_store=file_store,
             )
 
+        chosen_stem = mesh_request.asset_name or mesh_request.image_name
+        if not chosen_stem and mesh_request.image_file_id:
+            from api.routers.file_upload import _local_file_metadata
+            meta = _local_file_metadata.get(mesh_request.image_file_id)
+            if meta and meta.get("filename"):
+                chosen_stem = Path(meta["filename"]).stem
+        if not chosen_stem and image_file_path:
+            p_stem = Path(image_file_path).stem
+            if not p_stem.startswith("upload_"):
+                chosen_stem = p_stem
+        chosen_stem = chosen_stem or "asset"
+
         job_request = JobRequest(
             feature="image_to_textured_mesh",
             inputs={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "image_path": image_file_path,
                 "texture_image_path": texture_image_path,
                 "output_format": mesh_request.output_format,
@@ -841,6 +879,8 @@ async def image_to_textured_mesh(
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "postprocess_mode": "production_mesh",
                 "feature_type": "image_to_textured_mesh",
                 "physics_enabled": mesh_request.physics_enabled,

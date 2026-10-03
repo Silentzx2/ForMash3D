@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 GenerationProgress = Optional[Callable[[float, str, str], None]]
 
 MAX_PRODUCTION_FACES = 200_000
-_FORMATS = ("glb", "gltf", "fbx", "obj", "stl", "ply")
+_FORMATS = ("glb", "fbx")
 
 
 def _repo_root() -> Path:
@@ -58,7 +58,9 @@ def _repo_root() -> Path:
 
 
 def _storage_root() -> Path:
-    return _repo_root() / "backend" / "storage" / "models"
+    root = _repo_root() / "backend" / "storage" / "models" / "meshes"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
 
 
 def _safe_name(value: str) -> str:
@@ -68,6 +70,7 @@ def _safe_name(value: str) -> str:
 
 def _job_hash(job_id: str) -> str:
     return hashlib.sha256(job_id.encode("utf-8")).hexdigest()[:8]
+
 
 def canonical_asset_workspace(
     job_id: str,
@@ -82,15 +85,25 @@ def canonical_asset_workspace(
         or generation_result.get("output_path")
         or generation_result.get("file_path")
     )
-    raw_path = resolve_server_file_path(raw_candidate)
+    try:
+        raw_path = resolve_server_file_path(raw_candidate)
+    except Exception:
+        raw_path = raw_candidate
     source_stem = (
         job_inputs.get("asset_name")
+        or job_inputs.get("image_name")
+        or job_inputs.get("source_stem")
+        or job_inputs.get("original_filename")
         or job_inputs.get("image_path")
         or job_inputs.get("text_prompt")
         or (Path(raw_path).stem if raw_path else "asset")
     )
-    asset_name = _safe_name(Path(str(source_stem)).stem)
-    return _storage_root() / f"{asset_name}_{_job_hash(job_id)}"
+    stem_val = Path(str(source_stem)).stem
+    if stem_val.startswith("upload_") and job_inputs.get("text_prompt"):
+        stem_val = str(job_inputs["text_prompt"])[:32]
+    asset_name = _safe_name(stem_val)
+    clean_job_id = _safe_name(job_id)
+    return _storage_root() / f"{asset_name}_{clean_job_id}"
 
 
 def _sha256_file(path: Path) -> str:
@@ -250,7 +263,7 @@ def _export_gltf_embedded(glb_bytes: bytes, target: Path) -> None:
 
 
 def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
-    """Return True only when actual image/texture payloads exist on the mesh."""
+    """Return True when actual image/texture payloads or rich vertex colors exist on the mesh."""
     visual = getattr(mesh, "visual", None)
     if visual is None:
         return False
@@ -265,6 +278,16 @@ def _has_native_textures(mesh: trimesh.Trimesh) -> bool:
 
     if _is_real_image(getattr(visual, "image", None)):
         return True
+
+    # Detect vertex colors (e.g. from TripoSR / Tripo meshes)
+    vertex_colors = getattr(visual, "vertex_colors", None)
+    if vertex_colors is not None and len(vertex_colors) > 0:
+        vc = np.asarray(vertex_colors)
+        if vc.ndim == 2 and vc.shape[0] > 0 and vc.shape[1] >= 3:
+            # Check if vertex colors contain genuine variation (not uncolored default white/gray)
+            rgb = vc[:, :3]
+            if np.any(np.std(rgb, axis=0) > 1.0):
+                return True
 
     material = getattr(visual, "material", None)
     if material is None:
@@ -481,15 +504,21 @@ def run_postprocess_job(
 
     source_stem = (
         job_inputs.get("asset_name")
+        or job_inputs.get("image_name")
+        or job_inputs.get("source_stem")
+        or job_inputs.get("original_filename")
         or job_inputs.get("image_path")
         or job_inputs.get("text_prompt")
         or Path(raw_path).stem
     )
-    source_name = Path(str(source_stem)).stem
-    asset_name = _safe_name(source_name)
-    asset_hash = _job_hash(job_id)
+    stem_val = Path(str(source_stem)).stem
+    if stem_val.startswith("upload_") and job_inputs.get("text_prompt"):
+        stem_val = str(job_inputs["text_prompt"])[:32]
+    asset_name = _safe_name(stem_val)
+    clean_job_id = _safe_name(job_id)
     root = _storage_root()
-    asset_dir = root / f"{asset_name}_{asset_hash}"
+    asset_dir = root / f"{asset_name}_{clean_job_id}"
+    base_name = f"{asset_name}_{clean_job_id}"
     master_dir = asset_dir / "master"
     game_ready_dir = asset_dir / "game_ready"
     lod_dir = asset_dir / "lods"
@@ -508,7 +537,7 @@ def run_postprocess_job(
         shutil.copy2(raw_path, master_path)
 
     asset_manifest = metadata_dir / "asset.json"
-    if asset_manifest.exists() and (game_ready_dir / f"{asset_name}_{asset_hash}.glb").exists():
+    if asset_manifest.exists() and (game_ready_dir / f"{base_name}.glb").exists():
         saved = json.loads(asset_manifest.read_text(encoding="utf-8"))
         if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
             try:
@@ -703,26 +732,14 @@ def run_postprocess_job(
 
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
     game_ready_dir.mkdir(parents=True, exist_ok=True)
-    base_name = f"{asset_name}_{asset_hash}"
+    base_name = f"{asset_name}_{clean_job_id}"
     game_ready: Dict[str, str] = {}
     artifact_errors: Dict[str, str] = {}
     glb_path = game_ready_dir / f"{base_name}.glb"
     _save_file(glb_path, _export_glb(uv_mesh))
     game_ready["glb"] = str(glb_path)
 
-    quad_faces = retopo_stats.get("quad_faces")
-    for fmt in ("obj", "stl", "ply"):
-        try:
-            target = game_ready_dir / f"{base_name}.{fmt}"
-            if fmt == "obj" and quad_faces:
-                _save_file(target, _export_quad_obj(uv_mesh, quad_faces))
-            else:
-                _save_file(target, _export_bytes(uv_mesh, fmt))
-            game_ready[fmt] = str(target)
-        except Exception as exc:
-            artifact_errors[fmt] = str(exc)
-            logger.warning("Game-ready %s export failed: %s", fmt, exc)
-
+    # Pre-generate only GLB and FBX (Unity format); other formats (OBJ, STL, PLY, GLTF) convert on-demand
     try:
         fbx_bytes, _ = run_convert_fbx(
             glb_path.read_bytes(),
@@ -737,14 +754,6 @@ def run_postprocess_job(
     except Exception as exc:
         artifact_errors["fbx"] = str(exc)
         logger.warning("FBX export failed: %s", exc)
-
-    try:
-        gltf_path = game_ready_dir / f"{base_name}.gltf"
-        _export_gltf_embedded(glb_path.read_bytes(), gltf_path)
-        game_ready["gltf"] = str(gltf_path)
-    except Exception as exc:
-        artifact_errors["gltf"] = str(exc)
-        logger.warning("GLTF embedded export failed: %s", exc)
 
     lods: Dict[int, str] = {}
     lod_quality: Dict[str, Dict[str, Any]] = {}
@@ -789,9 +798,14 @@ def run_postprocess_job(
             "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
         }
 
-    physics_enabled = bool(
-        job_metadata.get("physics_enabled", job_inputs.get("physics_enabled", False))
-    )
+    physics_in_meta = job_metadata.get("physics_enabled")
+    physics_in_inputs = job_inputs.get("physics_enabled")
+    if physics_in_meta is not None:
+        physics_enabled = bool(physics_in_meta)
+    elif physics_in_inputs is not None:
+        physics_enabled = bool(physics_in_inputs)
+    else:
+        physics_enabled = True
     physics_config = normalize_physics_config(
         job_metadata.get("physics_config") or job_inputs.get("physics_config")
     )

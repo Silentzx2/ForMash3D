@@ -18,7 +18,7 @@
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Inspired_By-Tripo_AI_%7C_Meshy-FFCC00?style=for-the-badge&logo=codepen&logoColor=black" alt="Inspired by Tripo AI and Meshy"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-23_Neural_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="23 Models"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-24_Neural_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="24 Models"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -70,7 +70,8 @@ A technical comparison of ForMash3D versus commercial cloud platforms:
 |---|:---:|:---:|:---:|:---:|
 | **Pricing** | **100% Free & Open-Source (Apache 2.0)** | $20 – $100+/mo | $20 – $80/mo | $30 – $120/mo |
 | **Hosting & Privacy** | **100% Private (Local NVIDIA GPU)** | Proprietary Cloud | Proprietary Cloud | Proprietary Cloud |
-| **Model Diversity** | **23 Pluggable Open-Source Adapters** | 1 Proprietary Model | 1 Proprietary Model | 1 Proprietary Model |
+| **Model Diversity** | **24 Pluggable Open-Source Adapters** | 1 Proprietary Model | 1 Proprietary Model | 1 Proprietary Model |
+| **Multi-View Synthesis** | **Zero123++ v1.2 (6-View 30° Grid)** | Paid Cloud Only | Paid Cloud Only | ❌ None |
 | **Raw Geometry Preservation** | **Yes (`master/source.glb` preserved)** | ❌ Aggressive cloud decimation | ❌ Cloud compressed | ❌ Cloud compressed |
 | **Quad Retopology** | **FastMesh (V1K/V4K) & AutoRetopo** | Basic remesh | Basic remesh | Paid add-on |
 | **Progressive LODs** | **LOD0 to LOD3 with UV preservation** | ❌ Single level | Paid add-on | ❌ Single level |
@@ -146,13 +147,14 @@ flowchart TD
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines["Neural 3D Synthesis Engines (23 Model Adapters)"]
+    subgraph Engines["Neural 3D Synthesis Engines (24 Model Adapters)"]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
         TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
         RETOPO["FastMesh V1K / V4K<br/>Neural Quad Retopology"]:::purple
         EXTRAS["UltraShape / PartPacker<br/>Dense Poly / Part Decomp"]:::purple
         RIGGING["UniRig & ARDY<br/>Auto-Rigging & Motion AI"]:::purple
+        ZERO123["Zero123++ v1.2<br/>Multi-View 6-Cam Synthesis"]:::purple
     end
 
     subgraph PostProcess["Production Post-Processing Core (Ported from 3DGenStudio)"]

@@ -86,19 +86,24 @@ def _simplify_textured_fallback(mesh: trimesh.Trimesh, target_faces: int) -> tri
 
         result = trimesh.Trimesh(vertices=v_red, faces=f_red, process=False)
         source_visual = getattr(mesh, "visual", None)
-        if source_visual is not None and new_uv is not None:
-            source_material = getattr(source_visual, "material", None)
-            source_image = getattr(source_visual, "image", None)
-            if source_material is not None:
-                result.visual = trimesh.visual.TextureVisuals(
-                    uv=new_uv,
-                    material=copy.copy(source_material),
-                    image=source_image if source_image is not None else getattr(source_material, "image", None),
-                )
-            elif source_image is not None:
-                result.visual = trimesh.visual.TextureVisuals(uv=new_uv, image=source_image)
-            else:
-                result.visual = trimesh.visual.TextureVisuals(uv=new_uv)
+        if source_visual is not None:
+            vc = getattr(source_visual, "vertex_colors", None)
+            if vc is not None and len(vc) == len(mesh.vertices):
+                result.visual.vertex_colors = np.asarray(vc)[nearest_indices]
+
+            if new_uv is not None:
+                source_material = getattr(source_visual, "material", None)
+                source_image = getattr(source_visual, "image", None)
+                if source_material is not None:
+                    result.visual = trimesh.visual.TextureVisuals(
+                        uv=new_uv,
+                        material=copy.copy(source_material),
+                        image=source_image if source_image is not None else getattr(source_material, "image", None),
+                    )
+                elif source_image is not None:
+                    result.visual = trimesh.visual.TextureVisuals(uv=new_uv, image=source_image)
+                else:
+                    result.visual = trimesh.visual.TextureVisuals(uv=new_uv)
         return result
     except Exception:
         return mesh.simplify_quadric_decimation(face_count=int(target_faces))

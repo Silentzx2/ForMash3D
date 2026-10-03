@@ -66,6 +66,8 @@ _ADAPTER_MAP = {
     "TripoSFImageToRawMeshAdapter": ("triposf_adapter", "TripoSFImageToRawMeshAdapter"),
     # ARDY
     "ArdyMotionGenerationAdapter": ("ardy_adapter", "ArdyMotionGenerationAdapter"),
+    # Zero123++
+    "Zero123PlusAdapter": ("zero123plus_adapter", "Zero123PlusAdapter"),
 }
 
 __all__ = list(_ADAPTER_MAP.keys())

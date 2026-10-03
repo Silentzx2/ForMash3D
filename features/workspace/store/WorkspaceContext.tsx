@@ -460,7 +460,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     lowVramMode: 'auto',
     maxNumView: 6,
     resolution: 1024,
-    generateCollision: false,
+    generateCollision: true,
     enableRealESRGAN: true,
     physics: {
       bodyType: 'auto',
@@ -671,7 +671,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // Poll activeTask from backend so UI pipeline steps, progress, and failure update in real time
   useEffect(() => {
     const jobId = activeTask?.id;
-    if (!jobId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {
+    if (!jobId || activeTask?.isLocal || jobId.startsWith('local_') || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {
       return;
     }
     if (activeTask?.status === 'completed' || activeTask?.status === 'failed' || activeTask?.status === 'interrupted') {
@@ -902,6 +902,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const jobId = activeTask?.id;
     if (!jobId) return;
 
+    if (jobId.startsWith('local_') || activeTask?.isLocal) {
+      setIsExecuting(false);
+      setExecutionProgress(0);
+      setExecutionStep('Execution cancelled');
+      setActiveTask(null);
+      return;
+    }
+
     try {
       const data = await getApiClient().cancelGenerationJob(jobId);
       if (data.cancelled || data.status === 'cancelled') {
@@ -924,12 +932,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setExecutionStep(message);
       toast.error('Cancel failed', { description: message });
     }
-  }, [activeTask?.id]);
+  }, [activeTask?.id, activeTask?.isLocal]);
 
   const startTask = useCallback((type: ActiveTask['type'], title: string, promptId?: string, provider?: string, inputImage?: string, inputImageName?: string) => {
-    const taskId = promptId ?? crypto.randomUUID();
+    const isLocal = !promptId;
+    const taskId = promptId ?? `local_${crypto.randomUUID()}`;
     const task: ActiveTask = {
       id: taskId,
+      isLocal,
       type,
       title,
       startedAt: Date.now(),
@@ -952,13 +962,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setJobsById(prev => {
       const task = prev[localTaskId] || activeTaskRef.current;
       if (!task) return prev;
-      const next = { ...task, ...updates, id: jobId };
+      const next: ActiveTask = { ...task, ...updates, id: jobId, isLocal: false };
       const copy = { ...prev };
       delete copy[localTaskId];
       copy[jobId] = next;
       return copy;
     });
-    setActiveTask(prev => prev && prev.id === localTaskId ? { ...prev, ...updates, id: jobId } : prev);
+    setActiveTask(prev => prev && prev.id === localTaskId ? { ...prev, ...updates, id: jobId, isLocal: false } : prev);
   }, []);
 
   const generateImageTo3D = useCallback(async (customImage?: string) => {
@@ -1063,8 +1073,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         Boolean(generationSettings.generateCollision) &&
         !(isPaintModel && generationSettings.generateTexture !== false);
 
+      const cleanStem = (imageFileName || modelPrompt || 'asset')
+        .replace(/\.[^/.]+$/, '')
+        .replace(/[^A-Za-z0-9._-]+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'asset';
+
       const body: Record<string, unknown> = {
         ...imageInput,
+        asset_name: cleanStem,
+        image_name: cleanStem,
         output_format: 'glb',
         model_preference: generationSettings.aiModel,
         model_parameters: modelParameters,
@@ -1240,7 +1257,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setExecutionStep('Batch queued: ' + batchData.job_ids.length + ' jobs');
           return;
         }
+        const cleanPromptStem = modelPrompt
+          .slice(0, 32)
+          .replace(/[^A-Za-z0-9._-]+/g, '_')
+          .replace(/^_+|_+$/g, '') || 'asset';
+
         const body: Record<string, unknown> = {
+          asset_name: cleanPromptStem,
           text_prompt: modelPrompt,
           output_format: 'glb',
           model_preference: generationSettings.aiModel,

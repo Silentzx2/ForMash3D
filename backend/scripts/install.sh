@@ -743,6 +743,22 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then
     fi
 fi
 
+### Zero123++ v1.2 Multi-View Dependencies ###
+echo ""
+echo "========================================"
+echo "Installing Zero123++ v1.2 Dependencies"
+echo "========================================"
+if [ -d "$PROJECT_ROOT/backend/thirdparty/zero123plus" ]; then
+    echo "[INFO] Found vendored Zero123++ repository at $PROJECT_ROOT/backend/thirdparty/zero123plus"
+fi
+
+if [ -f "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" ]; then
+    echo "[INFO] Installing Zero123++ runtime dependencies..."
+    $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" || true
+    echo "[SUCCESS] Zero123++ runtime dependencies processed"
+fi
+### Zero123++ end ###
+
 cd "$PROJECT_ROOT/backend"
 
 echo ""
@@ -849,12 +865,20 @@ try:
 except Exception as e:
     print(f'PyTorch/CUDA check error: {e}')
 
-for pkg in ['numpy', 'diffusers', 'transformers', 'pymeshlab', 'open3d', 'trimesh']:
+for pkg in ['numpy', 'diffusers', 'transformers', 'pymeshlab', 'open3d', 'trimesh', 'rembg']:
     try:
         mod = __import__(pkg)
         print(f'{pkg}: {getattr(mod, \"__version__\", \"installed\")}')
     except Exception as e:
         print(f'{pkg}: NOT FOUND ({e})')
+
+try:
+    import sys
+    sys.path.insert(0, '$PROJECT_ROOT/backend')
+    from adapters.zero123plus_adapter import Zero123PlusAdapter
+    print('[SUCCESS] Zero123PlusAdapter import verified')
+except Exception as e:
+    print(f'[WARN] Zero123PlusAdapter import check: {e}')
 "
 
 persist_env_config 2>/dev/null || true

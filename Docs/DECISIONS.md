@@ -572,3 +572,17 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - Hunyuan shape, paint, and mini-turbo adapters safely operate within supported octree bounds.
 - TRELLIS.2 exporter never triggers unhandled cumesh exceptions on non-decimated requests.
 - Textured assets never lose their materials or crash the post-processing queue on decimation errors.
+
+## ADR-038: Zero123++ v1.2 Multi-View Isolation and Capability Gating
+
+**Decision**: Vendor Zero123++ v1.2 in `backend/thirdparty/zero123plus` without `.git` metadata, isolate behind `Zero123PlusAdapter` under `image_to_multiview` feature type, hide from general 3D model selectors (`hidden_from_model_selector: true`), and enforce a hard capability gate (`capabilities.multiview: true`) on downstream 3D reconstruction.
+
+**Reason**: Zero123++ generates 6 novel viewpoints at 30° azimuth intervals without producing 3D meshes directly. Its weights carry a CC-BY-NC 4.0 license constraint. Isolating it behind a dedicated feature type and adapter ensures it does not pollute 3D mesh selectors, preserves legal boundaries, enables on-demand ZIP export without mesh generation, and guarantees that 3D reconstruction only occurs when a multi-view enabled 3D engine is selected.
+
+**Consequences**:
+- Upstream repo is vendored directly in the project and `install.sh` verifies it without performing external git clones.
+- Single-image uploads are automatically shared with Multi-View mode without re-upload.
+- The UI action button and backend router (`/reconstruct-3d`) enforce strict rejection when attempting multi-view 3D reconstruction with incompatible engines.
+- Views, optional masks, and optional View-Space Normals are stored in `storage/models/<safe_stem>_<hash>/multiview/` with deterministic hashes (`source_sha256`, `request_sha256`).
+- ZIP export delivers `<safe_stem>.zip` without extra random hashes.
+

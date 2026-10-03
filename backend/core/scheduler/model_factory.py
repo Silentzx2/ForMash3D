@@ -166,6 +166,11 @@ class ModelFactory:
             "module": "adapters.ardy_adapter",
             "class": "ArdyMotionGenerationAdapter",
         },
+        # Zero123++ Multi-View adapter
+        "zero123plus_v12_image_to_multiview": {
+            "module": "adapters.zero123plus_adapter",
+            "class": "Zero123PlusAdapter",
+        },
     }
 
     @classmethod
@@ -247,6 +252,12 @@ class ModelFactory:
             raise Exception(
                 f"Failed to create model {config.get('model_id', 'unknown')}: {e}"
             )
+
+    @classmethod
+    def create_model(cls, model_id: str, **kwargs) -> BaseModel:
+        """Convenience method to create a model instance by model_id."""
+        config = {"model_id": model_id, **kwargs}
+        return cls.create_model_from_config(config)
 
     @classmethod
     def create_model_config(

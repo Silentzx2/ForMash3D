@@ -788,10 +788,17 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     if (!currentAsset) return;
     const artifacts = currentAsset.artifacts;
     const lodIndex = view.startsWith('lod') ? Number(view.slice(3)) : -1;
+    const rawLods = artifacts?.lods;
+    const lodCandidate = Array.isArray(rawLods)
+      ? rawLods[lodIndex]
+      : (rawLods && typeof rawLods === 'object')
+        ? ((rawLods as any)[lodIndex] || (rawLods as any)[String(lodIndex)])
+        : undefined;
+    const lodUrl = typeof lodCandidate === 'string' ? lodCandidate : lodCandidate?.url;
     const url =
       view === 'source' ? artifacts?.source :
       view === 'game-ready' ? artifacts?.gameReady :
-      lodIndex >= 0 ? artifacts?.lods?.[lodIndex] :
+      lodIndex >= 0 ? lodUrl :
       currentAsset.source?.viewUrl || currentAsset.source?.localUrl;
     if (typeof url !== 'string' || !url) return;
     loadModelInViewer(url, currentAsset.name, currentAsset as any);
@@ -3735,36 +3742,44 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             style={{ right: `${rightOffset}px` }} 
             className="absolute top-3 z-10 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)] transition-all duration-200 pointer-events-auto"
           >
-            {currentAsset?.artifacts && (
-              <div className="flex items-center gap-1 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
-                <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">Artifact</span>
-                {[
-                  { id: 'game-ready' as const, label: 'Game' },
-                  { id: 'source' as const, label: 'Source' },
-                  ...(currentAsset.artifacts.lods || []).slice(0, 4).map((_, i) => ({ id: ('lod' + i) as 'lod0' | 'lod1' | 'lod2' | 'lod3', label: 'L' + i })),
-                ].map(item => {
-                  const disabled =
-                    item.id === 'source' ? !currentAsset.artifacts?.source :
-                    item.id === 'game-ready' ? !currentAsset.artifacts?.gameReady :
-                    !currentAsset.artifacts?.lods?.[Number(item.id.slice(3))];
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => switchArtifactView(item.id)}
-                      className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed " + (
-                        artifactView === item.id
-                          ? "bg-primary text-black"
-                          : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            {currentAsset?.artifacts && (() => {
+              const rawLods = currentAsset.artifacts.lods;
+              const lodList: any[] = Array.isArray(rawLods)
+                ? rawLods
+                : (rawLods && typeof rawLods === 'object')
+                  ? Object.values(rawLods)
+                  : [];
+              return (
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+                  <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">Artifact</span>
+                  {[
+                    { id: 'game-ready' as const, label: 'Game' },
+                    { id: 'source' as const, label: 'Source' },
+                    ...lodList.slice(0, 4).map((_, i) => ({ id: ('lod' + i) as 'lod0' | 'lod1' | 'lod2' | 'lod3', label: 'L' + i })),
+                  ].map(item => {
+                    const disabled =
+                      item.id === 'source' ? !currentAsset.artifacts?.source :
+                      item.id === 'game-ready' ? !currentAsset.artifacts?.gameReady :
+                      !lodList[Number(item.id.slice(3))];
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => switchArtifactView(item.id)}
+                        className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed " + (
+                          artifactView === item.id
+                            ? "bg-primary text-black"
+                            : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
               <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">FPS</span>

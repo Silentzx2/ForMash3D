@@ -1,48 +1,23 @@
+## 2026-10-03 Zero123++ Multi-View Architecture, Canonical Mesh Storage, Physics & Tripo Alignment
+- Vendored upstream Zero123++ v1.2 into `backend/thirdparty/zero123plus` without `.git` repository metadata; verified authoritative PyTorch 2.6 / CUDA 12.4 environment. Dependency installation simplified via cleaned requirements without temp files.
+- Canonical storage layout: models are stored in separate directories under `storage/models/meshes/<image_name>_<job_id>/`. Game-ready exports produce exclusively `glb` and `fbx` named `<image_name>_<job_id>.glb` and `<image_name>_<job_id>.fbx`. Legacy formats (`obj`, `stl`, `ply`, `gltf`) convert on-demand on download.
+- Physics: replaced placeholder fallback with automatic CoACD multi-hull convex decomposition (`collision/collision.glb`) and rigid-body physical properties (`metadata/physics.json`).
+- Model orientation: eliminated unwanted rotation matrix in TripoSG and aligned TripoSF to enforce upright Y-up coordinates in Three.js viewport.
+- Adapter `Zero123PlusAdapter` encapsulates 6 novel viewpoints at 30° azimuth intervals (30°, 90°, 150°, 210°, 270°, 330°), deterministic request hashing (`source_sha256`, `request_sha256`), canonical storage in `storage/models/meshes/<safe_asset_name>_<job_id>/multiview/`, view masks, and on-demand ZIP delivery (`<stem>.zip`).
+- Capability gate: 3D generation models default to `capabilities.multiview: false`. The frontend action button and backend router (`/reconstruct-3d`) enforce strict rejection when attempting multi-view 3D reconstruction with incompatible engines.
+- Frontend: fixed `(h.artifacts.lods || []).slice is not a function` error by normalizing array and object LOD dictionaries; `MultiViewWorkspace.tsx` provides single-image automatic reuse, 6-view inspection gallery, full keyboard/mouse pan and zoom modal, advanced inference drawer, and manual view-set uploads.
+- Verification: 32/32 tests passing 100% across test suite and clean TypeScript compilation (`npx tsc --noEmit` exit 0).
+
 ## 2026-10-03 Source Fidelity + Downstream Polycount Contract Hardening
 - Root cause: target_polycount was intended as a post-process budget but was forwarded into adapters; TripoSG/TRELLIS/PartPacker could interpret it as an early decimation target.
 - Fix: multiprocess_scheduler.py now builds a separate adapter-input dictionary and removes production-only budget/orchestration controls before _process_request().
 - Maximum source fidelity: generation explicitly marks source_quality: max and uses the existing maximum geometry settings for each registered model. The visible quality selector no longer lowers source geometry.
 - Canonical safety: master/source.glb is the untouched model-native checkpoint. Positive poly budgets are applied only in canonical post-processing; Native/Raw is target 0.
 - Verification: Added scheduler firewall + frontend source-contract regression tests. NVIDIA/CUDA generation and visual comparison remain runtime-gated.
+
 ## 2026-10-03 Workspace Production Controls & Viewport Performance Pass
 - **Retopology poly budget:** Added `target_polycount` to the mesh-retopology API and `RemeshSettings`. The FastMesh V1K/V4K target remains model-fixed; the new slider controls the final production triangle budget downstream.
 - **Generation workflow recipes:** Added Mobile / Game Ready / Cinematic / Native presets that synchronize model quality, final triangle budget, LOD generation, and optional physics in one action.
 - **Viewport artifact inspection:** Added quick switching between Game Ready, immutable Source, and generated LOD artifacts directly in the viewport.
 - **Viewport performance modes:** Added Auto / Fast / Detail rendering modes that adjust pixel ratio and shadow cost, with automatic heavy-mesh detection preserved for the default mode.
 - **Research basis:** Current Tripo, Meshy, and Hyper3D workflows emphasize integrated generation, remesh/retopology, texture, rigging/animation, artifact review, and fast post-generation controls; the implementation keeps only the useful local/self-hosted subset.
-## 2026-10-03 Contract Sync, Command Palette & Production Lifecycle Audit
-- Hunyuan Shape and Mini-Turbo schemas, frontend quality mapping, and parity tests now agree on fixed raw extraction at `octree_resolution=512`; output polycount stays downstream in post-processing.
-- Added a Ctrl/Cmd+K command palette to the persistent workspace header using the existing local Command/cmdk component. No new dependency or parallel UI framework was introduced.
-- Corrected architecture/decision documentation so terminal job success reflects the actual scheduler: production post-processing completes before terminal success.
-- Source-level audit and static contract validation are complete; NVIDIA/CUDA visual-quality validation remains runtime-gated.
-
-## 2026-10-02 Studio Viewport Polish & Ground Contact Shadow (Empty Dark Gray Room)
-- **Empty Studio Dark Gray Room & Contact Shadow Floor:** Upgraded MeshViewer to a clean, empty dark studio room with subtle charcoal radial vignette (`#16181d` to `#08090a`) and `#111317` container bleed. Configured an invisible contact shadow floor plane (`ShadowMaterial`, opacity 0.25) directly at ground level `y = -0.001`, cleanly grounding the 3D model with realistic contact shadows without any artificial pedestal or floating appearance.
-- **Balanced 4-Point Studio Lighting Rig:** Eliminated washed-out front highlights and pitch-black rear cavities by recalibrating the lighting setup to a professional 4-point studio rig (key light 1.8 at front-right, front fill light 1.1, back rim light 1.5 at back-left, back fill light 1.1 at back-right, top-down hemisphere bounce 0.75, and camera fill 0.35) with ACES Filmic exposure 1.05.
-- **Client-Side FPS & Viewport Optimization:** Capped device pixel ratio at 1.25 to prevent 4K/retina GPU fill-rate throttling; introduced demand-driven directional shadow map updates (`needsUpdate` on demand); enabled smooth OrbitControls damping (0.08); set grid helper to OFF by default (`gridVisible: false`) with non-intrusive studio steel lines; and replaced rotating wireframe loading cubes with sleek reference image preview overlay (`GenerationLoadingPreview.tsx`).
-
-## 2026-10-02 Storage Contract, Detail Retention & Physics Hardening (BUG-001 - BUG-004)
-- **BUG-001 (Canonical Storage Contract):** Standardized raw mesh output directories in `trellis_adapter.py` and `trellis2_adapter.py` with `OutputPathGenerator(base_output_dir="outputs")`, fixing hardcoded `/outputs/meshes/` and CWD-dependent outputs.
-- **BUG-002 (Pipeline Directory Deferral & Visual Preservation):** Deferred non-master directory creation in `backend/postprocess/pipeline.py` until writing begins. Updated `backend/postprocess/meshio.py` to preserve visuals on single-geometry Scene imports, added `_has_native_textures_scene` for pre-concatenation inspection, and added `uv_seam_vertex_delta` metric to quality report.
-- **BUG-003 (Background Alpha Cutout & Max Extraction Resolution):** Implemented `has_useful_alpha` (`min(alpha) < 255`) check in `hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`, and `triposr_adapter.py` before running background removal to avoid corrupting pre-matted edges and missing opaque backgrounds. Hardcoded raw extraction `octree_res = 512` in Hunyuan adapters to decouple raw geometry detail capture from output polycount.
-- **BUG-004 (TripoSG Y-Up Orientation):** Applied standard coordinate transformation (-90° on X, +90° on Y) before mesh export in both normal and scribble branches of `triposg_adapter.py`, ensuring upright rendering in standard Y-up 3D viewports.
-- **Physics / Collision Pipeline:** Wired collision generation to derive from final `game_ready.glb` (`game_ready_mesh = load_mesh(glb_path)`), preserving strict immutability of `master/source.glb`. Removed silent fallback to single convex hull when CoACD decomposition is requested in `backend/postprocess/services/collision.py`, ensuring explicit errors on decomposition failure.
-- **UI/UX Artifact Normalization & Viewport Wiring:** Normalized all artifact URLs (collision mesh, physics metadata, PBR maps, multi-format export links, and QA inspection scores) in `types.ts` (`normalizeModelAsset`) and `WorkspaceContext.tsx` for both active job completions and history queries, enabling immediate Viewport rigid-body physics simulation and export downloads. Migrated active bug registry to `Docs/TASK.md` marked as implemented.
-- **Regression Tests & Contracts:** Added regression tests in `backend/tests/test_physics.py` and verified 100% pass across parity suite (`test_official_model_parity_contract.py`), postprocess e2e suite (`test_postprocess_e2e.py`), and adapter import suite (`test_adapter_imports.py`).
-
-## 2026-10-02 Official Model Implementation Parity & Raw Quality Hardening
-- Performed exhaustive parity audit across 10+ models between `backend/thirdparty/` and `backend/adapters/`.
-- Key Architectural Rule Enforced:
-  - Adapters must NEVER decimate, remesh, or rescale raw models before saving `output_mesh_path`. Decimation and post-processing are strictly downstream.
-  - `master/source.glb` is immutable and byte-for-byte authentic to upstream neural output.
-- Root Cause Deviations Fixed:
-  - TripoSG: Removed PyMeshLab quadric edge collapse decimation in `triposg_adapter.py`.
-  - PartPacker: Default `num_faces=-1`, `num_steps=50`, `cv2.INTER_AREA`, and `len(faces) > 10` noise filtering in `partpacker_utils.py` and `partpacker_adapter.py`.
-  - Hunyuan3D Paint v2.1: Enforced `use_remesh=False` in `hunyuan3d_paint_v21.py` and `hunyuan3d_adapter_v21.py`, preventing silent 40,000 face decimation during texturing.
-  - TRELLIS / TRELLIS.2: Default `simplify=0.0` across text, image, and painting adapters. Restored 12-step sampling schedules (`ss_sampling_steps=12`, `slat_sampling_steps=12`) and removed artificial 20-step clamping. Set `decimation_target=-1` and `remesh=False` in TRELLIS.2.
-  - Hunyuan3D Shape & Mini Turbo: Raw mesh extraction is fixed at `octree_resolution=512`; output polycount is applied downstream in production post-processing.
-  - UltraShape: Restored official defaults (`num_latents=32768`, `octree_res=1024`, corrected `hunyuan3d_root` path to `hunyuan3d-shape-v2-1`).
-  - Raw Model Scale Preservation: Enforced `do_normalise=False` across raw asset generators (`hunyuan3d_shape_v21.py`, `hunyuan3d_dit_v2_mini_turbo.py`, `trellis2_adapter.py`, `fastmesh_adapter.py`).
-  - Production Pipeline: Expanded `MAX_PRODUCTION_FACES` from 50,000 to 200,000. Enabled `auto_optimize: false` passthrough check to preserve 100% of native topology in `game_ready` when requested. Fixed compound double decimation in LOD chain calculation. Added graceful fallback to `fast-simplification` / `trimesh` decimation when pymeshlab native OpenGL libraries are missing in headless environments.
-  - UI & Telemetry: Added Model Quality presets (`low`, `medium`, `high`, `ultra`) mapped to official parameters, Native/Raw polycount chips, and 200,000 slider. Added exact runtime parameter logging in `multiprocess_scheduler.py`.
-  - Verification: Created `backend/tests/test_official_model_parity_contract.py` covering model contracts, parameter schemas, postprocessing passthrough, LOD ratios, and viewer routing (100% pass).

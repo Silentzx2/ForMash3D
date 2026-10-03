@@ -23,7 +23,7 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 ### Core Stack
 - **Frontend**: Next.js 16 (React 19, TypeScript, Three.js, React Three Fiber, Tailwind CSS)
 - **API Gateway**: FastAPI (Python 3.10, Conda env `3daigc-api`, Pydantic V2, AsyncIO)
-- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartPacker, UltraShape, PartField, P3-SAM, UniRig, FastMesh, VoxHammer
+- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartPacker, UltraShape, PartField, P3-SAM, UniRig, FastMesh, VoxHammer, Zero123++ (Multi-View)
 - **Scheduler**: VRAM-aware multiprocess scheduler with GPU monitoring
 - **Queue/Broker**: Redis 7 (optional, multi-worker mode only)
 - **File Storage**: Local filesystem + Redis FileStore (multi-worker mode)
@@ -46,7 +46,7 @@ graph TD
 
     subgraph Gateway["⚡ FastAPI Gateway :7842"]
         direction TB
-        API["Routers: system, generation,<br/>editing, rigging, segmentation"]:::cyan
+        API["Routers: system, generation,<br/>multiview, editing, rigging, segmentation"]:::cyan
         SCHED["VRAM-Aware Scheduler"]:::cyan
     end
 
@@ -58,7 +58,7 @@ graph TD
         AUTO_UNLOAD["Auto-Unload After Job"]:::orange
     end
 
-    subgraph Adapters["🧠 Model Adapters (23 Models)"]
+    subgraph Adapters["🧠 Model Adapters (24 Models)"]
         direction TB
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes PBR"]:::purple
         HUNY["Hunyuan3D-2.1<br/>Shape + Paint 2B"]:::purple
@@ -66,6 +66,7 @@ graph TD
         PP["PartPacker & UltraShape"]:::purple
         FM["FastMesh Quad Retopo"]:::purple
         UR["UniRig & ARDY Motion"]:::purple
+        Z123["Zero123++ v1.2<br/>Multi-View 6-Cam Grid"]:::purple
     end
 
     subgraph PostProcess["⚙️ Production Post-Processing"]
