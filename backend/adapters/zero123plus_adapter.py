@@ -37,15 +37,42 @@ from core.utils.file_utils import OutputPathGenerator, get_storage_base_dir, res
 
 logger = logging.getLogger(__name__)
 
-# Register torchvision compatibility stubs if torchvision C++ ops are absent
-for _op, _schema in [
-    ("torchvision::nms", "(Tensor dets, Tensor scores, float iou_threshold) -> Tensor"),
-    ("torchvision::qnms", "(Tensor qdets, Tensor scores, float iou_threshold) -> Tensor"),
-]:
+
+def _prepare_torchvision_and_pipeline_class(zero123plus_root: Path):
+    """
+    Safely prepare torchvision runtime and load Zero123PlusPipeline.
+    Only registers stub operators if torchvision fails to import due to missing C++ ops,
+    avoiding C++ dispatcher duplicate registration crashes on GPU workers.
+    """
     try:
-        torch.library.define(_op, _schema)
-    except Exception:
-        pass
+        import torchvision
+    except RuntimeError as e:
+        if "torchvision::nms" in str(e) or "operator torchvision::" in str(e):
+            for _op, _schema in [
+                ("torchvision::nms", "(Tensor dets, Tensor scores, float iou_threshold) -> Tensor"),
+                ("torchvision::qnms", "(Tensor qdets, Tensor scores, float iou_threshold) -> Tensor"),
+            ]:
+                try:
+                    torch.library.define(_op, _schema)
+                except Exception:
+                    pass
+            try:
+                import torchvision
+            except Exception:
+                pass
+        else:
+            raise
+
+    diffusers_support = str(zero123plus_root / "diffusers-support")
+    if diffusers_support not in sys.path:
+        sys.path.insert(0, diffusers_support)
+
+    try:
+        from pipeline import Zero123PlusPipeline
+        return Zero123PlusPipeline
+    finally:
+        if diffusers_support in sys.path and sys.path[0] == diffusers_support:
+            sys.path.remove(diffusers_support)
 
 
 CAMERA_RIG: List[Dict[str, Any]] = [
@@ -259,23 +286,43 @@ class Zero123PlusAdapter(BaseModel):
             sys.path.insert(0, root_str)
 
     def _load_model(self) -> Any:
-        self._ensure_vendored_pipeline_in_path()
         model_source = self._resolve_model_source()
         custom_pipeline_dir = str(self.zero123plus_root / "diffusers-support")
 
-        logger.info(f"Loading Zero123++ pipeline from {model_source} using custom pipeline {custom_pipeline_dir}")
-        from diffusers import DiffusionPipeline, EulerAncestralDiscreteScheduler
+        logger.info(f"Loading Zero123++ pipeline from {model_source}")
+        from diffusers import EulerAncestralDiscreteScheduler
 
         use_cuda = torch.cuda.is_available()
         dtype = torch.float16 if use_cuda else torch.float32
-
         is_local = os.path.exists(model_source)
-        pipeline = DiffusionPipeline.from_pretrained(
-            model_source,
-            custom_pipeline=custom_pipeline_dir,
-            torch_dtype=dtype,
-            local_files_only=is_local,
-        )
+
+        pipeline_cls = None
+        try:
+            pipeline_cls = _prepare_torchvision_and_pipeline_class(self.zero123plus_root)
+        except Exception as e:
+            logger.warning(f"Could not load Zero123PlusPipeline class directly ({e}); will try DiffusionPipeline fallback")
+
+        pipeline = None
+        if pipeline_cls is not None:
+            try:
+                pipeline = pipeline_cls.from_pretrained(
+                    model_source,
+                    torch_dtype=dtype,
+                    local_files_only=is_local,
+                )
+            except Exception as e:
+                logger.warning(f"pipeline_cls.from_pretrained failed ({e}); falling back to DiffusionPipeline")
+
+        if pipeline is None:
+            self._ensure_vendored_pipeline_in_path()
+            from diffusers import DiffusionPipeline
+            pipeline = DiffusionPipeline.from_pretrained(
+                model_source,
+                custom_pipeline=custom_pipeline_dir,
+                torch_dtype=dtype,
+                local_files_only=is_local,
+            )
+
         pipeline.scheduler = EulerAncestralDiscreteScheduler.from_config(
             pipeline.scheduler.config,
             timestep_spacing="trailing",
