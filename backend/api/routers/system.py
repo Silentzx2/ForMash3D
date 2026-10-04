@@ -10,7 +10,7 @@ import tempfile
 import time
 import torch
 import zipfile
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -42,7 +42,7 @@ async def health_check():
     """Basic health check endpoint"""
     return {
         "status": "healthy",
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime": time.time(),
     }
 
@@ -74,7 +74,7 @@ async def get_auth_status(settings=Depends(get_current_settings)):
             "user_management": settings.user_auth_enabled,
             "role_based_access": settings.user_auth_enabled,
         },
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -120,7 +120,7 @@ async def system_status(
         mesh_tools_status = {"status": "unavailable", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools", "error": str(exc)}
 
     status = {
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "system": {
             "cpu_usage": cpu_percent,
             "memory": {
@@ -200,7 +200,7 @@ async def system_stats(
         pass  # GPU monitoring not available
     
     return {
-        "timestamp": datetime.now(UTC).isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "cpu_percent": cpu_percent,
         "ram_used_gb": memory.used / (1024**3),
         "ram_total_gb": memory.total / (1024**3),
@@ -257,7 +257,7 @@ async def get_model_parameters(
                 "feature_type": model_config.get("feature_type"),
                 "vram_requirement": model_config.get("vram_requirement"),
                 "schema": schema,
-                "timestamp": datetime.now(datetime.UTC).isoformat()
+                "timestamp": datetime.now(datetime.timezone.utc).isoformat()
             }
         except ImportError as e:
             logger.error(f"Model adapter not found for {model_id}: {e}")
@@ -1464,7 +1464,7 @@ async def download_job_result(
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.now(UTC).isoformat(),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             except Exception as e:
@@ -1608,7 +1608,7 @@ async def download_job_thumbnail(
                         "file_size_mb": round(len(svg_bytes) / (1024 * 1024), 4),
                         "base64_data": f"data:image/svg+xml;base64,{b64_str}",
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.now(UTC).isoformat(),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             return Response(
@@ -1635,7 +1635,7 @@ async def download_job_thumbnail(
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.now(UTC).isoformat(),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             except Exception as e:
@@ -1750,7 +1750,7 @@ async def download_job_input(
                         "content_type": get_content_type_for_file(input_image_path),
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
-                        "download_time": datetime.now(UTC).isoformat(),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             except Exception as e:
