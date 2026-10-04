@@ -1,5 +1,5 @@
 import type { SystemStats } from '@/features/workspace/types';
-import { getApiClient as baseApiClient } from '@/services/apiClient';
+import { getApiClient } from '@/services/apiClient';
 import { dedupedGet } from '@/lib/requestDedup';
 
 export interface HistoryItem {
@@ -246,42 +246,31 @@ class ApiClient {
 // inheritance. ApiClient extends the shared client class at runtime, so
 // workspace helpers (on/off, getSystemStats, …) are available here while
 // the shared singleton remains untouched.
-const wsApiClient = new ApiClient();
+const baseApiClientInstance = getApiClient();
 
-export interface WorkspaceApiClient {
-  on(event: string, cb: (...args: unknown[]) => void): () => void;
-  off(event: string, cb: (...args: unknown[]) => void): void;
-  getSystemStats(): Promise<Record<string, unknown>>;
-  getQueue(): Promise<{ running: unknown[]; pending: unknown[] }>;
-  getHistory(maxItems?: number): Promise<Record<string, HistoryItem>>;
-  deleteHistory(jobId: string): Promise<void>;
-  cancelExecution(): void;
-  emitProgress(progress: unknown): void;
-  executing(node: string | null): void;
-  executed(node: string, data: unknown): void;
-  executionError(error: unknown): void;
-  connectWebSocket(): void;
-  disconnectWebSocket(): void;
-  getBaseUrl(): string;
-  setBaseUrl(url: string): void;
-}
-
-export const apiClient = Object.create(baseApiClient, {
-  on: { value: wsApiClient.on.bind(wsApiClient) },
-  off: { value: wsApiClient.off.bind(wsApiClient) },
-  getSystemStats: { value: wsApiClient.getSystemStats.bind(wsApiClient) },
-  getQueue: { value: wsApiClient.getQueue.bind(wsApiClient) },
-  getHistory: { value: wsApiClient.getHistory.bind(wsApiClient) },
-  deleteHistory: { value: wsApiClient.deleteHistory.bind(wsApiClient) },
-  cancelExecution: { value: wsApiClient.cancelExecution.bind(wsApiClient) },
-  emitProgress: { value: wsApiClient.emitProgress.bind(wsApiClient) },
-  emitExecuting: { value: wsApiClient.emitExecuting.bind(wsApiClient) },
-  emitExecuted: { value: wsApiClient.emitExecuted.bind(wsApiClient) },
-  emitError: { value: wsApiClient.emitError.bind(wsApiClient) },
-  connectWebSocket: { value: wsApiClient.connectWebSocket.bind(wsApiClient) },
-  disconnectWebSocket: { value: wsApiClient.disconnectWebSocket.bind(wsApiClient) },
-  getBaseUrl: { value: wsApiClient.getBaseUrl.bind(wsApiClient) },
-  setBaseUrl: { value: (baseApiClient as any).setBaseUrl },
+// Create workspace-specific client that inherits from the shared instance
+export const apiClient = Object.create(baseApiClientInstance, {
+  on: { value: function(event: string, callback: (data: unknown) => void) {
+      if (!this.listeners.has(event)) this.listeners.set(event, new Set());
+      this.listeners.get(event)!.add(callback);
+      return () => this.off(event, callback);
+    } },
+  off: { value: function(event: string, callback: (data: unknown) => void) {
+      this.listeners.get(event)?.delete(callback);
+    } },
+  getSystemStats: { value: this.getSystemStats.bind(this) },
+  getQueue: { value: this.getQueue.bind(this) },
+  getHistory: { value: this.getHistory.bind(this) },
+  deleteHistory: { value: this.deleteHistory.bind(this) },
+  cancelExecution: { value: this.cancelExecution.bind(this) },
+  emitProgress: { value: this.emitProgress.bind(this) },
+  emitExecuting: { value: this.emitExecuting.bind(this) },
+  emitExecuted: { value: this.emitExecuted.bind(this) },
+  emitError: { value: this.emitError.bind(this) },
+  connectWebSocket: { value: this.connectWebSocket.bind(this) },
+  disconnectWebSocket: { value: this.disconnectWebSocket.bind(this) },
+  getBaseUrl: { value: this.getBaseUrl.bind(this) },
+  setBaseUrl: { value: this.setBaseUrl.bind(this) },
 }) as unknown as WorkspaceApiClient;
 
 export async function fetchSystemStats(): Promise<SystemStats> {
