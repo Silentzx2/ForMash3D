@@ -34,7 +34,7 @@ from .services.auto_uv import run_auto_uv
 from .services.collision import run_collision
 from .services.convert_fbx import run_convert_fbx
 from .services.inspect import run_inspect
-from .services.repair import run_repair
+from .services.repair import run_repair, topology_counts
 from .services.simplify import run_lods, run_optimize
 from .schemas import (
     AutoRetopoOptions,
@@ -320,6 +320,59 @@ def _has_native_textures_scene(raw_bytes: bytes, filename: str = "model.glb") ->
         return False
     except Exception:
         return False
+
+
+def _quality_guard(reference: trimesh.Trimesh, candidate: trimesh.Trimesh, max_bounds_drift: float = 0.02, max_vertex_growth: float = 1.25) -> Dict[str, Any]:
+    """Reject post-process results that materially drift from the reference mesh."""
+    ref_vertices = np.asarray(reference.vertices, dtype=float)
+    cand_vertices = np.asarray(candidate.vertices, dtype=float)
+    if not len(cand_vertices) or not np.isfinite(cand_vertices).all():
+        return {"passed": False, "reason": "candidate has no finite vertices"}
+
+    ref_faces = int(len(reference.faces))
+    cand_faces = int(len(candidate.faces))
+    if cand_faces > ref_faces:
+        return {
+            "passed": False,
+            "reason": f"candidate increased face count ({cand_faces} > {ref_faces})",
+            "reference_faces": ref_faces,
+            "candidate_faces": cand_faces,
+        }
+
+    ref_bounds = np.asarray(reference.bounds, dtype=float)
+    cand_bounds = np.asarray(candidate.bounds, dtype=float)
+    ref_diag = float(np.linalg.norm(ref_bounds[1] - ref_bounds[0])) if ref_bounds.shape == (2, 3) else 0.0
+    scale = max(ref_diag, 1e-9)
+    bounds_drift = float(np.max(np.abs(cand_bounds - ref_bounds)) / scale) if cand_bounds.shape == (2, 3) else float("inf")
+    if bounds_drift > max_bounds_drift:
+        return {
+            "passed": False,
+            "reason": f"candidate bounds drifted by {bounds_drift:.4f} (> {max_bounds_drift:.4f})",
+            "reference_faces": ref_faces,
+            "candidate_faces": cand_faces,
+            "bounds_drift": bounds_drift,
+        }
+
+    max_vertices = max(1, int(np.ceil(len(ref_vertices) * max_vertex_growth)))
+    if len(cand_vertices) > max_vertices:
+        return {
+            "passed": False,
+            "reason": f"candidate vertex count grew unexpectedly ({len(cand_vertices)} > {max_vertices})",
+            "reference_faces": ref_faces,
+            "candidate_faces": cand_faces,
+            "reference_vertices": len(ref_vertices),
+            "candidate_vertices": len(cand_vertices),
+            "bounds_drift": bounds_drift,
+        }
+
+    return {
+        "passed": True,
+        "reference_faces": ref_faces,
+        "candidate_faces": cand_faces,
+        "reference_vertices": len(ref_vertices),
+        "candidate_vertices": len(cand_vertices),
+        "bounds_drift": bounds_drift,
+    }
 
 
 def _save_file(path: Path, payload: bytes) -> str:
@@ -656,7 +709,7 @@ def run_postprocess_job(
     )
 
     repair_t0 = time.time()
-    _emit(progress, 0.18, "repair", "Repairing topology.")
+    _emit(progress, 0.18, "repair", "Checking and repairing topology.")
     repair_opts = RepairOptions(
         method="remove",
         preserve_uv=True,
@@ -664,7 +717,21 @@ def run_postprocess_job(
         max_hole_size=30,
         weld=True,
     )
-    repaired, repair_stats, _ = run_repair(mesh, repair_opts)
+    source_topology = topology_counts(mesh.vertices, mesh.faces)
+    if source_topology.get("watertight") and source_topology.get("non_manifold_edges", 0) == 0:
+        repaired = mesh.copy()
+        repair_stats = {
+            "before": source_topology,
+            "after": source_topology.copy(),
+            "removed_faces": 0,
+            "method": "skipped_healthy",
+            "preserve_uv": True,
+            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
+            "skipped": True,
+            "reason": "Source mesh already passes manifold/watertight topology checks.",
+        }
+    else:
+        repaired, repair_stats, _ = run_repair(mesh, repair_opts)
     repair_duration = time.time() - repair_t0
 
     quality_trace["repaired"] = {
@@ -811,10 +878,26 @@ def run_postprocess_job(
                 OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
                                 permissive=False, aggressive=False, lock_border=False),
             )
+    optimize_guard = _quality_guard(repaired, optimized)
+    if not optimize_guard["passed"]:
+        logger.warning(
+            "Optimization quality guard rejected result for %s: %s",
+            job_id,
+            optimize_guard["reason"],
+        )
+        optimized = repaired
+        optimize_stats = {
+            **optimize_stats,
+            "passthrough": True,
+            "quality_guard_reverted": True,
+            "quality_guard_reason": optimize_guard["reason"],
+        }
+
     optimize_duration = time.time() - optimize_t0
     quality_trace["optimized"] = {
         **mesh_stats(optimized).model_dump(),
         "native_textures": _has_native_textures(optimized),
+        "quality_guard": optimize_guard,
     }
 
     reduction_pct = (

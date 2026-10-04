@@ -529,3 +529,7 @@ The workspace consumes those capabilities for routing and keeps the viewer asset
 All mesh-producing jobs carry `postprocess_mode: production_mesh` when they produce a user-owned mesh. The scheduler owns Shape→Paint dependencies; the browser only observes workflow state. Production artifacts are exposed through the authorized job download API and a structured artifact manifest. Job history is durable in SQL; Redis is a queue/cache.
 
 Mesh tools run inside the main FastAPI process under `/api/v1/mesh-tools/*`. There is no browser-direct or default-startup port 8200 sidecar.
+
+
+### Phase 0 Quality Guard
+The normal production pipeline applies a shared geometry-fidelity guard after optimization. Healthy manifold sources bypass unnecessary repair; optimization candidates that introduce non-finite geometry, face growth, excessive vertex growth, or material bounds drift are reverted to the repaired mesh.

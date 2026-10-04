@@ -55,6 +55,14 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertFalse(schema["pruning"]["default"])
         self.assertTrue(schema["use_normals"]["default"])
 
+    def test_common_postprocess_quality_guard_is_wired(self):
+        pipeline_path = backend_root / "postprocess/pipeline.py"
+        source = pipeline_path.read_text(encoding="utf-8")
+        self.assertIn("def _quality_guard(", source)
+        self.assertIn("quality_guard_reverted", source)
+        self.assertIn("skipped_healthy", source)
+
+
     def test_hunyuan3d_legacy_v21_contract(self):
         from adapters.hunyuan3d_adapter_v21 import Hunyuan3DV21ImageToRawMeshAdapter
         adapter = Hunyuan3DV21ImageToRawMeshAdapter(vram_requirement=8192)

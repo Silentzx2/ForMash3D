@@ -1,3 +1,8 @@
+## 2026-10-05 — [Phase 0 Raw-Mesh Quality Closure]
+- **Common post-process quality guard:** Added a shared geometry-fidelity guard to the normal production pipeline. Optimization results are rejected when they contain non-finite geometry, increase face count, exceed the allowed vertex-growth envelope, or materially drift the asset bounds; the repaired mesh is retained instead.
+- **Healthy-mesh repair bypass:** Already-watertight/manifold source meshes now skip unnecessary topology repair, preventing cleanup code from mutating otherwise-valid native geometry.
+- **Phase 0 contract:** Q1–Q8 source-fidelity, downstream-budget, texture-preservation, coordinate/provenance, model-schedule, and shared-pipeline contracts are explicitly tracked and regression-tested. Runtime GPU visual A/B remains environment-gated.
+
 ## 2026-10-04 — [Production Gap Closure]
 - Corrected normal Image-to-3D routing so the selected model's backend capabilities determine raw vs textured endpoint selection; the previous path forced all generation through raw-mesh routing.
 - Reduced workspace system telemetry refresh from 20 seconds to 5 seconds.

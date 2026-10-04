@@ -49,3 +49,10 @@
 - **Viewport artifact inspection:** Added quick switching between Game Ready, immutable Source, and generated LOD artifacts directly in the viewport.
 - **Viewport performance modes:** Added Auto / Fast / Detail rendering modes that adjust pixel ratio and shadow cost, with automatic heavy-mesh detection preserved for the default mode.
 - **Research basis:** Current Tripo, Meshy, and Hyper3D workflows emphasize integrated generation, remesh/retopology, texture, rigging/animation, artifact review, and fast post-generation controls; the implementation keeps only the useful local/self-hosted subset.
+
+
+## 2026-10-05 Phase 0 Raw-Mesh Quality Closure
+- The production post-processing path now applies a shared geometry-fidelity guard after optimization. It rejects non-finite results, unexpected face growth, excessive vertex growth, and material bounding-box drift, then retains the repaired mesh instead.
+- Already-watertight/manifold source meshes skip the repair mutation entirely, preserving native topology when no repair is required.
+- Phase 0 Q1–Q8 are source-level verified. Full NVIDIA/model visual A/B and 22-model GPU smoke validation remain explicitly environment-gated.
+- Future agents must independently verify the current implementation and tests; TASKS.md status labels are not evidence.

@@ -95,6 +95,36 @@ def test_topology_counts_exposes_largest_boundary_component():
     assert stats["watertight"] is False
 
 
+def test_healthy_mesh_repair_is_a_noop():
+    import numpy as np
+    import trimesh
+    from postprocess.services.repair import RepairOptions, run_repair
+
+    mesh = trimesh.creation.icosphere(subdivisions=2)
+    result, stats, _ = run_repair(
+        mesh,
+        RepairOptions(method="remove", preserve_uv=True, close_holes=True, max_hole_size=30, weld=True),
+    )
+    assert stats["before"]["watertight"] is True
+    assert result.vertices.shape == mesh.vertices.shape
+    assert result.faces.shape == mesh.faces.shape
+    np.testing.assert_allclose(result.vertices, mesh.vertices)
+    np.testing.assert_array_equal(result.faces, mesh.faces)
+
+
+def test_quality_guard_rejects_geometry_envelope_drift():
+    import trimesh
+    from postprocess.pipeline import _quality_guard
+
+    source = trimesh.creation.box(extents=(2.0, 2.0, 2.0))
+    shifted = source.copy()
+    shifted.apply_translation([0.25, 0.0, 0.0])
+
+    guard = _quality_guard(source, shifted)
+    assert guard["passed"] is False
+    assert "bounds drifted" in guard["reason"]
+
+
 def test_native_texture_detection_requires_real_texture_payload():
     import numpy as np
     import trimesh
