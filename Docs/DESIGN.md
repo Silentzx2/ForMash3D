@@ -485,3 +485,13 @@ Current model-specific inference defaults:
 
 The visible quality selector (`Mobile / Game / Studio / Cinematic / Native`) maps to production post-processing budgets, not inference schedules. `Native / Raw` preserves the model-native source density and skips downstream polycount reduction.
 
+## Phase 1 Generation UX Contract
+
+### Generation Preview
+The Generate panel exposes Original versus Generation Preview, approval/reuse, regeneration, manual editor navigation, and a disable path. Changing the source invalidates the previous preprocessing artifact.
+
+### Smart Intent
+Compact controls expose Game Ready, Cinematic, Animation, 3D Print, and Mobile. The backend returns the actual chosen model; the UI does not reimplement resource admission.
+
+### Production QA
+Printability, Auto-Repair, and Auto-Rig are explicit controls. All execute through the existing scheduler/post-process lifecycle and expose degraded failure state rather than false success.

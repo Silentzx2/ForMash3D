@@ -385,3 +385,17 @@ Normal downloads target game_ready/. ZIP export is an on-demand snapshot of the 
 
 ## Physics capability
 The product now supports an optional Physics Ready generation intent. Users can enable physics preparation before generation and adjust body behaviour, mass mode, collision quality, friction, restitution, damping, and gravity. Physics-ready assets expose collision and physics metadata and can be interactively tested in the existing model viewer. The first production scope is rigid-body simulation; deformable/jiggle behaviour remains capability-gated rather than being faked. Physics preparation reuses the existing collision pipeline and does not add an AI model.
+
+## Phase 1 Product Contract
+
+### Image Enhancement
+Generation Preview is optional. The approved artifact is content-addressed and reused exactly by the generation job. High-resolution images are not blindly upscaled; enhancement failures carry explicit fallback metadata.
+
+### Printability
+Printability QA is deterministic topology inspection in the shared production post-process path. Auto-repair is explicit. A failed final check is surfaced as a degraded result.
+
+### Auto-Rigging
+One canonical enable_auto_rig flag runs UniRig after the final production mesh. The immutable source/master is never replaced by the rigged derivative. A rigged artifact is not reported ready until the child job has produced a durable output.
+
+### Smart Intent
+Five built-in intent presets are backend-owned and deterministic. Explicit model selection remains an override; the scheduler remains the final concurrency and VRAM authority.

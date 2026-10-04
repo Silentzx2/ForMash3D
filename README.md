@@ -490,3 +490,14 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 
 ### Runtime note
 Mesh tools are part of the main FastAPI runtime at `/api/v1/mesh-tools/*`. The default startup no longer launches a separate port 8200 mesh-tools service. Job progress is read from durable job state; mesh-tool operations may stream operation-level SSE progress.
+
+## Phase 1 Production Automation
+
+ForMash3D's normal Image → 3D workflow now includes optional production automation without a second pipeline:
+
+- Generation Preview with reusable preprocessing artifacts, adaptive low-resolution enhancement, and provenance.
+- Smart Intent presets for Game Ready, Cinematic, Animation, 3D Print, and Mobile with deterministic backend model selection.
+- Printability QA with optional auto-repair inside the existing post-processing path.
+- Auto-Rig through the existing UniRig adapter after final production processing, with explicit success/degraded state.
+
+These capabilities reuse the existing scheduler, image editor, post-processing, history, and artifact-delivery infrastructure.

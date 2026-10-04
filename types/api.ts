@@ -257,6 +257,14 @@ export interface ImageToMeshRequest {
   output_format: OutputFormat;
   model_preference?: string;
   model_parameters?: Record<string, any>;
+  intent?: 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'mobile';
+  preprocessing_artifact_id?: string;
+  enhancement_enabled?: boolean;
+  enable_printability_check?: boolean;
+  enable_auto_repair?: boolean;
+  enable_auto_rig?: boolean;
+  auto_rig_mode?: 'skeleton' | 'skin' | 'full';
+
 }
 
 export interface ImageToTexturedMeshRequest {
@@ -270,6 +278,14 @@ export interface ImageToTexturedMeshRequest {
   output_format: OutputFormat;
   model_preference?: string;
   model_parameters?: Record<string, any>;
+  intent?: 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'mobile';
+  preprocessing_artifact_id?: string;
+  enhancement_enabled?: boolean;
+  enable_printability_check?: boolean;
+  enable_auto_repair?: boolean;
+  enable_auto_rig?: boolean;
+  auto_rig_mode?: 'skeleton' | 'skin' | 'full';
+
 }
 
 export interface MeshPaintingRequest {

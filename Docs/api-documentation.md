@@ -688,3 +688,12 @@ Event types:
 - `completed`: Job finished successfully with output path
 - `failed`: Job failed with error message
 - `cancelled`: Job was cancelled by the user
+
+## Phase 1 Generation Workflow APIs
+
+- POST /api/v1/image-enhancement/preview creates a deterministic Generation Preview artifact and returns preview/approved URLs plus provenance metadata.
+- GET /api/v1/image-enhancement/artifacts/{artifact_id}?variant=preview|approved serves the exact preview/approved artifact.
+- GET /api/v1/smart-generation/presets returns the versioned intent definitions.
+- POST /api/v1/smart-generation/resolve resolves an intent to a ready, compatible Image → 3D model and applied preset; an explicit model is validated as an override.
+- Image→raw and image→textured requests accept intent, preprocessing_artifact_id, enhancement_enabled, enable_printability_check, enable_auto_repair, enable_auto_rig, and auto_rig_mode.
+- Completed auto-rig workflows expose rigged_model_url and the standard download endpoint accepts artifact_format=rigged.

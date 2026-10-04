@@ -396,6 +396,29 @@ class ApiClient {
     return response.data;
   }
 
+  async previewImageEnhancement(request: {
+    image_path?: string;
+    image_base64?: string;
+    image_file_id?: string;
+    remove_background?: boolean;
+    auto_crop?: boolean;
+    upscale?: boolean;
+    sharpen?: boolean;
+  }): Promise<any> {
+    const response = await this.client.post('/api/v1/image-enhancement/preview', request);
+    return response.data;
+  }
+
+  async getSmartPresets(): Promise<any> {
+    const response = await this.retry(() => this.client.get('/api/v1/smart-generation/presets'));
+    return response.data;
+  }
+
+  async resolveSmartIntent(intent: string, model?: string): Promise<any> {
+    const response = await this.client.post('/api/v1/smart-generation/resolve', { intent, model });
+    return response.data;
+  }
+
   // Mesh Generation Endpoints
   async imageToRawMesh(request: ImageToMeshRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(

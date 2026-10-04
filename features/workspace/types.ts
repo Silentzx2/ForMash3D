@@ -97,6 +97,7 @@ export interface ModelAsset {
     physicsUrl?: string;
     physicsReady?: boolean;
     physics?: Record<string, unknown>;
+    rigged?: string;
   };
   qaScore?: number;
   qaStatus?: 'pass' | 'warn' | 'fail';
@@ -142,9 +143,13 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
   const pbrMaps = rawArtifacts.pbrMaps || raw.pbr_maps || undefined;
   const gameReadyFormats = rawArtifacts.gameReadyFormats || raw.game_ready_formats || (rawArtifacts.game_ready && typeof rawArtifacts.game_ready === 'object' ? Object.fromEntries(Object.entries(rawArtifacts.game_ready).map(([k, v]: [string, any]) => [k, v?.url || v]).filter(([, u]) => Boolean(u))) : undefined);
   const zipUrl = rawArtifacts.zipUrl || raw.zip_url || undefined;
+  const riggedUrl =
+    typeof rawArtifacts.rigged === 'string'
+      ? rawArtifacts.rigged
+      : (rawArtifacts.rigged?.url || raw.rigged_model_url || undefined);
 
   const hasArtifacts = Boolean(
-    raw.artifacts || collisionUrl || physicsReady || physics || qaReport || sourceUrl || gameReadyUrl || lods || pbrMaps || gameReadyFormats || zipUrl
+    raw.artifacts || collisionUrl || physicsReady || physics || qaReport || sourceUrl || gameReadyUrl || lods || pbrMaps || gameReadyFormats || zipUrl || riggedUrl
   );
 
   const artifacts = hasArtifacts ? {
@@ -159,6 +164,7 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     zipUrl,
     physicsUrl,
     physicsReady,
+    rigged: riggedUrl,
     physics,
   } : undefined;
 

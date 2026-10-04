@@ -1,0 +1,130 @@
+"""Deterministic intent preset resolver."""
+from __future__ import annotations
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import torch
+import yaml
+
+CONFIG = Path(__file__).resolve().parents[1] / "config" / "smart_presets.yaml"
+
+def load_smart_presets() -> Dict[str, Any]:
+    data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or not isinstance(data.get("intents"), dict):
+        raise ValueError("smart_presets.yaml must define an intents mapping")
+    return data
+
+def get_available_vram_mb() -> Optional[int]:
+    if not torch.cuda.is_available():
+        return None
+    try:
+        free_bytes, _ = torch.cuda.mem_get_info()
+        return int(free_bytes / (1024 * 1024))
+    except Exception:
+        return None
+
+def _model_ready(config: Any) -> bool:
+    if not getattr(config, "enabled", True):
+        return False
+    model_path = getattr(config, "model_path", None)
+    if not model_path:
+        return False
+    path = Path(str(model_path)).expanduser()
+    if not path.is_absolute():
+        candidates = [
+            Path.cwd() / path,
+            Path(__file__).resolve().parents[1] / path,
+            Path(__file__).resolve().parents[2] / str(model_path).replace("backend/", "", 1),
+        ]
+        path = next((candidate for candidate in candidates if candidate.exists()), path)
+    if not path.exists():
+        return False
+    if path.is_file():
+        return path.stat().st_size > 0
+    try:
+        checkpoint_suffixes = {".safetensors", ".bin", ".pt", ".pth", ".ckpt", ".onnx", ".engine"}
+        for child in path.rglob("*"):
+            if not child.is_file():
+                continue
+            try:
+                if child.stat().st_size > 0 and child.suffix.lower() in checkpoint_suffixes:
+                    return True
+            except OSError:
+                continue
+        return False
+    except OSError:
+        return False
+
+def _configs(settings: Any) -> Dict[str, Any]:
+    result = {}
+    for feature, models in (getattr(settings, "models", {}) or {}).items():
+        for model_id, config in (models or {}).items():
+            result[model_id] = (feature, config)
+    return result
+
+def resolve_intent(
+    intent: str,
+    settings: Any,
+    *,
+    explicit_model: Optional[str] = None,
+    available_vram_mb: Optional[int] = None,
+) -> Dict[str, Any]:
+    data = load_smart_presets()
+    preset = data["intents"].get(intent)
+    if not preset:
+        raise ValueError(f"Unknown intent preset: {intent}")
+
+    configs = _configs(settings)
+    vram_budget = available_vram_mb if available_vram_mb is not None else get_available_vram_mb()
+    candidates = []
+
+    for model_id in preset.get("model_priority", []):
+        entry = configs.get(model_id)
+        if not entry:
+            continue
+        feature, config = entry
+        capabilities = getattr(config, "capabilities", {}) or {}
+        if feature not in preset.get("preferred_features", []):
+            continue
+        if not capabilities.get("image_to_3d", True):
+            continue
+        if not _model_ready(config):
+            continue
+        required = int(getattr(config, "vram_requirement", 0) or 0)
+        if vram_budget is not None and required > vram_budget:
+            continue
+        candidates.append((model_id, feature, config))
+
+    if explicit_model:
+        entry = configs.get(explicit_model)
+        if not entry:
+            raise ValueError(f"Requested model '{explicit_model}' is not registered")
+        feature, config = entry
+        capabilities = getattr(config, "capabilities", {}) or {}
+        if feature not in preset.get("preferred_features", []) or not capabilities.get("image_to_3d", True):
+            raise ValueError(f"Model '{explicit_model}' is incompatible with intent '{intent}'")
+        if not _model_ready(config):
+            raise ValueError(f"Requested model '{explicit_model}' is not ready; install its weights first")
+        required = int(getattr(config, "vram_requirement", 0) or 0)
+        if vram_budget is not None and required > vram_budget:
+            raise ValueError(
+                f"Requested model '{explicit_model}' needs {required}MB VRAM; only {vram_budget}MB is currently free"
+            )
+        chosen = (explicit_model, feature, config)
+    elif candidates:
+        chosen = candidates[0]
+    else:
+        raise ValueError(
+            f"No ready Image → 3D model satisfies intent '{intent}' under current resource constraints"
+        )
+
+    return {
+        "version": int(data.get("version", 1)),
+        "intent": intent,
+        "preset": preset,
+        "model_id": chosen[0],
+        "feature": chosen[1],
+        "vram_required_mb": int(getattr(chosen[2], "vram_requirement", 0) or 0),
+        "candidate_order": [item[0] for item in candidates],
+        "vram_budget_mb": vram_budget,
+    }

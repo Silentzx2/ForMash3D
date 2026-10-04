@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
-import type { PhysicsSettings } from '../types';
+import type { GenerationSettings, PhysicsSettings } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
@@ -149,12 +149,25 @@ export const GeneratePanel: React.FC = () => {
   const [optionsLoading, setOptionsLoading] = useState(false);
   const pendingGenerateRef = useRef(false);
   const ownedBlobUrlsRef = useRef<Set<string>>(new Set());
+  const [smartPresets, setSmartPresets] = useState<Record<string, any>>({});
+  const [enhancementLoading, setEnhancementLoading] = useState(false);
+  const [enhancementError, setEnhancementError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pendingGenerateRef.current) return;
     pendingGenerateRef.current = false;
     void generate3DModel();
   }, [generationSettings, generate3DModel]);
+
+  useEffect(() => {
+    let active = true;
+    getApiClient().getSmartPresets().then(data => {
+      if (active && data?.intents) setSmartPresets(data.intents);
+    }).catch(err => {
+      console.warn('Failed to load smart-generation presets:', err);
+    });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -262,7 +275,7 @@ export const GeneratePanel: React.FC = () => {
 
   // Auto-correct selected model: if current selection is invalid, prefer the first ready model, or first available model
   useEffect(() => {
-    if (providersList.length === 0) return;
+    if (providersList.length === 0 || generationSettings.intent) return;
     const isCurrentModelValid = providersList.some(m => m.id === generationSettings.aiModel);
     if (!isCurrentModelValid) {
       const firstReady = providersList.find(m => m.available || m.installed);
@@ -374,6 +387,10 @@ export const GeneratePanel: React.FC = () => {
         ...prev,
         image: previewUrl,
         imageFileId: res.file_id,
+        preprocessingArtifactId: null,
+        preprocessingPreviewUrl: null,
+        preprocessingMetadata: null,
+        enhancementEnabled: false,
         prompt: cleanPrompt,
         imageName: cleanPrompt,
       }));
@@ -420,6 +437,10 @@ export const GeneratePanel: React.FC = () => {
         },
         image: slot === 'front' || !prev.image ? previewUrl : prev.image,
         imageFileId: slot === 'front' || !prev.imageFileId ? res.file_id : prev.imageFileId,
+        preprocessingArtifactId: slot === 'front' || !prev.image ? null : prev.preprocessingArtifactId,
+        preprocessingPreviewUrl: slot === 'front' || !prev.image ? null : prev.preprocessingPreviewUrl,
+        preprocessingMetadata: slot === 'front' || !prev.image ? null : prev.preprocessingMetadata,
+        enhancementEnabled: slot === 'front' || !prev.image ? false : prev.enhancementEnabled,
         imageName: slot === 'front' || !prev.imageName ? cleanPrompt : prev.imageName,
         mode: 'image-to-3d',
       }));
@@ -517,6 +538,96 @@ export const GeneratePanel: React.FC = () => {
     },
   ];
 
+  const applyIntentPreset = async (intent: string) => {
+    const preset = smartPresets[intent];
+    if (!preset) return;
+
+    let chosenModel = '';
+    try {
+      const resolved = await getApiClient().resolveSmartIntent(intent);
+      chosenModel = resolved.model_id || '';
+    } catch (error) {
+      setEnhancementError(error instanceof Error ? error.message : 'No ready model satisfies this intent');
+      return;
+    }
+
+    const textureResolution = Number(preset.texture_resolution || 0);
+    const textureQuality: GenerationSettings['textureQuality'] =
+      textureResolution <= 512 ? 'low'
+        : textureResolution <= 1024 ? 'medium'
+          : textureResolution <= 2048 ? 'high'
+            : '8k';
+
+    setGenerationSettings(prev => ({
+      ...prev,
+      intent: intent as GenerationSettings['intent'],
+      aiModel: chosenModel,
+      textureQuality,
+      generateTexture: textureResolution > 0,
+      generateLOD: Boolean(preset.generate_lod),
+      lodPreset: preset.lod_preset || prev.lodPreset,
+      lodCount: Number(preset.lod_count || 0),
+      generateCollision: Boolean(preset.collision),
+      enablePrintabilityCheck: Boolean(preset.enable_printability_check),
+      enableAutoRepair: Boolean(preset.enable_auto_repair),
+      enableAutoRig: Boolean(preset.enable_auto_rig),
+      autoOptimizeSettings: {
+        ...prev.autoOptimizeSettings,
+        targetPolycount: Number(preset.target_polycount || 0),
+      },
+    }));
+    setEnhancementError(null);
+  };
+
+  const previewEnhancement = async () => {
+    if (!generationSettings.imageFileId) {
+      setEnhancementError('Upload the source image first. Preview enhancement requires an uploaded file.');
+      return;
+    }
+    setEnhancementLoading(true);
+    setEnhancementError(null);
+    try {
+      const result = await getApiClient().previewImageEnhancement({
+        image_file_id: generationSettings.imageFileId,
+        remove_background: true,
+        auto_crop: true,
+        upscale: true,
+        sharpen: false,
+      });
+      setGenerationSettings(prev => ({
+        ...prev,
+        enhancementEnabled: true,
+        preprocessingArtifactId: result.artifact_id,
+        preprocessingPreviewUrl: result.preview_url,
+        preprocessingMetadata: result.metadata || null,
+      }));
+      if (result.warning) setEnhancementError(String(result.warning));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Image enhancement failed';
+      setEnhancementError(message);
+      setGenerationSettings(prev => ({
+        ...prev,
+        enhancementEnabled: false,
+        preprocessingArtifactId: null,
+        preprocessingPreviewUrl: null,
+        preprocessingMetadata: null,
+      }));
+    } finally {
+      setEnhancementLoading(false);
+    }
+  };
+
+  const disableEnhancement = () => {
+    setGenerationSettings(prev => ({
+      ...prev,
+      enhancementEnabled: false,
+      preprocessingArtifactId: null,
+      preprocessingPreviewUrl: null,
+      preprocessingMetadata: null,
+    }));
+    setEnhancementError(null);
+  };
+
   const handleGenerate = () => {
     const hasImage = Boolean(
       generationSettings.image ||
@@ -526,6 +637,11 @@ export const GeneratePanel: React.FC = () => {
     if (!hasImage) {
       setNoticeMessage('Please upload a reference image first.');
       setTimeout(() => setNoticeMessage(null), 4000);
+      return;
+    }
+    if (generationSettings.enhancementEnabled && !generationSettings.preprocessingArtifactId) {
+      setNoticeMessage('Approve the Generation Preview or disable enhancement before generating.');
+      setTimeout(() => setNoticeMessage(null), 5000);
       return;
     }
     if (subAction === 'crop') {
@@ -564,7 +680,17 @@ export const GeneratePanel: React.FC = () => {
       cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
       native: { meshQuality: 'ultra' as const, targetPolycount: 0, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: true },
     }[recipe];
-    setGenerationSettings(prev => ({ ...prev, meshQuality: presets.meshQuality, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount }, generateLOD: presets.generateLOD, lodPreset: presets.lodPreset as 'mobile' | 'low' | 'medium' | 'high' | 'custom' | undefined, lodCount: presets.lodCount, generateCollision: presets.generateCollision }));
+    setGenerationSettings(prev => ({
+      ...prev,
+      intent: undefined,
+      aiModel: '',
+      meshQuality: presets.meshQuality,
+      autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount },
+      generateLOD: presets.generateLOD,
+      lodPreset: presets.lodPreset as 'mobile' | 'low' | 'medium' | 'high' | 'custom' | undefined,
+      lodCount: presets.lodCount,
+      generateCollision: presets.generateCollision,
+    }));
   };
 
   return (
@@ -753,7 +879,17 @@ export const GeneratePanel: React.FC = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             revokeOwnedBlobUrl(generationSettings.image);
-                            setGenerationSettings(prev => ({ ...prev, image: null, imageName: undefined, mode: 'image-to-3d' }));
+                            setGenerationSettings(prev => ({
+  ...prev,
+  image: null,
+  imageFileId: null,
+  imageName: undefined,
+  preprocessingArtifactId: null,
+  preprocessingPreviewUrl: null,
+  preprocessingMetadata: null,
+  enhancementEnabled: false,
+  mode: 'image-to-3d',
+}));
                           }}
                           className="text-rose-400 hover:underline cursor-pointer font-medium"
                         >
@@ -783,6 +919,59 @@ export const GeneratePanel: React.FC = () => {
                     </div>
                   </div>
                 </>
+              )}
+
+              {generationSettings.image && (
+                <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] font-bold text-white">Generation Preview</div>
+                      <div className="text-[9px] text-zinc-400">Optional adaptive preprocessing before AI generation</div>
+                    </div>
+                    <span className={generationSettings.enhancementEnabled ? 'text-[9px] font-bold text-emerald-300' : 'text-[9px] text-zinc-500'}>
+                      {generationSettings.enhancementEnabled ? 'Approved' : 'Original'}
+                    </span>
+                  </div>
+                  {generationSettings.preprocessingPreviewUrl && (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="rounded-lg overflow-hidden border border-white/[0.06] bg-black/20">
+                        <img src={generationSettings.image} alt="Original reference" className="w-full h-20 object-contain" />
+                        <div className="px-1.5 py-1 text-[8px] text-zinc-500">Original</div>
+                      </div>
+                      <div className="rounded-lg overflow-hidden border border-primary/20 bg-black/20">
+                        <img src={generationSettings.preprocessingPreviewUrl} alt="Generation preview" className="w-full h-20 object-contain" />
+                        <div className="px-1.5 py-1 text-[8px] text-primary">Generation Preview</div>
+                      </div>
+                    </div>
+                  )}
+                  {enhancementError && (
+                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[9px] text-amber-300">
+                      {enhancementError}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button type="button" onClick={() => void previewEnhancement()} disabled={enhancementLoading}
+                      className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-[9px] font-bold text-primary disabled:opacity-50">
+                      {enhancementLoading ? 'Preparing Preview…' : generationSettings.preprocessingArtifactId ? 'Regenerate Preview' : 'Create Generation Preview'}
+                    </button>
+                    {generationSettings.preprocessingArtifactId ? (
+                      <button type="button" onClick={() => setGenerationSettings(prev => ({ ...prev, enhancementEnabled: true }))}
+                        className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[9px] font-bold text-emerald-300">
+                        Use Approved
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => navigateToTool('edit')}
+                        className="rounded-lg border border-white/[0.08] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-[9px] font-bold text-zinc-300">
+                        Edit Manually
+                      </button>
+                    )}
+                  </div>
+                  {generationSettings.preprocessingArtifactId && (
+                    <button type="button" onClick={disableEnhancement} className="w-full text-[9px] text-zinc-500 hover:text-white">
+                      Disable enhancement and use original input
+                    </button>
+                  )}
+                </div>
               )}
 
               {/* Mode 2: Multi-View Zero123++ & Manual Collections */}
@@ -998,6 +1187,49 @@ export const GeneratePanel: React.FC = () => {
             </div>
 
 
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white">Smart Intent</div>
+                  <div className="text-[9px] text-zinc-400">Backend-owned deterministic production recipe</div>
+                </div>
+                <span className="text-[9px] font-mono text-primary">{generationSettings.intent || 'Manual'}</span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {[
+                  ['game_ready', 'Game'],
+                  ['cinematic', 'Cinematic'],
+                  ['animation', 'Animation'],
+                  ['3d_print', 'Print'],
+                  ['mobile', 'Mobile'],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={!smartPresets[id]}
+                    onClick={() => void applyIntentPreset(id)}
+                    className={generationSettings.intent === id
+                      ? 'min-h-10 rounded-lg border border-primary bg-primary text-black font-bold text-[8px]'
+                      : 'min-h-10 rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] text-zinc-300 hover:border-primary/30 disabled:opacity-40 text-[8px]'}
+                  >
+                    <span className="block font-black">{label}</span>
+                    <span className="block mt-0.5 text-[7px] opacity-70">
+                      {Number(smartPresets[id]?.target_polycount) > 0
+                        ? Math.round(Number(smartPresets[id].target_polycount) / 1000) + 'K'
+                        : id === '3d_print' ? 'QA' : 'Preset'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {generationSettings.intent && (
+                <button type="button"
+                  onClick={() => setGenerationSettings(prev => ({ ...prev, intent: undefined, aiModel: '' }))}
+                  className="w-full text-[9px] text-zinc-500 hover:text-white">
+                  Clear intent and keep manual settings
+                </button>
+              )}
+            </div>
+
             {/* Unified Production Target & Polycount Budget */}
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2.5">
               <div className="flex items-center justify-between">
@@ -1118,6 +1350,46 @@ export const GeneratePanel: React.FC = () => {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div>
+                <div className="text-[11px] font-bold text-white">Production QA</div>
+                <div className="text-[9px] text-zinc-500">Uses the shared post-processing path; no duplicate pipeline.</div>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button type="button"
+                  onClick={() => setGenerationSettings(prev => ({
+                    ...prev,
+                    enablePrintabilityCheck: !Boolean(prev.enablePrintabilityCheck),
+                    enableAutoRepair: !Boolean(prev.enablePrintabilityCheck) ? prev.enableAutoRepair : false,
+                  }))}
+                  className={generationSettings.enablePrintabilityCheck ? 'rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-left text-primary' : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                  <span className="block text-[10px] font-bold">Printability</span>
+                  <span className="block text-[8px]">{generationSettings.enablePrintabilityCheck ? 'Checking topology' : 'Off'}</span>
+                </button>
+                <button type="button" disabled={!generationSettings.enablePrintabilityCheck}
+                  onClick={() => setGenerationSettings(prev => ({ ...prev, enableAutoRepair: !Boolean(prev.enableAutoRepair) }))}
+                  className={generationSettings.enableAutoRepair ? 'rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-left text-emerald-300' : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                  <span className="block text-[10px] font-bold">Auto-Repair</span>
+                  <span className="block text-[8px]">{generationSettings.enableAutoRepair ? 'Repair + recheck' : 'No mutation'}</span>
+                </button>
+              </div>
+              <button type="button"
+                onClick={() => setGenerationSettings(prev => ({ ...prev, enableAutoRig: !Boolean(prev.enableAutoRig) }))}
+                className={generationSettings.enableAutoRig ? 'w-full rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 text-left text-violet-200' : 'w-full rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                <span className="text-[10px] font-bold">Auto-Rig Game-Ready Mesh</span>
+                <span className="block text-[8px] opacity-75">{generationSettings.enableAutoRig ? 'Runs UniRig after production processing' : 'Disabled'}</span>
+              </button>
+              {generationSettings.enableAutoRig && (
+                <select value={generationSettings.autoRigMode || 'full'}
+                  onChange={e => setGenerationSettings(prev => ({ ...prev, autoRigMode: e.target.value as GenerationSettings['autoRigMode'] }))}
+                  className="w-full rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-200">
+                  <option value="full">Full — skeleton + skin</option>
+                  <option value="skeleton">Skeleton only</option>
+                  <option value="skin">Skinning</option>
+                </select>
+              )}
+            </div>
+
             {/* Physics Preparation */}
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">

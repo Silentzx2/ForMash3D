@@ -484,6 +484,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     resolution: 1024,
     generateCollision: true,
     enableRealESRGAN: true,
+    intent: undefined,
+    preprocessingArtifactId: null,
+    preprocessingPreviewUrl: null,
+    preprocessingMetadata: null,
+    enhancementEnabled: false,
+    enablePrintabilityCheck: false,
+    enableAutoRepair: false,
+    enableAutoRig: false,
+    autoRigMode: 'full',
     physics: {
       bodyType: 'auto',
       massMode: 'auto',
@@ -1032,7 +1041,21 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const currentQuality = generationSettings.meshQuality || 'high';
     // Source geometry follows the selected model's official/tuned inference schedule.
     const sourceQuality = 'ultra' as const;
-    const modelId = generationSettings.aiModel || '';
+    let modelId = generationSettings.aiModel || '';
+    if (generationSettings.enhancementEnabled && !generationSettings.preprocessingArtifactId) {
+      setExecutionStep('Enhancement preview must be approved before generation');
+      toast.error('Enhancement approval required', {
+        description: 'Accept the Generation Preview or disable enhancement before generating.',
+      });
+      return;
+    }
+    if (generationSettings.intent) {
+      const resolved = await getApiClient().resolveSmartIntent(
+        generationSettings.intent,
+        generationSettings.aiModel || undefined,
+      );
+      modelId = resolved.model_id;
+    }
     const paramDefaults = modelParameterDefaults[modelId] || {};
 
     // Use backend-provided parameter defaults when available; fall back to
@@ -1162,7 +1185,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         ? {
             asset_id: generationSettings.multiviewAssetId || undefined,
             images: generationSettings.multiviewViews || undefined,
-            model_preference: generationSettings.aiModel,
+            model_preference: modelId || undefined,
+            intent: generationSettings.intent,
+            preprocessing_artifact_id: generationSettings.preprocessingArtifactId || undefined,
+            enhancement_enabled: Boolean(generationSettings.enhancementEnabled),
+            enable_printability_check: Boolean(generationSettings.enablePrintabilityCheck),
+            enable_auto_repair: Boolean(generationSettings.enableAutoRepair),
+            enable_auto_rig: Boolean(generationSettings.enableAutoRig),
+            auto_rig_mode: generationSettings.autoRigMode || 'full',
             output_format: 'glb',
             topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
             quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
@@ -1173,7 +1203,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             asset_name: cleanStem,
             image_name: cleanStem,
             output_format: 'glb',
-            model_preference: generationSettings.aiModel,
+            model_preference: modelId || undefined,
+            intent: generationSettings.intent,
+            preprocessing_artifact_id: generationSettings.preprocessingArtifactId || undefined,
+            enhancement_enabled: Boolean(generationSettings.enhancementEnabled),
+            enable_printability_check: Boolean(generationSettings.enablePrintabilityCheck),
+            enable_auto_repair: Boolean(generationSettings.enableAutoRepair),
+            enable_auto_rig: Boolean(generationSettings.enableAutoRig),
+            auto_rig_mode: generationSettings.autoRigMode || 'full',
             model_parameters: modelParameters,
             physics_enabled: physicsForThisJob,
             physics_config: generationSettings.physics,
@@ -1183,7 +1220,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           };
 
       if (!useMultiviewReconstruction && isTextured) {
-        body.texture_resolution = currentQuality === 'ultra' ? 4096 : 2048;
+        const textureResolutionByQuality: Record<string, number> = {
+          low: 512,
+          medium: 1024,
+          high: 2048,
+          ultra: 4096,
+          '8k': 4096,
+        };
+        body.texture_resolution =
+          textureResolutionByQuality[generationSettings.textureQuality] || 2048;
       }
 
       const res = await fetch(endpoint, {
@@ -1234,22 +1279,48 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       toast.error('Image required', { description: 'Please upload an image to generate a 3D model.' });
       return;
     }
-    
-    const localTaskId = startTask('image-to-3d', generationSettings.imageName || 'asset', undefined, generationSettings.aiModel);
+    if (generationSettings.enhancementEnabled && !generationSettings.preprocessingArtifactId) {
+      setExecutionStep('Enhancement preview must be approved before generation');
+      toast.error('Enhancement approval required', {
+        description: 'Accept the Generation Preview or disable enhancement before generating.',
+      });
+      return;
+    }
+
+    const localTaskId = startTask(
+      'image-to-3d',
+      generationSettings.imageName || 'asset',
+      undefined,
+      generationSettings.aiModel || undefined,
+    );
 
     try {
+      let effectiveSettings = generationSettings;
+      let effectiveModelId = modelId;
+      if (generationSettings.intent) {
+        const resolved = await getApiClient().resolveSmartIntent(
+          generationSettings.intent,
+          generationSettings.aiModel || undefined,
+        );
+        effectiveModelId = resolved.model_id;
+        effectiveSettings = {
+          ...generationSettings,
+          aiModel: effectiveModelId,
+        };
+      }
+
       // Route from the selected model's declared capabilities instead of forcing raw-mesh output.
-      const selectedCapabilities = modelDetails[modelId]?.capabilities || {};
-      const isRawModel = selectedCapabilities.raw_mesh === true || modelId.endsWith('_image_to_raw_mesh');
+      const selectedCapabilities = modelDetails[effectiveModelId]?.capabilities || {};
+      const isRawModel = selectedCapabilities.raw_mesh === true || effectiveModelId.endsWith('_image_to_raw_mesh');
       const { endpoint, body } = buildGenerationParameters(
-        generationSettings,
+        effectiveSettings,
         {
           raw_mesh: isRawModel,
           paint_autochain: selectedCapabilities.paint_autochain === true,
           multiview: selectedCapabilities.multiview === true,
           supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
         },
-        modelParameterDefaults[modelId] || {},
+        modelParameterDefaults[effectiveModelId] || {},
       );
 
       const res = await fetch(endpoint, {
@@ -1264,6 +1335,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       bindBackendJob(localTaskId, jobId, {
         status: 'queued',
         currentStep: 'Queued on backend',
+        provider: effectiveModelId,
       });
       setExecutionStep('Generation queued on backend');
     } catch (error) {

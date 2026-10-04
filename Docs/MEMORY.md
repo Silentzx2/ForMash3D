@@ -56,3 +56,12 @@
 - Already-watertight/manifold source meshes skip the repair mutation entirely, preserving native topology when no repair is required.
 - Phase 0 Q1–Q8 are source-level verified. Full NVIDIA/model visual A/B and 22-model GPU smoke validation remain explicitly environment-gated.
 - Future agents must independently verify the current implementation and tests; TASKS.md status labels are not evidence.
+
+## Phase 1 Workflow Closure — 2026-10-05
+
+- SG-06 uses one shared deterministic preprocessing artifact rather than adapter-specific parallel pipelines.
+- SG-07 uses existing repair/topology infrastructure and the common post-process lifecycle.
+- SG-08 uses the existing UniRig adapter as a scheduler-managed child workflow after final production processing.
+- SG-02.2 uses one YAML source of truth and deterministic model priority/readiness/VRAM filtering.
+- Phase1 status labels are not evidence; future agents must independently verify source paths and tests.
+- Full CUDA/model runtime validation remains environment-gated and is not represented as passed.

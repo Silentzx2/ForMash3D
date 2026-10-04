@@ -92,6 +92,8 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
     "physics_enabled", "physics_config", "auto_paint", "paint_model_preference", "paint_resolution",
     "faces", "num_faces", "simplify", "decimation_target", "remesh", "remesh_band", "remesh_project",
     "bake_normal_maps", "bake_high_to_low", "bake_textures",
+    "intent", "preprocessing_artifact_id", "enhancement_enabled", "preprocessing_metadata",
+    "enable_printability_check", "enable_auto_repair", "enable_auto_rig", "auto_rig_mode",
 })
 
 
@@ -1274,6 +1276,107 @@ class MultiprocessModelScheduler:
                 # Non-transient error - fail immediately
                 await self.job_queue.fail_job(job_request.job_id, str(e))
 
+    async def _watch_auto_rig(
+        self,
+        parent_job_id: str,
+        child_job_id: str,
+        base_result: Dict[str, Any],
+    ) -> None:
+        """Wait for UniRig, persist the durable rigged artifact, then finalize the parent job."""
+        try:
+            while True:
+                child = await self.job_queue.get_job(child_job_id)
+                status = _extract_job_status(child)
+                if status in {"completed", "failed", "cancelled"}:
+                    break
+                await asyncio.sleep(1.0)
+
+            result = dict(base_result)
+            child_result = (
+                child.get("result")
+                if isinstance(child, dict)
+                else getattr(child, "result", None)
+            ) or {}
+
+            if status == "completed":
+                child_path = child_result.get("output_mesh_path")
+                if not child_path or not Path(child_path).is_file():
+                    raise RuntimeError("UniRig completed without a durable output_mesh_path")
+
+                asset_root = Path(result["asset_root"]).resolve()
+                storage_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+                asset_root.relative_to(storage_root)
+
+                rig_dir = asset_root / "rigging"
+                rig_dir.mkdir(parents=True, exist_ok=True)
+                rig_path = rig_dir / "game_ready_rigged.glb"
+                shutil.copy2(child_path, rig_path)
+
+                rig_url = (
+                    f"/api/v1/system/jobs/{parent_job_id}/download"
+                    f"?artifact_format=rigged"
+                )
+                result["rigging"] = {
+                    "status": "completed",
+                    "provider": "unirig_auto_rig",
+                    "child_job_id": child_job_id,
+                    "artifact_path": str(rig_path),
+                    "artifact_url": rig_url,
+                    "bone_count": child_result.get("bone_count"),
+                    "rig_info": child_result.get("rig_info"),
+                }
+                result["rigged_model_url"] = rig_url
+                result["artifacts"] = {
+                    **dict(result.get("artifacts") or {}),
+                    "rigged": {
+                        "status": "ready",
+                        "url": rig_url,
+                        "required": False,
+                    },
+                }
+            else:
+                error = (
+                    child.get("error")
+                    if isinstance(child, dict)
+                    else getattr(child, "error", None)
+                )
+                result["rigging"] = {
+                    "status": "failed" if status == "failed" else "cancelled",
+                    "provider": "unirig_auto_rig",
+                    "child_job_id": child_job_id,
+                    "error": error or f"UniRig child job ended with {status}",
+                }
+                result["production_status"] = "degraded"
+                result["degraded_reasons"] = list(result.get("degraded_reasons", [])) + ["auto_rig_failed"]
+
+            result["workflow_rig_job_id"] = child_job_id
+            await self.job_queue.update_job_progress(
+                parent_job_id,
+                1.0,
+                "rigging",
+                f"Auto-rig {status}",
+            )
+            await self.job_queue.complete_job(parent_job_id, result)
+        except Exception as exc:
+            logger.error(
+                "Auto-rig finalization failed for parent %s: %s",
+                parent_job_id,
+                exc,
+                exc_info=True,
+            )
+            fallback = dict(base_result)
+            fallback["rigging"] = {
+                "status": "failed",
+                "provider": "unirig_auto_rig",
+                "child_job_id": child_job_id,
+                "error": str(exc),
+            }
+            fallback["production_status"] = "degraded"
+            fallback["degraded_reasons"] = list(
+                fallback.get("degraded_reasons", [])
+            ) + ["auto_rig_workflow_failed"]
+            await self.job_queue.complete_job(parent_job_id, fallback)
+
     async def _handle_job_result(self, job_request: JobRequest, result_future: asyncio.Future):
         """Handle job result asynchronously without blocking the main processing loop"""
         job_id = job_request.job_id
@@ -1308,6 +1411,12 @@ class MultiprocessModelScheduler:
                             "quad_topology": job_request.inputs.get("quad_topology"),
                             "resolution": int(job_request.inputs.get("paint_resolution") or 512),
                             "max_num_view": int(job_request.inputs.get("max_num_view") or 6),
+                            "enable_printability_check": bool(job_request.inputs.get("enable_printability_check")),
+                            "enable_auto_repair": bool(job_request.inputs.get("enable_auto_repair")),
+                            "enable_auto_rig": bool(job_request.inputs.get("enable_auto_rig")),
+                            "auto_rig_mode": job_request.inputs.get("auto_rig_mode", "full"),
+                            "intent": job_request.inputs.get("intent"),
+                            "preprocessing_metadata": job_request.inputs.get("preprocessing_metadata"),
                         },
                         model_preference=str(
                             job_request.inputs.get("paint_model_preference")
@@ -1402,6 +1511,55 @@ class MultiprocessModelScheduler:
                         await self.job_queue.fail_job(job_id, err_msg)
                         logger.error(err_msg, exc_info=True)
                         return
+
+                if (
+                    final_result.get("output_mesh_path")
+                    and bool(job_request.inputs.get("enable_auto_rig"))
+                    and postprocess_mode == "production_mesh"
+                    and not auto_paint
+                ):
+                    child_request = JobRequest(
+                        feature="auto_rig",
+                        inputs={
+                            "mesh_path": final_result["output_mesh_path"],
+                            "rig_mode": job_request.inputs.get("auto_rig_mode", "full"),
+                            "output_format": "glb",
+                            "with_skinning": True,
+                        },
+                        model_preference="unirig_auto_rig",
+                        priority=job_request.priority,
+                        timeout_seconds=job_request.timeout_seconds,
+                        metadata={
+                            "postprocess_mode": "none",
+                            "feature_type": "auto_rig",
+                            "parent_job_id": job_id,
+                            "workflow_id": str(job_request.metadata.get("workflow_id") or job_id),
+                            "workflow_stage": "rigging",
+                            "workflow_state": "queued",
+                        },
+                        user_id=job_request.user_id,
+                    )
+                    child_id = await self.schedule_job(child_request)
+                    final_result["rigging"] = {
+                        "status": "queued",
+                        "provider": "unirig_auto_rig",
+                        "child_job_id": child_id,
+                    }
+                    final_result["rigged_model_url"] = (
+                        f"/api/v1/system/jobs/{job_id}/download"
+                        f"?artifact_format=rigged"
+                    )
+                    await self.job_queue.update_job_result(job_id, final_result)
+                    await self.job_queue.update_job_progress(
+                        job_id,
+                        0.90,
+                        "rigging",
+                        f"Auto-rig queued: {child_id}",
+                    )
+                    asyncio.create_task(
+                        self._watch_auto_rig(job_id, child_id, final_result)
+                    )
+                    return
 
                 await self.job_queue.complete_job(job_id, final_result)
                 logger.info(f"[JOB COMPLETE] job_id={job_id} status=success")

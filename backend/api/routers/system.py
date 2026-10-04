@@ -20,6 +20,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
+from core.model_readiness import is_model_weights_available
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
 from core.utils.file_utils import encode_file_to_base64, get_file_size_mb
 
@@ -1388,6 +1389,8 @@ async def download_job_result(
                 output_path = candidate
             elif canonical_format in {"lod0", "lod1", "lod2", "lod3"}:
                 output_path = asset_root_path / "lods" / f"{canonical_format}.glb"
+            elif canonical_format == "rigged":
+                output_path = asset_root_path / "rigging" / "game_ready_rigged.glb"
             elif canonical_format == "collision":
                 output_path = asset_root_path / "collision" / "collision.glb"
             elif canonical_format == "thumbnail":

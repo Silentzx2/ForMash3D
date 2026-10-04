@@ -62,6 +62,12 @@ export function buildGenerationParameters(
     lodCount: settings.lodCount || 4,
     negative_prompt: settings.negativePrompt || undefined,
     source_quality: 'max',
+    texture_resolution: (
+      settings.textureQuality === 'low' ? 512 :
+      settings.textureQuality === 'medium' ? 1024 :
+      settings.textureQuality === 'ultra' || settings.textureQuality === '8k' ? 4096 :
+      2048
+    ),
   };
   
   // Model-specific parameters
@@ -104,7 +110,14 @@ export function buildGenerationParameters(
       asset_name: cleanStem,
       image_name: cleanStem,
       output_format: 'glb',
-      model_preference: settings.aiModel,
+      model_preference: settings.aiModel || undefined,
+      intent: settings.intent,
+      preprocessing_artifact_id: settings.preprocessingArtifactId || undefined,
+      enhancement_enabled: Boolean(settings.enhancementEnabled),
+      enable_printability_check: Boolean(settings.enablePrintabilityCheck),
+      enable_auto_repair: Boolean(settings.enableAutoRepair),
+      enable_auto_rig: Boolean(settings.enableAutoRig),
+      auto_rig_mode: settings.autoRigMode || 'full',
       model_parameters: modelParameters,
       physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false, isPaintModel, settings.generateTexture ?? true),
       physics_config: settings.physics,
@@ -114,7 +127,14 @@ export function buildGenerationParameters(
     };
     
     if (isTextured) {
-      body.texture_resolution = currentQuality === 'ultra' ? 4096 : 2048;
+      const textureResolutionByQuality: Record<string, number> = {
+        low: 512,
+        medium: 1024,
+        high: 2048,
+        ultra: 4096,
+        '8k': 4096,
+      };
+      body.texture_resolution = textureResolutionByQuality[settings.textureQuality] || 2048;
     }
   }
   
@@ -194,12 +214,12 @@ function applyModelSpecificParams(
   } else if (modelId.includes('trellis2')) {
     modelParameters.decimation_target = Number(paramDefaults.decimation_target ?? -1);
     modelParameters.remesh = paramDefaults.remesh ?? false;
-    modelParameters.texture_size = Number(paramDefaults.texture_size ?? 4096);
+    modelParameters.texture_size = Number(paramDefaults.texture_size ?? modelParameters.texture_resolution ?? 4096);
   } else if (modelId.includes('trellis')) {
     modelParameters.simplify = Number(paramDefaults.simplify ?? 0.0);
     modelParameters.ss_sampling_steps = Number(paramDefaults.ss_sampling_steps ?? 12);
     modelParameters.slat_sampling_steps = Number(paramDefaults.slat_sampling_steps ?? 12);
-    modelParameters.texture_resolution = Number(paramDefaults.texture_resolution ?? 2048);
+    modelParameters.texture_resolution = Number(paramDefaults.texture_resolution ?? modelParameters.texture_resolution ?? 2048);
   } else if (modelId.includes('hunyuan')) {
     modelParameters.octree_resolution = Number(paramDefaults.octree_resolution ?? 512);
     modelParameters.enable_realesrgan = settings.enableRealESRGAN !== false;
@@ -215,6 +235,11 @@ function applyModelSpecificParams(
     modelParameters.resolution = settings.resolution ?? 512;
     modelParameters.auto_paint = true;
     modelParameters.paint_model_preference = 'hunyuan3d_paint_v21_image_mesh_painting';
-    modelParameters.paint_resolution = settings.paintResolution ?? 512;
+    modelParameters.paint_resolution = settings.paintResolution ?? (
+      settings.textureQuality === 'low' ? 512 :
+      settings.textureQuality === 'medium' ? 512 :
+      settings.textureQuality === 'ultra' || settings.textureQuality === '8k' ? 768 :
+      768
+    );
   }
 }

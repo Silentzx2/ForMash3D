@@ -357,9 +357,15 @@ Phase 0 is a **shared quality contract**, not a separate generation pipeline. Ev
 
 # 4. P1 — High-value / Low-effort Features
 
+**Status: DONE — SG-06, SG-07, SG-08, and SG-02.2 are implemented and cross-wired through the existing generation, scheduler, post-processing, and artifact-delivery paths.**
+
+> Verification rule: this is a source-level implementation marker, not proof of CUDA/model-runtime success. Future agents must independently inspect the current Dev code, trace the live execution path, and rerun relevant tests.
+
 ---
 
 ## SG-06 — Image Enhancement / Auto-Fix + Preview
+
+**Review: DONE — Shared preview/preprocessing artifact, adaptive fallback behavior, provenance, approved-input reuse, and normal Image → 3D integration are implemented.**
 
 **Priority:** HIGH  
 **Timing:** Immediately after P0  
@@ -504,6 +510,8 @@ Record:
 
 ## SG-07 — Printability Check + Auto-Repair
 
+**Review: DONE — Deterministic topology QA, explicit repair control, final recheck, and degraded-state reporting are implemented in the common post-processing path.**
+
 **Priority:** HIGH  
 **Timing:** P1  
 **Goal:** Make print-readiness an explicit, deterministic production check.
@@ -600,6 +608,8 @@ If \`enable_auto_split\` is later activated:
 
 ## SG-08 — Auto-Rigging Wiring
 
+**Review: DONE — Canonical enable_auto_rig scheduling, final-production-mesh UniRig execution, durable rigged artifact delivery, and explicit failure propagation are implemented.**
+
 **Priority:** HIGH  
 **Timing:** P1 after SG-07  
 **Goal:** Make the existing UniRig capability available as a generation pipeline option.
@@ -688,6 +698,8 @@ Future animation-preset application can be a separate task after the rigged arti
 ---
 
 ## SG-02.2 — Intent Presets
+
+**Review: DONE — Versioned YAML presets, deterministic capability/readiness/VRAM filtering, and explicit model override semantics are implemented.**
 
 **Priority:** HIGH  
 **Timing:** P1  
@@ -798,6 +810,16 @@ scheduler safety clamps
 - Applied preset and chosen model are stored in job metadata.
 
 ---
+
+### P1 Closure Verification
+
+- [x] SG-06 implemented end-to-end on the normal Image → 3D path.
+- [x] SG-07 implemented in the common post-processing path; no duplicate repair pipeline.
+- [x] SG-08 implemented after durable production processing using the existing UniRig adapter.
+- [x] SG-02.2 implemented from one YAML source of truth.
+- [x] Original Phase 1 plan preserved; only status/review annotations were added.
+- [x] Future-agent verification rule preserved.
+- [ ] CUDA/model-weight visual A/B and full production load validation — NOT RUN in this environment.
 
 # 5. Seven New Product Features From The Latest Product Review
 

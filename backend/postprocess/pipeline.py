@@ -322,6 +322,30 @@ def _has_native_textures_scene(raw_bytes: bytes, filename: str = "model.glb") ->
         return False
 
 
+def _printability_report(mesh: trimesh.Trimesh) -> Dict[str, Any]:
+    """Return deterministic printability metrics without mutating geometry."""
+    topology = topology_counts(mesh.vertices, mesh.faces)
+    try:
+        components = int(len(mesh.split(only_watertight=False)))
+    except Exception:
+        components = int(topology.get("components", 0) or 0)
+    passed = (
+        bool(topology.get("watertight", False))
+        and int(topology.get("boundary_edges", 0) or 0) == 0
+        and int(topology.get("non_manifold_edges", 0) or 0) == 0
+    )
+    return {
+        "status": "pass" if passed else "fail",
+        "watertight": bool(topology.get("watertight", False)),
+        "boundary_edges": int(topology.get("boundary_edges", 0) or 0),
+        "non_manifold_edges": int(topology.get("non_manifold_edges", 0) or 0),
+        "vertex_count": int(len(mesh.vertices)),
+        "face_count": int(len(mesh.faces)),
+        "connected_components": components,
+        "topology": topology,
+    }
+
+
 def _quality_guard(reference: trimesh.Trimesh, candidate: trimesh.Trimesh, max_bounds_drift: float = 0.02, max_vertex_growth: float = 1.25) -> Dict[str, Any]:
     """Reject post-process results that materially drift from the reference mesh."""
     ref_vertices = np.asarray(reference.vertices, dtype=float)
@@ -708,6 +732,18 @@ def run_postprocess_job(
         )
     )
 
+    printability_enabled = bool(
+        job_metadata.get("enable_printability_check")
+        or job_inputs.get("enable_printability_check")
+        or job_metadata.get("enable_auto_repair")
+        or job_inputs.get("enable_auto_repair")
+    )
+    printability_auto_repair = bool(
+        job_metadata.get("enable_auto_repair")
+        or job_inputs.get("enable_auto_repair")
+    )
+    printability_before = _printability_report(mesh) if printability_enabled else None
+
     repair_t0 = time.time()
     _emit(progress, 0.18, "repair", "Checking and repairing topology.")
     repair_opts = RepairOptions(
@@ -718,7 +754,19 @@ def run_postprocess_job(
         weld=True,
     )
     source_topology = topology_counts(mesh.vertices, mesh.faces)
-    if source_topology.get("watertight") and source_topology.get("non_manifold_edges", 0) == 0:
+    if printability_enabled and not printability_auto_repair:
+        repaired = mesh.copy()
+        repair_stats = {
+            "before": source_topology,
+            "after": source_topology.copy(),
+            "removed_faces": 0,
+            "method": "skipped_printability_check_only",
+            "preserve_uv": True,
+            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
+            "skipped": True,
+            "reason": "Printability was requested without auto-repair; the default repair mutation was not applied.",
+        }
+    elif source_topology.get("watertight") and source_topology.get("non_manifold_edges", 0) == 0:
         repaired = mesh.copy()
         repair_stats = {
             "before": source_topology,
@@ -733,6 +781,8 @@ def run_postprocess_job(
     else:
         repaired, repair_stats, _ = run_repair(mesh, repair_opts)
     repair_duration = time.time() - repair_t0
+
+    quality_trace["printability_before_repair"] = printability_before
 
     quality_trace["repaired"] = {
         **mesh_stats(repaired).model_dump(),
@@ -968,6 +1018,9 @@ def run_postprocess_job(
                 ],
             )
         )
+
+    printability_after = _printability_report(uv_mesh) if printability_enabled else None
+    printability_status = (printability_after or printability_before or {}).get("status")
 
     texture_paths: Dict[str, Path] = {}
     bake_stats = {
@@ -1287,6 +1340,13 @@ def run_postprocess_job(
             "seed": job_inputs.get("seed"),
             "target_polycount": resolved_target_polycount,
             "source_policy": "model-native maximum geometry fidelity; target_polycount is downstream-only",
+            "printability": {
+                "enabled": printability_enabled,
+                "auto_repair": printability_auto_repair,
+                "before": printability_before,
+                "after": printability_after,
+                "status": printability_status,
+            } if printability_enabled else None,
             "lod": {
                 "enabled": lod_enabled,
                 "preset": job_inputs.get("lodPreset") or "high",
@@ -1323,6 +1383,13 @@ def run_postprocess_job(
             "physics": physics_metadata,
             "target_polycount": resolved_target_polycount,
             "source_policy": "immutable source.glb is the model-native maximum-fidelity checkpoint; production budget applies only to derived outputs",
+            "printability": {
+                "enabled": printability_enabled,
+                "auto_repair": printability_auto_repair,
+                "before": printability_before,
+                "after": printability_after,
+                "status": printability_status,
+            } if printability_enabled else None,
         },
     )
 
@@ -1341,6 +1408,19 @@ def run_postprocess_job(
     final_result["model_url"] = final_result["game_ready_url"]
     final_result["quality_trace"] = quality_trace
     final_result["optimize"] = optimize_stats
+    if printability_enabled:
+        final_result["printability"] = {
+            "enabled": True,
+            "auto_repair": printability_auto_repair,
+            "before": printability_before,
+            "after": printability_after,
+            "status": printability_status,
+        }
+        if printability_status == "fail":
+            final_result["production_status"] = "degraded"
+            final_result["degraded_reasons"] = list(
+                final_result.get("degraded_reasons", [])
+            ) + ["printability_failed"]
     _write_json(asset_manifest, final_result)
 
     total_pipeline_time = time.time() - pipeline_start_time

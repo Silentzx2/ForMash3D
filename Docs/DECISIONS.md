@@ -596,3 +596,15 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - TRELLIS source texture is fixed to 2048 and TRELLIS.2 to 4096.
 - Production polycount, LOD, UV, collision, and baking remain downstream responsibilities.
 - CUDA/NVIDIA visual A/B remains a runtime verification gate.
+
+## ADR-051 — Phase 1 Shared Image Preprocessing Artifact
+
+Use a content-hashed preprocessing artifact for optional Image → 3D enhancement. It records source/approved hashes, exact recipe, dimensions, crop, and fallback state so preview and generation cannot silently diverge.
+
+## ADR-052 — Phase 1 Deterministic Intent Presets
+
+Use a versioned YAML source of truth with ordered model priorities and capability/readiness/VRAM gates instead of an opaque weighted scoring system. Explicit model choices remain authoritative.
+
+## ADR-053 — Phase 1 UniRig Child Workflow
+
+Run UniRig as a scheduler-managed child job after the canonical production mesh exists. Finalize the parent only after a durable rigged artifact is present; report failure explicitly as degraded.
