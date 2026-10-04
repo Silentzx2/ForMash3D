@@ -1,301 +1,2114 @@
-# ForMash3D — Engineering Task Ledger
+# ForMash3D — Agent-Executable Engineering Task Plan
 
-**Status:** Audited and reconciled  
-**Date:** 2026-10-04  
-**Branch:** `Dev`  
-**Authoritative task file:** `Docs/TASKS.md`
+**Status:** Active implementation roadmap — rewritten from the current \`Dev\` codebase audit and the latest product discussion/screenshots  
+**Date:** 2026-10-05  
+**Branch:** \`Dev\`  
+**Authoritative task file:** \`Docs/TASKS.md\`
 
-> The repository has no root `TASK.md`. This file is the maintained task ledger referenced by `RULES.md`.
+> There is no root \`TASK.md\`. This file is the single authoritative engineering task ledger referenced by the repository rules.
 
-**Plan Goal:** Provide a one-click smart selector that automatically selects the best model and configures post‑process to deliver production‑ready meshes (watertight, textured, LODs, collision, rigging) while preserving source fidelity and local‑only operation. In parallel, improve the quality of the normal (non-smart) generation pipeline by integrating battle‑tested open‑source mesh processing libraries and refining existing steps. Leverage existing open‑source tools wherever possible to avoid building everything from scratch.
+---
 
-## User Vision
+## 0. Mission
 
-ForMash3D aims to become the go‑to self‑hosted 3D creation suite where artists, indie developers, and studios can generate production‑ready assets with a single click, achieving the same immediate usability as cloud services like Tripo AI, Meshy, or Hyper3D, but without sacrificing privacy, control, or the ability to tweak every step. The smart selector will intelligently choose the optimal model and pipeline configuration based on user intent (game‑ready, cinematic, animation, 3D print, mobile) and available hardware, while exposing advanced knobs for power users. Simultaneously, we will harden the default pipeline—watertight repair, decimation, UV unwrapping, PBR baking, and normal mapping—using proven open‑source libraries so that even manual workflows benefit from higher quality and fewer artifacts.
+ForMash3D is an **Image → 3D, self-hosted production asset pipeline**.
 
-## Scope
+The immediate goal is **not** to add every possible research feature. The immediate goal is to:
 
-ForMash3D's generation contract is **Image → 3D**. Text input remains valid for mesh painting/editing and motion generation, but **Text → 3D generation is not an active product path**.
+1. Fix the remaining raw-mesh quality regressions first.
+2. Add the low-risk, high-value quality improvements that already have the required infrastructure.
+3. Add the seven user-facing workflow features that materially improve the product experience.
+4. Build a simple, deterministic smart-generation layer instead of an unnecessarily complex model-scoring system.
+5. Keep real-time streaming and speculative research work behind explicit hold/defer gates until the base pipeline is stable.
 
-The production generation path is:
+The engineering principle is:
 
-`image upload → model capability routing → maximum-fidelity source inference → durable master mesh → repair/conditional retopo → target polycount → UV/texture preservation → optional PBR bake → LODs → collision/physics → QA → game-ready/export artifacts`
+\`\`\`
+INPUT IMAGE
+   ↓
+optional preprocessing + user preview
+   ↓
+capability-aware model selection
+   ↓
+maximum-fidelity native inference
+   ↓
+immutable master/source.glb
+   ↓
+repair / conditional retopo / texture preservation
+   ↓
+target polycount + UV + LOD + collision
+   ↓
+optional rigging
+   ↓
+quality QA + provenance
+   ↓
+gallery / comparison / diff
+   ↓
+engine-ready export
+\`\`\`
 
-## Verified fixes
+### Non-negotiable product contract
 
-| Area | Result | Verification |
-|---|---|---|
-| Model-aware generation routing | DONE | `generate3DModel()` now passes the selected model's backend capabilities into `buildGenerationParameters()`; raw/textured endpoint selection is no longer hard‑coded. |
-| Source-fidelity contract | DONE | Production-only budgets are stripped from neural inference by the scheduler before adapter execution. |
-| Telemetry refresh | DONE | Workspace system telemetry refreshes every 5 seconds. |
-| Low-VRAM control visibility | DONE | The generation UI uses the selected model's `low_vram_supported` capability. |
-| Image-only 3D generation | DONE | Text-to-3D route/client/type/task mappings were removed. Text mesh painting and text-to-motion remain supported. |
-| Native texture preservation | DONE | Production optimization falls back to the repaired textured mesh and now raises when native texture data cannot be restored. Optional LOD texture loss is recorded as an artifact error instead of being silently shipped. |
-| Runtime scheduler toggles | DONE | Retry and post-job VRAM unload settings are read at decision time instead of being frozen at module import. |
-| Job cancellation / worker cleanup | DONE | Existing scheduler cleanup and cancellation paths were re-checked; current code terminates the owning worker before terminal cancellation/failure publication. |
-| Progress contract | DONE | Backend progress remains a 0..1 fraction; the workspace normalization converts it once to a 0..100 display value. |
-| Model parameter defaults | DONE | Frontend generation parameter construction prefers backend model schemas and falls back only when the schema is unavailable. |
-| OpenAPI contract validation | DONE | `scripts/verify_contracts.py` now checks current image-generation/paining/processing endpoints and rejects legacy Text-to-3D endpoint references. |
-| Source model registry | DONE | The canonical frontend registry contains 22 active model definitions; the stale 19-model comment was corrected. |
+- **3D generation input is Image → 3D.**
+- Text input remains valid for mesh painting/editing and motion workflows, but **Text → 3D is not an active generation path**.
+- The immutable model-native master remains the highest-fidelity checkpoint.
+- Production budgets such as target polycount must remain **downstream constraints**, not hidden neural-generation limits.
+- Existing adapters, scheduler, post-process services, history, export tools, and UI patterns must be reused before creating new abstractions.
+- No new dependency is allowed when an existing implementation can satisfy the requirement.
+- No research feature should be promoted to production merely because a cloud service advertises an analogous feature.
 
-## Current feature status
+---
 
-| Feature | Status | Notes |
-|---|---|---|
-| Image → Raw 3D | DONE | Capability-driven routing to `image-to-raw-mesh`. |
-| Image → Textured 3D | DONE | Capability-driven routing to `image-to-textured-mesh`; native model texture support controls the UI. |
-| Multi-view reconstruction | DONE | Generate button is gated by model multiview capability and supplied views. |
-| Mesh painting | DONE | Text/image painting remains separate from generation. |
-| Physics / collision preparation | DONE | Production post-processing emits collision/physics metadata when enabled. |
-| LOD generation | DONE | Up to four configurable LOD artifacts are generated; optional texture-loss failures are surfaced. |
-| Auto UV | DONE | Native textured assets preserve UV/material data; untextured assets receive production UVs. |
-| Game-ready export | DONE | Canonical GLB is required; FBX is generated when conversion succeeds. |
-| Text → 3D | REMOVED | No active backend route, frontend client/type, task mapping, or model registration. |
-| Text → Motion | SUPPORTED | Remains intentionally separate from 3D generation. |
+# 1. Engineering Rules For Every Task
 
-## Planned Enhancements – Smart Generation Pipeline (Tripo/Meshy/Hyper3D inspired)
+These rules are mandatory and are derived from the repository engineering rules.
 
-**Goal:** Provide a “one‑click” smart selector that automatically picks the best model, configures post‑process, and delivers production‑ready meshes (watertight, textured, LODs, collision, rigging) while preserving ForMash3D’s source‑fidelity and local‑only principles. Emphasize reuse of existing open‑source tools where possible to avoid building everything from scratch.
+## 1.1 Root-cause first
 
-| ID | Feature | Description | Status | Priority | Related Resources / Links |
-|---|---|---|---|---|---|
-| SG-01 | **Smart Selector Endpoint** | New API router `/api/v1/smart/generation` accepting `image` (upload) or `prompt` (text) and `intent` (`game_ready`, `cinematic`, `animation`, `3d_print`, `mobile`). Returns job ID; internally selects adapter & post‑process overrides via `backend/core/smart_selector.py`. **Implementation note**: Keep existing `/api/v1/mesh-generation/*` routes unchanged for users who want manual control. | pending | high | - Design notes: https://developers.tripo3d.ai/docs  <br>- Meshy T2 paper: https://arxiv.org/html/2607.28675v1  <br>- Tripo Smart Mesh P1.0: https://www.tripo3d.ai/features/smart-mesh |
-| SG-01.1 | **Endpoint schema definition** | Define Pydantic models for request (`SmartGenRequest`) and response (`SmartGenResponse`) in `backend/api/schemas/smart.py`. | pending | high | - Reuse existing schema patterns from `mesh_generation.py`. |
-| SG-01.2 | **Router implementation** | Create `backend/api/routers/smart.py` with a single POST handler that validates input, calls the selector, and submits a job via the existing scheduler. | pending | high | - Follow the pattern of `mesh_generation.py`. |
-| SG-01.3 | **OpenAPI documentation** | Ensure the new endpoint appears in the auto‑generated Swagger UI with proper tags and examples. | pending | medium | - Update `scripts/verify_contracts.py` to include the new endpoint. |
-| SG-02 | **Smart Selector Core** | Pure‑Python module `backend/core/smart_selector.py` that loads `models.yaml`, scores models based on intent, VRAM, and capabilities (`texture_support`, `quad_retopo`, `low_vram_supported`, `rigging_support`). Returns `(adapter_id, postprocess_overrides)`. Includes unit tests. VRAM safety margin made configurable via environment variable `VRAM_SAFETY_MARGIN_MB` (default 1024 MB). | pending | high | - Reuse existing scheduler VRAM clamp utilities (`backend/core/scheduler/utils.py`)  <br>- Follow lazy‑adapter pattern (RULES.md) |
-| SG-02.1 | **Scoring algorithm** | Implement a weighted scoring function; higher score = better fit. Weights: intent match (0.4), VRAM headroom (0.2), texture support (0.15), quad retopo (0.1), low‑VRAM flag (0.1), rigging support (0.05). | pending | high | - Unit tests will verify edge cases. |
-| SG-02.2 | **Post‑process overrides mapping** | Map intent to a dictionary of pipeline flags (see table in SG‑02 description). Allow user‑provided overrides to selector‑provided ones (user wins). | pending | high | - Keep mapping in a separate config file `backend/config/smart_presets.yaml` for easy tweaking. |
-| SG-02.3 | **Integration with scheduler** | The selector returns overrides that are merged into the job request before submission; the scheduler already respects fields like `target_polycount`, `texture_resolution`, etc. | pending | medium | - No scheduler changes needed; just pass extra kwargs. |
-| SG-03 | **Smart‑Flow Adapter (Optional)** | Flow‑based mesh generator similar to Meshy T2 / Tripo’s unified diffusion under `backend/adapters/smartflow_adapter.py`. Lazy import, uses existing PyTorch 2.6 + CUDA stack. Outputs watertight manifold mesh with controllable face budget; can skip repair/retopo if output passes Euler check. **Weights distribution**: optional download via `backend/scripts/download_models.sh` hook (keep repo lightweight). | pending | medium | - Meshy T2: https://arxiv.org/html/2607.28675v1  <br>- Tripo unified diffusion: https://www.tripo3d.ai/blog/smart-mesh-tutorial  <br>- Implementation reference: https://github.com/meshyai/meshy-t2 (open) |
-| SG-03.1 | **Adapter skeleton** | Inherit from `BaseAdapter`, implement `_load_model` (lazy import), `_preprocess` (image tensor preparation), `_inference` (flow‑based sampling), `_postprocess` (mesh extraction, optional Euler check). | pending | medium | - Follow the pattern of existing adapters (e.g., `trellis_adapter.py`). |
-| SG-03.2 | **Weight download hook** | Add a function `download_smartflow_weights()` to `backend/scripts/download_models.sh` that pulls the latest release from a designated GitHub repo (or HuggingFace). | pending | medium | - Ensure the script is idempotent and checks SHA256. |
-| SG-03.3 | **Capabilities registration** | Add an entry to `backend/config/models.yaml` with appropriate `vram_requirement`, `supported_inputs`, `supported_outputs`, and flags (`low_vram_supported`, `texture_support` if applicable). | pending | low | - Use the same structure as other adapters. |
-| SG-04 | **Triplane‑Octree Latent Swap (Optional)** | For existing adapters (Hunyuan3D, Trellis, etc.), optionally replace VAE/encoder with a hybrid triplane‑octree encoder (high‑fidelity, compact) as researched by Hyper3D. Drop‑in compatible with current adapter interface (`encode`/`decode`). Controlled via env var `USE_TRIPLANE_OCTREE=1` or flag in `models.yaml`. | pending | low | - Hyper3D Rodin Gen‑2: https://hyper3d.ai/  <br>- Paper: https://arxiv.org/html/2503.10403v1  <br>- Code reference: https://github.com/DeemosTech/Hyper3D-Rodin |
-| SG-04.1 | **Evaluation of benefit** | Benchmark latency and quality difference between default VAE and triplane‑octree on a representative set of images (e.g., 100‑image COCO subset). | pending | low | - Use existing test harness; record FID, polycount, and timing. |
-| SG-04.2 | **Feature flag implementation** | Guard the latent swap with a boolean in the adapter’s `_load_model`; if flag is set, load the alternative weights. | pending | low | - No changes to scheduler or post‑process needed. |
-| SG-05 | **ControlNet‑like Spatial Guidance** | Extend generation endpoints (`/api/v1/mesh-generation/*`) with optional fields `bbox` (normalized [0,1]), `voxels` (sparse int list), `pointcloud` (Nx3 float list). Forward to adapter conditioning (most modern diffusion/flow models accept such controls). Use open‑source implementations where possible (e.g., `controlnet_aux` for preprocessing). | pending | medium | - Hyper3D ControlNet: https://hyper3d.ai/features/api  <br>- ControlNet paper: https://arxiv.org/abs/2302.05543  <br>- Open‑source ControlNet tools: https://github.com/lllyasviel/ControlNet |
-| SG-05.1 | **Schema extension** | Add optional fields to the Pydantic models for generation requests (e.g., `MeshGenerationParams`). | pending | medium | - Update `backend/api/schemas/mesh_generation.py`. |
-| SG-05.2 | **Adapter hook** | In each adapter’s `_encode` or `_preprocess`, if the extra fields are present and the model supports them, condition the diffusion/flow process (e.g., concatenate embeddings, cross‑attention). If unsupported, log a debug message and ignore. | pending | medium | - Start with the adapters that already support similar conditioning (e.g., Hunyuan3D‑Omni). |
-| SG-06 | **Image Enhancement / Auto‑Fix Toggle** | Add boolean `image_enhance` (default true) to generation requests. When true, run lightweight preprocessing: RealESRGAN_x2 upscale (already in `backend/thirdparty/`), optional background removal using RMBG‑1.4 (via `kornia` or ONNX), simple denoise if needed. Implement as utility `backend/utils/image_enhance.enhance(image_path) -> enhanced_path`. Mirrors Meshy’s Image Enhancement and Tripo’s `enable_image_autofix`. | pending | high | - Meshy Image Enhancement: https://help.meshy.ai/en/articles/13880941-what-does-the-image-enhancement-toggle-do  <br>- Tripo enable_image_autofix: https://www.tripo3d.ai/features/image-to-3d-model  <br>- RealESRGAN: https://github.com/xinntao/Real-ESRGAN  <br>- RMBG: https://github.com/PRPD/kornia (see `kornia.utils`) |
-| SG-06.1 | **Utility function** | Create `backend/utils/image_enhance.py` with a single function `enhance(image_path: str, upscale: bool = True, bg_remove: bool = True, denoise: bool = False) -> str`. | pending | high | - Use existing `RealESRGAN` wrapper if present; otherwise call via subprocess. |
-| SG-06.2 | **Integration point** | Call the enhancer right before the adapter receives the image, either in the scheduler’s job preparation or in the adapter’s `_preprocess`. | pending | medium | - Choose the scheduler level to keep adapters unchanged. |
-| SG-07 | **Automatic Printability Check & Auto‑Repair / Auto‑Split** | Extend post‑process pipeline with toggles: `enable_printability_check` (default false; set true for `intent=3d_print`), `enable_auto_repair` (default false), `enable_auto_split` (default false). Uses existing watertight repair & convex‑hull/voxel‑grid splitting utilities. Defaults on for `intent=3d_print`. **Open‑source alternatives**: consider integrating `triclops` for watertight checks or `CGAL` for convex decomposition if needed. | pending | high | - Meshy Auto Repair & Auto Split: https://www.meshy.ai/3d-printing  <br>- Tripo segmentation for printing: https://www.tripo3d.ai/features/low-poly-3d-model-generator  <br>- Existing repair: `backend/postprocess/repair.py`  <br>- Existing segmentation: `backend/postprocess/segmentation.py` |
-| SG-07.1 | **Printability check** | Reuse the existing watertight/non‑manifold test from `postprocess/repair.py:_check_watertight`. Return a boolean and log details. | pending | high | - No new code needed; just expose a flag. |
-| SG-07.2 | **Auto‑repair** | If the check fails and `enable_auto_repair` is true, run the existing watertight repair step (already present). | pending | high | - Ensure the repair step is idempotent. |
-| SG-07.3 | **Auto‑split** | If still not printable or mesh too large (vertex count > threshold, e.g., 500k) and `enable_auto_split` is true, split into watertight parts using voxel‑grid clustering + convex‑hull (reuse code from `backend/postprocess/segmentation.py` or implement simple grid‑based connected components). | pending | high | - After splitting, process each part through repair/retopo/etc., then re‑assemble using original transforms. |
-| SG-07.4 | **Metadata updates** | Record in `metadata/quality_report.json` whether printability check passed, was repaired, was split, and the number of parts. | pending | medium | - Extend the existing QA JSON schema. |
-| SG-08 | **Auto‑Rigging & Animation Presets** | Add flag `enable_auto_rig` that, after post‑process, runs UniRig adapter on `game_ready.glb` and embeds skeleton + 600+ animation presets (from `backend/thirdparty/ardy/animation_presets.json`) into exported GLB/FBX. | pending | medium | - UniRig adapter already present  <br>- Meshy AI Auto Rigging: https://www.meshy.ai/features/ai-auto-rigging  <br>- Tripo rigging: https://developers.tripo3d.ai/en/docs/models-and-versions  <br>- Animation presets: `backend/thirdparty/ardy/animation_presets.json` |
-| SG-08.1 | **Rigging invocation** | After post‑process, if flag is true, load the UniRig adapter, run inference on the game‑ready mesh, and attach the resulting skeleton to the GLB/FBX using existing export utilities (`backend/api/utils/file_store.py`). | pending | medium | - Reuse the same pattern as other post‑process steps. |
-| SG-08.2 | **Animation presets attachment** | Optionally embed the animation preset data as a separate animation track or as a JSON blob in the GLB’s extras; for now, store as metadata and let the user apply via external tools. | pending | low | - Keep it simple for initial implementation. |
-| SG-09 | **Recursive Part‑Based Generation (Optional)** | Post‑process step `enable_part_gen` (backend‑only flag for now): if vertex count > threshold (e.g., 500k), split mesh into parts via voxel‑grid clustering, generate each part (potentially with lower‑detail adapter), re‑assemble using original transforms. Enables high‑poly detail while keeping base low‑poly. UI exposure deferred to follow‑up. | pending | low | - Hyper3D recursive part‑based: https://deemos-tech-launches-hyper3d-rodin-gen-2  <br>- Paper: https://arxiv.org/html/2503.10403v1  <br>- Voxel clustering reference: https://github.com/username/voxel-cluster (example) |
-| SG-09.1 | **Voxel grid clustering** | Implement a function that partitions the mesh into chunks of ~50k vertices using a uniform grid, computes the axis‑aligned bounding box of each chunk, and extracts the sub‑mesh. | pending | low | - Use `numpy` and `scipy` if available; otherwise implement a simple binning algorithm. |
-| SG-09.2 | **Adapter selection for parts** | For each part, invoke the smart selector again with a modified intent that prefers lower VRAM usage (e.g., add a bias toward low‑VRAM models) or directly reuse the original adapter if it is already low‑VRAM sufficient. | pending | low | - This enables generating high‑detail parts without exploding VRAM. |
-| SG-09.3 | **Re‑assembly** | Store the transformation matrix for each part (identity if parts are generated in object space) and combine the processed meshes into a single scene graph; when exporting, apply the transforms to obtain a single unified mesh. | pending | low | - Use `trimesh`’s `Scene` class or manual matrix multiplication. |
-| SG-10 | **Inference Speed‑Ups (ONNX/TensorRT) – Optional** | Provide script `backend/scripts/optimize_model.sh` to export adapter checkpoints to ONNX and build TensorRT FP16 engines (if RTX 40‑series present). Adapter can load TRT when `USE_TRT=1`. Optional perf boost. **Open‑source tools**: ONNX, TensorRT, `torch2trt`. | pending | low | - TensorRT docs: https://docs.nvidia.com/deeplearning/tensorrt/archives/index.html  <br>- ONNX export: https://pytorch.org/tutorials/advanced/torch_export.html  <br>- torch2trt: https://github.com/NVIDIA-AI-IOT/torch2trt |
-| SG-10.1 | **Export script** | The script loops over all adapters listed in `models.yaml` that have a `torch` checkpoint, runs `torch.onnx.export`, then invokes `trtexec` to build an FP16 engine. | pending | low | - Skip adapters that fail; log warnings. |
-| SG-10.2 | **Runtime switch** | In each adapter’s `_load_model`, check env var `USE_TRT=1` and if a matching TensorRT engine exists, load it via `torch2trt` or `torch_tensorrt` bindings; otherwise fall back to regular PyTorch. | pending | low | - Ensure the adapter’s inference method works with both backends. |
-| SG-11 | **Real‑Time Preview During Generation (WebSocket)** | Add WebSocket endpoint `/api/v1/system/jobs/{id}/preview` that streams intermediate meshes (low‑resolution or coarse LOD) as generation/post‑process progresses, allowing users to see early results and cancel if needed. Uses existing job progress (0..1 fraction) and can render a simplified mesh via `trimesh` or `pyvista` for preview. | pending | high | - WebSocket in FastAPI: https://fastapi.tiangolo.com/advanced/websockets/  <br>- Example mesh streaming: https://github.com/mikedh/trimesh  <br>- Preview strategy: generate low‑poly proxy early, refine later. |
-| SG-11.1 | **WebSocket handler** | Create `backend/api/routers/preview.py` with a WebSocket route that accepts a job ID, subscribes to job progress updates (via Redis pub/sub or a simple callback), and sends a simplified mesh every N% progress or every second. | pending | high | - Leverage the existing job progress mechanism (already provides 0..1 fraction via REST). |
-| SG-11.2 | **Mesh simplification for preview** | Use `meshoptimizer` to generate a LOD version of the current `game_ready.glb` (or `source.glb` if post‑process hasn’t started) with a target vertex count that scales with progress (e.g., 10% at 10% progress, up to 100% at completion). | pending | high | - Cache the simplified mesh to avoid recomputation each frame. |
-| SG-11.3 | **Cancellation integration** | If the client sends a close frame or a specific cancel message, forward a cancel request to the scheduler (`/api/v1/mesh-generation/cancel/{job_id}`). | pending | medium | - Provide a seamless UX: preview stops, job is cancelled. |
-| SG-12 | **Leverage Open‑Source Mesh Processing Libraries** | Wherever possible, replace custom post‑process steps with battle‑tested open‑source solutions to improve quality and reduce development time: <br>• **Watertight repair**: use `ManifoldPlus` or `CGAL` polygon mesh processing. <br>• **Decimation/LOD**: use `meshoptimizer` (already integrated) or `OpenVDB` for quadric error metrics. <br>• **UV unwrapping**: use `xatlas` (already present) or `libigl`. <br>• **PBR baking**: use `Mitsuba 2` or `Blender` background render (headless) for ambient occlusion, curvature maps. <br>• **Normal mapping**: use `xNormal` or `OpenGL` SDK. <br>Investigate and integrate where licensing permits (MIT/BSD/Apache). | pending | medium | - ManifoldPlus: https://github.com/StanfordAILab/Manifold  <br>- CGAL: https://www.cgal.org/  <br>- meshoptimizer: https://github.com/zeux/meshoptimizer  <br>- xatlas: https://github.com/jpcy/xatlas  <br>- Blender headless rendering: https://docs.blender.org/api/blender_python_api_2_93_2/bpy.app.background.html  <br>- Mitsuba 2: https://mitsuba2.org/ |
-| SG-12.1 | **Watertight repair swap** | Replace the custom repair logic in `backend/postprocess/repair.py` with a call to ManifoldPlus (via its Python binding) or CGAL’s `repair_polygon_soup`. Provide a fallback to the existing implementation if the library fails. | pending | medium | - Benchmark repair quality and speed on a set of problematic meshes. |
-| SG-12.2 | **Decimation/LOD enhancement** | While `meshoptimizer` is already used, evaluate OpenVDB’s quadric error metrics for potentially better quality‑to‑speed ratio, especially for massive meshes. | pending | low | - Keep meshoptimizer as default; add a flag to switch to OpenVDB if desired. |
-| SG-12.3 | **UV unwrapping confirmation** | Verify that `xatlas` is already integrated; if not, add it as the default unwrapper, falling back to the existing method only if xatlas fails. | pending | low | - xatlas is permissively licensed (MIT) and widely used. |
-| SG-12.4 | **PBR baking pipeline** | Integrate Mitsuba 2 (or Blender headless) to bake ambient occlusion, curvature, and normal maps from high‑detail meshes, storing the textures alongside the existing albedo/normal/roughness/metallic maps. | pending | medium | - Use a subprocess call to Mitsuba with a generated scene file; ensure the environment variable points to the Mitsuba binary. |
-| SG-12.5 | **Normal mapping toolkit** | Use `xNormal` (command‑line) or OpenGL SDK tutorials to generate tangent‑space normal maps from high‑poly meshes; integrate as an optional step after PBR baking. | pending | low | - Provide a script that wraps `xNormal` if installed; otherwise skip. |
-| SG-13 | **Documentation Updates** | Add `docs/SMART_SELECTOR.md` describing endpoint, intents, and configuration. Update `Docs/ARCHITECTURE.md` with new “Smart Generation Pipeline” section. Update `Docs/PRD.md` to reflect new smart‑generation feature. Update `CONTRIBUTING.md` to note that any new adapter must expose `low_vram_supported` and follow lazy‑import pattern. Update `Docs/OPEN_SOURCE_TOOLS.md` (new) listing integrated open‑source libraries and their licenses. | pending | high | - RULES.md requires docs update after each meaningful change |
-| SG-14 | **Verification & Testing** | Add unit tests for `smart_selector.py` (mock `models.yaml`). Add integration test for smart endpoint (uses a dummy adapter). Add tests for image enhance utility, WebSocket preview, and open‑source library integrations. Ensure `FORMASH_POSTPROCESS_E2E=1 pytest backend/tests/` passes. Update `scripts/verify_contracts.py` to include new smart endpoint and WebSocket in OpenAPI validation. | pending | high | - Follow existing verification patterns |
-| SG-15 | **Release Checklist Items** | Add to release checklist: <br> - [ ] Smart Selector endpoint functional <br> - [ ] Smart‑Flow adapter optional but buildable (weights downloadable) <br> - [ ] Image enhancement toggle works <br> - [ ] Auto‑repair / auto‑split toggles functional <br> - [ ] Auto‑rigging flag works <br> - [ ] Real‑time preview WebSocket functional <br> - [ ] Open‑source libraries integrated and documented <br> - [ ] Documentation updated | pending | high | - Align with existing release checklist |
+Before changing code:
 
-## Verification performed in this audit
+1. Read the task and every file in the execution path.
+2. Trace the request from UI → API → scheduler → adapter → storage → post-process → artifact delivery.
+3. Search every caller of any function being changed.
+4. Identify the actual cause rather than patching the visible symptom.
+5. Reuse an existing function, utility, endpoint, store, schema, or service whenever possible.
+6. Implement the smallest correct change.
+7. Run targeted tests first, then broader verification.
+8. Update all relevant documentation before declaring the task complete.
 
-- Re-read `RULES.md`, the complete `Docs/` documentation set, the current `Dev` branch tree, generation routing, scheduler, post-processing, and contract-test code.
-- Cross-checked the current frontend model registry against the backend feature/capability contract.
-- Cross-checked documented Text-to-3D routes against the actual backend route surface and removed stale documentation.
-- Added runtime-toggle regression coverage and removed a stale Text-to-3D topology test.
-- Python syntax checks are required for the modified backend modules before release.
+## 1.2 No duplicate systems
 
-## Verification that remains environment-gated
+Do not create:
 
-These items are **not marked complete without the required runtime environment**:
+- a second history database when job history already exists;
+- a second batch scheduler when the existing scheduler can queue jobs;
+- a second exporter when \`meshExport.js\` and \`ExportMeshDialog.jsx\` already provide export primitives;
+- a second rigging service when \`unirig_auto_rig\` already exists;
+- a second repair engine when \`backend/postprocess/services/repair.py\` exists;
+- a second image editor when the existing Image Editor already supports manual crop/filter operations;
+- a new WebSocket abstraction until the actual backend transport exists.
 
-| Check | Status | Reason |
-|---|---|---|
-| Full 22-model GPU smoke test | NOT RUN | Requires the actual model weights and compatible CUDA environment. |
-| 50 concurrent jobs on 4×A100 | NOT RUN | No 4×A100 load-test environment is available in this workspace. |
-| Redis multi-worker live integration | NOT RUN | Requires a running Redis service plus multi-worker runtime. |
-| SAST/DAST vendor scan | NOT RUN | No external scanner result is available; this ledger does not fabricate a pass. |
-| Mobile/responsive visual sweep | NOT RUN | Requires browser/device interaction. |
-| Smart Selector endpoint integration test | NOT RUN | Requires the new smart selector code and at least one adapter (can be dummy) to run. |
-| Smart‑Flow adapter build test | NOT RUN | Requires downloading optional weights and compiling the adapter. |
-| TensorRT optimization test | NOT RUN | Requires RTX 40‑series GPU and TensorRT installed. |
-| Real‑time preview WebSocket test | NOT RUN | Requires WebSocket endpoint and a frontend client to consume stream. |
-| Open‑source library integration test | NOT RUN | Requires verification that external libraries compile/link correctly and license compliance. |
+## 1.3 Resource safety
 
-## Dependency baseline
+Any feature that can create multiple generation jobs must be resource-admission aware.
 
-Current repository manifests are authoritative:
+Rules:
 
-- Frontend: Next.js `^16.2.11`, React `^19.2.8`, Axios `^1.8.1`, TypeScript `^7.0.2`.
-- Backend: FastAPI `0.104.1`, Pydantic `>=2.10`, PyTorch `2.6.0+cu124`.
-- Optional: ONNX Runtime, TensorRT (for SG‑10), RealESRGAN, RMBG‑1.4 (for SG‑06), UniRig & ARDY already present, plus candidate open‑source libraries for SG‑12 (ManifoldPlus, CGAL, meshoptimizer, xatlas, Blender headless, Mitsuba 2).
+- Never submit N GPU jobs blindly from the browser with \`Promise.all\`.
+- The scheduler is the source of truth for concurrency.
+- The UI may request concurrency, but the scheduler must decide whether a job runs immediately or remains queued.
+- If the selected model cannot fit the available VRAM/RAM budget, the job must remain queued or be rejected with a clear reason; it must never be started merely because the browser clicked “Generate”.
+- Comparison and batch workflows must degrade to sequential execution when concurrent execution would exceed the available resource budget.
+- User-visible status must distinguish **queued because of resources** from **failed**.
 
-No GitHub Actions workflow is currently present in `.github/workflows/`; local contract verification is therefore not described as a CI gate.
+## 1.4 Failure honesty
 
-## Implementation Roadmap and Success Metrics
+A partial artifact must never be presented as fully production-ready.
 
-**Milestones (Quarterly Targets)**
+Examples:
 
-| Quarter | Target | Description |
-|---|---|---|
-| Q4 2026 | Smart Selector Endpoint & Core | Deploy SG-01 and SG-02; basic intent‑based model selection and post‑process overrides functional in staging. |
-| Q1 2027 | Smart‑Flow Adapter & Image Enhancement | Release optional Smart‑Flow adapter (SG-03) and image enhancement toggle (SG-06); verify watertight output and improved visual fidelity. |
-| Q2 2027 | Open‑Source Library Integration | Integrate ManifoldPlus/CGAL for watertight repair (SG-12.1), confirm quality uplift; add Mitsuba 2 PBR baking (SG-12.4). |
-| Q3 2027 | Real‑Time Preview & WebSocket | Implement SG-11; users can see low‑resolution previews and cancel long jobs. |
-| Q4 2027 | Advanced Features | Deploy ControlNet spatial guidance (SG-05), Triplane‑Octree latent swap (SG-04), recursive part‑based generation (SG-09), and inference speed‑ups (SG-10). |
-| Q1 2028 | Documentation & Polishing | Complete SG-13, SG-14, and release checklist items; prepare public release. |
+- Auto-rig failure must not leave a “rigged” status.
+- Texture loss in a textured production artifact must be surfaced.
+- Export conversion failure must be explicit.
+- Printability check failure must remain visible.
+- A preview transport that is not implemented must not be simulated as a live WebSocket.
 
-**Success Metrics**
+## 1.5 Documentation
 
-- **Generation Latency**: Reduce average end‑to‑end time for a game‑ready mesh (including post‑process) from ~30 s to ≤ 10 s on a RTX 3060 (6 GB VRAM) when using the smart selector with appropriate intent.
-- **Watertightness Rate**: Increase the percentage of generated meshes that pass a manifold check from ~70 % (baseline) to ≥ 95 % across a diverse test set of 1 000 images.
-- **User Satisfaction**: Target a ≥ 4.5/5 average rating in internal user studies for the one‑click smart selector versus manual parameter tuning.
-- **Resource Efficiency**: Lower average VRAM consumption per job by 20 % through intelligent model selection and automatic down‑shifting, enabling more concurrent jobs on fixed hardware.
-- **Open‑Source Adoption**: Ensure that at least 80 % of post‑process steps (repair, decimation, UV unwrapping, PBR baking, normal mapping) rely on battle‑tested open‑source libraries, reducing custom code maintenance burden.
+After every meaningful implementation task, update the relevant existing docs:
 
-**Risk Monitoring**
+- \`Docs/TASKS.md\`
+- \`Docs/ARCHITECTURE.md\`
+- \`Docs/PRD.md\`
+- \`Docs/DESIGN.md\`
+- \`Docs/MEMORY.md\`
+- \`Docs/api-documentation.md\`
+- \`Docs/DECISIONS.md\` when a durable architecture decision is made
+- \`Docs/CHANGELOG.md\` according to the repository's “last three changes” policy
+- \`README.md\` when a public capability or workflow changes
+- \`CONTRIBUTING.md\` when contributor-facing conventions change
 
-- **License Compliance**: Track all integrated libraries; ensure MIT/BSD/Apache/GPL‑compatible usage; flag any GPL‑only components for possible isolation.
-- **Integration Complexity**: Limit changes to existing interfaces; prefer configuration flags and utility functions over deep refactoring.
-- **Performance Regression**: Run nightly benchmarks on a standard GPU (RTX 3060) to ensure latency does not regress beyond 5 % after each merge.
-## Technical Specifications and Integration Details
+Do not create duplicate documentation files merely to satisfy a task.
 
-### Smart Selector Algorithm (SG-02)
+---
 
-The core selector evaluates each candidate model across five dimensions, producing a normalized score in [0,1]. The final score is a weighted sum:
+# 2. Current Repository Baseline
 
-\[
-\text{Score} = w_1 \cdot S_{\text{intent}} + w_2 \cdot S_{\text{VRAM}} + w_3 \cdot S_{\text{texture}} + w_4 \cdot S_{\text{quad}} + w_5 \cdot S_{\text{lowVRAM}} + w_6 \cdot S_{\text{rig}}
-\]
+The current \`Dev\` branch already contains substantial infrastructure. The following must be treated as the baseline rather than rebuilt.
 
-where:
-- \(S_{\text{intent}}\) = 1.0 if the model’s primary capability matches the intent (e.g., texture_support for cinematic, quad_retopo for game_ready), else 0.0.
-- \(S_{\text{VRAM}}\) = \(\frac{\max(0, \text{VRAM}_{\text{available}} - \text{VRAM}_{\text{requirement}})}{\text{VRAM}_{\text{available}}}\) capped at 1.0, rewarding headroom.
-- \(S_{\text{texture}}\) = 1.0 if the model supports texture generation (either native or via Shape→Paint chain), else 0.0.
-- \(S_{\text{quad}}\) = 1.0 if the model lists quad_retopo capability, else 0.0.
-- \(S_{\text{lowVRAM}}\) = 1.0 if the model’s `low_vram_supported` flag is true, else 0.0.
-- \(S_{\text{rig}}\) = 1.0 if the model includes rigging support (UniRig/ARDY), else 0.0.
+## 2.1 Existing generation pipeline
 
-Default weights (tunable via `backend/config/smart_weights.yaml`):
-- w1 = 0.30 (intent match)
-- w2 = 0.20 (VRAM headroom)
-- w3 = 0.15 (texture)
-- w4 = 0.10 (quad retopo)
-- w5 = 0.10 (low‑VRAM friendliness)
-- w6 = 0.05 (rigging)
+Current contract:
 
-The selector discards any model where `VRAM_requirement > VRAM_available * (1 + safety_margin)`, where the safety margin is derived from the environment variable `VRAM_SAFETY_MARGIN_MB` (default 1024 MB) converted to a fraction of total VRAM.
+\`\`\`
+image upload
+→ model capability routing
+→ native inference
+→ immutable source/master asset
+→ production post-process
+→ QA
+→ artifact delivery
+\`\`\`
 
-### Post‑Process Override Mapping (SG-02.2)
+Already present:
 
-Each intent maps to a baseline set of flags (see table below). The selector returns this baseline; the API layer then merges any user‑provided explicit parameters (user overrides selector).
+- capability-aware image-to-raw / image-to-textured routing;
+- multi-view related infrastructure;
+- scheduler with VRAM-aware execution;
+- source/master asset preservation;
+- repair;
+- auto-retopo;
+- UV processing;
+- LOD generation;
+- collision/physics preparation;
+- history endpoints;
+- mesh export utilities;
+- UniRig adapter;
+- image-editor utilities;
+- generation settings persistence.
 
-| Intent | target_polycount | texture_resolution | enable_lod | lod_levels | enable_collision | enable_quad_retopo | enable_pbr_bake | enable_printability_check | enable_auto_repair | enable_auto_split | enable_auto_rig | enable_part_gen |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| game_ready | 50 000 | 1024 | true | 3 | true | true | true | false | false | false | false | false |
-| cinematic | 200 000 | 2048 | true | 2 | false | false | true | false | false | false | false | false |
-| animation | 30 000 | 1024 | true | 2 | false | true | true | false | false | false | true | false |
-| 3d_print | 0 (source detail) | 0 | false | 0 | true | false | false | true | true | true | false | false |
-| mobile | 20 000 | 512 | true | 1 | false | true | true | false | false | false | false | false |
+## 2.2 Existing Asset History is partial, not absent
 
-These values are further clamped by the scheduler’s VRAM‑aware down‑shift utilities (`clamp_texture_by_vram`, `clamp_polycount_by_vram`) to guarantee that the job fits within the selected GPU’s memory budget.
+Current code already has:
 
-### Smart‑Flow Adapter (SG-03) – Technical Outline
+- \`features/workspace/Dashboard/OutputsPage.tsx\`
+- \`features/workspace/store/WorkspaceContext.tsx\`
+- \`features/workspace/lib/api.ts\`
+- \`stores/useAppStore.ts\`
+- \`/api/v1/system/jobs/history\`
+- thumbnail metadata;
+- polygon/vertex/material/topology metadata;
+- post-process status;
+- delete-history support.
 
-The Smart‑Flow adapter is based on the Meshy T2 flow‑based formulation:
+Therefore **Asset History must be upgraded, not rebuilt**.
 
-1. **Input Encoding**: An RGB image is passed through a shallow CNN (ResNet‑18) to obtain a 256‑dim feature map.
-2. **Latent Vertex Generation**: A flow‑matching model predicts a set of vertex coordinates \(V \in \mathbb{R}^{N \times 3}\) and an existence confidence \(c \in [0,1]^N\). The loss encourages the existence confidence to be high for vertices that belong to the mesh and low for padding vertices.
-3. **Edge Prediction**: Simultaneously, the model predicts an adjacency matrix \(A \in \{0,1\}^{N \times N}\) representing undirected edges, supervised by a binary cross‑entropy loss on the ground‑truth mesh’s edge set.
-4. **Decoding**: Vertices with \(c > \tau\) (threshold 0.5) are kept; edges where both endpoint vertices are kept and \(A_{ij} > 0.5\) are retained. The resulting vertex‑edge graph is fed to a lightweight post‑process that extracts faces via ear‑clipping on the projected 2D layout (ensuring manifoldness).
-5. **Face Budget Control**: A scalar \(\lambda\) modulates the trade‑off between existence confidence and edge density; increasing \(\lambda\) yields fewer vertices/edges, thus lower polycount. The selector provides a target polycount that is translated to a \(\lambda\) via a small lookup table derived from offline calibration.
+## 2.3 Existing batch infrastructure is partial
 
-The adapter outputs a watertight manifold mesh (if the Euler characteristic \(V - E + F = 2\) holds; otherwise it falls back to the standard pipeline). Because the generation and edge prediction are joint, the output often requires no explicit repair or decimation, matching the “no‑cleanup needed” promise of Tripo/Meshy.
+Current code already has:
 
-Integration points:
-- The adapter registers itself as `smartflow` in `models.yaml`.
-- It reuses the existing `BaseAdapter` lazy‑import pattern, ensuring no impact on startup time unless selected.
-- GPU memory consumption is dominated by the flow‑matching network (~1.2 GB FP16 for the base variant), leaving ample room for post‑process on cards with ≥ 6 GB VRAM.
+- \`batchGenerationEnabled\`
+- \`batchQueue\`
+- batch queue actions in \`stores/useAppStore.ts\`
+- \`BatchQueueItem\`
 
-### Open‑Source Library Integration Notes (SG-12)
+However, the current queue is still prompt-centric in places, while the active product contract is Image → 3D.
 
-| Library | License | Integration Point | Wrapper Status |
-|---|---|---|---|
-| **Manifold** | MIT | Watertight repair (replace custom boolean logic) | Header‑only; compile‑time include; Python binding via `cffi` or `pybind11` already evaluated. |
-| **ManifoldPlus** | Non‑commercial (free for research/commercial with attribution) | Alternative watertight repair for challenging soups | Requires building a shared library; provides C API. |
-| **CGAL** | GPL/LGPL | Complementary repair, hole filling, convex decomposition | LGPL allows linking; we will isolate CGAL calls behind a dynamic loader to avoid contaminating the main binary with GPL if needed. |
-| **meshoptimizer** | MIT | Decimation, LOD, vertex cache optimization | Already integrated via Cython wrapper; no change needed. |
-| **OpenVDB** | MPL‑2.0 | Hierarchical LOD, quadric error metrics for massive meshes | Optional; provides C++ and Python bindings. |
-| **xatlas** | MIT | UV unwrapping | Already used; header‑only; easy to call from C/C++/Python. |
-| **libigl** | MPL‑2.0/GPL | Fallback UV, normal map generation, curvature | Header‑only; optional CGAL components. |
-| **Mitsuba 2** | Apache 2.0 | PBR texture baking (AO, curvature, normal) | Provides a Python module; can be invoked as a subprocess for headless rendering. |
-| **Blender** | GPL | Background render for baking (fallback if Mitsuba unavailable) | Isolated subprocess; GPL does not affect our code as we only call the executable. |
-| **xNormal** | Freeware | High‑quality normal/AO/displacement maps | Command‑line tool; wrap via subprocess. |
-| **OpenGL SDK** | Various | Tangent‑space normal map generation via shaders | Useful for custom shader pipelines; we may generate a simple GLSL script to compute TBN matrices. |
+The batch task must therefore **retrofit the existing queue to image inputs** instead of introducing a separate queue system.
 
-All libraries with permissive licenses (MIT, MPL‑2.0, Apache 2.0) can be linked directly. GPL components (libigl optional parts, Blender, CGAL if GPL) will be accessed via subprocess or dynamic loading to maintain licensing compatibility with ForMash3D’s Apache 2.0 stance.
+## 2.4 Existing export infrastructure is substantial
 
-### Real‑Time Preview WebSocket (SG-11) – Protocol
+Current code already has:
 
-The WebSocket endpoint follows a simple JSON‑binary hybrid protocol:
+- \`features/utils/meshExport.js\`
+- \`features/mesh-extras/ExportMeshDialog.jsx\`
+- GLB/OBJ/PLY/STL export;
+- Unity FBX preset;
+- Unreal FBX preset;
+- generic FBX;
+- collision merging;
+- LOD exports;
+- batch export;
+- folder browsing;
+- texture handling.
 
-1. **Connection**: Client opens `ws://<host>:<port>/api/v1/system/jobs/{job_id}/preview`.
-2. **Initial Message**: Server sends `{ "type": "hello", "job_id": "...", "total_steps": N }`.
-3. **Periodic Updates**: Every time the job’s internal progress counter increments by 5 % (or every 2 seconds, whichever comes first), the server:
-   - Retrieves the current state (either the raw `source.glb` if generation is in progress, or the latest intermediate mesh from post‑process).
-   - Calls `meshoptimizer.simplify` to obtain a LOD with vertex count = `base_vertex_count * progress_factor` (clamped between 1 000 and 100 % of base).
-   - Encodes the mesh as a binary GLB (or as separate vertex/index buffers) and sends a binary message prefixed with a 4‑byte length header.
-   - Simultaneously sends a JSON metadata packet: `{ "type": "mesh", "progress": 0.42, "vertex_count": 5842 }`.
-4. **Completion**: On job success, a final message with `type: "result"` and the download URL for the full‑resolution assets is sent.
-5. **Cancellation**: If the client closes the WebSocket or sends `{ "type": "cancel" }`, the server forwards a cancel request to the scheduler and ends the stream.
+The one-click engine export task must package and expose these capabilities cleanly rather than duplicate exporters.
 
-This design ensures low bandwidth usage early in the process while delivering increasing fidelity as the job proceeds, giving users immediate feedback and the ability to abort undesirable outcomes.
+## 2.5 Existing rigging infrastructure is present
 
-### Performance Benchmarks (Baseline vs. Smart Selector)
+Current code already has:
 
-All numbers are measured on an Ubuntu 22.04 host with an RTX 3060 (6 GB VRAM), using the default pipeline (Trellis base + standard post‑process) unless otherwise noted.
+- \`backend/adapters/unirig_adapter.py\`
+- \`unirig_auto_rig\` model registration;
+- \`backend/api/routers/auto_rigging.py\`;
+- frontend auto-rig helpers;
+- \`autoRig\` generation state.
 
-| Scenario | Avg. Latency (s) | VRAM Peak (GB) | Watertight % | Notes |
-|---|---|---|---|---|
-| Baseline (manual, intent=game_ready) | 28.4 | 5.8 | 68% | User must set polycount, texture size, enable repair etc. |
-| Smart Selector (game_ready intent) | 9.7 | 4.9 | 92% | Automatic model picks Trellis base, sets polycount=50k, texture=1024, enables repair+retopo+LOD+collision+PBR. |
-| Smart‑Flow (optional) | 6.3 | 3.2 | 96% | Flow‑based generator produces watertight mesh directly; skips repair/retopo. |
-| Smart‑Flow + Mitsuba PBR | 8.1 | 4.1 | 96% | Adds PBR baking step; still under 10 s target. |
-| 4× Concurrent Smart Selector jobs | — | 5.6 GB total | — | With VRAM safety margin 1024 MB, scheduler allows up to 4 jobs sequentially; no OOM observed. |
+What is missing is the **generation-pipeline wiring for an explicit \`enable_auto_rig\` contract**.
 
-These benchmarks demonstrate that the smart selector can meet the latency and quality targets outlined in the success metrics.
+## 2.6 Existing printability/repair infrastructure is present
 
-## Release checklist
-## Release checklist
+Current code already has:
 
-- [x] Single-image generation uses capability-aware endpoint routing.
-- [x] Production polycount budgets remain downstream-only.
-- [x] Telemetry refresh is 5 seconds.
-- [x] Legacy Text-to-3D generation route/client mappings are removed.
-- [x] Native texture loss cannot silently become a successful game-ready asset.
-- [x] Scheduler runtime toggles are not import-time constants.
-- [x] Core documentation agrees with the current route and model surfaces.
-- [ ] Full GPU model smoke suite.
-- [ ] 4×A100 concurrency load test.
-- [ ] Live Redis multi-worker integration.
-- [ ] External SAST/DAST report.
-- [ ] Smart Selector endpoint functional
-- [ ] Smart‑Flow adapter optional but buildable
-- [ ] Image enhancement toggle works
-- [ ] Auto‑repair / auto‑split toggles functional
-- [ ] Auto‑rigging flag works
-- [ ] Real‑time preview WebSocket functional
-- [ ] Open‑source libraries integrated and documented
-- [ ] Documentation updated
+- \`backend/postprocess/services/repair.py\`;
+- topology counts;
+- boundary-edge detection;
+- non-manifold detection;
+- watertight status;
+- UV-preserving repair;
+- auto-retopo watertight processing;
+- segmentation tools.
+
+Therefore SG-07 should expose and orchestrate what already exists before considering a new geometry library.
+
+## 2.7 Existing image preprocessing pieces are distributed
+
+Current code already contains background-removal and preprocessing logic in several model integrations, including:
+
+- RealESRGAN support;
+- RMBG-based paths;
+- adapter-level background removal;
+- image-editor crop/filter functionality.
+
+The problem is that these capabilities are **distributed rather than exposed as one shared pre-generation experience**.
+
+The SG-06 task must consolidate the orchestration layer while reusing the existing model-specific implementations wherever technically safe.
+
+## 2.8 Existing generation settings persistence is partial
+
+\`stores/useAppStore.ts\` already persists lightweight generation preferences.
+
+Therefore named user presets should extend that persistence rather than introduce an unrelated settings store.
+
+## 2.9 Current WebSocket reality
+
+The current frontend explicitly treats backend job state as REST-driven and the current workspace API's WebSocket methods are placeholders/no-ops.
+
+Therefore SG-11 remains a **hold item**. Do not implement fake streaming or invent a protocol until the actual backend transport exists.
+
+---
+
+# 3. Priority Ladder
+
+## P0 — Blocking quality work
+
+### BUG-Q1 → BUG-Q8 — Raw mesh quality closure
+
+**Status:** BLOCKER / must be completed before declaring the next feature milestone ready.
+
+The eight raw-quality bugs were identified in the previous quality investigation but are not represented with enough detail in the current task ledger.
+
+### Required execution
+
+Before implementing any new P1 feature:
+
+1. Recover the exact Q1–Q8 root-cause notes from the previous engineering session, branch history, existing issue/commit context, and affected source files.
+2. Do not invent descriptions for Q1–Q8 from memory.
+3. For each bug create a concrete entry in the execution log containing:
+   - exact symptom;
+   - affected model(s);
+   - exact root cause;
+   - reproduction input;
+   - affected stage;
+   - minimal fix;
+   - regression test;
+   - verification result;
+   - commit reference.
+4. Trace both single-image and any sibling generation path that shares the same helper.
+5. Verify the immutable source asset before and after the fix.
+6. Compare native output to post-processed output to determine whether the quality loss occurs during inference or finishing.
+7. Do not “fix” a raw-quality issue by adding downstream smoothing or decimation unless the root cause is actually downstream.
+
+### P0 acceptance criteria
+
+All Q1–Q8 entries must have:
+
+- root cause identified;
+- code fix merged;
+- targeted regression test added or an existing test explicitly extended;
+- native source asset checked;
+- post-process asset checked;
+- no texture/UV regressions;
+- no new silent decimation;
+- no fabricated test result.
+
+**Stop condition:** If any Q1–Q8 issue remains root-cause-unresolved, do not mark this section complete.
+
+---
+
+# 4. P1 — High-value / Low-effort Features
+
+---
+
+## SG-06 — Image Enhancement / Auto-Fix + Preview
+
+**Priority:** HIGH  
+**Timing:** Immediately after P0  
+**Goal:** Improve the quality of the image entering the 3D generator without changing the neural model itself.
+
+### Problem
+
+Poor input images cause:
+
+- weak silhouette extraction;
+- incorrect subject/background separation;
+- low detail;
+- unnecessary background geometry;
+- poor framing;
+- avoidable generation artifacts.
+
+The repository already has RealESRGAN/RMBG capabilities, but they are not exposed as one coherent pre-generation pipeline.
+
+### What to build
+
+Add one shared pre-generation enhancement flow:
+
+\`\`\`
+uploaded image
+  ↓
+input inspection
+  ↓
+RMBG preview / subject isolation
+  ↓
+auto crop + center subject
+  ↓
+resolution inspection
+  ↓
+RealESRGAN only when useful
+  ↓
+optional denoise/sharpen
+  ↓
+approved preprocessed image
+  ↓
+generation scheduler
+\`\`\`
+
+### User flow
+
+1. User uploads image.
+2. UI immediately shows the original and “Generation Preview”.
+3. Preview shows the background-removed/normalized subject.
+4. User can:
+   - Accept;
+   - regenerate preprocessing;
+   - open the existing manual image editor;
+   - disable enhancement.
+5. Once accepted, the exact approved image becomes the generation input.
+6. Generation stores provenance linking the generated asset to the approved preprocessing artifact.
+
+### Required preprocessing policy
+
+Default behavior must be **adaptive**, not destructive.
+
+- Low-resolution input → upscale using existing RealESRGAN capability.
+- Already-high-resolution input → do not blindly upscale.
+- Existing alpha/mask → preserve it and avoid unnecessary second matting.
+- Background removal → preview first whenever possible.
+- Auto-crop → only crop to the detected subject with a configurable safety margin.
+- Centering → preserve the subject's relative orientation and proportions.
+- Noise reduction/sharpening → conservative defaults; avoid hallucinating texture.
+- Enhancement failure → preserve the original input and show a clear warning rather than silently changing the source.
+
+### Reuse requirements
+
+Inspect and reuse:
+
+- existing RealESRGAN checkpoint/path resolution;
+- existing RMBG/model-specific wrappers;
+- existing image-editor crop/filter functionality;
+- existing upload/proxy APIs;
+- existing workspace generation settings.
+
+Do not duplicate every adapter's background-removal implementation.
+
+### Integration point
+
+Preferred architecture:
+
+\`\`\`
+Upload
+  ↓
+Enhancement/Preview service
+  ↓
+approved image artifact
+  ↓
+scheduler job input
+  ↓
+adapter
+\`\`\`
+
+The enhancer should run once at job preparation level when the selected model can consume the shared result.
+
+Model-specific adapters may retain their own required preprocessing when it is an intrinsic part of the upstream model contract, but the shared layer must avoid double-processing.
+
+### Data/provenance
+
+Record:
+
+- original image ID;
+- enhanced image ID;
+- preprocessing operations;
+- RealESRGAN used/not used;
+- RMBG used/not used;
+- crop rectangle;
+- final dimensions;
+- content hash.
+
+### Acceptance criteria
+
+- Enhancement preview appears before generation.
+- “Looks wrong? Edit manually” uses the existing Image Editor rather than a duplicate editor.
+- Same approved image artifact is used by the final generation job.
+- Low-resolution inputs receive useful upscaling.
+- Good high-resolution inputs are not unnecessarily degraded.
+- Existing alpha is not destroyed.
+- Enhancement failure does not produce a false-success generation.
+- The generated history entry shows that enhancement was used.
+- Existing direct generation still works with enhancement disabled.
+
+### Tests
+
+- RGB input.
+- RGBA input.
+- low-resolution input.
+- already-high-resolution input.
+- subject on complex background.
+- subject already isolated.
+- enhancement disabled.
+- RealESRGAN unavailable.
+- RMBG unavailable.
+- malformed image.
+- crop bounds regression.
+- identical approved-input hash reused by job.
+
+---
+
+## SG-07 — Printability Check + Auto-Repair
+
+**Priority:** HIGH  
+**Timing:** P1  
+**Goal:** Make print-readiness an explicit, deterministic production check.
+
+### Phase A — Implement now
+
+Expose existing topology analysis as a first-class production flag.
+
+Recommended flags:
+
+- \`enable_printability_check\`
+- \`enable_auto_repair\`
+
+Defaults:
+
+- normal generation → off unless user/preset enables;
+- \`3d_print\` intent → on by preset.
+
+### Existing implementation to reuse
+
+Use:
+
+- \`backend/postprocess/services/repair.py\`
+- existing watertight/non-manifold/boundary checks;
+- existing repair pipeline;
+- existing quality-report infrastructure.
+
+### Decision flow
+
+\`\`\`
+mesh
+ ↓
+printability analysis
+ ↓
+PASS → continue
+FAIL + auto_repair=false → keep failure/warning visible
+FAIL + auto_repair=true
+ ↓
+repair
+ ↓
+recheck
+ ↓
+PASS → continue
+FAIL → explicit degraded/failed printability state
+\`\`\`
+
+### Metrics
+
+At minimum record:
+
+- watertight;
+- boundary edges;
+- non-manifold edges;
+- face/vertex counts;
+- connected components;
+- repair attempted;
+- repair result;
+- number of removed/filled/detached faces where available.
+
+### Phase B — Auto-split, only if justified
+
+Do not build a new splitter immediately.
+
+If \`enable_auto_split\` is later activated:
+
+1. Reuse existing segmentation/splitting primitives.
+2. Validate that splitting actually improves printability.
+3. Process each part independently.
+4. Preserve transforms.
+5. Run repair/recheck per part.
+6. Record part count and per-part QA.
+7. Never split merely because a mesh is large.
+
+### Acceptance criteria
+
+- Existing \`repair.py\` logic is reused.
+- Printability status is exposed in production metadata.
+- Auto-repair is explicit and reproducible.
+- A failed repair is visible.
+- Textures/UVs are preserved where the existing UV-preserving repair path supports them.
+- Print intent presets turn the appropriate flags on automatically.
+
+### Tests
+
+- watertight mesh;
+- single-hole mesh;
+- non-manifold edge mesh;
+- repair-success mesh;
+- repair-failure mesh;
+- textured repair regression;
+- printability metadata schema test.
+
+---
+
+## SG-08 — Auto-Rigging Wiring
+
+**Priority:** HIGH  
+**Timing:** P1 after SG-07  
+**Goal:** Make the existing UniRig capability available as a generation pipeline option.
+
+### Current state
+
+The project already has:
+
+- UniRig adapter;
+- scheduler model registration;
+- auto-rigging API;
+- frontend auto-rig utility;
+- \`autoRig\` settings state.
+
+The missing part is a single generation-pipeline contract.
+
+### Required flag
+
+Use one canonical job-level flag:
+
+\`\`\`
+enable_auto_rig: boolean
+\`\`\`
+
+Do not keep multiple aliases.
+
+### Execution flow
+
+\`\`\`
+native generation
+ ↓
+production post-process
+ ↓
+canonical game-ready.glb
+ ↓
+if enable_auto_rig
+ ↓
+UniRig
+ ↓
+rigged game-ready artifact
+ ↓
+QA
+ ↓
+history/export
+\`\`\`
+
+### Rules
+
+- Auto-rig must run on the final production mesh, not on the immutable raw master.
+- Preserve the immutable source.
+- Do not claim success until the rigged asset is actually durable.
+- Preserve materials/UVs where the rigging path permits.
+- If UniRig fails, publish an explicit rigging failure/degraded artifact state.
+- Do not silently replace a production result with an unrigged result while reporting “rigged”.
+- Keep the existing manual rigging workflow intact.
+
+### Animation presets
+
+The repository contains ARDY/animation infrastructure, but **do not invent native embedded animation behavior**.
+
+Initial SG-08 scope:
+
+- auto-rig wiring only.
+
+Future animation-preset application can be a separate task after the rigged artifact contract is verified.
+
+### Acceptance criteria
+
+- UI toggle maps to \`enable_auto_rig\`.
+- Job payload contains exactly one canonical rigging flag.
+- Scheduler/post-process invokes existing UniRig path.
+- Rigging is capability-aware.
+- Rigged result exposes skeleton/rig metadata.
+- Failure is explicit.
+- Manual rigging remains functional.
+
+### Tests
+
+- auto-rig off → no UniRig call;
+- auto-rig on + valid model;
+- auto-rig unavailable;
+- UniRig failure;
+- rigged artifact history entry;
+- export preserves rig/animation clips where existing exporter supports them.
+
+---
+
+## SG-02.2 — Intent Presets
+
+**Priority:** HIGH  
+**Timing:** P1  
+**Goal:** Provide deterministic one-click production recipes without a complex scoring system.
+
+### Critical simplification
+
+Do **not** implement the previous six-dimensional weighted model-scoring algorithm as the first smart-generation layer.
+
+For a self-hosted project, the first useful abstraction is:
+
+\`\`\`
+intent → preset → capability-aware model choice → generation → game-ready
+\`\`\`
+
+### Preset storage
+
+Use a versioned YAML config, preferably:
+
+\`\`\`
+backend/config/smart_presets.yaml
+\`\`\`
+
+Do not duplicate the same values across frontend and backend.
+
+### Initial built-in presets
+
+#### game_ready
+
+- target polycount: 50,000
+- texture resolution: 1024
+- LOD: enabled
+- collision: enabled
+- production QA: enabled
+- auto UV: enabled where needed
+- auto rig: optional / user-selected
+
+#### cinematic
+
+- target polycount: 200,000
+- texture resolution: 2048
+- LOD: enabled
+- collision: off by default
+- preserve maximum source fidelity
+
+#### animation
+
+- target polycount: 30,000
+- texture resolution: 1024
+- LOD: enabled
+- quad/retopo preference as supported
+- auto-rig: enabled or prominently suggested
+
+#### 3d_print
+
+- preserve source detail where possible
+- texture output not required unless user requests it
+- printability check: enabled
+- auto-repair: enabled
+- collision: optional
+- no unnecessary texture baking
+
+#### mobile
+
+- target polycount: 20,000
+- texture resolution: 512
+- LOD: enabled
+- collision: optional
+- resource-efficient model preference
+
+### Model choice policy
+
+Do not score six independent dimensions.
+
+Instead:
+
+1. Filter to models compatible with Image → 3D.
+2. Filter to models that satisfy the intent's minimum capability.
+3. Filter by readiness/installation state.
+4. Filter by VRAM constraints.
+5. Use a deterministic priority order for the remaining models.
+6. Return the chosen model and the exact applied preset.
+
+### User override rule
+
+Preset values are defaults.
+
+Explicit user values win.
+
+\`\`\`
+preset defaults
+   ↓
+model capability constraints
+   ↓
+user explicit overrides
+   ↓
+scheduler safety clamps
+\`\`\`
+
+### Acceptance criteria
+
+- One YAML source of truth.
+- Five intents available.
+- No weighted scoring engine.
+- Model selection is deterministic.
+- User overrides are respected.
+- Scheduler still clamps for VRAM.
+- Applied preset and chosen model are stored in job metadata.
+
+---
+
+# 5. Seven New Product Features From The Latest Product Review
+
+These seven features are required in the next product roadmap. Existing partial implementations must be extended rather than duplicated.
+
+---
+
+## UX-01 — Asset History / Generations Gallery
+
+**Priority:** HIGH  
+**Current state:** PARTIAL — upgrade existing implementation.
+
+### Why
+
+Users need to return to previously generated assets across sessions, inspect what was generated, reopen it, compare versions, and export it later.
+
+### Current code to reuse
+
+- \`features/workspace/Dashboard/OutputsPage.tsx\`
+- \`features/workspace/store/WorkspaceContext.tsx\`
+- \`features/workspace/lib/api.ts\`
+- \`stores/useAppStore.ts\`
+- \`/api/v1/system/jobs/history\`
+
+### Required result
+
+Upgrade the current gallery into a durable “My Assets” experience.
+
+### Asset card must show
+
+- thumbnail;
+- asset name;
+- created time;
+- model;
+- generation intent/preset;
+- source type;
+- poly/vertex count;
+- texture resolution/material state;
+- post-process status;
+- printability status where available;
+- rigged/unrigged status;
+- LOD availability;
+- production-ready/degraded/failed state.
+
+### Interaction
+
+Click asset → reopen exact artifact in workspace.
+
+Actions:
+
+- Open;
+- Duplicate/Regenerate;
+- Compare;
+- Diff;
+- Export;
+- Delete;
+- Favorite.
+
+### Filtering
+
+Support at least:
+
+- all;
+- completed;
+- degraded;
+- failed;
+- rigged;
+- textured;
+- game-ready;
+- 3d-print;
+- cinematic;
+- mobile.
+
+### Search
+
+Search by:
+
+- asset name;
+- job ID;
+- model;
+- intent/preset.
+
+### Persistence
+
+Use the existing backend job history and artifact metadata.
+
+Do not introduce a second asset database.
+
+### Acceptance criteria
+
+- Gallery survives page reload.
+- Existing history remains compatible.
+- Thumbnails use existing fallback logic.
+- Deleted jobs disappear from the gallery.
+- Reopening restores the correct artifact.
+- No duplicate history entry is created merely by reopening.
+
+---
+
+## UX-02 — Side-by-Side Model Comparison
+
+**Priority:** HIGH  
+**Current state:** NEW.
+
+### Why
+
+Users need an objective way to compare model output quality before selecting the final asset.
+
+### User flow
+
+1. Upload one source image.
+2. Select 2–3 compatible models.
+3. Keep common generation settings synchronized.
+4. Submit the jobs as one comparison group.
+5. Scheduler decides whether they run concurrently or sequentially.
+6. Show results in synchronized viewers.
+7. User can compare and keep one/all.
+
+### Required comparison metadata
+
+For each candidate:
+
+- model name;
+- generation time;
+- VRAM peak if available;
+- vertex count;
+- triangle count;
+- dimensions;
+- UV state;
+- texture state;
+- watertight status;
+- post-process status;
+- error/degraded state.
+
+### Resource behavior
+
+Never start three heavyweight models blindly.
+
+Decision:
+
+\`\`\`
+requested 3 models
+ ↓
+estimate/admit resource needs
+ ↓
+fits concurrency?
+ ├─ yes → concurrent
+ └─ no → scheduler queues/sequences
+\`\`\`
+
+### Reuse
+
+- existing generation endpoint;
+- existing scheduler;
+- existing job tracking;
+- existing MeshViewer;
+- existing Outputs/Asset History.
+
+Do not create a parallel model execution engine.
+
+### UI acceptance
+
+- same source image visible for all candidates;
+- synchronized orbit/zoom;
+- identical camera framing when possible;
+- model-specific errors do not hide successful candidates;
+- user can save selected candidate(s) to history.
+
+### Tests
+
+- 2 compatible models;
+- 3 compatible models;
+- one model unavailable;
+- insufficient VRAM;
+- one job failure;
+- sequential fallback;
+- history persistence.
+
+---
+
+## UX-03 — Batch Generation From Multiple Images
+
+**Priority:** HIGH  
+**Current state:** PARTIAL — existing queue is prompt-oriented and must be adapted to the current Image → 3D contract.
+
+### Why
+
+Studios and power users need to process many references without manually repeating Generate.
+
+### Required behavior
+
+User can:
+
+- upload multiple images;
+- optionally choose one shared preset/model/quality;
+- enqueue all inputs;
+- start once.
+
+Each image becomes one independent generation job.
+
+### Important correction to current implementation
+
+The current \`BatchQueueItem\` is prompt-centric in places.
+
+The active product contract requires:
+
+\`\`\`
+BatchQueueItem
+  input image
+  preprocessing recipe
+  model/preset
+  status
+  progress
+  result
+  error
+\`\`\`
+
+Do not keep prompt-only generation as the active 3D batch path.
+
+### Resource-aware admission
+
+This is mandatory.
+
+The browser must not launch all jobs simultaneously.
+
+Required UI states:
+
+- Ready;
+- Queued;
+- Running;
+- Resource-wait;
+- Completed;
+- Failed;
+- Cancelled.
+
+The scheduler decides actual concurrency.
+
+### Example
+
+For ten images:
+
+\`\`\`
+10 inputs
+ ↓
+10 queued jobs
+ ↓
+scheduler admits 1–N based on VRAM
+ ↓
+completed jobs free capacity
+ ↓
+next queued jobs start
+\`\`\`
+
+### Batch summary
+
+Show:
+
+- total;
+- completed;
+- failed;
+- queued;
+- average generation time;
+- total elapsed time;
+- resource-wait time.
+
+### Acceptance criteria
+
+- Multiple images can be uploaded in one action.
+- All jobs can be submitted without browser-side OOM.
+- Scheduler controls concurrency.
+- Batch can be cancelled.
+- Failed items can be retried individually.
+- Completed items appear in Asset History automatically.
+- Batch export can reuse existing export dialog.
+
+### Tests
+
+- 2 images;
+- 10+ images;
+- mixed resolutions;
+- duplicate filenames;
+- one corrupt image;
+- insufficient VRAM;
+- cancellation;
+- retry;
+- partial failures;
+- page reload while jobs are running.
+
+---
+
+## UX-04 — Generation Presets Save / Load
+
+**Priority:** HIGH  
+**Current state:** PARTIAL — settings persistence exists, named presets do not.
+
+### Why
+
+Artists repeatedly use recipes such as:
+
+- Game Ready 50K;
+- Cinematic 200K;
+- Mobile 20K;
+- 3D Print;
+- Animation Rig.
+
+### Separate two concepts
+
+#### Built-in intent presets
+
+Backend-owned and versioned:
+
+- \`smart_presets.yaml\`
+
+#### User presets
+
+User-owned named settings.
+
+Initial implementation should use the existing persisted frontend settings mechanism unless a cross-device persistence requirement is later established.
+
+### Preset fields
+
+At minimum:
+
+- model;
+- intent;
+- quality;
+- target polycount;
+- texture resolution;
+- LOD settings;
+- collision;
+- printability;
+- auto repair;
+- auto rig;
+- enhancement;
+- seed;
+- relevant model-specific generation parameters.
+
+Do not save transient runtime fields.
+
+### UX
+
+- Save current settings as preset.
+- Load preset.
+- Duplicate preset.
+- Rename.
+- Delete user preset.
+- Restore built-in default.
+- Show “built-in” vs “custom”.
+
+### Override behavior
+
+Loading a preset applies its values, but a later explicit user change overrides the preset.
+
+### Acceptance criteria
+
+- Named presets survive page reload.
+- Built-in presets remain versioned from YAML.
+- User presets cannot overwrite built-in definitions.
+- Invalid/stale fields are safely migrated.
+- Preset loading does not accidentally restore stale runtime job state.
+
+---
+
+## UX-05 — Mesh Diff Viewer
+
+**Priority:** HIGH  
+**Current state:** NEW.
+
+### Why
+
+The user currently cannot easily answer:
+
+> “What exactly did post-processing change?”
+
+This feature must make source → production differences visible.
+
+### Source of truth
+
+Use existing immutable:
+
+\`\`\`
+master/source.glb
+\`\`\`
+
+and existing production artifacts/quality metadata.
+
+Do not regenerate the source mesh just to compare it.
+
+### Required views
+
+Two synchronized panes:
+
+- Source / Native;
+- Game Ready / Final.
+
+Optional stage picker:
+
+- Source;
+- Repaired;
+- Retopologized;
+- LOD0;
+- LOD1;
+- LOD2;
+- collision.
+
+### Metrics
+
+At minimum:
+
+- vertices;
+- triangles/faces;
+- dimensions;
+- bounding box;
+- scale;
+- material count;
+- texture count;
+- texture resolution;
+- UV coverage;
+- UV overlap status;
+- watertight;
+- boundary edges;
+- non-manifold edges;
+- connected components;
+- LOD count;
+- file size;
+- post-process status.
+
+### Delta presentation
+
+Example:
+
+\`\`\`
+Triangles     612,400 → 50,120   -91.8%
+Vertices      318,000 → 27,100   -91.5%
+Watertight    false   → true
+UV coverage  71%     → 96%
+Textures      0       → 4
+LOD levels    0       → 3
+\`\`\`
+
+### Stage attribution
+
+Use existing quality-trace information so the UI can say:
+
+- “repair changed topology”;
+- “decimation reduced face count”;
+- “UV step added charts”;
+- “texture bake created material maps”.
+
+Do not perform expensive duplicate processing just to generate these labels.
+
+### Acceptance criteria
+
+- Source bytes remain unchanged.
+- Final artifact is accurately represented.
+- Stats match stored QA metadata.
+- Viewer camera can be synchronized.
+- Deltas are deterministic.
+- Missing optional metrics are shown as “Unavailable”, not guessed.
+
+---
+
+## UX-06 — One-Click Engine Export
+
+**Priority:** HIGH  
+**Current state:** PARTIAL — existing exporter primitives are strong.
+
+### Why
+
+“Export” should mean “ready for the selected engine”, not merely “download GLB”.
+
+### Existing code to reuse
+
+- \`features/utils/meshExport.js\`
+- \`features/mesh-extras/ExportMeshDialog.jsx\`
+- existing FBX presets;
+- existing collision merging;
+- existing LOD naming;
+- existing texture export;
+- existing batch export.
+
+### Targets
+
+#### Unreal Engine 5
+
+Default package:
+
+\`\`\`
+Unreal/
+  <AssetName>/
+    Mesh/
+      <AssetName>.fbx
+    Textures/
+      ...
+    LODs/
+      ...
+    Collision/
+      UCX_<AssetName>_01...
+    manifest.json
+    IMPORT.md
+\`\`\`
+
+Requirements:
+
+- centimeters/scale contract documented;
+- skeleton/animations preserved when present;
+- UCX collision naming maintained;
+- LOD naming explicit;
+- texture paths deterministic.
+
+#### Unity
+
+Default package:
+
+\`\`\`
+Unity/
+  <AssetName>/
+    Models/
+      <AssetName>.fbx
+    Textures/
+      ...
+    LODs/
+      ...
+    Materials/
+      ...
+    manifest.json
+    IMPORT.md
+\`\`\`
+
+Requirements:
+
+- Unity-ready FBX;
+- deterministic texture references;
+- optional material metadata/setup instructions;
+- rig/import hints;
+- LOD mapping.
+
+Do not generate fake proprietary Unity assets unless Unity tooling is actually available. A folder package plus import metadata is the default cross-platform contract.
+
+#### Godot
+
+Default package:
+
+\`\`\`
+Godot/
+  <AssetName>/
+    <AssetName>.glb
+    Textures/
+      ...
+    LODs/
+      ...
+    Materials/
+      ...
+    manifest.json
+    IMPORT.md
+\`\`\`
+
+Use GLB/glTF as the default Godot delivery format unless an explicit tested FBX workflow is requested.
+
+### General package contract
+
+Every engine export should contain:
+
+- canonical mesh;
+- textures;
+- LODs when enabled;
+- collision when enabled;
+- rig/animation data when present;
+- deterministic naming;
+- target engine metadata;
+- manifest;
+- human-readable import instructions.
+
+Zip is optional delivery, but the output must first be a valid structured package.
+
+### Acceptance criteria
+
+- One click selects target engine.
+- Existing exporter functions are reused.
+- Package structure is deterministic.
+- No broken relative texture paths.
+- Collision naming is valid for the target.
+- LOD files are consistently named.
+- Manifest lists every generated artifact.
+- Failed optional conversions are clearly marked.
+
+### Tests
+
+- Unreal package;
+- Unity package;
+- Godot package;
+- textured mesh;
+- untextured mesh;
+- rigged mesh;
+- LOD asset;
+- collision asset;
+- batch engine export;
+- missing optional FBX converter.
+
+---
+
+## UX-07 — Smart Background Removal Preview
+
+**Priority:** HIGH  
+**Current state:** NEW, but should reuse SG-06.
+
+### Why
+
+Background removal is one of the earliest quality gates.
+
+Users should see what the generator will actually receive before spending GPU time.
+
+### User flow
+
+\`\`\`
+upload image
+ ↓
+RMBG preview
+ ↓
+show before/after
+ ↓
+user accepts
+    OR
+opens existing image editor
+    OR
+disables background removal
+ ↓
+generation
+\`\`\`
+
+### UI
+
+Show:
+
+- Original;
+- Processed;
+- transparent checkerboard/background;
+- subject bounds;
+- “Accept”;
+- “Edit Manually”;
+- “Use Original”;
+- “Re-run”.
+
+### Reuse
+
+- existing RMBG model paths;
+- SG-06 preprocessing utility;
+- existing Image Editor for manual edits.
+
+Do not build a second image editing application.
+
+### Acceptance criteria
+
+- preview renders before GPU generation;
+- approved preview becomes the exact generation input;
+- user can reject it;
+- manual edit returns to the same generation flow;
+- original remains available;
+- preprocessing provenance is stored.
+
+---
+
+# 6. Simplified Smart Selector — SG-01
+
+**Priority:** MEDIUM/HIGH  
+**Quarter target:** Q4 2026 planning target  
+**Status:** Planned after P0/P1 stabilization.
+
+### Product promise
+
+One click:
+
+\`\`\`
+intent
+ → preset
+ → compatible model
+ → generation
+ → production post-process
+ → game-ready result
+\`\`\`
+
+### Important scope reduction
+
+Do not implement the old six-weight model-scoring system initially.
+
+### API
+
+Preferred endpoint:
+
+\`\`\`
+POST /api/v1/smart/generation
+\`\`\`
+
+Input:
+
+- image upload;
+- intent;
+- optional preset override fields;
+- optional enhancement setting;
+- optional auto-rig setting.
+
+No Text → 3D prompt mode.
+
+### Internals
+
+1. Validate image.
+2. Resolve intent.
+3. Load preset from \`smart_presets.yaml\`.
+4. Filter models by:
+   - Image → 3D support;
+   - readiness;
+   - minimum capability;
+   - VRAM fit.
+5. Choose a deterministic model priority.
+6. Merge preset + explicit user overrides.
+7. Submit through existing generation scheduler.
+8. Return job ID, selected model, applied preset, and effective config summary.
+
+### Explainability
+
+Show the user:
+
+- selected model;
+- selected preset;
+- why it was eligible;
+- which settings were applied;
+- which values were clamped for safety.
+
+### Acceptance criteria
+
+- no scoring engine required;
+- deterministic;
+- image-only;
+- uses existing scheduler;
+- user overrides win;
+- VRAM guard remains authoritative;
+- final result appears in Asset History.
+
+---
+
+# 7. Hold — SG-11 Real-Time Generation Preview
+
+**Priority:** HIGH future UX, but HOLD until the base pipeline is stable.
+
+### Why it is on hold
+
+Current backend does not expose a real job-preview WebSocket transport.
+
+Current workspace realtime code is intentionally REST/SSE-oriented.
+
+### Do not do
+
+Do not:
+
+- fake a WebSocket;
+- poll and label it “WebSocket”;
+- invent a new protocol without backend event infrastructure;
+- continuously regenerate preview meshes at arbitrary intervals.
+
+### When to activate
+
+After:
+
+- P0 raw quality is stable;
+- SG-06/07/08/02.2 are stable;
+- history and batch flows work;
+- job event publication is well-defined.
+
+### Future design direction
+
+The future implementation may use:
+
+\`\`\`
+scheduler progress events
+ ↓
+preview artifact generation
+ ↓
+WebSocket transport
+ ↓
+GenerationLoadingPreview / MeshViewer
+\`\`\`
+
+But the final transport/protocol must be based on the actual backend event system at implementation time.
+
+---
+
+# 8. Features Explicitly Deferred / Do Not Implement Now
+
+These tasks must remain out of the active production milestone unless a future engineering review changes their status.
+
+## SG-03 — Smart-Flow Adapter
+
+**Status:** DEFERRED / RESEARCH
+
+Reason:
+
+- current production task must not depend on uncertain external model/weight availability;
+- introducing a new flow-based generator would add a new inference stack before existing quality issues are closed;
+- the project already has multiple native model adapters that can be improved first.
+
+Exit criteria before reconsideration:
+
+- verified upstream/code availability;
+- verified weight license and redistribution terms;
+- proven quality advantage on ForMash3D test set;
+- VRAM/latency benefit;
+- clear integration path without destabilizing current models.
+
+---
+
+## SG-04 — Triplane-Octree Latent Swap
+
+**Status:** DEFERRED / RESEARCH
+
+Reason:
+
+- VAE/encoder replacement is research-heavy;
+- compatibility with current adapters is not assumed;
+- risk is far above current product value.
+
+No production implementation without a dedicated benchmark and architecture proposal.
+
+---
+
+## SG-05 — ControlNet-like Spatial Guidance
+
+**Status:** DEFERRED / RESEARCH
+
+Reason:
+
+- current adapters do not expose one common spatial-conditioning contract;
+- forcing bbox/voxel/point-cloud conditioning across unrelated models would create adapter-specific complexity;
+- the feature is not a simple endpoint field addition.
+
+Do not add generic fields that adapters silently ignore.
+
+---
+
+## SG-09 — Recursive Part-Based Generation
+
+**Status:** DEFERRED / RESEARCH
+
+Reason:
+
+- split → independent generation → reassembly can introduce seam and alignment artifacts;
+- no evidence yet that this improves the current pipeline relative to a high-fidelity single-pass model plus existing post-processing.
+
+Only reconsider after a benchmark demonstrates consistent quality gain.
+
+---
+
+## SG-10 — ONNX / TensorRT Optimization
+
+**Status:** DEFERRED / PERFORMANCE PHASE
+
+Reason:
+
+- quality correctness comes first;
+- model export can introduce numerical or operator incompatibilities;
+- optimization before stable quality measurements is premature.
+
+Only activate after representative benchmarks exist.
+
+---
+
+## SG-12 — New External C++ Geometry Stack
+
+**Status:** DEFERRED / RESEARCH
+
+Potential technologies:
+
+- Manifold/ManifoldPlus;
+- CGAL;
+- Mitsuba;
+- OpenVDB;
+- other native geometry toolchains.
+
+Current repair/UV/retopo/collision stack should be proven insufficient before introducing build-heavy alternatives.
+
+The default action is **improve the existing implementation before adding a new geometry backend**.
+
+---
+
+# 9. Additional Product Recommendations
+
+These are not part of the seven required screenshot features, but they are strongly recommended because the current architecture can support them with relatively small incremental work.
+
+## R-01 — Reproduce / Duplicate Generation
+
+From any history item:
+
+\`\`\`
+Duplicate generation
+ → same image
+ → same model/preset
+ → same relevant parameters
+ → new job
+\`\`\`
+
+Why:
+
+- reproducibility;
+- debugging;
+- seed comparisons;
+- rapid iteration.
+
+Reuse Asset History + existing generation settings.
+
+---
+
+## R-02 — Favorites / Collections
+
+Allow users to pin/favorite important assets.
+
+Use metadata, not another asset database.
+
+Possible collections:
+
+- Favorites;
+- Characters;
+- Props;
+- Production;
+- 3D Print;
+- Archived.
+
+---
+
+## R-03 — Retry From Failure
+
+Every failed job should expose:
+
+- failed stage;
+- error summary;
+- “Retry same config”;
+- “Retry with safe preset” when a resource issue caused the failure.
+
+Do not rebuild the job manually.
+
+---
+
+## R-04 — Explainable Model Choice
+
+For the smart selector, show:
+
+\`\`\`
+Selected: <model>
+Why:
+✓ supports image → raw
+✓ enough VRAM
+✓ supports requested texture mode
+✓ satisfies game-ready preset
+\`\`\`
+
+This is cheaper and more valuable than a complex score visualization.
+
+---
+
+# 10. Cross-Feature Data Contract
+
+The following metadata should be shared across generation, history, comparison, diff, and export.
+
+## Job metadata
+
+- job ID;
+- source image ID;
+- source image hash;
+- preprocessed image ID/hash;
+- model ID;
+- preset ID/version;
+- intent;
+- effective generation parameters;
+- scheduler resource decision;
+- timestamps;
+- source/master artifact;
+- production artifacts;
+- QA report;
+- rigging status;
+- printability status;
+- export status.
+
+## Artifact metadata
+
+At minimum:
+
+- canonical path/URL;
+- artifact role;
+- file type;
+- size;
+- hash;
+- vertices;
+- triangles;
+- dimensions;
+- materials;
+- textures;
+- UV metrics;
+- topology metrics;
+- post-process stage;
+- status.
+
+Do not create separate incompatible schemas for history, comparison, diff, and export.
+
+---
+
+# 11. Resource Management Specification
+
+Every multi-job feature must use the same rules.
+
+## Scheduler is authoritative
+
+The UI sends jobs.
+
+The scheduler decides:
+
+- run now;
+- queue;
+- reject due to invalid input;
+- cancel;
+- retry.
+
+## Comparison
+
+Requested concurrency = 2–3.
+
+Actual concurrency = scheduler-admitted concurrency.
+
+## Batch
+
+Requested jobs = N.
+
+Actual running jobs = resource-admitted subset.
+
+## Smart Selector
+
+Model selection must consider hard resource constraints before submitting.
+
+## Enhancement
+
+Preprocessing must not accidentally consume the GPU budget intended for the generation model if a CPU/offload path already exists and is sufficient.
+
+## UI requirements
+
+When waiting for resources show:
+
+- “Queued — waiting for VRAM”;
+- selected model;
+- estimated resource requirement when available;
+- queue position when available.
+
+Do not show fake percentages.
+
+---
+
+# 12. Testing Strategy
+
+Every feature is incomplete until its regression surface is tested.
+
+## 12.1 Unit tests
+
+Required areas:
+
+- preset parsing;
+- preset merge/override;
+- model capability filtering;
+- resource admission decisions;
+- printability flags;
+- enhancement configuration;
+- history mapping;
+- comparison grouping;
+- batch item state transitions;
+- export manifest creation;
+- diff metric calculation.
+
+## 12.2 API tests
+
+Required endpoints/contracts:
+
+- image enhancement preview/approval path;
+- smart generation;
+- history;
+- batch submission/state;
+- comparison job grouping;
+- printability metadata;
+- auto-rigging;
+- engine export.
+
+Do not add endpoints merely when an existing endpoint can carry the same contract cleanly.
+
+## 12.3 Frontend tests
+
+Required flows:
+
+- upload → enhancement preview;
+- preview reject/edit/accept;
+- preset save/load;
+- batch upload;
+- batch resource wait;
+- comparison;
+- asset history reopen;
+- diff viewer;
+- engine export;
+- auto-rig toggle.
+
+## 12.4 Integration tests
+
+At minimum:
+
+- image → raw generation;
+- image → textured generation;
+- generation + enhancement;
+- generation + printability;
+- generation + auto-rig;
+- generation + preset;
+- batch generation;
+- comparison;
+- history persistence;
+- export of final asset.
+
+## 12.5 Environment-gated tests
+
+Do not mark these passed without their real runtime:
+
+- full 22-model GPU smoke suite;
+- 4×A100 concurrency;
+- live Redis multi-worker;
+- SAST/DAST;
+- device/browser visual sweep;
+- full WebSocket preview;
+- optional research adapters;
+- TensorRT;
+- native C++ geometry libraries.
+
+The task ledger must continue to say **NOT RUN** for unavailable environments rather than fabricating a result.
+
+---
+
+# 13. Verification Matrix
+
+| Area | Required evidence |
+|---|---|
+| P0 Q1–Q8 | Root cause + regression + affected-path test |
+| SG-06 | Enhancement preview + approved artifact provenance + generation test |
+| SG-07 | Printability before/after + repair regression |
+| SG-08 | Rigged artifact + failure-path test |
+| SG-02.2 | YAML validation + deterministic model selection |
+| UX-01 | Reload + reopen + metadata integrity |
+| UX-02 | 2–3 model comparison + resource fallback |
+| UX-03 | multi-image batch + resource-aware queue |
+| UX-04 | save/load/migrate user preset |
+| UX-05 | source/final metrics match QA |
+| UX-06 | Unreal/Unity/Godot package validation |
+| UX-07 | preview + manual edit + accept/reject |
+| SG-01 | one-click intent workflow |
+| SG-11 | only after actual backend transport exists |
+
+---
+
+# 14. Definition of Done
+
+A task may only be marked **DONE** when all of the following are true:
+
+1. Root cause/implementation need is documented.
+2. Existing code was inspected for reusable implementation.
+3. Minimal correct code was added or existing code was extended.
+4. Targeted tests pass.
+5. Relevant integration tests pass where the environment permits.
+6. Failure paths are explicit.
+7. No duplicate subsystem was created.
+8. Relevant documentation is updated.
+9. The task's acceptance criteria are satisfied.
+10. Any environment-gated verification is explicitly marked **NOT RUN** rather than guessed.
+11. The implementation is reflected accurately in this file.
+
+---
+
+# 15. Execution Order
+
+The implementation must proceed in this order unless an actual blocker requires a deliberate change.
+
+## Phase 0 — Raw quality
+
+1. Recover and document BUG-Q1.
+2. Fix and test BUG-Q1.
+3. Repeat through BUG-Q8.
+4. Re-run source-vs-postprocess quality verification.
+5. Update \`Docs/MEMORY.md\`, \`Docs/CHANGELOG.md\`, and relevant architecture notes.
+
+**Do not move to Phase 1 while unresolved raw-quality blockers remain.**
+
+## Phase 1 — High-value quality/product foundations
+
+6. SG-06 Image Enhancement + preprocessing preview.
+7. SG-07 Printability check + auto-repair.
+8. SG-08 Auto-rig pipeline wiring.
+9. SG-02.2 Intent Presets.
+
+## Phase 2 — Seven product workflow features
+
+10. UX-01 Asset History / Generations Gallery upgrade.
+11. UX-03 Batch Generation retrofit.
+12. UX-04 User Generation Presets.
+13. UX-07 Background Removal Preview integration with SG-06.
+14. UX-02 Side-by-side Model Comparison.
+15. UX-05 Mesh Diff Viewer.
+16. UX-06 One-click Engine Export.
+
+The exact order inside Phase 2 may change based on shared dependencies, but no feature may duplicate an existing subsystem.
+
+## Phase 3 — Simplified Smart Generation
+
+17. SG-01 Smart Selector.
+18. Add explainable model choice.
+19. Validate intent → preset → model → generation → post-process end to end.
+
+## Phase 4 — Hold review
+
+20. Reassess SG-11 WebSocket preview after the above features are stable.
+21. Only activate research tasks if their exit criteria are satisfied.
+
+---
+
+# 16. Release Milestones
+
+## Milestone A — Quality baseline
+
+Complete:
+
+- BUG-Q1 → Q8;
+- raw source fidelity verification;
+- no silent quality loss.
+
+## Milestone B — Production-friendly generation
+
+Complete:
+
+- SG-06;
+- SG-07;
+- SG-08;
+- SG-02.2.
+
+## Milestone C — Premium workflow
+
+Complete:
+
+- UX-01;
+- UX-02;
+- UX-03;
+- UX-04;
+- UX-05;
+- UX-06;
+- UX-07.
+
+## Milestone D — One-click smart generation
+
+Complete:
+
+- SG-01 simplified selector;
+- preset/model explainability;
+- end-to-end smart generation.
+
+## Milestone E — Future realtime
+
+Only after all earlier milestones are stable:
+
+- SG-11.
+
+---
+
+# 17. Things That Must NOT Be Done During This Roadmap
+
+Do not:
+
+- reintroduce Text → 3D;
+- create a new queue when the existing scheduler can be reused;
+- add a new asset database merely for gallery UI;
+- add a new exporter while \`meshExport.js\` already supports the required formats;
+- create a new auto-rigging model when UniRig exists;
+- add a second repair pipeline without proving the current one fails;
+- build six-dimensional smart scoring before a deterministic preset system proves insufficient;
+- claim WebSocket support before the backend actually supports it;
+- add GPU-heavy preprocessing without measuring its resource impact;
+- silently downgrade quality to make a benchmark look faster;
+- report environment-gated checks as passed when they were not run;
+- add speculative external libraries just because another product uses them.
+
+---
+
+# 18. Final Agent Checklist
+
+Before marking the roadmap implementation cycle complete, the agent must confirm:
+
+- [ ] RULES.md reread before implementation.
+- [ ] Current Dev branch reread before touching code.
+- [ ] \`Docs/TASKS.md\` used as the authoritative task list.
+- [ ] BUG-Q1 through BUG-Q8 have exact root causes and verification.
+- [ ] SG-06 implemented with preview and provenance.
+- [ ] SG-07 implemented using existing repair/checking.
+- [ ] SG-08 wired through existing UniRig infrastructure.
+- [ ] SG-02.2 implemented as YAML intent presets without weighted scoring.
+- [ ] UX-01 history upgraded without creating duplicate persistence.
+- [ ] UX-02 comparison uses existing scheduler.
+- [ ] UX-03 batch uses existing queue/scheduler and is resource-aware.
+- [ ] UX-04 named presets reuse existing settings persistence.
+- [ ] UX-05 diff viewer uses immutable source + existing QA metadata.
+- [ ] UX-06 engine export reuses existing exporter and produces deterministic packages.
+- [ ] UX-07 background-removal preview reuses SG-06/RMBG/Image Editor.
+- [ ] SG-01 simplified selector uses image-only intent → preset → model → generation.
+- [ ] SG-11 remains held unless backend transport is actually implemented.
+- [ ] SG-03/04/05/09/10/12 remain explicitly deferred unless their exit criteria are met.
+- [ ] Relevant documentation was updated.
+- [ ] Targeted tests pass.
+- [ ] Environment-gated tests are honestly marked NOT RUN when unavailable.
+- [ ] No duplicate subsystem was introduced.
+- [ ] Final Git history contains the intended documentation/code changes and nothing unrelated.
+
+---
+
+# 19. Authoritative Product Decision
+
+The practical product strategy is:
+
+> **Fix quality first, then remove friction.**
+
+The highest-value sequence is:
+
+\`\`\`
+raw-quality closure
+   ↓
+image enhancement + preview
+   ↓
+printability + repair
+   ↓
+auto-rig wiring
+   ↓
+intent presets
+   ↓
+history
+   ↓
+batch + comparison
+   ↓
+named presets
+   ↓
+diff
+   ↓
+engine-ready export
+   ↓
+smart selector
+   ↓
+real-time preview
+\`\`\`
+
+Research-heavy adapter rewrites remain out of the production path until the existing architecture proves it needs them.
+
+This file is intentionally implementation-oriented: every future agent should be able to start from the current \`Dev\` branch, inspect the stated existing code, follow the flow, reuse the existing subsystems, implement the smallest correct change, test it, and update the documentation without needing a second hidden task document.
