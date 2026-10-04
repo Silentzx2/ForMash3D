@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async
+from api.utils.asset_name import resolve_asset_name
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
@@ -594,17 +595,12 @@ async def image_to_raw_mesh(
             file_store=file_store,
         )
 
-        chosen_stem = mesh_request.asset_name or mesh_request.image_name
-        if not chosen_stem and mesh_request.image_file_id:
-            from api.routers.file_upload import _local_file_metadata
-            meta = _local_file_metadata.get(mesh_request.image_file_id)
-            if meta and meta.get("filename"):
-                chosen_stem = Path(meta["filename"]).stem
-        if not chosen_stem and image_file_path:
-            p_stem = Path(image_file_path).stem
-            if not p_stem.startswith("upload_"):
-                chosen_stem = p_stem
-        chosen_stem = chosen_stem or "asset"
+        chosen_stem = await resolve_asset_name(
+            mesh_request,
+            file_store,
+            image_file_path,
+            mesh_request.image_file_id,
+        )
 
         job_request = JobRequest(
             feature="image_to_raw_mesh",
@@ -694,17 +690,12 @@ async def image_to_textured_mesh(
                 file_store=file_store,
             )
 
-        chosen_stem = mesh_request.asset_name or mesh_request.image_name
-        if not chosen_stem and mesh_request.image_file_id:
-            from api.routers.file_upload import _local_file_metadata
-            meta = _local_file_metadata.get(mesh_request.image_file_id)
-            if meta and meta.get("filename"):
-                chosen_stem = Path(meta["filename"]).stem
-        if not chosen_stem and image_file_path:
-            p_stem = Path(image_file_path).stem
-            if not p_stem.startswith("upload_"):
-                chosen_stem = p_stem
-        chosen_stem = chosen_stem or "asset"
+        chosen_stem = await resolve_asset_name(
+            mesh_request,
+            file_store,
+            image_file_path,
+            mesh_request.image_file_id,
+        )
 
         job_request = JobRequest(
             feature="image_to_textured_mesh",

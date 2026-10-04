@@ -26,8 +26,7 @@ Create a centralized, local AI 3D asset factory that takes an image or text prom
 ## Core Features
 
 ### 1. Neural Shape Generation
-- **Image-to-3D**: Generate raw meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
-- **Text-to-3D**: Generate meshes from text prompts using TRELLIS
+- **Image-to-3D**: Generate raw and textured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
 - **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
@@ -213,8 +212,8 @@ sequenceDiagram
     participant Adapter as Model Adapter
     participant Storage as backend/storage/
 
-    User->>Frontend: Select prompt / image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/text-to-textured-mesh
+    User->>Frontend: Select image + Platform budget
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output

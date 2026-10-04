@@ -84,6 +84,7 @@ export interface ModelAsset {
   materialConfig?: MaterialConfig;
   materials?: string[];
   createdAt?: string;
+  sourceType?: 'local' | 'upload' | 'history';
   artifacts?: {
     source?: string;
     gameReady?: string;

@@ -276,7 +276,7 @@ def get_settings() -> Settings:
 
         settings = load_config_from_file(str(system_config))
 
-        # If user authorization is turned on, force API key 
+        # If user authorization is turned on, force API key
         if settings.user_auth_enabled:
             settings.security.api_key_required = True
 
@@ -293,6 +293,13 @@ def get_settings() -> Settings:
             settings.models = get_default_model_configs()
 
     return settings
+
+
+def reload_settings() -> Settings:
+    """Reload settings from config files, discarding cached instance."""
+    global settings
+    settings = None
+    return get_settings()
 
 
 def setup_logging(config: LoggingConfig):

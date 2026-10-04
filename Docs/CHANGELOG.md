@@ -2,7 +2,7 @@
 - Verified BQ-01..BQ-12 and the bug-registry fixes against the live code; closed the remaining drift without treating test scripts as the source of truth.
 - TRELLIS image-path `generation_info` now records actual sampling stages, texture resolution, and bake mode (BQ-11 parity with the text path).
 - Fixed a stale official-parity assertion (TRELLIS image `texture_resolution` default 1024 → 2048) and the TripoSR `mc_resolution` docstring (fixed 320 official ceiling).
-- Docs/TASK.md now records the TripoSG Y-up rotation as rejected/reverted per the 2026-10-03 parity audit; cross-bug pattern and summary table reconciled.
+- Docs/TASKS.md now records the TripoSG Y-up rotation as rejected/reverted per the 2026-10-03 parity audit; cross-bug pattern and summary table reconciled.
 
 ## 2026-10-03 — [Deep Adapter Parity & Source-Fidelity Closure]
 - Centralized raw-source fidelity in the scheduler by stripping adapter-level extraction, decimation, and remesh controls before model inference.

@@ -346,7 +346,7 @@
 
 ---
 
-## ADR-021: Canonical Hunyuan Shape→Paint Workflow
+## ADR-040: Canonical Hunyuan Shape→Paint Workflow
 
 **Decision**: Treat Hunyuan3D-Shape-v2-1 as the raw-mesh stage and Hunyuan3D-Paint-v2-1 as the optional texture stage. Do not register a separate direct Shape textured model ID.
 
@@ -358,7 +358,7 @@
 - Workspace texture generation uses the generated job file ID plus the original image input for Shape-v2-1 or Mini Turbo → Paint handoff.
 - The removed direct Shape textured ID is not exposed through the model registry or GeneratePanel.
 
-## ADR-014: Explicit SDPA Fallback for Pre-Ampere Sparse Attention
+## ADR-041: Explicit SDPA Fallback for Pre-Ampere Sparse Attention
 
 **Decision**: When an adapter selects SDPA for a pre-Ampere GPU, bundled TRELLIS and TripoSF sparse attention execute PyTorch scaled-dot-product attention directly.
 
@@ -369,7 +369,7 @@
 - No new runtime dependency is introduced.
 - FlashAttention remains the explicit path on supported GPUs.
 
-## ADR-015: Model-Specific Dependency Overrides After the Global Baseline
+## ADR-042: Model-Specific Dependency Overrides After the Global Baseline
 
 **Decision**: Use shared backend dependency pins that satisfy TripoSG, then install TripoSG's requirements after the backend baseline in the shell installer and both Docker builds.
 
@@ -467,41 +467,41 @@ Security: artifact downloads reuse existing job authorization and accept only fi
 
 **Constraints:** Keep the canonical physics representation provider-neutral; do not treat draft glTF physics extensions as the sole source of truth; do not fake soft-body/jiggle; do not add native physics engines until a tested product requirement exists.
 
-## ADR-014: Truthful Execution Telemetry and Artifact-Driven Inspectors
+## ADR-043: Truthful Execution Telemetry and Artifact-Driven Inspectors
 **Date:** 2026-09-29
 
 **Decision:** The UI must render generation status, progress, cancellation, and asset statistics from real backend contracts only. Missing backend facts remain explicitly unknown instead of being replaced by sample numbers.
 
 **Consequences:** Pipeline status uses real stage logs and adaptive polling; queued cancellation calls the scheduler-backed cancel endpoint; Jobs removes fabricated progress; segmentation inspectors consume `segmentation_info`; uploaded assets no longer pretend to have fixed mesh counts. The current single-image generation backend is surfaced honestly rather than presenting the existing multiview collection UI as a supported multi-view request.
 
-## ADR-019 — Redis Control State Must Not Be Evicted
+## ADR-044: Redis Control State Must Not Be Evicted
 
 Decision: Redis used for job/worker control state uses noeviction; result payloads use dedicated expiring keys.
 
 Reason: Evicting live queue state can strand GPU work. Redis EXPIRE applies to keys, not individual hash fields.
 
-## ADR-020 — Resource-Blocked Jobs Rotate
+## ADR-045: Resource-Blocked Jobs Rotate
 
 Decision: A job that currently cannot acquire compatible worker/VRAM resources is requeued at the back rather than blocking the global queue head.
 
 Reason: A large or unavailable model must not block smaller jobs whose resource requirements are currently satisfiable.
 
-## ADR-021 — Manifest-Driven Model Readiness and VRAM
+## ADR-046: Manifest-Driven Model Readiness and VRAM
 
 The backend model manifest is authoritative for capabilities, VRAM reservation, max workers, IO, and model paths. Adapters reject missing manifest VRAM for models whose historical defaults were inconsistent.
 
-## ADR-022 — Unsupported Multiview Is Explicitly Gated
+## ADR-047: Unsupported Multiview Is Explicitly Gated
 
 Until a model-specific multi-view request contract exists, the UI must not collect or silently collapse multi-view inputs into a single-view generation request.
 
-## ADR-023 — Raw Result Is Independent from Production Post-Processing
+## ADR-048: Raw Result Is Independent from Production Post-Processing
 
 GPU generation publishes the raw artifact first. Production post-processing runs asynchronously and records its own status/error fields on the completed job.
 
 
 ---
 
-## ADR-014: Production Post-Processing Before Terminal Completion
+## ADR-049: Production Post-Processing Before Terminal Completion
 
 **Decision**: Persist the native model result as the immutable master checkpoint, then run canonical production post-processing before publishing terminal job success.
 
@@ -513,7 +513,7 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - The live execution panel can show the real production stages through terminal completion.
 - A post-processing error is a generation failure for that job rather than a misleading success.
 
-## ADR-015: Manifest-Only Runtime Resource Contracts
+## ADR-050: Manifest-Only Runtime Resource Contracts
 
 **Decision**: Adapter runtime constructors do not invent VRAM defaults; model manifests provide the resource requirement and capability contract.
 

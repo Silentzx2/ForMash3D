@@ -42,7 +42,7 @@ async def health_check():
     """Basic health check endpoint"""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "uptime": time.time(),
     }
 
@@ -74,7 +74,7 @@ async def get_auth_status(settings=Depends(get_current_settings)):
             "user_management": settings.user_auth_enabled,
             "role_based_access": settings.user_auth_enabled,
         },
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -105,8 +105,8 @@ async def system_status(
 ):
     """Get detailed system status including GPU information"""
 
-    # Basic system metrics (non-blocking delta calculation)
-    cpu_percent = psutil.cpu_percent(interval=None)
+    # Basic system metrics (non-blocking delta calculation with interval for accurate reading)
+    cpu_percent = psutil.cpu_percent(interval=0.1)
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
 
@@ -120,7 +120,7 @@ async def system_status(
         mesh_tools_status = {"status": "unavailable", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools", "error": str(exc)}
 
     status = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "system": {
             "cpu_usage": cpu_percent,
             "memory": {
@@ -174,7 +174,7 @@ async def system_stats(
 ):
     """Get lightweight system stats optimized for header resource monitor (5s refresh)"""
     
-    cpu_percent = psutil.cpu_percent(interval=None)
+    cpu_percent = psutil.cpu_percent(interval=0.1)
     memory = psutil.virtual_memory()
     
     # Get GPU info
@@ -200,7 +200,7 @@ async def system_stats(
         pass  # GPU monitoring not available
     
     return {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "cpu_percent": cpu_percent,
         "ram_used_gb": memory.used / (1024**3),
         "ram_total_gb": memory.total / (1024**3),
@@ -273,6 +273,13 @@ async def get_model_parameters(
             )
     except HTTPException:
         raise
+    except KeyError as e:
+        # Handle missing model config specifically
+        logger.error(f"Model config key error for {model_id}: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model '{model_id}' configuration not found"
+        )
     except Exception as e:
         logger.error(f"Error getting model parameters: {e}")
         raise HTTPException(
@@ -1457,7 +1464,7 @@ async def download_job_result(
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.utcnow().isoformat(),
+                        "download_time": datetime.now(UTC).isoformat(),
                     }
                 )
             except Exception as e:
@@ -1601,7 +1608,7 @@ async def download_job_thumbnail(
                         "file_size_mb": round(len(svg_bytes) / (1024 * 1024), 4),
                         "base64_data": f"data:image/svg+xml;base64,{b64_str}",
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.utcnow().isoformat(),
+                        "download_time": datetime.now(UTC).isoformat(),
                     }
                 )
             return Response(
@@ -1628,7 +1635,7 @@ async def download_job_thumbnail(
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.utcnow().isoformat(),
+                        "download_time": datetime.now(UTC).isoformat(),
                     }
                 )
             except Exception as e:
@@ -1743,7 +1750,7 @@ async def download_job_input(
                         "content_type": get_content_type_for_file(input_image_path),
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
-                        "download_time": datetime.utcnow().isoformat(),
+                        "download_time": datetime.now(UTC).isoformat(),
                     }
                 )
             except Exception as e:

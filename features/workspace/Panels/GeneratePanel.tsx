@@ -8,6 +8,7 @@ import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
 import { MultiViewWorkspace } from './MultiViewWorkspace';
+import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
@@ -136,8 +137,11 @@ export const GeneratePanel: React.FC = () => {
     executionStep,
     generate3DModel,
     generationSettings,
-    setGenerationSettings
+    setGenerationSettings,
+    navigateToTool,
   } = useWorkspace();
+  
+  const router = useRouter();
 
   const currentMode = 'image-to-3d';
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
@@ -150,7 +154,7 @@ export const GeneratePanel: React.FC = () => {
   useEffect(() => {
     if (!pendingGenerateRef.current) return;
     pendingGenerateRef.current = false;
-    void generate3DModel('image-to-3d');
+    void generate3DModel();
   }, [generationSettings, generate3DModel]);
 
   useEffect(() => {
@@ -281,7 +285,8 @@ export const GeneratePanel: React.FC = () => {
   const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview);
   
   const supportsTextureGeneration = activeModelObj?.supports_texture ?? false;
-  const showTextureToggle = supportsTextureGeneration;
+  const isTextTo3DModel = activeModelObj?.id === 'trellis_text_to_textured_mesh';
+  const showTextureToggle = supportsTextureGeneration && !isTextTo3DModel;
 
   const physics = generationSettings.physics ?? {
     bodyType: 'auto' as const,
@@ -310,8 +315,6 @@ export const GeneratePanel: React.FC = () => {
       };
     });
   };
-
-  const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
 
   const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
 
@@ -482,6 +485,7 @@ export const GeneratePanel: React.FC = () => {
 
   const handleImageTo3DTabClick = () => {
     setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
+    navigateToTool('model');
   };
 
   const handleModelSelect = (model: any) => {
@@ -496,22 +500,22 @@ export const GeneratePanel: React.FC = () => {
     {
       id: 'mech-sentinel',
       name: 'Mech Sentinel',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><polygon points="150,40 230,100 210,240 90,240 70,100" fill="%232e3440" stroke="%23F9CF00" stroke-width="4"/><circle cx="150" cy="120" r="35" fill="%23F9CF00"/><circle cx="150" cy="120" r="15" fill="%23111"/><rect x="110" y="180" width="80" height="40" rx="8" fill="%23434c5e" stroke="%23d8dee9" stroke-width="2"/><text x="150" y="270" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="12" font-weight="bold">MECH SENTINEL</text></svg>',
+      url: '/samples/mech-sentinel.svg',
     },
     {
       id: 'cyber-drone',
       name: 'Cyber Drone',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><circle cx="150" cy="140" r="70" fill="%232b303c" stroke="%2338bdf8" stroke-width="4"/><path d="M120,130 Q150,110 180,130" stroke="%2338bdf8" stroke-width="8" stroke-linecap="round" fill="none"/><circle cx="130" cy="155" r="8" fill="%23F9CF00"/><circle cx="170" cy="155" r="8" fill="%23F9CF00"/><text x="150" y="260" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="12" font-weight="bold">CYBER DROID</text></svg>',
+      url: '/samples/cyber-drone.svg',
     },
     {
       id: 'sci-fi-helmet',
       name: 'Sci-Fi Helmet',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><path d="M90,80 Q150,30 210,80 Q240,160 210,230 Q150,260 90,230 Q60,160 90,80 Z" fill="%232e3440" stroke="%23a855f7" stroke-width="4"/><path d="M100,120 Q150,90 200,120 Q210,160 195,180 Q150,200 105,180 Z" fill="%23F9CF00"/><text x="150" y="270" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="12" font-weight="bold">HELMET MK-IV</text></svg>',
+      url: '/samples/sci-fi-helmet.svg',
     },
     {
       id: 'obsidian-blade',
       name: 'Obsidian Blade',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><path d="M150,30 L175,170 L150,190 L125,170 Z" fill="%233b4252" stroke="%2310b981" stroke-width="3"/><rect x="110" y="190" width="80" height="12" rx="4" fill="%234c566a"/><rect x="142" y="202" width="16" height="60" rx="3" fill="%232e3440" stroke="%23F9CF00" stroke-width="2"/><circle cx="150" cy="272" r="10" fill="%23F9CF00"/><text x="150" y="292" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="11" font-weight="bold">OBSIDIAN BLADE</text></svg>',
+      url: '/samples/obsidian-blade.svg',
     },
   ];
 
@@ -689,7 +693,7 @@ export const GeneratePanel: React.FC = () => {
                       scale: isDragOver ? 1.02 : 1,
                       borderColor: isDragOver ? 'hsl(var(--primary))' : uploadError ? '#ef4444' : 'rgba(255,255,255,0.08)',
                     }}
-                    transition={springTransition}
+                    transition={{ type: 'spring' as const, stiffness: 400, damping: 25 }}
                     className="relative w-full h-24 rounded-lg border border-dashed border-white/[0.12] cursor-pointer overflow-hidden flex flex-col items-center justify-center p-2 group/dropzone bg-[hsl(var(--surface-1))]/50 hover:bg-[hsl(var(--surface-1))]"
                   >
                     {uploadProgress.active ? (

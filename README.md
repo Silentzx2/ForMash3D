@@ -11,13 +11,13 @@
 <p align="center">
   <strong>Open-Source Generative 3D Mesh Studio & Production Pipeline</strong><br>
   <em>A unified, self-hosted 3D creation suite for neural 3D generation, asset finishing, and engine-ready delivery</em><br>
-  Text-to-3D • Image-to-3D • Quad Retopology • PBR Material Painting • Auto-Rigging • Automated LODs • Game Engine Ready
+  Text-to-Motion • Image-to-3D • Quad Retopology • PBR Material Painting • Auto-Rigging • Automated LODs • Game Engine Ready
 </p>
 
 <p align="center">
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="24 Models"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="22 Models"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -65,7 +65,7 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 
 | Capability | ForMash3D Implementation |
 |---|---|
-| Neural 3D Generation | Image-to-3D and text-to-3D adapters with model-specific inference contracts |
+| Neural 3D Generation | Image-to-3D adapters with model-specific inference contracts |
 | Source Preservation | Immutable master/source.glb checkpoint before production processing |
 | Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
 | PBR Materials | Hunyuan3D Paint-v2.1 and model-specific textured generation |
@@ -138,7 +138,7 @@ flowchart TD
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines["Neural 3D Synthesis Engines (24 Model Adapters)"]
+    subgraph Engines["Neural 3D Synthesis Engines (22 Model Adapters)"]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
         TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
@@ -344,7 +344,7 @@ The single-container RunPod image uses the same repository-root build context: `
 
 The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
 
-- **Generate Studio (`/workspace`)**: Text-to-3D and Image-to-3D generation with model selector, VRAM estimator, and step configuration.
+- **Generate Studio (`/workspace`)**: Image-to-3D generation with model selector, VRAM estimator, and step configuration.
 - **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting, Real-ESRGAN upscaling, and map baking (Albedo, Normal, Roughness, Metallic, AO).
 - **Retopology & Remesh (`/workspace/remesh`)**: FastMesh quad-dominant retopology with V1K and V4K target presets.
 - **UV Unwrapping (`/workspace/uv`)**: Automated conformal seam placement and atlas chart packing.
@@ -363,7 +363,7 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 | Endpoint | Method | Description |
 |---|:---:|---|
 | `/api/v1/system/info` | `GET` | System health, GPU specs, VRAM utilization, active worker mode |
-| `/api/v1/system/models` | `GET` | List all discovered 23 model adapters, readiness, and VRAM requirements |
+| `/api/v1/system/models` | `GET` | List all discovered 22 model adapters, readiness, and VRAM requirements |
 | `/api/v1/mesh-generation/text-to-textured-mesh` | `POST` | Generate textured 3D mesh from descriptive text prompt |
 | `/api/v1/mesh-generation/image-to-raw-mesh` | `POST` | Generate high-fidelity raw geometry from single reference image |
 | `/api/v1/mesh-generation/image-to-textured-mesh` | `POST` | Generate textured geometry directly from image |
@@ -470,11 +470,11 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 | 📋 **[Product Requirements (PRD)](Docs/PRD.md)** | Core features, target users, and product roadmaps |
 | 🎨 **[Design System](Docs/DESIGN.md)** | Studio Gold color tokens, UI component specifications, and layouts |
 | 🛡️ **[Agent & Engineering Rules](RULES.md)** | Authoritative coding standards, minimalist practices, and change policies |
-| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (ADR-001 through ADR-037) |
+| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (ADR-001 through ADR-050) |
 | 🧠 **[Project Memory & Status](Docs/MEMORY.md)** | Active state, hardware prerequisites, and verified milestones |
 | 📜 **[Change Log](Docs/CHANGELOG.md)** | Chronological history of releases, fixes, and optimizations |
 | 🎯 **[Task Tracker](Docs/TASKS.md)** | Completed features, active development items, and future roadmap |
-| ⚡ **[Physics Runtime Specification](Docs/PHYSICS.md)** | Rigid-body simulation, mass properties, and Rapier3D integration |
+| ⚡ **[Physics Runtime Specification](Docs/SYSTEM-BLUEPRINT.md#physics-path)** | Rigid-body simulation, mass properties, and Rapier3D integration |
 | 🔌 **[API Documentation](Docs/api-documentation.md)** | Complete endpoint schemas, request payloads, and status codes |
 | ⚖️ **[Third-Party Model Licenses](backend/thirdparty/LICENSE)** | Upstream terms and attributions for all integrated model weights |
 | 🔒 **[Security Policy](Docs/SECURITY.md)** | Vulnerability reporting and isolated environment safety guidelines |

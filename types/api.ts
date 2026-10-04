@@ -708,6 +708,21 @@ export interface RuntimeOptions {
   colab_preparation_limit_mb: number | null;
 }
 
+// System Stats (for ResourceMonitor header component)
+export interface SystemStats {
+  timestamp: string;
+  cpu_percent: number;
+  ram_used_gb: number;
+  ram_total_gb: number;
+  ram_percent: number;
+  gpu_percent: number;
+  vram_used_gb: number;
+  vram_total_gb: number;
+  vram_percent: number;
+  gpu_name?: string;
+  gpu_temp_c?: number;
+}
+
 // Error Types
 export interface ApiError extends Error {
   code?: string;

@@ -294,7 +294,6 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 - `POST /api/v1/mesh-generation/image-to-raw-mesh`: Geometry synthesis from image.
 - `POST /api/v1/mesh-generation/image-to-textured-mesh`: Full PBR geometry + texture from models that natively implement the feature.
 - Hunyuan3D Shape→Paint: Shape-v2-1 or DiT-v2-mini-Turbo uses `image-to-raw-mesh`, then optionally chains into `hunyuan3d_paint_v21_image_mesh_painting` after geometry completion.
-- `POST /api/v1/mesh-generation/text-to-raw-mesh`: Geometry synthesis from text.
 - `POST /api/v1/mesh-generation/image-mesh-painting`: Paint textures onto mesh (Hunyuan3D-Paint-v2-1).
 - `GET /api/v1/mesh-generation/status/{job_id}`: Real-time generation job status.
 - `POST /api/v1/mesh-generation/cancel/{job_id}`: Cancel a running job.

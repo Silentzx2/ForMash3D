@@ -103,7 +103,7 @@ interface WorkspaceContextType {
   setSculptSettings: React.Dispatch<React.SetStateAction<SculptSettings>>;
   paintBrushSettings: PaintBrushSettings;
   setPaintBrushSettings: React.Dispatch<React.SetStateAction<PaintBrushSettings>>;
-  generate3DModel: (forcedMode?: 'image-to-3d' | 'text-to-3d') => Promise<void>;
+  generate3DModel: () => Promise<void>;
   generateImageTo3D: (customImage?: string) => Promise<void>;
   runModelGeneration: () => Promise<void>;
   runRemeshGeneration: () => Promise<void>;
@@ -364,6 +364,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const prevMap = new Map((prevAssets || []).map(a => [a.id, a]));
       const all = [...local, ...uploaded, ...history].map(rawItem => {
         const a = normalizeModelAsset(rawItem);
+        // Add prefix to IDs to prevent collisions (MED-002)
+        if (local.includes(rawItem as any)) {
+          a.id = `local_${a.id}`;
+        } else if (uploaded.includes(rawItem as any)) {
+          a.id = `upload_${a.id}`;
+        } else if (history.includes(rawItem as any)) {
+          a.id = `hist_${a.id}`;
+        }
+        a.sourceType = local.includes(rawItem as any) ? 'local' : (uploaded.includes(rawItem as any) ? 'upload' : 'history');
         const existing = prevMap.get(a.id);
         if (existing && existing.statsAvailable && !a.statsAvailable) {
           return {
@@ -545,6 +554,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
   const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
+  const [modelParameterDefaults, setModelParameterDefaults] = useState<Record<string, Record<string, any>>>({});
 
   useEffect(() => {
     getApiClient().getAvailableModels().then(data => {
@@ -555,6 +565,26 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.warn('Failed to load model details:', err);
     });
   }, []);
+
+  // Fetch parameter defaults for the currently selected model (LOW-001)
+  useEffect(() => {
+    const modelId = generationSettings.aiModel;
+    if (!modelId) return;
+    if (modelParameterDefaults[modelId]) return; // already cached
+
+    let cancelled = false;
+    getApiClient().getModelParameters(modelId).then(data => {
+      if (cancelled) return;
+      setModelParameterDefaults(prev => ({
+        ...prev,
+        [modelId]: data.schema?.parameters || {},
+      }));
+    }).catch(err => {
+      console.warn(`Failed to load model parameters for ${modelId}:`, err);
+    });
+
+    return () => { cancelled = true; };
+  }, [generationSettings.aiModel, modelParameterDefaults]);
 
   const currentAsset = useMemo(
     () => selectedAssetId ? (assets.find(a => a.id === selectedAssetId) ?? null) : null,
@@ -1003,24 +1033,29 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Source geometry follows the selected model's official/tuned inference schedule.
     const sourceQuality = 'ultra' as const;
     const modelId = generationSettings.aiModel || '';
-    const octreeRes = 512;
-    let infSteps = 50;
-    let infGuidance = generationSettings.guidanceScale ?? 7.5;
+    const paramDefaults = modelParameterDefaults[modelId] || {};
+
+    // Use backend-provided parameter defaults when available; fall back to
+    // model-specific inference schedules only if the schema has not loaded yet.
+    const infSteps = Number(
+      paramDefaults.num_inference_steps ??
+      paramDefaults.ss_sampling_steps ??
+      50
+    );
+    let infGuidance = Number(
+      paramDefaults.guidance_scale ??
+      generationSettings.guidanceScale ??
+      7.5
+    );
 
     if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-      infSteps = 5;
-      infGuidance = 5.0;
+      infGuidance = infGuidance || 5.0;
     } else if (modelId.includes('triposg')) {
-      infSteps = 50;
-      infGuidance = 7.0;
+      infGuidance = infGuidance || 7.0;
     } else if (modelId.includes('trellis')) {
-      infSteps = modelId.includes('text_to_') ? 25 : 12;
-      infGuidance = 7.5;
+      infGuidance = infGuidance || 7.5;
     } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
-      infSteps = 50;
-      infGuidance = 5.0;
-    } else if (modelId.includes('ultrashape')) {
-      infSteps = 50;
+      infGuidance = infGuidance || 5.0;
     }
 
     try {
@@ -1055,7 +1090,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
       const modelParameters: Record<string, unknown> = {
-        octree_resolution: octreeRes,
+        octree_resolution: Number(paramDefaults.octree_resolution ?? 512),
         num_inference_steps: infSteps,
         guidance_scale: infGuidance,
         seed: generationSettings.seed ?? undefined,
@@ -1192,6 +1227,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Project is Image-to-3D only - no text-to-3D mode
     const imageInput = generationSettings.image;
     const imageFileId = generationSettings.imageFileId;
+    const modelId = generationSettings.aiModel || '';
     
     if (!imageInput && !imageFileId) {
       setExecutionStep('Please upload or select an image first');
@@ -1208,7 +1244,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         paint_autochain: false,
         multiview: false,
         supports_texture: true,
-      });
+      }, modelParameterDefaults[modelId] || {});
 
       const res = await fetch(endpoint, {
         method: 'POST',

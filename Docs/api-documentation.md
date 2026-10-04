@@ -235,16 +235,14 @@ DELETE /api/v1/file-upload/{file_id}
 
 ## Mesh Generation APIs
 
-> **Note on Text-to-Raw Mesh**: `POST /api/v1/mesh-generation/text-to-raw-mesh` is exposed as an API route, but currently has no model registered in `models.yaml`. Use `text-to-textured-mesh` with `trellis_text_to_textured_mesh` for text prompts.
-
 ```http
-POST /api/v1/mesh-generation/text-to-raw-mesh
+POST /api/v1/mesh-generation/image-to-raw-mesh
 Content-Type: application/json
 
 {
-  "text_prompt": "A cute cartoon robot holding a flower",
+  "image_file_id": "img_abc123",
   "output_format": "glb",
-  "model_preference": "trellis_text_to_raw_mesh",
+  "model_preference": "hunyuan3d_shape_v21_image_to_raw_mesh",
   "model_parameters": {}
 }
 ```
@@ -399,7 +397,6 @@ GET /api/v1/mesh-generation/models
 **Response:**
 ```json
 {
-  "text_to_raw_mesh": ["trellis_text_to_raw_mesh"],
   "text_to_textured_mesh": ["trellis_text_to_textured_mesh"],
   "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh"],
   "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh", "hunyuan3d_shape_v21_image_to_textured_mesh"],

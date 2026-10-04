@@ -1,8 +1,8 @@
 ## 2026-10-04 Source-Fidelity Contract Verification Pass
-- Re-verified BUG-REPORT-ADAPTER-QUALITY.md (BQ-01..BQ-12), the Docs/TASK.md bug registry, and all project docs against the live adapters, scheduler firewall, postprocess pipeline, and frontend schedules.
+- Re-verified BUG-REPORT-ADAPTER-QUALITY.md (BQ-01..BQ-12), the Docs/TASKS.md bug registry, and all project docs against the live adapters, scheduler firewall, postprocess pipeline, and frontend schedules.
 - Closed the TRELLIS image-path response metadata gap: `generation_info` now records the actual ss/slat sampling stages, guidance, texture resolution, bake mode, and simplify ratio, matching the text path and BQ-11.
 - Corrected a stale official-parity regression assertion (TRELLIS image `texture_resolution` schema default 1024 → 2048 per BQ-11/BQ-12/ADR-039) and the TripoSR `mc_resolution` docstring (fixed 320, not "default: 256").
-- Corrected Docs/TASK.md: the TripoSG Y-up rotation (BUG-004) is now recorded as reverted — the 2026-10-03 parity audit rejected the extra transform because the current upstream extraction is natively Y-up.
+- Corrected Docs/TASKS.md: the TripoSG Y-up rotation (BUG-004) is now recorded as reverted — the 2026-10-03 parity audit rejected the extra transform because the current upstream extraction is natively Y-up.
 - Verification: backend pytest passes with 0 failures (3 runtime-gated skips); `npx tsc --noEmit` clean.
 
 ## 2026-10-03 Deep Adapter Parity & Source-Fidelity Firewall Audit

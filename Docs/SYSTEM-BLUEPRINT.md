@@ -65,7 +65,7 @@ graph TD
         AUTO_UNLOAD["Auto-Unload After Job"]:::orange
     end
 
-    subgraph Adapters["🧠 Model Adapters (24 Models)"]
+    subgraph Adapters["🧠 Model Adapters (22 Models)"]
         direction TB
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes PBR"]:::purple
         HUNY["Hunyuan3D-2.1<br/>Shape + Paint 2B"]:::purple

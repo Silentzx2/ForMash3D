@@ -416,3 +416,72 @@ Jobs & Execution follows the same rule: active jobs refresh frequently, idle his
 
 ## Workspace Data Integrity
 Mesh statistics, segmentation part counts, and result metadata are rendered only when supplied by the backend. Client-side sample numbers are not treated as factual asset statistics.
+
+## Resource/Status Header UI — 2026-10-04
+
+The top-level resource status strip shows live system telemetry with negligible performance impact:
+
+| Metric | Backend Source | Refresh |
+|--------|---------------|---------|
+| CPU usage % | `/api/v1/system/stats` `cpu_percent` | 5s |
+| RAM used / total GB | `/api/v1/system/stats` `ram_used_gb`, `ram_total_gb` | 5s |
+| GPU usage % | `/api/v1/system/stats` `gpu_percent` | 5s |
+| GPU VRAM used / total GB | `/api/v1/system/stats` `vram_used_gb`, `vram_total_gb` | 5s |
+| GPU temperature C | `/api/v1/system/stats` `gpu_temp_c` | 5s |
+| GPU name | `/api/v1/system/stats` `gpu_name` | On load |
+
+The backend uses `psutil.cpu_percent(interval=0.1)` for an accurate delta reading without blocking the event loop. GPU telemetry is best-effort via `GPUtil`; absence does not fail the request.
+
+Frontend pattern:
+- Poll `/api/v1/system/stats` every 5 seconds from the workspace header.
+- Hide or degrade gracefully when `gpu_name` is `"Unknown"` or GPU fields are `0.0`.
+- Do not run heavy polling while the workspace tab is hidden.
+
+## Model Parameter Contract — 2026-10-04
+
+The frontend never hardcodes model inference schedules. Each model exposes its parameter schema through:
+
+```
+GET /api/v1/system/models/{model_id}/parameters
+```
+
+Response shape:
+```json
+{
+  "model_id": "trellis_image_to_textured_mesh",
+  "feature_type": "image_to_textured_mesh",
+  "vram_requirement": 11776,
+  "schema": {
+    "parameters": {
+      "texture_resolution": {
+        "type": "integer",
+        "default": 2048,
+        "minimum": 512,
+        "maximum": 4096,
+        "description": "Output texture resolution"
+      }
+    }
+  },
+  "timestamp": "2026-10-04T00:00:00Z"
+}
+```
+
+Frontend rules:
+- Use the returned `schema.parameters` for defaults, constraints, and validation.
+- Treat the backend schema as the source of truth; do not duplicate parameter definitions in TypeScript.
+- When the schema is unavailable, disable dependent controls rather than guessing defaults.
+
+## Generation Quality Presets — 2026-10-04
+
+Quality presets in the Generate panel are UI convenience shortcuts. The actual inference schedule remains model-specific and is resolved at submission time from the model parameter contract or the backend `/system/models/{model_id}/parameters` endpoint.
+
+Current model-specific inference defaults:
+- Hunyuan3D-Shape-v2-1: 50 steps, guidance 5.0
+- Hunyuan3D-DiT-v2-mini-Turbo: 5 steps, guidance 5.0
+- TripoSR: official fixed schedule
+- TripoSG: 50 steps, guidance 7.0
+- TRELLIS image: 12 steps, guidance 7.5
+- TRELLIS text: 25 steps, guidance 7.5
+
+The visible quality selector (`Mobile / Game / Studio / Cinematic / Native`) maps to production post-processing budgets, not inference schedules. `Native / Raw` preserves the model-native source density and skips downstream polycount reduction.
+

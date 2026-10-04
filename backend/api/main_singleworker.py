@@ -31,6 +31,7 @@ from core.scheduler.scheduler_factory import (
     create_development_scheduler,
     create_production_scheduler,
 )
+from core.file_store import FileStore
 from core.utils.exceptions import BaseAPIException
 
 from .routers import (
@@ -132,6 +133,46 @@ async def lifespan(app: FastAPI):
 
         # Store scheduler in app state for dependency injection
         app.state.scheduler = scheduler
+
+        # Initialize in-memory file store for single-worker mode
+        from core.file_store import FileStore
+        from core.file_store import FileInfo
+        class InMemoryFileStore:
+            """In-memory file store for single-worker mode"""
+            def __init__(self):
+                self._storage = {}
+            
+            async def store_file_metadata(self, file_id: str, file_info: dict) -> bool:
+                self._storage[file_id] = file_info
+                return True
+            
+            async def get_file_metadata(self, file_id: str):
+                return self._storage.get(file_id)
+            
+            async def delete_file_metadata(self, file_id: str) -> bool:
+                if file_id in self._storage:
+                    self._storage[file_id]["is_available"] = False
+                    return True
+                return False
+            
+            async def list_file_metadata(self, file_type: str = None, limit: int = 100):
+                files = []
+                for metadata in self._storage.values():
+                    if file_type and metadata.get("file_type") != file_type:
+                        continue
+                    if len(files) >= limit:
+                        break
+                    files.append(metadata)
+                return files
+            
+            async def count_files(self, file_type: str = None):
+                if file_type:
+                    return sum(1 for m in self._storage.values() if m.get("file_type") == file_type)
+                return len(self._storage)
+        
+        file_store = InMemoryFileStore()
+        app.state.file_store = file_store
+        logger.info("✓ In-memory file store initialized for single-worker mode")
 
         logger.info("Application startup completed successfully")
 

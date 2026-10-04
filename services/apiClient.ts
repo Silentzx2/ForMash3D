@@ -4,6 +4,7 @@ import {
   BaseApiResponse, 
   HealthStatus,
   SystemStatus,
+  SystemStats,
   SchedulerStatus,
   AvailableModels,
   FeaturesResponse,
@@ -241,13 +242,18 @@ class ApiClient {
   }
 
   async getSystemStatus(): Promise<SystemStatus> {
-    const response = await this.retry(() => 
-      this.client.get<SystemStatus>('/api/v1/system/status')
-    );
-    return response.data;
-  }
+      const response = await this.retry(() =>
+        this.client.get<SystemStatus>('/api/v1/system/status')
+      );
+      return response.data;
+    }
 
-  async getSchedulerStatus(): Promise<SchedulerStatus> {
+    async getSystemStats(): Promise<SystemStats> {
+      const response = await this.client.get<SystemStats>('/api/v1/system/stats');
+      return response.data;
+    }
+
+    async getSchedulerStatus(): Promise<SchedulerStatus> {
     const response = await this.retry(() => 
       this.client.get<SchedulerStatus>('/api/v1/system/scheduler-status')
     );
@@ -265,6 +271,13 @@ class ApiClient {
   async getAvailableFeatures(): Promise<FeaturesResponse> {
     const response = await this.retry(() => 
       this.client.get<FeaturesResponse>('/api/v1/system/features')
+    );
+    return response.data;
+  }
+
+  async getModelParameters(modelId: string): Promise<ModelParametersResponse> {
+    const response = await this.retry(() =>
+      this.client.get<ModelParametersResponse>(`/api/v1/system/models/${encodeURIComponent(modelId)}/parameters`)
     );
     return response.data;
   }
@@ -538,14 +551,6 @@ class ApiClient {
     return response.data;
   }
 
-  // Model Parameters Endpoints
-  async getModelParameters(modelId: string): Promise<ModelParametersResponse> {
-    const response = await this.retry(() => 
-      this.client.get<ModelParametersResponse>(`/api/v1/system/models/${modelId}/parameters`)
-    );
-    return response.data;
-  }
-
   // Mesh Editing Endpoints
   async textMeshEditing(request: TextMeshEditingRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(
@@ -600,21 +605,17 @@ class ApiClient {
   // limitation honestly (throws) instead of silently hitting 404s.
 
   async getLogs(limit: number = 100, level?: string): Promise<any[]> {
-    try {
-      const params: any = { lines: String(limit) };
-      if (level) params.level = level.toUpperCase();
-      const response = await this.client.get('/api/v1/system/logs', { params });
-      const rawLogs = response?.data?.logs || (response as any)?.logs || [];
-      return rawLogs.map((log: any, index: number) => ({
-        id: log.id || `log-${index}-${Date.now()}`,
-        timestamp: log.timestamp || log.ts || new Date().toISOString(),
-        level: (log.level || 'info').toLowerCase(),
-        source: log.source || log.logger || 'system',
-        message: log.message || '',
-      }));
-    } catch {
-      return [];
-    }
+    const params: any = { lines: String(limit) };
+    if (level) params.level = level.toUpperCase();
+    const response = await this.client.get('/api/v1/system/logs', { params });
+    const rawLogs = response?.data?.logs || (response as any)?.logs || [];
+    return rawLogs.map((log: any, index: number) => ({
+      id: log.id || `log-${index}-${Date.now()}`,
+      timestamp: log.timestamp || log.ts || new Date().toISOString(),
+      level: (log.level || 'info').toLowerCase(),
+      source: log.source || log.logger || 'system',
+      message: log.message || '',
+    }));
   }
 
   async clearLogs(): Promise<void> {

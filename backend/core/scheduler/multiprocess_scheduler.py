@@ -72,7 +72,13 @@ from .job_queue import JobQueue, JobRequest, JobStatus
 
 logger = logging.getLogger(__name__)
 
-RETRY_TRANSIENT_ERRORS = os.environ.get("RETRY_TRANSIENT_ERRORS", "false").lower() == "true"
+def parse_bool_env(env_var: str, default: bool = False) -> bool:
+    """Parse environment variable as boolean, handling common string representations."""
+    value = os.environ.get(env_var, str(default)).strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+RETRY_TRANSIENT_ERRORS = parse_bool_env("RETRY_TRANSIENT_ERRORS", False)
+AUTO_UNLOAD_AFTER_JOB = parse_bool_env("AUTO_UNLOAD_AFTER_JOB", True)
 
 # Production budgets belong to post-processing. Never let them reach model inference.
 _POSTPROCESS_ONLY_INPUTS = frozenset({
@@ -557,7 +563,7 @@ def _process_job_in_worker(
             )
         )
 
-        if os.environ.get("AUTO_UNLOAD_AFTER_JOB", "true").lower() in {"1", "true", "yes", "on"}:
+        if AUTO_UNLOAD_AFTER_JOB:
             try:
                 logger.info(
                     f"[GPU UNLOAD QUEUED] job_id={job_id} model={model_id} reason=AUTO_UNLOAD_AFTER_JOB"
@@ -596,7 +602,7 @@ def _process_job_in_worker(
                 ],
             )
         )
-        if loaded_model is not None and os.environ.get("AUTO_UNLOAD_AFTER_JOB", "true").lower() in {"1", "true", "yes", "on"}:
+        if loaded_model is not None and AUTO_UNLOAD_AFTER_JOB:
             try:
                 logger.info(
                     f"[GPU UNLOAD QUEUED] job_id={job_request.job_id} "

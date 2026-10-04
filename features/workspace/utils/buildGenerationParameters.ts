@@ -25,7 +25,8 @@ export interface BuildParamsResult {
 
 export function buildGenerationParameters(
   settings: GenerationSettings,
-  modelCapabilities: ModelCapabilities
+  modelCapabilities: ModelCapabilities,
+  paramDefaults: Record<string, any> = {}
 ): BuildParamsResult {
   const modelId = settings.aiModel || '';
   const currentQuality = settings.meshQuality || 'high';
@@ -47,9 +48,9 @@ export function buildGenerationParameters(
   
   // Build model parameters
   const modelParameters: Record<string, unknown> = {
-    octree_resolution: 512,
-    num_inference_steps: getInferenceSteps(modelId, true),
-    guidance_scale: settings.guidanceScale ?? 7.5,
+    octree_resolution: Number(paramDefaults.octree_resolution ?? 512),
+    num_inference_steps: getInferenceSteps(modelId, true, paramDefaults),
+    guidance_scale: Number(paramDefaults.guidance_scale ?? settings.guidanceScale ?? 7.5),
     seed: settings.seed ?? undefined,
     low_vram: Boolean(settings.lowVram),
     enable_flashvdm: settings.enableFlashVDM ?? false,
@@ -64,7 +65,7 @@ export function buildGenerationParameters(
   };
   
   // Model-specific parameters
-  applyModelSpecificParams(modelParameters, modelId, currentQuality, isPaintModel, settings);
+  applyModelSpecificParams(modelParameters, modelId, currentQuality, isPaintModel, settings, paramDefaults);
   
   // Determine endpoint and body
   let endpoint: string;
@@ -129,31 +130,30 @@ export function buildGenerationParameters(
   };
 }
 
-function getInferenceSteps(modelId: string, isImageTo3D: boolean): number {
-  // Model-specific inference steps (must match official schedules)
-  let infSteps: number;
-  
+function getInferenceSteps(modelId: string, isImageTo3D: boolean, paramDefaults: Record<string, any> = {}): number {
+  // Model-specific inference steps (must match official schedules).
+  // Prefer backend-provided schema defaults; fall back to known official schedules.
+  const schemaSteps = Number(
+    paramDefaults.num_inference_steps ??
+    paramDefaults.ss_sampling_steps ??
+    -1
+  );
+  if (schemaSteps >= 1) return schemaSteps;
+
   if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-    infSteps = 5;
+    return 5;
   } else if (modelId.includes('triposg')) {
-    infSteps = 50;
+    return 50;
   } else if (modelId.includes('trellis')) {
     // Trellis: 12 steps for image-to-3D, 25 for text-to-3D
-    infSteps = isImageTo3D ? 12 : 25;
+    return isImageTo3D ? 12 : 25;
   } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
-    infSteps = 50;
+    return 50;
   } else if (modelId.includes('ultrashape')) {
-    infSteps = 50;
-  } else {
-    infSteps = 50;
+    return 50;
   }
   
-  // Explicit assignments for contract verification (string search in test)
-  // infSteps = 5 for hunyuan3d_dit_v2_mini_turbo
-  // infSteps = 12 for trellis image-to-3D
-  // infSteps = 50 for triposg, hunyuan3d_shape_v21, ultrashape
-  
-  return infSteps;
+  return 50;
 }
 
 function shouldAutoOptimize(targetPolycount: number | undefined): boolean {
@@ -170,36 +170,38 @@ function applyModelSpecificParams(
   modelId: string,
   currentQuality: string,
   isPaintModel: boolean,
-  settings: GenerationSettings
+  settings: GenerationSettings,
+  paramDefaults: Record<string, any> = {}
 ): void {
   // Source geometry and source textures always use maximum-fidelity generation settings.
   // UI poly/quality budgets apply only to downstream production artifacts.
+  // When the backend provides parameter defaults, prefer them over hardcoded values.
   
   if (modelId.includes('triposr')) {
-    modelParameters.mc_resolution = 320;
+    modelParameters.mc_resolution = Number(paramDefaults.mc_resolution ?? 320);
   } else if (modelId.includes('triposg')) {
-    modelParameters.faces = -1;
-    modelParameters.num_inference_steps = 50;
+    modelParameters.faces = Number(paramDefaults.faces ?? -1);
+    modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
   } else if (modelId.includes('triposf')) {
-    modelParameters.resolution = 1024;
-    modelParameters.sample_points_num = 1638400;
+    modelParameters.resolution = Number(paramDefaults.resolution ?? 1024);
+    modelParameters.sample_points_num = Number(paramDefaults.sample_points_num ?? 1638400);
   } else if (modelId.includes('partpacker')) {
-    modelParameters.grid_resolution = 512;
-    modelParameters.num_faces = -1;
+    modelParameters.grid_resolution = Number(paramDefaults.grid_resolution ?? 512);
+    modelParameters.num_faces = Number(paramDefaults.num_faces ?? -1);
   } else if (modelId.includes('ultrashape')) {
-    modelParameters.octree_res = 1024;
-    modelParameters.num_latents = 32768;
+    modelParameters.octree_res = Number(paramDefaults.octree_res ?? 1024);
+    modelParameters.num_latents = Number(paramDefaults.num_latents ?? 32768);
   } else if (modelId.includes('trellis2')) {
-    modelParameters.decimation_target = -1;
-    modelParameters.remesh = false;
-    modelParameters.texture_size = 4096;
+    modelParameters.decimation_target = Number(paramDefaults.decimation_target ?? -1);
+    modelParameters.remesh = paramDefaults.remesh ?? false;
+    modelParameters.texture_size = Number(paramDefaults.texture_size ?? 4096);
   } else if (modelId.includes('trellis')) {
-    modelParameters.simplify = 0.0;
-    modelParameters.ss_sampling_steps = 12;
-    modelParameters.slat_sampling_steps = 12;
-    modelParameters.texture_resolution = 2048;
+    modelParameters.simplify = Number(paramDefaults.simplify ?? 0.0);
+    modelParameters.ss_sampling_steps = Number(paramDefaults.ss_sampling_steps ?? 12);
+    modelParameters.slat_sampling_steps = Number(paramDefaults.slat_sampling_steps ?? 12);
+    modelParameters.texture_resolution = Number(paramDefaults.texture_resolution ?? 2048);
   } else if (modelId.includes('hunyuan')) {
-    modelParameters.octree_resolution = 512;
+    modelParameters.octree_resolution = Number(paramDefaults.octree_resolution ?? 512);
     modelParameters.enable_realesrgan = settings.enableRealESRGAN !== false;
   }
   
