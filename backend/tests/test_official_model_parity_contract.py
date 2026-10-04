@@ -123,7 +123,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
 
         self.assertEqual(schema["ss_sampling_steps"]["default"], 12)
         self.assertEqual(schema["slat_sampling_steps"]["default"], 12)
-        self.assertEqual(schema["texture_resolution"]["default"], 1024)
+        self.assertEqual(schema["texture_resolution"]["default"], 2048)
         self.assertEqual(schema["simplify"]["default"], 0.0)
 
     def test_trellis_text_adapter_contract(self):

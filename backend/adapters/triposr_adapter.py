@@ -144,7 +144,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
         Inputs:
             - image_path: Path to input image (or image_paths)
             - output_format: 'glb' or 'obj' (default: 'glb')
-            - mc_resolution: Marching cubes resolution (default: 256)
+            - mc_resolution: Marching cubes resolution (fixed at 320, the official UI ceiling)
             - bake_texture: bool (default: False)
             - no_remove_bg: bool (default: False)
             - foreground_ratio: float (default: 0.85)
