@@ -9,10 +9,8 @@ from core.scheduler.job_queue import JobRequest, JobStatus
 from postprocess.pipeline import _export_quad_obj
 from api.routers.mesh_generation import (
     TextToRawMeshRequest,
-    TextToTexturedMeshRequest,
     ImageToRawMeshRequest,
     ImageToTexturedMeshRequest,
-    BatchTextToTexturedMeshItem,
 )
 
 
@@ -68,7 +66,7 @@ def test_mesh_generation_requests_accept_quad_topology():
     """Verify request models accept topology_mode and quad_topology."""
     t_req = TextToRawMeshRequest(
         text_prompt="a cute low-poly robot",
-        model_preference="trellis_text_to_textured_mesh",
+        model_preference="triposr_image_to_raw_mesh",
         topology_mode="quad",
         quad_topology=True,
     )
@@ -83,14 +81,6 @@ def test_mesh_generation_requests_accept_quad_topology():
     )
     assert img_req.topology_mode == "quad"
     assert img_req.quad_topology is True
-
-    batch_item = BatchTextToTexturedMeshItem(
-        text_prompt="sword",
-        topology_mode="quad",
-        quad_topology=True,
-    )
-    assert batch_item.topology_mode == "quad"
-    assert batch_item.quad_topology is True
 
 
 def test_export_quad_obj_produces_quad_polygons():

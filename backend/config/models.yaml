@@ -2,22 +2,6 @@
 # Available models for each feature
 # Use the actual adapter model IDs as defined in the adapter classes
 
-# text-conditioned geometry/geometry+texture generation
-text_to_textured_mesh:
-  trellis_text_to_textured_mesh:
-    capabilities:
-      text_to_3d: true
-      image_to_3d: false
-      multiview: false
-      texture_generation: true
-      raw_mesh: false
-    vram_requirement: 11776  # MB
-    supported_inputs: ["text"]
-    supported_outputs: ["glb", "obj"]
-    model_path: "backend/pretrained/TRELLIS"
-    enabled: true
-    max_workers: 1
-
 # text-conditioned mesh painting
 text_mesh_painting:
   trellis_text_mesh_painting:

@@ -68,7 +68,6 @@ export const MESH_QUALITY_OPTIONS: MeshQualityPreset[] = [
     badge: '640³ • 75 steps (Maximum)',
     tooltip: 'Ultra: Maximum fidelity (640³ grid • 75 steps • ~100k tris)',
   },
-  // 'raw' quality removed: text-to-raw-mesh has no registered backend model
 ];
 
 interface DiscoveredModel {
@@ -140,7 +139,7 @@ export const GeneratePanel: React.FC = () => {
     setGenerationSettings
   } = useWorkspace();
 
-  const currentMode = generationSettings.mode || 'image-to-3d';
+  const currentMode = 'image-to-3d';
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
   const [weightsStatus, setWeightsStatus] = useState<Record<string, boolean>>({});
   const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
@@ -177,42 +176,84 @@ export const GeneratePanel: React.FC = () => {
     return () => { active = false; };
   }, []);
 
+
+  // Keep the user's model selection. Only repair an invalid selection after
+  // the available-model list changes; never rank or silently replace models.
+
+  // Memoize modelDetails to prevent infinite re-renders (HIGH-003)
+  const memoizedModelDetails = useMemo(() => {
+    if (!modelRegistry) return {};
+    const details: Record<string, any> = {};
+    for (const [feature, ids] of Object.entries(modelRegistry)) {
+      for (const id of ids) {
+        if (modelDetails[id]) {
+          details[id] = modelDetails[id];
+        }
+      }
+    }
+    return details;
+  }, [modelRegistry, modelDetails]);
+
   const relevantModelIds = useMemo(() => {
     let ids: string[] = [];
-    if (currentMode === 'text-to-3d') {
-      const textModels = (modelRegistry?.['text_to_textured_mesh'] || []).filter(isMeshGenerationModel);
-      ids = textModels.length > 0 ? textModels : ['trellis_text_to_textured_mesh'];
-    } else {
-      const textured = (modelRegistry?.['image_to_textured_mesh'] || []).filter(isMeshGenerationModel);
-      const raw = (modelRegistry?.['image_to_raw_mesh'] || []).filter(isMeshGenerationModel);
-      const combined = Array.from(new Set([...textured, ...raw]));
-      const defaults = [
-        'trellis_image_to_textured_mesh',
-        'triposr_image_to_raw_mesh',
-        'triposg_image_to_raw_mesh',
-        'hunyuan3d_shape_v21_image_to_raw_mesh',
-        'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-        'triposf_image_to_raw_mesh',
-        'trellis2_image_to_textured_mesh',
-        'partpacker_image_to_raw_mesh',
-        'ultrashape_image_to_raw_mesh',
-      ];
-      ids = combined.length > 0 ? combined : defaults;
-    }
+    
+    const textured = (modelRegistry?.['image_to_textured_mesh'] || []).filter(isMeshGenerationModel);
+    const raw = (modelRegistry?.['image_to_raw_mesh'] || []).filter(isMeshGenerationModel);
+    const combined = Array.from(new Set([...textured, ...raw]));
+    const defaults = [
+      'trellis_image_to_textured_mesh',
+      'triposr_image_to_raw_mesh',
+      'triposg_image_to_raw_mesh',
+      'hunyuan3d_shape_v21_image_to_raw_mesh',
+      'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
+      'triposf_image_to_raw_mesh',
+      'trellis2_image_to_textured_mesh',
+      'partpacker_image_to_raw_mesh',
+      'ultrashape_image_to_raw_mesh',
+    ];
+    ids = combined.length > 0 ? combined : defaults;
 
     // Prioritize ready / installed models at the top, while keeping all supported models
     // visible in the selector so users can see available engines and their readiness status.
-    const readyIds = ids.filter(id => modelDetails[id]?.status === 'ready' || weightsStatus[id] === true);
+    const readyIds = ids.filter(id => memoizedModelDetails[id]?.status === 'ready' || weightsStatus[id] === true);
     const otherIds = ids.filter(id => !readyIds.includes(id));
     return [...readyIds, ...otherIds];
-  }, [modelRegistry, currentMode, weightsStatus, modelDetails]);
+  }, [modelRegistry, weightsStatus, memoizedModelDetails]);
+  const [subAction, setSubAction] = useState<'upload' | 'crop'>('upload');
+  const [activeMvSlot, setActiveMvSlot] = useState<'front' | 'back' | 'left' | 'right'>('front');
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const getStatusInfo = () => {
+    const selected = providersList.find(m => m.id === generationSettings.aiModel);
+    if (!selected) {
+      if (providersList.length === 0) return { label: 'No models installed', tone: 'warn' as const };
+      return null;
+    }
+    // Check both weightsStatus and modelDetails for readiness (MED-001)
+    const details = memoizedModelDetails[selected.id];
+    const isReady = weightsStatus[selected.id] === true || details?.status === 'ready';
+    if (isReady) return null; // ready → no pill
+    if (details?.status === 'weights_missing') return { label: 'Weights missing (download via manager)', tone: 'warn' as const };
+    if (details?.status === 'gpu_unavailable') return { label: 'GPU unavailable (requires CUDA)', tone: 'warn' as const };
+    if (!selected.installed) return { label: 'Model weights missing', tone: 'warn' as const };
+    if (selected.status) return { label: selected.status, tone: 'warn' as const };
+    return { label: 'Not ready', tone: 'warn' as const };
+  };
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const statusInfo = getStatusInfo();
+
 
   const meshCapableModels = useMemo(() => {
     return relevantModelIds.map(id => {
-      const isReady = modelDetails[id]?.status === 'ready' || weightsStatus[id] === true;
-      return formatGenerateModel(id, isReady, modelDetails[id]);
+      const isReady = memoizedModelDetails[id]?.status === 'ready' || weightsStatus[id] === true;
+      return formatGenerateModel(id, isReady, memoizedModelDetails[id]);
     });
-  }, [relevantModelIds, weightsStatus, modelDetails]);
+  }, [relevantModelIds, weightsStatus, memoizedModelDetails]);
 
   const providersList = meshCapableModels;
 
@@ -230,54 +271,6 @@ export const GeneratePanel: React.FC = () => {
   }, [providersList, generationSettings.aiModel, setGenerationSettings]);
 
   // Status pill logic — shows what's wrong with the selected model
-  const getStatusInfo = () => {
-    const selected = providersList.find(m => m.id === generationSettings.aiModel);
-    if (!selected) {
-      if (providersList.length === 0) return { label: 'No models installed', tone: 'warn' as const };
-      return null;
-    }
-    if (selected.available) return null; // ready → no pill
-    if (selected.status === 'weights_missing') return { label: 'Weights missing (download via manager)', tone: 'warn' as const };
-    if (selected.status === 'gpu_unavailable') return { label: 'GPU unavailable (requires CUDA)', tone: 'warn' as const };
-    if (!selected.installed) return { label: 'Model weights missing', tone: 'warn' as const };
-    if (selected.status) return { label: selected.status, tone: 'warn' as const };
-    return { label: 'Not ready', tone: 'warn' as const };
-  };
-
-  const statusInfo = getStatusInfo();
-
-  // Keep the user's model selection. Only repair an invalid selection after
-  // the available-model list changes; never rank or silently replace models.
-
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
-
-  useEffect(() => {
-    if (!modelDropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
-        setModelDropdownOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setModelDropdownOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [modelDropdownOpen]);
-
-  const [subAction, setSubAction] = useState<'upload' | 'crop'>('upload');
-  const [activeMvSlot, setActiveMvSlot] = useState<'front' | 'back' | 'left' | 'right'>('front');
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
-
-  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const { progress: uploadProgress, startUpload, updateProgress, finishUpload, failUpload } = useUploadProgress();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -286,6 +279,9 @@ export const GeneratePanel: React.FC = () => {
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
   const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview);
+  
+  const supportsTextureGeneration = activeModelObj?.supports_texture ?? false;
+  const showTextureToggle = supportsTextureGeneration;
 
   const physics = generationSettings.physics ?? {
     bodyType: 'auto' as const,
@@ -336,11 +332,11 @@ export const GeneratePanel: React.FC = () => {
     }
     ownedBlobUrlsRef.current.clear();
   }, []);
-  const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/x-png', 'image/jpg', 'image/avif'];
-  const ACCEPTED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.avif'];
+  const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/x-png', 'image/jpg'];
+  const ACCEPTED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'];
 
   const isAcceptedImage = (file: File) => {
-    if (file.type && (ACCEPTED_IMAGE_TYPES.includes(file.type.toLowerCase()) || file.type.startsWith('image/'))) {
+    if (file.type && ACCEPTED_IMAGE_TYPES.includes(file.type.toLowerCase())) {
       return true;
     }
     const name = (file.name || '').toLowerCase();
@@ -855,7 +851,7 @@ export const GeneratePanel: React.FC = () => {
                           setGenerationSettings(prev => ({
                             ...prev,
                             aiModel: m.id,
-                            generateTexture: m.supports_texture ? (prev.generateTexture !== false) : false,
+                            generateTexture: m.supports_texture ? true : false,
                           }));
                           setModelDropdownOpen(false);
                         }}
@@ -907,33 +903,35 @@ export const GeneratePanel: React.FC = () => {
 
               {/* Engine Feature Toggles: PBR Texture & Low VRAM */}
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
-                {/* PBR Texture Toggle */}
-                <button
-                  type="button"
-                  onClick={() => setGenerationSettings(prev => ({
-                    ...prev,
-                    generateTexture: prev.generateTexture === false,
-                  }))}
-                  className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
-                    generationSettings.generateTexture !== false
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
-                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
-                  }`}
-                >
-                  <div className="flex flex-col min-w-0 pr-1">
-                    <span className="text-[11px] font-bold text-white leading-tight">PBR Texture</span>
-                    <span className="text-[9px] text-zinc-400">
-                      {generationSettings.generateTexture !== false ? 'Color Maps' : 'Disabled'}
-                    </span>
-                  </div>
-                  <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
-                    generationSettings.generateTexture !== false ? 'bg-emerald-500' : 'bg-zinc-700'
-                  }`}>
-                    <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
-                      generationSettings.generateTexture !== false ? 'left-4' : 'left-0.5 bg-zinc-300'
-                    }`} />
-                  </div>
-                </button>
+                {/* PBR Texture Toggle - hidden for text-to-3D models (always generates textures) */}
+                {showTextureToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setGenerationSettings(prev => ({
+                      ...prev,
+                      generateTexture: prev.generateTexture === false,
+                    }))}
+                    className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
+                      generationSettings.generateTexture !== false
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
+                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
+                    }`}
+                  >
+                    <div className="flex flex-col min-w-0 pr-1">
+                      <span className="text-[11px] font-bold text-white leading-tight">PBR Texture</span>
+                      <span className="text-[9px] text-zinc-400">
+                        {generationSettings.generateTexture !== false ? 'Color Maps' : 'Disabled'}
+                      </span>
+                    </div>
+                    <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
+                      generationSettings.generateTexture !== false ? 'bg-emerald-500' : 'bg-zinc-700'
+                    }`}>
+                      <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                        generationSettings.generateTexture !== false ? 'left-4' : 'left-0.5 bg-zinc-300'
+                      }`} />
+                    </div>
+                  </button>
+                )}
 
                 {/* FlashVDM Toggle - only visible for FlashVDM-compatible models */}
                 {isFlashVDMModel && (

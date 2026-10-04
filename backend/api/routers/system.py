@@ -10,7 +10,7 @@ import tempfile
 import time
 import torch
 import zipfile
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Optional
 
@@ -168,6 +168,52 @@ async def system_status(
     return status
 
 
+@router.get("/stats", summary="Lightweight system stats for resource monitor")
+async def system_stats(
+    settings=Depends(get_current_settings), _: bool = Depends(verify_api_key)
+):
+    """Get lightweight system stats optimized for header resource monitor (5s refresh)"""
+    
+    cpu_percent = psutil.cpu_percent(interval=None)
+    memory = psutil.virtual_memory()
+    
+    # Get GPU info
+    gpu_percent = 0.0
+    vram_used_gb = 0.0
+    vram_total_gb = 0.0
+    vram_percent = 0.0
+    gpu_name = "Unknown"
+    gpu_temp_c = None
+    
+    try:
+        import GPUtil
+        gpus = GPUtil.getGPUs()
+        if gpus:
+            gpu = gpus[0]  # Primary GPU
+            gpu_percent = gpu.load * 100
+            vram_total_gb = gpu.memoryTotal / 1024
+            vram_used_gb = gpu.memoryUsed / 1024
+            vram_percent = gpu.memoryUtil * 100
+            gpu_name = gpu.name
+            gpu_temp_c = gpu.temperature
+    except Exception:
+        pass  # GPU monitoring not available
+    
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "cpu_percent": cpu_percent,
+        "ram_used_gb": memory.used / (1024**3),
+        "ram_total_gb": memory.total / (1024**3),
+        "ram_percent": memory.percent,
+        "gpu_percent": gpu_percent,
+        "vram_used_gb": vram_used_gb,
+        "vram_total_gb": vram_total_gb,
+        "vram_percent": vram_percent,
+        "gpu_name": gpu_name,
+        "gpu_temp_c": gpu_temp_c,
+    }
+
+
 @router.get("/models/{model_id}/parameters", summary="Get model parameters")
 async def get_model_parameters(
     model_id: str,
@@ -211,8 +257,14 @@ async def get_model_parameters(
                 "feature_type": model_config.get("feature_type"),
                 "vram_requirement": model_config.get("vram_requirement"),
                 "schema": schema,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(datetime.UTC).isoformat()
             }
+        except ImportError as e:
+            logger.error(f"Model adapter not found for {model_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model adapter not found: {str(e)}"
+            )
         except Exception as e:
             logger.error(f"Failed to get parameters for model {model_id}: {e}")
             raise HTTPException(

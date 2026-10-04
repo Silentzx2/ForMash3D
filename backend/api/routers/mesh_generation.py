@@ -6,7 +6,9 @@ and combinations of both. Enhanced to support file uploads, base64 encoding, and
 result downloading.
 """
 
+import asyncio
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 from uuid import uuid4
@@ -86,46 +88,6 @@ class TextToRawMeshRequest(BaseModel):
         if v not in allowed_formats:
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
-
-
-class TextToTexturedMeshRequest(TextToRawMeshRequest):
-    """Request for text-to-textured-mesh generation"""
-
-    model_preference: str = Field(
-        "trellis_text_to_textured_mesh", description="Model name for mesh generation"
-    )
-    texture_prompt: str = Field(
-        "", description="Text description for texture generation"
-    )
-    texture_resolution: int = Field(
-        1024, description="Texture resolution", ge=256, le=4096
-    )
-    model_parameters: Optional[dict] = Field(
-        None,
-        description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
-    )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
-    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
-    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
-    quad_topology: bool = Field(False, description="Request quad-dominant topology")
-
-
-class BatchTextToTexturedMeshItem(BaseModel):
-    """One independent text-generation item inside a batch."""
-    text_prompt: str = Field(..., min_length=1, max_length=4000)
-    negative_prompt: Optional[str] = Field(None, max_length=4000)
-    model_preference: str = Field("trellis_text_to_textured_mesh")
-    texture_prompt: Optional[str] = Field(None, max_length=4000)
-    texture_resolution: int = Field(1024, ge=256, le=4096)
-    model_parameters: Optional[dict] = None
-    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
-    quad_topology: bool = Field(False, description="Request quad-dominant topology")
-
-
-class BatchTextToTexturedMeshRequest(BaseModel):
-    """Submit independent text jobs under one scheduler-owned batch."""
-    items: List[BatchTextToTexturedMeshItem] = Field(..., min_length=1, max_length=100)
-    max_parallel: int = Field(2, ge=1, le=32)
 
 
 class TextMeshPaintingRequest(BaseModel):
@@ -446,14 +408,14 @@ async def process_file_input(
             raise HTTPException(status_code=400, detail="No input provided")
     except HTTPException as he:
         if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, temp_dir, True)
         import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(he)} {trace}")
         raise he
     except Exception as e:
         if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, temp_dir, True)
         import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(e)} {trace}")
@@ -526,127 +488,8 @@ async def text_to_raw_mesh(
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
 
 
-@router.post("/text-to-textured-mesh", response_model=MeshGenerationResponse)
-async def text_to_textured_mesh(
-    mesh_request: TextToTexturedMeshRequest,
-    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
-):
-    """
-    Generate a 3D textured mesh from text description.
-
-    Args:
-        mesh_request: Text-to-textured-mesh generation parameters
-        scheduler: Model scheduler dependency
-        current_user: Current authenticated user (required if auth enabled)
-
-    Returns:
-        Job information for the mesh generation task
-    """
-    try:
-        user_id = current_user.user_id if current_user else None
-        
-        # Validate model preference
-        validate_model_preference(
-            mesh_request.model_preference, "text_to_textured_mesh", scheduler
-        )
-
-        chosen_stem = mesh_request.asset_name or (mesh_request.text_prompt[:32] if mesh_request.text_prompt else "asset")
-        job_request = JobRequest(
-            feature="text_to_textured_mesh",
-            inputs={
-                "asset_name": chosen_stem,
-                "text_prompt": mesh_request.text_prompt,
-                "texture_prompt": mesh_request.texture_prompt,
-                "texture_text_prompt": mesh_request.texture_prompt,
-                "output_format": mesh_request.output_format,
-                "texture_resolution": mesh_request.texture_resolution,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-                **(mesh_request.model_parameters or {}),
-            },
-            model_preference=mesh_request.model_preference,
-            priority=1,
-            metadata={
-                "asset_name": chosen_stem,
-                "postprocess_mode": "production_mesh",
-                "feature_type": "text_to_textured_mesh",
-                "physics_enabled": mesh_request.physics_enabled,
-                "physics_config": mesh_request.physics_config,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-            },
-            user_id=user_id,
-        )
-        # logger.info("JobRequest: {}".format(job_request.to_dict()))
-
-        job_id = await scheduler.schedule_job(job_request)
-
-        return MeshGenerationResponse(
-            job_id=job_id,
-            status="queued",
-            message="Text-to-textured-mesh generation job queued successfully",
-        )
-
-    except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
-        raise
-    except Exception as e:
-        logger.error(f"Error scheduling text-to-textured-mesh job: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
-
-
-@router.post("/text-to-textured-mesh/batch")
-async def batch_text_to_textured_mesh(
-    batch_request: BatchTextToTexturedMeshRequest,
-    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
-):
-    """Queue multiple text-to-3D jobs; the scheduler enforces max_parallel."""
-    batch_id = uuid4().hex
-    user_id = current_user.user_id if current_user else None
-    jobs = []
-    for item in batch_request.items:
-        validate_model_preference(
-            item.model_preference, "text_to_textured_mesh", scheduler
-        )
-        job_request = JobRequest(
-            feature="text_to_textured_mesh",
-            inputs={
-                "text_prompt": item.text_prompt,
-                "negative_prompt": item.negative_prompt or "",
-                "texture_prompt": item.texture_prompt or item.text_prompt,
-                "texture_text_prompt": item.texture_prompt or item.text_prompt,
-                "output_format": "glb",
-                "texture_resolution": item.texture_resolution,
-                "topology_mode": item.topology_mode or ("quad" if item.quad_topology else "triangle"),
-                "quad_topology": bool(item.quad_topology or item.topology_mode == "quad"),
-                **(item.model_parameters or {}),
-            },
-            model_preference=item.model_preference,
-            priority=1,
-            metadata={
-                "postprocess_mode": "production_mesh",
-                "feature_type": "text_to_textured_mesh",
-                "batch_id": batch_id,
-                "batch_max_parallel": batch_request.max_parallel,
-                "batch_size": len(batch_request.items),
-                "batch_item_index": len(jobs),
-                "topology_mode": item.topology_mode or ("quad" if item.quad_topology else "triangle"),
-                "quad_topology": bool(item.quad_topology or item.topology_mode == "quad"),
-            },
-            user_id=user_id,
-        )
-        jobs.append(await scheduler.schedule_job(job_request))
-
-    return {
-        "api_version": "1",
-        "batch_id": batch_id,
-        "status": "queued",
-        "max_parallel": batch_request.max_parallel,
-        "job_ids": jobs,
-    }
-
+# Removed text-to-textured-mesh endpoints - project is Image-to-3D only
+# Text-to-Motion is kept in ardy_adapter.py
 
 # Text-based mesh painting endpoint (supports both file path and base64)
 @router.post("/text-mesh-painting", response_model=MeshGenerationResponse)

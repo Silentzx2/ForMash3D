@@ -239,14 +239,19 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 simplify = 0.0
 
             # Extract mesh from Gaussian representation
+            # For raw extraction, disable post-processing (hole filling + mincut) to preserve micro-details
+            postprocess_mode = "none" if simplify == 0.0 else "simplify"
+            fill_holes = simplify != 0.0
+            
             mesh = self.postprocessing_utils.to_trimesh(
                 outputs["gaussian"][0],
                 candidate_mesh,
                 simplify=simplify,
-                fill_holes=True,
+                fill_holes=fill_holes,
                 texture_size=texture_resolution,
                 texture_bake_mode=texture_bake_mode,
                 forward_rot=True,
+                postprocess_mode=postprocess_mode,
             )
 
             # Save mesh in requested format
@@ -294,6 +299,9 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                         "texture_bake_mode": texture_bake_mode,
                         "simplify_ratio": simplify,
                         "thumbnail_generated": thumbnail_generated,
+                        "slat_cfg_strength": 3.0,
+                        "texture_size": texture_resolution,
+                        "bake_mode": texture_bake_mode,
                     },
                 }
             )
@@ -607,14 +615,19 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 simplify = 0.0
 
             # Extract mesh from Gaussian representation
+            # For raw extraction, disable post-processing (hole filling + mincut) to preserve micro-details
+            postprocess_mode = "none" if simplify == 0.0 else "simplify"
+            fill_holes = simplify != 0.0
+            
             mesh = self.postprocessing_utils.to_trimesh(
                 outputs["gaussian"][0],
                 candidate_mesh,
                 simplify=simplify,
-                fill_holes=True,
+                fill_holes=fill_holes,
                 texture_size=texture_resolution,
                 texture_bake_mode=tex_bake_mode,
                 forward_rot=True,
+                postprocess_mode=postprocess_mode,
             )
 
             # Save mesh in requested format
@@ -651,6 +664,9 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         "texture_bake_mode": tex_bake_mode,
                         "simplify_ratio": simplify,
                         "thumbnail_generated": thumbnail_generated,
+                        "slat_cfg_strength": 3.0,
+                        "texture_size": texture_resolution,
+                        "bake_mode": tex_bake_mode,
                     },
                 }
             )

@@ -33,25 +33,6 @@ export interface ModelDefinition {
 }
 
 export const CANONICAL_MODELS: ModelDefinition[] = [
-  // ── MESH GENERATION (Text to 3D) ──────────────────────────────────────────
-  {
-    id: 'trellis_text_to_textured_mesh',
-    name: 'TRELLIS (Text → Textured 3D)',
-    category: 'mesh_generation',
-    feature: 'text_to_textured_mesh',
-    featureLabel: 'Text to Textured 3D',
-    vramMb: 11776,
-    lowVramSupported: true,
-    lowVramMb: 6144,
-    supportsTexture: true,
-    supportedInputs: ['text'],
-    supportedOutputs: ['glb', 'obj'],
-    modelPath: 'backend/pretrained/TRELLIS',
-    enabled: true,
-    status: 'available',
-    description: 'Generates high-fidelity 3D meshes with PBR textures from natural language prompts.',
-  },
-
   // ── MESH GENERATION (Image to 3D Textured) ────────────────────────────────
   {
     id: 'trellis_image_to_textured_mesh',
@@ -463,4 +444,17 @@ export function isRawMeshModel(id: string): boolean {
 export function isMotionGenerationModel(id: string): boolean {
   const model = MODEL_MAP.get(id);
   return model?.category === 'motion_generation';
+}
+
+export function getSupportedInputs(id: string): string[] {
+  const model = MODEL_MAP.get(id);
+  return model?.supportedInputs ?? [];
+}
+
+export function supportsTextInput(id: string): boolean {
+  return getSupportedInputs(id).includes('text');
+}
+
+export function supportsImageInput(id: string): boolean {
+  return getSupportedInputs(id).includes('image');
 }

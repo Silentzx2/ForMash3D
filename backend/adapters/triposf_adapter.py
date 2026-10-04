@@ -231,20 +231,31 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
 
+            # VRAM safety check - only downshift if user explicitly requests low_vram_mode
+            # This prevents silent geometry fidelity loss. Users on constrained GPUs must opt-in.
             if device == "cuda":
                 torch.cuda.empty_cache()
                 total_vram_mb = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)
                 allocated_mb = torch.cuda.memory_allocated(0) // (1024 ** 2)
                 free_vram_mb = total_vram_mb - allocated_mb
-                # For GPUs with <= 16GB total VRAM or under 12GB free VRAM, enforce safety limits
-                # to prevent PointNet feature allocation spike (5.22 GiB OOM)
-                if total_vram_mb <= 16384 or free_vram_mb < 12288:
+                
+                # Check if user requested low VRAM mode
+                low_vram_mode = bool(inputs.get("low_vram_mode", False))
+                
+                if low_vram_mode:
                     pruning = True
                     resolution = min(resolution, 256)
                     sample_points_num = min(sample_points_num, 409_600)
                     logger.info(
-                        "TripoSF memory guard active: resolution=%d, pruning=True, sample_points=%d (total_vram=%dMB, free_vram=%dMB)",
+                        "TripoSF low_vram_mode enabled: resolution=%d, pruning=True, sample_points=%d (total_vram=%dMB, free_vram=%dMB)",
                         resolution, sample_points_num, total_vram_mb, free_vram_mb,
+                    )
+                elif total_vram_mb <= 16384 or free_vram_mb < 12288:
+                    # Warn but don't silently downshift - let user decide
+                    logger.warning(
+                        "TripoSF: GPU has limited VRAM (total=%dMB, free=%dMB). Consider enabling low_vram_mode to avoid OOM. "
+                        "Proceeding with full resolution (1024) and sample_points (1,638,400).",
+                        total_vram_mb, free_vram_mb,
                     )
 
             from inference import normalize_mesh, load_quantized_mesh_original
@@ -403,6 +414,12 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "integer",
                     "description": "Random seed for generation reproducibility",
                     "default": 0,
+                    "required": False,
+                },
+                "low_vram_mode": {
+                    "type": "boolean",
+                    "description": "Enable low VRAM mode (downshifts resolution to 256, sample_points to 409,600). Required for GPUs with <12GB free VRAM to avoid OOM.",
+                    "default": False,
                     "required": False,
                 },
             }

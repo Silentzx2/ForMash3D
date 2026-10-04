@@ -25,6 +25,7 @@ import { prefetchGLB } from '../lib/glbCache';
 import { shadingModeToPreset, presetToShadingMode } from '@/lib/storeAdapter';
 import { diagnoseJobError } from '@/lib/jobDiagnostics';
 import { useRouter, usePathname } from 'next/navigation';
+import { buildGenerationParameters } from '../utils/buildGenerationParameters';
 
 interface WorkspaceContextType {
   activeTool: ToolType;
@@ -156,11 +157,23 @@ async function parseApiError(response: Response): Promise<Error> {
 //   → { job_id, status: queued|processing|completed|failed|cancelled,
 //       progress: 0..1 fraction, result: { mesh_url, thumbnail_url, ... },
 //       error: string|null }
-// Backend result URLs are absolute backend addresses; rewrite them to the
+// Backend result URLs may be absolute or relative; rewrite them to the
 // same-origin /api/v1 proxy path so the browser can always reach them.
 function toProxyUrl(url: unknown): string | undefined {
   if (typeof url !== 'string' || !url) return undefined;
-  return url.replace(/^https?:\/\/[^/]+/, '');
+  // Handle absolute URLs (http://host/path or https://host/path)
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url.replace(/^https?:\/\//, '');
+  }
+  // Handle relative URLs - ensure they go through our /api/v1 proxy
+  if (url.startsWith('/')) {
+    if (!url.startsWith('/api/v1/')) {
+      return `/api/v1${url}`;
+    }
+    return url;
+  }
+  // Handle relative URLs without leading slash
+  return `/api/v1/${url}`;
 }
 
 interface BackendJobPayload {
@@ -1165,223 +1178,76 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       toast.error('Generation failed', { description: message });
     }
   }, [
-    generationSettings.image,
-    generationSettings.imageFileId,
-    generationSettings.negativePrompt,
-    generationSettings.multiviewImages,
-    generationSettings.aiModel,
-    generationSettings.meshQuality,
-    generationSettings.topologyMode,
-    generationSettings.quadTopology,
-    generationSettings.lowVram,
-    generationSettings.vramMode,
-    generationSettings.autoOptimizeSettings,
-    generationSettings.generateTexture,
-    generationSettings.gameReady,
-    generationSettings.targetPlatform,
-    generationSettings.generateLOD,
-    generationSettings.lodPreset,
-    generationSettings.lodCount,
-    generationSettings.generateCollision,
-    generationSettings.physics,
-    generationSettings.generatePBR,
-    generationSettings.seed,
-    generationSettings.guidanceScale,
-    generationSettings.enableFlashVDM,
-    generationSettings.lowVramMode,
-    generationSettings.maxNumView,
-    generationSettings.resolution,
-    generationSettings.paintResolution,
-    generationSettings.generatePBR,
+    generationSettings,
+    modelDetails,
     startTask,
+    bindBackendJob,
+    parseApiError,
+    parseApiData,
+    setIsExecuting,
+    setExecutionStep,
   ]);
 
-  const generate3DModel = useCallback(async (forcedMode?: 'image-to-3d' | 'text-to-3d') => {
-    const isTextMode = forcedMode === 'text-to-3d' || (!generationSettings.image && Boolean(generationSettings.prompt?.trim()));
-    if (isTextMode) {
-      const modelPrompt = generationSettings.prompt?.trim();
-      if (!modelPrompt) {
-        setExecutionStep('Please enter a text prompt first');
-        toast.error('Prompt required', { description: 'Please enter a text prompt to generate a 3D model.' });
-        return;
-      }
-      const localTaskId = startTask('text-to-3d', modelPrompt, undefined, generationSettings.aiModel, undefined, modelPrompt);
-
-      const currentQuality = generationSettings.meshQuality || 'high';
-      // Text generation follows the official TRELLIS text sampling schedule.
-      const modelId = generationSettings.aiModel || '';
-      const octreeRes = 512;
-      const infSteps = 25;
-      const infGuidance = 7.5;
-
-      try {
-        // ponytail: map UI generation settings to the real 3DAIGC-API contract.
-        // POST /api/v1/mesh-generation/text-to-textured-mesh
-        //   → { job_id, status, message }
-        // text-to-raw-mesh is disabled because no text_to_raw_mesh model is registered.
-        const isTextured = generationSettings.generateTexture !== false;
-        if (!isTextured) {
-          throw new Error('Text-to-raw mesh generation is not available. No text-to-raw model is registered in the backend.');
-        }
-        const endpoint = '/api/v1/mesh-generation/text-to-textured-mesh';
-
-        const batchItems = appStore.batchGenerationEnabled
-          ? appStore.batchQueue.filter(item => item.prompt?.trim())
-          : [];
-
-        const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
-        const modelParameters: Record<string, unknown> = {
-          octree_resolution: octreeRes,
-          num_inference_steps: infSteps,
-          guidance_scale: infGuidance,
-          seed: generationSettings.seed ?? undefined,
-          low_vram: Boolean(generationSettings.lowVram),
-        enable_flashvdm: generationSettings.enableFlashVDM ?? false,
-        low_vram_mode: generationSettings.lowVramMode ?? 'auto',
-        auto_optimize: targetPoly === 0 || (targetPoly > 0 && targetPoly < 200000),
-        target_polycount: targetPoly,
-          generateLOD: generationSettings.generateLOD !== false,
-          lodPreset: generationSettings.lodPreset || 'high',
-          lodCount: generationSettings.lodCount || 4,
-          negative_prompt: generationSettings.negativePrompt || undefined,
-          source_quality: 'max',
-        };
-
-        if (batchItems.length > 0) {
-          const batchResponse = await fetch('/api/v1/mesh-generation/text-to-textured-mesh/batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              items: batchItems.map(item => ({
-                text_prompt: item.prompt,
-                negative_prompt: item.negativePrompt,
-                model_preference: generationSettings.aiModel,
-                texture_prompt: item.prompt,
-                texture_resolution: currentQuality === 'ultra' ? 4096 : 2048,
-                model_parameters: modelParameters,
-                topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
-                quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
-              })),
-              max_parallel: 2,
-            }),
-          });
-          if (!batchResponse.ok) throw await parseApiError(batchResponse);
-
-          const batchData = await parseApiData<{ batch_id: string; job_ids: string[] }>(batchResponse);
-          if (!Array.isArray(batchData.job_ids) || batchData.job_ids.length === 0) {
-            throw new Error('Backend did not return any batch job IDs');
-          }
-
-          const [firstJobId, ...otherJobIds] = batchData.job_ids;
-          bindBackendJob(localTaskId, firstJobId, {
-            status: 'queued',
-            currentStep: 'Batch queued on backend',
-          });
-
-          if (otherJobIds.length > 0) {
-            setJobsById(prev => {
-              const next = { ...prev };
-              otherJobIds.forEach((jobId, index) => {
-                next[jobId] = {
-                  id: jobId,
-                  type: 'text-to-3d',
-                  title: batchItems[index + 1]?.prompt || ('Batch item ' + (index + 2)),
-                  startedAt: Date.now(),
-                  status: 'queued',
-                  progress: 0,
-                  currentStep: 'Batch queued on backend',
-                  provider: generationSettings.aiModel,
-                };
-              });
-              return next;
-            });
-          }
-
-          appStore.clearBatchQueue();
-          setExecutionStep('Batch queued: ' + batchData.job_ids.length + ' jobs');
-          return;
-        }
-        const cleanPromptStem = modelPrompt
-          .slice(0, 32)
-          .replace(/[^A-Za-z0-9._-]+/g, '_')
-          .replace(/^_+|_+$/g, '') || 'asset';
-
-        const body: Record<string, unknown> = {
-          asset_name: cleanPromptStem,
-          text_prompt: modelPrompt,
-          output_format: 'glb',
-          model_preference: generationSettings.aiModel,
-          model_parameters: modelParameters,
-          physics_enabled: Boolean(generationSettings.generateCollision),
-          physics_config: generationSettings.physics,
-          topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
-          quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
-        };
-
-        if (isTextured) {
-          body.texture_resolution = currentQuality === 'ultra' ? 4096 : 2048;
-        }
-
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (!res.ok) throw await parseApiError(res);
-        const data = await parseApiData<{ job_id?: string; id?: string; status?: string }>(res);
-        const jobId = data.job_id ?? data.id;
-        if (!jobId) throw new Error('Backend did not return a generation job ID');
-        setActiveTask(prev => prev ? { ...prev, id: jobId, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' } : prev);
-        setExecutionStep('Generation queued on backend');
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Generation submission failed';
-        setIsExecuting(false);
-        setExecutionStep(message);
-        const diagnostic = diagnoseJobError({
-          id: 'submit-error',
-          status: 'failed',
-          error: message,
-          error_message: message,
-          provider: generationSettings.aiModel || '',
-        } as any);
-        setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: message, errorMessage: message, diagnostic } : null);
-        toast.error('Generation failed', { description: message });
-      }
+  const generate3DModel = useCallback(async () => {
+    // Project is Image-to-3D only - no text-to-3D mode
+    const imageInput = generationSettings.image;
+    const imageFileId = generationSettings.imageFileId;
+    
+    if (!imageInput && !imageFileId) {
+      setExecutionStep('Please upload or select an image first');
+      toast.error('Image required', { description: 'Please upload an image to generate a 3D model.' });
       return;
     }
-    return generateImageTo3D();
+    
+    const localTaskId = startTask('image-to-3d', generationSettings.imageName || 'asset', undefined, generationSettings.aiModel);
+
+    try {
+      // Use pure function to build parameters
+      const { endpoint, body } = buildGenerationParameters(generationSettings, {
+        raw_mesh: true,
+        paint_autochain: false,
+        multiview: false,
+        supports_texture: true,
+      });
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw await parseApiError(res);
+      const data = await parseApiData<{ job_id?: string; id?: string; status?: string }>(res);
+      const jobId = data.job_id ?? data.id;
+      if (!jobId) throw new Error('Backend did not return a generation job ID');
+      bindBackendJob(localTaskId, jobId, {
+        status: 'queued',
+        currentStep: 'Queued on backend',
+      });
+      setExecutionStep('Generation queued on backend');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Generation submission failed';
+      setIsExecuting(false);
+      setExecutionStep(message);
+      const diagnostic = diagnoseJobError({
+        id: 'submit-error',
+        status: 'failed',
+        error: message,
+        error_message: message,
+        provider: generationSettings.aiModel || '',
+      } as any);
+      setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: message, errorMessage: message, diagnostic } : null);
+      toast.error('Generation failed', { description: message });
+    }
   }, [
-    generationSettings.prompt,
-    generationSettings.negativePrompt,
-    generationSettings.multiviewImages,
-    generationSettings.image,
-    generationSettings.imageFileId,
-    generationSettings.aiModel,
-    generationSettings.meshQuality,
-    generationSettings.topologyMode,
-    generationSettings.quadTopology,
-    generationSettings.lowVram,
-    generationSettings.vramMode,
-    generationSettings.autoOptimizeSettings,
-    generationSettings.generateTexture,
-    generationSettings.gameReady,
-    generationSettings.targetPlatform,
-    generationSettings.generateLOD,
-    generationSettings.lodPreset,
-    generationSettings.lodCount,
-    generationSettings.generateCollision,
-    generationSettings.physics,
-    generationSettings.generatePBR,
-    generationSettings.seed,
-    generationSettings.guidanceScale,
-    generationSettings.enableFlashVDM,
-    generationSettings.lowVramMode,
-    generationSettings.maxNumView,
-    generationSettings.resolution,
+    generationSettings,
     modelDetails,
     startTask,
     generateImageTo3D,
     bindBackendJob,
+    parseApiError,
+    parseApiData,
+    setIsExecuting,
+    setExecutionStep,
     appStore.batchGenerationEnabled,
     appStore.batchQueue,
     appStore.clearBatchQueue,

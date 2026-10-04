@@ -902,6 +902,8 @@ def run_postprocess_job(
         or bool(job_inputs.get("bake_textures"))
         or bool(job_metadata.get("bake_normal_maps"))
         or bool(job_metadata.get("bake_textures"))
+        # Auto-enable bake for native-textured models so native detail bakes to game-ready UVs
+        or native_textures
     )
 
     bake_t0 = time.time()

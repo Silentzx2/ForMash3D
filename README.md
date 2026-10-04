@@ -199,7 +199,7 @@ flowchart TD
 
 ---
 
-## 🤖 Supported Model Catalog (23 Models)
+## 🤖 Supported Model Catalog (22 Models)
 
 The model registry is dynamically configured via `backend/config/models.yaml` and loaded lazily:
 
@@ -208,7 +208,7 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **Hunyuan3D-Shape-v2.1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline, octree resolution up to 512 |
 | **Hunyuan3D-Paint-v2.1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB | 2B PBR texture checkpoint, RealESRGAN x4+, DifferentiableRenderer |
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM step-distilled shape model with Turbo path |
-| **TRELLIS** | `trellis_image_to_textured_mesh`<br>`trellis_text_to_textured_mesh` | Text/Image to Mesh | 11.5 GB | FlexiCubes PBR meshes with 2048x2048 texture maps |
+| **TRELLIS** | `trellis_image_to_textured_mesh` | Image to Mesh | 11.5 GB | FlexiCubes PBR meshes with 2048x2048 texture maps |
 | **TRELLIS.2** | `trellis2_image_to_textured_mesh`<br>`trellis2_image_mesh_painting` | Structured 3D & Paint | 23.5 GB | High-fidelity FlexiCubes with multi-view PBR texture baking |
 | **TripoSR** | `triposr_image_to_raw_mesh` | Single-Image to 3D | 6 GB | Ultra-fast feedforward 3D reconstruction with texture baking |
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
@@ -457,7 +457,7 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 ## 🏷️ Recommended GitHub Repository Topics
 
 ```text
-3d, 3d-generation, 3d-mesh-generation, tripo-ai, text-to-3d, image-to-3d, mesh-generation, ai-3d, generative-ai, generative-3d, neural-3d, self-hosted, self-hosted-ai, gpu-accelerated, pbr-textures, retopology, quad-mesh, fastmesh, trellis, hunyuan3d, unreal-engine, unity, godot, game-ready, physics-colliders, open-source-3d
+3d, 3d-generation, 3d-mesh-generation, tripo-ai, image-to-3d, mesh-generation, ai-3d, generative-ai, generative-3d, neural-3d, self-hosted, self-hosted-ai, gpu-accelerated, pbr-textures, retopology, quad-mesh, fastmesh, trellis, hunyuan3d, unreal-engine, unity, godot, game-ready, physics-colliders, open-source-3d
 ```
 
 ---

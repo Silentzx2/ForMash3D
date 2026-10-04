@@ -4,7 +4,7 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/components/ui/command';
 import { motion } from 'motion/react';
-
+import { ResourceMonitor } from './ResourceMonitor';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, CableIcon, CheckIcon, ChevronDown, HexagonIcon, LayersIcon, Menu, PackageIcon, Search01Icon, SettingsIcon, SparklesIcon, UserIcon } from '@hugeicons/core-free-icons';
@@ -266,6 +266,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
             </span>
           </button>
         </SimpleTooltip>
+
+        {/* Resource Monitor - System Stats */}
+        <ResourceMonitor />
 
         <SimpleTooltip label="Command palette • Ctrl K" side="bottom">
           <button id="btn-header-command-palette" type="button" onClick={() => setCommandOpen(true)} className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-primary/30 text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer" aria-label="Open command palette">

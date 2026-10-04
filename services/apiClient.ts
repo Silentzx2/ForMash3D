@@ -68,12 +68,19 @@ class ApiClient {
     this.client.interceptors.request.use(
       (config) => {
         // If uploading FormData, ensure Content-Type is not forced to application/json
-        // or raw multipart/form-data without boundary, allowing the browser/axios to set
-        // the correct multipart/form-data; boundary=----... header automatically.
+        // Only delete Content-Type if explicitly set by the caller.
+        // Axios auto-sets 'multipart/form-data; boundary=...' when Content-Type is absent.
+        // Some proxies require explicit header, so we only delete if it's 'application/json'
+        // or explicitly set to 'multipart/form-data' without boundary.
         if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
           if (config.headers) {
-            delete config.headers['Content-Type'];
-            delete (config.headers as any)['content-type'];
+            const contentType = config.headers['Content-Type'] || (config.headers as any)['content-type'];
+            // Only remove if it's application/json (default axios default) or malformed multipart
+            if (contentType && (contentType === 'application/json' || 
+                (contentType.startsWith('multipart/form-data') && !contentType.includes('boundary=')))) {
+              delete config.headers['Content-Type'];
+              delete (config.headers as any)['content-type'];
+            }
           }
           if (!config.timeout || config.timeout < 600000) {
             config.timeout = 600000;

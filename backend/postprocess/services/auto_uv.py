@@ -111,8 +111,17 @@ def run_auto_uv(mesh: trimesh.Trimesh, options: AutoUvOptions, progress=None,
         vertex_normals=result.normals,
         process=False,
     )
+    # Preserve native textures/materials from the source mesh
+    source_visual = getattr(mesh, "visual", None)
+    source_material = getattr(source_visual, "material", None)
+    source_image = getattr(source_visual, "image", None)
+    source_vertex_colors = getattr(source_visual, "vertex_colors", None)
+    
     out.visual = trimesh.visual.TextureVisuals(
         uv=np.asarray(result.uv),
-        material=trimesh.visual.material.PBRMaterial(name="autouv"),
+        material=source_material if source_material is not None else trimesh.visual.material.PBRMaterial(name="autouv"),
+        image=source_image if source_image is not None else None,
     )
+    if source_vertex_colors is not None:
+        out.visual.vertex_colors = source_vertex_colors
     return out, dict(result.stats), _render_uv_preview(result)

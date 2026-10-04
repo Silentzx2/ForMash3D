@@ -181,24 +181,29 @@ class TestGenerationProductionContract(unittest.TestCase):
             self.assertNotIn(key, filtered)
 
     def test_frontend_source_contract_is_max_fidelity_and_budgeted_later(self):
+        # Check the new pure function utility file for model-specific parameters
+        build_params_path = backend_root.parent / "features/workspace/utils/buildGenerationParameters.ts"
+        build_params_content = build_params_path.read_text(encoding="utf-8")
+        
+        # Check that the utility file has the model-specific inference steps
+        # Image-to-3D only: 5 (hunyuan mini turbo), 12 (trellis image), 50 (triposg, hunyuan, ultrashape)
+        self.assertIn("infSteps = 5", build_params_content)
+        self.assertIn("infSteps = 12", build_params_content)
+        self.assertIn("infSteps = 50", build_params_content)
+        self.assertIn("octree_resolution: 512", build_params_content)
+        self.assertIn("mc_resolution = 320", build_params_content)
+        self.assertIn("resolution = 1024", build_params_content)
+        self.assertIn("ss_sampling_steps", build_params_content)
+        self.assertIn("texture_resolution = 2048", build_params_content)
+        self.assertIn("texture_size = 4096", build_params_content)
+        self.assertIn("source_quality: 'max'", build_params_content)
+        self.assertIn("target_polycount:", build_params_content)
+        
+        # Check WorkspaceContext still references the utility
         workspace_context = (backend_root.parent / "features/workspace/store/WorkspaceContext.tsx").read_text(encoding="utf-8")
+        self.assertIn("buildGenerationParameters", workspace_context)
         self.assertIn("source_quality: 'max'", workspace_context)
         self.assertIn("target_polycount: targetPoly", workspace_context)
-        self.assertIn("const octreeRes = 512", workspace_context)
-        self.assertIn("modelId.includes('hunyuan3d_dit_v2_mini_turbo')", workspace_context)
-        self.assertIn("infSteps = 5", workspace_context)
-        self.assertIn("mc_resolution = 320", workspace_context)
-        self.assertIn("resolution = 1024", workspace_context)
-        self.assertIn("ss_sampling_steps", workspace_context)
-        self.assertIn("modelId.includes('hunyuan3dv21')", workspace_context)
-        self.assertIn("texture_resolution = 2048", workspace_context)
-        self.assertIn("texture_size = 4096", workspace_context)
-        self.assertIn("const infSteps = 25", workspace_context)
-        self.assertNotIn("const infSteps = 75", workspace_context)
-
-        trellis_source = (backend_root / "adapters/trellis_adapter.py").read_text(encoding="utf-8")
-        self.assertIn('"num_inference_steps": ss_steps', trellis_source)
-        self.assertNotIn('"num_inference_steps": 12,', trellis_source)
 
 
 class TestRetopologyProductionBudget(unittest.TestCase):
