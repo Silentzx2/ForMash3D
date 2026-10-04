@@ -87,18 +87,18 @@ def image_examples(samples, ncols, return_key=None, example_text="Examples"):
         for i in range(len(samples) // ncols):
             cols = st.columns(ncols)
             for j in range(ncols):
-                idx = i * ncols + j
-                if idx >= len(samples):
-                    continue
-                entry = samples[idx]
-                with cols[j]:
-                    st.image(entry['dispi'])
-                    img_example_counter += 1
-                    with st.columns(5)[2]:
-                        this_trigger = st.button('\+', key='imgexuse%d' % img_example_counter)
-                    trigger = trigger or this_trigger
-                    if this_trigger:
-                        trigger = entry[return_key]
+                 idx = i * ncols + j
+                 if idx >= len(samples):
+                     continue
+                 entry = samples[idx]
+                 with cols[j]:
+                     st.image(entry['dispi'])
+                     img_example_counter += 1
+                     with st.columns(5)[2]:
+                         this_trigger = st.button('+', key='imgexuse%d' % img_example_counter)
+                     trigger = trigger or this_trigger
+                     if this_trigger:
+                         trigger = entry[return_key]
     return trigger
 
 
