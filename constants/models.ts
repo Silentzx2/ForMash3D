@@ -1,6 +1,6 @@
 /**
  * Canonical Model Registry & Feature Routing
- * Sourced directly from backend/config/models.yaml (19 registered models)
+ * Sourced directly from backend/config/models.yaml (22 registered models)
  */
 
 export type ModelCategory =

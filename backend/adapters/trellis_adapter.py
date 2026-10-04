@@ -29,7 +29,7 @@ NOTE: Mesh Painting in TRELLIS expects the mesh in Z-Up conventions
 """
 
 
-class TrellisTextToMeshAdapterCommon(TextToMeshModel):
+class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
     """
     Adapter for TRELLIS text-to-mesh model.
 
@@ -37,8 +37,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
     into our standardized mesh generation framework.
     """
 
-    FEATURE_TYPE = "text_to_textured_mesh"  # Feature type for this adapter
-    MODEL_ID = "trellis_text_to_textured_mesh"
+    FEATURE_TYPE = "text_mesh_painting"  # Default for the text-conditioned painting adapter.
+    MODEL_ID = "trellis_text_mesh_painting"
 
     def __init__(
         self,
@@ -776,25 +776,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         }
 
 
-class TrellisTextToTexturedMeshAdapter(TrellisTextToMeshAdapterCommon):
-    """
-    Adapter for TRELLIS text-to-raw-mesh model.
-
-    This adapter uses the TRELLIS model to generate raw meshes from text prompts.
-    """
-
-    FEATURE_TYPE = "text_to_textured_mesh"  # Feature type for this adapter
-    MODEL_ID = "trellis_text_to_textured_mesh"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.supported_output_formats = ["obj", "glb"]
-        self.skip_models = [
-            "slat_decoder_rf"
-        ]  # Skip some models conditionally to save VRAM
-
-
-class TrellisTextMeshPaintingAdapter(TrellisTextToMeshAdapterCommon):
+class TrellisTextMeshPaintingAdapter(TrellisTextConditionedMeshAdapterCommon):
     """
     Adapter for TRELLIS text-conditioned mesh painting model.
 
@@ -828,7 +810,7 @@ class TrellisTextMeshPaintingAdapter(TrellisTextToMeshAdapterCommon):
 
 class TrellisImageToTexturedMeshAdapter(TrellisImageToMeshAdapterCommon):
     """
-    Adapter for TRELLIS text-to-textured-mesh model.
+    Adapter for TRELLIS image-to-textured-mesh model.
 
     This adapter uses the TRELLIS model to generate textured meshes from input images
     """
@@ -890,8 +872,7 @@ class TrellisImageMeshPaintingAdapter(TrellisImageToMeshAdapterCommon):
 # Aliases matching various naming conventions
 TRELLISImageToTexturedMeshAdapter = TrellisImageToTexturedMeshAdapter
 TRELLISImageToRawMeshAdapter = TrellisImageToRawMeshAdapter
-TRELLISTextToTexturedMeshAdapter = TrellisTextToTexturedMeshAdapter
-TRELLISTextToMeshAdapterCommon = TrellisTextToMeshAdapterCommon
+TRELLISTextConditionedMeshAdapterCommon = TrellisTextConditionedMeshAdapterCommon
 TRELLISImageToMeshAdapterCommon = TrellisImageToMeshAdapterCommon
 TRELLISImageMeshPaintingAdapter = TrellisImageMeshPaintingAdapter
 TRELLISTextMeshPaintingAdapter = TrellisTextMeshPaintingAdapter

@@ -12,8 +12,6 @@ import {
   JobResultInfo,
   JobsHistoryResponse,
   JobsHistoryParams,
-  TextToMeshRequest,
-  TextToTexturedMeshRequest,
   ImageToMeshRequest,
   ImageToTexturedMeshRequest,
   MeshPaintingRequest,
@@ -399,22 +397,6 @@ class ApiClient {
   }
 
   // Mesh Generation Endpoints
-  async textToRawMesh(request: TextToMeshRequest): Promise<BaseApiResponse> {
-    const response = await this.client.post<BaseApiResponse>(
-      '/api/v1/mesh-generation/text-to-raw-mesh',
-      request
-    );
-    return response.data;
-  }
-
-  async textToTexturedMesh(request: TextToTexturedMeshRequest): Promise<BaseApiResponse> {
-    const response = await this.client.post<BaseApiResponse>(
-      '/api/v1/mesh-generation/text-to-textured-mesh',
-      request
-    );
-    return response.data;
-  }
-
   async imageToRawMesh(request: ImageToMeshRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(
       '/api/v1/mesh-generation/image-to-raw-mesh',

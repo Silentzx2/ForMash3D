@@ -65,7 +65,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
     {
       id: 'tool-btn-model',
       label: 'Model',
-      tooltip: '3D Model Generation (Image & Text to 3D) • G',
+      tooltip: '3D Model Generation (Image to 3D) • G',
       shortcut: 'G',
       icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
       active: isActive('model'),

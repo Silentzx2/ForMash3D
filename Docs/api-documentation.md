@@ -256,22 +256,6 @@ Content-Type: application/json
 }
 ```
 
-### Text-to-Textured Mesh
-
-Generate a textured 3D mesh from a text prompt.
-
-```http
-POST /api/v1/mesh-generation/text-to-textured-mesh
-Content-Type: application/json
-
-{
-  "text_prompt": "A red sports car",
-  "output_format": "glb",
-  "model_preference": "trellis_text_to_textured_mesh",
-  "model_parameters": {}
-}
-```
-
 ### Image-to-Raw Mesh
 
 Generate a 3D mesh from an uploaded image.
@@ -367,27 +351,6 @@ GET /api/v1/mesh-generation/status/{job_id}
 POST /api/v1/mesh-generation/cancel/{job_id}
 ```
 
-### Cost Estimate
-
-```http
-POST /api/v1/mesh-generation/cost-estimate
-Content-Type: application/json
-
-{
-  "model_preference": "trellis_text_to_textured_mesh",
-  "text_prompt": "A dragon"
-}
-```
-
-**Response:**
-```json
-{
-  "estimated_vram_mb": 11776,
-  "estimated_time_seconds": 60,
-  "model_name": "TRELLIS"
-}
-```
-
 ### Available Models
 
 ```http
@@ -397,9 +360,8 @@ GET /api/v1/mesh-generation/models
 **Response:**
 ```json
 {
-  "text_to_textured_mesh": ["trellis_text_to_textured_mesh"],
   "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh"],
-  "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh", "hunyuan3d_shape_v21_image_to_textured_mesh"],
+  "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
   "text_mesh_painting": ["trellis_text_mesh_painting"],
   "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],
   "mesh_segmentation": ["partfield_mesh_segmentation", "p3sam_mesh_segmentation"],
@@ -408,7 +370,8 @@ GET /api/v1/mesh-generation/models
   "mesh_retopology": ["fastmesh_v1k_retopology", "fastmesh_v4k_retopology"],
   "uv_unwrapping": ["partuv_uv_unwrapping"],
   "text_mesh_editing": ["voxhammer_text_mesh_editing"],
-  "image_mesh_editing": ["voxhammer_image_mesh_editing"]
+  "image_mesh_editing": ["voxhammer_image_mesh_editing"],
+  "image_to_multiview": ["zero123plus_v12_image_to_multiview"]
 }
 ```
 

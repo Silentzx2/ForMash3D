@@ -116,8 +116,8 @@ sequenceDiagram
     participant Adapter as Model Adapter
     participant Storage as backend/storage/
 
-    User->>Frontend: Select prompt / image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/text-to-textured-mesh
+    User->>Frontend: Select image + Platform budget
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output

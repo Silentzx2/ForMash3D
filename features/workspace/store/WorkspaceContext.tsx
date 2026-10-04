@@ -247,7 +247,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const stats = await apiClient.getSystemStats();
       return stats as unknown as SystemStats;
     },
-    refetchInterval: 20000, // Poll every 20s
+    refetchInterval: 5000, // Refresh resource telemetry every 5s
     staleTime: 10000,
   });
 
@@ -1238,13 +1238,19 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const localTaskId = startTask('image-to-3d', generationSettings.imageName || 'asset', undefined, generationSettings.aiModel);
 
     try {
-      // Use pure function to build parameters
-      const { endpoint, body } = buildGenerationParameters(generationSettings, {
-        raw_mesh: true,
-        paint_autochain: false,
-        multiview: false,
-        supports_texture: true,
-      }, modelParameterDefaults[modelId] || {});
+      // Route from the selected model's declared capabilities instead of forcing raw-mesh output.
+      const selectedCapabilities = modelDetails[modelId]?.capabilities || {};
+      const isRawModel = selectedCapabilities.raw_mesh === true || modelId.endsWith('_image_to_raw_mesh');
+      const { endpoint, body } = buildGenerationParameters(
+        generationSettings,
+        {
+          raw_mesh: isRawModel,
+          paint_autochain: selectedCapabilities.paint_autochain === true,
+          multiview: selectedCapabilities.multiview === true,
+          supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
+        },
+        modelParameterDefaults[modelId] || {},
+      );
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -1278,15 +1284,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     generationSettings,
     modelDetails,
     startTask,
-    generateImageTo3D,
     bindBackendJob,
     parseApiError,
     parseApiData,
     setIsExecuting,
     setExecutionStep,
-    appStore.batchGenerationEnabled,
-    appStore.batchQueue,
-    appStore.clearBatchQueue,
   ]);
 
   const runRemeshGeneration = useCallback(async () => {

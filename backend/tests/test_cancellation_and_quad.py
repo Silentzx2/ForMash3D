@@ -8,7 +8,6 @@ from core.scheduler.multiprocess_scheduler import _extract_job_status, Multiproc
 from core.scheduler.job_queue import JobRequest, JobStatus
 from postprocess.pipeline import _export_quad_obj
 from api.routers.mesh_generation import (
-    TextToRawMeshRequest,
     ImageToRawMeshRequest,
     ImageToTexturedMeshRequest,
 )
@@ -64,15 +63,6 @@ def test_process_external_cancellations_with_dict():
 
 def test_mesh_generation_requests_accept_quad_topology():
     """Verify request models accept topology_mode and quad_topology."""
-    t_req = TextToRawMeshRequest(
-        text_prompt="a cute low-poly robot",
-        model_preference="triposr_image_to_raw_mesh",
-        topology_mode="quad",
-        quad_topology=True,
-    )
-    assert t_req.topology_mode == "quad"
-    assert t_req.quad_topology is True
-
     img_req = ImageToRawMeshRequest(
         image_path="/tmp/test.png",
         model_preference="hunyuan3d_shape_v21_image_to_raw_mesh",

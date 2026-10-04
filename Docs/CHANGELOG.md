@@ -1,3 +1,11 @@
+## 2026-10-04 — [Production Gap Closure]
+- Corrected normal Image-to-3D routing so the selected model's backend capabilities determine raw vs textured endpoint selection; the previous path forced all generation through raw-mesh routing.
+- Reduced workspace system telemetry refresh from 20 seconds to 5 seconds.
+- Removed the remaining Text-to-3D generation route, client/type mappings, task mapping, and model-factory registration while retaining text mesh painting and text-to-motion.
+- Hardened native-texture preservation: unrecoverable texture loss now fails the production pipeline instead of silently shipping an untextured game-ready asset; optional LOD texture loss is surfaced as an artifact error.
+- Made scheduler retry/unload switches runtime-evaluated instead of import-time constants.
+- Reconciled `Docs/TASKS.md` and core architecture/API documentation with the current `Dev` implementation.
+
 ## 2026-10-04 — [Source-Fidelity Contract Verification]
 - Verified BQ-01..BQ-12 and the bug-registry fixes against the live code; closed the remaining drift without treating test scripts as the source of truth.
 - TRELLIS image-path `generation_info` now records actual sampling stages, texture resolution, and bake mode (BQ-11 parity with the text path).

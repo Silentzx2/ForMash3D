@@ -77,8 +77,14 @@ def parse_bool_env(env_var: str, default: bool = False) -> bool:
     value = os.environ.get(env_var, str(default)).strip().lower()
     return value in {"1", "true", "yes", "on"}
 
-RETRY_TRANSIENT_ERRORS = parse_bool_env("RETRY_TRANSIENT_ERRORS", False)
-AUTO_UNLOAD_AFTER_JOB = parse_bool_env("AUTO_UNLOAD_AFTER_JOB", True)
+def retry_transient_errors_enabled() -> bool:
+    """Read the retry switch at decision time so runtime configuration is not frozen at import."""
+    return parse_bool_env("RETRY_TRANSIENT_ERRORS", False)
+
+
+def auto_unload_after_job_enabled() -> bool:
+    """Read the VRAM unload switch at decision time."""
+    return parse_bool_env("AUTO_UNLOAD_AFTER_JOB", True)
 
 # Production budgets belong to post-processing. Never let them reach model inference.
 _POSTPROCESS_ONLY_INPUTS = frozenset({
@@ -563,7 +569,7 @@ def _process_job_in_worker(
             )
         )
 
-        if AUTO_UNLOAD_AFTER_JOB:
+        if auto_unload_after_job_enabled():
             try:
                 logger.info(
                     f"[GPU UNLOAD QUEUED] job_id={job_id} model={model_id} reason=AUTO_UNLOAD_AFTER_JOB"
@@ -602,7 +608,7 @@ def _process_job_in_worker(
                 ],
             )
         )
-        if loaded_model is not None and AUTO_UNLOAD_AFTER_JOB:
+        if loaded_model is not None and auto_unload_after_job_enabled():
             try:
                 logger.info(
                     f"[GPU UNLOAD QUEUED] job_id={job_request.job_id} "
@@ -1254,7 +1260,7 @@ class MultiprocessModelScheduler:
 
             # For transient errors, requeue the job; for non-transient errors, fail immediately
             error_msg = str(e).lower()
-            if RETRY_TRANSIENT_ERRORS and any(
+            if retry_transient_errors_enabled() and any(
                 keyword in error_msg
                 for keyword in ["timeout", "connection", "network", "temporarily"]
             ):

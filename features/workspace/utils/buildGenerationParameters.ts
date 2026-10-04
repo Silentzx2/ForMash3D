@@ -43,7 +43,7 @@ export function buildGenerationParameters(
   );
   const useMultiviewReconstruction = isMultiviewCapable && hasMvViews;
   
-  // Determine if textured (force true for text-to-3D, user choice for image-to-3D)
+  // Determine texture routing for image-to-3D.
   const isTextured = !isRawModel && (settings.generateTexture ?? true);
   
   // Build model parameters
@@ -145,7 +145,7 @@ function getInferenceSteps(modelId: string, isImageTo3D: boolean, paramDefaults:
   } else if (modelId.includes('triposg')) {
     return 50;
   } else if (modelId.includes('trellis')) {
-    // Trellis: 12 steps for image-to-3D, 25 for text-to-3D
+    // Trellis image-to-3D uses the image-conditioned schedule.
     return isImageTo3D ? 12 : 25;
   } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
     return 50;

@@ -23,6 +23,8 @@ from core.scheduler.multiprocess_scheduler import (
     MultiprocessModelScheduler,
     WorkerConfig,
     WorkerResponse,
+    retry_transient_errors_enabled,
+    auto_unload_after_job_enabled,
 )
 from core.scheduler.job_queue import JobRequest
 
@@ -86,6 +88,16 @@ class TestTripoSGAdapter(unittest.TestCase):
                 self.adapter._load_model()
             self.assertIn("TripoSG", str(ctx.exception))
             self.assertIsNotNone(ctx.exception.__cause__)
+
+
+class TestRuntimeSchedulerToggles(unittest.TestCase):
+    def test_scheduler_environment_switches_are_read_at_runtime(self):
+        with patch.dict(os.environ, {"RETRY_TRANSIENT_ERRORS": "false", "AUTO_UNLOAD_AFTER_JOB": "false"}, clear=False):
+            self.assertFalse(retry_transient_errors_enabled())
+            self.assertFalse(auto_unload_after_job_enabled())
+        with patch.dict(os.environ, {"RETRY_TRANSIENT_ERRORS": "true", "AUTO_UNLOAD_AFTER_JOB": "true"}, clear=False):
+            self.assertTrue(retry_transient_errors_enabled())
+            self.assertTrue(auto_unload_after_job_enabled())
 
 
 class TestSchedulerResilience(unittest.IsolatedAsyncioTestCase):

@@ -102,7 +102,6 @@ function formatGenerateModel(
 
   let cleanLabel = def?.name || id;
   if (id === 'trellis_image_to_textured_mesh') cleanLabel = 'TRELLIS (PBR Textured Mesh)';
-  else if (id === 'trellis_text_to_textured_mesh') cleanLabel = 'TRELLIS (Text-to-3D Textured)';
   else if (id === 'triposr_image_to_raw_mesh') cleanLabel = 'TripoSR (Ultra-Fast Geometry)';
   else if (id === 'triposg_image_to_raw_mesh') cleanLabel = 'TripoSG (Fast Feed-Forward Geometry)';
   else if (id === 'triposf_image_to_raw_mesh') cleanLabel = 'TripoSF (High-Density Neural Raw Mesh)';
@@ -285,8 +284,7 @@ export const GeneratePanel: React.FC = () => {
   const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview);
   
   const supportsTextureGeneration = activeModelObj?.supports_texture ?? false;
-  const isTextTo3DModel = activeModelObj?.id === 'trellis_text_to_textured_mesh';
-  const showTextureToggle = supportsTextureGeneration && !isTextTo3DModel;
+  const showTextureToggle = supportsTextureGeneration;
 
   const physics = generationSettings.physics ?? {
     bodyType: 'auto' as const,
@@ -907,7 +905,7 @@ export const GeneratePanel: React.FC = () => {
 
               {/* Engine Feature Toggles: PBR Texture & Low VRAM */}
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
-                {/* PBR Texture Toggle - hidden for text-to-3D models (always generates textures) */}
+                {/* PBR Texture Toggle - shown only when the selected model supports texture generation */}
                 {showTextureToggle && (
                   <button
                     type="button"
@@ -968,6 +966,7 @@ export const GeneratePanel: React.FC = () => {
                 )}
 
                 {/* Low VRAM Toggle */}
+                {activeModelObj?.low_vram_supported && (
                 <button
                   type="button"
                   onClick={() => setGenerationSettings(prev => ({
@@ -994,6 +993,7 @@ export const GeneratePanel: React.FC = () => {
                     }`} />
                   </div>
                 </button>
+                )}
               </div>
             </div>
 

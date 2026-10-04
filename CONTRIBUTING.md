@@ -61,7 +61,7 @@ The maintained Wheels release is used for compatible prebuilt Python wheels; the
 Run checks relevant to your change:
 
 ```bash
-npx tsc --noEmit
+bun run test
 bun run lint
 bun run build
 python3 -m compileall -q backend/
@@ -69,7 +69,7 @@ python3 scripts/verify_contracts.py
 bash -n backend/scripts/*.sh scripts/*.sh
 ```
 
-GPU/model inference and full production post-processing require an appropriate NVIDIA environment. Static checks do not replace GPU validation.
+GPU/model inference and full production post-processing require an appropriate NVIDIA environment. Static checks do not replace GPU validation. The repository currently has no GitHub Actions workflow under `.github/workflows/`, so local verification is the authoritative pre-push check.
 
 ## Pull requests
 

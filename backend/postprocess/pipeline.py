@@ -693,7 +693,7 @@ def run_postprocess_job(
     retopo_stats: Dict[str, Any] = {"status": "skipped", "reason": "No structural retopology required."}
     feature_type = str(job_metadata.get("feature") or job_inputs.get("feature") or "")
     solid_generation_feature = feature_type in {
-        "image_to_raw_mesh", "image_to_textured_mesh", "text_to_raw_mesh", "text_to_textured_mesh",
+        "image_to_raw_mesh", "image_to_textured_mesh",
     }
     large_open_defect = (
         int(repaired_topology.get("largest_boundary_component_edges", 0))

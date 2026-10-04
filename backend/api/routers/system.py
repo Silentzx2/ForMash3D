@@ -871,7 +871,7 @@ async def get_jobs_history(
         limit: Maximum number of jobs to return (max 500)
         offset: Number of jobs to skip for pagination
         status: Filter by job status (queued, processing, completed, failed, cancelled)
-        feature: Filter by feature type (e.g., text_to_textured_mesh)
+        feature: Filter by feature type (e.g., image_to_textured_mesh)
         start_date: Filter jobs after this date (ISO format: 2024-01-01T00:00:00Z)
         end_date: Filter jobs before this date (ISO format: 2024-01-01T23:59:59Z)
         scheduler: Model scheduler dependency

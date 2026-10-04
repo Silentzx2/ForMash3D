@@ -89,7 +89,6 @@ export interface Task {
 }
 
 export type TaskType = 
-  | 'text-to-mesh'
   | 'image-to-mesh'
   // | 'text-to-textured-mesh'
   // | 'image-to-textured-mesh'

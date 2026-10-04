@@ -177,8 +177,8 @@ sequenceDiagram
     participant PostProcess as Production Post-Processing
     participant Storage as backend/storage/
 
-    User->>Frontend: Select prompt / image + production triangle budget
-    Frontend->>API: POST /api/v1/mesh-generation/text-to-textured-mesh
+    User->>Frontend: Select image + production triangle budget
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run maximum-fidelity model inference; strip production-only budget flags
     Adapter-->>SCHED: Raw model-native mesh output
@@ -297,7 +297,6 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 - `POST /api/v1/mesh-generation/image-mesh-painting`: Paint textures onto mesh (Hunyuan3D-Paint-v2-1).
 - `GET /api/v1/mesh-generation/status/{job_id}`: Real-time generation job status.
 - `POST /api/v1/mesh-generation/cancel/{job_id}`: Cancel a running job.
-- `POST /api/v1/mesh-generation/cost-estimate`: Estimate VRAM and time cost.
 - `GET /api/v1/system/jobs/{job_id}/download?artifact_format=<format>`: Deliver canonical master, game-ready, LOD, collision, texture, preview, QA, or ZIP artifacts.
 
 ### Mesh Editing, Rigging, Segmentation, Retopology, UV
@@ -316,30 +315,31 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ## 8. Model Catalog
 
-| Model Architecture | Registered Adapters | Category / Tasks | VRAM Budget |
-|---|---|---|---|
-| **Hunyuan3D-Shape-v2-1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB |
-| **Hunyuan3D-Paint-v2-1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB |
-| **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB |
-| **Hunyuan3D-2.1 (Legacy)** | `hunyuan3dv21_image_to_raw_mesh`, `hunyuan3dv21_image_to_textured_mesh`, `hunyuan3dv21_image_mesh_painting` | Raw & Textured Mesh | 8–19.5 GB |
-| **TRELLIS** | `trellis_text_to_textured_mesh`, `trellis_image_to_textured_mesh`, `trellis_text_mesh_painting`, `trellis_image_mesh_painting` | Text/Image to Mesh, Mesh Painting | 11.5 GB |
-| **TRELLIS.2** | `trellis2_image_to_textured_mesh`, `trellis2_image_mesh_painting` | Structured 3D & Painting | 23.5 GB |
-| **TripoSR** | `triposr_image_to_raw_mesh` | Single-Image to Mesh | 6 GB |
-| **TripoSG** | `triposg_image_to_raw_mesh` | Image & Scribble to Mesh | 8 GB |
-| **TripoSF** | `triposf_image_to_raw_mesh` | SparseFlex Mesh | 12 GB |
-| **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB |
-| **PartPacker** | `partpacker_image_to_raw_mesh` | Part-Level Image to Mesh | 10 GB |
-| **UltraShape** | `ultrashape_image_to_raw_mesh` | Arbitrary-Topology Mesh | 26.6 GB |
-| **PartField** | `partfield_mesh_segmentation` | Mesh Segmentation | 4 GB |
-| **P3-SAM** | `p3sam_mesh_segmentation` | High-Precision Segmentation | 60 GB |
-| **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB |
-| **FastMesh** | `fastmesh_v1k_retopology`, `fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB |
-| **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB |
-| **VoxHammer** | `voxhammer_text_mesh_editing`, `voxhammer_image_mesh_editing` | Text/Image Mesh Editing | 40 GB |
+The active catalog is sourced from `backend/config/models.yaml`. Text-conditioned **mesh painting** and mesh editing remain supported; Text → 3D mesh generation is not registered.
 
----
+| Model Family | Registered IDs | Category / Tasks | VRAM Budget |
+|---|---|---|---:|
+| Hunyuan3D-Shape-v2.1 | `hunyuan3d_shape_v21_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB |
+| Hunyuan3D-Paint-v2.1 | `hunyuan3d_paint_v21_image_mesh_painting` | Image/mesh → PBR Paint | ~21 GB |
+| Hunyuan3D-DiT-v2-mini-Turbo | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Image → Raw Mesh | ~6 GB |
+| TRELLIS | `trellis_image_to_textured_mesh`; `trellis_text_mesh_painting`; `trellis_image_mesh_painting` | Image → Textured Mesh; Mesh Painting | ~11.5 GB |
+| TRELLIS.2 | `trellis2_image_to_textured_mesh`; `trellis2_image_mesh_painting` | Image → Textured Mesh; Image Paint | ~23.5 GB |
+| TripoSR | `triposr_image_to_raw_mesh` | Image → Raw Mesh | ~6 GB |
+| TripoSG | `triposg_image_to_raw_mesh` | Image → Raw Mesh | ~8 GB |
+| TripoSF | `triposf_image_to_raw_mesh` | Image → Raw Mesh | ~12 GB |
+| PartPacker | `partpacker_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB |
+| UltraShape | `ultrashape_image_to_raw_mesh` | Image → Raw Mesh | ~26.6 GB |
+| PartField | `partfield_mesh_segmentation` | Mesh Segmentation | ~4 GB |
+| P3-SAM | `p3sam_mesh_segmentation` | Mesh Segmentation | ~60 GB |
+| UniRig | `unirig_auto_rig` | Auto-Rigging | ~9 GB |
+| FastMesh | `fastmesh_v1k_retopology`; `fastmesh_v4k_retopology` | Mesh Retopology | ~16–24.5 GB |
+| PartUV | `partuv_uv_unwrapping` | UV Unwrapping | ~7 GB |
+| VoxHammer | `voxhammer_text_mesh_editing`; `voxhammer_image_mesh_editing` | Mesh Editing | ~40 GB |
+| ARDY | `ardy_motion_generation` | Text → Motion | ~8 GB |
+| Zero123++ v1.2 | `zero123plus_v12_image_to_multiview` | Multi-view image generation | runtime-gated |
 
 ## 8.1 Raw Generation Fidelity / Official Parity Contract
+
 
 Raw generation is model-specific. ForMash3D does not apply one global inference-step contract because released models are tuned/distilled for different schedules.
 

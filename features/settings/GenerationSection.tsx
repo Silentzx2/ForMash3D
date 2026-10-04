@@ -93,7 +93,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
     localStorage.setItem('batchGenerationEnabled', JSON.stringify(val));
     toast.success(val ? 'Batch Generation Enabled' : 'Batch Generation Disabled', {
       description: val
-        ? 'Workspace will now support queueing multiple text-to-3D prompts consecutively.'
+        ? 'Workspace will now support queueing multiple 3D generation jobs consecutively.'
         : 'Workspace standard single-generation mode active.'
     });
   };
@@ -132,7 +132,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
             <HugeiconsIcon icon={CpuIcon} size={16} className="w-5 h-5 text-primary" />
             Default 3D Model Provider
           </CardTitle>
-          <CardDescription>Select the primary model engine for text-to-3D and image-to-3D generation.</CardDescription>
+          <CardDescription>Select the primary model engine for image-to-3D generation.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <select
@@ -297,7 +297,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
             </div>
           </div>
           <CardDescription>
-            Allows the workspace to queue multiple text-to-3D prompts consecutively, showing a real-time progress queue indicator for the entire job set.
+            Allows the workspace to queue multiple 3D generation jobs consecutively, showing a real-time progress queue indicator for the entire job set.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -308,7 +308,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
                 Consecutive Job Queueing
               </span>
               <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                When active, the prompt input bar in the 3D workspace enables multi-prompt entry, sequential rendering, and total set progress tracking.
+                When active, the 3D workspace can queue multiple generation jobs and track total set progress.
               </p>
             </div>
             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap self-start sm:self-auto ${

@@ -41,9 +41,7 @@ _ADAPTER_MAP = {
     # PartUV
     "PartUVUnwrappingAdapter": ("partuv_adapter", "PartUVUnwrappingAdapter"),
     # TRELLIS
-    "TrellisTextToMeshAdapterCommon": ("trellis_adapter", "TrellisTextToMeshAdapterCommon"),
     "TrellisImageToMeshAdapterCommon": ("trellis_adapter", "TrellisImageToMeshAdapterCommon"),
-    "TrellisTextToTexturedMeshAdapter": ("trellis_adapter", "TrellisTextToTexturedMeshAdapter"),
     "TrellisTextMeshPaintingAdapter": ("trellis_adapter", "TrellisTextMeshPaintingAdapter"),
     "TrellisImageToTexturedMeshAdapter": ("trellis_adapter", "TrellisImageToTexturedMeshAdapter"),
     "TrellisImageToRawMeshAdapter": ("trellis_adapter", "TrellisImageToRawMeshAdapter"),

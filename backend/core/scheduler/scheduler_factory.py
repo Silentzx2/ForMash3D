@@ -149,7 +149,7 @@ def create_development_scheduler(**kwargs) -> MultiprocessModelScheduler:
     defaults = {
         "reduce_vram_requirements": True,
         "model_subset": [
-            "trellis_text_to_textured_mesh",
+            "trellis_image_to_textured_mesh",
             "partfield_mesh_segmentation",
         ],  # Subset of models for faster development
     }

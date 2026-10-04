@@ -62,35 +62,6 @@ def validate_model_preference(
 
 
 # Enhanced Request models with file upload support
-class TextToRawMeshRequest(BaseModel):
-    """Request for text-to-mesh generation"""
-
-    text_prompt: str = Field(..., description="Text description for mesh generation")
-    output_format: str = Field("glb", description="Output mesh format")
-    model_preference: str = Field(
-        ..., description="Model name for mesh generation"
-    )
-    model_parameters: Optional[dict] = Field(
-        None,
-        description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
-    )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
-    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
-    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
-    quad_topology: bool = Field(False, description="Request quad-dominant topology")
-    asset_name: Optional[str] = Field(None, description="Asset base stem name")
-
-    model_config = ConfigDict(protected_namespaces=("settings_",))
-
-    @field_validator("output_format")
-    @classmethod
-    def validate_output_format(cls, v):
-        allowed_formats = ["glb"]
-        if v not in allowed_formats:
-            raise ValueError(f"Output format must be one of: {allowed_formats}")
-        return v
-
-
 class TextMeshPaintingRequest(BaseModel):
     """Request for text-based mesh painting"""
 
@@ -425,69 +396,7 @@ async def process_file_input(
         )
 
 
-# Text-to-mesh endpoints
-@router.post("/text-to-raw-mesh", response_model=MeshGenerationResponse)
-async def text_to_raw_mesh(
-    mesh_request: TextToRawMeshRequest,
-    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
-):
-    """
-    Generate a 3D mesh from text description.
-
-    Args:
-        mesh_request: Text-to-mesh generation parameters
-        scheduler: Model scheduler dependency
-        current_user: Current authenticated user (required if auth enabled)
-
-    Returns:
-        Job information for the mesh generation task
-    """
-    try:
-        # Extract user_id if user is authenticated
-        user_id = current_user.user_id if current_user else None
-        
-        # Validate model preference
-        validate_model_preference(
-            mesh_request.model_preference, "text_to_raw_mesh", scheduler
-        )
-
-        job_request = JobRequest(
-            feature="text_to_raw_mesh",
-            inputs={
-                "text_prompt": mesh_request.text_prompt,
-                "output_format": mesh_request.output_format,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-                **(mesh_request.model_parameters or {}),
-            },
-            model_preference=mesh_request.model_preference,
-            priority=1,
-            metadata={
-                "postprocess_mode": "production_mesh",
-                "feature_type": "text_to_raw_mesh",
-                "physics_enabled": mesh_request.physics_enabled,
-                "physics_config": mesh_request.physics_config,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-            },
-            user_id=user_id,
-        )
-        job_id = await scheduler.schedule_job(job_request)
-
-        return MeshGenerationResponse(
-            job_id=job_id,
-            status="queued",
-            message="Text-to-raw-mesh generation job queued successfully",
-        )
-
-    except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
-        raise
-    except Exception as e:
-        logger.error(f"Error scheduling text-to-raw-mesh job: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
-
+# Text-to-3D generation is intentionally image-only. Text prompts remain supported for mesh painting and motion.
 
 # Removed text-to-textured-mesh endpoints - project is Image-to-3D only
 # Text-to-Motion is kept in ardy_adapter.py

@@ -250,22 +250,6 @@ export interface FileMetadata {
 }
 
 // Mesh Generation Types - UPDATED
-export interface TextToMeshRequest {
-  text_prompt: string;
-  output_format: OutputFormat;
-  model_preference?: string;
-  model_parameters?: Record<string, any>;
-}
-
-export interface TextToTexturedMeshRequest {
-  text_prompt: string;
-  texture_prompt?: string;
-  texture_resolution?: number;
-  output_format: OutputFormat;
-  model_preference?: string;
-  model_parameters?: Record<string, any>;
-}
-
 export interface ImageToMeshRequest {
   image_path?: string;
   image_base64?: string;

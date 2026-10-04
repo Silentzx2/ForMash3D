@@ -43,11 +43,7 @@ class ModelFactory:
     # Registry of known adapter modules and classes
     ADAPTER_REGISTRY = {
         # TRELLIS adapters
-        "trellis_text_to_textured_mesh": {
-            "module": "adapters.trellis_adapter",
-            "class": "TrellisTextToTexturedMeshAdapter",
-        },
-        "trellis_text_mesh_painting": {
+                "trellis_text_mesh_painting": {
             "module": "adapters.trellis_adapter",
             "class": "TrellisTextMeshPaintingAdapter",
         },
