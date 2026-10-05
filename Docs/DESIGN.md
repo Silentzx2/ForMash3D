@@ -491,7 +491,7 @@ The visible quality selector (`Mobile / Game / Studio / Cinematic / Native`) map
 The Generate panel exposes Original versus Generation Preview, approval/reuse, regeneration, manual editor navigation, and a disable path. Changing the source invalidates the previous preprocessing artifact.
 
 ### Smart Intent
-Compact controls expose Game Ready, Cinematic, Animation, 3D Print, and Mobile. The backend returns the actual chosen model; the UI does not reimplement resource admission.
+Compact controls expose Game Ready, Cinematic, Animation, 3D Print, and Mobile. With a ready uploaded image, selecting an intent applies the backend preset, resolves the actual chosen model, shows the selection rationale, and triggers the normal generation lifecycle. The UI does not reimplement resource admission.
 
 ### Production QA
 Printability, Auto-Repair, and Auto-Rig are explicit controls. All execute through the existing scheduler/post-process lifecycle and expose degraded failure state rather than false success.

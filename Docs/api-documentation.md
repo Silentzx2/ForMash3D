@@ -233,6 +233,13 @@ DELETE /api/v1/file-upload/{file_id}
 
 ---
 
+## Smart Generation APIs
+
+### Smart Generation
+`POST /api/v1/smart-generation/generation` accepts an image input, one of the five built-in intent IDs, an optional explicit model override, preprocessing/auto-rig/printability controls, and safe preset overrides. It resolves a ready image-capable model deterministically, submits through the existing image raw/textured generation scheduler path, and returns `job_id`, selected model, applied preset, candidate order, and effective configuration.
+
+`GET /api/v1/smart-generation/presets` returns the versioned YAML preset definitions. `POST /api/v1/smart-generation/resolve` returns the deterministic model-selection decision without submitting a job.
+
 ## Mesh Generation APIs
 
 ```http

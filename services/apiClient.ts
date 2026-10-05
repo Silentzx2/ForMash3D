@@ -419,6 +419,11 @@ class ApiClient {
     return response.data;
   }
 
+  async generateSmartGeneration(request: Record<string, any>): Promise<any> {
+    const response = await this.retry(() => this.client.post('/api/v1/smart-generation/generation', request));
+    return response.data;
+  }
+
   // Mesh Generation Endpoints
   async imageToRawMesh(request: ImageToMeshRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(

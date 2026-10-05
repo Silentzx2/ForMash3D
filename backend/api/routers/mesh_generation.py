@@ -1,8 +1,7 @@
 """
 Mesh generation API endpoints.
 
-Provides endpoints for generating 3D meshes from various inputs including text, images,
-and combinations of both. Enhanced to support file uploads, base64 encoding, and proper
+Provides endpoints for Image → 3D generation plus text-guided mesh painting. Enhanced to support file uploads, base64 encoding, and proper
 result downloading.
 """
 

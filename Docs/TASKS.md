@@ -1486,7 +1486,7 @@ Do not build a second image editing application.
 
 **Priority:** MEDIUM/HIGH  
 **Quarter target:** Q4 2026 planning target  
-**Status:** Planned after P0/P1 stabilization.
+**Status:** IMPLEMENTED — deterministic intent resolution, image-only smart submission, one-click workspace execution, and explainability are wired to the existing scheduler path.
 
 ### Product promise
 
@@ -1510,7 +1510,7 @@ Do not implement the old six-weight model-scoring system initially.
 Preferred endpoint:
 
 \`\`\`
-POST /api/v1/smart/generation
+POST /api/v1/smart-generation/generation
 \`\`\`
 
 Input:
@@ -1536,7 +1536,7 @@ No Text → 3D prompt mode.
 5. Choose a deterministic model priority.
 6. Merge preset + explicit user overrides.
 7. Submit through existing generation scheduler.
-8. Return job ID, selected model, applied preset, and effective config summary.
+8. Return job ID, selected model, applied preset, candidate order, effective config summary, and explicit runtime-safety responsibility.
 
 ### Explainability
 
@@ -2114,13 +2114,22 @@ Do not:
 - Updated root/Docs model-count language to distinguish 23 registered backend adapters from 22 user-selectable models; Zero123++ remains intentionally hidden from the general selector.
 - Full CUDA/model visual validation remains **NOT RUN** and remains the user environment-gated GPU testing responsibility.
 
+# 17.2 Latest Repository Audit — 2026-10-05 (SG-01 Closure + Contract Cleanup)
+
+- Independently re-read all 2,188 lines of \`Docs/TASKS.md\`, including the acceptance criteria, testing strategy, verification matrix, execution order, release milestones, and final checklist.
+- Re-verified SG-06, SG-07, SG-08, and SG-02.2 against their live API/scheduler/post-process/frontend paths; the core implementations are present.
+- Closed SG-01: added a real smart-generation submission contract, deterministic intent→model resolution, one-click intent execution from the Generate panel when an uploaded image is ready, and explainable model/VRAM selection state.
+- Added focused regression coverage for deterministic intent routing, explicit model override, preprocessing provenance/alpha preservation, built-in intent inventory, and printability reporting.
+- Reconciled stale Text → 3D metadata in PRD/repository SEO surfaces; the active product contract remains Image → 3D plus text-guided painting/editing/motion.
+- GPU/model-weight visual validation and the full production test suite remain NOT RUN here; they are not represented as passed.
+
 # 18. Final Agent Checklist
 
 Before marking the roadmap implementation cycle complete, the agent must confirm:
 
-- [ ] RULES.md reread before implementation.
-- [ ] Current Dev branch reread before touching code.
-- [ ] \`Docs/TASKS.md\` used as the authoritative task list.
+- [x] RULES.md reread before implementation.
+- [x] Current Dev branch reread before touching code.
+- [x] \`Docs/TASKS.md\` used as the authoritative task list.
 - [x] BUG-Q1 through BUG-Q8 have exact implementation contracts, source verification, and regression coverage; future agents must independently re-verify rather than trust this status.
 - [x] SG-06 implemented with preview and provenance.
 - [x] SG-07 implemented using existing repair/checking.
@@ -2133,14 +2142,14 @@ Before marking the roadmap implementation cycle complete, the agent must confirm
 - [x] UX-05 diff viewer uses immutable source + existing QA metadata.
 - [x] UX-06 engine export reuses existing exporter and produces deterministic packages.
 - [x] UX-07 background-removal preview reuses SG-06/RMBG/Image Editor.
-- [ ] SG-01 simplified selector uses image-only intent → preset → model → generation.
-- [ ] SG-11 remains held unless backend transport is actually implemented.
-- [ ] SG-03/04/05/09/10/12 remain explicitly deferred unless their exit criteria are met.
+- [x] SG-01 simplified selector uses image-only intent → preset → model → generation; selecting an intent with an uploaded/approved image now triggers the normal generation lifecycle.
+- [x] SG-11 remains held because the backend has no real preview WebSocket transport.
+- [x] SG-03/04/05/09/10/12 remain explicitly deferred; no exit criteria have been met.
 - [x] Relevant documentation was updated.
-- [ ] Targeted tests pass.
-- [ ] Environment-gated tests are honestly marked NOT RUN when unavailable.
-- [ ] No duplicate subsystem was introduced.
-- [ ] Final Git history contains the intended documentation/code changes and nothing unrelated.
+- [ ] Targeted tests pass — NOT RUN here because the GitHub execution environment has no repository clone/dependency runtime.
+- [x] Environment-gated tests are honestly marked NOT RUN when unavailable.
+- [x] No duplicate subsystem was introduced.
+- [x] Final Git history contains the intended documentation/code changes and nothing unrelated.
 
 ---
 

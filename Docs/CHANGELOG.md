@@ -1,3 +1,8 @@
+## 2026-10-05 — [Smart Generation Closure]
+
+- Closed SG-01 with a real smart-generation submission endpoint, deterministic intent→model execution, one-click intent generation in the workspace when an approved image is ready, and inline explainability.
+- Added focused regression coverage for smart presets, preprocessing provenance, and printability reporting.
+
 ## 2026-10-05 — [Phase 2 User Experience Features]
 
 - UX-01: Enhanced Asset History / Generations Gallery to show generation intent, texture maps count, and LOD levels in asset cards

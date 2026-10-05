@@ -605,6 +605,18 @@ Use a content-hashed preprocessing artifact for optional Image → 3D enhancemen
 
 Use a versioned YAML source of truth with ordered model priorities and capability/readiness/VRAM gates instead of an opaque weighted scoring system. Explicit model choices remain authoritative.
 
+## ADR-054 — Deterministic Smart Generation Submission
+
+**Decision**: Smart Generation resolves image-only intent presets against the existing model manifest, then delegates the actual job to the existing raw/textured image-generation endpoints and scheduler. The Generate panel may auto-submit after an intent is selected when a valid uploaded/approved image is available.
+
+**Reason**: This satisfies one-click smart generation without creating a second scheduler, inference path, or persistence layer.
+
+**Consequences**:
+- Five YAML-backed intent presets remain the single source of truth.
+- Explicit model overrides remain supported through the smart API.
+- Scheduler VRAM admission and existing production post-processing remain authoritative.
+- Text → 3D remains out of scope.
+
 ## ADR-053 — Phase 1 UniRig Child Workflow
 
 Run UniRig as a scheduler-managed child job after the canonical production mesh exists. Finalize the parent only after a durable rigged artifact is present; report failure explicitly as degraded.

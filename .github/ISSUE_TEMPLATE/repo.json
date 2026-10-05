@@ -4,7 +4,6 @@
   "keywords": [
     "3d-generation",
     "3d-mesh-generation",
-    "text-to-3d",
     "image-to-3d",
     "generative-3d",
     "ai-3d",
@@ -41,7 +40,6 @@
     "ai-3d",
     "generative-ai",
     "generative-3d",
-    "text-to-3d",
     "image-to-3d",
     "self-hosted",
     "open-source-3d",
@@ -58,7 +56,6 @@
     "primary": [
       "3D generation",
       "3D mesh generation",
-      "text-to-3D",
       "image-to-3D",
       "self-hosted 3D"
     ],
@@ -80,7 +77,7 @@
   "elevator_pitch": "A unified self-hosted studio for generating, processing, inspecting, and exporting AI-generated 3D assets.",
   "use_cases": [
     "Image-to-3D generation",
-    "Text-to-3D generation",
+    "Image-to-3D generation",
     "PBR texture workflows",
     "Mesh retopology and UV processing",
     "Game-ready asset finishing",

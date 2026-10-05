@@ -512,7 +512,7 @@ Generation completion is production-oriented:
 3. game-ready/LOD/physics/preview/QA artifacts are written;
 4. the job reaches terminal success only after the requested production outputs are complete.
 
-Batch text generation submits independent jobs under a scheduler-owned batch ID and max-parallel limit. Redis and single-worker queues expose the same terminal semantics and error-code surface.
+Batch image generation submits independent jobs under a scheduler-owned batch ID and max-parallel limit. Smart Generation resolves image-only intent presets through the same model manifest and scheduler-backed image-generation endpoints. Redis and single-worker queues expose the same terminal semantics and error-code surface.
 
 Each canonical asset manifest carries asset_id, job_id, optional parent_job_id, model/feature information, seed/settings, and SHA-256 input hashes for reproducibility.
 

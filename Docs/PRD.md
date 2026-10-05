@@ -21,7 +21,7 @@ Existing open-source AI 3D tools produce raw outputs that lack the post-processi
 
 ## Goal
 
-Create a centralized, local AI 3D asset factory that takes an image or text prompt and automatically produces the highest-quality practical 3D asset possible, preserves model-native geometry at an immutable `master/source.glb` checkpoint, processes it intelligently, validates it, optimizes it, and gives the user a usable game-ready result.
+Create a centralized, local AI 3D asset factory that takes a reference image and automatically produces the highest-quality practical 3D asset possible. Text prompts remain supported for mesh painting, localized mesh editing, and motion generation; direct Text → 3D mesh generation is out of scope.
 
 ## Core Features
 

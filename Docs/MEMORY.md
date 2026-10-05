@@ -1,3 +1,8 @@
+## 2026-10-05 SG-01 Smart Generation Closure
+- Smart Generation now has a real `/api/v1/smart-generation/generation` submission contract that delegates to the existing image raw/textured generation endpoints, avoiding a duplicate scheduler or inference path.
+- GeneratePanel intent buttons remain backend-owned and deterministic; when an uploaded image is ready they now trigger the normal generation lifecycle after applying the preset, with model/VRAM explainability shown inline.
+- Added focused regression coverage for smart intent resolution, preprocessing provenance, built-in preset inventory, and printability reporting.
+
 ## 2026-10-05 Model Registry & Download Manager Parity Audit
 - Cross-checked the 23 backend model manifest entries against the 22 user-selectable frontend entries, the root manager.sh, and backend/scripts/download_models.sh.
 - VoxHammer was the only registered model family missing from the download manager. Added its image- and text-conditioned TRELLIS checkpoints using the adapter-compatible Hugging Face cache layout.

@@ -161,6 +161,7 @@ export const GeneratePanel: React.FC = () => {
   const pendingGenerateRef = useRef(false);
   const ownedBlobUrlsRef = useRef<Set<string>>(new Set());
   const [smartPresets, setSmartPresets] = useState<Record<string, any>>({});
+  const [smartResolution, setSmartResolution] = useState<any | null>(null);
   const [enhancementLoading, setEnhancementLoading] = useState(false);
   const [enhancementError, setEnhancementError] = useState<string | null>(null);
 
@@ -700,6 +701,12 @@ export const GeneratePanel: React.FC = () => {
         : textureResolution <= 1024 ? 'medium'
           : textureResolution <= 2048 ? 'high'
             : '8k';
+
+    setSmartResolution(resolved);
+    const canAutoGenerate = Boolean(generationSettings.imageFileId)
+      && (!generationSettings.enhancementEnabled || Boolean(generationSettings.preprocessingArtifactId))
+      && !batchGenerationEnabled;
+    if (canAutoGenerate) pendingGenerateRef.current = true;
 
     setGenerationSettings(prev => ({
       ...prev,
@@ -1402,9 +1409,18 @@ export const GeneratePanel: React.FC = () => {
                   </button>
                 ))}
               </div>
+              {generationSettings.intent && smartResolution && (
+                <div className="rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-[8px] text-zinc-400 space-y-0.5">
+                  <div className="flex justify-between gap-2"><span>Selected model</span><span className="font-mono text-white truncate">{smartResolution.model_id}</span></div>
+                  <div className="flex justify-between gap-2"><span>Preset</span><span className="font-mono text-white truncate">{smartPresets[generationSettings.intent]?.label || generationSettings.intent}</span></div>
+                  <div className="flex justify-between gap-2"><span>Applied</span><span className="font-mono text-zinc-300">{Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount || 0) / 1000)}K · {generationSettings.generateLOD ? String(generationSettings.lodCount || 4) + ' LOD' : 'No LOD'} · {generationSettings.generateCollision ? 'Collision' : 'No collision'}</span></div>
+                  <div className="flex justify-between gap-2"><span>Eligibility</span><span className="text-emerald-300">Image → 3D · ready · VRAM-fit</span></div>
+                  <div className="flex justify-between gap-2"><span>Safety</span><span className="font-mono text-zinc-300">No preflight clamp · scheduler authoritative</span></div>
+                </div>
+              )}
               {generationSettings.intent && (
                 <button type="button"
-                  onClick={() => setGenerationSettings(prev => ({ ...prev, intent: undefined, aiModel: '' }))}
+                  onClick={() => { setSmartResolution(null); setGenerationSettings(prev => ({ ...prev, intent: undefined, aiModel: '' })); }}
                   className="w-full text-[9px] text-zinc-500 hover:text-white">
                   Clear intent and keep manual settings
                 </button>
