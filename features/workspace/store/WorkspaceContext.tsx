@@ -715,9 +715,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
      const off4 = apiClient.on('execution_error', onError);
      return () => { off1(); off2(); off3(); off4(); };
    }, []);
-   // Poll batch job statuses periodically
+    // Poll batch job statuses periodically
     useEffect(() => {
-      const appStore = useAppStore();
       const { batchQueue } = appStore;
      
      // Check if we have any batch jobs that need monitoring
