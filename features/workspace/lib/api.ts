@@ -1,5 +1,4 @@
 import type { SystemStats } from '@/features/workspace/types';
-import { getApiClient } from '@/services/apiClient';
 import { dedupedGet } from '@/lib/requestDedup';
 
 export interface HistoryItem {
@@ -48,6 +47,8 @@ class ApiClient {
   }
 
   public getBaseUrl(): string { return this._host; }
+
+  public setBaseUrl(host: string) { this._host = host; }
 
   public on(event: string, callback: (data: unknown) => void) {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
@@ -242,36 +243,11 @@ class ApiClient {
   }
 }
 
-// Workspace-specific apiClient: wraps services/apiClient via prototype
-// inheritance. ApiClient extends the shared client class at runtime, so
-// workspace helpers (on/off, getSystemStats, …) are available here while
-// the shared singleton remains untouched.
-const baseApiClientInstance = getApiClient() as any;
-
-// Create workspace-specific client that inherits from the shared instance
-export const apiClient = Object.create(baseApiClientInstance, {
-  on: { value: function(event: string, callback: (data: unknown) => void) {
-      if (!baseApiClientInstance.listeners.has(event)) baseApiClientInstance.listeners.set(event, new Set());
-      baseApiClientInstance.listeners.get(event)!.add(callback);
-      return () => this.off(event, callback);
-    } },
-  off: { value: function(event: string, callback: (data: unknown) => void) {
-      baseApiClientInstance.listeners.get(event)?.delete(callback);
-    } },
-  getSystemStats: { value: baseApiClientInstance.getSystemStats.bind(baseApiClientInstance) },
-  getQueue: { value: baseApiClientInstance.getQueue.bind(baseApiClientInstance) },
-  getHistory: { value: baseApiClientInstance.getHistory.bind(baseApiClientInstance) },
-  deleteHistory: { value: baseApiClientInstance.deleteHistory.bind(baseApiClientInstance) },
-  cancelExecution: { value: baseApiClientInstance.cancelExecution.bind(baseApiClientInstance) },
-  emitProgress: { value: baseApiClientInstance.emitProgress.bind(baseApiClientInstance) },
-  emitExecuting: { value: baseApiClientInstance.emitExecuting.bind(baseApiClientInstance) },
-  emitExecuted: { value: baseApiClientInstance.emitExecuted.bind(baseApiClientInstance) },
-  emitError: { value: baseApiClientInstance.emitError.bind(baseApiClientInstance) },
-  connectWebSocket: { value: baseApiClientInstance.connectWebSocket.bind(baseApiClientInstance) },
-  disconnectWebSocket: { value: baseApiClientInstance.disconnectWebSocket.bind(baseApiClientInstance) },
-  getBaseUrl: { value: baseApiClientInstance.getBaseUrl.bind(baseApiClientInstance) },
-  setBaseUrl: { value: baseApiClientInstance.setBaseUrl.bind(baseApiClientInstance) },
-}) as any;
+// Workspace-specific apiClient: standalone instance of the workspace ApiClient
+// defined above. It already carries the workspace helpers (on/off,
+// getSystemStats, getQueue, getHistory, …), so no shared-singleton binding
+// is required.
+export const apiClient = new ApiClient() as any;
 
 export async function fetchSystemStats(): Promise<SystemStats> {
   const stats = await apiClient.getSystemStats();
