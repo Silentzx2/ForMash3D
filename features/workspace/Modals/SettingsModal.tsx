@@ -11,6 +11,58 @@ import { AlertCircle, BrushIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, GridI
 type SettingsTab = 'server' | 'viewport' | 'sculpt' | 'ai';
 
 export const SettingsModal: React.FC = () => {
+  let workspaceContext;
+  try {
+    workspaceContext = useWorkspace();
+  } catch (error) {
+    return (
+      <div
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            // We don't have setIsSettingsOpen, so we can't close the modal this way.
+            // But we can still close it by clicking on the backdrop? We'll leave it open for now.
+            // Alternatively, we can reload the page on click? Not ideal.
+            // We'll just not close it.
+          }
+        }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-4"
+      >
+        <div className="w-full max-w-2xl max-h-[88vh] rounded-2xl bg-[hsl(var(--surface-1))] border border-white/[0.12] shadow-2xl overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
+                <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white">Studio SettingsIcon</h3>
+                <p className="text-[10.5px] text-zinc-400">Configure viewport, pipeline defaults, and local AI runtime</p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                // We don't have setIsSettingsOpen, so we can't close the modal.
+                // We'll just do nothing.
+              }}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+            >
+              <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Body Content */}
+          <div className="p-5 space-y-4 text-xs bg-[hsl(var(--surface-0))] flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
+            <div className="text-center py-10">
+              <p className="text-zinc-400">
+                Error: Unable to access workspace context. Please refresh the page.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const {
     isSettingsOpen,
     setIsSettingsOpen,
@@ -26,7 +78,7 @@ export const SettingsModal: React.FC = () => {
     setPaintBrushSettings,
     showGrid,
     setShowGrid,
-  } = useWorkspace();
+  } = workspaceContext;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('server');
 

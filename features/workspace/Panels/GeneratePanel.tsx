@@ -184,15 +184,136 @@ export const GeneratePanel: React.FC = () => {
     void generate3DModel();
   }, [generationSettings, generate3DModel]);
 
-  useEffect(() => {
-    let active = true;
-    getApiClient().getSmartPresets().then(data => {
-      if (active && data?.intents) setSmartPresets(data.intents);
-    }).catch(err => {
-      console.warn('Failed to load smart-generation presets:', err);
-    });
-    return () => { active = false; };
-  }, []);
+   useEffect(() => {
+     let active = true;
+     getApiClient().getSmartPresets().then(data => {
+       if (active && data?.intents) setSmartPresets(data.intents);
+     }).catch(err => {
+       console.warn('Failed to load smart-generation presets:', err);
+       // Fallback to hardcoded presets from smart_presets.yaml
+       setSmartPresets({
+         game_ready: {
+           label: 'Game Ready',
+           target_polycount: 50000,
+           texture_resolution: 1024,
+           generate_lod: true,
+           lod_preset: 'high',
+           lod_count: 4,
+           collision: true,
+           production_qa: true,
+           auto_uv: true,
+           enable_auto_rig: false,
+           enable_printability_check: false,
+           enable_auto_repair: false,
+           preferred_features: ['image_to_textured_mesh', 'image_to_raw_mesh'],
+           model_priority: [
+             'trellis2_image_to_textured_mesh',
+             'trellis_image_to_textured_mesh',
+             'hunyuan3d_shape_v21_image_to_raw_mesh',
+             'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
+             'triposf_image_to_raw_mesh',
+             'triposg_image_to_raw_mesh',
+             'triposr_image_to_raw_mesh',
+             'partpacker_image_to_raw_mesh',
+             'ultrashape_image_to_raw_mesh',
+           ],
+         },
+         cinematic: {
+           label: 'Cinematic',
+           target_polycount: 200000,
+           texture_resolution: 2048,
+           generate_lod: true,
+           lod_preset: 'high',
+           lod_count: 4,
+           collision: false,
+           production_qa: true,
+           auto_uv: true,
+           enable_auto_rig: false,
+           enable_printability_check: false,
+           enable_auto_repair: false,
+           preferred_features: ['image_to_textured_mesh', 'image_to_raw_mesh'],
+           model_priority: [
+             'trellis2_image_to_textured_mesh',
+             'trellis_image_to_textured_mesh',
+             'ultrashape_image_to_raw_mesh',
+             'triposf_image_to_raw_mesh',
+             'hunyuan3d_shape_v21_image_to_raw_mesh',
+             'triposg_image_to_raw_mesh',
+             'triposr_image_to_raw_mesh',
+           ],
+         },
+         animation: {
+           label: 'Animation',
+           target_polycount: 30000,
+           texture_resolution: 1024,
+           generate_lod: true,
+           lod_preset: 'high',
+           lod_count: 4,
+           collision: false,
+           production_qa: true,
+           auto_uv: true,
+           enable_auto_rig: true,
+           enable_printability_check: false,
+           enable_auto_repair: false,
+           preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
+           model_priority: [
+             'hunyuan3d_shape_v21_image_to_raw_mesh',
+             'trellis2_image_to_textured_mesh',
+             'trellis_image_to_textured_mesh',
+             'triposf_image_to_raw_mesh',
+             'triposg_image_to_raw_mesh',
+             'triposr_image_to_raw_mesh',
+           ],
+         },
+         '3d_print': {
+           label: '3D Print',
+           target_polycount: 0,
+           texture_resolution: 0,
+           generate_lod: false,
+           lod_preset: 'high',
+           lod_count: 0,
+           collision: false,
+           production_qa: true,
+           auto_uv: false,
+           enable_auto_rig: false,
+           enable_printability_check: true,
+           enable_auto_repair: true,
+           preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
+           model_priority: [
+             'ultrashape_image_to_raw_mesh',
+             'triposf_image_to_raw_mesh',
+             'hunyuan3d_shape_v21_image_to_raw_mesh',
+             'triposg_image_to_raw_mesh',
+             'triposr_image_to_raw_mesh',
+             'partpacker_image_to_raw_mesh',
+           ],
+         },
+         mobile: {
+           label: 'Mobile',
+           target_polycount: 20000,
+           texture_resolution: 512,
+           generate_lod: true,
+           lod_preset: 'mobile',
+           lod_count: 4,
+           collision: false,
+           production_qa: true,
+           auto_uv: true,
+           enable_auto_rig: false,
+           enable_printability_check: false,
+           enable_auto_repair: false,
+           preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
+           model_priority: [
+             'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
+             'triposr_image_to_raw_mesh',
+             'triposg_image_to_raw_mesh',
+             'partpacker_image_to_raw_mesh',
+             'hunyuan3d_shape_v21_image_to_raw_mesh',
+           ],
+         },
+       });
+     });
+     return () => { active = false; };
+   }, []);
 
   useEffect(() => {
     let active = true;

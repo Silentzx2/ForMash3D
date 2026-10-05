@@ -385,6 +385,7 @@ class Zero123PlusAdapter(BaseModel):
                 - output_format: 'png' or 'zip' (default: 'png')
                 - job_id: (Optional) Job ID string
         """
+        logger.info("[ZERO123++ ADAPTER] _process_request started")
         raw_image_input = (
             inputs.get("image_path")
             or inputs.get("image")
@@ -410,6 +411,8 @@ class Zero123PlusAdapter(BaseModel):
         save_contact_sheet = bool(inputs.get("save_contact_sheet", True))
         output_format = str(inputs.get("output_format", "png")).lower()
         job_id = str(inputs.get("job_id") or f"mv_{int(time.time())}")
+
+        logger.info(f"[ZERO123++ ADAPTER] Parsed inputs: seed={seed}, bg_removal={background_removal}, generate_masks={generate_masks}, generate_normals={generate_normals}, save_contact_sheet={save_contact_sheet}, output_format={output_format}")
 
         req_params = {
             "source_sha256": source_sha256,
@@ -437,34 +440,46 @@ class Zero123PlusAdapter(BaseModel):
         asset_workspace = storage_root / f"{safe_asset_name}_{job_hash}"
         multiview_dir = asset_workspace / "multiview"
         multiview_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"[ZERO123++ ADAPTER] Created workspace: {multiview_dir}")
 
         # 1. Retain original single-image source as multiview/source.png
         canonical_source_path = multiview_dir / "source.png"
         if not canonical_source_path.exists():
             shutil.copy2(source_path, canonical_source_path)
+            logger.info(f"[ZERO123++ ADAPTER] Copied source image to {canonical_source_path}")
 
         # 2. Prepare PIL input for inference
         input_pil = Image.open(source_path)
+        logger.info(f"[ZERO123++ ADAPTER] Loaded input image: {input_pil.size}")
         if background_removal:
+            logger.info("[ZERO123++ ADAPTER] Starting background removal")
             import rembg
             if self.rembg_session is None:
                 self.rembg_session = rembg.new_session()
+                logger.info("[ZERO123++ ADAPTER] Created rembg session")
             input_pil = rembg.remove(input_pil, session=self.rembg_session)
+            logger.info(f"[ZERO123++ ADAPTER] Background removal completed, image size: {input_pil.size}")
 
         # Expand to square and resize to >= 320x320 (e.g. 512x512)
         input_pil = expand_to_square(input_pil, (127, 127, 127, 0))
+        logger.info(f"[ZERO123++ ADAPTER] After expand_to_square: {input_pil.size}")
         if input_pil.width < 320 or input_pil.height < 320:
             input_pil = input_pil.resize((320, 320), Image.Resampling.LANCZOS)
+            logger.info(f"[ZERO123++ ADAPTER] Resized to 320x320: {input_pil.size}")
         elif max(input_pil.size) > 1280:
             ratio = 1280.0 / max(input_pil.size)
             new_size = (int(input_pil.width * ratio), int(input_pil.height * ratio))
             input_pil = input_pil.resize(new_size, Image.Resampling.LANCZOS)
+            logger.info(f"[ZERO123++ ADAPTER] Resized to {new_size}: {input_pil.size}")
 
         # 3. Run Diffusion Pipeline to generate the 3x2 contact sheet
         if self.pipeline is None:
+            logger.info("[ZERO123++ ADAPTER] Loading pipeline")
             self._load_model()
+            logger.info("[ZERO123++ ADAPTER] Pipeline loaded")
 
         device = self.pipeline.device
+        logger.info(f"[ZERO123++ ADAPTER] Pipeline device: {device}")
         generator = torch.Generator(device).manual_seed(seed)
         self.pipeline.set_progress_bar_config(disable=True)
 
@@ -482,7 +497,8 @@ class Zero123PlusAdapter(BaseModel):
                 ],
             )
         )
-        logger.info(f"Running Zero123++ multi-view inference ({inference_steps} steps, cfg={guidance_scale})")
+        logger.info(f"[ZERO123++ ADAPTER] Running Zero123++ multi-view inference ({inference_steps} steps, cfg={guidance_scale})")
+        logger.info(f"[ZERO123++ ADAPTER] Calling pipeline with input size {input_pil.size}")
         pipeline_output = self.pipeline(
             input_pil,
             prompt="",
@@ -492,17 +508,20 @@ class Zero123PlusAdapter(BaseModel):
             width=640,
             height=960,
         )
+        logger.info(f"[ZERO123++ ADAPTER] Pipeline call completed, got {len(pipeline_output.images)} images")
         contact_sheet_img: Image.Image = pipeline_output.images[0]
 
         if save_contact_sheet:
             contact_sheet_img.save(multiview_dir / "contact_sheet.png")
+            logger.info(f"[ZERO123++ ADAPTER] Saved contact sheet to {multiview_dir / 'contact_sheet.png'}")
 
         # 4. Optional View-Space Normals generation via ControlNet
         normal_contact_sheet: Optional[Image.Image] = None
         if generate_normals:
+            logger.info("[ZERO123++ ADAPTER] Starting View-Space Normals generation via ControlNet")
             try:
                 normal_pipe = self._load_normal_controlnet()
-                logger.info("Generating View-Space Normals via ControlNet")
+                logger.info("[ZERO123++ ADAPTER] Loaded normal controlnet")
                 normal_gen = torch.Generator(device).manual_seed(seed)
                 normal_output = normal_pipe(
                     input_pil,
@@ -515,8 +534,9 @@ class Zero123PlusAdapter(BaseModel):
                     height=960,
                 )
                 normal_contact_sheet = normal_output.images[0]
+                logger.info(f"[ZERO123++ ADAPTER] View-Space Normals generation completed")
             except Exception as e:
-                logger.warning(f"View-Space Normals generation skipped or failed: {e}", exc_info=True)
+                logger.warning(f"[ZERO123++ ADAPTER] View-Space Normals generation skipped or failed: {e}", exc_info=True)
                 normal_contact_sheet = None
 
         # 5. Crop the 6 views and optional masks/normals
@@ -526,8 +546,10 @@ class Zero123PlusAdapter(BaseModel):
 
         if masks_dir:
             masks_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[ZERO123++ ADAPTER] Created masks directory: {masks_dir}")
         if normals_dir:
             normals_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[ZERO123++ ADAPTER] Created normals directory: {normals_dir}")
 
         for camera in CAMERA_RIG:
             file_name = f"{camera['name']}.png"
@@ -535,6 +557,7 @@ class Zero123PlusAdapter(BaseModel):
             view_img = contact_sheet_img.crop(crop_box)
             view_dest = multiview_dir / file_name
             view_img.save(view_dest)
+            logger.debug(f"[ZERO123++ ADAPTER] Saved view {file_name} to {view_dest}")
 
             # Mask handling
             if masks_dir:
@@ -544,13 +567,15 @@ class Zero123PlusAdapter(BaseModel):
                         self.rembg_session = rembg.new_session()
                     segmented = rembg.remove(view_img, session=self.rembg_session, only_mask=True)
                     segmented.save(masks_dir / file_name)
+                    logger.debug(f"[ZERO123++ ADAPTER] Saved mask for {file_name}")
                 except Exception as e:
-                    logger.debug(f"Failed to generate mask for {file_name}: {e}")
+                    logger.debug(f"[ZERO123++ ADAPTER] Failed to generate mask for {file_name}: {e}")
 
             # Normal handling
             if normals_dir and normal_contact_sheet:
                 normal_view = normal_contact_sheet.crop(crop_box)
                 normal_view.save(normals_dir / file_name)
+                logger.debug(f"[ZERO123++ ADAPTER] Saved normal for {file_name}")
 
             view_entry = {
                 "file": file_name,
@@ -590,6 +615,7 @@ class Zero123PlusAdapter(BaseModel):
         manifest_path = multiview_dir / "manifest.json"
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest_data, f, indent=2)
+        logger.info(f"[ZERO123++ ADAPTER] Wrote manifest to {manifest_path}")
 
         sheet_file = multiview_dir / "contact_sheet.png"
         sheet_size_str = f"{format_bytes(sheet_file.stat().st_size)}" if sheet_file.exists() else "N/A"
@@ -609,11 +635,14 @@ class Zero123PlusAdapter(BaseModel):
         # 7. Generate ZIP archive if requested or on demand
         zip_path = None
         if output_format == "zip":
+            logger.info("[ZERO123++ ADAPTER] Creating ZIP archive")
             zip_filename = f"{safe_asset_name}.zip"
             zip_path = asset_workspace / zip_filename
             self.create_multiview_zip(multiview_dir, zip_path)
+            logger.info(f"[ZERO123++ ADAPTER] Created ZIP archive at {zip_path}")
 
-        logger.info(f"Zero123++ multi-view generation completed successfully: {multiview_dir}")
+        logger.info(f"[ZERO123++ ADAPTER] Zero123++ multi-view generation completed successfully: {multiview_dir}")
+        logger.info("[ZERO123++ ADAPTER] _process_request finished")
         return {
             "status": "success",
             "model_id": self.MODEL_ID,

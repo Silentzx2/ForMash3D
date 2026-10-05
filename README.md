@@ -9,9 +9,9 @@
 </h1>
 
 <p align="center">
-  <strong>Open-Source Generative 3D Mesh Studio & Production Pipeline</strong><br>
-  <em>A unified, self-hosted 3D creation suite for neural 3D generation, asset finishing, and engine-ready delivery</em><br>
-  Text-to-Motion • Image-to-3D • Quad Retopology • PBR Material Painting • Auto-Rigging • Automated LODs • Game Engine Ready
+    <strong>Open-Source Generative 3D Mesh Studio & Production Pipeline</strong><br>
+    <em>A unified, self-hosted 3D creation suite for neural 3D generation, asset finishing, and engine-ready delivery</em><br>
+    Text-to-Motion • Image-to-3D • Quad Retopology • PBR Material Painting • Auto-Rigging • Automated LODs • Game Engine Ready
 </p>
 
 <p align="center">
@@ -72,20 +72,20 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 | Multi-View | Zero123++ v1.2 plus capability-gated 3D reconstruction |
 | Smart Generation | One-click image-only intents with deterministic model selection and scheduler-backed execution |
 | QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
-| Engine Export | GLB/FBX game-ready packages plus LOD and collision artifacts |
+| Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |
 
 ## 🔄 End-to-End Asset Generation Pipeline
 
 ForMash3D enforces an **immutable master preservation architecture**. The raw neural model output is immediately snapshotted at `master/source.glb` before any downstream finishing operations, guaranteeing zero accidental loss of fine surface detail:
 
 ```text
-  INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
+   INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
 ┌─────────────────────┐    ┌───────────────────────────┐    ┌──────────────────────────┐
 │  • Single Image     │───►│  Neural Model Adapters:   │───►│ master/source.glb        │
 │  • Multi-View Image │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
 │                     │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
 └─────────────────────┘    └───────────────────────────┘    └────────────┬─────────────┘
-                                                                         │
+                                                                          │
  ┌───────────────────────────────────────────────────────────────────────┘
  │  PRODUCTION POST-PROCESSING & ENGINE FINISHING (Ported & Enhanced from 3DGenStudio)
  ▼
@@ -95,16 +95,16 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
 │ Non-Manifold Fix│    │ AutoRetopo Def. │    │ PBR Material Map│    │ LOD1: 50%       │
 │ Boundary Guard  │    │ Feature Angle   │    │ RealESRGAN x4+  │    │ LOD2: 25% / 12% │
 └─────────────────┘    └─────────────────┘    └─────────────────┘    └────────┬────────┘
-                                                                              │
+                                                                               │
  ┌────────────────────────────────────────────────────────────────────────────┘
  ▼
-┌─────────────────┐    ┌─────────────────┐    ┌────────────────────────────────────────┐
+┌─────────────────┐    ┌─────────────────┐    ┌────────────────────────────────────────┘
 │ 5. Physics      │───►│ 6. QA Engine    │───►│ GAME-READY EXPORT PACKAGE              │
 │ CoACD Convex    │    │ 0-100 Score     │    │ • game_ready.glb (Unreal / Unity/Godot)│
 │ Decomposition   │    │ Stage Snapshots │    │ • lods/ (lod0.glb - lod3.glb)          │
 │ Rapier3D WebSim │    │ Quality Trace   │    │ • collision.glb & physics.json         │
 └─────────────────┘    └─────────────────┘    │ • Structured Engine-Ready ZIP Archive  │
-                                              └────────────────────────────────────────┘
+                                               └────────────────────────────────────────┘
 ```
 
 ---
@@ -160,7 +160,7 @@ flowchart TD
         QA["QA Diagnostic Engine<br/>0-100 Quality Trace"]:::green
     end
 
-    subgraph Delivery["Game Engine Ready Delivery"]
+    subblock Delivery["Game Engine Ready Delivery"]
         ASSET_STORE["backend/storage/models/meshes/<br/>Canonical Asset Hierarchy"]:::slate
         ZIP["Structured ZIP Export<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end
@@ -238,7 +238,7 @@ backend/storage/models/meshes/<asset_name>_<job_id>/
 │   └── source.glb              # Immutable master raw mesh
 ├── game_ready/
 │   └── <asset_name>_<job_id>.glb # Production engine-ready model
-├── lods/
+├── lords/
 │   ├── lod0.glb                # LOD0 (100% detail)
 │   ├── lod1.glb                # LOD1 (50% reduction)
 │   ├── lod2.glb                # LOD2 (25% reduction)
@@ -491,6 +491,13 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 - **Backend API Gateway Base**: Forked and modernized from **[FishWoWater/3DAIGC-API](https://github.com/FishWoWater/3DAIGC-API)**.
 - **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSR/SG/SF, PartPacker, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
 
+---
+
+## Recent Fixes (2026-10-05)
+
+- Fixed Minified React error #130 on settings page by adding error handling for missing workspace context.
+- Resolved Zero123Plus worker job spam issue by adding detailed logging and disabling background removal by default.
+- Made "smash mash gen" feature visible in UI by adding fallback to hardcoded smart presets when API fails.
 
 ### Runtime note
 Mesh tools are part of the main FastAPI runtime at `/api/v1/mesh-tools/*`. The default startup no longer launches a separate port 8200 mesh-tools service. Job progress is read from durable job state; mesh-tool operations may stream operation-level SSE progress.
