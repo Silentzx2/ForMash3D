@@ -10,7 +10,7 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
+import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, LoaderCircle, AlertCircle, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
 
 interface MeshDiffViewerProps {
   className?: string;
@@ -69,16 +69,16 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [diffMode, setDiffMode] = useState<'source-final' | 'source-lod1' | 'lod0-lod1'>('source-final');
-  const [leftCamera, setLeftCamera] = useRef<THREE.PerspectiveCamera | null>(null);
-  const [rightCamera, setRightCamera] = useRef<THREE.PerspectiveCamera | null>(null);
-  const [leftControls, setLeftControls] = useRef<OrbitControls | null>(null);
-  const [rightControls, setRightControls] = useRef<OrbitControls | null>(null);
-  const [leftRenderer, setLeftRenderer] = useRef<THREE.WebGLRenderer | null>(null);
-  const [rightRenderer, setRightRenderer] = useRef<THREE.WebGLRenderer | null>(null);
-  const [leftScene, setLeftScene] = useRef<THREE.Scene | null>(null);
-  const [rightScene, setRightScene] = useRef<THREE.Scene | null>(null);
-  const [leftContainerRef, setLeftContainerRef] = useRef<HTMLDivElement | null>(null);
-  const [rightContainerRef, setRightContainerRef] = useRef<HTMLDivElement | null>(null);
+  const leftCamera = useRef<THREE.PerspectiveCamera | null>(null);
+  const rightCamera = useRef<THREE.PerspectiveCamera | null>(null);
+  const leftControls = useRef<OrbitControls | null>(null);
+  const rightControls = useRef<OrbitControls | null>(null);
+  const leftRenderer = useRef<THREE.WebGLRenderer | null>(null);
+  const rightRenderer = useRef<THREE.WebGLRenderer | null>(null);
+  const leftScene = useRef<THREE.Scene | null>(null);
+  const rightScene = useRef<THREE.Scene | null>(null);
+  const leftContainerRef = useRef<HTMLDivElement | null>(null);
+  const rightContainerRef = useRef<HTMLDivElement | null>(null);
   const [animationFrame, setAnimationFrame] = useState<number>(0);
 
   // Initialize Three.js scenes
@@ -86,23 +86,23 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
     if (typeof window === 'undefined') return;
 
     // Left scene
-    const leftScene = new THREE.Scene();
-    leftScene.background = new THREE.Color(0x1a1a1a);
-    setLeftScene(leftScene);
+    const newLeftScene = new THREE.Scene();
+    newLeftScene.background = new THREE.Color(0x1a1a1a);
+    leftScene.current = newLeftScene;
 
     // Right scene
-    const rightScene = new THREE.Scene();
-    rightScene.background = new THREE.Color(0x1a1a1a);
-    setRightScene(rightScene);
+    const newRightScene = new THREE.Scene();
+    newRightScene.background = new THREE.Color(0x1a1a1a);
+    rightScene.current = newRightScene;
 
     // Initialize cameras
-    const leftCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-    leftCamera.position.set(0, 1.5, 3);
-    setLeftCamera(leftCamera);
+    const newLeftCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    newLeftCamera.position.set(0, 1.5, 3);
+    leftCamera.current = newLeftCamera;
 
-    const rightCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
-    rightCamera.position.set(0, 1.5, 3);
-    setRightCamera(rightCamera);
+    const newRightCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    newRightCamera.position.set(0, 1.5, 3);
+    rightCamera.current = newRightCamera;
 
     // Add lights to both scenes
     const addLightsToScene = (scene: THREE.Scene) => {
@@ -114,13 +114,11 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
       scene.add(directionalLight);
     };
 
-    addLightsToScene(leftScene);
-    addLightsToScene(rightScene);
+    addLightsToScene(newLeftScene);
+    addLightsToScene(newRightScene);
 
     return () => {
       // Cleanup
-      leftScene.dispose();
-      rightScene.dispose();
     };
   }, []);
 
@@ -139,8 +137,8 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
       setError(null);
 
       try {
-        let leftUrl: string | null = null;
-        let rightUrl: string | null = null;
+        let leftUrl: string | undefined | null = null;
+        let rightUrl: string | undefined | null = null;
 
         // Determine which meshes to load based on diffMode
         switch (diffMode) {
@@ -157,9 +155,9 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
             break;
           case 'lod0-lod1':
             // Left: LOD0 (base), Right: LOD1
-            const lods = currentAsset.artifacts?.lods;
-            leftUrl = lods && lods.length > 0 ? lods[0] : null;
-            rightUrl = lods && lods.length > 1 ? lods[1] : lods && lods.length > 0 ? lods[0] : null;
+            const lodPair = currentAsset.artifacts?.lods;
+            leftUrl = lodPair && lodPair.length > 0 ? lodPair[0] : null;
+            rightUrl = lodPair && lodPair.length > 1 ? lodPair[1] : lodPair && lodPair.length > 0 ? lodPair[0] : null;
             break;
         }
 
@@ -278,29 +276,29 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
 
     const syncControls = () => {
       // Sync left to right
-      rightControls.current.target.copy(leftControls.current.target);
-      rightControls.current.position.copy(leftControls.current.position);
-      rightControls.current.update();
+      rightControls.current!.target.copy(leftControls.current!.target);
+      rightControls.current!.object.position.copy(leftControls.current!.object.position);
+      rightControls.current!.update();
 
       // Sync right to left  
-      leftControls.current.target.copy(rightControls.current.target);
-      leftControls.current.position.copy(rightControls.current.position);
-      leftControls.current.update();
+      leftControls.current!.target.copy(rightControls.current!.target);
+      leftControls.current!.object.position.copy(rightControls.current!.object.position);
+      leftControls.current!.update();
     };
 
     // Add event listeners
-    leftControls.current.addEventListener('change', syncControls);
-    rightControls.current.addEventListener('change', syncControls);
+    leftControls.current!.addEventListener('change', syncControls);
+    rightControls.current!.addEventListener('change', syncControls);
 
     return () => {
-      leftControls.current.removeEventListener('change', syncControls);
-      rightControls.current.removeEventListener('change', syncControls);
+      leftControls.current!.removeEventListener('change', syncControls);
+      rightControls.current!.removeEventListener('change', syncControls);
     };
   }, [leftControls, rightControls]);
 
   // Animation loop
   useEffect(() => {
-    const animate = () {
+    const animate = () => {
       setAnimationFrame(prev => prev + 1);
       
       // Render left scene
@@ -330,7 +328,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
       renderer.setPixelRatio(window.devicePixelRatio || 1);
       renderer.setSize(leftContainerRef.current.clientWidth, leftContainerRef.current.clientHeight);
       leftContainerRef.current.appendChild(renderer.domElement);
-      setLeftRenderer(renderer);
+      leftRenderer.current = renderer;
 
       const scene = leftScene.current;
       if (scene) {
@@ -344,16 +342,16 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
       if (camera) {
         camera.position.set(0, 1.5, 3);
         camera.lookAt(0, 0, 0);
-      }
 
-      const controls = new OrbitControls(camera, leftContainerRef.current);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
-      controls.screenSpacePanning = false;
-      controls.minDistance = 0.5;
-      controls.maxDistance = 20;
-      controls.target.set(0, 0, 0);
-      setLeftControls(controls);
+        const controls = new OrbitControls(camera, leftContainerRef.current);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 0.5;
+        controls.maxDistance = 20;
+        controls.target.set(0, 0, 0);
+        leftControls.current = controls;
+      }
     }
 
     if (rightContainerRef.current) {
@@ -361,7 +359,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
       renderer.setPixelRatio(window.devicePixelRatio || 1);
       renderer.setSize(rightContainerRef.current.clientWidth, rightContainerRef.current.clientHeight);
       rightContainerRef.current.appendChild(renderer.domElement);
-      setRightRenderer(renderer);
+      rightRenderer.current = renderer;
 
       const scene = rightScene.current;
       if (scene) {
@@ -375,16 +373,16 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
       if (camera) {
         camera.position.set(0, 1.5, 3);
         camera.lookAt(0, 0, 0);
-      }
 
-      const controls = new OrbitControls(camera, rightContainerRef.current);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
-      controls.screenSpacePanning = false;
-      controls.minDistance = 0.5;
-      controls.maxDistance = 20;
-      controls.target.set(0, 0, 0);
-      setRightControls(controls);
+        const controls = new OrbitControls(camera, rightContainerRef.current);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.screenSpacePanning = false;
+        controls.minDistance = 0.5;
+        controls.maxDistance = 20;
+        controls.target.set(0, 0, 0);
+        rightControls.current = controls;
+      }
     }
 
     return () => {
@@ -407,8 +405,8 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
     if (leftMesh && leftScene.current) {
       // Clear existing meshes (except grid helper)
       leftScene.current.traverse((object) => {
-        if (object.isMesh && object.userData !== 'gridHelper') {
-          leftScene.current.remove(object);
+        if (object instanceof THREE.Mesh && (typeof object.userData !== 'string' || object.userData !== 'gridHelper')) {
+          leftScene.current!.remove(object);
         }
       });
       leftScene.current.add(leftMesh);
@@ -419,8 +417,8 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
     if (rightMesh && rightScene.current) {
       // Clear existing meshes (except grid helper)
       rightScene.current.traverse((object) => {
-        if (object.isMesh && object.userData !== 'gridHelper') {
-          rightScene.current.remove(object);
+        if (object instanceof THREE.Mesh && (typeof object.userData !== 'string' || object.userData !== 'gridHelper')) {
+          rightScene.current!.remove(object);
         }
       });
       rightScene.current.add(rightMesh);
@@ -444,8 +442,8 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
   const getMeshUrls = useCallback(() => {
     if (!currentAsset) return { left: 'None', right: 'None' };
     
-    let leftUrl: string | null = null;
-    let rightUrl: string | null = null;
+    let leftUrl: string | undefined | null = null;
+    let rightUrl: string | undefined | null = null;
 
     switch (diffMode) {
       case 'source-final':
@@ -458,9 +456,9 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
         rightUrl = lods && lods.length > 0 ? lods[0] : null;
         break;
       case 'lod0-lod1':
-        const lods = currentAsset.artifacts?.lods;
-        leftUrl = lods && lods.length > 0 ? lods[0] : null;
-        rightUrl = lods && lods.length > 1 ? lods[1] : lods && lods.length > 0 ? lods[0] : null;
+        const lodPair = currentAsset.artifacts?.lods;
+        leftUrl = lodPair && lodPair.length > 0 ? lodPair[0] : null;
+        rightUrl = lodPair && lodPair.length > 1 ? lodPair[1] : lodPair && lodPair.length > 0 ? lodPair[0] : null;
         break;
     }
 
@@ -515,7 +513,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
                  'LOD0 vs LOD1'}
               </span>
               <HugeiconsIcon icon={ChevronDown} size={12} className="text-zinc-400" />
-            </div>
+            </button>
           </div>
         )}
       </div>
@@ -650,7 +648,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
                     </div>
                   </div>
                 )}
-              }
+              </div>
             </div>
 
             {/* Difference Metrics */}

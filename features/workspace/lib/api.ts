@@ -246,32 +246,32 @@ class ApiClient {
 // inheritance. ApiClient extends the shared client class at runtime, so
 // workspace helpers (on/off, getSystemStats, …) are available here while
 // the shared singleton remains untouched.
-const baseApiClientInstance = getApiClient();
+const baseApiClientInstance = getApiClient() as any;
 
 // Create workspace-specific client that inherits from the shared instance
 export const apiClient = Object.create(baseApiClientInstance, {
   on: { value: function(event: string, callback: (data: unknown) => void) {
-      if (!this.listeners.has(event)) this.listeners.set(event, new Set());
-      this.listeners.get(event)!.add(callback);
+      if (!baseApiClientInstance.listeners.has(event)) baseApiClientInstance.listeners.set(event, new Set());
+      baseApiClientInstance.listeners.get(event)!.add(callback);
       return () => this.off(event, callback);
     } },
   off: { value: function(event: string, callback: (data: unknown) => void) {
-      this.listeners.get(event)?.delete(callback);
+      baseApiClientInstance.listeners.get(event)?.delete(callback);
     } },
-  getSystemStats: { value: this.getSystemStats.bind(this) },
-  getQueue: { value: this.getQueue.bind(this) },
-  getHistory: { value: this.getHistory.bind(this) },
-  deleteHistory: { value: this.deleteHistory.bind(this) },
-  cancelExecution: { value: this.cancelExecution.bind(this) },
-  emitProgress: { value: this.emitProgress.bind(this) },
-  emitExecuting: { value: this.emitExecuting.bind(this) },
-  emitExecuted: { value: this.emitExecuted.bind(this) },
-  emitError: { value: this.emitError.bind(this) },
-  connectWebSocket: { value: this.connectWebSocket.bind(this) },
-  disconnectWebSocket: { value: this.disconnectWebSocket.bind(this) },
-  getBaseUrl: { value: this.getBaseUrl.bind(this) },
-  setBaseUrl: { value: this.setBaseUrl.bind(this) },
-}) as unknown as WorkspaceApiClient;
+  getSystemStats: { value: baseApiClientInstance.getSystemStats.bind(baseApiClientInstance) },
+  getQueue: { value: baseApiClientInstance.getQueue.bind(baseApiClientInstance) },
+  getHistory: { value: baseApiClientInstance.getHistory.bind(baseApiClientInstance) },
+  deleteHistory: { value: baseApiClientInstance.deleteHistory.bind(baseApiClientInstance) },
+  cancelExecution: { value: baseApiClientInstance.cancelExecution.bind(baseApiClientInstance) },
+  emitProgress: { value: baseApiClientInstance.emitProgress.bind(baseApiClientInstance) },
+  emitExecuting: { value: baseApiClientInstance.emitExecuting.bind(baseApiClientInstance) },
+  emitExecuted: { value: baseApiClientInstance.emitExecuted.bind(baseApiClientInstance) },
+  emitError: { value: baseApiClientInstance.emitError.bind(baseApiClientInstance) },
+  connectWebSocket: { value: baseApiClientInstance.connectWebSocket.bind(baseApiClientInstance) },
+  disconnectWebSocket: { value: baseApiClientInstance.disconnectWebSocket.bind(baseApiClientInstance) },
+  getBaseUrl: { value: baseApiClientInstance.getBaseUrl.bind(baseApiClientInstance) },
+  setBaseUrl: { value: baseApiClientInstance.setBaseUrl.bind(baseApiClientInstance) },
+}) as any;
 
 export async function fetchSystemStats(): Promise<SystemStats> {
   const stats = await apiClient.getSystemStats();

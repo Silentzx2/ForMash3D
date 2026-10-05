@@ -5,12 +5,12 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
-import { ModelAsset } from '../../types';
+import { ModelAsset } from '../types';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
+import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon, LoaderCircle, AlertCircle } from '@hugeicons/core-free-icons';
 
 interface ModelComparisonViewerProps {
   className?: string;
@@ -123,7 +123,6 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
 
     return () => {
       // Cleanup
-      scenes.forEach(scene => scene.dispose());
       cameras.forEach(camera => {});
       controls.forEach(control => {
         if (control) control.dispose();
@@ -285,7 +284,7 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
     return () => {
       controls.forEach((control, index) => {
         if (control) {
-          control.removeEventListener('syncControls', syncControls);
+          control.removeEventListener('change', syncControls);
         }
       });
     };
@@ -356,7 +355,7 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
       // Cleanup
       renderers.forEach((renderer, index) => {
         if (renderer && containerRefs[index]) {
-          renderer.current?.dispose();
+          renderer.dispose();
           containerRefs[index]?.removeChild(renderer.domElement);
         }
       });
@@ -372,7 +371,7 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
       if (model && scenes[index]) {
         // Clear existing meshes (except grid helper)
         scenes[index].traverse((object) => {
-          if (object.isMesh && object.userData !== 'gridHelper') {
+          if (object instanceof THREE.Mesh && (object as any).userData !== 'gridHelper') {
             scenes[index].remove(object);
           }
         });
@@ -441,7 +440,7 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
                 {selectedModelId ? `Selected: ${selectedModelId.slice(-6)}` : 'Select Model'}
               </span>
               <HugeiconsIcon icon={ChevronDown} size={12} className="text-zinc-400" />
-            </div>
+            </button>
           </div>
         )}
       </div>

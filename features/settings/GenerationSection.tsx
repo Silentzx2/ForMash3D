@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/premium/Spinner';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { CpuIcon, SlidersHorizontalIcon, BoxIcon, SparklesIcon, ZapIcon, GaugeIcon, GaugeIcon, ListOrderedIcon } from '@hugeicons/core-free-icons';
+import { CpuIcon, SlidersHorizontalIcon, BoxIcon, SparklesIcon, ZapIcon, GaugeIcon, ListOrderedIcon, LoaderCircle, FileCodeIcon, CheckmarkCircle02Icon } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/useAppStore';
@@ -525,11 +525,10 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
                </span>
              </div>
            </div>
-         </CardContent>
-       </Card>
-     </div>
-   
-     {/* Preset Management */}
+          </CardContent>
+        </Card>
+    
+      {/* Preset Management */}
      <div className="space-y-6">
        <div className="flex items-center justify-between">
          <h2 className="text-2xl font-bold tracking-tight">Generation Presets</h2>
@@ -687,7 +686,6 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
                  </div>
                )}
              </div>
-           </div>
    
              {/* Preset Editor */}
              {selectedPresetId && (
@@ -705,9 +703,9 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
                          setShowPresetManager(false);
                        }}
                        className="p-1 rounded-lg hover:bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]"
-                     >
-                       ✕
-                     </div>
+                      >
+                        ✕
+                      </button>
                    </div>
    
                    <div className="space-y-2">
@@ -749,5 +747,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
          </div>
        )}
      </div>
+     </div>
    );
  
+}

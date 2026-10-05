@@ -65,7 +65,7 @@ export function buildGenerationParameters(
     texture_resolution: (
       settings.textureQuality === 'low' ? 512 :
       settings.textureQuality === 'medium' ? 1024 :
-      settings.textureQuality === 'ultra' || settings.textureQuality === '8k' ? 4096 :
+      settings.textureQuality === '8k' ? 4096 :
       2048
     ),
   };
@@ -238,7 +238,7 @@ function applyModelSpecificParams(
     modelParameters.paint_resolution = settings.paintResolution ?? (
       settings.textureQuality === 'low' ? 512 :
       settings.textureQuality === 'medium' ? 512 :
-      settings.textureQuality === 'ultra' || settings.textureQuality === '8k' ? 768 :
+      settings.textureQuality === '8k' ? 768 :
       768
     );
   }

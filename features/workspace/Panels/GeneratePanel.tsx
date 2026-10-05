@@ -8,11 +8,24 @@ import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
-import { MultiViewWorkspace } => './MultiViewWorkspace';
+import { MultiViewWorkspace } from './MultiViewWorkspace';
 import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
+
+function dataURLtoFile(dataURL: string, filename: string): File {
+  const arr = dataURL.split(',');
+  const mime = arr[0].match(/:(.*?);/)![1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
 export interface MeshQualityPreset {
   id: 'low' | 'medium' | 'high' | 'ultra';
   label: string;
@@ -687,9 +700,10 @@ export const GeneratePanel: React.FC = () => {
     if (!preset) return;
 
     let chosenModel = '';
+    let resolved: { model_id?: string } | null = null;
     try {
-      const resolved = await getApiClient().resolveSmartIntent(intent);
-      chosenModel = resolved.model_id || '';
+      resolved = await getApiClient().resolveSmartIntent(intent);
+      chosenModel = resolved!.model_id || '';
     } catch (error) {
       setEnhancementError(error instanceof Error ? error.message : 'No ready model satisfies this intent');
       return;
@@ -702,7 +716,7 @@ export const GeneratePanel: React.FC = () => {
           : textureResolution <= 2048 ? 'high'
             : '8k';
 
-    setSmartResolution(resolved);
+    setSmartResolution(resolved!);
     const canAutoGenerate = Boolean(generationSettings.imageFileId)
       && (!generationSettings.enhancementEnabled || Boolean(generationSettings.preprocessingArtifactId))
       && !batchGenerationEnabled;

@@ -281,7 +281,7 @@ def preprocess_image(
 
 
 def load_preprocessed_artifact(artifact_id: str, variant: str = "approved"):
-    if not artifact_id or "/" in artifact_id or "\" in artifact_id:
+    if not artifact_id or "/" in artifact_id or "\\" in artifact_id:
         raise ValueError("Invalid preprocessing artifact ID")
     if variant not in {"approved", "preview"}:
         raise ValueError("Invalid preprocessing artifact variant")

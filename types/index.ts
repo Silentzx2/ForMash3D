@@ -1,3 +1,5 @@
+import type { GenerationSettings } from '../features/workspace/types';
+
 export type GenerationMode = 'image-to-3d';
 export type QualityPreset = 'low-poly' | 'standard' | 'high-poly' | 'ultra' | 'draft';
 export type GenerationStatus = 'idle' | 'uploading' | 'queued' | 'processing' | 'generating' | 'texturing' | 'completed' | 'failed' | 'cancelled';
@@ -69,7 +71,7 @@ export interface RecentPrompt {
 export interface BatchQueueItem {
   id: string;
   imageFileId: string;
-  preprocessingArtifactId?: string;
+  preprocessingArtifactId?: string | null;
   preprocessingMetadata?: any;
   aiModel: string;
   intent?: string;
@@ -103,6 +105,8 @@ export interface BatchQueueItem {
   enableAutoRepair?: GenerationSettings['enableAutoRepair'];
   enableAutoRig?: GenerationSettings['enableAutoRig'];
   autoRigMode?: GenerationSettings['autoRigMode'];
+  preprocessingPreviewUrl?: string | null;
+  enhancementEnabled?: GenerationSettings['enhancementEnabled'];
 }
 
 export interface ViewerState {

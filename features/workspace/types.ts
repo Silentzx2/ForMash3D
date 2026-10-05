@@ -394,6 +394,15 @@ export interface GenerationSettings {
   resolution?: number;
   paintResolution?: 512 | 768;
   enableRealESRGAN?: boolean;
+  intent?: string;
+  preprocessingArtifactId?: string | null;
+  preprocessingPreviewUrl?: string | null;
+  preprocessingMetadata?: any;
+  enhancementEnabled?: boolean;
+  enablePrintabilityCheck?: boolean;
+  enableAutoRepair?: boolean;
+  enableAutoRig?: boolean;
+  autoRigMode?: string;
 }
 
 

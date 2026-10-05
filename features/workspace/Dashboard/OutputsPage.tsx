@@ -104,7 +104,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
             </div>
           ) : null}
           {/* Vertex/Face Counts */}
-          {asset.statsAvailable && (
+          {asset.statsAvailable ? (
             <div className="flex items-center justify-between text-[9px] text-zinc-400">
               <span>{asset.vertices.toLocaleString()} vertices</span>
               <span>{asset.faces.toLocaleString()} faces</span>
@@ -123,7 +123,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
                   ? 'bg-emerald-500/20 text-emerald-300' 
                   : asset.postprocessStatus === 'failed' 
                     ? 'bg-rose-500/20 text-rose-300' 
-                    : 'bg-gray-500/20 text-gray-400'`}>
+                    : 'bg-gray-500/20 text-gray-400'}`}>
                 {asset.postprocessStatus ?? 'processing'}
               </div>
               {/* Rigged Status */}
@@ -139,7 +139,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
                     ? 'bg-emerald-500/20 text-emerald-300' 
                     : printabilityStatus === 'warn' 
                       ? 'bg-yellow-500/20 text-yellow-300' 
-                      : 'bg-rose-500/20 text-rose-300'`}>
+                      : 'bg-rose-500/20 text-rose-300'}`}>
                   {printabilityStatus ?? 'unknown'}
                 </div>
               )}
@@ -148,7 +148,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
             <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded 
               ${isProductionReady 
                 ? 'bg-emerald-500/20 text-emerald-300' 
-                : 'bg-gray-500/20 text-gray-400'`}>
+                : 'bg-gray-500/20 text-gray-400'}`}>
                 {isProductionReady ? 'Ready' : 'Not Ready'}
               </div>
           </div>
@@ -230,7 +230,7 @@ export const OutputsPage: React.FC = () => {
           <div className="rounded-2xl border border-white/[0.08] bg-[hsl(var(--surface-1))] p-12 text-center shadow-xl space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center mx-auto text-zinc-400">
               <HugeiconsIcon icon={FolderOpenIcon} size={16} className="h-6 w-6" />
-            </div
+            </div>
           </div>
         ) : (
           <DndContext

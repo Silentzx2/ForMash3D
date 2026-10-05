@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { GenerationConfig, GenerationJob, GenerationMode, QualityPreset, ViewerState, ViewerMode, LogEntry, RecentPrompt, UploadedImage, InstallProgress, AdminJob, ProjectAsset, ProjectLayer, BatchQueueItem, GenerationResult } from '@/types';
+import type { GenerationSettings } from '@/features/workspace/types';
 import { getApiClient } from '@/services/apiClient';
 
 export interface AppState {
@@ -22,6 +23,7 @@ export interface AppState {
   isLoadingHistory: boolean;
   loadingError: string | null;
   retryCount: number;
+  generationSettings: GenerationSettings;
   loadHistory: () => Promise<void>;
 
   // ── Multi-View & References ──
@@ -194,6 +196,88 @@ const DEFAULT_STATE: AppStateData = {
   isLoadingHistory: false,
   loadingError: null,
   retryCount: 0,
+  generationSettings: {
+    mode: 'image-to-3d' as const,
+    image: null,
+    imageFileId: null,
+    aiModel: '',
+    meshQuality: 'high',
+    textureQuality: 'high',
+    quadTopology: false,
+    topologyMode: 'triangle',
+    seed: 42891,
+    guidanceScale: 7.5,
+    removeBackground: true,
+    lowVram: false,
+    vramMode: 'auto',
+    autoOptimizeSettings: { targetPolycount: 50000 },
+    generateTexture: true,
+    gameReady: false,
+    targetPlatform: 'generic',
+    generateLOD: false,
+    lodPreset: 'high',
+    lodCount: 4,
+    generateCollision: false,
+    physics: {
+      bodyType: 'auto',
+      massMode: 'auto',
+      massKg: 1,
+      densityMode: 'auto',
+      densityKgM3: 500,
+      friction: 0.5,
+      restitution: 0.1,
+      linearDamping: 0.05,
+      angularDamping: 0.05,
+      gravityEnabled: true,
+      collisionQuality: 'balanced',
+      deformation: 'off',
+    },
+    generatePBR: true,
+    bakeNormalMaps: false,
+    bakeHighToLow: false,
+    prompt: '',
+    imageName: '',
+    negativePrompt: '',
+    multiviewImages: {
+      front: null,
+      right: null,
+      back: null,
+      left: null,
+    },
+    multiviewSourceFileId: null,
+    multiviewJobId: null,
+    multiviewAssetId: null,
+    multiviewStatus: 'idle',
+    multiviewViews: [],
+    multiviewManifest: null,
+    multiviewZipUrl: null,
+    multiviewError: null,
+    multiviewInputMode: 'upload',
+    multiviewAdvanced: {
+      inferenceSteps: 12,
+      seed: 42891,
+      saveContactSheet: false,
+      transparentBackground: false,
+      generateMasks: false,
+      generateNormals: false,
+      includeManifest: false,
+    },
+    enableFlashVDM: false,
+    lowVramMode: 'auto',
+    maxNumView: 6,
+    resolution: 1024,
+    paintResolution: 512,
+    enableRealESRGAN: true,
+    intent: undefined,
+    preprocessingArtifactId: null,
+    preprocessingPreviewUrl: null,
+    preprocessingMetadata: null,
+    enhancementEnabled: false,
+    enablePrintabilityCheck: false,
+    enableAutoRepair: false,
+    enableAutoRig: false,
+    autoRigMode: 'full',
+  },
 
   hdMode: 'hd',
   multiViewImages: {

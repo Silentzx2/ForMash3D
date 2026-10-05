@@ -17,6 +17,7 @@ import {
   EnvironmentSettings,
   normalizeModelAsset,
 } from '../types';
+import type { BatchQueueItem } from '@/types';
 import { apiClient } from '../lib/api';
 import { getApiClient } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
@@ -126,6 +127,9 @@ interface WorkspaceContextType {
   runSegmentation: (customSettings?: { numParts?: number; method?: string; hierarchical?: boolean; outputFormat?: string; modelParameters?: Record<string, any>; modelPreference?: string } | number) => Promise<void>;
   runMeshEditing: (customSettings?: { sourcePrompt?: string; targetPrompt?: string; resolution?: number; bbox?: any; outputFormat?: string; mode?: 'text' | 'image'; targetImageFileId?: string; targetImageBase64?: string; strength?: number }) => Promise<void>;
   queueWorkflow: (workflow: Record<string, unknown>, type: ActiveTask['type'], title: string) => Promise<void>;
+  processBatchQueue: () => Promise<void>;
+  cancelBatchProcessing: () => Promise<void>;
+  retryFailedBatchItems: () => Promise<void>;
   navigateToTool: (tool: ToolType) => void;
   navigateToMain: (nav: MainNavRoute) => void;
   navigateToMainNav: (nav: MainNavRoute) => void;
@@ -240,6 +244,7 @@ function normalizeBackendJob(raw: BackendJobPayload) {
 export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const queryClient = useQueryClient();
   const appStore = useAppStore();
+  const updateBatchItem = useAppStore((state) => state.updateBatchItem);
   const viewerStore = useViewerStore();
   const router = useRouter();
   const pathname = usePathname();
@@ -277,7 +282,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { data: historyAssets, isLoading: isHistoryLoading } = useQuery({
     queryKey: ['history-assets'],
     queryFn: async () => {
-      const history = await apiClient.getHistory();
+      const history = await apiClient.getHistory() as Record<string, any>;
       return Object.entries(history).filter(([, h]) => h.status?.completed).map(([id, h], i) => {
         const rawPrompt = (h.prompt?.[1] as string)?.trim();
         const promptName = rawPrompt && !rawPrompt.startsWith('workflow:') && rawPrompt !== 'generate'
@@ -585,8 +590,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
    const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
    const [modelParameterDefaults, setModelParameterDefaults] = useState<Record<string, Record<string, any>>>({});
-   const batchJobIdMap = useRef<Record<string, string>>({}); // Maps jobId to batchQueueItemId
-   const batchPollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     getApiClient().getAvailableModels().then(data => {
@@ -713,9 +716,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
      return () => { off1(); off2(); off3(); off4(); };
    }, []);
    // Poll batch job statuses periodically
-   useEffect(() => {
-     const appStore = useAppStore();
-     const { batchQueue } = appStore;
+    useEffect(() => {
+      const appStore = useAppStore();
+      const { batchQueue } = appStore;
      
      // Check if we have any batch jobs that need monitoring
      const hasBatchJobs = batchQueue.some(item => 
@@ -819,11 +822,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
          clearInterval(batchPollingIntervalRef.current);
          batchPollingIntervalRef.current = null;
        }
-       // Clear the job ID map
-       batchJobIdMap.current = {};
-     };
-   }, [updateBatchItem, useAppStore]);
-   const addAsset = useCallback((asset: ModelAsset) => {
+        // Clear the job ID map
+        batchJobIdMap.current = {};
+      };
+    }, [useAppStore]);
+    const addAsset = useCallback((asset: ModelAsset) => {
     setLocalAssets(prev => {
       const idx = prev.findIndex(a =>
         a.id === asset.id ||
@@ -1244,6 +1247,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const getComparisonGroupResults = useCallback((groupId: string) => {
     return comparisonGroups[groupId]?.results ?? {};
   }, [comparisonGroups]);
+
+  const generateImageTo3D = useCallback(async (customImage?: string) => {
     const imageToUse = customImage ?? generationSettings.image;
     if (!imageToUse) {
       setExecutionStep('Please select or upload an image first');
@@ -1256,7 +1261,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const imageFileName = generationSettings.imageName
       || (imageToUse ? decodeURIComponent(imageToUse.split('/').pop()?.replace(/\?.*$/, '') || '') : '')
        || modelPrompt;
-     const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse, imageFileName, comparisonGroupId);
+     const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse ?? undefined, imageFileName, comparisonGroupId ?? undefined);
 
     const currentQuality = generationSettings.meshQuality || 'high';
     // Source geometry follows the selected model's official/tuned inference schedule.
@@ -1514,8 +1519,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
        generationSettings.aiModel || undefined,
        undefined,
        undefined,
-       comparisonGroupId
-     );
+        comparisonGroupId ?? undefined
+      );
 
     try {
       let effectiveSettings = generationSettings;
@@ -1586,8 +1591,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setExecutionStep,
   ]);
 
-   const runRemeshGeneration = useCallback(async () => {
-     const localTaskId = startTask('remesh', 'Remesh / topology optimization', undefined, undefined, undefined, undefined, comparisonGroupId);
+    const runRemeshGeneration = useCallback(async () => {
+      const localTaskId = startTask('remesh', 'Remesh / topology optimization', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1629,8 +1634,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [remeshSettings, currentAsset, startTask]);
 
-   const runTextureGeneration = useCallback(async () => {
-     const localTaskId = startTask('texture', 'Texture generation', undefined, textureSettings.modelId, undefined, undefined, comparisonGroupId);
+    const runTextureGeneration = useCallback(async () => {
+      const localTaskId = startTask('texture', 'Texture generation', undefined, textureSettings.modelId, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1721,7 +1726,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
      saveIndividualParts?: boolean;
      modelParameters?: Record<string, any>;
    }) => {
-     const localTaskId = startTask('uv', 'UV Unwrapping (PartUV)', undefined, undefined, undefined, undefined, comparisonGroupId);
+      const localTaskId = startTask('uv', 'UV Unwrapping (PartUV)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1776,7 +1781,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     modelPreference?: string;
   } | number) => {
     const pref = (typeof customSettings === 'object' && customSettings?.modelPreference) || 'partfield_mesh_segmentation';
-     const localTaskId = startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`, undefined, undefined, undefined, undefined, comparisonGroupId);
+     const localTaskId = startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`, undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1833,7 +1838,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     targetImageBase64?: string;
     strength?: number;
   }) => {
-     const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)', undefined, undefined, undefined, undefined, comparisonGroupId);
+     const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshFileId = currentAsset?.source?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
@@ -1912,9 +1917,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
    }, [startTask]);
 
    // Batch processing function
-   const processBatchQueue = useCallback(async () => {
-     const appStore = useAppStore();
-     const { batchGenerationEnabled, batchQueue, updateBatchItem } = appStore;
+    const processBatchQueue = useCallback(async () => {
+      const appStore = useAppStore();
+      const { batchGenerationEnabled, batchQueue } = appStore;
      
      if (!batchGenerationEnabled) {
        toast.error('Batch generation disabled', { description: 'Enable batch generation in settings to process the queue.' });
@@ -1992,11 +1997,11 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             'image-to-3d',
             `Batch Item ${batchItem.id.slice(-6)}`,
             undefined,
-            batchItem.aiModel || '',
-            undefined,
-            undefined,
-            comparisonGroupId
-          );
+             batchItem.aiModel || '',
+             undefined,
+             undefined,
+             comparisonGroupId ?? undefined
+           );
 
          // Resolve smart intent if applicable
          let effectiveSettings = batchSettings;
@@ -2078,9 +2083,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
        }
      }
 
-     // Show completion toast
-     toast.success('Batch processing started', { description: `${queuedItems.length} items submitted for processing.` );
-   }, [updateBatchItem, useAppStore, modelDetails, modelParameterDefaults, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
+      // Show completion toast
+      toast.success('Batch processing started', { description: `${queuedItems.length} items submitted for processing.` });
+    }, [useAppStore, modelDetails, modelParameterDefaults, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
 
    // Cancel batch processing function
    const cancelBatchProcessing = useCallback(async () => {
@@ -2126,13 +2131,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
        }
      }
      
-     toast.success('Batch processing cancelled', { description: `${itemsToCancel.length} items cancelled.` });
-   }, [updateBatchItem, useAppStore]);
+      toast.success('Batch processing cancelled', { description: `${itemsToCancel.length} items cancelled.` });
+    }, [useAppStore]);
 
-   // Retry failed batch items function
-   const retryFailedBatchItems = useCallback(async () => {
-     const appStore = useAppStore();
-     const { batchQueue, updateBatchItem } = appStore;
+    // Retry failed batch items function
+    const retryFailedBatchItems = useCallback(async () => {
+      const appStore = useAppStore();
+      const { batchQueue } = appStore;
      
      // Get all batch queue items that have failed
      const failedItems = batchQueue.filter(item => 
@@ -2183,8 +2188,8 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
          }
        }
      
-     toast.success('Failed items reset for retry', { description: `${failedItems.length} failed items reset to queued status.` });
-   }, [updateBatchItem, useAppStore]);
+      toast.success('Failed items reset for retry', { description: `${failedItems.length} failed items reset to queued status.` });
+    }, [useAppStore]);
 
   const navigateToTool = useCallback((tool: ToolType) => {
     setActiveTool(tool);

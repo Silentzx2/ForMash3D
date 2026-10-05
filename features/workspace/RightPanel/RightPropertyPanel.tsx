@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { MeshDiffViewer } from '../Viewport/MeshDiffViewer';
 import { ModelComparisonViewer } from '../Viewport/ModelComparisonViewer';
 import { ModelAsset } from '../types';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { Box, Cancel, CheckIcon, DownloadIcon, EyeIcon, HexagonIcon, Lock, MoveIcon, PaletteIcon, Plus, RefreshCw, ShieldCheckIcon, SlidersHorizontalIcon, SparklesIcon, Unlock, ZapIcon } from '@hugeicons/core-free-icons';
 
 
 export const RightPropertyPanel: React.FC = () => {
@@ -291,7 +293,6 @@ export const RightPropertyPanel: React.FC = () => {
                 />
               </div>
             </div>
-          }
         </div>
 
         {/* 2. Geometry Statistics & Topology Health */}
@@ -645,7 +646,7 @@ export const RightPropertyPanel: React.FC = () => {
                 >
                   <span className="text-xs font-mono">Clear Comparison</span>
                   <HugeiconsIcon icon={Cancel} size={12} className="text-zinc-400" />
-                </div>
+                </button>
               ) : (
                 <div className="relative">
                   <button
@@ -661,7 +662,7 @@ export const RightPropertyPanel: React.FC = () => {
                   >
                     <span className="text-xs font-mono">Select Model to Compare</span>
                     <HugeiconsIcon icon={Plus} size={12} className="text-zinc-400" />
-                  </div>
+                  </button>
                 </div>
               )}
             </div>
@@ -739,6 +740,7 @@ export const RightPropertyPanel: React.FC = () => {
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 };
