@@ -101,7 +101,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
 
             logger.info("Loading Mini Turbo pipeline...")
             self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-                str(self.model_path)
+                str(self.model_path), subfolder='hunyuan3d-dit-v2-mini-turbo'
             )
 
             try:

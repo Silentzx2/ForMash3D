@@ -597,7 +597,7 @@ def bake_texture(
                 render = dr.texture(texture, uv, uv_dr)[0]
                 loss = torch.nn.functional.l1_loss(render[mask], observation[mask])
                 if lambda_tv > 0:
-                    loss += lambda_tv * tv_loss(texture)
+                    loss = loss + lambda_tv * tv_loss(texture)
                 loss.backward()
                 optimizer.step()
                 # annealing

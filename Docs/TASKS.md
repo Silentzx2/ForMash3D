@@ -9,6 +9,13 @@
 
 ---
 
+## Bug Fixes — 2026-10-05
+
+- **Mini Turbo model load failure** (`hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh`): fixed the pipeline load to use the correct checkpoint subfolder `hunyuan3d-dit-v2-mini-turbo` inside `tencent/Hunyuan3D-2mini`; weights must be downloaded first (`bash backend/scripts/download_models.sh -m hunyuan2mini`). Bundled `smart_load_model` loaders for both Mini Turbo and Hunyuan3D-2.1 now resolve absolute local weight paths directly instead of trying to treat them as Hugging Face repo IDs.
+- **TRELLIS texture baking crash** (`trellis_image_to_textured_mesh`): fixed the gradient-descent texture optimizer in `postprocessing_utils.py` — replaced the in-place `loss += lambda_tv * tv_loss(texture)` (which breaks the PyTorch 2.x grad graph) with a new-tensor assignment.
+
+---
+
 ## 0. Mission
 
 ForMash3D is an **Image → 3D, self-hosted production asset pipeline**.
