@@ -7,16 +7,18 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Spinner } from '@/components/premium/Spinner';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { CpuIcon, SlidersHorizontalIcon, BoxIcon, SparklesIcon, ZapIcon, GaugeIcon, ListOrderedIcon } from '@hugeicons/core-free-icons';
+import { CpuIcon, SlidersHorizontalIcon, BoxIcon, SparklesIcon, ZapIcon, GaugeIcon, GaugeIcon, ListOrderedIcon } from '@hugeicons/core-free-icons';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import { useAppStore } from '@/stores/useAppStore';
+import { useWorkspace } from '@/features/workspace/store/WorkspaceContext';
 
 export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: () => Promise<void>) => void }) {
-  const { options, loading: optionsLoading, error: optionsError } = useRuntimeOptions();
-  const { settings, loading: settingsLoading } = useSystemSettings();
-  const batchGenerationEnabled = useAppStore((s) => s.batchGenerationEnabled);
-  const setBatchGenerationEnabled = useAppStore((s) => s.setBatchGenerationEnabled);
+   const { options, loading: optionsLoading, error: optionsError } = useRuntimeOptions();
+   const { settings, loading: settingsLoading } = useSystemSettings();
+   const batchGenerationEnabled = useAppStore((s) => s.batchGenerationEnabled);
+   const setBatchGenerationEnabled = useAppStore((s) => s.setBatchGenerationEnabled);
+   const { processBatchQueue, cancelBatchProcessing, retryFailedBatchItems } = useWorkspace();
 
   const [provider, setProvider] = useState<string>('');
   const [quality, setQuality] = useState<string>('high');
@@ -25,7 +27,152 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
   const [steps, setSteps] = useState<number>(30);
   const [lowVram, setLowVram] = useState<boolean>(false);
   const [batchEnabled, setBatchEnabled] = useState<boolean>(batchGenerationEnabled);
-  const [saving, setSaving] = useState(false);
+   const [saving, setSaving] = useState(false);
+   const [presets, setPresets] = useState<Array<{id: string; name: string; settings: any}>>([]);
+   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
+   const [presetNameInput, setPresetNameInput] = useState('');
+   const [showPresetManager, setShowPresetManager] = useState(false);
+
+   // Load user presets from localStorage
+   useEffect(() => {
+     try {
+       const savedPresets = localStorage.getItem('userPresets');
+       if (savedPresets) {
+         setPresets(JSON.parse(savedPresets));
+       }
+     } catch (err) {
+       console.warn('Failed to load user presets from localStorage:', err);
+       setPresets([]);
+     }
+   }, []);
+   
+   // Save user presets to localStorage when they change
+   useEffect(() => {
+     try {
+       localStorage.setItem('userPresets', JSON.stringify(presets));
+     } catch (err) {
+       console.warn('Failed to save user presets to localStorage:', err);
+     }
+   }, [presets]);
+
+   // Save current settings as a new preset
+   const handleSavePreset = () => {
+     if (!presetNameInput.trim()) {
+       toast.error('Please enter a preset name');
+       return;
+     }
+     
+     // Check if preset with this name already exists
+     const exists = presets.some(p => 
+       p.name.toLowerCase() === presetNameInput.trim().toLowerCase() && 
+       p.id !== selectedPresetId
+     );
+     
+     if (exists) {
+       toast.error('A preset with this name already exists');
+       return;
+     }
+     
+     // Create settings object from current values
+     const settings = {
+       provider,
+       quality,
+       outputFormat,
+       resolution,
+       steps,
+       lowVram,
+       batchEnabled
+     };
+     
+     const newPreset: {id: string; name: string; settings: any} = {
+       id: presetNameInput.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+       name: presetNameInput.trim(),
+       settings
+     };
+     
+     setPresets(prev => [...prev, newPreset]);
+     setSelectedPresetId(newPreset.id);
+     setPresetNameInput('');
+     toast.success('Preset saved successfully');
+   };
+   
+   // Load selected preset
+   const handleLoadPreset = () => {
+     const preset = presets.find(p => p.id === selectedPresetId);
+     if (!preset) return;
+     
+     try {
+       // Apply preset settings
+       setProvider(preset.settings.provider);
+       setQuality(preset.settings.quality);
+       setOutputFormat(preset.settings.outputFormat);
+       setResolution(preset.settings.resolution);
+       setSteps(preset.settings.steps);
+       setLowVram(preset.settings.lowVram);
+       setBatchGenerationEnabled(preset.settings.batchEnabled);
+       
+       toast.success(`Preset '${preset.name}' loaded successfully`);
+     } catch (err) {
+       console.error('Failed to load preset:', err);
+       toast.error('Failed to load preset');
+     }
+   };
+   
+   // Delete selected preset
+   const handleDeletePreset = () => {
+     if (!selectedPresetId) return;
+     
+     setPresets(prev => prev.filter(p => p.id !== selectedPresetId));
+     setSelectedPresetId(null);
+     setPresetNameInput('');
+     toast.success('Preset deleted successfully');
+   };
+   
+   // Rename selected preset
+   const handleRenamePreset = () => {
+     if (!selectedPresetId || !presetNameInput.trim()) {
+       toast.error('Please enter a new name');
+       return;
+     }
+     
+     // Check if preset with this name already exists
+     const exists = presets.some(p => 
+       p.name.toLowerCase() === presetNameInput.trim().toLowerCase() && 
+       p.id !== selectedPresetId
+     );
+     
+     if (exists) {
+       toast.error('A preset with this name already exists');
+       return;
+     }
+     
+     setPresets(prev => prev.map(p => 
+       p.id === selectedPresetId 
+         ? {...p, name: presetNameInput.trim()} 
+         : p
+     ));
+     setSelectedPresetId(prev => prev === selectedPresetId ? 
+       presetNameInput.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-') 
+       : prev);
+     setPresetNameInput('');
+     toast.success('Preset renamed successfully');
+   };
+   
+   // Reset to built-in defaults
+   const handleResetToDefault = () => {
+     // These would be the default values - in a real app these might come from backend config
+     setProvider(options?.three_d_models?.[0]?.id || options?.providers?.[0]?.id || '');
+     setQuality('high');
+     setOutputFormat('glb');
+     setResolution('1024');
+     setSteps(30);
+     setLowVram(false);
+     setBatchGenerationEnabled(false);
+     
+     setSelectedPresetId(null);
+     setPresetNameInput('');
+     toast.success('Reset to default settings');
+   };
 
   // Register save function with parent for section-switch saving
   useEffect(() => {
@@ -281,46 +428,326 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
         </Card>
       )}
 
-      {/* Batch Generation Mode Card */}
-      <Card className="border-[hsl(var(--border))] bg-[hsl(var(--surface-1))]">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base font-semibold">
-              <HugeiconsIcon icon={ListOrderedIcon} size={16} className="w-5 h-5 text-primary" />
-              Batch Generation &amp; Queue Pipelining
-            </CardTitle>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={batchEnabled}
-                onCheckedChange={(checked) => handleToggleBatch(checked)}
-              />
-            </div>
-          </div>
-          <CardDescription>
-            Allows the workspace to queue multiple 3D generation jobs consecutively, showing a real-time progress queue indicator for the entire job set.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="p-4 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-1">
-              <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
-                <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 text-primary" />
-                Consecutive Job Queueing
-              </span>
-              <p className="text-xs text-[hsl(var(--muted-foreground))]">
-                When active, the 3D workspace can queue multiple generation jobs and track total set progress.
-              </p>
-            </div>
-            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap self-start sm:self-auto ${
-              batchEnabled
-                ? 'bg-primary/15 text-primary border border-primary/30'
-                : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'
-            }`}>
-              {batchEnabled ? 'Active in Workspace' : 'Standard Mode'}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+       {/* Batch Generation Mode Card */}
+       <Card className="border-[hsl(var(--border))] bg-[hsl(var(--surface-1))]">
+         <CardHeader>
+           <div className="flex items-center justify-between">
+             <CardTitle className="flex items-center gap-2 text-base font-semibold">
+               <HugeiconsIcon icon={ListOrderedIcon} size={16} className="w-5 h-5 text-primary" />
+               Batch Generation &amp; Queue Pipelining
+             </CardTitle>
+             <div className="flex items-center gap-2">
+               <Switch
+                 checked={batchEnabled}
+                 onCheckedChange={(checked) => handleToggleBatch(checked)}
+               />
+             </div>
+           </div>
+           <CardDescription>
+             Allows the workspace to queue multiple 3D generation jobs consecutively, showing a real-time progress queue indicator for the entire job set.
+           </CardDescription>
+         </CardHeader>
+         <CardContent className="space-y-4">
+           <div className="p-4 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+             <div className="space-y-1">
+               <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
+                 <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 text-primary" />
+                 Consecutive Job Queueing
+               </span>
+               <p className="text-xs text-[hsl(var(--muted-foreground))]">
+                 When active, the 3D workspace can queue multiple generation jobs and track total set progress.
+               </p>
+             </div>
+             <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap self-start sm:self-auto ${
+               batchEnabled
+                 ? 'bg-primary/15 text-primary border border-primary/30'
+                 : 'bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]'
+             }`}>
+               {batchEnabled ? 'Active in Workspace' : 'Standard Mode'}
+             </span>
+           </div>
+           <div className="p-4 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+             <div className="flex items-center justify-between">
+               <button
+                 onClick={async () => {
+                   try {
+                     await processBatchQueue();
+                   } catch (err) {
+                     console.error('Failed to process batch queue:', err);
+                     toast.error('Failed to start batch processing');
+                   }
+                 }}
+                 disabled={!batchEnabled}
+                 className="w-full px-4 py-2 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 Process Batch Queue
+               </button>
+               <span className="text-xs font-medium text-[hsl(var(--foreground))]">
+                 {batchEnabled ? 'Click to process queued items' : 'Enable batch generation first'}
+               </span>
+             </div>
+             <div className="flex items-center justify-between mt-2">
+               <button
+                 onClick={async () => {
+                   try {
+                     await cancelBatchProcessing();
+                   } catch (err) {
+                     console.error('Failed to cancel batch processing:', err);
+                     toast.error('Failed to cancel batch processing');
+                   }
+                 }}
+                 disabled={!batchEnabled}
+                 className="w-full px-4 py-2 rounded-lg bg-[hsl(var(--destructive))] text-white font-medium hover:bg-[hsl(var(--destructive))]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 Cancel Batch Processing
+               </button>
+               <span className="text-xs font-medium text-[hsl(var(--foreground))]">
+                 {batchEnabled ? 'Click to cancel batch processing' : 'Enable batch generation first'}
+               </span>
+             </div>
+             <div className="flex items-center justify-between mt-2">
+               <button
+                 onClick={async () => {
+                   try {
+                     await retryFailedBatchItems();
+                   } catch (err) {
+                     console.error('Failed to retry failed batch items:', err);
+                     toast.error('Failed to retry failed batch items');
+                   }
+                 }}
+                 disabled={!batchEnabled}
+                 className="w-full px-4 py-2 rounded-lg bg-[hsl(var(--warning))] text-white font-medium hover:bg-[hsl(var(--warning))]/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+                 Retry Failed Items
+               </button>
+               <span className="text-xs font-medium text-[hsl(var(--foreground))]">
+                 {batchEnabled ? 'Click to retry failed items' : 'Enable batch generation first'}
+               </span>
+             </div>
+           </div>
+         </CardContent>
+       </Card>
+     </div>
+   
+     {/* Preset Management */}
+     <div className="space-y-6">
+       <div className="flex items-center justify-between">
+         <h2 className="text-2xl font-bold tracking-tight">Generation Presets</h2>
+         <div className="flex items-center gap-2">
+           <button
+             onClick={() => setShowPresetManager(true)}
+             className="px-3 py-1 rounded-lg text-sm font-medium bg-primary text-white hover:bg-primary/90 transition-all"
+           >
+             Manage Presets
+           </button>
+           <button
+             onClick={handleResetToDefault}
+             className="px-3 py-1 rounded-lg text-sm font-medium bg-[hsl(var(--muted))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]/80 transition-all"
+           >
+             Reset to Defaults
+           </button>
+         </div>
+       </div>
+   
+       {/* Current Settings Display */}
+       <div className="bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-xl p-4">
+         <div className="space-y-4">
+           <div className="flex items-center justify-between">
+             <span className="text-sm font-medium text-[hsl(var(--mixed-foreground))]">Current Settings</span>
+             <button
+               onClick={handleSavePreset}
+               disabled={!presetNameInput.trim()}
+               className="px-2 py-1 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary/90 transition-all disabled:opacity-50"
+             >
+               Save as Preset
+               {saving && <HugeiconsIcon icon={LoaderCircle} size={10} className="animate-spin" />}
+             </button>
+           </div>
+           <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-2">
+               <label className="text-xs font-medium text-[hsl(var(--muted-foreground))]">Preset Name</label>
+               <input
+                 value={presetNameInput}
+                 onChange={(e) => setPresetNameInput(e.target.value)}
+                 placeholder="Enter preset name..."
+                 className="w-full bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-xl px-3 py-2 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:border-[hsl(var(--primary))] transition-all"
+               />
+             </div>
+             <div className="space-y-2">
+               <label className="text-xs font-medium text-[hsl(var(--muted-foreground))]">Quick Apply</label>
+               <div className="flex flex-wrap gap-2">
+                 {[
+                   {label: 'Default', id: 'default'},
+                   ...presets.map(p => ({label: p.name, id: p.id}))
+                 ].map(({label, id}) => (
+                   <button
+                     key={id}
+                     onClick={() => {
+                       if (id === 'default') {
+                         handleResetToDefault();
+                       } else {
+                         setSelectedPresetId(id);
+                         handleLoadPreset();
+                       }
+                     }}
+                     className={`px-2 py-1 rounded-lg text-xs font-medium bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--foreground))] hover:bg-[hsl(var(--surface-2))]/80 transition-all ${
+                       selectedPresetId === id ? 'bg-primary text-white' : ''
+                     }`}
+                   >
+                     {label}
+                   </button>
+                 ))}
+               </div>
+             </div>
+           </div>
+         </div>
+       </div>
+   
+       {/* Preset Manager Modal */}
+       {showPresetManager && (
+         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+           <div className="w-full max-w-lg bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-2xl p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+             <div className="flex items-center justify-between border-b border-[hsl(var(--border)/0.5)] pb-3">
+               <div className="flex items-center gap-2">
+                 <HugeiconsIcon icon={FileCodeIcon} size={16} className="text-[hsl(var(--primary))]" />
+                 <h3 className="text-sm font-bold text-[hsl(var(--foreground))]">Preset Manager</h3>
+               </div>
+               <button
+                 onClick={() => setShowPresetManager(false)}
+                 className="p-1 rounded-lg hover:bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]"
+               >
+                 ✕
+               </button>
+             </div>
+   
+             {/* Preset List */}
+             <div className="space-y-4">
+               <div className="space-y-2">
+                 <label className="text-sm font-medium text-[hsl(var(--muted-foreground))]">Your Presets</label>
+                 <p className="text-[hsl(var(--muted-foreground))]">
+                   {presets.length === 0 ? 'No presets saved yet' : `${presets.length} preset${presets.length === 1 ? '' : 's'} saved`}
+                 </p>
+               </div>
+   
+               {presets.length > 0 ? (
+                 <div className="space-y-2">
+                   <div className="bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-xl p-4">
+                     {presets.map((preset) => (
+                       <div key={preset.id} className="flex items-center justify-between px-3 py-2 bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--surface-2))]/50 rounded-lg transition-all cursor-pointer">
+                         <div className="flex items-center gap-3">
+                           <div className="flex items-center gap-2">
+                             {selectedPresetId === preset.id && (
+                               <HugeiconsIcon icon={CheckmarkCircle02Icon} size={12} className="text-primary" />
+                             )}
+                             <span className="font-medium">{preset.name}</span>
+                           </div>
+                           <div className="text-[hsl(var(--muted-foreground))] text-xs">
+                             {new Date().toLocaleString()} {/* In a real app, we'd store the timestamp when saved */}
+                           </div>
+                         </div>
+                         <div className="flex items-center gap-2">
+                           <button
+                             onClick={() => {
+                               setSelectedPresetId(preset.id);
+                               setPresetNameInput(preset.name);
+                               setShowPresetManager(false);
+                               handleLoadPreset();
+                             }}
+                             className="px-2 py-1 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary/90 transition-all"
+                           >
+                             Load
+                           </button>
+                           <button
+                             onClick={() => {
+                               setSelectedPresetId(preset.id);
+                               setPresetNameInput(preset.name);
+                               setShowPresetManager(false);
+                             }}
+                             className="px-2 py-1 rounded-lg text-xs font-medium bg-[hsl(var(--warning))] text-white hover:bg-[hsl(var(--warning))]/90 transition-all"
+                           >
+                             Edit
+                           </button>
+                           <button
+                             onClick={() => {
+                               setSelectedPresetId(preset.id);
+                               handleDeletePreset();
+                             }}
+                             className="px-2 py-1 rounded-lg text-xs font-medium bg-[hsl(var(--destructive))] text-white hover:bg-[hsl(var(--destructive))]/90 transition-all"
+                           >
+                             Delete
+                           </button>
+                         </div>
+                       </div>
+                     ))}
+                   </div>
+                 </div>
+               ) : (
+                 <div className="text-[hsl(var(--muted-foreground))] text-center py-4">
+                   No presets saved yet. Create your first preset above!
+                 </div>
+               )}
+             </div>
+           </div>
+   
+             {/* Preset Editor */}
+             {selectedPresetId && (
+               <div className="mt-6">
+                 <div className="space-y-4">
+                   <div className="flex items-center justify-between">
+                     <div className="flex items-center gap-2">
+                       <HugeiconsIcon icon={FileCodeIcon} size={16} className="text-[hsl(var(--primary))]" />
+                       <h4 className="text-sm font-bold text-[hsl(var(--foreground))]">Edit Preset</h4>
+                     </div>
+                     <button
+                       onClick={() => {
+                         setSelectedPresetId(null);
+                         setPresetNameInput('');
+                         setShowPresetManager(false);
+                       }}
+                       className="p-1 rounded-lg hover:bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))]"
+                     >
+                       ✕
+                     </div>
+                   </div>
+   
+                   <div className="space-y-2">
+                     <label className="text-sm font-medium text-[hsl(var(--muted-foreground))]">Preset Name</label>
+                     <input
+                       value={presetNameInput}
+                       onChange={(e) => setPresetNameInput(e.target.value)}
+                       placeholder="Enter preset name..."
+                       className="w-full bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-xl px-3 py-2 text-sm text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:border-[hsl(var(--primary))] transition-all"
+                     />
+                   </div>
+   
+                   <div className="flex items-center justify-between">
+                     <span className="text-[hsl(var(--muted-foreground))] font-medium">Changes will be saved when you edit the name</span>
+                     <div className="flex items-center gap-2">
+                       <button
+                         onClick={handleRenamePreset}
+                         disabled={!presetNameInput.trim()}
+                         className="px-2 py-1 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary/90 transition-all disabled:opacity-50"
+                       >
+                         Save Changes
+                       </button>
+                       <button
+                         onClick={() => {
+                           setSelectedPresetId(null);
+                           setPresetNameInput('');
+                           setShowPresetManager(false);
+                         }}
+                         className="px-2 py-1 rounded-lg text-xs font-medium bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--surface-2))]/80 transition-all"
+                       >
+                         Cancel
+                       </button>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+             )}
+           </div>
+         </div>
+       )}
+     </div>
+   );
+ 

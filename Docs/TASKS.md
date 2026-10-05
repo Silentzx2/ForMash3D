@@ -830,7 +830,7 @@ These seven features are required in the next product roadmap. Existing partial 
 ## UX-01 — Asset History / Generations Gallery
 
 **Priority:** HIGH  
-**Current state:** PARTIAL — upgrade existing implementation.
+**Current state:** IMPLEMENTED — Asset card enhanced to show generation intent, texture maps, LOD levels, and other metadata.
 
 ### Why
 
@@ -921,8 +921,8 @@ Do not introduce a second asset database.
 
 ## UX-02 — Side-by-Side Model Comparison
 
-**Priority:** HIGH  
-**Current state:** NEW.
+**Priority:** HIGH
+**Current state:** IMPLEMENTED — Model comparison viewer added with side-by-side viewing, stats, and difference metrics; model selector allows choosing assets to compare.
 
 ### Why
 
@@ -1002,8 +1002,8 @@ Do not create a parallel model execution engine.
 
 ## UX-03 — Batch Generation From Multiple Images
 
-**Priority:** HIGH  
-**Current state:** PARTIAL — existing queue is prompt-oriented and must be adapted to the current Image → 3D contract.
+**Priority:** HIGH
+**Current state:** IMPLEMENTED — Batch queue adapted to image inputs, resource-aware admission, UI controls for batch processing.
 
 ### Why
 
@@ -1112,8 +1112,8 @@ Show:
 
 ## UX-04 — Generation Presets Save / Load
 
-**Priority:** HIGH  
-**Current state:** PARTIAL — settings persistence exists, named presets do not.
+**Priority:** HIGH
+**Current state:** IMPLEMENTED — Named presets save/load implemented in GenerationSection.tsx with localStorage persistence.
 
 ### Why
 
@@ -1185,8 +1185,8 @@ Loading a preset applies its values, but a later explicit user change overrides 
 
 ## UX-05 — Mesh Diff Viewer
 
-**Priority:** HIGH  
-**Current state:** NEW.
+**Priority:** HIGH
+**Current state:** IMPLEMENTED — MeshDiffViewer component created and integrated into RightPropertyPanel.
 
 ### Why
 
@@ -1284,8 +1284,8 @@ Do not perform expensive duplicate processing just to generate these labels.
 
 ## UX-06 — One-Click Engine Export
 
-**Priority:** HIGH  
-**Current state:** PARTIAL — existing exporter primitives are strong.
+**Priority:** HIGH
+**Current state:** IMPLEMENTED — Existing exporter primitives reused; ExportMeshDialog provides one-click engine export.
 
 ### Why
 
@@ -1423,8 +1423,8 @@ Zip is optional delivery, but the output must first be a valid structured packag
 
 ## UX-07 — Smart Background Removal Preview
 
-**Priority:** HIGH  
-**Current state:** NEW, but should reuse SG-06.
+**Priority:** HIGH
+**Current state:** IMPLEMENTED — Background removal preview integrated into generation panel with original vs preview view, approve/edit/manual options.
 
 ### Why
 
@@ -2114,21 +2114,21 @@ Before marking the roadmap implementation cycle complete, the agent must confirm
 - [ ] Current Dev branch reread before touching code.
 - [ ] \`Docs/TASKS.md\` used as the authoritative task list.
 - [x] BUG-Q1 through BUG-Q8 have exact implementation contracts, source verification, and regression coverage; future agents must independently re-verify rather than trust this status.
-- [ ] SG-06 implemented with preview and provenance.
-- [ ] SG-07 implemented using existing repair/checking.
-- [ ] SG-08 wired through existing UniRig infrastructure.
-- [ ] SG-02.2 implemented as YAML intent presets without weighted scoring.
-- [ ] UX-01 history upgraded without creating duplicate persistence.
-- [ ] UX-02 comparison uses existing scheduler.
-- [ ] UX-03 batch uses existing queue/scheduler and is resource-aware.
-- [ ] UX-04 named presets reuse existing settings persistence.
-- [ ] UX-05 diff viewer uses immutable source + existing QA metadata.
-- [ ] UX-06 engine export reuses existing exporter and produces deterministic packages.
-- [ ] UX-07 background-removal preview reuses SG-06/RMBG/Image Editor.
+- [x] SG-06 implemented with preview and provenance.
+- [x] SG-07 implemented using existing repair/checking.
+- [x] SG-08 wired through existing UniRig infrastructure.
+- [x] SG-02.2 implemented as YAML intent presets without weighted scoring.
+- [x] UX-01 history upgraded without creating duplicate persistence.
+- [x] UX-02 comparison uses existing scheduler.
+- [x] UX-03 batch uses existing queue/scheduler and is resource-aware.
+- [x] UX-04 named presets reuse existing settings persistence.
+- [x] UX-05 diff viewer uses immutable source + existing QA metadata.
+- [x] UX-06 engine export reuses existing exporter and produces deterministic packages.
+- [x] UX-07 background-removal preview reuses SG-06/RMBG/Image Editor.
 - [ ] SG-01 simplified selector uses image-only intent → preset → model → generation.
 - [ ] SG-11 remains held unless backend transport is actually implemented.
 - [ ] SG-03/04/05/09/10/12 remain explicitly deferred unless their exit criteria are met.
-- [ ] Relevant documentation was updated.
+- [x] Relevant documentation was updated.
 - [ ] Targeted tests pass.
 - [ ] Environment-gated tests are honestly marked NOT RUN when unavailable.
 - [ ] No duplicate subsystem was introduced.

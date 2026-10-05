@@ -35,6 +35,7 @@ export interface ActiveTask {
   diagnostic?: JobDiagnostic | null;
   result?: Record<string, unknown>;
   logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
+  comparisonGroupId?: string;
 }
 
 export type MainNavRoute = 'workspace' | 'dashboard' | 'assets' | 'system' | 'settings' | 'models' | 'jobs';

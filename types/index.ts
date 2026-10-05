@@ -68,15 +68,41 @@ export interface RecentPrompt {
 
 export interface BatchQueueItem {
   id: string;
-  prompt: string;
-  negativePrompt?: string;
+  imageFileId: string;
+  preprocessingArtifactId?: string;
+  preprocessingMetadata?: any;
+  aiModel: string;
+  intent?: string;
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   result?: GenerationResult;
   error?: string;
+  jobId?: string; // Associated generation job ID
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;
+  // Generation settings that were current when the item was added to the queue
+  meshQuality?: GenerationSettings['meshQuality'];
+  textureQuality?: GenerationSettings['textureQuality'];
+  quadTopology?: GenerationSettings['quadTopology'];
+  topologyMode?: GenerationSettings['topologyMode'];
+  seed?: GenerationSettings['seed'];
+  guidanceScale?: GenerationSettings['guidanceScale'];
+  removeBackground?: GenerationSettings['removeBackground'];
+  lowVram?: GenerationSettings['lowVram'];
+  vramMode?: GenerationSettings['vramMode'];
+  autoOptimizeSettings?: GenerationSettings['autoOptimizeSettings'];
+  generateTexture?: GenerationSettings['generateTexture'];
+  enableFlashVDM?: GenerationSettings['enableFlashVDM'];
+  lowVramMode?: GenerationSettings['lowVramMode'];
+  maxNumView?: GenerationSettings['maxNumView'];
+  resolution?: GenerationSettings['resolution'];
+  generateCollision?: GenerationSettings['generateCollision'];
+  enableRealESRGAN?: GenerationSettings['enableRealESRGAN'];
+  enablePrintabilityCheck?: GenerationSettings['enablePrintabilityCheck'];
+  enableAutoRepair?: GenerationSettings['enableAutoRepair'];
+  enableAutoRig?: GenerationSettings['enableAutoRig'];
+  autoRigMode?: GenerationSettings['autoRigMode'];
 }
 
 export interface ViewerState {

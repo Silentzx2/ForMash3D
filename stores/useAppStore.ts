@@ -129,13 +129,13 @@ export interface AppState {
   setMultiViewImage: (view: 'front' | 'left' | 'right' | 'back', img: UploadedImage | null) => void;
   setReferenceModel: (model: AppState['referenceModel']) => void;
 
-  // ── Batch Generation Actions ──
-  setBatchGenerationEnabled: (v: boolean) => void;
-  setBatchQueue: (queue: BatchQueueItem[]) => void;
-  addToBatchQueue: (prompts: string[]) => void;
-  removeFromBatchQueue: (id: string) => void;
-  clearBatchQueue: () => void;
-  updateBatchItem: (id: string, updates: Partial<BatchQueueItem>) => void;
+    // ── Batch Generation Actions ──
+    setBatchGenerationEnabled: (batchGenerationEnabled) => void;
+    setBatchQueue: (batchBatchQueue) => void;
+    addToBatchQueue: (imageFileIds: string[]) => void;
+    removeFromBatchQueue: (id: string) => void;
+    clearBatchQueue: () => void;
+    updateBatchItem: (id: string, updates: Partial<BatchQueueItem>) => void;
 
   setLeftSidebarCollapsed: (v: boolean) => void;
   setRightSidebarCollapsed: (v: boolean) => void;
@@ -323,19 +323,46 @@ export const useAppStore = create<AppState>()(
       // ── Batch Generation Actions ──
       setBatchGenerationEnabled: (batchGenerationEnabled) => set({ batchGenerationEnabled }),
       setBatchQueue: (batchQueue) => set({ batchQueue }),
-      addToBatchQueue: (prompts) =>
-        set((s) => {
-          const newItems: BatchQueueItem[] = prompts
-            .filter((p) => p.trim().length > 0)
-            .map((p) => ({
-              id: 'batch-' + Math.random().toString(36).slice(2, 9),
-              prompt: p.trim(),
-              status: 'queued',
-              progress: 0,
-              createdAt: new Date(),
-            }));
-          return { batchQueue: [...s.batchQueue, ...newItems] };
-        }),
+       addToBatchQueue: (imageFileIds) =>
+         set((s) => {
+           const newItems: BatchQueueItem[] = imageFileIds
+             .filter((id) => id !== undefined && id !== null && id !== '')
+             .map((imageFileId) => ({
+               id: 'batch-' + Math.random().toString(36).slice(2, 9),
+               imageFileId: imageFileId,
+               preprocessingArtifactId: s.generationSettings.preprocessingArtifactId,
+               preprocessingMetadata: s.generationSettings.preprocessingMetadata,
+               aiModel: s.generationSettings.aiModel,
+               intent: s.generationSettings.intent,
+               status: 'queued',
+               progress: 0,
+               jobId: undefined,
+               // Store the current generation settings
+               meshQuality: s.generationSettings.meshQuality,
+               textureQuality: s.generationSettings.textureQuality,
+               quadTopology: s.generationSettings.quadTopology,
+               topologyMode: s.generationSettings.topologyMode,
+               seed: s.generationSettings.seed,
+               guidanceScale: s.generationSettings.guidanceScale,
+               removeBackground: s.generationSettings.removeBackground,
+               lowVram: s.generationSettings.lowVram,
+               vramMode: s.generationSettings.vramMode,
+               autoOptimizeSettings: s.generationSettings.autoOptimizeSettings,
+               generateTexture: s.generationSettings.generateTexture,
+               enableFlashVDM: s.generationSettings.enableFlashVDM,
+               lowVramMode: s.generationSettings.lowVramMode,
+               maxNumView: s.generationSettings.maxNumView,
+               resolution: s.generationSettings.resolution,
+               generateCollision: s.generationSettings.generateCollision,
+               enableRealESRGAN: s.generationSettings.enableRealESRGAN,
+               enablePrintabilityCheck: s.generationSettings.enablePrintabilityCheck,
+               enableAutoRepair: s.generationSettings.enableAutoRepair,
+               enableAutoRig: s.generationSettings.enableAutoRig,
+               autoRigMode: s.generationSettings.autoRigMode,
+               createdAt: new Date(),
+             }));
+           return { batchQueue: [...s.batchQueue, ...newItems] };
+         }),
       removeFromBatchQueue: (id) =>
         set((s) => ({
           batchQueue: s.batchQueue.filter((item) => item.id !== id),

@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
+import { useAppStore } from '@/stores/useAppStore';
 import type { GenerationSettings, PhysicsSettings } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
-import { MultiViewWorkspace } from './MultiViewWorkspace';
+import { MultiViewWorkspace } => './MultiViewWorkspace';
 import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -139,6 +140,16 @@ export const GeneratePanel: React.FC = () => {
     setGenerationSettings,
     navigateToTool,
   } = useWorkspace();
+  
+  const {
+    batchGenerationEnabled,
+    setBatchGenerationEnabled,
+    addToBatchQueue,
+    removeFromBatchQueue,
+    clearBatchQueue,
+    updateBatchItem,
+    setBatchQueue,
+  } = useAppStore();
   
   const router = useRouter();
 
@@ -401,9 +412,76 @@ export const GeneratePanel: React.FC = () => {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processImageFile(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    // Process each file
+    const validFiles = Array.from(files).filter(isAcceptedImage);
+    if (validFiles.length === 0) {
+      setUploadError('No valid image files selected. Use JPG, PNG, or WEBP.');
+      return;
+    }
+    
+    if (validFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
+      setUploadError('One or more files are too large. Maximum size is 20MB per file.');
+      return;
+    }
+    
+    // Upload all valid files and collect their file IDs
+    const uploadPromises = validFiles.map(file => 
+      new Promise<{file: File, fileId: string | null, previewUrl: string | null}>(async (resolve) => {
+        try {
+          startUpload(file.name, file.size);
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await getApiClient().post<{ file_id: string }>(
+            '/api/v1/file-upload/image',
+            formData,
+            { 
+              headers: { 'Content-Type': 'multipart/form-data' }, 
+              onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) 
+            }
+          );
+          finishUpload();
+          const previewUrl = ownBlobUrl(URL.createObjectURL(file));
+          resolve({ 
+            file, 
+            fileId: res.file_id || null, 
+            previewUrl: previewUrl || null 
+          });
+        } catch (err) {
+          failUpload();
+          resolve({ 
+            file, 
+            fileId: null, 
+            previewUrl: null 
+          });
+        }
+      })
+    );
+    
+    // Wait for all uploads to complete
+    Promise.all(uploadPromises).then(results => {
+      const successfulUploads = results.filter(r => r.fileId !== null);
+      const failedUploads = results.filter(r => r.fileId === null);
+      
+      if (successfulUploads.length > 0) {
+        // Add successfully uploaded images to batch queue
+        const imageFileIds = successfulUploads.map(r => r.fileId!);
+        addToBatchQueue(imageFileIds);
+        
+        // Show success message
+        setNoticeMessage(`${successfulUploads.length} image${successfulUploads.length === 1 ? '' : 's'} added to batch queue.`);
+        setTimeout(() => setNoticeMessage(null), 5000);
+      }
+      
+      if (failedUploads.length > 0) {
+        setUploadError(`${failedUploads.length} image${failedUploads.length === 1 ? '' : 's'} failed to upload.`);
+      }
+      
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    });
   };
 
   const processImageFileForSlot = async (file: File, slot: 'front' | 'back' | 'left' | 'right') => {
@@ -475,13 +553,78 @@ export const GeneratePanel: React.FC = () => {
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
-    const file = e.dataTransfer.files?.[0];
-    if (file) processImageFile(file);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    
+    // Process each file
+    const validFiles = Array.from(files).filter(isAcceptedImage);
+    if (validFiles.length === 0) {
+      setUploadError('No valid image files dropped. Use JPG, PNG, or WEBP.');
+      return;
+    }
+    
+    if (validFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
+      setUploadError('One or more files are too large. Maximum size is 20MB per file.');
+      return;
+    }
+    
+    // Upload all valid files and collect their file IDs
+    const uploadPromises = validFiles.map(file => 
+      new Promise<{file: File, fileId: string | null, previewUrl: string | null}>(async (resolve) => {
+        try {
+          startUpload(file.name, file.size);
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await getApiClient().post<{ file_id: string }>(
+            '/api/v1/file-upload/image',
+            formData,
+            { 
+              headers: { 'Content-Type': 'multipart/form-data' }, 
+              onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) 
+            }
+          );
+          finishUpload();
+          const previewUrl = ownBlobUrl(URL.createObjectURL(file));
+          resolve({ 
+            file, 
+            fileId: res.file_id || null, 
+            previewUrl: previewUrl || null 
+          });
+        } catch (err) {
+          failUpload();
+          resolve({ 
+            file, 
+            fileId: null, 
+            previewUrl: null 
+          });
+        }
+      })
+    );
+    
+    // Wait for all uploads to complete
+    Promise.all(uploadPromises).then(results => {
+      const successfulUploads = results.filter(r => r.fileId !== null);
+      const failedUploads = results.filter(r => r.fileId === null);
+      
+      if (successfulUploads.length > 0) {
+        // Add successfully uploaded images to batch queue
+        const imageFileIds = successfulUploads.map(r => r.fileId!);
+        addToBatchQueue(imageFileIds);
+        
+        // Show success message
+        setNoticeMessage(`${successfulUploads.length} image${successfulUploads.length === 1 ? '' : 's'} added to batch queue.`);
+        setTimeout(() => setNoticeMessage(null), 5000);
+      }
+      
+      if (failedUploads.length > 0) {
+        setUploadError(`${failedUploads.length} image${failedUploads.length === 1 ? '' : 's'} failed to upload.`);
+      }
+    });
   };
 
   const handlePanelDragOver = (e: React.DragEvent) => {
@@ -628,7 +771,7 @@ export const GeneratePanel: React.FC = () => {
     setEnhancementError(null);
   };
 
-  const handleGenerate = () => {
+   const handleGenerate = () => {
     const hasImage = Boolean(
       generationSettings.image ||
       generationSettings.multiviewImages?.front ||
@@ -658,20 +801,57 @@ export const GeneratePanel: React.FC = () => {
         return;
       }
     }
-    // Commit the request settings first; the effect above submits only after React
-    // has installed this exact snapshot, avoiding stale-state generation requests.
-    pendingGenerateRef.current = true;
-    setGenerationSettings(prev => ({
-      ...prev,
-      generateTexture: prev.generateTexture !== false,
-      removeBackground: true,
-      autoOptimizeSettings: {
-        ...prev.autoOptimizeSettings,
-        targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
-          ? prev.autoOptimizeSettings.targetPolycount
-          : 50000,
-      },
-    }));
+    
+    // If batch generation is enabled, add current image to batch queue instead of generating immediately
+    if (batchGenerationEnabled) {
+      // Upload current image if not already uploaded
+      if (generationSettings.image && !generationSettings.imageFileId) {
+        // Convert base64 image to file and upload
+        const imageBlob = dataURLtoFile(generationSettings.image, 'image.jpg');
+        const formData = new FormData();
+        formData.append('file', imageBlob);
+        
+        getApiClient().post<{ file_id: string }>(
+          '/api/v1/file-upload/image',
+          formData,
+          { 
+            headers: { 'Content-Type': 'multipart/form-data' } 
+          }
+        ).then(res => {
+          const imageFileId = res.file_id;
+          if (imageFileId) {
+            // Add to batch queue
+            addToBatchQueue([imageFileId]);
+            setNoticeMessage('Image added to batch queue.');
+            setTimeout(() => setNoticeMessage(null), 5000);
+          }
+        }).catch(err => {
+          setNoticeMessage('Failed to upload image for batch.');
+          setTimeout(() => setNoticeMessage(null), 5000);
+        });
+      } else if (generationSettings.imageFileId) {
+        // Image already uploaded, add to batch queue
+        addToBatchQueue([generationSettings.imageFileId]);
+        setNoticeMessage('Image added to batch queue.');
+        setTimeout(() => setNoticeMessage(null), 5000);
+      }
+    } else {
+      // Standard single image generation
+      // Commit the request settings first; the effect above submits only after React
+      // has installed this exact snapshot, avoiding stale-state generation requests.
+      pendingGenerateRef.current = true;
+      setGenerationSettings(prev => ({
+        ...prev,
+        generateTexture: prev.generateTexture !== false,
+        removeBackground: true,
+        autoOptimizeSettings: {
+          ...prev.autoOptimizeSettings,
+          targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
+            ? prev.autoOptimizeSettings.targetPolycount
+            : 50000,
+        },
+      }));
+    }
   };
   const applyWorkflowRecipe = (recipe: 'mobile' | 'game' | 'cinematic' | 'native') => {
     const presets = {
@@ -800,13 +980,14 @@ export const GeneratePanel: React.FC = () => {
               {/* Mode 1: Single Image UploadIcon */}
               {subAction === 'upload' && (
                 <>
-                  <input 
-                    ref={fileInputRef}
-                    type="file" 
-                    accept="image/jpeg,image/png,image/webp" 
-                    className="hidden" 
-                    onChange={handleFileUpload} 
-                  />
+                   <input 
+                     ref={fileInputRef}
+                     type="file" 
+                     accept="image/jpeg,image/png,image/webp" 
+                     multiple
+                     className="hidden" 
+                     onChange={handleFileUpload} 
+                   />
                   
                   <motion.div 
                     onDragOver={handleDragOver}
