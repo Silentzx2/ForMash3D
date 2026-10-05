@@ -279,9 +279,9 @@ download_hunyuan2mini() {
     fi
     
     mkdir -p "$model_dir"
-    print_info "Downloading Hunyuan3D 2.0 mini (geometry/vae)..."
+    print_info "Downloading Hunyuan3D 2.0 mini (geometry)..."
     if hf_download  tencent/Hunyuan3D-2mini \
-        --include "hunyuan3d-dit-v2-mini-turbo/*" "hunyuan3d-vae-v2-mini-turbo/*" \
+        --include "hunyuan3d-dit-v2-mini-turbo/*" \
         --local-dir "$model_dir"; then
         print_success "Hunyuan3D 2.0 mini models downloaded successfully"
     else
@@ -356,7 +356,9 @@ download_hunyuan3d_dit_v2_mini_turbo() {
     print_info "Downloading Hunyuan3D-DiT-v2-mini-Turbo Models"
     print_info "========================================"
 
-    # The pipeline root requires both the DiT and VAE components.
+    # The mini-turbo pipeline root is the DiT checkpoint; the bundled
+    # checkpoint already contains the VAE weights, so only the DiT
+    # subfolder needs to be downloaded.
     download_hunyuan2mini
 }
 
@@ -835,7 +837,6 @@ verify_all_models() {
     
     print_info "Checking Hunyuan3D-DiT-v2-mini-Turbo..."
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo" 3 || all_verified=false
-    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2mini/hunyuan3d-vae-v2-mini-turbo" 3 || all_verified=false
     
     print_info "Checking TRELLIS image-large..."
     verify_directory "$PRETRAINED_DIR/TRELLIS/TRELLIS-image-large" 5 || all_verified=false
