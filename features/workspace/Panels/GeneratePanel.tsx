@@ -286,9 +286,6 @@ export const GeneratePanel: React.FC = () => {
   };
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const statusInfo = getStatusInfo();
-
-
   const meshCapableModels = useMemo(() => {
     return relevantModelIds.map(id => {
       const isReady = memoizedModelDetails[id]?.status === 'ready' || weightsStatus[id] === true;
@@ -297,6 +294,7 @@ export const GeneratePanel: React.FC = () => {
   }, [relevantModelIds, weightsStatus, memoizedModelDetails]);
 
   const providersList = meshCapableModels;
+  const statusInfo = getStatusInfo();
 
   // Auto-correct selected model: if current selection is invalid, prefer the first ready model, or first available model
   useEffect(() => {
