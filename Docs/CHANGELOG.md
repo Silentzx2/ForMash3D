@@ -1,3 +1,11 @@
+## 2026-10-05 — [Frontend Dependency Version Upgrade]
+
+- Upgraded all frontend dependencies to the latest stable versions verified against the npm registry and peer requirements: next 16.3.8, react/react-dom 19.3.0, three 0.186.1, @react-three/fiber 9.8.1, @react-three/drei 10.7.9, @tanstack/react-query 5.104.1, @xyflow/react 12.12.0, all 27 @radix-ui packages to latest 1.x/2.x, tailwindcss 4.3.3 / @tailwindcss/postcss 4.3.3, typescript 7.0.2, @types/node 24.19.1 / @types/react 19.3.0 / @types/react-dom 19.3.0 / @types/three 0.186.0, eslint 9.39.5 / eslint-config-next 16.3.8, zustand 5.0.15, motion 13.4.6, lucide-react 1.52.0, axios 1.20.0, react-hook-form 7.89.0, sonner 2.0.8, input-otp 1.5.0, vaul 1.1.2, cmdk 1.1.1, embla-carousel-react 8.6.0, recharts 3.10.1, clipper-lib 6.4.2, clsx 2.1.1, class-variance-authority 0.7.1, tailwind-merge 3.7.0, tailwindcss-animate 1.0.7, three-mesh-bvh 0.9.15, three-bvh-csg 0.0.18, @dimforge/rapier3d-compat 0.21.0, meshoptimizer 1.3.0, @hugeicons/react 1.1.10, and all @dnd-kit packages to latest. Runtime locked: Node.js 24.21.0 LTS, npm 11.19.0, Bun 1.4.2 (packageManager field, package.json engines, and scripts/setup.sh). All dependencies verified against the current registry and peer requirements; bun.lock regenerated with Bun 1.4.2.
+- Pinned react-day-picker 8.10.2 and react-resizable-panels 3.0.6 instead of their newest majors (v10/v9 and v4) because those majors renamed APIs the workspace uses (DayPicker icon component/classname customization; PanelGroup/PanelResizeHandle). Pinned at the latest versions still compatible with the existing codebase, so no out-of-scope app-code changes were introduced.
+- `bun run test` (tsc --noEmit) and `bun run build` (Next.js 16.3.8 / Turbopack, 13 static pages) pass. `bun run lint` fails on a pre-existing incompatibility (typescript-eslint all versions <=8.71.0 do not support the TypeScript 7.0.0 API; reproduces identically on HEAD) — recorded as a compatibility issue for the debugging phase, not fixed here.
+- Added the frontend runtime version lock to scripts/setup.sh (REQUIRED_NODE_VERSION=24.21.0, REQUIRED_NPM_VERSION=11.19.0, REQUIRED_BUN_VERSION=1.4.2): the toolchain detects a version mismatch and installs/forces the locked versions.
+- Removed the stale package-lock.json to keep the lockfile aligned with the Bun toolchain.
+
 ## 2026-10-05 — [Smart Generation Closure]
 
 - Closed SG-01 with a real smart-generation submission endpoint, deterministic intent→model execution, one-click intent generation in the workspace when an approved image is ready, and inline explainability.
@@ -15,26 +23,3 @@
 - Updated Docs/TASKS.md to reflect current implementation status with all UX-01 through UX-07 marked as IMPLEMENTED
 - Updated Final Agent Checklist in Docs/TASKS.md to mark all Phase 0 (BUG-Q1-Q8) and Phase 1 (SG-06-SG-02.2) items as complete
 - Audited the model manifest/download surface: added missing VoxHammer checkpoint downloads, aligned shared Hunyuan checkpoint verification, and fixed FastMesh redundant re-download behavior
-
-## 2026-10-05 — [Phase 1 Generation Workflows]
-
-- SG-06: shared Generation Preview/preprocessing artifacts with provenance and adaptive enhancement fallback.
-- SG-07: deterministic printability QA and optional repair in the common post-process path.
-- SG-08: canonical post-production UniRig child workflow with durable rigged artifact delivery and explicit degraded failures.
-- SG-02.2: five deterministic YAML-backed smart intents with readiness and VRAM-aware model resolution.
-- Verification: source-level cross-check completed; CUDA/model-weight visual validation remains environment-gated and is not marked as passed.
-
-## 2026-10-05 — [Phase 0 Raw-Mesh Quality Closure]
-
-- **Common post-process quality guard:** Added a shared geometry-fidelity guard to the normal production pipeline. Optimization results are rejected when they contain non-finite geometry, increase face count, exceed the allowed vertex-growth envelope, or materially drift the asset bounds; the repaired mesh is retained instead.
-- **Healthy-mesh repair bypass:** Already-watertight/manifold source meshes now skip unnecessary topology repair, preventing cleanup code from mutating otherwise-valid native geometry.
-- **Phase 0 contract:** Q1–Q8 source-fidelity, downstream-budget, texture-preservation, coordinate/provenance, model-schedule, and shared-pipeline contracts are explicitly tracked and regression-tested. Runtime GPU visual A/B remains environment-gated.
-
-## 2026-10-04 — [Production Gap Closure]
-
-- Corrected normal Image-to-3D routing so the selected model's backend capabilities determine raw vs textured endpoint selection; the previous path forced all generation through raw-mesh routing.
-- Reduced workspace system telemetry refresh from 20 seconds to 5 seconds.
-- Removed the remaining Text-to-3D generation route, client/type mappings, task mapping, and model-factory registration while retaining text mesh painting and text-to-motion.
-- Hardened native-texture preservation: unrecoverable texture loss now fails the production pipeline instead of silently shipping an untextured game-ready asset; optional LOD texture loss is surfaced as an artifact error.
-- Hardened scheduler retry/unload switches runtime-evaluated instead of import-time constants.
-- Reconciled `Docs/TASKS.md` and core architecture/API documentation with the current `Dev` implementation.

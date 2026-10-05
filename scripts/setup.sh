@@ -349,29 +349,114 @@ ensure_redis(){
   fi
 }
 
-ensure_bun_or_npm(){
-  section "Frontend Toolchain"
-  BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
-  [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
+# ── Frontend runtime version lock ─────────────────────────────────
+# Locked runtime versions. Must stay in sync with package.json
+# "engines" and the "_runtime" metadata field.
+REQUIRED_NODE_VERSION="24.21.0"
+REQUIRED_NPM_VERSION="11.19.0"
+REQUIRED_BUN_VERSION="1.4.2"
+NODE_RUNTIME_DIR="${FORMASH3D_NODE_RUNTIME_DIR:-$HOME/.formash3d/node}"
 
-  if command -v bun >/dev/null 2>&1; then
-    command -v sudo >/dev/null 2>&1 && sudo ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || true
-    log "Bun: $(bun --version)"
+_ensure_node_version() {
+  local current=""
+  if command -v node >/dev/null 2>&1; then
+    current=$(node --version 2>/dev/null | sed 's/^v//' || true)
+  fi
+  if [[ "$current" == "$REQUIRED_NODE_VERSION" ]]; then
+    log "Node: v${current} (locked version active)"
     return 0
   fi
-
-  info "Bun not found. Installing Bun..."
-  if curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1; then
-    [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
-  fi
-
-  if command -v bun >/dev/null 2>&1; then
-    command -v sudo >/dev/null 2>&1 && sudo ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || true
-    log "Bun installed: $(bun --version)"
-  elif command -v npm >/dev/null 2>&1; then
-    warn "Bun unavailable; using npm fallback: $(npm --version)"
+  if [[ -n "$current" ]]; then
+    warn "Node v${current} found — locked version is v${REQUIRED_NODE_VERSION}. Installing locked version..."
   else
-    fail "Neither Bun nor npm is available. Install Node.js 20+ or Bun and rerun setup."
+    info "Node not found — installing locked version v${REQUIRED_NODE_VERSION}..."
+  fi
+  local arch os tarball url staging
+  os="linux"
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64) arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) fail "Unsupported architecture for locked Node install: $arch" ;;
+  esac
+  tarball="node-v${REQUIRED_NODE_VERSION}-${os}-${arch}.tar.xz"
+  url="https://nodejs.org/dist/v${REQUIRED_NODE_VERSION}/${tarball}"
+  mkdir -p "$NODE_RUNTIME_DIR"
+  staging="$(mktemp -d)"
+  if ! curl -fsSL --retry 3 -o "$staging/$tarball" "$url"; then
+    tarball="node-v${REQUIRED_NODE_VERSION}-${os}-${arch}.tar.gz"
+    url="https://nodejs.org/dist/v${REQUIRED_NODE_VERSION}/${tarball}"
+    curl -fsSL --retry 3 -o "$staging/$tarball" "$url" || {
+      rm -rf "$staging"
+      fail "Failed to download Node v${REQUIRED_NODE_VERSION} from ${url}"
+    }
+  fi
+  if [[ "$tarball" == *.xz ]]; then
+    tar -xJf "$staging/$tarball" -C "$staging"
+  else
+    tar -xzf "$staging/$tarball" -C "$staging"
+  fi
+  rm -rf "${NODE_RUNTIME_DIR}/current"
+  mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
+  rm -rf "$staging"
+  export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+  hash -r
+  log "Node v${REQUIRED_NODE_VERSION} installed at ${NODE_RUNTIME_DIR}/current and forced on PATH."
+}
+
+_ensure_npm_version() {
+  local current=""
+  if command -v npm >/dev/null 2>&1; then
+    current=$(npm --version 2>/dev/null || true)
+  fi
+  if [[ "$current" == "$REQUIRED_NPM_VERSION" ]]; then
+    log "npm: v${current} (locked version active)"
+    return 0
+  fi
+  warn "npm ${current:-none} found — locked version is v${REQUIRED_NPM_VERSION}. Installing locked version..."
+  local sudo_cmd=""
+  command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
+  $sudo_cmd npm install -g "npm@${REQUIRED_NPM_VERSION}" >/dev/null 2>&1 \
+    || warn "npm self-upgrade to v${REQUIRED_NPM_VERSION} failed; continuing with npm ${current:-unknown}"
+  hash -r
+  log "npm: v$(npm --version 2>/dev/null || echo 'unknown')"
+}
+
+_ensure_bun_version() {
+  local current=""
+  if command -v bun >/dev/null 2>&1; then
+    current=$(bun --version 2>/dev/null || true)
+  fi
+  if [[ "$current" == "$REQUIRED_BUN_VERSION" ]]; then
+    log "Bun: v${current} (locked version active)"
+    return 0
+  fi
+  if [[ -n "$current" ]]; then
+    warn "Bun v${current} found — locked version is v${REQUIRED_BUN_VERSION}. Installing locked version..."
+  else
+    info "Bun not found — installing locked version v${REQUIRED_BUN_VERSION}..."
+  fi
+  if curl -fsSL https://bun.sh/install | bash -s "bun-v${REQUIRED_BUN_VERSION}" >/dev/null 2>&1; then
+    BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
+    [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
+    hash -r
+  fi
+  current=$(bun --version 2>/dev/null || true)
+  if [[ "$current" == "$REQUIRED_BUN_VERSION" ]]; then
+    command -v sudo >/dev/null 2>&1 && sudo ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || true
+    log "Bun v${REQUIRED_BUN_VERSION} installed and forced."
+  else
+    warn "Bun v${REQUIRED_BUN_VERSION} could not be enforced (found: ${current:-none})."
+  fi
+}
+
+ensure_bun_or_npm(){
+  section "Frontend Toolchain (locked: Node v${REQUIRED_NODE_VERSION} / npm v${REQUIRED_NPM_VERSION} / Bun v${REQUIRED_BUN_VERSION})"
+  _ensure_node_version
+  _ensure_npm_version
+  _ensure_bun_version
+  if ! command -v bun >/dev/null 2>&1 && ! command -v npm >/dev/null 2>&1; then
+    fail "Neither Bun nor npm is available after runtime lock enforcement. Install Node v${REQUIRED_NODE_VERSION} or Bun v${REQUIRED_BUN_VERSION} and rerun setup."
   fi
 }
 
