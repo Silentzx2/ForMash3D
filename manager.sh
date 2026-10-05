@@ -217,7 +217,7 @@ cmd_models() {
         printf "  ${CYAN}[19]${NC} TripoSF            - SparseFlex high-res arbitrary topology\n"
         printf "  ${CYAN}[20]${NC} Zero123++ v1.2     - Multi-view image generation model\n"
         printf "  ${CYAN}[21]${NC} Zero123++ Normals   - Normal generation ControlNet (optional)\n"
-        printf "\n"
+        printf "  ${CYAN}[22]${NC} VoxHammer           - Local text/image mesh editing (~40GB VRAM)\n        printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"
         printf "  ${RED}[b]${NC}  Back\n\n"
@@ -272,6 +272,7 @@ cmd_models() {
                         19) models_csv="${models_csv}triposf," ;;
                         20) models_csv="${models_csv}zero123plus," ;;
                         21) models_csv="${models_csv}zero123plus_normal_controlnet," ;;
+                        22) models_csv="${models_csv}voxhammer," ;;
                          *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1

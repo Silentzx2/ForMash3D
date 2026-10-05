@@ -5,7 +5,7 @@
 # 
 # Available models:
 #   partfield, hunyuan2mini, hunyuan21, trellis, trellis-text, trellis2,
-#   p3sam, unirig, partpacker, partuv, fastmesh, ultrashape, misc, all
+#   p3sam, unirig, partpacker, partuv, fastmesh, ultrashape, voxhammer, misc, all
 #
 # Options:
 #   -h, --help              Show this help message
@@ -81,7 +81,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposr" "triposg" "triposf" "ardy" "zero123plus" "zero123plus_normal_controlnet" "misc" "all")
+AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposr" "triposg" "triposf" "ardy" "zero123plus" "zero123plus_normal_controlnet" "voxhammer" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -118,6 +118,7 @@ Available models:
     ardy               - ARDY motion generation models
     zero123plus        - Zero123++ v1.2 multi-view image generation model
     zero123plus_normal_controlnet - Normal generation ControlNet for Zero123++ v1.2 (optional)
+    voxhammer          - VoxHammer text/image mesh-editing TRELLIS checkpoints
     misc               - Miscellaneous utility models (RealESRGAN, DINOv2)
     all                - All core models (excluding optional normal ControlNet)
 
@@ -297,8 +298,8 @@ download_hunyuan21() {
     
     local model_dir="$PRETRAINED_DIR/tencent/Hunyuan3D-2.1"
     
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir" 5; then
-        print_info "Hunyuan3D 2.1 models already exist and verified"
+    if [ "$FORCE_DOWNLOAD" = false ] &&        verify_directory "$model_dir/hunyuan3d-dit-v2-1" 3 &&        verify_directory "$model_dir/hunyuan3d-vae-v2-1" 3 &&        verify_directory "$model_dir/hunyuan3d-paintpbr-v2-1" 3; then
+        print_info "Hunyuan3D 2.1 shared checkpoint is complete and verified"
         return 0
     fi
     
@@ -317,22 +318,9 @@ download_hunyuan3d_shape_v21() {
     print_info "========================================"
     print_info "Downloading Hunyuan3D-Shape-v2-1 Models"
     print_info "========================================"
-    
-    local model_dir="$PRETRAINED_DIR/tencent/Hunyuan3D-2.1"
-    
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir" 5; then
-        print_info "Hunyuan3D-Shape-v2-1 models already exist and verified"
-        return 0
-    fi
-    
-    mkdir -p "$model_dir"
-    print_info "Downloading Hunyuan3D-Shape-v2-1 (3.3B shape) models..."
-    if hf_download tencent/Hunyuan3D-2.1 --include "hunyuan3d-dit-v2-1/*" --local-dir "$model_dir"; then
-        print_success "Hunyuan3D-Shape-v2-1 models downloaded successfully"
-    else
-        print_error "Failed to download Hunyuan3D-Shape-v2-1 models"
-        return 1
-    fi
+
+    # Shape-v2-1 shares the full Hunyuan3D-2.1 pipeline root with Paint.
+    download_hunyuan21
 }
 
 # Function to download Hunyuan3D-Paint-v2-1 models
@@ -340,47 +328,26 @@ download_hunyuan3d_paint_v21() {
     print_info "========================================"
     print_info "Downloading Hunyuan3D-Paint-v2-1 Models"
     print_info "========================================"
-    
-    local model_dir="$PRETRAINED_DIR/tencent/Hunyuan3D-2.1"
+
+    # Paint uses the same Hunyuan3D-2.1 root checkpoint as Shape.
+    download_hunyuan21
+
     local realesrgan_path="$PRETRAINED_DIR/misc/RealESRGAN_x4plus.pth"
     local thirdparty_realesrgan_path="$PROJECT_ROOT/backend/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/ckpt/RealESRGAN_x4plus.pth"
-    
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir" 5 && verify_file "$realesrgan_path" 50000000; then
-        print_info "Hunyuan3D-Paint-v2-1 models already exist and verified"
-        # Also ensure thirdparty copy exists
-        if [ ! -f "$thirdparty_realesrgan_path" ]; then
-            print_info "Copying RealESRGAN to thirdparty location..."
-            mkdir -p "$(dirname "$thirdparty_realesrgan_path")"
-            cp "$realesrgan_path" "$thirdparty_realesrgan_path"
-        fi
-        return 0
-    fi
-    
-    mkdir -p "$model_dir"
-    print_info "Downloading Hunyuan3D-Paint-v2-1 (2B PBR) models..."
-    if hf_download tencent/Hunyuan3D-2.1 --include "hunyuan3d-paintpbr-v2-1/*" --local-dir "$model_dir"; then
-        print_success "Hunyuan3D-Paint-v2-1 models downloaded successfully"
+
+    if [ "$FORCE_DOWNLOAD" = false ] && verify_file "$realesrgan_path" 50000000; then
+        print_info "RealESRGAN_x4plus already exists and verified"
     else
-        print_error "Failed to download Hunyuan3D-Paint-v2-1 models"
-        return 1
-    fi
-    
-    # Download RealESRGAN_x4plus.pth if not present
-    if [ ! -f "$realesrgan_path" ]; then
         print_info "Downloading RealESRGAN_x4plus.pth..."
         mkdir -p "$PRETRAINED_DIR/misc"
-        download_with_verify \
-            "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" \
-            "$realesrgan_path" \
-            "RealESRGAN_x4plus model"
+        download_with_verify             "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"             "$realesrgan_path"             "RealESRGAN_x4plus model"
     fi
-    
-    # Also copy to thirdparty location where adapter expects it
-    if [ -f "$realesrgan_path" ]; then
-        mkdir -p "$(dirname "$thirdparty_realesrgan_path")"
+
+    mkdir -p "$(dirname "$thirdparty_realesrgan_path")"
+    if [ ! -f "$thirdparty_realesrgan_path" ] || [ "$FORCE_DOWNLOAD" = true ]; then
         cp "$realesrgan_path" "$thirdparty_realesrgan_path"
-        print_success "RealESRGAN checkpoint copied to thirdparty Paint location"
     fi
+    print_success "Hunyuan3D-Paint-v2-1 models and RealESRGAN dependency are ready"
 }
 
 # Function to download Hunyuan3D-DiT-v2-mini-Turbo models
@@ -388,22 +355,9 @@ download_hunyuan3d_dit_v2_mini_turbo() {
     print_info "========================================"
     print_info "Downloading Hunyuan3D-DiT-v2-mini-Turbo Models"
     print_info "========================================"
-    
-    local model_dir="$PRETRAINED_DIR/tencent/Hunyuan3D-2mini"
-    
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir" 5; then
-        print_info "Hunyuan3D-DiT-v2-mini-Turbo models already exist and verified"
-        return 0
-    fi
-    
-    mkdir -p "$model_dir"
-    print_info "Downloading Hunyuan3D-DiT-v2-mini-Turbo (0.6B) models..."
-    if hf_download tencent/Hunyuan3D-2mini --include "hunyuan3d-dit-v2-mini-turbo/*" --local-dir "$model_dir"; then
-        print_success "Hunyuan3D-DiT-v2-mini-Turbo models downloaded successfully"
-    else
-        print_error "Failed to download Hunyuan3D-DiT-v2-mini-Turbo models"
-        return 1
-    fi
+
+    # The pipeline root requires both the DiT and VAE components.
+    download_hunyuan2mini
 }
 
 # Function to download TRELLIS models
@@ -555,37 +509,36 @@ download_partpacker() {
 # Function to download FastMesh model
 download_fastmesh() {
     print_info "========================================"
-    print_info "Downloading FastMesh Model"
+    print_info "Downloading FastMesh Models"
     print_info "========================================"
-    
+
     local model_dir_v1k="$PRETRAINED_DIR/FastMesh-V1K"
     local model_dir_v4k="$PRETRAINED_DIR/FastMesh-V4K"
-    
+
     if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir_v1k" 3; then
         print_info "FastMesh v1k model already exists and verified"
-    fi
-    
-    mkdir -p "$model_dir_v1k"
-    print_info "Downloading FastMesh v1k model..."
-    if hf_download  "WopperSet/FastMesh-V1K" --local-dir "$model_dir_v1k"; then
-        print_success "FastMesh v1k model downloaded successfully"
     else
-        print_error "Failed to download FastMeshv1k model"
-        return 1
+        mkdir -p "$model_dir_v1k"
+        print_info "Downloading FastMesh v1k model..."
+        if hf_download "WopperSet/FastMesh-V1K" --local-dir "$model_dir_v1k"; then
+            print_success "FastMesh v1k model downloaded successfully"
+        else
+            print_error "Failed to download FastMesh v1k model"
+            return 1
+        fi
     fi
 
     if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir_v4k" 3; then
         print_info "FastMesh v4k model already exists and verified"
-        return 0
-    fi
-    
-    mkdir -p "$model_dir_v4k"
-    print_info "Downloading FastMesh v4k model..."
-    if hf_download  "WopperSet/FastMesh-V4K" --local-dir "$model_dir_v4k"; then
-        print_success "FastMesh v4k model downloaded successfully"
     else
-        print_error "Failed to download FastMeshv4k model"
-        return 1
+        mkdir -p "$model_dir_v4k"
+        print_info "Downloading FastMesh v4k model..."
+        if hf_download "WopperSet/FastMesh-V4K" --local-dir "$model_dir_v4k"; then
+            print_success "FastMesh v4k model downloaded successfully"
+        else
+            print_error "Failed to download FastMesh v4k model"
+            return 1
+        fi
     fi
 }
 
@@ -788,6 +741,41 @@ download_zero123plus_normal_controlnet() {
     fi
 }
 
+# Function to download VoxHammer model checkpoints
+download_voxhammer() {
+    print_info "========================================"
+    print_info "Downloading VoxHammer Model Checkpoints"
+    print_info "========================================"
+
+    local model_dir="$PRETRAINED_DIR/VoxHammer"
+    local image_cache="$model_dir/models--FishWoWater--TRELLIS-image-large-voxhammer"
+    local text_cache="$model_dir/models--FishWoWater--TRELLIS-text-large-voxhammer"
+
+    if [ "$FORCE_DOWNLOAD" = false ] &&        verify_directory "$image_cache" 2 &&        verify_directory "$text_cache" 2; then
+        print_info "VoxHammer checkpoints already exist and verified"
+        return 0
+    fi
+
+    mkdir -p "$model_dir"
+
+    # VoxHammer text editing depends on the base TRELLIS image checkpoint.
+    download_trellis
+
+    print_info "Downloading VoxHammer image-conditioned TRELLIS checkpoint..."
+    if ! hf_download FishWoWater/TRELLIS-image-large-voxhammer --cache-dir "$model_dir"; then
+        print_error "Failed to download VoxHammer image checkpoint"
+        return 1
+    fi
+
+    print_info "Downloading VoxHammer text-conditioned TRELLIS checkpoint..."
+    if ! hf_download FishWoWater/TRELLIS-text-large-voxhammer --cache-dir "$model_dir"; then
+        print_error "Failed to download VoxHammer text checkpoint"
+        return 1
+    fi
+
+    print_success "VoxHammer model checkpoints downloaded successfully"
+}
+
 # Function to download miscellaneous models
 download_misc() {
     print_info "========================================"
@@ -834,8 +822,10 @@ verify_all_models() {
     print_info "Checking PartField..."
     verify_file "$PRETRAINED_DIR/PartField/model_objaverse.pt" 50000000 || all_verified=false
     
-    print_info "Checking Hunyuan3D 2.1..."
-    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1" 5 || all_verified=false
+    print_info "Checking Hunyuan3D 2.1 shared checkpoint..."
+    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-dit-v2-1" 3 || all_verified=false
+    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-vae-v2-1" 3 || all_verified=false
+    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-paintpbr-v2-1" 3 || all_verified=false
     
     print_info "Checking Hunyuan3D-Shape-v2-1..."
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1" 5 || all_verified=false
@@ -844,7 +834,8 @@ verify_all_models() {
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1" 5 || all_verified=false
     
     print_info "Checking Hunyuan3D-DiT-v2-mini-Turbo..."
-    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2mini" 5 || all_verified=false
+    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo" 3 || all_verified=false
+    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2mini/hunyuan3d-vae-v2-mini-turbo" 3 || all_verified=false
     
     print_info "Checking TRELLIS image-large..."
     verify_directory "$PRETRAINED_DIR/TRELLIS/TRELLIS-image-large" 5 || all_verified=false
@@ -867,6 +858,12 @@ verify_all_models() {
     
     print_info "Checking TRELLIS.2-4B..."
     verify_directory "$PRETRAINED_DIR/TRELLIS.2/TRELLIS.2-4B" 5 || all_verified=false
+
+    print_info "Checking VoxHammer image checkpoint..."
+    verify_directory "$PRETRAINED_DIR/VoxHammer/models--FishWoWater--TRELLIS-image-large-voxhammer" 2 || all_verified=false
+
+    print_info "Checking VoxHammer text checkpoint..."
+    verify_directory "$PRETRAINED_DIR/VoxHammer/models--FishWoWater--TRELLIS-text-large-voxhammer" 2 || all_verified=false
     
     print_info "Checking P3-SAM..."
     verify_file "$PRETRAINED_DIR/P3-SAM/p3sam.safetensors" 50000000 || all_verified=false
@@ -898,10 +895,9 @@ verify_all_models() {
     verify_file "$PRETRAINED_DIR/misc/RealESRGAN_x4plus.pth" 50000000 || all_verified=false
     verify_directory "$PRETRAINED_DIR/dinov2-giant" 5 || all_verified=false
     
-    print_info "Checking Hunyuan3D-Paint-v2-1 checkpoint..."
-    verify_file "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1" 5 || all_verified=false
+    print_info "Checking Hunyuan3D-Paint-v2-1 RealESRGAN dependency..."
     verify_file "$PRETRAINED_DIR/misc/RealESRGAN_x4plus.pth" 50000000 || all_verified=false
-    # Also verify thirdparty copy
+    # Also verify the thirdparty copy expected by the Paint adapter.
     verify_file "$PROJECT_ROOT/backend/thirdparty/hunyuan3d-paint-v2-1/hy3dpaint/ckpt/RealESRGAN_x4plus.pth" 50000000 || all_verified=false
     
     if [ "$all_verified" = true ]; then
@@ -1004,18 +1000,21 @@ for model in "${MODELS_ARRAY[@]}"; do
         "zero123plus_normal_controlnet")
             download_zero123plus_normal_controlnet
             ;;
+        "voxhammer")
+            download_voxhammer
+            ;;
         "misc")
             download_misc
             ;;
         "all")
             download_partfield
-            download_hunyuan3d_shape_v21
-            download_hunyuan3d_paint_v21
-            download_hunyuan3d_dit_v2_mini_turbo
             download_hunyuan21
+            download_hunyuan3d_paint_v21
+            download_hunyuan2mini
             download_trellis
             download_trellis_text
             download_trellis2
+            download_voxhammer
             download_p3sam
             download_unirig
             download_partpacker

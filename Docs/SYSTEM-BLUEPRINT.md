@@ -18,7 +18,7 @@
 
 ## 1. Executive System Overview
 
-ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization platform that converts 2D images or text prompts into game-ready 3D assets (`.glb`, `.obj`, `.fbx`, `.stl`, PBR textures, LOD cascades, collision hulls).
+ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization platform that converts reference images into game-ready 3D assets. Text prompts remain supported for mesh painting, localized mesh editing, and motion generation.
 
 ### Core Stack
 - **Frontend**: Next.js 16 (React 19, TypeScript, Three.js, React Three Fiber, Tailwind CSS)
@@ -65,7 +65,7 @@ graph TD
         AUTO_UNLOAD["Auto-Unload After Job"]:::orange
     end
 
-    subgraph Adapters["🧠 Model Adapters (22 Models)"]
+    subgraph Adapters["🧠 Model Adapters (23 registered / 22 selectable; Zero123++ hidden)"]
         direction TB
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes PBR"]:::purple
         HUNY["Hunyuan3D-2.1<br/>Shape + Paint 2B"]:::purple

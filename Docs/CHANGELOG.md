@@ -9,6 +9,7 @@
 - UX-07: Verified Background Removal Preview integration (original vs preview view with approve/edit/manual options in generation panel)
 - Updated Docs/TASKS.md to reflect current implementation status with all UX-01 through UX-07 marked as IMPLEMENTED
 - Updated Final Agent Checklist in Docs/TASKS.md to mark all Phase 0 (BUG-Q1-Q8) and Phase 1 (SG-06-SG-02.2) items as complete
+- Audited the model manifest/download surface: added missing VoxHammer checkpoint downloads, aligned shared Hunyuan checkpoint verification, and fixed FastMesh redundant re-download behavior
 
 ## 2026-10-05 — [Phase 1 Generation Workflows]
 

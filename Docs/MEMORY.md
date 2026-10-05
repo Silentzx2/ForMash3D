@@ -1,3 +1,9 @@
+## 2026-10-05 Model Registry & Download Manager Parity Audit
+- Cross-checked the 23 backend model manifest entries against the 22 user-selectable frontend entries, the root manager.sh, and backend/scripts/download_models.sh.
+- VoxHammer was the only registered model family missing from the download manager. Added its image- and text-conditioned TRELLIS checkpoints using the adapter-compatible Hugging Face cache layout.
+- Corrected shared-checkpoint handling for Hunyuan3D-2.1 and Hunyuan3D-2mini so model-specific entries cannot falsely report readiness from an unrelated partial directory; FastMesh no longer re-downloads a verified V1K bundle.
+- Runtime CUDA/model visual validation remains environment-gated and is not represented as passed.
+
 ## 2026-10-04 Source-Fidelity Contract Verification Pass
 - Re-verified BUG-REPORT-ADAPTER-QUALITY.md (BQ-01..BQ-12), the Docs/TASKS.md bug registry, and all project docs against the live adapters, scheduler firewall, postprocess pipeline, and frontend schedules.
 - Closed the TRELLIS image-path response metadata gap: `generation_info` now records the actual ss/slat sampling stages, guidance, texture resolution, bake mode, and simplify ratio, matching the text path and BQ-11.
@@ -54,7 +60,7 @@
 ## 2026-10-05 Phase 0 Raw-Mesh Quality Closure
 - The production post-processing path now applies a shared geometry-fidelity guard after optimization. It rejects non-finite results, unexpected face growth, excessive vertex growth, and material bounding-box drift, then retains the repaired mesh instead.
 - Already-watertight/manifold source meshes skip the repair mutation entirely, preserving native topology when no repair is required.
-- Phase 0 Q1–Q8 are source-level verified. Full NVIDIA/model visual A/B and 22-model GPU smoke validation remain explicitly environment-gated.
+- Phase 0 Q1–Q8 are source-level verified. Full NVIDIA/model visual A/B and 22 user-facing-model GPU smoke validation remain explicitly environment-gated.
 - Future agents must independently verify the current implementation and tests; TASKS.md status labels are not evidence.
 
 ## Phase 1 Workflow Closure — 2026-10-05

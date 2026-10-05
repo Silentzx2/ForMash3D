@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="22 Models"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="22 user-facing models / 23 registered adapters"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -80,9 +80,9 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
 ```text
   INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
 ┌─────────────────────┐    ┌───────────────────────────┐    ┌──────────────────────────┐
-│  • Text Prompt      │───►│  Neural Model Adapters:   │───►│ master/source.glb        │
-│  • Single Image     │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
-│  • Multi-View Image │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
+│  • Single Image     │───►│  Neural Model Adapters:   │───►│ master/source.glb        │
+│  • Multi-View Image │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
+│                     │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
 └─────────────────────┘    └───────────────────────────┘    └────────────┬─────────────┘
                                                                          │
  ┌───────────────────────────────────────────────────────────────────────┘
@@ -138,7 +138,7 @@ flowchart TD
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines["Neural 3D Synthesis Engines (22 Model Adapters)"]
+    subgraph Engines["Neural 3D Synthesis Engines (22 selectable / 23 registered adapters)"]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
         TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
@@ -199,7 +199,7 @@ flowchart TD
 
 ---
 
-## 🤖 Supported Model Catalog (22 Models)
+## 🤖 Supported Model Catalog (22 User-Facing Models / 23 Registered Adapters)
 
 The model registry is dynamically configured via `backend/config/models.yaml` and loaded lazily:
 
@@ -307,8 +307,11 @@ bash scripts/setup.sh
 Download pre-trained weights for the models you wish to use:
 
 ```bash
-# Download model checkpoints (Hunyuan3D, TRELLIS, TripoSR, etc.)
+# Download all core model checkpoints (includes VoxHammer)
 bash backend/scripts/download_models.sh
+
+# Or download only the VoxHammer checkpoints
+bash backend/scripts/download_models.sh -m voxhammer
 ```
 
 ### 4. Running the Studio
@@ -363,7 +366,7 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 | Endpoint | Method | Description |
 |---|:---:|---|
 | `/api/v1/system/info` | `GET` | System health, GPU specs, VRAM utilization, active worker mode |
-| `/api/v1/system/models` | `GET` | List all discovered 22 model adapters, readiness, and VRAM requirements |
+| `/api/v1/system/models` | `GET` | List 23 registered adapters (22 user-facing models + hidden Zero123++ multi-view adapter), readiness, and VRAM requirements |
 | `/api/v1/mesh-generation/image-to-raw-mesh` | `POST` | Generate high-fidelity raw geometry from single reference image |
 | `/api/v1/mesh-generation/image-to-textured-mesh` | `POST` | Generate textured geometry directly from image |
 | `/api/v1/mesh-generation/image-mesh-painting` | `POST` | Paint PBR textures onto existing 3D geometry |
@@ -395,7 +398,7 @@ npx tsc --noEmit
 bun run lint
 
 # Verify shell script syntax
-bash -n backend/scripts/*.sh scripts/*.sh
+bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
 **Verification status**: Runtime verification must be run on the supported Python 3.10/GPU environment; this checkout's static audit does not claim a live test result.

@@ -1,6 +1,7 @@
 /**
- * Canonical Model Registry & Feature Routing
- * Sourced directly from backend/config/models.yaml (22 registered models)
+ * Canonical user-selectable Model Registry & Feature Routing
+ * Mirrors the 22 visible adapters from backend/config/models.yaml.
+ * The backend also registers hidden Zero123++ multi-view support as adapter #23.
  */
 
 export type ModelCategory =

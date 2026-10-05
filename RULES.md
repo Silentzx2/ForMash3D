@@ -38,7 +38,7 @@ Rules:
 - `Docs/PRD.md` — Product requirements
 - `Docs/ARCHITECTURE.md` — System architecture with flow charts
 - `Docs/DESIGN.md` — UI design system and component reference
-- `Docs/RULES.md` — This file
+- `RULES.md` — This file
 - `Docs/TASKS.md` — Project task list
 - `Docs/DECISIONS.md` — Architecture decisions (ADRs)
 - `Docs/MEMORY.md` — Project current state

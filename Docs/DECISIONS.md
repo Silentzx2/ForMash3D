@@ -293,7 +293,7 @@
 - `Docs/PRD.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, etc.
 - `Docs/CHANGELOG.md` keeps only last 3 changes
 - `Docs/TASKS.md` with clear completed/future format
-- `Docs/RULES.md` with mandatory doc update policy
+- `RULES.md` at repository root with mandatory doc update policy
 - After every code change, all relevant .md files must be updated
 
 ---

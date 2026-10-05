@@ -2106,6 +2106,14 @@ Do not:
 
 ---
 
+# 17.1 Latest Repository Audit — 2026-10-05
+
+- Cross-checked all 23 backend model IDs against constants/models.ts, manager.sh, and backend/scripts/download_models.sh.
+- Added the missing VoxHammer download path and verified that it is the only registered model family absent from the model-download surface.
+- Hardened shared Hunyuan3D-2.1 / 2mini checkpoint readiness checks and removed the FastMesh verified-bundle re-download path.
+- Updated root/Docs model-count language to distinguish 23 registered backend adapters from 22 user-selectable models; Zero123++ remains intentionally hidden from the general selector.
+- Full CUDA/model visual validation remains **NOT RUN** and remains the user environment-gated GPU testing responsibility.
+
 # 18. Final Agent Checklist
 
 Before marking the roadmap implementation cycle complete, the agent must confirm:
