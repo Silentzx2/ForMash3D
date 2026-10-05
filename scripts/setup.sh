@@ -401,7 +401,13 @@ _ensure_node_version() {
   rm -rf "$staging"
   export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
   hash -r
-  log "Node v${REQUIRED_NODE_VERSION} installed at ${NODE_RUNTIME_DIR}/current and forced on PATH."
+  local verify
+  verify=$(node --version 2>/dev/null | sed 's/^v//' || true)
+  if [[ "$verify" == "$REQUIRED_NODE_VERSION" ]]; then
+    log "Node v${REQUIRED_NODE_VERSION} installed at ${NODE_RUNTIME_DIR}/current and forced on PATH."
+    return 0
+  fi
+  fail "Node v${REQUIRED_NODE_VERSION} installation failed verification (found: ${verify:-none}). Aborting."
 }
 
 _ensure_npm_version() {
@@ -417,9 +423,15 @@ _ensure_npm_version() {
   local sudo_cmd=""
   command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
   $sudo_cmd npm install -g "npm@${REQUIRED_NPM_VERSION}" >/dev/null 2>&1 \
-    || warn "npm self-upgrade to v${REQUIRED_NPM_VERSION} failed; continuing with npm ${current:-unknown}"
+    || warn "npm self-upgrade to v${REQUIRED_NPM_VERSION} failed (permission issue; try running with sudo). Continuing..."
   hash -r
-  log "npm: v$(npm --version 2>/dev/null || echo 'unknown')"
+  local verify
+  verify=$(npm --version 2>/dev/null || echo 'unknown')
+  if [[ "$verify" == "$REQUIRED_NPM_VERSION" ]]; then
+    log "npm: v${verify} (locked version active)"
+    return 0
+  fi
+  fail "npm v${REQUIRED_NPM_VERSION} could not be enforced (found: ${verify:-none}). Aborting."
 }
 
 _ensure_bun_version() {
@@ -445,9 +457,9 @@ _ensure_bun_version() {
   if [[ "$current" == "$REQUIRED_BUN_VERSION" ]]; then
     command -v sudo >/dev/null 2>&1 && sudo ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || true
     log "Bun v${REQUIRED_BUN_VERSION} installed and forced."
-  else
-    warn "Bun v${REQUIRED_BUN_VERSION} could not be enforced (found: ${current:-none})."
+    return 0
   fi
+  fail "Bun v${REQUIRED_BUN_VERSION} could not be enforced (found: ${current:-none}). Aborting."
 }
 
 ensure_bun_or_npm(){
