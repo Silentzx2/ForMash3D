@@ -298,7 +298,10 @@ download_hunyuan21() {
     
     local model_dir="$PRETRAINED_DIR/tencent/Hunyuan3D-2.1"
     
-    if [ "$FORCE_DOWNLOAD" = false ] &&        verify_directory "$model_dir/hunyuan3d-dit-v2-1" 3 &&        verify_directory "$model_dir/hunyuan3d-vae-v2-1" 3 &&        verify_directory "$model_dir/hunyuan3d-paintpbr-v2-1" 3; then
+    if [ "$FORCE_DOWNLOAD" = false ] \
+       && verify_directory "$model_dir/hunyuan3d-dit-v2-1" 3 \
+       && verify_directory "$model_dir/hunyuan3d-vae-v2-1" 3 \
+       && verify_directory "$model_dir/hunyuan3d-paintpbr-v2-1" 3; then
         print_info "Hunyuan3D 2.1 shared checkpoint is complete and verified"
         return 0
     fi
@@ -340,7 +343,10 @@ download_hunyuan3d_paint_v21() {
     else
         print_info "Downloading RealESRGAN_x4plus.pth..."
         mkdir -p "$PRETRAINED_DIR/misc"
-        download_with_verify             "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"             "$realesrgan_path"             "RealESRGAN_x4plus model"
+        download_with_verify \
+            "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth" \
+            "$realesrgan_path" \
+            "RealESRGAN_x4plus model"
     fi
 
     mkdir -p "$(dirname "$thirdparty_realesrgan_path")"
@@ -826,12 +832,6 @@ verify_all_models() {
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-dit-v2-1" 3 || all_verified=false
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-vae-v2-1" 3 || all_verified=false
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-paintpbr-v2-1" 3 || all_verified=false
-    
-    print_info "Checking Hunyuan3D-Shape-v2-1..."
-    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1" 5 || all_verified=false
-    
-    print_info "Checking Hunyuan3D-Paint-v2-1..."
-    verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1" 5 || all_verified=false
     
     print_info "Checking Hunyuan3D-DiT-v2-mini-Turbo..."
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo" 3 || all_verified=false
