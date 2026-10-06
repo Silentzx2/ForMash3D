@@ -46,11 +46,11 @@ export const ResourceMonitor: React.FC = () => {
         headers: { 'Accept': 'application/json' },
         cache: 'no-store',
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      
+
       const data = await response.json();
       setStats(data);
       setError(null);
@@ -109,7 +109,7 @@ export const ResourceMonitor: React.FC = () => {
           aria-expanded={isExpanded}
         >
           <HugeiconsIcon icon={GaugeIcon} size={16} className="w-3 h-3 text-primary" />
-          
+
           {/* VRAM - most critical for 3D work (showing average across GPUs if available) */}
           <div className="flex items-center gap-0.5">
             <HugeiconsIcon icon={GpuIcon} size={12} className={`w-2.5 h-2.5 ${getColor(vramPercentToShow)}`} />
@@ -117,7 +117,7 @@ export const ResourceMonitor: React.FC = () => {
               {formatPercent(vramPercentToShow)}
             </span>
           </div>
-          
+
           {/* RAM */}
           <div className="flex items-center gap-0.5 ml-1">
             <HugeiconsIcon icon={RamMemoryIcon} size={12} className={`w-2.5 h-2.5 ${getColor(stats.ram_percent)}`} />
@@ -125,7 +125,7 @@ export const ResourceMonitor: React.FC = () => {
               {formatPercent(stats.ram_percent)}
             </span>
           </div>
-          
+
           {/* CPU */}
           <div className="flex items-center gap-0.5 ml-1">
             <HugeiconsIcon icon={CpuIcon} size={12} className={`w-2.5 h-2.5 ${getColor(stats.cpu_percent)}`} />
@@ -133,11 +133,11 @@ export const ResourceMonitor: React.FC = () => {
               {formatPercent(stats.cpu_percent)}
             </span>
           </div>
-          
-          <HugeiconsIcon 
-            icon={isExpanded ? ChevronUp : ChevronDown} 
-            size={14} 
-            className={`w-3 h-3 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
+
+          <HugeiconsIcon
+            icon={isExpanded ? ChevronUp : ChevronDown}
+            size={14}
+            className={`w-3 h-3 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
           />
         </button>
       </SimpleTooltip>
@@ -146,12 +146,12 @@ export const ResourceMonitor: React.FC = () => {
       {isExpanded && (
         <>
           {/* Backdrop */}
-          <div 
-            className="fixed inset-0 z-40" 
+          <div
+            className="fixed inset-0 z-40"
             onClick={() => setIsExpanded(false)}
             aria-hidden="true"
           />
-          
+
           {/* Panel */}
           <motion.div
             initial={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -193,7 +193,7 @@ export const ResourceMonitor: React.FC = () => {
                     {formatPercent(vramPercentToShow)}
                   </span>
                 </div>
-                
+
                 {stats.gpus && stats.gpus.length > 0 ? (
                   <>
                     {stats.gpus.map((gpu, index) => (
@@ -242,14 +242,15 @@ export const ResourceMonitor: React.FC = () => {
                           />
                         </div>
                         <div className="flex items-center justify-between text-[9px] text-zinc-400">
-                          <span>{formatGB(stats.total_vram_used_gb, stats.total_vram_total_gb)}</span>
+                          <span>{formatGB(stats.total_vram_used_gb ?? 0, stats.total_vram_total_gb ?? 0)}</span>
                         </div>
                       </div>
                     )}
                   </>
                 ) : (
-                  {/* Fallback to single GPU display (original behavior) */}
-                   <div className="w-full h-1.5 bg-[hsl(var(--surface-2))] rounded-full overflow-hidden">
+                  <>
+                    {/* Fallback to single GPU display (original behavior) */}
+                    <div className="w-full h-1.5 bg-[hsl(var(--surface-2))] rounded-full overflow-hidden">
                      <motion.div
                        initial={{ width: 0 }}
                        animate={{ width: `${Math.min(stats.vram_percent, 100)}%` }}
@@ -262,13 +263,14 @@ export const ResourceMonitor: React.FC = () => {
                      <span>{formatGB(stats.vram_used_gb, stats.vram_total_gb)}</span>
                      {stats.gpu_name && <span className="truncate max-w-[140px]">{stats.gpu_name}</span>}
                    </div>
-                   {stats.gpu_temp_c && (
-                     <div className="text-[9px] text-zinc-500">
-                       GPU Temp: {stats.gpu_temp_c}°C
-                     </div>
-                   )}
+                    {stats.gpu_temp_c && (
+                      <div className="text-[9px] text-zinc-500">
+                        GPU Temp: {stats.gpu_temp_c}°C
+                      </div>
+                    )}
+                  </>
                 )}
-                
+
                 {stats.gpus && stats.gpus.length > 0 && stats.gpus[0].temperature !== undefined && (
                   <div className="pt-2 border-t border-white/[0.06]">
                     <div className="flex items-center justify-between text-[9px] text-zinc-400">

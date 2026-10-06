@@ -7,7 +7,7 @@ import { motion, LayoutGroup } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { BoneIcon, Box, CircleDashedIcon, FilmIcon, FolderOpenIcon, GridIcon, LayersIcon, LayoutDashboardIcon, ListOrderedIcon, ScissorsIcon, SparklesIcon } from '@hugeicons/core-free-icons';
+import { BoneIcon, Box, CircleDashedIcon, FilmIcon, FolderOpenIcon, GridIcon, LayersIcon, LayoutDashboardIcon, ListOrderedIcon, ScissorsIcon, SparklesIcon, ScrollTextIcon } from '@hugeicons/core-free-icons';
 interface LeftNavigationProps {
   /** When true, renders as a wide drawer with full labels instead of icon rail */
   isMobileDrawer?: boolean;
@@ -140,36 +140,45 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
     },
   ];
 
-  // Workspace & project hub views
-  const workspaceViews: NavItemConfig[] = [
-    {
-      id: 'tool-btn-overview',
-      label: 'Overview',
-      tooltip: 'Studio Overview & Hub • ⌘1',
-      shortcut: '⌘1',
-      icon: (props: any) => <HugeiconsIcon icon={LayoutDashboardIcon} size={16} {...props} />,
-      active: isOverviewActive,
-      onClick: () => handleMainNavClick('dashboard'),
-    },
-    {
-      id: 'tool-btn-assets',
-      label: 'Assets',
-      tooltip: 'Outputs & Asset History • ⌘2',
-      shortcut: '⌘2',
-      icon: (props: any) => <HugeiconsIcon icon={FolderOpenIcon} size={16} {...props} />,
-      active: isAssetsActive,
-      onClick: () => handleMainNavClick('assets'),
-    },
-    {
-      id: 'tool-btn-jobs',
-      label: 'Jobs',
-      tooltip: 'Generation Jobs & Run Inspector • ⌘3',
-      shortcut: '⌘3',
-      icon: (props: any) => <HugeiconsIcon icon={ListOrderedIcon} size={16} {...props} />,
-      active: isJobsActive,
-      onClick: () => handleMainNavClick('jobs'),
-    },
-  ];
+    // Workspace & project hub views
+    const workspaceViews: NavItemConfig[] = [
+      {
+        id: 'tool-btn-overview',
+        label: 'Overview',
+        tooltip: 'Studio Overview & Hub • ⌘1',
+        shortcut: '⌘1',
+        icon: (props: any) => <HugeiconsIcon icon={LayoutDashboardIcon} size={16} {...props} />,
+        active: isOverviewActive,
+        onClick: () => handleMainNavClick('dashboard'),
+      },
+      {
+        id: 'tool-btn-assets',
+        label: 'Assets',
+        tooltip: 'Outputs & Asset History • ⌘2',
+        shortcut: '⌘2',
+        icon: (props: any) => <HugeiconsIcon icon={FolderOpenIcon} size={16} {...props} />,
+        active: isAssetsActive,
+        onClick: () => handleMainNavClick('assets'),
+      },
+      {
+        id: 'tool-btn-jobs',
+        label: 'Jobs',
+        tooltip: 'Generation Jobs & Run Inspector • ⌘3',
+        shortcut: '⌘3',
+        icon: (props: any) => <HugeiconsIcon icon={ListOrderedIcon} size={16} {...props} />,
+        active: isJobsActive,
+        onClick: () => handleMainNavClick('jobs'),
+      },
+      {
+        id: 'tool-btn-logs',
+        label: 'Logs',
+        tooltip: 'View system logs • ⌘4',
+        shortcut: '⌘4',
+        icon: (props: any) => <HugeiconsIcon icon={ScrollTextIcon} size={16} {...props} />,
+        active: false, // TODO: set active based on admin tab
+        onClick: () => router.push('/admin?tab=logs'),
+      },
+    ];
 
   /** Render individual desktop nav button with clean SaaS aesthetic and smooth Framer Motion layout sliding */
   const renderDesktopNavButton = (item: NavItemConfig) => {

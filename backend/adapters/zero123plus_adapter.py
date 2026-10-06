@@ -26,15 +26,17 @@ import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
-import numpy as np
 import torch
-from PIL import Image
-
-from core.models.base import BaseModel, ModelStatus
-from core.utils.file_utils import OutputPathGenerator, get_storage_base_dir, resolve_server_file_path
+from core.models.base import BaseModel
+from core.utils.file_utils import (
+    OutputPathGenerator,
+    get_storage_base_dir,
+    resolve_server_file_path,
+)
 from core.utils.log_formatters import format_box, format_bytes
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -534,7 +536,7 @@ class Zero123PlusAdapter(BaseModel):
                     height=960,
                 )
                 normal_contact_sheet = normal_output.images[0]
-                logger.info(f"[ZERO123++ ADAPTER] View-Space Normals generation completed")
+                logger.info("[ZERO123++ ADAPTER] View-Space Normals generation completed")
             except Exception as e:
                 logger.warning(f"[ZERO123++ ADAPTER] View-Space Normals generation skipped or failed: {e}", exc_info=True)
                 normal_contact_sheet = None
