@@ -199,7 +199,12 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             num_steps = inputs.get("num_inference_steps", 50)
             guidance_scale = inputs.get("guidance_scale", 5.0)
             seed = int(inputs.get("seed", 42))
+            # Use same device as pipeline to avoid tensor device mismatch
             device = "cuda" if torch.cuda.is_available() else "cpu"
+            # If pipeline has device attribute, use it; otherwise fallback
+            if hasattr(self.pipeline_shapegen, 'device'):
+                device = self.pipeline_shapegen.device
+            logger.info(f"Using device '{device}' for generator")
             generator = torch.Generator(device=device).manual_seed(seed)
 
             mesh_result = self.pipeline_shapegen(

@@ -177,27 +177,37 @@ async def system_stats(
     cpu_percent = psutil.cpu_percent(interval=0.1)
     memory = psutil.virtual_memory()
     
-    # Get GPU info
-    gpu_percent = 0.0
-    vram_used_gb = 0.0
-    vram_total_gb = 0.0
-    vram_percent = 0.0
-    gpu_name = "Unknown"
-    gpu_temp_c = None
-    
+    # Get GPU info for all GPUs
+    gpus_info = []
     try:
         import GPUtil
         gpus = GPUtil.getGPUs()
-        if gpus:
-            gpu = gpus[0]  # Primary GPU
-            gpu_percent = gpu.load * 100
-            vram_total_gb = gpu.memoryTotal / 1024
-            vram_used_gb = gpu.memoryUsed / 1024
-            vram_percent = gpu.memoryUtil * 100
-            gpu_name = gpu.name
-            gpu_temp_c = gpu.temperature
+        for gpu in gpus:
+            gpus_info.append({
+                "id": gpu.id,
+                "name": gpu.name,
+                "memory_total_mb": gpu.memoryTotal,
+                "memory_used_mb": gpu.memoryUsed,
+                "memory_util": gpu.memoryUtil,  # 0-1
+                "load": gpu.load,  # 0-1
+                "temperature": gpu.temperature,
+            })
     except Exception:
         pass  # GPU monitoring not available
+    
+    # Calculate totals for collapsed view
+    total_vram_used_gb = sum(gpu["memory_used_mb"] for gpu in gpus_info) / 1024
+    total_vram_total_gb = sum(gpu["memory_total_mb"] for gpu in gpus_info) / 1024
+    avg_vram_percent = (total_vram_used_gb / total_vram_total_gb * 100) if total_vram_total_gb > 0 else 0.0
+    
+    # For backward compatibility, keep single GPU fields (first GPU or defaults)
+    primary_gpu = gpus_info[0] if gpus_info else None
+    gpu_percent = primary_gpu["load"] * 100 if primary_gpu else 0.0
+    vram_used_gb = primary_gpu["memory_used_mb"] / 1024 if primary_gpu else 0.0
+    vram_total_gb = primary_gpu["memory_total_mb"] / 1024 if primary_gpu else 0.0
+    vram_percent = primary_gpu["memory_util"] * 100 if primary_gpu else 0.0
+    gpu_name = primary_gpu["name"] if primary_gpu else "Unknown"
+    gpu_temp_c = primary_gpu["temperature"] if primary_gpu else None
     
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -211,6 +221,11 @@ async def system_stats(
         "vram_percent": vram_percent,
         "gpu_name": gpu_name,
         "gpu_temp_c": gpu_temp_c,
+        # New fields for multiple GPUs
+        "gpus": gpus_info,
+        "total_vram_used_gb": total_vram_used_gb,
+        "total_vram_total_gb": total_vram_total_gb,
+        "avg_vram_percent": avg_vram_percent,
     }
 
 
@@ -494,77 +509,126 @@ async def get_logs(
     """Get recent log entries from log files"""
 
     try:
-        logs_dir = Path("logs")
-        if not logs_dir.exists():
+        # Define log directories to search: repo root logs and backend logs
+        repo_root = Path(__file__).resolve().parents[3]
+        backend_root = Path(__file__).resolve().parents[2]
+        log_dirs = [repo_root / "logs", backend_root / "logs"]
+        # Filter to existing directories
+        existing_log_dirs = [d for d in log_dirs if d.exists() and d.is_dir()]
+        if not existing_log_dirs:
             return {
-                "error": "Logs directory not found",
-                "message": "Logging may not be properly configured",
+                "error": "No logs directories found",
+                "message": "Logging directories not found in repo root or backend",
                 "logs": [],
+                "directories_searched": [str(d) for d in log_dirs],
             }
 
-        # Find log files
-        log_files = list(logs_dir.glob("*.log"))
+        # Find all .log files in the directories
+        log_files = []
+        for log_dir in existing_log_dirs:
+            log_files.extend(list(log_dir.glob("*.log")))
+        # Deduplicate by resolved path
+        seen = set()
+        unique_log_files = []
+        for f in log_files:
+            resolved = f.resolve()
+            if resolved not in seen:
+                seen.add(resolved)
+                unique_log_files.append(f)
+        log_files = unique_log_files
+
         if not log_files:
-            return {"message": "No log files found", "logs": [], "available_files": []}
-
-        # Get the most recent log file (app.log by default)
-        main_log_file = logs_dir / "app.log"
-        if not main_log_file.exists() and log_files:
-            main_log_file = log_files[0]
-
-        if not main_log_file.exists():
             return {
-                "error": "Main log file not found",
-                "available_files": [f.name for f in log_files],
+                "message": "No log files found in directories",
                 "logs": [],
+                "available_files": [],
+                "directories_searched": [str(d) for d in existing_log_dirs],
             }
 
-        # Read log file with fast reverse block seeking
-        log_entries = []
-        try:
-            recent_lines = _tail_file_lines(main_log_file, lines)
-            for line in recent_lines:
-                line = line.strip()
-                if not line:
-                    continue
+        # Determine how many lines to read from each file to ensure we have enough after merging
+        # We'll read 2x the requested lines from each file to have buffer for merging and filtering
+        per_file_lines = max(lines * 2, 100)  # at least 100 lines per file
 
-                # Parse log entry
-                log_entry = _parse_log_line(line)
-
-                # Apply filters
-                if level and log_entry.get("level") != level.upper():
-                    continue
-
-                if logger_name and logger_name not in log_entry.get("logger", ""):
-                    continue
-
-                if since:
+        # Collect log entries from all files
+        all_entries = []
+        for log_file in log_files:
+            try:
+                recent_lines = _tail_file_lines(log_file, per_file_lines)
+                for line in recent_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Parse log entry
+                    log_entry = _parse_log_line(line)
+                    # Add a parsed timestamp for sorting (if parsing fails, use far past)
+                    ts_str = log_entry.get("timestamp", "")
                     try:
-                        from datetime import datetime
+                        # Try to parse ISO format with optional timezone
+                        if ts_str:
+                            # Remove trailing Z and convert to offset-aware if needed
+                            if ts_str.endswith('Z'):
+                                ts_str = ts_str[:-1] + '+00:00'
+                            parsed_ts = datetime.fromisoformat(ts_str)
+                        else:
+                            parsed_ts = datetime.min
+                    except Exception:
+                        parsed_ts = datetime.min
+                    log_entry["_parsed_timestamp"] = parsed_ts
+                    all_entries.append(log_entry)
+            except Exception as e:
+                # If reading a particular file fails, we skip it but continue with others
+                logger.warning(f"Failed to read log file {log_file}: {str(e)}")
+                continue
 
-                        entry_time = datetime.fromisoformat(
-                            log_entry.get("timestamp", "")
-                        )
-                        since_time = datetime.fromisoformat(since)
-                        if entry_time < since_time:
-                            continue
-                    except (ValueError, TypeError):
-                        pass  # Skip time filtering if parsing fails
-
-                log_entries.append(log_entry)
-
-        except Exception as e:
+        if not all_entries:
             return {
-                "error": f"Failed to read log file: {str(e)}",
+                "message": "No log entries found in log files",
                 "logs": [],
-                "file": str(main_log_file),
+                "available_files": [f.name for f in log_files],
+                "directories_searched": [str(d) for d in existing_log_dirs],
             }
+
+        # Apply filters: level, logger_name, since
+        filtered_entries = []
+        since_dt = None
+        if since:
+            try:
+                if since.endswith('Z'):
+                    since = since[:-1] + '+00:00'
+                since_dt = datetime.fromisoformat(since)
+            except Exception:
+                # If since cannot be parsed, ignore the filter
+                pass
+
+        for entry in all_entries:
+            # Level filter
+            if level and entry.get("level") != level.upper():
+                continue
+            # Logger name filter
+            if logger_name and logger_name not in entry.get("logger", ""):
+                continue
+            # Since filter
+            if since_dt:
+                entry_ts = entry.get("_parsed_timestamp")
+                if entry_ts and entry_ts < since_dt:
+                    continue
+            filtered_entries.append(entry)
+
+        # Sort by parsed timestamp descending (newest first)
+        filtered_entries.sort(key=lambda x: x.get("_parsed_timestamp", datetime.min), reverse=True)
+
+        # Take the most recent 'lines' entries
+        final_entries = filtered_entries[:lines]
+
+        # Remove the temporary _parsed_timestamp field from the output
+        for entry in final_entries:
+            entry.pop("_parsed_timestamp", None)
 
         return {
-            "logs": log_entries,
-            "total_entries": len(log_entries),
-            "file": str(main_log_file),
+            "logs": final_entries,
+            "total_entries": len(filtered_entries),
             "available_files": [f.name for f in log_files],
+            "directories_searched": [str(d) for d in existing_log_dirs],
             "filters_applied": {
                 "lines": lines,
                 "level": level,

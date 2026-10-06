@@ -92,7 +92,18 @@ export const SettingsModal: React.FC = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isSettingsOpen, setIsSettingsOpen]);
 
-  // ServerIcon settings state
+   const getVramColor = (percent: number) => {
+     if (percent >= 90) return 'text-rose-400';
+     if (percent >= 75) return 'text-amber-400';
+     if (percent >= 50) return 'text-yellow-400';
+     return 'text-emerald-400';
+   };
+ 
+   const formatGB = (used: number, total: number) => `${used.toFixed(1)}/${total.toFixed(1)} GB`;
+   const formatPercent = (val: number) => `${Math.round(val)}%`;
+ 
+
+   // ServerIcon settings state
   const [host, setHost] = useState(() => {
     try {
       return localStorage.getItem('ai3d_api_host') || apiClient.getBaseUrl();
@@ -261,53 +272,84 @@ export const SettingsModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Hardware and System Details */}
-              <div className="space-y-2 pt-1">
-                <span className="font-semibold text-[11px] text-zinc-400 uppercase tracking-wider">
-                  Hardware &amp; Engine Telemetry
-                </span>
-                <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-400">FastAPI Pipeline Status</span>
-                    <span
-                      className={`text-xs font-mono font-bold flex items-center gap-1.5 ${
-                        systemStats.status === 'online' ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          systemStats.status === 'online' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
-                        }`}
-                      />
-                      {systemStats.status === 'online'
-                        ? `Online (${systemStats.lastPingMs || 12}ms)`
-                        : 'Offline / Connecting'}
-                    </span>
-                  </div>
+               {/* Hardware and System Details */}
+               <div className="space-y-2 pt-1">
+                 <span className="font-semibold text-[11px] text-zinc-400 uppercase tracking-wider">
+                   Hardware &amp; Engine Telemetry
+                 </span>
+                 <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-2.5">
+                   <div className="flex items-center justify-between">
+                     <span className="text-zinc-400">FastAPI Pipeline Status</span>
+                     <span
+                       className={`text-xs font-mono font-bold flex items-center gap-1.5 ${
+                         systemStats.status === 'online' ? 'text-emerald-400' : 'text-rose-400'
+                       }`}
+                     >
+                       <span
+                         className={`w-2 h-2 rounded-full ${
+                           systemStats.status === 'online' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
+                         }`}
+                       />
+                       {systemStats.status === 'online'
+                         ? `Online (${systemStats.lastPingMs || 12}ms)`
+                         : 'Offline / Connecting'}
+                     </span>
+                   </div>
 
-                  <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-zinc-400">Acceleration Device</span>
-                    <span className="font-mono text-zinc-200">
-                      {systemStats.gpu && systemStats.gpu !== 'Unavailable' ? systemStats.gpu : 'NVIDIA CUDA / PyTorch'}
-                    </span>
-                  </div>
+                   {/* GPU Information */}
+                   <div className="space-y-1.5">
+                     <div className="flex items-center justify-between text-[11.5px]">
+                       <span className="text-zinc-400">GPU(s)</span>
+                       {systemStats.gpus && systemStats.gpus.length > 0 ? (
+                         <>
+                           {systemStats.gpus.map((gpu, index) => (
+                             <div key={gpu.id} className="flex items-center justify-between space-x-2">
+                               <span className="font-mono text-zinc-200">GPU {gpu.id}:</span>
+                               <span className="font-mono text-primary">
+                                 {gpu.name}
+                               </span>
+                             </div>
+                           ))}
+                           {systemStats.gpus.length > 1 && (
+                             <div className="flex items-center justify-between pt-1 border-t border-white/[0.08]">
+                               <span className="font-mono text-zinc-200">Total VRAM:</span>
+                               <span className={`font-mono text-primary font-bold ${getVramColor(systemStats.avg_vram_percent ?? 0)}`}>
+                                 {formatGB(systemStats.total_vram_used_gb, systemStats.total_vram_total_gb)} ({formatPercent(systemStats.avg_vram_percent ?? 0)})
+                               </span>
+                             </div>
+                           )}
+                         </>
+                       ) : (
+                         <span className="font-mono text-zinc-200">
+                           {systemStats.gpu && systemStats.gpu !== 'Unavailable' ? systemStats.gpu : 'NVIDIA CUDA / PyTorch'}
+                         </span>
+                       )}
+                     </div>
+                     {systemStats.gpus && systemStats.gpus.length > 0 && systemStats.gpus[0].temperature !== undefined && (
+                       <div className="space-y-1">
+                         <div className="flex items-center justify-between text-[11.5px]">
+                           <span className="text-zinc-400">GPU Temperatures</span>
+                         </div>
+                         <div className="space-y-0.5">
+                           {systemStats.gpus.map((gpu, index) => (
+                             <div key={gpu.id} className="flex items-center justify-between">
+                               <span className="text-xs">GPU {gpu.id}:</span>
+                               <span className="font-mono text-[9px]">{gpu.temperature}°C</span>
+                             </div>
+                           ))}
+                          </div>
+                        )
+                      }
+                   </div>
 
-                  <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-zinc-400">VRAM Allocation</span>
-                    <span className="font-mono text-primary font-semibold">
-                      {systemStats.vramUsedGb != null
-                        ? `${systemStats.vramUsedGb} / ${systemStats.vramTotalGb || 16} GB`
-                        : 'Dynamic GPU Memory'}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-zinc-400">Python / PyTorch</span>
-                    <span className="font-mono text-zinc-400">
-                      {systemStats.pythonVersion || 'Python 3.10+'} · PyTorch 2.4.0 CUDA
-                    </span>
-                  </div>
-                </div>
+                   <div className="flex items-center justify-between text-[11.5px]">
+                     <span className="text-zinc-400">Python / PyTorch</span>
+                     <span className="font-mono text-zinc-400">
+                       {systemStats.pythonVersion || 'Python 3.10+'} · PyTorch 2.4.0 CUDA
+                     </span>
+                   </div>
+                 </div>
+               </div>
               </div>
 
               {/* Auto-SaveIcon Configuration */}

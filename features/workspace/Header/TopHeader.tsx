@@ -249,7 +249,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
       <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
         {/* Restored FastAPI Status Pill - text hidden on small screens */}
         <SimpleTooltip
-          label={`FastAPI Backend: ${systemStats.status.toUpperCase()} • GPU: ${systemStats.gpu || 'Auto/CUDA'} • ${systemStats.vramUsedGb != null ? `${systemStats.vramUsedGb}GB VRAM` : 'Ready'}`}
+          label={`FastAPI Backend: ${systemStats.status.toUpperCase()} • GPUs: ${systemStats.gpus?.length || 1} • ${systemStats.total_vram_used_gb != null && systemStats.total_vram_total_gb != null ? `${systemStats.total_vram_used_gb.toFixed(1)}/${systemStats.total_vram_total_gb.toFixed(1)}GB VRAM` : 'Ready'}`}
           side="bottom"
         >
           <button

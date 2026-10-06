@@ -266,6 +266,19 @@ export interface SystemStats {
   activePromptId: string | null;
   activeNode: string | null;
   lastPingMs: number;
+  // New fields for multiple GPU support
+  gpus?: Array<{
+    id: number;
+    name: string;
+    memory_total_mb: number;
+    memory_used_mb: number;
+    memory_util: number; // 0-1
+    load: number; // 0-1
+    temperature?: number;
+  }>;
+  total_vram_used_gb?: number;
+  total_vram_total_gb?: number;
+  avg_vram_percent?: number;
 }
 
 export interface SegmentationSettings {
