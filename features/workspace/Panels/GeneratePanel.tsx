@@ -969,6 +969,8 @@ export const GeneratePanel: React.FC = () => {
         ).then(res => {
           const imageFileId = res.file_id;
           if (imageFileId) {
+            // Save file_id to generation settings so UI keeps the image reference
+            setGenerationSettings(prev => ({ ...prev, imageFileId }));
             // Add to batch queue
             addToBatchQueue([imageFileId]);
             setNoticeMessage('Image added to batch queue.');

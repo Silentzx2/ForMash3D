@@ -164,7 +164,11 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             logger.info("Generating 3D shape with Mini Turbo...")
             octree_res = 512
             num_steps = inputs.get("num_inference_steps", 5)
+            if num_steps is None:
+                num_steps = 5
             guidance_scale = inputs.get("guidance_scale", 5.0)
+            if guidance_scale is None:
+                guidance_scale = 5.0
             low_vram_mode = bool(inputs.get("low_vram_mode", True))
             enable_flashvdm = bool(inputs.get("enable_flashvdm", True))
             seed = int(inputs.get("seed", 42))

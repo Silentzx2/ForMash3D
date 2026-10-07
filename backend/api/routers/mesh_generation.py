@@ -732,7 +732,7 @@ async def image_to_textured_mesh(
         texture_resolution = int(
             params.pop(
                 "texture_resolution",
-                preset.get("texture_resolution", mesh_request.texture_resolution),
+                preset.get("texture_resolution", mesh_request.texture_resolution or 1024),
             )
         )
         enable_printability = bool(
