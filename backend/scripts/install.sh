@@ -712,7 +712,57 @@ echo "Installing Unique3D Dependencies"
 echo "========================================"
 cd "$THIRDPARTY_DIR/Unique3D"
 echo "[INFO] Installing Unique3D requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
+
+# Use shared PyTorch 2.6+CUDA 12.4 environment - do NOT install torch/torchvision/torchaudio
+# Use local wheels first, then fall back to source builds
+
+# nvdiffrast
+if ! install_local_wheel "nvdiffrast-*.whl" "nvdiffrast"; then
+    _retry 3 5 $UV_PIP install git+https://github.com/NVlabs/nvdiffrast.git
+fi
+
+# PyTorch3D
+if ! install_local_wheel "pytorch3d-*.whl" "pytorch3d"; then
+    _retry 3 5 $UV_PIP install git+https://github.com/facebookresearch/pytorch3d.git@stable
+fi
+
+# torch_scatter (CUDA 12.4)
+if ! install_local_wheel "torch_scatter-*.whl" "torch_scatter"; then
+    _retry 3 5 $UV_PIP install torch_scatter -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
+fi
+
+# xformers
+if ! install_local_wheel "xformers-*.whl" "xformers"; then
+    _retry 3 5 $UV_PIP install xformers --index-url https://download.pytorch.org/whl/cu124
+fi
+
+# Remaining Unique3D requirements (excluding torch/torchvision/torchaudio which use shared env)
+echo "[INFO] Installing remaining Unique3D requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" \
+    accelerate \
+    datasets \
+    "diffusers>=0.26.3" \
+    fire \
+    gradio \
+    jaxtyping \
+    numba \
+    numpy \
+    omegaconf \
+    onnxruntime_gpu \
+    opencv_python \
+    opencv_python_headless \
+    ort_nightly_gpu \
+    peft \
+    Pillow \
+    pygltflib \
+    "pymeshlab>=2023.12" \
+    "rembg[gpu]" \
+    tqdm \
+    transformers \
+    trimesh \
+    typeguard \
+    wandb
+
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] Unique3D requirements installed"
 else
