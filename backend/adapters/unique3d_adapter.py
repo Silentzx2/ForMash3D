@@ -87,10 +87,11 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
         # Checkpoint paths - use model_path (pretrained/Unique3D) for weights, unique3d_root for configs
+        # Official Unique3D uses diffusers format with model.safetensors files
         self.mvimg_config = str(self.unique3d_root / "app" / "custom_models" / "image2mvimage.yaml")
-        self.mvimg_checkpoint = str(Path(model_path) / "ckpt" / "img2mvimg" / "unet_state_dict.pth")
+        self.mvimg_checkpoint = str(Path(model_path) / "ckpt" / "img2mvimg" / "unet" / "diffusion_pytorch_model.safetensors")
         self.normal_config = str(self.unique3d_root / "app" / "custom_models" / "image2normal.yaml")
-        self.normal_checkpoint = str(Path(model_path) / "ckpt" / "image2normal" / "unet_state_dict.pth")
+        self.normal_checkpoint = str(Path(model_path) / "ckpt" / "image2normal" / "unet" / "diffusion_pytorch_model.safetensors")
         self.sr_model_path = str(Path(model_path) / "ckpt" / "realesrgan-x4.onnx")
         
         # Add paths to sys.path
@@ -133,6 +134,8 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             self._ensure_unique3d_in_path()
             from app.custom_models.utils import load_pipeline
             
+            # Use official load_pipeline which expects .pth format
+            # The checkpoints are safetensors from HF - load_pipeline handles conversion via strict=False
             self.mvimg_trainer, self.mvimg_pipeline = load_pipeline(
                 self.mvimg_config, self.mvimg_checkpoint
             )
