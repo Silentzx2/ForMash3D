@@ -401,6 +401,37 @@ def _quality_guard(reference: trimesh.Trimesh, candidate: trimesh.Trimesh, max_b
     }
 
 
+def _validate_lod_chain(lod_levels: list[dict[str, Any]], reference: trimesh.Trimesh) -> Dict[str, Any]:
+    """Validate LOD lineage without modifying any asset."""
+    errors = []
+    previous_faces = len(reference.faces)
+    reference_bounds = np.asarray(reference.bounds, dtype=float)
+    reference_diagonal = max(float(np.linalg.norm(reference_bounds[1] - reference_bounds[0])), 1e-9)
+    for level in lod_levels:
+        index = int(level.get("level", 0))
+        level_mesh = level.get("mesh")
+        if not isinstance(level_mesh, trimesh.Trimesh):
+            errors.append(f"LOD{index}: missing mesh")
+            continue
+        vertices = np.asarray(level_mesh.vertices, dtype=float)
+        if len(level_mesh.faces) == 0 or not np.isfinite(vertices).all():
+            errors.append(f"LOD{index}: invalid or non-finite geometry")
+            continue
+        if index > 0 and len(level_mesh.faces) > previous_faces:
+            errors.append(f"LOD{index}: face count increased")
+        bounds = np.asarray(level_mesh.bounds, dtype=float)
+        if bounds.shape == (2, 3):
+            drift = float(np.max(np.abs(bounds - reference_bounds)) / reference_diagonal)
+            if drift > 0.02:
+                errors.append(f"LOD{index}: bounds drift {drift:.4f} exceeds 0.02")
+        previous_faces = len(level_mesh.faces)
+    return {
+        "status": "pass" if not errors else "fail",
+        "validated": len(lod_levels),
+        "errors": errors,
+    }
+
+
 def _save_file(path: Path, payload: bytes) -> str:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
@@ -514,6 +545,7 @@ def _build_result(
             "zip": {"status": "ready", "url": f"{base_url}/download?artifact_format=zip", "required": False},
         },
         "qa_report": qa_report,
+        "lod_validation": generated.get("lod_validation", {}),
         "artifact_errors": artifact_errors,
         "postprocess": {
             "asset_dir": str(asset_dir),
@@ -541,7 +573,25 @@ def _build_result(
         for artifact in (group.values() if isinstance(group, dict) else [])
         if isinstance(artifact, dict)
     )
-    result["production_status"] = "failed" if required_failed else "degraded" if any_failed else "ready"
+    quality_failed = (
+        isinstance(qa_report.get("qa"), dict)
+        and qa_report["qa"].get("status") == "fail"
+    )
+    lod_failed = generated.get("lod_validation", {}).get("status") == "fail"
+    result["production_status"] = (
+        "failed"
+        if required_failed
+        else "degraded"
+        if any_failed or quality_failed or lod_failed
+        else "ready"
+    )
+    degraded_reasons = []
+    if quality_failed:
+        degraded_reasons.append("final_quality_gate_failed")
+    if lod_failed:
+        degraded_reasons.append("lod_validation_failed")
+    if degraded_reasons:
+        result["degraded_reasons"] = degraded_reasons
     return result
 
 
@@ -1283,6 +1333,7 @@ def run_postprocess_job(
             "native_textures": bool(_has_native_textures(level_mesh)),
             "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
         }
+    lod_validation = _validate_lod_chain(lod_levels, uv_mesh)
     lod_duration = time.time() - lod_t0
 
     glb_file_size = glb_path.stat().st_size if glb_path.exists() else 0
@@ -1477,6 +1528,7 @@ def run_postprocess_job(
             "texture_resolution": texture_resolution,
             "cpu_threads": cpu_threads,
             "lods": lod_quality,
+            "lod_validation": lod_validation,
             "collision": collision_stats,
             "physics": physics_metadata,
             "target_polycount": resolved_target_polycount,
@@ -1501,6 +1553,7 @@ def run_postprocess_job(
         "texture_status": texture_status,
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
         "artifact_errors": artifact_errors,
+        "lod_validation": lod_validation,
     }
     final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=resolved_target_polycount, lod_enabled=lod_enabled)
     final_result["model_url"] = final_result["game_ready_url"]
@@ -1508,6 +1561,16 @@ def run_postprocess_job(
     final_result["quality_trace"] = quality_trace
     final_result["master_to_derivative"] = master_quality_report
     final_result["quality_mode"] = quality_mode
+    if master_quality_report.get("quality_gate", {}).get("passed") is False:
+        final_result["production_status"] = "degraded"
+        final_result["degraded_reasons"] = list(
+            final_result.get("degraded_reasons", [])
+        ) + ["master_to_derivative_quality_drift"]
+    if qa_report.get("status") == "warn" and final_result.get("production_status") == "ready":
+        final_result["production_status"] = "degraded"
+        final_result["degraded_reasons"] = list(
+            final_result.get("degraded_reasons", [])
+        ) + ["final_quality_inspection_unavailable"]
     final_result["texture_resolution"] = texture_resolution
     final_result["cpu_threads"] = cpu_threads
     final_result["optimize"] = optimize_stats

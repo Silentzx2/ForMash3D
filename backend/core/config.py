@@ -96,6 +96,50 @@ class ModelConfig(BaseSettings):
     model_config = SettingsConfigDict(protected_namespaces=("settings_",), extra="allow")
 
 
+def normalize_model_capabilities(
+    feature: str,
+    model_id: str,
+    config: "ModelConfig",
+) -> "ModelConfig":
+    """Fill the shared capability contract without inventing model behavior.
+
+    Explicit manifest values win. Defaults describe only facts derivable from the
+    existing model registration (feature, supported inputs/outputs, VRAM).
+    Model-specific quality/extraction/preprocessing fields remain explicit opt-ins.
+    """
+    caps = dict(config.capabilities or {})
+    inputs = {str(value).lower() for value in (config.supported_inputs or [])}
+    outputs = list(config.supported_outputs or [])
+
+    caps.setdefault("image_to_3d", feature.startswith("image_to_") and "image" in inputs)
+    caps.setdefault("text_to_3d", feature.startswith("text_to_") and "text" in inputs)
+    caps.setdefault("multiview", feature == "image_to_multiview" or "multiview" in inputs)
+    caps.setdefault("multiview_input", caps.get("multiview", False))
+    caps.setdefault("generated_multiview", False)
+    caps.setdefault("single_view", "image" in inputs and not bool(caps.get("multiview_input", False)))
+    caps.setdefault(
+        "texture_generation",
+        feature in {"image_to_textured_mesh", "image_mesh_painting", "text_mesh_painting"},
+    )
+    caps.setdefault("native_pbr", False)
+    caps.setdefault("vertex_color", False)
+    caps.setdefault("mesh_quality_characteristics", [])
+    caps.setdefault("preferred_preprocessing", "default")
+    caps.setdefault("preferred_extraction", "model_native")
+    caps.setdefault("preferred_resolution", None)
+    caps.setdefault("preferred_face_budget", "auto")
+    caps.setdefault("minimum_vram_mb", int(config.vram_requirement or 0))
+    caps.setdefault("cpu_requirements", {"threads": "auto"})
+    caps.setdefault("multi_gpu", False)
+    caps.setdefault("multi_gpu_strategy", None)
+    caps.setdefault("recommended_postprocess_profile", "default")
+    caps.setdefault("latency_class", "balanced")
+    caps.setdefault("supported_output_formats", outputs)
+
+    config.capabilities = caps
+    return config
+
+
 class Settings(BaseSettings):
     """Main settings class
     
@@ -136,9 +180,14 @@ class Settings(BaseSettings):
                 parsed[feature] = {}
                 for model_id, config in models.items():
                     if isinstance(config, dict):
-                        parsed[feature][model_id] = ModelConfig(**config)
+                        parsed_config = ModelConfig(**config)
                     else:
-                        parsed[feature][model_id] = config
+                        parsed_config = config
+                    parsed[feature][model_id] = normalize_model_capabilities(
+                        feature,
+                        model_id,
+                        parsed_config,
+                    )
             return parsed
         return v
 
@@ -227,7 +276,11 @@ def load_models_config(models_config_path: str) -> Dict[str, Dict[str, ModelConf
         for feature, models in models_data.items():
             parsed_models[feature] = {}
             for model_id, config in models.items():
-                parsed_models[feature][model_id] = ModelConfig(**config)
+                parsed_models[feature][model_id] = normalize_model_capabilities(
+                    feature,
+                    model_id,
+                    ModelConfig(**config),
+                )
 
         logger.info(
             f"Successfully loaded models configuration from {models_config_path}"

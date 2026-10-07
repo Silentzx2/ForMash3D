@@ -22,6 +22,13 @@ image_to_raw_mesh:
       texture_generation: false
       raw_mesh: true
       high_fidelity_geometry: true
+      mesh_quality_characteristics: [high_detail, thin_feature_sensitive]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: hierarchical_marching_cubes
+      preferred_resolution: 512
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: balanced
       quality_priority: 85
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch
@@ -41,6 +48,13 @@ image_to_raw_mesh:
       texture_generation: false
       raw_mesh: true
       high_fidelity_geometry: true
+      mesh_quality_characteristics: [fast, compact]
+      preferred_preprocessing: default
+      preferred_extraction: hierarchical_marching_cubes
+      preferred_resolution: 512
+      preferred_face_budget: medium
+      recommended_postprocess_profile: default
+      latency_class: fast
       quality_priority: 60
       multi_gpu: false
       paint_autochain: true
@@ -103,6 +117,13 @@ image_to_raw_mesh:
       texture_generation: false
       raw_mesh: true
       high_fidelity_geometry: true
+      mesh_quality_characteristics: [hierarchical_geometry, sharp_detail]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: hierarchical_octree
+      preferred_resolution: 512
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: balanced
       quality_priority: 90
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch
@@ -133,9 +154,20 @@ image_to_raw_mesh:
     capabilities:
       text_to_3d: false
       image_to_3d: true
-      multiview: true
+      multiview: false
+      multiview_input: false
+      generated_multiview: true
       texture_generation: false
       raw_mesh: true
+      high_fidelity_geometry: true
+      vertex_color: true
+      mesh_quality_characteristics: [normal_bridged, multi_view_conditioned]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: normal_bridged_reconstruction
+      preferred_resolution: 1024
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: balanced
       super_resolution: true
     vram_requirement: 10240  # MB (estimated from measurement)
     supported_inputs: ["image"]
@@ -176,6 +208,14 @@ image_to_textured_mesh:
       raw_mesh: false
       native_pbr: true
       high_fidelity_geometry: true
+      vertex_color: true
+      mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
+      preferred_preprocessing: native_detail
+      preferred_extraction: o_voxel
+      preferred_resolution: 1536
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: quality
       quality_priority: 100
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch

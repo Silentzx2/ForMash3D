@@ -183,7 +183,12 @@ async def smart_generation(
 ):
     """Resolve an image-only intent and submit through the existing generation scheduler path."""
     try:
-        resolved = resolve_intent(request.intent, settings, explicit_model=request.model)
+        resolved = resolve_intent(
+            request.intent,
+            settings,
+            explicit_model=request.model,
+            inputs=dict(request.overrides or {}),
+        )
         payload, summary = _build_smart_request(request, resolved)
         if isinstance(payload, ImageToTexturedMeshRequest):
             queued = await image_to_textured_mesh(

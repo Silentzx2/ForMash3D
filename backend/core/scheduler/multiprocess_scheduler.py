@@ -1217,10 +1217,12 @@ class MultiprocessModelScheduler:
                 # fall back to the next compatible retained model instead of failing the job.
                 if not job_request.model_preference:
                     feature_models = self.model_features.get(job_request.feature, [])
+                    routing_inputs = dict(job_request.inputs or {})
+                    routing_inputs["available_gpu_count"] = len(self.gpu_monitor.get_gpu_status())
                     ranked = ResourcePlanner.choose_model(
                         self.model_registry,
                         feature_models,
-                        job_request.inputs,
+                        routing_inputs,
                         explicit_model=None,
                     )
                     candidates = [ranked] if ranked else []
@@ -1737,10 +1739,12 @@ class MultiprocessModelScheduler:
 
         available_models = self.model_features.get(feature, [])
         if available_models:
+            routing_inputs = dict(job_request.inputs or {})
+            routing_inputs["available_gpu_count"] = len(self.gpu_monitor.get_gpu_status())
             preferred = ResourcePlanner.choose_model(
                 self.model_registry,
                 available_models,
-                job_request.inputs,
+                routing_inputs,
                 explicit_model=None,
             )
             ordered = ([preferred] if preferred else []) + [m for m in available_models if m != preferred]
@@ -1753,7 +1757,7 @@ class MultiprocessModelScheduler:
                     first_viable = candidate
                 if self.resource_planner.plan(
                     config,
-                    active_workers=max(1, len(self.workers)),
+                    active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
                 ) is not None:
                     return candidate
             return first_viable or ordered[0]
@@ -1828,7 +1832,7 @@ class MultiprocessModelScheduler:
         model_config = self.model_registry[target_model_id]
         resource_plan = self.resource_planner.plan(
             model_config,
-            active_workers=max(1, len(self.workers)),
+            active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
         )
         if resource_plan is None:
             for gpu_info in self.gpu_monitor.get_gpu_status():
@@ -1838,7 +1842,7 @@ class MultiprocessModelScheduler:
                 )
             resource_plan = self.resource_planner.plan(
                 model_config,
-                active_workers=max(1, len(self.workers)),
+                active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
             )
         if resource_plan is None:
             logger.info("No supported resource placement for model %s; job will wait", target_model_id)
@@ -1865,7 +1869,7 @@ class MultiprocessModelScheduler:
             if resource_plan is None:
                 resource_plan = self.resource_planner.plan(
                     model_config,
-                    active_workers=max(1, len(self.workers)),
+                    active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
                 )
                 if resource_plan is None:
                     return None

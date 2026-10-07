@@ -715,3 +715,20 @@ Production mesh-generation results may additionally expose:
 - `quality_trace`: per-stage quality metadata
 
 System/status responses now expose resource planning metadata including CPU count, per-worker CPU-thread policy and GPU capacity snapshots. Multi-GPU placement is only reported when the selected adapter declares a supported strategy.
+
+## Capability-Aware Generation and Quality Metadata — 2026-10-08
+
+The runtime model-details response exposes a normalized capability contract. Relevant fields include modality, multiview input/output behavior, texture/PBR/vertex-color support, preprocessing/extraction preferences, preferred resolution/face budget, minimum VRAM, CPU policy, multi-GPU strategy, latency class and supported output formats.
+
+Production generation results can include production_status, degraded_reasons, master_to_derivative, quality_trace, lod_validation, quality_mode, texture_resolution, cpu_threads, and high_fidelity_url.
+
+### Offline A/B benchmark
+
+The repository includes backend/scripts/run_model_ab_benchmark.py. It compares two completed asset directories only when input hashes and target production protocol match.
+
+Command:
+
+    cd backend
+    python -m scripts.run_model_ab_benchmark --baseline-asset <baseline_asset_dir> --candidate-asset <candidate_asset_dir> --output <report.json>
+
+Add --reference <reference_mesh.glb> only when a real ground-truth mesh exists. Without a reference, generated-vs-generated geometry metrics are explicitly diagnostic rather than absolute quality measurements.

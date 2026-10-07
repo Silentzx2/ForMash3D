@@ -17,6 +17,13 @@ logger = logging.getLogger(__name__)
 
 PREPROCESS_VERSION = "1"
 LOW_RESOLUTION_MAX = 1024
+PROFILE_TARGET_RESOLUTION = {
+    "default": 1024,
+    "quality": 1536,
+    "high_fidelity": 1536,
+    "native_detail": 1536,
+    "fast": 1024,
+}
 CROP_PADDING = 0.08
 
 
@@ -172,6 +179,7 @@ def _crop_subject(image: Image.Image):
 def preprocess_image(
     source_path: str,
     *,
+    profile: str = "default",
     remove_background: bool = True,
     auto_crop: bool = True,
     upscale: bool = True,
@@ -189,6 +197,18 @@ def preprocess_image(
     original_mode = image.mode
     original_dimensions = [int(image.width), int(image.height)]
     had_alpha = "A" in image.getbands()
+    profile = str(profile or "default").lower()
+    if profile not in PROFILE_TARGET_RESOLUTION:
+        raise ValueError(f"Unknown preprocessing profile: {profile}")
+
+    # Profiles alter only the shared recipe knobs; model inference remains untouched.
+    target_resolution = PROFILE_TARGET_RESOLUTION[profile]
+    if profile == "fast":
+        upscale = False
+        sharpen = False
+    elif profile in {"quality", "high_fidelity", "native_detail"}:
+        upscale = True
+        sharpen = False
 
     rmbg_used = False
     rmbg_error = None
@@ -203,15 +223,15 @@ def preprocess_image(
     upscale_used = False
     upscale_error = None
     upscale_method = "none"
-    if upscale and max(image.width, image.height) < LOW_RESOLUTION_MAX:
+    if upscale and max(image.width, image.height) < target_resolution:
         image, upscale_used, upscale_error, upscale_method = _realesrgan(
             image,
-            max(LOW_RESOLUTION_MAX, image.width),
-            max(LOW_RESOLUTION_MAX, image.height),
+            max(target_resolution, image.width),
+            max(target_resolution, image.height),
         )
         if not upscale_used:
             longest_side = max(1, image.width, image.height)
-            scale = LOW_RESOLUTION_MAX / longest_side
+            scale = target_resolution / longest_side
             target_size = (
                 max(1, int(round(image.width * scale))),
                 max(1, int(round(image.height * scale))),
@@ -226,8 +246,17 @@ def preprocess_image(
     if image.mode != "RGBA" and (had_alpha or rmbg_used):
         image = image.convert("RGBA")
 
+    alpha_bounds = _alpha_bounds(image)
+    if alpha_bounds:
+        left, top, right, bottom = alpha_bounds
+        subject_area_fraction = float((right - left) * (bottom - top) / max(1, image.width * image.height))
+    else:
+        subject_area_fraction = None
+
     recipe = {
         "version": PREPROCESS_VERSION,
+        "profile": profile,
+        "target_resolution": target_resolution,
         "remove_background": bool(remove_background),
         "auto_crop": bool(auto_crop),
         "upscale": bool(upscale),
@@ -248,6 +277,8 @@ def preprocess_image(
     metadata = {
         "artifact_id": artifact_id,
         "preprocess_version": PREPROCESS_VERSION,
+        "profile": profile,
+        "target_resolution": target_resolution,
         "original_sha256": original_hash,
         "original_path": str(source),
         "original_mode": original_mode,
@@ -261,6 +292,7 @@ def preprocess_image(
         "rmbg_error": rmbg_error,
         "auto_crop": bool(auto_crop),
         "crop_box": crop_box,
+        "subject_area_fraction": subject_area_fraction,
         "upscale_requested": bool(upscale),
         "upscaled": upscale_used,
         "upscale_method": upscale_method,

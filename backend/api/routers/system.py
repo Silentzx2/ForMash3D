@@ -385,7 +385,7 @@ def _model_supports_download(model_id: str) -> bool:
         token in model_id
         for token in (
             "trellis", "triposr", "triposg", "triposf", "zero123plus",
-            "hunyuan", "partpacker", "ultrashape", "partfield", "fastmesh"
+            "hunyuan", "partpacker", "ultrashape", "partfield", "fastmesh", "unique3d"
         )
     )
 

@@ -2,6 +2,7 @@
 """Lightweight mesh quality diagnostics for ForMash3D."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Optional, Sequence, Tuple
 
@@ -163,3 +164,141 @@ def render_multi_view(
     finally:
         renderer.delete()
     return {"status": "ok", "views": len(directions), "output_dir": str(output_root)}
+
+def compare_render_directories(
+    baseline_dir: str | Path,
+    candidate_dir: str | Path,
+) -> dict[str, Any]:
+    """Compare standardized render views without treating either render as truth."""
+    from PIL import Image
+
+    baseline_root = Path(baseline_dir)
+    candidate_root = Path(candidate_dir)
+    baseline_files = sorted(baseline_root.glob("view_*.png"))
+    candidate_files = sorted(candidate_root.glob("view_*.png"))
+    names = sorted(set(p.name for p in baseline_files) & set(p.name for p in candidate_files))
+    if not names:
+        return {"status": "blocked", "reason": "No common standardized render views found."}
+
+    per_view = {}
+    errors = []
+    ious = []
+    for name in names:
+        base = np.asarray(Image.open(baseline_root / name).convert("RGB"), dtype=np.float32) / 255.0
+        cand = np.asarray(
+            Image.open(candidate_root / name).convert("RGB").resize((base.shape[1], base.shape[0])),
+            dtype=np.float32,
+        ) / 255.0
+        error = float(np.abs(base - cand).mean())
+        base_mask = np.linalg.norm(base, axis=2) > 0.05
+        cand_mask = np.linalg.norm(cand, axis=2) > 0.05
+        intersection = float(np.logical_and(base_mask, cand_mask).sum())
+        union = float(np.logical_or(base_mask, cand_mask).sum())
+        iou = intersection / union if union else 1.0
+        per_view[name] = {"mean_absolute_rgb_error": error, "silhouette_iou": iou}
+        errors.append(error)
+        ious.append(iou)
+
+    return {
+        "status": "ok",
+        "views_compared": len(names),
+        "mean_absolute_rgb_error": float(np.mean(errors)),
+        "mean_silhouette_iou": float(np.mean(ious)),
+        "per_view": per_view,
+        "interpretation": "diagnostic_only_without_ground_truth",
+    }
+
+
+def _load_run_metadata(asset_dir: str | Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    root = Path(asset_dir)
+    job_path = root / "metadata" / "job.json"
+    quality_path = root / "metadata" / "quality_report.json"
+    if not job_path.is_file():
+        raise FileNotFoundError(f"Missing benchmark metadata: {job_path}")
+    job = json.loads(job_path.read_text(encoding="utf-8"))
+    quality = json.loads(quality_path.read_text(encoding="utf-8")) if quality_path.is_file() else {}
+    return job, quality
+
+
+def compare_model_runs(
+    baseline_asset_dir: str | Path,
+    candidate_asset_dir: str | Path,
+    *,
+    reference_mesh: str | Path | None = None,
+    sample_count: int = 4096,
+    render_output_dir: str | Path | None = None,
+) -> dict[str, Any]:
+    """Controlled A/B comparison requiring identical input hashes and protocol."""
+    baseline_job, baseline_quality = _load_run_metadata(baseline_asset_dir)
+    candidate_job, candidate_quality = _load_run_metadata(candidate_asset_dir)
+    baseline_hashes = baseline_job.get("input_sha256") or {}
+    candidate_hashes = candidate_job.get("input_sha256") or {}
+    if baseline_hashes != candidate_hashes:
+        return {
+            "status": "blocked",
+            "reason": "baseline and candidate do not have identical input hashes",
+        }
+
+    protocol_keys = ("target_polycount", "texture_resolution")
+    if any(baseline_job.get(key) != candidate_job.get(key) for key in protocol_keys):
+        return {
+            "status": "blocked",
+            "reason": "baseline and candidate do not share the same production protocol",
+            "protocol_keys": protocol_keys,
+        }
+
+    baseline_master = Path(baseline_asset_dir) / "master" / "source.glb"
+    candidate_master = Path(candidate_asset_dir) / "master" / "source.glb"
+    result: dict[str, Any] = {
+        "status": "ok",
+        "baseline_model": baseline_job.get("model_id"),
+        "candidate_model": candidate_job.get("model_id"),
+        "input_sha256": baseline_hashes,
+        "protocol": {key: baseline_job.get(key) for key in protocol_keys},
+        "baseline_quality": baseline_quality.get("after_postprocess"),
+        "candidate_quality": candidate_quality.get("after_postprocess"),
+        "evaluation_mode": "diagnostic_only_no_ground_truth",
+    }
+
+    result["master_to_master_diagnostic"] = compare_paths(
+        baseline_master,
+        candidate_master,
+        sample_count=max(256, sample_count),
+    )
+
+    if reference_mesh:
+        result["baseline_reference"] = compare_paths(
+            reference_mesh,
+            baseline_master,
+            sample_count=max(256, sample_count),
+        )
+        result["candidate_reference"] = compare_paths(
+            reference_mesh,
+            candidate_master,
+            sample_count=max(256, sample_count),
+        )
+        result["evaluation_mode"] = "reference"
+
+    if render_output_dir:
+        from tempfile import TemporaryDirectory
+        render_root = Path(render_output_dir)
+        render_root.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix="formash-ab-") as temp_dir:
+            temp_root = Path(temp_dir)
+            baseline_render = temp_root / "baseline"
+            candidate_render = temp_root / "candidate"
+            render_multi_view(load_mesh(baseline_master), baseline_render)
+            render_multi_view(load_mesh(candidate_master), candidate_render)
+            result["render_comparison"] = compare_render_directories(
+                baseline_render,
+                candidate_render,
+            )
+            for source_dir, destination in (
+                (baseline_render, render_root / "baseline"),
+                (candidate_render, render_root / "candidate"),
+            ):
+                destination.mkdir(parents=True, exist_ok=True)
+                for source in source_dir.glob("view_*.png"):
+                    (destination / source.name).write_bytes(source.read_bytes())
+
+    return result

@@ -60,6 +60,50 @@ class ResourcePlannerTests(unittest.TestCase):
         )
         self.assertEqual(chosen, "hq")
 
+    def test_quality_routing_uses_polycount_and_latency_signals(self):
+        registry = {
+            "fast": {
+                "vram_requirement": 6000,
+                "capabilities": {
+                    "quality_priority": 10,
+                    "latency_class": "fast",
+                    "high_fidelity_geometry": False,
+                },
+            },
+            "hero": {
+                "vram_requirement": 12000,
+                "capabilities": {
+                    "quality_priority": 100,
+                    "latency_class": "quality",
+                    "high_fidelity_geometry": True,
+                },
+            },
+        }
+        chosen = ResourcePlanner.choose_model(
+            registry,
+            ["fast", "hero"],
+            {"quality": "ultra", "target_polycount": 150000},
+        )
+        self.assertEqual(chosen, "hero")
+
+    def test_multiview_routing_rejects_single_view_models(self):
+        registry = {
+            "single": {
+                "vram_requirement": 4000,
+                "capabilities": {"quality_priority": 200, "single_view": True},
+            },
+            "multi": {
+                "vram_requirement": 8000,
+                "capabilities": {"quality_priority": 100, "multiview_input": True},
+            },
+        }
+        chosen = ResourcePlanner.choose_model(
+            registry,
+            ["single", "multi"],
+            {"multiview_input": True, "available_gpu_count": 2},
+        )
+        self.assertEqual(chosen, "multi")
+
     def test_cpu_override(self):
         previous = os.environ.get("FORMSH3D_CPU_THREADS")
         try:

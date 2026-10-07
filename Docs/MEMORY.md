@@ -117,3 +117,14 @@ PY
 ```
 
 Use the normal ForMash3D workspace generation flow for final visual/VRAM validation. Confirm that a model whose declared footprint exceeds one card but fits the supported aggregate placement is assigned multiple GPUs, that no existing model disappears from model selection, and that the generated master remains available separately from the optimized derivative.
+
+## 2026-10-08 — Deep Task Gap Closure
+
+- Normalized the model capability contract at configuration load time. The contract now includes modality, multiview input/output semantics, texture/PBR/vertex-color state, preprocessing/extraction preferences, resolution/face-budget hints, VRAM/CPU requirements, multi-GPU strategy, postprocess profile, latency class and output formats.
+- Smart intent resolution now considers per-GPU free VRAM plus aggregate free VRAM for explicitly multi-GPU-capable models, then uses the shared deterministic quality/polycount/texture/latency router instead of blindly taking the first YAML candidate.
+- Optional image enhancement now supports model-selected preprocessing profiles and records subject occupancy/profile/target resolution in provenance.
+- Final QA rejects invalid/non-finite geometry, validates LOD lineage, and marks production degraded when final quality inspection or master-to-derivative fidelity gates fail.
+- Added a controlled model A/B benchmark CLI. It requires identical input hashes and production protocol and does not treat one generated result as ground truth.
+- Added FORMSH3D_CPU_THREADS=auto and FORMSH3D_CPU_WORKERS=auto; scheduler admission uses the shared CPU worker cap.
+- Unique3D readiness/download capability reporting now includes the existing model ID.
+- Hi3DGen remains explicitly evaluation-gated; no unsupported dependency/runtime was added just to satisfy the task text.

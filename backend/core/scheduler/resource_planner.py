@@ -187,29 +187,87 @@ class ResourcePlanner:
         inputs: Optional[Dict[str, Any]] = None,
         explicit_model: Optional[str] = None,
     ) -> Optional[str]:
+        """Deterministic capability/resource/quality-aware model routing."""
         inputs = inputs or {}
         if explicit_model and explicit_model in feature_models:
             return explicit_model
 
         quality = str(inputs.get("quality") or inputs.get("meshQuality") or "").lower()
-        multiview = bool(inputs.get("multiview")) or len(inputs.get("image_paths") or []) > 1
-        texture = bool(inputs.get("texture") or inputs.get("texture_generation") or inputs.get("texture_image_path"))
+        requested_poly = inputs.get("target_polycount")
+        try:
+            target_polycount = int(requested_poly) if requested_poly is not None else 0
+        except (TypeError, ValueError):
+            target_polycount = 0
+        multiview = bool(inputs.get("multiview") or inputs.get("multiview_input"))
+        multiview = multiview or len(inputs.get("image_paths") or []) > 1
+        texture = bool(
+            inputs.get("texture")
+            or inputs.get("texture_generation")
+            or inputs.get("texture_image_path")
+        )
+        latency = str(inputs.get("latency") or inputs.get("performance_mode") or "").lower()
+        available_gpus = int(inputs.get("available_gpu_count", 0) or 0)
 
         def score(model_id: str):
             config = model_registry.get(model_id, {})
             caps = config.get("capabilities") or {}
+            vram = int(config.get("vram_requirement", 0) or 0)
             points = int(caps.get("quality_priority", 0) or 0)
-            if multiview:
-                points += 80 if caps.get("multiview") else -100
-            if texture:
-                points += 60 if caps.get("texture_generation") else -20
-                points += 20 if caps.get("native_pbr") else 0
-            if quality in {"high", "ultra"}:
-                points += 20 if caps.get("raw_mesh") else 0
-                points += 15 if caps.get("high_fidelity_geometry") else 0
-            return (points, -int(config.get("vram_requirement", 0) or 0))
 
-        return sorted(feature_models, key=score, reverse=True)[0] if feature_models else None
+            if multiview:
+                points += 100 if caps.get("multiview_input") or caps.get("multiview") else -200
+            elif caps.get("single_view"):
+                points += 5
+
+            if texture:
+                points += 70 if caps.get("texture_generation") else -30
+                points += 25 if caps.get("native_pbr") else 0
+
+            if quality in {"high", "ultra", "cinematic"}:
+                points += 25 if caps.get("raw_mesh") else 0
+                points += 35 if caps.get("high_fidelity_geometry") else 0
+                points += 15 if caps.get("recommended_postprocess_profile") in {"high_fidelity", "cinematic"} else 0
+            elif quality in {"low", "fast", "mobile"}:
+                points += 20 if caps.get("latency_class") in {"fast", "low"} else 0
+
+            if target_polycount >= 100_000:
+                points += 20 if caps.get("high_fidelity_geometry") else 0
+            elif 0 < target_polycount <= 30_000:
+                points += 15 if caps.get("latency_class") in {"fast", "balanced"} else 0
+
+            if inputs.get("source_quality") == "max":
+                points += 20 if caps.get("high_fidelity_geometry") else 0
+                points += 10 if caps.get("raw_mesh") else 0
+
+            if latency in {"fast", "low"}:
+                points += 20 if caps.get("latency_class") in {"fast", "low"} else -5
+            elif latency in {"quality", "high"}:
+                points += 15 if caps.get("high_fidelity_geometry") else 0
+
+            if available_gpus > 1 and caps.get("multi_gpu"):
+                points += 12
+            if vram > 0:
+                points -= min(vram // 8192, 8)
+
+            return (points, int(caps.get("quality_priority", 0) or 0), -vram, model_id)
+
+        ranked = sorted(
+            (model_id for model_id in feature_models if model_id in model_registry),
+            key=score,
+            reverse=True,
+        )
+        return ranked[0] if ranked else None
+
+
+    @staticmethod
+    def cpu_worker_limit(requested: Optional[int] = None) -> int:
+        """Resolve a safe CPU worker cap from hardware and optional override."""
+        override = _env_int("FORMSH3D_CPU_WORKERS", 0)
+        if override:
+            return max(1, min(cpu_count(), override))
+        if requested:
+            return max(1, min(cpu_count(), int(requested)))
+        return cpu_count()
 
 
 def dispatch_pipeline_across_gpus(pipeline: Any, resource_plan: ResourcePlan, offload_dir: Optional[str] = None) -> Dict[str, Any]:

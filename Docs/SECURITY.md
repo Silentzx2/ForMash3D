@@ -145,3 +145,7 @@ Artifact naming uses UUIDs for mesh, segmentation, and rigged outputs to reduce 
 ## Resource and Model Integrity — 2026-10-08
 
 Resource planning must fail closed for unsupported multi-GPU strategies. Do not treat combined VRAM as proof that an arbitrary model can be split. Model/weight selection must remain restricted to registered open-weight assets and existing trusted model-management paths. User-provided paths remain validated before processing, and quality diagnostics must never mutate the immutable master.
+
+## Resource Admission Integrity — 2026-10-08
+
+Aggregate VRAM is considered only for model adapters that explicitly declare a supported multi-GPU strategy. Unsupported pipelines fail closed instead of receiving a fabricated device split. CPU worker/thread policies are bounded by the host logical-core count, with optional FORMSH3D_CPU_WORKERS and FORMSH3D_CPU_THREADS overrides.

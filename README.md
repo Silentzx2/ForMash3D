@@ -522,3 +522,9 @@ These capabilities reuse the existing scheduler, image editor, post-processing, 
 ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler can use explicit multi-GPU placement for compatible pipelines and scales CPU-side work from the available core count while preventing worker oversubscription.
 
 Quality diagnostics can compare derivatives to the master and can use reference-mesh metrics when ground truth is available. Final GPU/OOM validation remains hardware-specific.
+
+## High-Fidelity Runtime Hardening — 2026-10-08
+
+ForMash3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
+
+Production results keep the immutable source master separate from optimized derivatives and now include final QA/LOD/fidelity diagnostics. A lightweight offline A/B benchmark is available for controlled same-input comparisons; without a real reference mesh, generated-vs-generated geometry metrics remain diagnostic.

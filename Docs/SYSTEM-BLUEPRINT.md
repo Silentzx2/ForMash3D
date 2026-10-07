@@ -346,3 +346,7 @@ The production path is now conceptually:
 Resource placement is handled centrally. Single-GPU loading is preferred when safe; multi-GPU loading is attempted only for adapters that explicitly declare a supported strategy. Current supported generic multi-GPU integration uses Accelerate component dispatch for compatible diffusers-style pipelines, including the TRELLIS.2 adapter path.
 
 The production result distinguishes the immutable high-fidelity master from the optimized game-ready mesh and exposes quality diagnostics without turning non-ground-truth metrics into false absolute scores.
+
+## Normalized Capability Contract — 2026-10-08
+
+Model configuration is normalized once at load time into a shared capability contract. The same contract drives smart intent admission, scheduler routing, optional preprocessing profiles, runtime model details, multi-GPU eligibility and UI capability state. Production QA reports finite-geometry checks, UV/material checks, LOD lineage and master-to-derivative drift without modifying master/source.glb.

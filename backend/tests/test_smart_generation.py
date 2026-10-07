@@ -45,6 +45,39 @@ def test_resolve_intent_is_deterministic_and_uses_priority(tmp_path):
     assert result["candidate_order"][0] == "trellis_image_to_textured_mesh"
 
 
+def test_capability_contract_is_normalized():
+    from core.config import ModelConfig, normalize_model_capabilities
+
+    config = ModelConfig(
+        vram_requirement=8192,
+        supported_inputs=["image"],
+        supported_outputs=["glb"],
+    )
+    normalized = normalize_model_capabilities(
+        "image_to_raw_mesh",
+        "example_model",
+        config,
+    )
+    capabilities = normalized.capabilities
+    for key in (
+        "image_to_3d",
+        "multiview_input",
+        "generated_multiview",
+        "single_view",
+        "texture_generation",
+        "preferred_preprocessing",
+        "preferred_extraction",
+        "minimum_vram_mb",
+        "cpu_requirements",
+        "multi_gpu",
+        "recommended_postprocess_profile",
+        "supported_output_formats",
+    ):
+        assert key in capabilities
+    assert capabilities["single_view"] is True
+    assert capabilities["minimum_vram_mb"] == 8192
+
+
 def test_resolve_intent_honors_explicit_model_override(tmp_path):
     checkpoint = tmp_path / "shape.ckpt"
     checkpoint.write_bytes(b"weights")

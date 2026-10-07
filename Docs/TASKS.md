@@ -1860,3 +1860,20 @@ Completed implementation scope from the high-fidelity generation task includes:
 - validation tests for resource planning and mesh-quality diagnostics
 
 Final real-GPU generation/OOM validation remains a user-hardware step as required by the execution contract.
+
+## 2026-10-08 — Deep Audit Gap Closure
+
+Closed source-level gaps found by the second full task reread:
+- normalized capability contract is shared across config/routing/readiness/preprocessing;
+- smart intent admission supports aggregate VRAM for explicitly multi-GPU models and deterministic quality-aware ranking;
+- model-aware preprocessing profiles are wired to the selected model capability metadata;
+- production QA now validates finite geometry, face indices, final inspection, LOD lineage and master-to-derivative drift;
+- controlled A/B benchmark added with same-input/same-protocol enforcement and optional real-reference metrics;
+- CPU worker cap is now centralized with FORMSH3D_CPU_WORKERS;
+- Unique3D download/readiness discovery is included in runtime model status.
+
+Still externally gated, not falsely marked complete:
+- NVIDIA/CUDA generation and OOM/visual A-B;
+- target-runtime dependency/build validation;
+- Hi3DGen normal-bridging adoption until a compatible upstream runtime and measurable benchmark win exist;
+- MeshyBench/Eval3D external benchmark execution because the current repo has no supplied benchmark dataset/runtime fixture.

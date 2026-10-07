@@ -485,6 +485,10 @@ Current model-specific inference defaults:
 
 The visible quality selector (`Mobile / Game / Studio / Cinematic / Native`) maps to production post-processing budgets, not inference schedules. `Native / Raw` preserves the model-native source density and skips downstream polycount reduction.
 
+## Resource-Aware Generation UX — 2026-10-08
+
+The workspace receives the normalized runtime capability contract. Model-specific controls are shown only when supported; quality/polycount choices are routed through the scheduler and production post-process rather than silently changing model-native source density. High-fidelity source and game-ready derivatives remain separately inspectable.
+
 ## Phase 1 Generation UX Contract
 
 ### Generation Preview

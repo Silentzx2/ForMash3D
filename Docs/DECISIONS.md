@@ -603,7 +603,7 @@ Use a content-hashed preprocessing artifact for optional Image → 3D enhancemen
 
 ## ADR-052 — Phase 1 Deterministic Intent Presets
 
-Use a versioned YAML source of truth with ordered model priorities and capability/readiness/VRAM gates instead of an opaque weighted scoring system. Explicit model choices remain authoritative.
+Use a versioned YAML source of truth with ordered model priorities as the deterministic candidate/tie-break order. Candidate admission and ranking also use the shared capability/resource contract, including readiness, VRAM, quality, texture, polycount, latency, and multi-GPU compatibility. Explicit model choices remain authoritative.
 
 ## ADR-054 — Deterministic Smart Generation Submission
 
@@ -656,3 +656,31 @@ Aggregate VRAM is not treated as automatic model parallelism. A model must decla
 **Status:** Accepted
 
 The first valid generated mesh remains the fidelity source. Retopology, decimation, UV, baking and LOD are derivative operations and may never overwrite the master.
+
+## ADR-056 — Shared Model Capability Contract
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Normalize every model manifest into one machine-readable capability contract at configuration load time. Explicit model metadata wins; only facts derivable from the existing manifest are defaulted. This keeps routing, readiness, preprocessing profiles, resource planning and UI capability state on one source of truth.
+
+## ADR-057 — Quality Gates Are Part of Production Status
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Final QA, LOD lineage validation, and master-to-derivative fidelity drift are production signals. They cannot overwrite or invalidate the immutable master, but failed mandatory quality checks must mark the production result degraded/failed rather than silently reporting success.
+
+## ADR-058 — Controlled A/B Benchmark Without False Ground Truth
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+ForMash3D provides a lightweight offline A/B harness that requires identical input hashes and production protocol. Without a real reference mesh, generated-vs-generated geometry comparisons remain diagnostic only. Ground-truth metrics are enabled only when an actual reference mesh is supplied.
+
+## ADR-059 — Hi3DGen Remains Evaluation-Gated
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Hi3DGen-style normal bridging is not hard-wired into production without controlled evidence. The current integration preserves the model-aware preprocessing/capability contract and leaves normal-bridging adoption behind an explicit benchmark gate until a compatible runtime, dependency set, and measurable quality improvement are verified.

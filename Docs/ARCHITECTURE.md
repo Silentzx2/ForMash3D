@@ -543,7 +543,17 @@ The normal production pipeline applies a shared geometry-fidelity guard after op
 Phase 1 extends the existing Image → 3D lifecycle; it does not introduce a parallel generation pipeline.
 
 - SG-06 uses a content-hashed preprocessing artifact with source/approved hashes, optional RMBG, subject framing, low-resolution enhancement, and explicit fallback metadata.
-- SG-02.2 uses one YAML source of truth for Game Ready, Cinematic, Animation, 3D Print, and Mobile. Resolution filters Image → 3D compatibility, readiness, and available VRAM before deterministic model priority; the scheduler remains the final resource authority.
+- SG-02.2 uses one YAML source of truth for Game Ready, Cinematic, Animation, 3D Print, and Mobile. Capability/readiness/VRAM admission is followed by deterministic quality-aware ranking using requested quality, polycount, texture needs, latency and multi-GPU capability; the scheduler remains the final resource authority.
 - SG-07 runs printability QA and optional repair inside run_postprocess_job(), alongside the existing repair/UV/optimization lifecycle.
 - SG-08 schedules the existing UniRig adapter only after the durable production mesh exists. The rigged GLB is stored under the same asset root and failures are explicit/degraded.
 - Enhancement, intent, QA, and rigging provenance travel through normal job/result metadata so history and artifact delivery retain the decision trail.
+
+## 2026-10-08 Gap-Closure Audit
+
+The capability contract is now normalized during config load and is consumed by smart intent resolution, scheduler routing, optional model-aware preprocessing, runtime model status, and frontend capability state. Smart intent routing can admit a model that does not fit on one GPU when the model explicitly declares a supported multi-GPU strategy and aggregate free memory is sufficient.
+
+Production QA now includes explicit finite-geometry/face-index checks, UV/material inspection, final quality scoring, LOD lineage validation, and master-to-derivative fidelity drift diagnostics. These signals affect production status without mutating the immutable master.
+
+A controlled A/B benchmark compares two completed asset runs only when their source hashes and production protocol match. Generated-vs-generated metrics remain diagnostic without ground truth; reference metrics require an actual reference mesh.
+
+Hi3DGen normal bridging remains evaluation-gated because the repository currently lacks a verified production-compatible Hi3DGen runtime and no controlled benchmark has established a measurable improvement.

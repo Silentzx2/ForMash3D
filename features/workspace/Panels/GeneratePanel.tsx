@@ -120,6 +120,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     model_priority: [
       'trellis2_image_to_textured_mesh',
       'trellis_image_to_textured_mesh',
+      'unique3d_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
       'triposf_image_to_raw_mesh',
@@ -146,6 +147,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     model_priority: [
       'trellis2_image_to_textured_mesh',
       'trellis_image_to_textured_mesh',
+      'unique3d_image_to_raw_mesh',
       'ultrashape_image_to_raw_mesh',
       'triposf_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
@@ -168,6 +170,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     enable_auto_repair: false,
     preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
     model_priority: [
+      'unique3d_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'trellis2_image_to_textured_mesh',
       'trellis_image_to_textured_mesh',
@@ -191,6 +194,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     enable_auto_repair: true,
     preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
     model_priority: [
+      'unique3d_image_to_raw_mesh',
       'ultrashape_image_to_raw_mesh',
       'triposf_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
@@ -214,6 +218,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     enable_auto_repair: false,
     preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
     model_priority: [
+      'unique3d_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
       'triposr_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
@@ -379,6 +384,7 @@ export const GeneratePanel: React.FC = () => {
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
       'triposf_image_to_raw_mesh',
       'trellis2_image_to_textured_mesh',
+      'unique3d_image_to_raw_mesh',
       'partpacker_image_to_raw_mesh',
       'ultrashape_image_to_raw_mesh',
     ];
