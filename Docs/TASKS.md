@@ -1843,3 +1843,20 @@ Download
 with no manual copying of model source, no manual Python environment, no second server, no second model manager, no bypass of the scheduler, and no missing registration layer.
 
 **Do not mark the task complete until the entire chain has been tested.**
+
+## 2026-10-08 — High-Fidelity 3D Pipeline Completion
+
+Completed implementation scope from the high-fidelity generation task includes:
+- capability-aware model routing without removing existing models
+- immutable high-fidelity master plus derivative optimization
+- detail-preserving optimization before UV/baking
+- adaptive texture-resolution selection
+- master-to-derivative quality diagnostics
+- centralized GPU/CPU resource planning
+- supported multi-GPU placement with explicit adapter capability declarations
+- deterministic CPU thread scaling and resource-aware model workers
+- TripoSG high/ultra hierarchical-extraction preference
+- additive TRELLIS.2 multi-GPU resource path
+- validation tests for resource planning and mesh-quality diagnostics
+
+Final real-GPU generation/OOM validation remains a user-hardware step as required by the execution contract.

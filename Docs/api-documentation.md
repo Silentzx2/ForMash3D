@@ -704,3 +704,14 @@ Event types:
 - POST /api/v1/smart-generation/resolve resolves an intent to a ready, compatible Image → 3D model and applied preset; an explicit model is validated as an override.
 - Image→raw and image→textured requests accept intent, preprocessing_artifact_id, enhancement_enabled, enable_printability_check, enable_auto_repair, enable_auto_rig, and auto_rig_mode.
 - Completed auto-rig workflows expose rigged_model_url and the standard download endpoint accepts artifact_format=rigged.
+
+## High-Fidelity Result and Resource Metadata — 2026-10-08
+
+Production mesh-generation results may additionally expose:
+- `high_fidelity_url`: immutable master download URL
+- `quality_mode`: selected quality profile
+- `texture_resolution`: resolved bake/UV resolution
+- `master_to_derivative`: diagnostic fidelity report
+- `quality_trace`: per-stage quality metadata
+
+System/status responses now expose resource planning metadata including CPU count, per-worker CPU-thread policy and GPU capacity snapshots. Multi-GPU placement is only reported when the selected adapter declares a supported strategy.

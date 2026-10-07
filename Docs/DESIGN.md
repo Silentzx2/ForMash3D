@@ -495,3 +495,9 @@ Compact controls expose Game Ready, Cinematic, Animation, 3D Print, and Mobile. 
 
 ### Production QA
 Printability, Auto-Repair, and Auto-Rig are explicit controls. All execute through the existing scheduler/post-process lifecycle and expose degraded failure state rather than false success.
+
+## High-Fidelity Generation UX Contract — 2026-10-08
+
+The generation experience exposes model capability state, quality mode, polycount, texture quality, progress/fallback state and high-fidelity vs optimized output variants without exposing controls unsupported by the selected model.
+
+Quality mode must never silently downgrade the immutable master. A requested polycount applies to derivative generation, not to the master.

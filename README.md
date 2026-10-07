@@ -516,3 +516,9 @@ ForMash3D's normal Image → 3D workflow now includes optional production automa
 - Auto-Rig through the existing UniRig adapter after final production processing, with explicit success/degraded state.
 
 These capabilities reuse the existing scheduler, image editor, post-processing, history, and artifact-delivery infrastructure.
+
+## High-Fidelity Generation Architecture
+
+ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler can use explicit multi-GPU placement for compatible pipelines and scales CPU-side work from the available core count while preventing worker oversubscription.
+
+Quality diagnostics can compare derivatives to the master and can use reference-mesh metrics when ground truth is available. Final GPU/OOM validation remains hardware-specific.

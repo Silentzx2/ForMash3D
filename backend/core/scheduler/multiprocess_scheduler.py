@@ -69,6 +69,7 @@ from core.utils.log_formatters import (
 from ..models.base import BaseModel
 from .gpu_monitor import GPUMonitor
 from .job_queue import JobQueue, JobRequest, JobStatus
+from .resource_planner import ResourcePlan, ResourcePlanner, configure_cpu_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -106,10 +107,19 @@ def _build_model_inference_inputs(inputs: Optional[Dict[str, Any]]) -> Dict[str,
 class WorkerConfig:
     """Configuration for a worker process - simplified to one model per worker"""
 
-    def __init__(self, worker_id: str, gpu_id: int, model_config: Dict[str, Any]):
+    def __init__(
+        self,
+        worker_id: str,
+        gpu_id: int,
+        model_config: Dict[str, Any],
+        gpu_ids: Optional[List[int]] = None,
+        resource_plan: Optional[Dict[str, Any]] = None,
+    ):
         self.worker_id = worker_id
         self.gpu_id = gpu_id
-        self.model_config = model_config  # Single model configuration for this worker
+        self.gpu_ids = list(gpu_ids or [gpu_id])
+        self.resource_plan = dict(resource_plan or {})
+        self.model_config = model_config
 
 
 class WorkerMessage:
@@ -172,6 +182,7 @@ def model_worker_process(
     """
     worker_id = worker_config.worker_id
     gpu_id = worker_config.gpu_id
+    gpu_ids = list(worker_config.gpu_ids or [gpu_id])
 
     try:
         # Re-initialize logging in spawned worker process so logs are routed to logs/*.log files
@@ -193,11 +204,12 @@ def model_worker_process(
             except Exception as e:
                 logger.warning("Failed to login to huggingface, possibly invalid token!")
 
-        # Set CUDA device first thing
+        # Set primary CUDA device; multi-GPU adapters dispatch modules across worker_config.gpu_ids.
         if torch.cuda.is_available():
             torch.cuda.set_device(gpu_id)
-            # Enable TF32 and benchmark for Tensor Core acceleration
-            try:
+        configure_cpu_runtime(int((worker_config.resource_plan or {}).get("cpu_threads", 1)))
+        # Enable TF32 and benchmark for Tensor Core acceleration
+        try:
                 torch.backends.cuda.matmul.allow_tf32 = True
                 torch.backends.cudnn.allow_tf32 = True
                 torch.backends.cudnn.benchmark = True
@@ -225,7 +237,7 @@ def model_worker_process(
         try:
             logger.info(f"[GPU LOAD START] Worker {worker_id} loading model '{model_id}' on GPU {gpu_id} with config: {model_config.get('init_params', {})}")
             model = _create_model_from_config(model_config)
-            success = model.load(gpu_id)
+            success = model.load(gpu_id, resource_plan=worker_config.resource_plan)
 
             if success:
                 loaded_model = model
@@ -262,6 +274,7 @@ def model_worker_process(
                         model_config,
                         processing_job,
                         gpu_id,
+                        worker_config.resource_plan,
                     )
                     control_response_queue.put(response)
 
@@ -285,6 +298,7 @@ def model_worker_process(
                         model_config,
                         processing_job,
                         gpu_id,
+                        worker_config.resource_plan,
                     )
                     status_str = "SUCCESS" if result.get("success") else "FAILED"
                     logger.info(
@@ -329,6 +343,7 @@ def _handle_control_message(
     model_config: Dict[str, Any],
     processing_job: Optional[str],
     gpu_id: int,
+    resource_plan: Optional[Dict[str, Any]] = None,
 ) -> WorkerResponse:
     """Handle control messages in worker process - simplified for single model"""
     try:
@@ -351,7 +366,7 @@ def _handle_control_message(
             model = _create_model_from_config(model_config)
 
             # Load synchronously (we're in a worker process)
-            success = model.load(gpu_id)
+            success = model.load(gpu_id, resource_plan=resource_plan)
 
             if success:
                 loaded_model = model
@@ -412,6 +427,7 @@ def _process_job_in_worker(
     model_config: Dict[str, Any],
     processing_job: Optional[str],
     gpu_id: int,
+    resource_plan: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], Optional[BaseModel], Optional[str]]:
     """Process a job in the worker process - simplified for single model"""
     try:
@@ -445,7 +461,7 @@ def _process_job_in_worker(
         # Load model if not already loaded
         if loaded_model is None:
             model = _create_model_from_config(model_config)
-            success = model.load(gpu_id)
+            success = model.load(gpu_id, resource_plan=resource_plan)
 
             if not success:
                 return (
@@ -676,6 +692,7 @@ class MultiprocessModelScheduler:
             mp.set_start_method("spawn", force=True)
 
         self.gpu_monitor = gpu_monitor or GPUMonitor(tracking_mode=True)
+        self.resource_planner = ResourcePlanner(self.gpu_monitor)
         self.job_queue = job_queue or JobQueue(
             database_url=database_url,
             max_size=1000,
@@ -749,6 +766,17 @@ class MultiprocessModelScheduler:
         model_id = model_config["model_id"]
         feature_type = model_config["feature_type"]
         max_workers = model_config.get("max_workers", 1)
+
+        capabilities = dict(model_config.get("capabilities") or {})
+        capabilities.setdefault("image_to_3d", feature_type.startswith("image_to_"))
+        capabilities.setdefault("multiview", False)
+        capabilities.setdefault("raw_mesh", feature_type.endswith("raw_mesh"))
+        capabilities.setdefault("texture_generation", feature_type in {"image_to_textured_mesh", "image_mesh_painting", "text_mesh_painting"})
+        capabilities.setdefault("native_pbr", False)
+        capabilities.setdefault("high_fidelity_geometry", False)
+        capabilities.setdefault("multi_gpu", False)
+        capabilities.setdefault("multi_gpu_strategy", None)
+        model_config["capabilities"] = capabilities
 
         self.model_registry[model_id] = model_config
         self.model_max_workers[model_id] = max_workers
@@ -994,34 +1022,18 @@ class MultiprocessModelScheduler:
         if job_request.is_waiting_too_long():
             return True, "Job has been waiting for more than 1 hour"
 
-        # Find the model that would be used for this job
-        target_model_id = None
-        if job_request.model_preference:
-            if (
-                job_request.model_preference in self.model_registry
-                and job_request.model_preference in self.model_features.get(feature, [])
-            ):
-                target_model_id = job_request.model_preference
+        target_model_id = self._get_model_id_for_job(job_request)
+        if target_model_id == "unknown" or target_model_id not in self.model_registry:
+            return True, f"No compatible model available for feature: {feature}"
 
-        if not target_model_id:
-            available_models = self.model_features.get(feature, [])
-            if not available_models:
-                return True, f"No models available for feature: {feature}"
-            target_model_id = available_models[0]
-
-        # Check if VRAM requirement exceeds total available VRAM across all GPUs
         model_config = self.model_registry[target_model_id]
-        vram_requirement = model_config.get("vram_requirement", 1024)
-
-        gpu_status = self.gpu_monitor.get_gpu_status()
-        max_gpu_vram = max((gpu["memory_total"] for gpu in gpu_status), default=0)
-
-        if vram_requirement > max_gpu_vram:
-            return (
-                True,
-                f"VRAM requirement ({vram_requirement}MB) exceeds maximum GPU VRAM ({max_gpu_vram}MB)",
-            )
-
+        if self.resource_planner.model_is_impossible(model_config):
+            caps = model_config.get("capabilities") or {}
+            if caps.get("multi_gpu"):
+                aggregate = sum(int(g.get("memory_total", 0)) for g in self.gpu_monitor.get_gpu_status())
+                return True, f"VRAM requirement ({model_config.get('vram_requirement', 0)}MB) exceeds aggregate supported capacity ({aggregate}MB)"
+            max_gpu = max((int(g.get("memory_total", 0)) for g in self.gpu_monitor.get_gpu_status()), default=0)
+            return True, f"VRAM requirement ({model_config.get('vram_requirement', 0)}MB) exceeds maximum single-GPU capacity ({max_gpu}MB)"
         return False, ""
 
     async def get_system_status(self) -> Dict:
@@ -1055,6 +1067,11 @@ class MultiprocessModelScheduler:
                 "processing_mode": "priority_fifo_with_resource_rotation",
             },
             "gpu": gpu_status,
+            "resources": {
+                "cpu_count": max(1, os.cpu_count() or 1),
+                "cpu_threads_per_worker": max(1, (os.cpu_count() or 1) // max(1, len(self.workers))),
+                "gpu_capacity": self.resource_planner.gpu_capacity_snapshot(),
+            },
             "queue": queue_status,
             "workers": worker_status,
             "features": {
@@ -1192,15 +1209,67 @@ class MultiprocessModelScheduler:
                 return
             elif worker_result == "MODEL_LOAD_FAILED":
                 target_model = self._get_model_id_for_job(job_request)
-                load_err = self.last_worker_error.pop(target_model, f"Model '{target_model}' worker startup/load failed")
-                logger.error(
-                    f"Job {job_request.job_id} failed: model '{target_model}' could not be loaded: {load_err}"
+                load_err = self.last_worker_error.pop(
+                    target_model,
+                    f"Model '{target_model}' worker startup/load failed",
                 )
-                await self.job_queue.fail_job(
-                    job_request.job_id,
-                    f"Model load failed: {load_err}",
-                )
-                return
+                # Explicit model selections are hard requirements. Automatic routes may
+                # fall back to the next compatible retained model instead of failing the job.
+                if not job_request.model_preference:
+                    feature_models = self.model_features.get(job_request.feature, [])
+                    ranked = ResourcePlanner.choose_model(
+                        self.model_registry,
+                        feature_models,
+                        job_request.inputs,
+                        explicit_model=None,
+                    )
+                    candidates = [ranked] if ranked else []
+                    candidates.extend(
+                        model_id for model_id in feature_models
+                        if model_id != target_model and model_id not in candidates
+                    )
+                    for candidate in candidates:
+                        if candidate is None:
+                            continue
+                        if self.resource_planner.model_is_impossible(self.model_registry[candidate]):
+                            continue
+                        job_request.model_preference = candidate
+                        fallback_result = await self._find_or_create_worker_for_job(job_request)
+                        if isinstance(fallback_result, str) and fallback_result not in {
+                            "MODEL_LOAD_FAILED",
+                            "NO_VRAM",
+                            "WORKERS_BUSY",
+                            "NO_FEATURE",
+                        }:
+                            logger.warning(
+                                "Job %s fell back from model %s to retained model %s after load failure",
+                                job_request.job_id,
+                                target_model,
+                                candidate,
+                            )
+                            worker_result = fallback_result
+                            break
+                    else:
+                        worker_result = "MODEL_LOAD_FAILED"
+                if worker_result == "MODEL_LOAD_FAILED":
+                    logger.error(
+                        f"Job {job_request.job_id} failed: model '{target_model}' could not be loaded: {load_err}"
+                    )
+                    await self.job_queue.fail_job(
+                        job_request.job_id,
+                        f"Model load failed: {load_err}",
+                    )
+                    return
+                if worker_result == "NO_FEATURE":
+                    await self.job_queue.fail_job(
+                        job_request.job_id,
+                        f"No models available for feature: {job_request.feature}",
+                    )
+                    return
+                if worker_result in {"WORKERS_BUSY", "NO_VRAM"}:
+                    await self.job_queue.requeue_job(job_request.job_id, front=False)
+                    await asyncio.sleep(2.0)
+                    return
             elif worker_result in ["WORKERS_BUSY", "NO_VRAM"]:
                 # Resources unavailable: rotate the blocked job so compatible jobs
                 # behind it can run.
@@ -1666,15 +1735,28 @@ class MultiprocessModelScheduler:
             ):
                 return job_request.model_preference
 
-        # If no preference or preference unavailable, choose first available model for feature
         available_models = self.model_features.get(feature, [])
         if available_models:
-            # Simple round-robin across available models for this feature
-            if feature not in self.model_selection_counter:
-                self.model_selection_counter[feature] = 0
-            index = self.model_selection_counter[feature] % len(available_models)
-            self.model_selection_counter[feature] = index + 1
-            return available_models[index]
+            preferred = ResourcePlanner.choose_model(
+                self.model_registry,
+                available_models,
+                job_request.inputs,
+                explicit_model=None,
+            )
+            ordered = ([preferred] if preferred else []) + [m for m in available_models if m != preferred]
+            first_viable = None
+            for candidate in ordered:
+                config = self.model_registry[candidate]
+                if self.resource_planner.model_is_impossible(config):
+                    continue
+                if first_viable is None:
+                    first_viable = candidate
+                if self.resource_planner.plan(
+                    config,
+                    active_workers=max(1, len(self.workers)),
+                ) is not None:
+                    return candidate
+            return first_viable or ordered[0]
 
         # This shouldn't happen if _is_job_impossible was called first, but just in case
         logger.warning(
@@ -1712,14 +1794,16 @@ class MultiprocessModelScheduler:
                     f"Available registered models for this feature: {self.model_features.get(feature, [])}"
                 )
 
-        # If no preference or preference unavailable, choose first available model for feature
         if not target_model_id:
             available_models = self.model_features.get(feature, [])
             if not available_models:
-                logger.error(f"❌ No registered models support feature '{feature}'")
+                logger.error(f"No registered models support feature '{feature}'")
                 return "NO_FEATURE"
-            target_model_id = available_models[0]
-            logger.info(f"🔄 Job {job_request.job_id}: Auto-selected default fallback model '{target_model_id}' for feature '{feature}'")
+            target_model_id = self._get_model_id_for_job(job_request)
+            logger.info(
+                f"Auto-selected model '{target_model_id}' for feature '{feature}' "
+                "using deterministic quality-aware routing"
+            )
 
         # Try to find existing available worker for this model
         if target_model_id in self.worker_assignments:
@@ -1741,50 +1825,75 @@ class MultiprocessModelScheduler:
             )
             return "WORKERS_BUSY"
 
-        # Check if there's enough VRAM to create a new worker
         model_config = self.model_registry[target_model_id]
-        vram_requirement = model_config.get("vram_requirement", 1024)
-
-        # Find GPU with enough VRAM first
-        gpu_id = self.gpu_monitor.find_best_gpu(vram_requirement)
-        if gpu_id is None:
-            # Try to free up VRAM on each GPU systematically until we find one with enough space
-            gpu_id = await self._find_gpu_with_freeable_vram(vram_requirement)
-        if gpu_id is None:
-            logger.info(
-                f"No GPU has enough VRAM ({vram_requirement}MB) for model {target_model_id}, job will wait"
+        resource_plan = self.resource_planner.plan(
+            model_config,
+            active_workers=max(1, len(self.workers)),
+        )
+        if resource_plan is None:
+            for gpu_info in self.gpu_monitor.get_gpu_status():
+                await self._ensure_vram_available(
+                    int(model_config.get("vram_requirement", 1024)),
+                    int(gpu_info["id"]),
+                )
+            resource_plan = self.resource_planner.plan(
+                model_config,
+                active_workers=max(1, len(self.workers)),
             )
+        if resource_plan is None:
+            logger.info("No supported resource placement for model %s; job will wait", target_model_id)
             return "NO_VRAM"
 
-        # Create new worker
-        worker_id = await self._create_worker_for_model(target_model_id, gpu_id)
+        worker_id = await self._create_worker_for_model(
+            target_model_id,
+            resource_plan=resource_plan,
+        )
         if worker_id:
             return worker_id
         else:
             return "MODEL_LOAD_FAILED"
 
     async def _create_worker_for_model(
-        self, model_id: str, gpu_id: int
+        self,
+        model_id: str,
+        gpu_id: Optional[int] = None,
+        resource_plan: Optional[ResourcePlan] = None,
     ) -> Optional[str]:
         """Create a new worker for the specified model on the given GPU"""
         try:
             model_config = self.model_registry[model_id]
-            vram_requirement = model_config.get("vram_requirement", 1024)
-
-            # Allocate VRAM on the target GPU
-            if not self.gpu_monitor.allocate_vram(gpu_id, vram_requirement):
-                logger.error(
-                    f"Failed to allocate {vram_requirement}MB VRAM on GPU {gpu_id} for model {model_id}"
+            if resource_plan is None:
+                resource_plan = self.resource_planner.plan(
+                    model_config,
+                    active_workers=max(1, len(self.workers)),
                 )
-                return None
+                if resource_plan is None:
+                    return None
 
-            # Generate unique worker ID
+            allocated = []
+            for plan_gpu, plan_vram in resource_plan.reservation_mb.items():
+                if not self.gpu_monitor.allocate_vram(int(plan_gpu), int(plan_vram)):
+                    for allocated_gpu, allocated_vram in allocated:
+                        self.gpu_monitor.deallocate_vram(allocated_gpu, allocated_vram)
+                    logger.error(
+                        "Failed to reserve %sMB on GPU %s for model %s",
+                        plan_vram,
+                        plan_gpu,
+                        model_id,
+                    )
+                    return None
+                allocated.append((int(plan_gpu), int(plan_vram)))
+
+            primary_gpu = int(resource_plan.primary_gpu)
             worker_count = len(self.worker_assignments.get(model_id, []))
-            worker_id = f"worker_{model_id}_{gpu_id}_{worker_count}"
+            worker_id = f"worker_{model_id}_{primary_gpu}_{worker_count}"
 
-            # Create worker configuration
             worker_config = WorkerConfig(
-                worker_id=worker_id, gpu_id=gpu_id, model_config=model_config
+                worker_id=worker_id,
+                gpu_id=primary_gpu,
+                gpu_ids=list(resource_plan.gpu_ids),
+                resource_plan=resource_plan.as_dict(),
+                model_config=model_config,
             )
 
             # Create communication queues
@@ -1852,7 +1961,7 @@ class MultiprocessModelScheduler:
                     f"Worker {worker_id} failed during startup/model-load: {error_reason}"
                 )
                 self.last_worker_error[model_id] = error_reason
-                self._remove_worker_tracking(worker_id, model_id, gpu_id, vram_requirement)
+                self._remove_worker_tracking(worker_id, model_id, resource_plan.as_dict())
                 if worker_process.is_alive():
                     worker_process.terminate()
                     worker_process.join(timeout=2.0)
@@ -1866,12 +1975,15 @@ class MultiprocessModelScheduler:
 
         except Exception as e:
             logger.error(f"Error creating worker for model {model_id}: {e}")
-            # Clean up tracking if worker was partially created
-            if 'worker_id' in locals():
-                self._remove_worker_tracking(worker_id, model_id, gpu_id, vram_requirement)
-            # Deallocate VRAM if worker creation failed
-            vram_requirement = model_config.get("vram_requirement", 1024)
-            self.gpu_monitor.deallocate_vram(gpu_id, vram_requirement)
+            if "worker_id" in locals():
+                self._remove_worker_tracking(
+                    worker_id,
+                    model_id,
+                    resource_plan.as_dict() if resource_plan is not None else None,
+                )
+            elif resource_plan is not None:
+                for plan_gpu, plan_vram in resource_plan.reservation_mb.items():
+                    self.gpu_monitor.deallocate_vram(int(plan_gpu), int(plan_vram))
             return None
 
     async def _find_gpu_with_freeable_vram(self, required_vram: int) -> Optional[int]:
@@ -2305,7 +2417,10 @@ class MultiprocessModelScheduler:
                 await asyncio.sleep(60)
 
     def _remove_worker_tracking(
-        self, worker_id: str, model_id: str, gpu_id: int, vram_requirement: int
+        self,
+        worker_id: str,
+        model_id: str,
+        resource_plan: Optional[Dict[str, Any]] = None,
     ):
         """Remove worker from all tracking dictionaries"""
         self.workers.pop(worker_id, None)
@@ -2323,7 +2438,8 @@ class MultiprocessModelScheduler:
                 self.worker_assignments[model_id].remove(worker_id)
             if not self.worker_assignments[model_id]:
                 del self.worker_assignments[model_id]
-        self.gpu_monitor.deallocate_vram(gpu_id, vram_requirement)
+        for plan_gpu, plan_vram in (resource_plan or {}).get("reservation_mb", {}).items():
+            self.gpu_monitor.deallocate_vram(int(plan_gpu), int(plan_vram))
 
     async def _destroy_worker(self, worker_id: str):
         """Destroy a worker process"""
@@ -2339,7 +2455,11 @@ class MultiprocessModelScheduler:
 
             model_id = worker_config.model_config["model_id"]
             gpu_id = worker_config.gpu_id
-            vram_requirement = worker_config.model_config.get("vram_requirement", 1024)
+            resource_plan = worker_config.resource_plan or {
+                "reservation_mb": {
+                    gpu_id: worker_config.model_config.get("vram_requirement", 1024)
+                }
+            }
 
             if model_id in self.worker_assignments:
                 if worker_id in self.worker_assignments[model_id]:
@@ -2368,8 +2488,9 @@ class MultiprocessModelScheduler:
                     if process.is_alive():
                         process.kill()
 
-            # Deallocate VRAM from GPU
-            self.gpu_monitor.deallocate_vram(gpu_id, vram_requirement)
+            # Deallocate exact reservations, including multi-GPU plans.
+            for plan_gpu, plan_vram in resource_plan.get("reservation_mb", {}).items():
+                self.gpu_monitor.deallocate_vram(int(plan_gpu), int(plan_vram))
 
             # Cleanup all tracking data
             self.worker_configs.pop(worker_id, None)
@@ -2383,7 +2504,7 @@ class MultiprocessModelScheduler:
             self.worker_current_callback.pop(worker_id, None)
 
             logger.info(
-                f"Worker {worker_id} destroyed and cleaned up, deallocated {vram_requirement}MB VRAM from GPU {gpu_id}"
+                f"Worker {worker_id} destroyed and cleaned up; released resource plan {resource_plan.get('reservation_mb', {})}"
             )
 
         except Exception as e:

@@ -336,3 +336,13 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - Interactive mesh tools run in-process through `/api/v1/mesh-tools/*`; the default runtime does not launch a browser-facing port 8200 sidecar.
 - Durable job polling owns generation progress; mesh-tool operations may use SSE for operation-level progress.
 - Failed production post-processing keeps the canonical asset root and immutable master so the job can retry without model inference.
+
+## High-Fidelity Generation Control Plane — 2026-10-08
+
+The production path is now conceptually:
+
+`Input -> capability detection -> model-aware preprocessing -> resource-aware routing -> retained model -> immutable master -> conservative repair/remesh/retopo -> UV -> bake -> optimized derivative -> LOD/game-ready -> quality gates`
+
+Resource placement is handled centrally. Single-GPU loading is preferred when safe; multi-GPU loading is attempted only for adapters that explicitly declare a supported strategy. Current supported generic multi-GPU integration uses Accelerate component dispatch for compatible diffusers-style pipelines, including the TRELLIS.2 adapter path.
+
+The production result distinguishes the immutable high-fidelity master from the optimized game-ready mesh and exposes quality diagnostics without turning non-ground-truth metrics into false absolute scores.

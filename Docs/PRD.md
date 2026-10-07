@@ -337,7 +337,7 @@ ForMash3D/
 │   ├── scripts/                       # install.sh, download_models.sh
 │   ├── thirdparty/                    # Third-party source code
 ├── scripts/                           # Setup and lifecycle scripts
-├── docs/                              # Technical documentation
+├── Docs/                              # Technical documentation
 ├── backend/storage/                   # Generated assets
 ├── backend/thirdparty/wheels/         # Prebuilt wheels
 ├── .env.example                       # Environment template

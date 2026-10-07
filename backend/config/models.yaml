@@ -21,6 +21,10 @@ image_to_raw_mesh:
       multiview: false
       texture_generation: false
       raw_mesh: true
+      high_fidelity_geometry: true
+      quality_priority: 85
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
       paint_autochain: true
     vram_requirement: 10240  # MB (3.3B shape model)
     supported_inputs: ["image"]
@@ -36,6 +40,9 @@ image_to_raw_mesh:
       multiview: false
       texture_generation: false
       raw_mesh: true
+      high_fidelity_geometry: true
+      quality_priority: 60
+      multi_gpu: false
       paint_autochain: true
     vram_requirement: 6144  # MB (0.6B mini turbo model)
     supported_inputs: ["image"]
@@ -95,6 +102,10 @@ image_to_raw_mesh:
       multiview: false
       texture_generation: false
       raw_mesh: true
+      high_fidelity_geometry: true
+      quality_priority: 90
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
       max_images: 1
     vram_requirement: 8192  # MB
     supported_inputs: ["image"]
@@ -163,6 +174,11 @@ image_to_textured_mesh:
       multiview: false
       texture_generation: true
       raw_mesh: false
+      native_pbr: true
+      high_fidelity_geometry: true
+      quality_priority: 100
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
       max_images: 1
     vram_requirement: 23552  # MB (23GB, TRELLIS.2)
     supported_inputs: ["image"]

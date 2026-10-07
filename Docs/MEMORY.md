@@ -82,3 +82,38 @@
 - SG-02.2 uses one YAML source of truth and deterministic model priority/readiness/VRAM filtering.
 - Phase1 status labels are not evidence; future agents must independently verify source paths and tests.
 - Full CUDA/model runtime validation remains environment-gated and is not represented as passed.
+
+## 2026-10-08 — Fidelity + Resource Orchestration Hardening
+
+- Added `backend/core/scheduler/resource_planner.py` for deterministic model routing, GPU/VRAM placement, supported multi-GPU planning, and CPU-thread scaling.
+- Added `backend/core/quality/evaluation.py` plus `backend/scripts/run_mesh_quality_benchmark.py` for reference-aware CD/F-Score/DCD diagnostics, master-to-derivative drift checks, and deterministic multi-view rendering.
+- High/ultra untextured generated assets now use the existing curvature-adaptive AutoRetopo path as a derivative-target builder before UV/bake; native-textured masters preserve their native mapping.
+- TripoSG high/ultra routes disable the fast decoder so the upstream hierarchical extraction path is used when supported.
+- TRELLIS.2 is retained as an additive multi-GPU-capable path using explicit Accelerate component dispatch. Combined VRAM is never treated as implicit model parallelism.
+- Existing models remain registered; automatic routing can fall back to another retained compatible model after an automatic model-load failure.
+- Final GPU/model visual validation remains user-hardware-gated. Non-hardware tests cover resource planning and quality diagnostics.
+
+### User GPU validation package
+
+Run from the repository root:
+
+```bash
+cd backend
+python -c "import torch; print('CUDA:', torch.cuda.is_available()); print('GPUs:', torch.cuda.device_count()); [print(i, torch.cuda.get_device_name(i), round(torch.cuda.get_device_properties(i).total_memory/1024**3, 2), 'GB') for i in range(torch.cuda.device_count())]"
+python -m unittest backend/tests/test_resource_planner.py backend/tests/test_quality_evaluation.py
+```
+
+For a two-GPU resource-discovery check:
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 python - <<'PY'
+from core.scheduler.gpu_monitor import GPUMonitor
+from core.scheduler.resource_planner import ResourcePlanner
+m = GPUMonitor(tracking_mode=False)
+p = ResourcePlanner(m)
+print(p.gpu_capacity_snapshot())
+print('GPUs detected:', len(p.gpu_capacity_snapshot()))
+PY
+```
+
+Use the normal ForMash3D workspace generation flow for final visual/VRAM validation. Confirm that a model whose declared footprint exceeds one card but fits the supported aggregate placement is assigned multiple GPUs, that no existing model disappears from model selection, and that the generated master remains available separately from the optimized derivative.

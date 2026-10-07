@@ -34,6 +34,8 @@ class BaseModel(ABC):
         self.feature_type = feature_type
         self.status = ModelStatus.UNLOADED
         self.gpu_id: Optional[int] = None
+        self.gpu_ids: List[int] = []
+        self.resource_plan: Optional[Dict[str, Any]] = None
         self.model = None
 
     @abstractmethod
@@ -51,7 +53,7 @@ class BaseModel(ABC):
         """Process a single request. Override in subclasses."""
         pass
 
-    def load(self, gpu_id: int) -> bool:
+    def load(self, gpu_id: int, resource_plan: Optional[Dict[str, Any]] = None) -> bool:
         """Load model on specified GPU"""
         if self.status == ModelStatus.LOADED:
             return True
@@ -61,6 +63,8 @@ class BaseModel(ABC):
         try:
             self.status = ModelStatus.LOADING
             self.gpu_id = gpu_id
+            self.resource_plan = dict(resource_plan or {})
+            self.gpu_ids = [int(x) for x in self.resource_plan.get("gpu_ids", [gpu_id])]
 
             # Set CUDA device
             if torch.cuda.is_available():
@@ -101,6 +105,8 @@ class BaseModel(ABC):
             self.model = None
             self.status = ModelStatus.UNLOADED
             self.gpu_id = None
+            self.gpu_ids = []
+            self.resource_plan = None
 
             # Clear GPU cache
             if torch.cuda.is_available():
@@ -205,6 +211,8 @@ class BaseModel(ABC):
             "feature_type": self.feature_type,
             "status": self.status.value,
             "gpu_id": self.gpu_id,
+            "gpu_ids": list(self.gpu_ids),
+            "resource_plan": dict(self.resource_plan or {}),
             "vram_requirement": self.vram_requirement,
             "supported_formats": self.get_supported_formats(),
         }

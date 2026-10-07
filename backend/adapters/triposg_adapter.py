@@ -177,7 +177,26 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 raise RuntimeError(err_msg) from e
 
             try:
-                self.pipe = TripoSGPipeline.from_pretrained(triposg_source).to(device, dtype)
+                self.pipe = TripoSGPipeline.from_pretrained(triposg_source)
+                if len(getattr(self, "gpu_ids", [])) > 1:
+                    from core.scheduler.resource_planner import dispatch_pipeline_across_gpus, ResourcePlan
+                    rp = self.resource_plan or {}
+                    dispatch_pipeline_across_gpus(
+                        self.pipe,
+                        ResourcePlan(
+                            kind="multi_gpu",
+                            gpu_ids=tuple(self.gpu_ids),
+                            primary_gpu=self.gpu_ids[0],
+                            reservation_mb={int(k): int(v) for k, v in rp.get("reservation_mb", {}).items()},
+                            max_memory_mb={str(k): int(v) for k, v in rp.get("max_memory_mb", {}).items()},
+                            cpu_threads=int(rp.get("cpu_threads", 1)),
+                            strategy=str(rp.get("strategy", "accelerate_component_dispatch")),
+                            reason=str(rp.get("reason", "scheduler resource plan")),
+                        ),
+                    )
+                    logger.info("TripoSG dispatched across GPUs %s", self.gpu_ids)
+                else:
+                    self.pipe = self.pipe.to(device, dtype)
             except Exception as pipe_err:
                 err_msg = f"TripoSG model load failed for source '{triposg_source}': {pipe_err}"
                 logger.error(err_msg)
@@ -249,6 +268,9 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
             use_flash_decoder = device == "cuda" and torch.cuda.get_device_capability()[0] >= 8
+            quality = str(inputs.get("quality") or inputs.get("meshQuality") or "").lower()
+            if quality in {"high", "ultra"} and inputs.get("force_fast_decoder") is not True:
+                use_flash_decoder = False
 
             if is_scribble and prompt:
                 # Run scribble pipeline

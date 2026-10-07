@@ -137,8 +137,28 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                 str(self.model_path)
             )
+            multi_gpu_applied = False
+            if len(getattr(self, "gpu_ids", [])) > 1:
+                from core.scheduler.resource_planner import dispatch_pipeline_across_gpus
+                from core.scheduler.resource_planner import ResourcePlan
+                rp = self.resource_plan or {}
+                dispatch_pipeline_across_gpus(
+                    self.pipeline_shapegen,
+                    ResourcePlan(
+                        kind="multi_gpu",
+                        gpu_ids=tuple(self.gpu_ids),
+                        primary_gpu=self.gpu_ids[0],
+                        reservation_mb={int(k): int(v) for k, v in rp.get("reservation_mb", {}).items()},
+                        max_memory_mb={str(k): int(v) for k, v in rp.get("max_memory_mb", {}).items()},
+                        cpu_threads=int(rp.get("cpu_threads", 1)),
+                        strategy=str(rp.get("strategy", "accelerate_component_dispatch")),
+                        reason=str(rp.get("reason", "scheduler resource plan")),
+                    ),
+                )
+                multi_gpu_applied = True
+                logger.info("Hunyuan3D-Shape-v2-1 dispatched across GPUs %s", self.gpu_ids)
             try:
-                if hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
+                if not multi_gpu_applied and hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
                     self.pipeline_shapegen.enable_model_cpu_offload()
                     logger.info("Enabled model CPU offload for shape pipeline")
             except Exception as offload_err:

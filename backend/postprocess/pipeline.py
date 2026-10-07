@@ -26,6 +26,8 @@ from PIL import Image
 
 from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path
 from core.utils.log_formatters import format_banner, format_box, format_bytes
+from core.quality.evaluation import compare_meshes, quality_gate
+from core.scheduler.resource_planner import configure_cpu_runtime, cpu_count
 from .config import BLENDER_EXECUTABLE
 from .meshio import load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
@@ -439,6 +441,7 @@ def _build_result(
         "active_model_url": download_model_url,
         "download_url": f"{base_url}/download?artifact_format=glb",
         "source_model_url": download_master_url,
+        "high_fidelity_url": download_master_url,
         "game_ready_url": download_model_url,
         "game_ready_formats": {
             fmt: f"{base_url}/download?artifact_format={fmt}"
@@ -475,6 +478,7 @@ def _build_result(
         "lod_enabled": lod_enabled,
         "artifacts": {
             "master": {"status": "ready", "url": download_master_url, "required": True},
+            "high_fidelity": {"status": "ready", "url": download_master_url, "required": True},
             "game_ready": {
                 fmt: {
                     "status": (
@@ -514,6 +518,7 @@ def _build_result(
         "postprocess": {
             "asset_dir": str(asset_dir),
             "master": "master/source.glb",
+            "high_fidelity": "master/source.glb",
             "game_ready": sorted(generated["game_ready"]),
             "lods": sorted(f"lod{idx}" for idx in generated["lods"]),
             "collision": bool(generated.get("collision")),
@@ -550,6 +555,21 @@ def run_postprocess_job(
     """Create the canonical asset workspace and run production post-processing."""
     job_inputs = job_inputs or {}
     job_metadata = job_metadata or {}
+    quality_mode = str(job_inputs.get("quality") or job_inputs.get("meshQuality") or "high").lower()
+    explicit_texture_resolution = job_inputs.get("texture_resolution")
+    default_texture_resolution = {
+        "low": 512,
+        "medium": 1024,
+        "high": 2048,
+        "ultra": 4096,
+    }.get(quality_mode, 2048)
+    try:
+        texture_resolution = int(explicit_texture_resolution or default_texture_resolution)
+    except (TypeError, ValueError):
+        texture_resolution = default_texture_resolution
+    texture_resolution = max(512, min(4096, texture_resolution))
+    cpu_threads = int(job_inputs.get("cpu_threads") or cpu_count())
+    configure_cpu_runtime(cpu_threads)
     raw_target_polycount = job_inputs.get("target_polycount")
     try:
         parsed_target_polycount = int(raw_target_polycount) if raw_target_polycount is not None else None
@@ -703,7 +723,7 @@ def run_postprocess_job(
             mesh,
             InspectOptions(
                 tri_budget=resolved_target_polycount or MAX_PRODUCTION_FACES,
-                texture_resolution=2048,
+                texture_resolution=texture_resolution,
                 max_material_count=8,
                 uv_overlap_grid=512,
                 uv_scan_max_faces=60_000,
@@ -903,6 +923,61 @@ def run_postprocess_job(
             )
         )
 
+    # High/ultra quality profiles use the existing curvature-adaptive AutoRetopo
+    # as a conservative derivative-target builder before UV/baking. Native-textured
+    # masters bypass this because their native UV/material mapping is already valuable.
+    feature_remesh_stats: Dict[str, Any] = {"status": "skipped", "reason": "Quality profile does not require adaptive remesh."}
+    if (
+        quality_mode in {"high", "ultra"}
+        and solid_generation_feature
+        and not native_textures
+        and retopo_stats.get("status") != "completed"
+        and (
+            auto_optimize
+            or (parsed_target_polycount is not None and parsed_target_polycount > 0)
+        )
+    ):
+        try:
+            remesh_target = min(
+                MAX_PRODUCTION_FACES,
+                max(5_000, int(raw_target_polycount or MAX_PRODUCTION_FACES)),
+            )
+            repaired, remesh_tool_stats, _ = run_auto_retopo(
+                repaired,
+                AutoRetopoOptions(
+                    target_faces=remesh_target,
+                    quads=False,
+                    watertight=False,
+                    adaptive=True,
+                    preserve_features=True,
+                    feature_angle=25.0,
+                    project=True,
+                    shell_smooth=0.25,
+                    shell_taubin=1,
+                    calibrate_passes=1,
+                ),
+                progress=lambda stage, frac, msg: _emit(
+                    progress,
+                    0.30 + min(1.0, max(0.0, frac)) * 0.05,
+                    "remesh",
+                    msg,
+                ),
+            )
+            feature_remesh_stats = {
+                "status": "completed",
+                "target_faces": remesh_target,
+                **remesh_tool_stats,
+            }
+            quality_trace["feature_remesh"] = feature_remesh_stats
+        except Exception as exc:
+            feature_remesh_stats = {
+                "status": "warn",
+                "error": str(exc),
+                "reason": "Adaptive remesh failed; continuing with the repaired derivative.",
+            }
+            quality_trace["feature_remesh"] = feature_remesh_stats
+            logger.warning("Adaptive high-quality remesh failed for %s: %s", job_id, exc)
+
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
     optimize_t0 = time.time()
     auto_optimize = bool(job_inputs.get("auto_optimize", False))
@@ -1001,7 +1076,7 @@ def run_postprocess_job(
         optimized_normals = np.asarray(optimized.vertex_normals)
         uv_mesh, uv_stats, _ = run_auto_uv(
             optimized,
-            AutoUvOptions(resolution=2048, padding_texels=4, refine=True, weld=True,
+            AutoUvOptions(resolution=texture_resolution, padding_texels=4, refine=True, weld=True,
                           preserve_normals=True, normal_smooth_deg=60),
             source_normals=optimized_normals,
         )
@@ -1011,7 +1086,7 @@ def run_postprocess_job(
                 "POSTPROCESS: STAGE 5/8 - UV PARAMETERIZATION",
                 [
                     ("Status", "Generated Production UVs"),
-                    ("Resolution", "2048x2048"),
+                    ("Resolution", f"{texture_resolution}x{texture_resolution}"),
                     ("Chart Padding", "4 texels"),
                     ("Normal Smoothing", "60 deg (source normals preserved)"),
                     ("Stage Elapsed", f"{uv_duration:.2f}s"),
@@ -1049,7 +1124,7 @@ def run_postprocess_job(
             from .services.bake import run_bake
             from .schemas import BakeOptions
 
-            bake_res = int(job_inputs.get("texture_resolution") or 2048)
+            bake_res = texture_resolution
             maps_to_bake = ["normal", "ao"]
             if native_textures:
                 maps_to_bake.extend(["base_color", "roughness", "metallic"])
@@ -1095,6 +1170,25 @@ def run_postprocess_job(
             bake_stats = {"status": "skipped", "reason": str(exc)}
             logger.warning("Bake step skipped or failed: %s", exc)
     bake_duration = time.time() - bake_t0
+
+    # Compare every optimized derivative against the immutable master.
+    # Without ground truth this is a degradation diagnostic, not an absolute quality score.
+    master_quality_report: Dict[str, Any] = {"status": "skipped", "reason": "quality comparison unavailable"}
+    try:
+        master_quality_report = compare_meshes(
+            mesh,
+            uv_mesh,
+            sample_count=4096,
+            seed=0,
+        )
+        master_quality_report["interpretation"] = "master_vs_derivative_diagnostic"
+        master_quality_report["quality_gate"] = quality_gate(master_quality_report)
+    except Exception as exc:
+        master_quality_report = {
+            "status": "warn",
+            "reason": f"Master/derivative quality comparison failed: {exc}",
+        }
+    quality_trace["master_to_derivative"] = master_quality_report
 
     if bake_stats.get("status") == "completed":
         logger.info(
@@ -1378,6 +1472,10 @@ def run_postprocess_job(
             "bake": bake_stats,
             "texture_status": texture_status,
             "quality_trace": quality_trace,
+            "master_to_derivative": master_quality_report,
+            "quality_mode": quality_mode,
+            "texture_resolution": texture_resolution,
+            "cpu_threads": cpu_threads,
             "lods": lod_quality,
             "collision": collision_stats,
             "physics": physics_metadata,
@@ -1406,7 +1504,12 @@ def run_postprocess_job(
     }
     final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=resolved_target_polycount, lod_enabled=lod_enabled)
     final_result["model_url"] = final_result["game_ready_url"]
+    final_result["high_fidelity_url"] = final_result["source_model_url"]
     final_result["quality_trace"] = quality_trace
+    final_result["master_to_derivative"] = master_quality_report
+    final_result["quality_mode"] = quality_mode
+    final_result["texture_resolution"] = texture_resolution
+    final_result["cpu_threads"] = cpu_threads
     final_result["optimize"] = optimize_stats
     if printability_enabled:
         final_result["printability"] = {

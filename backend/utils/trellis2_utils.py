@@ -32,7 +32,8 @@ class Trellis2Runner:
         self,
         trellis2_root: Optional[str] = None,
         model_cache_dir: Optional[str] = None,
-        device: str = "cuda"
+        device: str = "cuda",
+        resource_plan: Optional[Dict[str, Any]] = None,
     ):
         """
         Initialize TRELLIS.2 runner.
@@ -89,8 +90,22 @@ class Trellis2Runner:
             self.image_to_3d_pipeline = Trellis2ImageTo3DPipeline.from_pretrained(
                 "microsoft/TRELLIS.2-4B"
             )
-            
-            if self.device == "cuda":
+            if len(self.resource_plan.get("gpu_ids", [])) > 1:
+                from core.scheduler.resource_planner import ResourcePlan, dispatch_pipeline_across_gpus
+                dispatch_pipeline_across_gpus(
+                    self.image_to_3d_pipeline,
+                    ResourcePlan(
+                        kind="multi_gpu",
+                        gpu_ids=tuple(int(x) for x in self.resource_plan["gpu_ids"]),
+                        primary_gpu=int(self.resource_plan["gpu_ids"][0]),
+                        reservation_mb={int(k): int(v) for k, v in self.resource_plan.get("reservation_mb", {}).items()},
+                        max_memory_mb={str(k): int(v) for k, v in self.resource_plan.get("max_memory_mb", {}).items()},
+                        cpu_threads=int(self.resource_plan.get("cpu_threads", 1)),
+                        strategy=str(self.resource_plan.get("strategy", "accelerate_component_dispatch")),
+                        reason=str(self.resource_plan.get("reason", "scheduler resource plan")),
+                    ),
+                )
+            elif self.device == "cuda":
                 self.image_to_3d_pipeline.cuda()
             
             logger.info("TRELLIS.2 image-to-3D pipeline loaded successfully")
@@ -112,8 +127,22 @@ class Trellis2Runner:
                 "microsoft/TRELLIS.2-4B",
                 config_file="texturing_pipeline.json"
             )
-            
-            if self.device == "cuda":
+            if len(self.resource_plan.get("gpu_ids", [])) > 1:
+                from core.scheduler.resource_planner import ResourcePlan, dispatch_pipeline_across_gpus
+                dispatch_pipeline_across_gpus(
+                    self.texturing_pipeline,
+                    ResourcePlan(
+                        kind="multi_gpu",
+                        gpu_ids=tuple(int(x) for x in self.resource_plan["gpu_ids"]),
+                        primary_gpu=int(self.resource_plan["gpu_ids"][0]),
+                        reservation_mb={int(k): int(v) for k, v in self.resource_plan.get("reservation_mb", {}).items()},
+                        max_memory_mb={str(k): int(v) for k, v in self.resource_plan.get("max_memory_mb", {}).items()},
+                        cpu_threads=int(self.resource_plan.get("cpu_threads", 1)),
+                        strategy=str(self.resource_plan.get("strategy", "accelerate_component_dispatch")),
+                        reason=str(self.resource_plan.get("reason", "scheduler resource plan")),
+                    ),
+                )
+            elif self.device == "cuda":
                 self.texturing_pipeline.cuda()
             
             logger.info("TRELLIS.2 texturing pipeline loaded successfully")

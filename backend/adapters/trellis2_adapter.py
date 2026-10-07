@@ -77,7 +77,8 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             self.runner = Trellis2Runner(
                 trellis2_root=str(self.trellis2_root),
                 model_cache_dir=str(self.model_path),
-                device="cuda"
+                device="cuda",
+                resource_plan=self.resource_plan,
             )
 
             # Pre-load the image-to-3D pipeline

@@ -91,3 +91,7 @@ Do not disclose security vulnerabilities in public issues. Follow [Docs/SECURITY
 ## Documentation
 
 When behavior, configuration, architecture, API contracts, installation, or UI conventions change, update the relevant documentation before the change is considered complete.
+
+## 2026-10-08 Implementation Note
+
+Changes in the high-fidelity generation path must preserve all existing model adapters, keep master assets immutable, and route multi-GPU loading only through declared supported strategies. Resource and quality changes should include non-hardware tests and update the relevant `Docs/` documentation in the same commit.

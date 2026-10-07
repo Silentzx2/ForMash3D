@@ -635,3 +635,24 @@ Run UniRig as a scheduler-managed child job after the canonical production mesh 
 - Upstream commit `6311af200ee197544e82e0f2557cd890edd60416` recorded for traceability.
 - MIT LICENSE preserved in the vendored directory.
 - No changes to `backend/requirements.txt` needed — Unique3D dependencies install into the shared environment.
+
+## ADR — Preserve Every Model; Route by Capability
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+ForMash3D will not remove or replace existing open-weight models merely because a newer generator benchmarks better. Model selection is now capability- and resource-aware, with deterministic fallback behavior. TRELLIS.2, TripoSG and Hi3DGen-derived conditioning are additive capabilities.
+
+## ADR — Multi-GPU Loading Must Be Explicitly Supported
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Aggregate VRAM is not treated as automatic model parallelism. A model must declare a supported strategy. The generic implementation uses Accelerate device-map dispatch for compatible torch-module pipelines. The scheduler reserves memory on every participating GPU and fails closed when the adapter cannot actually be dispatched.
+
+## ADR — Master Mesh Is Immutable
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+The first valid generated mesh remains the fidelity source. Retopology, decimation, UV, baking and LOD are derivative operations and may never overwrite the master.
