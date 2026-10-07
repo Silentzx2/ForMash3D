@@ -118,6 +118,27 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  unique3d_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: true
+      texture_generation: false
+      raw_mesh: true
+      super_resolution: true
+    vram_requirement: 10240  # MB (estimated from measurement)
+    supported_inputs: ["image"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/Unique3D"
+    enabled: true
+    max_workers: 1
+    init_params:
+      seed: 1145
+      input_processing: true
+      do_refine: true
+      expansion_weight: 0.1
+      init_type: "std"
+
 # image-conditioned geometry+texture generation
 image_to_textured_mesh:
   trellis_image_to_textured_mesh:

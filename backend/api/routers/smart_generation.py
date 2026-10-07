@@ -61,7 +61,7 @@ class SmartGenerationRequest(BaseModel):
 
 
 def _override_value(request: SmartGenerationRequest, preset: Dict[str, Any], key: str, default: Any = None) -> Any:
-    if key in request.overrides:
+    if key in request.overrides and request.overrides[key] is not None:
         return request.overrides[key]
     return preset.get(key, default)
 
@@ -108,6 +108,7 @@ def _build_smart_request(request: SmartGenerationRequest, resolved: Dict[str, An
             "enable_auto_repair",
             "enable_auto_rig",
         }
+        and value is not None
     }
     model_parameters.update({
         "target_polycount": target_polycount,

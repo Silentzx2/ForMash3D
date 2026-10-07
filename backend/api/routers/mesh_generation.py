@@ -459,7 +459,7 @@ async def text_mesh_painting(
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
-                **(mesh_request.model_parameters or {}),
+                **{k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None},
             },
             model_preference=mesh_request.model_preference,
             priority=1,
@@ -571,7 +571,8 @@ async def image_to_raw_mesh(
             image_file_path,
             mesh_request.image_file_id,
         )
-        params = dict(mesh_request.model_parameters or {})
+        # Filter out None values from model_parameters so pop() fallbacks work correctly
+        params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
         target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
@@ -724,7 +725,8 @@ async def image_to_textured_mesh(
             image_file_path,
             mesh_request.image_file_id,
         )
-        params = dict(mesh_request.model_parameters or {})
+        # Filter out None values from model_parameters so pop() fallbacks work correctly
+        params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
         target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
@@ -870,7 +872,7 @@ async def image_mesh_painting(
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
                 "resolution": mesh_request.texture_resolution,
-                **(mesh_request.model_parameters or {}),
+                **{k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None},
             },
             model_preference=mesh_request.model_preference,
             priority=1,

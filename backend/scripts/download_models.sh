@@ -81,7 +81,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposr" "triposg" "triposf" "ardy" "zero123plus" "zero123plus_normal_controlnet" "voxhammer" "misc" "all")
+AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposr" "triposg" "triposf" "ardy" "zero123plus" "zero123plus_normal_controlnet" "voxhammer" "unique3d" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -99,7 +99,7 @@ Options:
 Available models:
     partfield          - PartField model for mesh segmentation
     hunyuan2mini       - Hunyuan3D 2.0 mini models
-    hunyuan21          - Hunyuan3D 2.1 models  
+    hunyuan21          - Hunyuan3D 2.1 models
     hunyuan3d_shape_v21 - Hunyuan3D-Shape-v2-1 (3.3B shape)
     hunyuan3d_paint_v21 - Hunyuan3D-Paint-v2-1 (2B PBR texture)
     hunyuan3d_dit_v2_mini_turbo - Hunyuan3D-DiT-v2-mini-Turbo (0.6B low-VRAM)
@@ -119,6 +119,7 @@ Available models:
     zero123plus        - Zero123++ v1.2 multi-view image generation model
     zero123plus_normal_controlnet - Normal generation ControlNet for Zero123++ v1.2 (optional)
     voxhammer          - VoxHammer text/image mesh-editing TRELLIS checkpoints
+    unique3d           - Unique3D high-fidelity single-image to 3D model
     misc               - Miscellaneous utility models (RealESRGAN, DINOv2)
     all                - All core models (excluding optional normal ControlNet)
 
@@ -778,6 +779,81 @@ download_voxhammer() {
     print_success "VoxHammer model checkpoints downloaded successfully"
 }
 
+# Function to download Unique3D models
+download_unique3d() {
+    print_info "========================================"
+    print_info "Downloading Unique3D Model"
+    print_info "========================================"
+
+    local model_dir="$PRETRAINED_DIR/Unique3D/ckpt"
+    
+    if [ "$FORCE_DOWNLOAD" = false ] && \
+       verify_directory "$model_dir/controlnet-tile" 1 && \
+       verify_directory "$model_dir/image2normal" 1 && \
+       verify_directory "$model_dir/img2mvimg" 1 && \
+       verify_file "$model_dir/realesrgan-x4.onnx" 50000000 && \
+       verify_file "$model_dir/v1-inference.yaml" 1000; then
+        print_info "Unique3D model already exists and verified"
+        return 0
+    fi
+
+    mkdir -p "$model_dir"
+
+    # Download controlnet-tile directory
+    print_info "Downloading Unique3D controlnet-tile..."
+    if ! hf_download Wuvin/Unique3D \
+        --include "ckpt/controlnet-tile/*" \
+        --local-dir "$model_dir"; then
+        print_error "Failed to download controlnet-tile"
+        return 1
+    fi
+
+    # Download image2normal directory
+    print_info "Downloading Unique3D image2normal..."
+    if ! hf_download Wuvin/Unique3D \
+        --include "ckpt/image2normal/*" \
+        --local-dir "$model_dir"; then
+        print_error "Failed to download image2normal"
+        return 1
+    fi
+
+    # Download img2mvimg directory
+    print_info "Downloading Unique3D img2mvimg..."
+    if ! hf_download Wuvin/Unique3D \
+        --include "ckpt/img2mvimg/*" \
+        --local-dir "$model_dir"; then
+        print_error "Failed to download img2mvimg"
+        return 1
+    fi
+
+    # Download realesrgan-x4.onnx
+    print_info "Downloading Unique3D realesrgan-x4.onnx..."
+    if ! hf_download Wuvin/Unique3D \
+        --include "ckpt/realesrgan-x4.onnx" \
+        --local-dir "$model_dir"; then
+        print_error "Failed to download realesrgan-x4.onnx"
+        return 1
+    fi
+
+    # Download v1-inference.yaml
+    print_info "Downloading Unique3D v1-inference.yaml..."
+    if ! hf_download Wuvin/Unique3D \
+        --include "ckpt/v1-inference.yaml" \
+        --local-dir "$model_dir"; then
+        print_error "Failed to download v1-inference.yaml"
+        return 1
+    fi
+
+    # Fix directory structure: move from ckpt/ckpt/ to ckpt/
+    if [ -d "$model_dir/ckpt" ]; then
+        print_info "Fixing directory structure..."
+        mv "$model_dir/ckpt"/* "$model_dir/" 2>/dev/null || true
+        rmdir "$model_dir/ckpt" 2>/dev/null || true
+    fi
+
+    print_success "Unique3D model downloaded successfully"
+}
+
 # Function to download miscellaneous models
 download_misc() {
     print_info "========================================"
@@ -865,7 +941,14 @@ verify_all_models() {
 
     print_info "Checking VoxHammer text checkpoint..."
     verify_directory "$PRETRAINED_DIR/VoxHammer/models--FishWoWater--TRELLIS-text-large-voxhammer" 2 || all_verified=false
-    
+
+    print_info "Checking Unique3D..."
+    verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/controlnet-tile" 1 || all_verified=false
+    verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/image2normal" 1 || all_verified=false
+    verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/img2mvimg" 1 || all_verified=false
+    verify_file "$PRETRAINED_DIR/Unique3D/ckpt/realesrgan-x4.onnx" 50000000 || all_verified=false
+    verify_file "$PRETRAINED_DIR/Unique3D/ckpt/v1-inference.yaml" 1000 || all_verified=false
+
     print_info "Checking P3-SAM..."
     verify_file "$PRETRAINED_DIR/P3-SAM/p3sam.safetensors" 50000000 || all_verified=false
     
@@ -1004,6 +1087,9 @@ for model in "${MODELS_ARRAY[@]}"; do
         "voxhammer")
             download_voxhammer
             ;;
+        "unique3d")
+            download_unique3d
+            ;;
         "misc")
             download_misc
             ;;
@@ -1027,6 +1113,7 @@ for model in "${MODELS_ARRAY[@]}"; do
             download_triposf
             download_ardy
             download_zero123plus
+            download_unique3d
             download_misc
             ;;
         *)

@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="22 user-facing models / 23 registered adapters"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="23 user-facing models / 24 registered adapters"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -139,7 +139,7 @@ flowchart TD
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines["Neural 3D Synthesis Engines (22 selectable / 23 registered adapters)"]
+    subgraph Engines["Neural 3D Synthesis Engines (23 selectable / 24 registered adapters)"]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
         TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
@@ -147,6 +147,7 @@ flowchart TD
         EXTRAS["UltraShape / PartPacker<br/>Dense Poly / Part Decomp"]:::purple
         RIGGING["UniRig & ARDY<br/>Auto-Rigging & Motion AI"]:::purple
         ZERO123["Zero123++ v1.2<br/>Multi-View 6-Cam Synthesis"]:::purple
+        UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
 
     subgraph PostProcess["Production Post-Processing Core (Ported from 3DGenStudio)"]
@@ -177,6 +178,8 @@ flowchart TD
     MONITOR --> RETOPO
     MONITOR --> EXTRAS
     MONITOR --> RIGGING
+    MONITOR --> ZERO123
+    MONITOR --> UNIQUE3D
 
     HUNYUAN -->|"Model Native GLB"| CHECKPOINT
     TRELLIS -->|"Model Native GLB"| CHECKPOINT
@@ -222,7 +225,8 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB | Automated bipedal skeletal armature generation |
 | **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB | Interactive autoregressive text-to-motion generation |
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
-| **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
+|| **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
+|| **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
 
 Zero123++ v1.2 is a separate, hidden Multi-View image-generation adapter (not a mesh generator). Its base checkpoint is available from the model download manager; the View-Space Normals ControlNet is optional.
 

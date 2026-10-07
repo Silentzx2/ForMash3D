@@ -167,6 +167,11 @@ class ModelFactory:
             "module": "adapters.zero123plus_adapter",
             "class": "Zero123PlusAdapter",
         },
+        # Unique3D adapter
+        "unique3d_image_to_raw_mesh": {
+            "module": "adapters.unique3d_adapter",
+            "class": "Unique3DImageToRawMeshAdapter",
+        },
     }
 
     @classmethod

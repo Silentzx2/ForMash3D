@@ -1,3 +1,16 @@
+## 2026-10-07 — [Unique3D Integration]
+
+- Integrated official AiuniAI/Unique3D (upstream commit `6311af200ee197544e82e0f2557cd890edd60416`) as a first-class single-image → 3D model
+- Vendored source at `backend/thirdparty/Unique3D/` (MIT license preserved, `.git` metadata removed)
+- Added `download_unique3d()` to `backend/scripts/download_models.sh` with official checkpoint layout: `controlnet-tile/`, `image2normal/`, `img2mvimg/`, `realesrgan-x4.onnx`, `v1-inference.yaml`
+- Updated `manager.sh` with Unique3D menu entry `[23]`
+- Created `backend/adapters/unique3d_adapter.py` with `Unique3DImageToRawMeshAdapter(ImageToMeshModel)`
+- Registered in lazy adapter map (`backend/adapters/__init__.py`), model factory (`backend/core/scheduler/model_factory.py`), and model manifest (`backend/config/models.yaml`)
+- Added frontend registry entry in `constants/models.ts` with canonical ID `unique3d_image_to_raw_mesh`
+- Wired model-native parameters in `buildGenerationParameters.ts`: `seed`, `input_processing`, `do_refine`, `expansion_weight`, `init_type`
+- Updated documentation: `README.md`, `Docs/ARCHITECTURE.md`, `Docs/DECISIONS.md` (ADR-055), `Docs/api-documentation.md`
+- VRAM requirement: 10240 MB (placeholder until measured), `max_workers: 1`
+
 ## 2026-10-05 — [Mini Turbo & TRELLIS generation fixes]
 
 - Fixed `hunyuan3d_dit_v2_mini_turbo` adapter: pipeline now loads from the correct checkpoint subfolder `hunyuan3d-dit-v2-mini-turbo` inside the downloaded `tencent/Hunyuan3D-2mini` repo (the bundled `from_pretrained` default subfolder `hunyuan3d-dit-v2-0` does not exist there).

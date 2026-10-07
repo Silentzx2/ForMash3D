@@ -50,6 +50,7 @@ class FileUploadResponse(BaseModel):
     """Response for file upload requests"""
 
     file_id: str = Field(..., description="Unique identifier for the uploaded file")
+    file_path: str = Field(..., description="Server file path")
     filename: str = Field(..., description="Original filename")
     file_type: str = Field(..., description="Type of file (image/mesh)")
     file_size_mb: float = Field(..., description="File size in MB")
@@ -327,6 +328,7 @@ async def upload_file_with_validation(
 
         return {
             "file_id": file_id,
+            "file_path": str(file_path),
             "filename": file.filename,
             "file_type": file_type,
             "file_size_mb": file_info["file_size_mb"],

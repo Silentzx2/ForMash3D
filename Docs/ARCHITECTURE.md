@@ -126,7 +126,7 @@ Located at `backend/api/`:
 | **GPU Monitor** | `backend/core/scheduler/gpu_monitor.py` | Real-time VRAM and temperature polling |
 | **Job Queue** | `backend/core/scheduler/job_queue.py` | Job request models and types |
 | **Redis Job Queue** | `backend/core/scheduler/redis_job_queue.py` | Redis-backed distributed job queue (multi-worker with bounded 20-connection pool) |
-| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123PlusAdapter). All raw outputs route through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). Camera-aligned model handling is model-specific; TripoSR is normalized for the viewer, while no extra TripoSG rotation is injected beyond its upstream integration. Zero123++ is isolated under `image_to_multiview` for novel viewpoint synthesis. |
+| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123PlusAdapter, **Unique3D**). All raw outputs route through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). Camera-aligned model handling is model-specific; TripoSR is normalized for the viewer, while no extra TripoSG rotation is injected beyond its upstream integration. Zero123++ is isolated under `image_to_multiview` for novel viewpoint synthesis. |
 | **Paint-v2-1 Pipeline** | `backend/adapters/hunyuan3d_paint_v21.py` | Hunyuan3D-Paint-v2-1 adapter with RealESRGAN x4+ super-resolution, DifferentiableRenderer for PBR validation, VRAM status tracking, and Shape→Paint automatic chaining support |
 | **Multi-View Router** | `backend/api/routers/multiview.py` | Dedicated API router for Zero123++ view generation, manual view sets, ZIP export, and capability-gated `/reconstruct-3d` |
 
@@ -227,7 +227,7 @@ flowchart LR
 
 The install script creates the Conda env `3daigc-api` (Python 3.10) and installs:
 - PyTorch 2.6.0 + CUDA 12.4 (from `https://download.pytorch.org/whl/cu124`)
-- All thirdparty model dependencies (TRELLIS.2, PartField, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, UniRig, PartPacker, PartUV, P3-SAM, FastMesh, UltraShape, VoxHammer, Zero123++)
+- All thirdparty model dependencies (TRELLIS.2, PartField, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, UniRig, PartPacker, PartUV, P3-SAM, FastMesh, UltraShape, VoxHammer, Zero123++, **Unique3D**)
 - Main project dependencies (from `backend/requirements.txt`)
 - System packages (`libsm6`, `libegl1`, `libgl1-mesa-dev`)
 - RealESRGAN_x4plus.pth for Hunyuan3D-Paint-v2-1 super-resolution
@@ -338,7 +338,8 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 | PartUV | `partuv_uv_unwrapping` | UV Unwrapping | ~7 GB |
 | VoxHammer | `voxhammer_text_mesh_editing`; `voxhammer_image_mesh_editing` | Mesh Editing | ~40 GB |
 | ARDY | `ardy_motion_generation` | Text → Motion | ~8 GB |
-| Zero123++ v1.2 | `zero123plus_v12_image_to_multiview` | Multi-view image generation | runtime-gated |
+|| Zero123++ v1.2 | `zero123plus_v12_image_to_multiview` | Multi-view image generation | runtime-gated ||
+|| Unique3D | `unique3d_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB ||
 
 ## 8.1 Raw Generation Fidelity / Official Parity Contract
 
@@ -387,6 +388,7 @@ backend/thirdparty/
 ├── TripoSG/
 ├── TripoSF/
 ├── ardy/
+├── Unique3D/          # Unique3D (AiuniAI/Unique3D) - single-image to 3D
 └── wheels/
 ```
 

@@ -66,6 +66,8 @@ _ADAPTER_MAP = {
     "ArdyMotionGenerationAdapter": ("ardy_adapter", "ArdyMotionGenerationAdapter"),
     # Zero123++
     "Zero123PlusAdapter": ("zero123plus_adapter", "Zero123PlusAdapter"),
+    # Unique3D
+    "Unique3DImageToRawMeshAdapter": ("unique3d_adapter", "Unique3DImageToRawMeshAdapter"),
 }
 
 __all__ = list(_ADAPTER_MAP.keys())
@@ -74,7 +76,7 @@ __all__ = list(_ADAPTER_MAP.keys())
 def __getattr__(name: str) -> Any:
     if name in _ADAPTER_MAP:
         module_name, class_name = _ADAPTER_MAP[name]
-        module = __import__(f"adapters.{module_name}", fromlist=[class_name])
+        module = __import__(f"backend.adapters.{module_name}", fromlist=[class_name])
         attr = getattr(module, class_name)
         globals()[name] = attr
         return attr

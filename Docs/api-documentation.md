@@ -367,7 +367,7 @@ GET /api/v1/mesh-generation/models
 **Response:**
 ```json
 {
-  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh"],
+  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
   "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
   "text_mesh_painting": ["trellis_text_mesh_painting"],
   "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],

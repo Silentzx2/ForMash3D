@@ -221,13 +221,20 @@ function applyModelSpecificParams(
     modelParameters.slat_sampling_steps = Number(paramDefaults.slat_sampling_steps ?? 12);
     modelParameters.texture_resolution = Number(paramDefaults.texture_resolution ?? modelParameters.texture_resolution ?? 2048);
   } else if (modelId.includes('hunyuan')) {
-    modelParameters.octree_resolution = Number(paramDefaults.octree_resolution ?? 512);
-    modelParameters.enable_realesrgan = settings.enableRealESRGAN !== false;
-  }
-  
-  if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-    modelParameters.enable_flashvdm = true;
-  }
+      modelParameters.octree_resolution = Number(paramDefaults.octree_resolution ?? 512);
+      modelParameters.enable_realesrgan = settings.enableRealESRGAN !== false;
+    } else if (modelId.includes('unique3d')) {
+      // Unique3D model-native parameters (official defaults)
+      modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 1145;
+      modelParameters.input_processing = paramDefaults.input_processing ?? true;
+      modelParameters.do_refine = paramDefaults.do_refine ?? true;
+      modelParameters.expansion_weight = Number(paramDefaults.expansion_weight ?? 0.1);
+      modelParameters.init_type = paramDefaults.init_type ?? 'std';
+    }
+
+    if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
+      modelParameters.enable_flashvdm = true;
+    }
   
   // Pass Paint-v2-1 parameters for shape models to enable auto-chaining
   if (isPaintModel) {

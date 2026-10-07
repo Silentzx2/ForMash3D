@@ -705,6 +705,22 @@ else
 fi
 ### FastMesh end ###
 
+### Unique3D ###
+echo ""
+echo "========================================"
+echo "Installing Unique3D Dependencies"
+echo "========================================"
+cd "$THIRDPARTY_DIR/Unique3D"
+echo "[INFO] Installing Unique3D requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Unique3D requirements installed"
+else
+    echo "[ERROR] Failed to install Unique3D requirements"
+    exit 1
+fi
+### Unique3D end ###
+
 ### UltraShape ###
 echo ""
 echo "========================================"

@@ -620,3 +620,18 @@ Use a versioned YAML source of truth with ordered model priorities and capabilit
 ## ADR-053 — Phase 1 UniRig Child Workflow
 
 Run UniRig as a scheduler-managed child job after the canonical production mesh exists. Finalize the parent only after a durable rigged artifact is present; report failure explicitly as degraded.
+
+---
+
+## ADR-055: Unique3D Third-Party Integration
+
+**Decision**: Vendor Unique3D (AiuniAI/Unique3D) at `backend/thirdparty/Unique3D/` with upstream commit `6311af200ee197544e82e0f2557cd890edd60416`, without `.git` metadata. Install via `install.sh` after FastMesh, using the project's shared PyTorch 2.6.0+CUDA 12.4 environment. Remove torch/torchvision/torchaudio from Unique3D's requirements to avoid conflicts with the canonical baseline. Preserve the MIT LICENSE from upstream.
+
+**Reason**: Unique3D provides high-quality image-to-3D generation. The upstream repo targets Python 3.10 + CUDA 12.2, but the ForMash3D baseline uses PyTorch 2.6.0 + CUDA 12.4 which is compatible. Removing the pinned torch dependencies prevents version conflicts with the shared environment. The install order after FastMesh ensures nvdiffrast and other shared build dependencies are already available.
+
+**Consequences**:
+- `backend/thirdparty/Unique3D/requirements.txt` audited: torch/torchvision/torchaudio references removed (were already commented or absent).
+- `backend/scripts/install.sh` updated with Unique3D installation block after FastMesh.
+- Upstream commit `6311af200ee197544e82e0f2557cd890edd60416` recorded for traceability.
+- MIT LICENSE preserved in the vendored directory.
+- No changes to `backend/requirements.txt` needed — Unique3D dependencies install into the shared environment.

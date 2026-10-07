@@ -1,7 +1,7 @@
 /**
  * Canonical user-selectable Model Registry & Feature Routing
- * Mirrors the 22 visible adapters from backend/config/models.yaml.
- * The backend also registers hidden Zero123++ multi-view support as adapter #23.
+ * Mirrors the 23 visible adapters from backend/config/models.yaml.
+ * The backend also registers hidden Zero123++ multi-view support as adapter #24.
  */
 
 export type ModelCategory =
@@ -185,6 +185,22 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     enabled: true,
     status: 'available',
     description: 'High-resolution arbitrary-topology 3D mesh modeling and reconstruction up to 1024³ with SparseFlex VAE.',
+  },
+  {
+    id: 'unique3d_image_to_raw_mesh',
+    name: 'Unique3D (High-Fidelity Single Image → 3D)',
+    category: 'mesh_generation',
+    feature: 'image_to_raw_mesh',
+    featureLabel: 'Image to Geometry',
+    vramMb: 10240,
+    lowVramSupported: false,
+    supportsTexture: true,
+    supportedInputs: ['image'],
+    supportedOutputs: ['glb', 'obj'],
+    modelPath: 'backend/pretrained/Unique3D',
+    enabled: true,
+    status: 'available',
+    description: 'High-fidelity single-image to 3D mesh with multi-view diffusion, normal prediction, and textured reconstruction.',
   },
 
   // ── TEXTURE STUDIO / MESH PAINTING ───────────────────────────────────────
