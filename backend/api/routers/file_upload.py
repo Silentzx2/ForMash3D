@@ -175,7 +175,7 @@ async def get_file_path_impl(
         if file_path and os.path.exists(file_path):
             return file_path
 
-    # Fallback: check if file_id corresponds to a job output in canonical storage
+    # Fallback 1: check if file_id corresponds to a job output in canonical storage
     clean_id = file_id.removeprefix("job-")
     id_hash = hashlib.sha256(clean_id.encode("utf-8")).hexdigest()[:8]
     storage_base = get_storage_base_dir()
@@ -197,6 +197,24 @@ async def get_file_path_impl(
                     return str(glb)
                 for obj in candidate_dir.glob("*.obj"):
                     return str(obj)
+
+    # Fallback 2: check uploads directory (for uploaded images/meshes when metadata is lost)
+    # Files are stored in uploads/{file_type}/{file_id[:2]}/
+    upload_prefix = file_id[:2]
+    for base in [storage_base, Path("backend/storage"), Path("/app/backend/storage")]:
+        uploads_dir = Path(base) / "uploads"
+        if not uploads_dir.is_dir():
+            continue
+        # Search in both image and mesh subdirectories
+        for file_type_dir in ["image", "mesh"]:
+            type_dir = uploads_dir / file_type_dir / upload_prefix
+            if not type_dir.is_dir():
+                continue
+            # Look for any file with this file_id in the filename
+            candidates = list(type_dir.glob(f"*{file_id}*"))
+            for candidate in candidates:
+                if candidate.is_file() and os.path.exists(candidate):
+                    return str(candidate)
 
     return None
 

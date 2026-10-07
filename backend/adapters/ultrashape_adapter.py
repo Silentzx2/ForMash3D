@@ -205,6 +205,8 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 raise ValueError(f"Unsupported output format: {output_format}")
             
             num_inference_steps = inputs.get("num_inference_steps", 50)
+            if num_inference_steps is None:
+                num_inference_steps = 50
             num_latents = int(inputs.get("num_latents", 32768))
             octree_res = int(inputs.get("octree_res", 1024))
             chunk_size = inputs.get("chunk_size", 8000)

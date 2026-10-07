@@ -142,8 +142,12 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
 
             # Extract parameters
             output_format = inputs.get("output_format", "glb")
-            num_steps = int(inputs.get("num_steps", 50))
+            num_steps = inputs.get("num_steps", 50)
+            if num_steps is None:
+                num_steps = 50
             cfg_scale = inputs.get("cfg_scale", 7.0)
+            if cfg_scale is None:
+                cfg_scale = 7.0
             grid_resolution = inputs.get("grid_resolution", 384)
             auto_optimize = bool(inputs.get("auto_optimize", False))
             num_faces = int(inputs.get("num_faces", -1))

@@ -284,8 +284,16 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             # Shape generation only
             logger.info("Generating 3D shape...")
             octree_res = 512
-            num_steps = int(inputs.get("num_inference_steps", 50))
-            guidance_scale = float(inputs.get("guidance_scale", 5.0))
+            num_steps = inputs.get("num_inference_steps", 50)
+            if num_steps is None:
+                num_steps = 50
+            else:
+                num_steps = int(num_steps)
+            guidance_scale = inputs.get("guidance_scale", 5.0)
+            if guidance_scale is None:
+                guidance_scale = 5.0
+            else:
+                guidance_scale = float(guidance_scale)
             seed = int(inputs.get("seed", 1234))
             device = "cuda" if torch.cuda.is_available() else "cpu"
             generator = torch.Generator(device=device).manual_seed(seed)
@@ -413,8 +421,16 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
 
             # Step 1: Shape generation follows the same model-specific source contract.
             logger.info("Generating 3D shape...")
-            num_steps = int(inputs.get("num_inference_steps", 50))
-            guidance_scale = float(inputs.get("guidance_scale", 5.0))
+            num_steps = inputs.get("num_inference_steps", 50)
+            if num_steps is None:
+                num_steps = 50
+            else:
+                num_steps = int(num_steps)
+            guidance_scale = inputs.get("guidance_scale", 5.0)
+            if guidance_scale is None:
+                guidance_scale = 5.0
+            else:
+                guidance_scale = float(guidance_scale)
             seed = int(inputs.get("seed", 1234))
             device = "cuda" if torch.cuda.is_available() else "cpu"
             generator = torch.Generator(device=device).manual_seed(seed)

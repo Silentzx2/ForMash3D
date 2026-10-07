@@ -169,11 +169,15 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             seed = inputs.get("seed", 42)
             texture_resolution = inputs.get("texture_resolution", 2048)
             num_steps = inputs.get("num_inference_steps", 25)
+            if num_steps is None:
+                num_steps = 25
             target_polycount = inputs.get("target_polycount", None)
             simplify = inputs.get("simplify", None)
             auto_optimize = bool(inputs.get("auto_optimize", False))
             texture_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
+            if guidance is None:
+                guidance = 7.5
 
             ss_steps = max(1, min(50, int(num_steps)))
             slat_steps = max(1, min(50, int(num_steps)))
