@@ -123,7 +123,7 @@ export const WorkspaceShell: React.FC = () => {
   // Mobile menu state: left navigation drawer
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Global Workspace Navigation KeyboardIcon Shortcuts (⌘1, ⌘2, ⌘3, ⌘4, G, R, T, A, S, ⌘,)
+  // Global Workspace Navigation KeyboardIcon Shortcuts (⌘1, ⌘2, ⌘3, ⌘4→Logs, G, R, T, A, S, ⌘,)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting keystrokes in inputs, textareas, or content-editable elements
@@ -153,7 +153,7 @@ export const WorkspaceShell: React.FC = () => {
           navigateToMainNav('jobs');
         } else if (e.key === '4') {
           e.preventDefault();
-          navigateToMainNav('system');
+          router.push('/admin?tab=logs');
         } else if (e.key === ',') {
           e.preventDefault();
           router.push('/admin?tab=settings');

@@ -51,6 +51,7 @@ export function LogsTab() {
   const endRef = useRef<HTMLDivElement>(null);
   const seenIds = useRef<Set<string>>(new Set());
   const isAutoScrollRef = useRef(autoScroll);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   isAutoScrollRef.current = autoScroll;
 
   // Load initial logs
@@ -72,27 +73,49 @@ export function LogsTab() {
     void fetchLogs();
   }, [fetchLogs]);
 
-  // Live SSE stream handler
+  // Live polling - fetch new logs every 3s and append smoothly
   useEffect(() => {
     if (!live) return;
-    const unsubscribe = getApiClient().streamLogs((entry) => {
-      const key = entry.id || `${entry.timestamp}-${entry.source}-${entry.message}`;
-      if (seenIds.current.has(key)) return;
-      seenIds.current.add(key);
 
-      setLogs((prev) => {
-        const next = [...prev, entry];
-        if (next.length > 2500) {
-          return next.slice(-2000);
+    const poll = async () => {
+      try {
+        const data = await getApiClient().getLogs(1000, level === "all" ? undefined : level);
+        const newEntries = data.filter(
+          (l) => !seenIds.current.has(l.id || `${l.timestamp}-${l.source}-${l.message}`)
+        );
+
+        if (newEntries.length > 0) {
+          newEntries.forEach((entry) => {
+            const key = entry.id || `${entry.timestamp}-${entry.source}-${entry.message}`;
+            seenIds.current.add(key);
+          });
+
+          setLogs((prev) => {
+            const next = [...prev, ...newEntries];
+            if (next.length > 2500) {
+              return next.slice(-2000);
+            }
+            return next;
+          });
         }
-        return next;
-      });
-    }, 100);
+      } catch {
+        // Silent failure for polling - don't spam toasts
+      }
+    };
+
+    // Initial poll
+    void poll();
+
+    // Set up 3-second interval
+    pollTimerRef.current = setInterval(poll, 3000);
 
     return () => {
-      unsubscribe();
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
     };
-  }, [live]);
+  }, [live, level]);
 
   // Scroll listener for detecting user manual scroll vs auto-scroll
   const handleScroll = useCallback(() => {
@@ -244,7 +267,7 @@ export function LogsTab() {
             <span className="text-[hsl(var(--muted-foreground))]">:</span>
             <span className="text-[hsl(var(--foreground))]">~/logs</span>
             <span className="text-[hsl(var(--muted-foreground))]">$</span>
-            <span className="text-[hsl(var(--foreground))] font-normal">tail -f app.log</span>
+            <span className="text-[hsl(var(--foreground))] font-normal">poll logs 3s</span>
           </div>
         </div>
 
@@ -258,12 +281,12 @@ export function LogsTab() {
                 ? "bg-[hsl(var(--log-success))]/15 text-[hsl(var(--log-success))] border border-[hsl(var(--log-success))]/30 shadow-sm"
                 : "bg-[hsl(var(--surface-2))]/20 text-[hsl(var(--muted-foreground))] border border-[hsl(var(--border))]/30"
             }`}
-            title={live ? "Click to pause live streaming" : "Click to resume live streaming"}
+            title={live ? "Click to pause live polling" : "Click to resume live polling"}
           >
             {live ? (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--log-success))] animate-pulse" />
-                <span>LIVE</span>
+                <span>POLLING</span>
               </>
             ) : (
               <>
@@ -407,7 +430,7 @@ export function LogsTab() {
         {loading && logs.length === 0 ? (
           <div className="flex items-center justify-center h-48 text-[hsl(var(--muted-foreground))] font-mono">
             <RefreshCw className="w-4 h-4 animate-spin mr-2 text-[hsl(var(--log-info))]" />
-            <span>Streaming logs from backend...</span>
+            <span>Loading logs from backend...</span>
           </div>
         ) : filteredLogs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-[hsl(var(--muted-foreground))] font-mono space-y-1">
@@ -491,7 +514,7 @@ export function LogsTab() {
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--log-success))]" />
-            <span className="text-[hsl(var(--muted-foreground))]">Uvicorn / FastAPI Log Sink</span>
+            <span className="text-[hsl(var(--muted-foreground))]">Repos: logs/, backend/logs/, backend/run/</span>
           </span>
           <span className="text-[hsl(var(--muted-foreground))]">UTF-8</span>
         </div>
