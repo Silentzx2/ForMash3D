@@ -1,2203 +1,1845 @@
-# ForMash3D — Agent-Executable Engineering Task Plan
+# ForMash3D — Unique3D Integration Plan
 
-**Status:** Active implementation roadmap — rewritten from the current \`Dev\` codebase audit and the latest product discussion/screenshots  
-**Date:** 2026-10-05  
-**Branch:** \`Dev\`  
-**Authoritative task file:** \`Docs/TASKS.md\`
+## 1. Objective
 
-> There is no root \`TASK.md\`. This file is the single authoritative engineering task ledger referenced by the repository rules.
+Integrate the **official AiuniAI/Unique3D implementation** into ForMash3D as a first-class **single-image → 3D** model.
+
+**Target branch:** `Dev`  
+**Audited Dev HEAD:** `bd3bcd5947981c27d873394316e0207e240d2d71`  
+**Feature:** `image_to_raw_mesh`  
+**Proposed canonical model ID:** `unique3d_image_to_raw_mesh`  
+**Backend:** FastAPI + Python 3.10 (`3daigc-api`)  
+**Frontend:** Next.js 16 + React 19  
+
+This document is an **implementation specification**, not an implementation. The coding agent must execute it only after re-reading the current repository state and `RULES.md`.
 
 ---
 
-## Bug Fixes — 2026-10-05
+# 2. Mandatory Engineering Rules
 
-- **Mini Turbo model load failure** (`hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh`): fixed the pipeline load to use the correct checkpoint subfolder `hunyuan3d-dit-v2-mini-turbo` inside `tencent/Hunyuan3D-2mini`; weights must be downloaded first (`bash backend/scripts/download_models.sh -m hunyuan2mini`). Bundled `smart_load_model` loaders for both Mini Turbo and Hunyuan3D-2.1 now resolve absolute local weight paths directly instead of trying to treat them as Hugging Face repo IDs.
-- **TRELLIS texture baking crash** (`trellis_image_to_textured_mesh`): fixed the gradient-descent texture optimizer in `postprocessing_utils.py` — replaced the in-place `loss += lambda_tv * tv_loss(texture)` (which breaks the PyTorch 2.x grad graph) with a new-tensor assignment.
+The integration MUST follow `RULES.md`.
+
+### Required principles
+
+- Reuse the existing model architecture.
+- Do not create a second model manager, registry, scheduler, or storage system.
+- Root-cause dependency/runtime issues before fixing them.
+- Prefer the smallest correct diff.
+- Do not add a dependency when the existing environment already provides a compatible implementation.
+- Update all relevant existing documentation after the implementation.
+- Do not touch unrelated frontend/backend code.
+- Do not modify Python model pipelines merely to make the integration convenient.
+
+### Official-source rule
+
+Unique3D must use the **official upstream source code** for its actual inference algorithm.
+
+The ForMash3D layer should wrap the official implementation rather than re-implement it.
+
+Do NOT rewrite:
+
+- multi-view generation;
+- normal prediction;
+- mesh initialization;
+- stage-1 reconstruction;
+- mesh refinement;
+- color projection;
+- reconstruction losses;
+- model architecture;
+- checkpoint interpretation;
+- official inference defaults.
+
+The adapter exists to translate between ForMash3D and Unique3D.
 
 ---
 
-## 0. Mission
+# 3. Current ForMash3D Architecture Already Available
 
-ForMash3D is an **Image → 3D, self-hosted production asset pipeline**.
+The Dev branch already provides the pieces required for a clean model integration:
 
-The immediate goal is **not** to add every possible research feature. The immediate goal is to:
+- `backend/config/models.yaml` — backend model manifest;
+- `backend/core/scheduler/model_factory.py` — model factory/registration;
+- `backend/adapters/` — lazy model adapters;
+- `backend/core/scheduler/multiprocess_scheduler.py` — VRAM-aware model scheduler;
+- `backend/api/routers/mesh_generation.py` — image-to-raw-mesh API;
+- `backend/api/routers/system.py` — model readiness/details;
+- `backend/scripts/download_models.sh` — model downloader/verifier;
+- `manager.sh` — interactive model manager;
+- `constants/models.ts` — frontend canonical model registry;
+- `features/workspace/Panels/GeneratePanel.tsx` — generation UI;
+- `features/workspace/utils/buildGenerationParameters.ts` — model parameter wiring;
+- `features/admin/tabs/ModelsTab.tsx` — model administration/status;
+- `backend/tests/test_official_model_parity_contract.py` — official-parameter/source-fidelity tests;
+- `backend/tests/test_model_readiness.py` — weight/readiness tests.
 
-1. Fix the remaining raw-mesh quality regressions first.
-2. Add the low-risk, high-value quality improvements that already have the required infrastructure.
-3. Add the seven user-facing workflow features that materially improve the product experience.
-4. Build a simple, deterministic smart-generation layer instead of an unnecessarily complex model-scoring system.
-5. Keep real-time streaming and speculative research work behind explicit hold/defer gates until the base pipeline is stable.
+**Do not build a parallel Unique3D system. Extend these existing mechanisms.**
 
-The engineering principle is:
+---
 
-\`\`\`
-INPUT IMAGE
+# 4. Third-Party Source Acquisition
+
+## 4.1 Clone official source
+
+Clone the official repository from `AiuniAI/Unique3D` into:
+
+```text
+backend/thirdparty/Unique3D/
+```
+
+Use the upstream source actually selected for the implementation and record the exact commit/ref.
+
+## 4.2 Remove Git metadata
+
+After cloning and auditing the source:
+
+```bash
+rm -rf backend/thirdparty/Unique3D/.git
+```
+
+The vendored source must not remain a nested Git repository.
+
+## 4.3 Record upstream revision
+
+Because `.git` will be removed, record the exact upstream commit used somewhere in the project's existing documentation/decision records. Do not leave the vendored version ambiguous.
+
+## 4.4 Preserve license
+
+Keep the upstream `LICENSE` file. The official Unique3D repository is MIT-licensed.
+
+Also update the existing ForMash3D third-party attribution/license documentation where appropriate.
+
+---
+
+# 5. Preserve Official Unique3D Layout
+
+Keep the official source structure intact wherever possible:
+
+```text
+backend/thirdparty/Unique3D/
+├── app/
+├── custum_3d_diffusion/
+├── mesh_reconstruction/
+├── scripts/
+├── assets/
+├── LICENSE
+├── README.md
+├── Installation.md
+└── requirements*.txt
+```
+
+Do not aggressively delete upstream files simply because ForMash3D does not use the demo UI.
+
+The official inference files remain the source of truth.
+
+---
+
+# 6. Dependency Strategy
+
+ForMash3D has a **shared backend environment**. Current repository configuration pins the core Torch stack around:
+
+```text
+Python 3.10
+PyTorch 2.6.0 + CUDA 12.4
+TorchVision 0.21.0 + CUDA 12.4
+TorchAudio 2.6.0 + CUDA 12.4
+```
+
+These are controlled by the existing backend installation flow.
+
+## 6.1 No separate Unique3D environment
+
+Do NOT create a second Conda environment for Unique3D.
+
+Do NOT install a second PyTorch/CUDA stack into the shared environment.
+
+Do NOT blindly reproduce the older Unique3D environment from its historical README.
+
+The official project documents older CUDA/PyTorch combinations; those are reference information, not a mandate to replace ForMash3D's runtime.
+
+---
+
+# 7. Unique3D Requirements Editing
+
+The official Unique3D `requirements.txt` must be audited before installation.
+
+The current upstream/Wuvin variants contain core ML/runtime dependencies including Diffusers, PyTorch3D, nvdiffrast, torch-scatter, ONNX Runtime, OpenCV, rembg, xformers, and other packages.
+
+## 7.1 Remove conflicting shared-runtime packages
+
+From the vendored Unique3D requirements, remove any direct dependency that attempts to replace the ForMash3D runtime, especially:
+
+```text
+torch
+torchvision
+torchaudio
+```
+
+This must be done so Unique3D uses the project's shared Torch/CUDA baseline.
+
+## 7.2 Do not blindly delete everything else
+
+Each remaining dependency must be classified:
+
+1. Already available in the ForMash3D environment → reuse it.
+2. Unique3D-specific and required for inference → retain/install it.
+3. Native CUDA dependency → use existing wheelhouse/build rules.
+4. Conflicting dependency → verify compatibility before changing anything globally.
+
+Do not turn the Unique3D requirements file into a duplicate of `backend/requirements.txt`.
+
+---
+
+# 8. Special Dependency Audits
+
+Before installation, explicitly audit:
+
+### PyTorch3D
+
+- Check whether a compatible PyTorch3D build already exists.
+- Prefer a compatible wheel from `backend/thirdparty/wheels/`.
+- Verify compatibility with Torch 2.6.0 + CUDA 12.4.
+- Only build from source if necessary.
+
+### torch-scatter
+
+- Check existing version and ABI compatibility.
+- Reuse existing compatible installation.
+- Prefer the project's wheelhouse.
+
+### xformers
+
+- Do not force Unique3D's historical version.
+- Reuse the shared compatible version when possible.
+
+### nvdiffrast
+
+- Verify the current project's installation/build path.
+- Prefer existing compatible artifacts.
+- Test both CUDA and GL/EGL paths required by Unique3D.
+
+### ONNX Runtime
+
+- Determine whether `onnxruntime-gpu` is actually required by the runtime path.
+- Avoid conflicting CPU/GPU variants.
+- Do not install historical versions blindly.
+
+### OpenCV
+
+The upstream requirements mention both Python OpenCV variants. Do not install redundant/conflicting packages unless the actual inference path requires them.
+
+### rembg
+
+Reuse the existing compatible background-removal stack where possible. Avoid duplicate preprocessing.
+
+### Gradio
+
+Do not make Gradio a required ForMash3D production dependency merely because the upstream demo uses it.
+
+### wandb
+
+Do not keep a training-only dependency as a mandatory inference dependency unless actual inference imports require it.
+
+---
+
+# 9. Installation Script Integration
+
+Review:
+
+```text
+backend/scripts/install.sh
+backend/requirements.txt
+backend/thirdparty/wheels/
+```
+
+Add a Unique3D installation block only for dependencies that are genuinely missing and need model-specific handling.
+
+Reuse the existing patterns:
+
+```text
+uv pip
+local wheelhouse
+PIP_NO_BUILD_ISOLATION=1
+shared Torch/CUDA environment
+```
+
+Do not duplicate packages already installed globally by the existing model setup.
+
+---
+
+# 10. Weight Storage Layout
+
+Use one canonical weight root:
+
+```text
+backend/pretrained/Unique3D/
+```
+
+Preserve the official checkpoint layout underneath it:
+
+```text
+backend/pretrained/Unique3D/
+└── ckpt/
+    ├── controlnet-tile/
+    ├── image2normal/
+    ├── img2mvimg/
+    ├── realesrgan-x4.onnx
+    └── v1-inference.yaml
+```
+
+If the official weight package contains additional mandatory files, include them after verifying the upstream commit.
+
+Do not flatten or rename required checkpoint files unless the official code is explicitly adapted to understand the new structure.
+
+---
+
+# 11. Model Download Script
+
+Modify:
+
+```text
+backend/scripts/download_models.sh
+```
+
+Add:
+
+```text
+unique3d
+```
+
+to the existing `AVAILABLE_MODELS` list.
+
+Implement:
+
+```bash
+download_unique3d() {
+    ...
+}
+```
+
+The function must:
+
+- create the canonical target path;
+- download official Unique3D checkpoints;
+- preserve the official `ckpt/` layout;
+- use the existing Hugging Face token logic;
+- be idempotent;
+- support `--force`;
+- report useful failures;
+- verify required files/directories before declaring success.
+
+Do not create a second downloader framework.
+
+---
+
+# 12. Weight Verification
+
+Extend `verify_all_models()`.
+
+A Unique3D installation must be considered incomplete if required files/directories are missing or empty.
+
+At minimum validate the official checkpoint components:
+
+```text
+ckpt/controlnet-tile/
+ckpt/image2normal/
+ckpt/img2mvimg/
+ckpt/realesrgan-x4.onnx
+ckpt/v1-inference.yaml
+```
+
+Use the project's existing `verify_file()` and `verify_directory()` patterns.
+
+---
+
+# 13. manager.sh Registration
+
+Modify the existing model manager in `manager.sh`.
+
+Add a dedicated entry such as:
+
+```text
+Unique3D — High-Fidelity Single Image → 3D
+```
+
+Map that menu option to:
+
+```text
+unique3d
+```
+
+Ensure:
+
+```text
+a = Download ALL models
+v = Verify existing models
+```
+
+also include Unique3D correctly.
+
+Do not disturb existing menu mappings.
+
+---
+
+# 14. Canonical Model ID
+
+Use exactly one ID everywhere:
+
+```text
+unique3d_image_to_raw_mesh
+```
+
+Do not introduce aliases such as:
+
+```text
+unique3d
+unique3d_image_to_mesh
+unique3d_raw_mesh
+unique3d_v1
+```
+
+The download slug may be simply:
+
+```text
+unique3d
+```
+
+but all model-runtime registries must use the canonical model ID.
+
+---
+
+# 15. Backend Manifest Registration
+
+Modify:
+
+```text
+backend/config/models.yaml
+```
+
+Add under `image_to_raw_mesh`:
+
+```yaml
+unique3d_image_to_raw_mesh:
+  capabilities:
+    text_to_3d: false
+    image_to_3d: true
+    multiview: false
+    texture_generation: true
+    raw_mesh: true
+  vram_requirement: <verified-value-in-MB>
+  supported_inputs: ["image"]
+  supported_outputs: ["glb"]
+  model_path: "backend/pretrained/Unique3D"
+  enabled: true
+  max_workers: 1
+```
+
+The exact VRAM requirement must be measured from the integrated environment. Do not guess from checkpoint size.
+
+---
+
+# 16. VRAM Reservation Policy
+
+Unique3D must initially run with:
+
+```text
+max_workers: 1
+```
+
+Measure:
+
+- baseline GPU memory;
+- model load peak;
+- first inference peak;
+- repeat inference peak;
+- post-inference memory;
+- memory after unload.
+
+Then set the manifest reservation using the measured peak plus the existing scheduler safety policy.
+
+Do not hard-code a second VRAM value inside the adapter.
+
+---
+
+# 17. Official Unique3D Inference Flow
+
+The current official implementation uses a pipeline conceptually equivalent to:
+
+```text
+Input Image
+    ↓
+small-image super-resolution when applicable
+    ↓
+image → multi-view prediction
+    ↓
+normal prediction
+    ↓
+initial mesh
+    ↓
+stage-1 reconstruction
+    ↓
+optional refinement
+    ↓
+multiview color projection
+    ↓
+GLB export
+```
+
+The adapter must preserve this behavior.
+
+The official `gradio_3dgen.py` exposes native parameters including:
+
+```text
+input_processing
+seed
+render_video
+do_refine
+expansion_weight
+init_type
+```
+
+For ForMash3D:
+
+- preserve `seed`;
+- preserve `input_processing` semantics;
+- preserve `do_refine`;
+- preserve `expansion_weight`;
+- preserve `init_type`;
+- do not expose `render_video` unless a concrete ForMash3D product feature requires it.
+
+The exact defaults must be verified from the pinned upstream commit before implementation.
+
+---
+
+# 18. Official Parameter Fidelity
+
+The adapter schema must preserve official model-native defaults.
+
+Known current upstream values to verify against the pinned source include:
+
+```text
+do_refine = true
+expansion_weight = 0.1
+init_type = "std"
+```
+
+The actual source remains authoritative.
+
+Do not substitute project-wide values for Unique3D-specific parameters.
+
+---
+
+# 19. Adapter File
+
+Create:
+
+```text
+backend/adapters/unique3d_adapter.py
+```
+
+Use the same adapter contract as existing image-to-raw-mesh adapters.
+
+Recommended class:
+
+```python
+class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
+    FEATURE_TYPE = "image_to_raw_mesh"
+    MODEL_ID = "unique3d_image_to_raw_mesh"
+```
+
+The adapter must provide the existing lifecycle:
+
+```text
+load
+process
+unload
+get_supported_formats
+get_parameter_schema
+```
+
+and return the same generation response shape expected by the scheduler.
+
+---
+
+# 20. Adapter Responsibilities
+
+The adapter is responsible for:
+
+### Input
+
+- validate image path;
+- validate output format;
+- resolve model and checkpoint roots;
+- validate model readiness;
+- normalize adapter inputs.
+
+### Inference
+
+- invoke the official Unique3D implementation;
+- pass through official model-native parameters;
+- keep official reconstruction behavior intact.
+
+### Output
+
+- write a canonical GLB via existing `OutputPathGenerator`/storage mechanisms;
+- validate the resulting mesh;
+- preserve texture/material information;
+- return generation metadata.
+
+---
+
+# 21. Do Not Run Gradio as a Separate ForMash3D Service
+
+Do NOT deploy the upstream:
+
+```text
+python app/gradio_local.py
+```
+
+as a second server.
+
+ForMash3D already provides:
+
+```text
+Next.js UI
+FastAPI
+Scheduler
+Model Adapter
+```
+
+The adapter should call the underlying official inference functions directly.
+
+The upstream Gradio code is a reference for the official execution flow and defaults, not the production UI.
+
+---
+
+# 22. Relative Checkpoint Paths
+
+The upstream code uses relative paths such as:
+
+```text
+./ckpt/...
+```
+
+This is a known integration constraint.
+
+Preferred solution order:
+
+1. Use an upstream-supported absolute/root configuration if available.
+2. Otherwise provide adapter-side runtime context for the Unique3D root.
+3. If needed, use isolated worker/subprocess context.
+4. Only as a last resort use carefully scoped working-directory isolation.
+
+Do NOT globally change the backend process working directory.
+
+Do NOT rewrite all upstream checkpoint references when an adapter-side solution is possible.
+
+---
+
+# 23. Import Namespace Isolation
+
+Unique3D has generic module names under `scripts/`, `app/`, and other folders.
+
+Because ForMash3D contains many third-party projects, imports like:
+
+```python
+from scripts...
+```
+
+must resolve to the Unique3D copy, not another third-party package.
+
+The adapter must establish the correct Unique3D source root before importing upstream modules.
+
+Verify the resolved module paths during testing.
+
+Do not permanently add the Unique3D root to global `sys.path` at backend startup.
+
+---
+
+# 24. Lazy Import Requirement
+
+Add Unique3D to:
+
+```text
+backend/adapters/__init__.py
+```
+
+through the existing lazy `_ADAPTER_MAP` pattern.
+
+Do not eagerly import Unique3D or its native dependencies at application startup.
+
+This protects unrelated models from Unique3D dependency failures.
+
+---
+
+# 25. Model Factory Registration
+
+Modify:
+
+```text
+backend/core/scheduler/model_factory.py
+```
+
+Add:
+
+```text
+unique3d_image_to_raw_mesh
+    module: adapters.unique3d_adapter
+    class: Unique3DImageToRawMeshAdapter
+```
+
+Do not create a second model factory.
+
+---
+
+# 26. Backend API Registration
+
+Use the existing endpoint:
+
+```text
+POST /api/v1/mesh-generation/image-to-raw-mesh
+```
+
+The request should select:
+
+```json
+{
+  "model_preference": "unique3d_image_to_raw_mesh"
+}
+```
+
+Do NOT create a `/unique3d` API endpoint.
+
+The existing scheduler/model validation should handle it automatically after registry registration.
+
+---
+
+# 27. System/Availability Registration
+
+The existing `backend/api/routers/system.py` returns model availability and model details.
+
+Unique3D must appear in:
+
+```text
+available_models
+model_details
+weights_status
+```
+
+where supported by the current API contract.
+
+The backend is the source of truth for readiness.
+
+---
+
+# 28. Readiness Contract
+
+Unique3D must not be reported “ready” only because:
+
+```text
+backend/pretrained/Unique3D/
+```
+
+exists.
+
+Ready means the required checkpoint structure is present and non-empty.
+
+Extend `backend/tests/test_model_readiness.py` with Unique3D-specific coverage.
+
+---
+
+# 29. Database / Job Registration
+
+The current database is primarily a job queue/history store; it is not a reason to introduce a duplicate model-catalog table.
+
+Unique3D jobs should naturally persist through the existing job fields:
+
+```text
+feature
+model_preference
+assigned_model
+job_metadata
+status
+result
+error
+```
+
+Expected values:
+
+```text
+feature = image_to_raw_mesh
+model_preference = unique3d_image_to_raw_mesh
+assigned_model = unique3d_image_to_raw_mesh
+```
+
+If the current Dev branch has a separate persistent model metadata store discovered during implementation, register Unique3D there too. Do not invent a new database abstraction if the existing architecture already covers it.
+
+---
+
+# 30. Frontend Canonical Registry
+
+Modify:
+
+```text
+constants/models.ts
+```
+
+Add a `ModelDefinition` for Unique3D.
+
+Recommended display metadata:
+
+```text
+id: unique3d_image_to_raw_mesh
+name: Unique3D (High-Fidelity Single Image → 3D)
+category: mesh_generation
+feature: image_to_raw_mesh
+featureLabel: Image to Geometry
+supportedInputs: ["image"]
+supportedOutputs: ["glb"]
+supportsTexture: true
+```
+
+`vramMb` must use the verified scheduler requirement.
+
+Do not mark low-VRAM support until an actual tested path exists.
+
+---
+
+# 31. Generate Panel
+
+Inspect and update:
+
+```text
+features/workspace/Panels/GeneratePanel.tsx
+```
+
+The Unique3D model must be selectable exactly like existing image-to-raw-mesh models.
+
+Do not create a Unique3D-only selector.
+
+The UI must use the canonical ID:
+
+```text
+unique3d_image_to_raw_mesh
+```
+
+---
+
+# 32. Parameter Wiring
+
+Modify:
+
+```text
+features/workspace/utils/buildGenerationParameters.ts
+```
+
+When the selected model is Unique3D, forward only the parameters the model actually supports.
+
+Expected model-native inputs to preserve:
+
+```text
+seed
+input_processing
+do_refine
+expansion_weight
+init_type
+```
+
+Do NOT inject unrelated values such as:
+
+```text
+octree_resolution
+mc_resolution
+guidance_scale
+num_faces
+```
+
+unless official Unique3D source actually consumes them.
+
+---
+
+# 33. Model Parameter Schema
+
+Implement `get_parameter_schema()` in the adapter.
+
+Expose the official parameters and validation ranges.
+
+Current upstream UI indicates:
+
+```text
+expansion_weight: -1.0 .. 1.0
+init_type: std | thin
+```
+
+Verify these values against the pinned source before implementation.
+
+---
+
+# 34. Admin Models Tab
+
+The current admin model page already reads:
+
+```text
+CANONICAL_MODELS
+available_models
+model_details
+```
+
+Unique3D should therefore appear automatically after proper registry/API wiring.
+
+Verify:
+
+- search finds Unique3D;
+- correct VRAM requirement is displayed;
+- readiness state is correct;
+- missing weights are visible;
+- Ready state appears only after verification;
+- no duplicate model card is created.
+
+---
+
+# 35. Smart Generation
+
+Inspect:
+
+```text
+backend/api/routers/smart_generation.py
+```
+
+If smart generation uses explicit candidate lists, add Unique3D where appropriate.
+
+Recommended role:
+
+```text
+single-image → high-quality textured geometry candidate
+```
+
+Do not automatically make Unique3D the global default unless the existing product logic has an explicit model-priority mechanism that should include it.
+
+Explicit user model selection must always win.
+
+---
+
+# 36. Source-Fidelity / Downstream Pipeline Contract
+
+Unique3D is a **source generation model**.
+
+The source mesh should be generated at the model's native quality, then preserved as the immutable master.
+
+Flow:
+
+```text
+Unique3D
    ↓
-optional preprocessing + user preview
+raw/native source GLB
    ↓
-capability-aware model selection
+master/source.glb (immutable)
    ↓
-maximum-fidelity native inference
-   ↓
-immutable master/source.glb
-   ↓
-repair / conditional retopo / texture preservation
-   ↓
-target polycount + UV + LOD + collision
-   ↓
-optional rigging
-   ↓
-quality QA + provenance
-   ↓
-gallery / comparison / diff
-   ↓
-engine-ready export
-\`\`\`
+existing production post-process
+   ├── retopo
+   ├── UV
+   ├── texture operations
+   ├── LOD
+   ├── collision
+   └── game-ready
+```
 
-### Non-negotiable product contract
-
-- **3D generation input is Image → 3D.**
-- Text input remains valid for mesh painting/editing and motion workflows, but **Text → 3D is not an active generation path**.
-- The immutable model-native master remains the highest-fidelity checkpoint.
-- Production budgets such as target polycount must remain **downstream constraints**, not hidden neural-generation limits.
-- Existing adapters, scheduler, post-process services, history, export tools, and UI patterns must be reused before creating new abstractions.
-- No new dependency is allowed when an existing implementation can satisfy the requirement.
-- No research feature should be promoted to production merely because a cloud service advertises an analogous feature.
+Do not use ForMash3D target polycount to destructively simplify inside the Unique3D adapter.
 
 ---
 
-# 1. Engineering Rules For Every Task
+# 37. Texture Contract
 
-These rules are mandatory and are derived from the repository engineering rules.
+Unique3D produces textured mesh output in its official generation path.
 
-## 1.1 Root-cause first
+The adapter must preserve:
 
-Before changing code:
-
-1. Read the task and every file in the execution path.
-2. Trace the request from UI → API → scheduler → adapter → storage → post-process → artifact delivery.
-3. Search every caller of any function being changed.
-4. Identify the actual cause rather than patching the visible symptom.
-5. Reuse an existing function, utility, endpoint, store, schema, or service whenever possible.
-6. Implement the smallest correct change.
-7. Run targeted tests first, then broader verification.
-8. Update all relevant documentation before declaring the task complete.
-
-## 1.2 No duplicate systems
-
-Do not create:
-
-- a second history database when job history already exists;
-- a second batch scheduler when the existing scheduler can queue jobs;
-- a second exporter when \`meshExport.js\` and \`ExportMeshDialog.jsx\` already provide export primitives;
-- a second rigging service when \`unirig_auto_rig\` already exists;
-- a second repair engine when \`backend/postprocess/services/repair.py\` exists;
-- a second image editor when the existing Image Editor already supports manual crop/filter operations;
-- a new WebSocket abstraction until the actual backend transport exists.
-
-## 1.3 Resource safety
-
-Any feature that can create multiple generation jobs must be resource-admission aware.
-
-Rules:
-
-- Never submit N GPU jobs blindly from the browser with \`Promise.all\`.
-- The scheduler is the source of truth for concurrency.
-- The UI may request concurrency, but the scheduler must decide whether a job runs immediately or remains queued.
-- If the selected model cannot fit the available VRAM/RAM budget, the job must remain queued or be rejected with a clear reason; it must never be started merely because the browser clicked “Generate”.
-- Comparison and batch workflows must degrade to sequential execution when concurrent execution would exceed the available resource budget.
-- User-visible status must distinguish **queued because of resources** from **failed**.
-
-## 1.4 Failure honesty
-
-A partial artifact must never be presented as fully production-ready.
-
-Examples:
-
-- Auto-rig failure must not leave a “rigged” status.
-- Texture loss in a textured production artifact must be surfaced.
-- Export conversion failure must be explicit.
-- Printability check failure must remain visible.
-- A preview transport that is not implemented must not be simulated as a live WebSocket.
-
-## 1.5 Documentation
-
-After every meaningful implementation task, update the relevant existing docs:
-
-- \`Docs/TASKS.md\`
-- \`Docs/ARCHITECTURE.md\`
-- \`Docs/PRD.md\`
-- \`Docs/DESIGN.md\`
-- \`Docs/MEMORY.md\`
-- \`Docs/api-documentation.md\`
-- \`Docs/DECISIONS.md\` when a durable architecture decision is made
-- \`Docs/CHANGELOG.md\` according to the repository's “last three changes” policy
-- \`README.md\` when a public capability or workflow changes
-- \`CONTRIBUTING.md\` when contributor-facing conventions change
-
-Do not create duplicate documentation files merely to satisfy a task.
-
----
-
-# 2. Current Repository Baseline
-
-The current \`Dev\` branch already contains substantial infrastructure. The following must be treated as the baseline rather than rebuilt.
-
-## 2.1 Existing generation pipeline
-
-Current contract:
-
-\`\`\`
-image upload
-→ model capability routing
-→ native inference
-→ immutable source/master asset
-→ production post-process
-→ QA
-→ artifact delivery
-\`\`\`
-
-Already present:
-
-- capability-aware image-to-raw / image-to-textured routing;
-- multi-view related infrastructure;
-- scheduler with VRAM-aware execution;
-- source/master asset preservation;
-- repair;
-- auto-retopo;
-- UV processing;
-- LOD generation;
-- collision/physics preparation;
-- history endpoints;
-- mesh export utilities;
-- UniRig adapter;
-- image-editor utilities;
-- generation settings persistence.
-
-## 2.2 Existing Asset History is partial, not absent
-
-Current code already has:
-
-- \`features/workspace/Dashboard/OutputsPage.tsx\`
-- \`features/workspace/store/WorkspaceContext.tsx\`
-- \`features/workspace/lib/api.ts\`
-- \`stores/useAppStore.ts\`
-- \`/api/v1/system/jobs/history\`
-- thumbnail metadata;
-- polygon/vertex/material/topology metadata;
-- post-process status;
-- delete-history support.
-
-Therefore **Asset History must be upgraded, not rebuilt**.
-
-## 2.3 Existing batch infrastructure is partial
-
-Current code already has:
-
-- \`batchGenerationEnabled\`
-- \`batchQueue\`
-- batch queue actions in \`stores/useAppStore.ts\`
-- \`BatchQueueItem\`
-
-However, the current queue is still prompt-centric in places, while the active product contract is Image → 3D.
-
-The batch task must therefore **retrofit the existing queue to image inputs** instead of introducing a separate queue system.
-
-## 2.4 Existing export infrastructure is substantial
-
-Current code already has:
-
-- \`features/utils/meshExport.js\`
-- \`features/mesh-extras/ExportMeshDialog.jsx\`
-- GLB/OBJ/PLY/STL export;
-- Unity FBX preset;
-- Unreal FBX preset;
-- generic FBX;
-- collision merging;
-- LOD exports;
-- batch export;
-- folder browsing;
-- texture handling.
-
-The one-click engine export task must package and expose these capabilities cleanly rather than duplicate exporters.
-
-## 2.5 Existing rigging infrastructure is present
-
-Current code already has:
-
-- \`backend/adapters/unirig_adapter.py\`
-- \`unirig_auto_rig\` model registration;
-- \`backend/api/routers/auto_rigging.py\`;
-- frontend auto-rig helpers;
-- \`autoRig\` generation state.
-
-What is missing is the **generation-pipeline wiring for an explicit \`enable_auto_rig\` contract**.
-
-## 2.6 Existing printability/repair infrastructure is present
-
-Current code already has:
-
-- \`backend/postprocess/services/repair.py\`;
-- topology counts;
-- boundary-edge detection;
-- non-manifold detection;
-- watertight status;
-- UV-preserving repair;
-- auto-retopo watertight processing;
-- segmentation tools.
-
-Therefore SG-07 should expose and orchestrate what already exists before considering a new geometry library.
-
-## 2.7 Existing image preprocessing pieces are distributed
-
-Current code already contains background-removal and preprocessing logic in several model integrations, including:
-
-- RealESRGAN support;
-- RMBG-based paths;
-- adapter-level background removal;
-- image-editor crop/filter functionality.
-
-The problem is that these capabilities are **distributed rather than exposed as one shared pre-generation experience**.
-
-The SG-06 task must consolidate the orchestration layer while reusing the existing model-specific implementations wherever technically safe.
-
-## 2.8 Existing generation settings persistence is partial
-
-\`stores/useAppStore.ts\` already persists lightweight generation preferences.
-
-Therefore named user presets should extend that persistence rather than introduce an unrelated settings store.
-
-## 2.9 Current WebSocket reality
-
-The current frontend explicitly treats backend job state as REST-driven and the current workspace API's WebSocket methods are placeholders/no-ops.
-
-Therefore SG-11 remains a **hold item**. Do not implement fake streaming or invent a protocol until the actual backend transport exists.
-
----
-
-# 3. Priority Ladder
-
-### P0 — Raw Mesh Quality Closure
-
-**Status: DONE — source-level implementation and regression verification completed.**
-
-> **IMPORTANT FOR FUTURE AGENTS:** Do **not** trust the DONE/VERIFIED status in this file. Treat this ledger as a checklist, not as proof. Every agent must independently inspect the current `Dev` code, trace the live execution path, and rerun the relevant tests before accepting this phase as complete. If the implementation or tests drift, reopen the item even if this document says DONE.
-
-Phase 0 is a **shared quality contract**, not a separate generation pipeline. Every normal Image → 3D generation job uses the same production post-processing path.
-
-#### Q1 — No destructive pre-decimation in model inference
-**DONE / VERIFIED BY SOURCE AUDIT**
-
-- Raw model adapters must not silently decimate model-native geometry.
-- PartPacker raw output remains `num_faces=-1`.
-- TRELLIS raw/image/painting paths keep `simplify=0.0`.
-- Hunyuan Paint keeps remeshing disabled in the model path.
-- Model-native extraction controls remain upstream-compatible.
-
-#### Q2 — Production budgets remain downstream-only
-**DONE / VERIFIED BY SOURCE + CONTRACT TESTS**
-
-- `target_polycount`, LOD settings, collision settings, bake settings, and optimization controls are stripped from model inference inputs.
-- A user target polycount must never reduce the neural model's native source output.
-- The immutable `master/source.glb` remains the source of all downstream processing.
-
-#### Q3 — Maximum-fidelity extraction parameters are preserved
-**DONE / VERIFIED BY SOURCE + PARITY TESTS**
-
-- TripoSR extraction uses the verified 320 contract.
-- TripoSF supports the verified 1024 / 1,638,400 quality contract.
-- Hunyuan/UltraShape/PartPacker/TRELLIS/TRELLIS.2 defaults remain aligned with their current official parity tests.
-- Quality presets may select supported model parameters, but must not silently introduce destructive source limits.
-
-#### Q4 — Model-specific inference schedules are preserved
-**DONE / VERIFIED BY SOURCE + PARITY TESTS**
-
-- TRELLIS image sampling uses the verified 12/12 schedule.
-- Hunyuan shape paths use the verified 50-step seeded contract.
-- Mini Turbo keeps its model-specific 5-step contract.
-- The scheduler does not globally force one sampling schedule onto every adapter.
-
-#### Q5 — Source coordinates, scale, and provenance remain immutable
-**DONE / VERIFIED BY SOURCE + REGRESSION TESTS**
-
-- Raw model saves preserve native coordinate/scale contracts.
-- `master/source.glb` is byte-for-byte protected from post-processing.
-- Source hashes and quality snapshots remain part of the artifact metadata.
-
-#### Q6 — Native textures/materials/UVs cannot be silently destroyed
-**DONE / VERIFIED BY SOURCE + REGRESSION TESTS**
-
-- Native texture detection requires actual payloads, not UV presence alone.
-- Texture-aware optimization restores wedge UV/material information.
-- If texture preservation fails, the pipeline reverts/fails explicitly instead of silently shipping an untextured asset.
-- Native textured assets are not routed through structural retopology that would destroy their mapping.
-
-#### Q7 — LOD/repair/optimization cannot silently compound quality loss
-**DONE / VERIFIED BY SOURCE + REGRESSION TESTS**
-
-- LOD levels are generated independently from the production mesh, not chained.
-- Healthy manifold source meshes skip unnecessary repair.
-- Optimization uses texture-aware decimation for textured assets.
-- The common pipeline applies a geometry-fidelity guard to optimization results and reverts to the repaired mesh when the candidate has non-finite geometry, unexpected face growth, excessive vertex growth, or material bounds drift.
-
-#### Q8 — Normal generation uses the same quality-safe post-processing path
-**DONE / VERIFIED**
-
-- There is no separate “quality pipeline” for smart generation versus normal generation.
-- `run_postprocess_job()` is the common production path.
-- The repair skip and optimization quality guard therefore apply to ordinary Image → 3D generation as well as future smart generation.
-- Existing repair, AutoRetopo, UV, texture, LOD, collision, QA, and artifact contracts remain in this shared path.
-
-### Phase 0 acceptance
-
-- [x] Q1–Q8 implementation contracts verified in current source.
-- [x] Common post-processing quality guard implemented.
-- [x] Healthy meshes no longer receive unnecessary repair mutations.
-- [x] Regression tests added for repair no-op and geometry-envelope protection.
-- [x] No separate quality pipeline introduced.
-- [x] Documentation explicitly warns agents to independently verify implementation rather than trusting status labels.
-- [ ] Full GPU/model visual A/B verification — **NOT RUN: requires production NVIDIA/model runtime.**
-- [ ] Full 22-model GPU smoke suite — **NOT RUN: requires model weights + CUDA runtime.**
-- [ ] 4×A100 concurrency/load test — **NOT RUN: no matching environment available.**
-
-**Phase 0 is source-level DONE, but runtime GPU visual verification remains environment-gated and must not be represented as passed.**
-
-# 4. P1 — High-value / Low-effort Features
-
-**Status: DONE — SG-06, SG-07, SG-08, and SG-02.2 are implemented and cross-wired through the existing generation, scheduler, post-processing, and artifact-delivery paths.**
-
-> Verification rule: this is a source-level implementation marker, not proof of CUDA/model-runtime success. Future agents must independently inspect the current Dev code, trace the live execution path, and rerun relevant tests.
-
----
-
-## SG-06 — Image Enhancement / Auto-Fix + Preview
-
-**Review: DONE — Shared preview/preprocessing artifact, adaptive fallback behavior, provenance, approved-input reuse, and normal Image → 3D integration are implemented.**
-
-**Priority:** HIGH  
-**Timing:** Immediately after P0  
-**Goal:** Improve the quality of the image entering the 3D generator without changing the neural model itself.
-
-### Problem
-
-Poor input images cause:
-
-- weak silhouette extraction;
-- incorrect subject/background separation;
-- low detail;
-- unnecessary background geometry;
-- poor framing;
-- avoidable generation artifacts.
-
-The repository already has RealESRGAN/RMBG capabilities, but they are not exposed as one coherent pre-generation pipeline.
-
-### What to build
-
-Add one shared pre-generation enhancement flow:
-
-\`\`\`
-uploaded image
-  ↓
-input inspection
-  ↓
-RMBG preview / subject isolation
-  ↓
-auto crop + center subject
-  ↓
-resolution inspection
-  ↓
-RealESRGAN only when useful
-  ↓
-optional denoise/sharpen
-  ↓
-approved preprocessed image
-  ↓
-generation scheduler
-\`\`\`
-
-### User flow
-
-1. User uploads image.
-2. UI immediately shows the original and “Generation Preview”.
-3. Preview shows the background-removed/normalized subject.
-4. User can:
-   - Accept;
-   - regenerate preprocessing;
-   - open the existing manual image editor;
-   - disable enhancement.
-5. Once accepted, the exact approved image becomes the generation input.
-6. Generation stores provenance linking the generated asset to the approved preprocessing artifact.
-
-### Required preprocessing policy
-
-Default behavior must be **adaptive**, not destructive.
-
-- Low-resolution input → upscale using existing RealESRGAN capability.
-- Already-high-resolution input → do not blindly upscale.
-- Existing alpha/mask → preserve it and avoid unnecessary second matting.
-- Background removal → preview first whenever possible.
-- Auto-crop → only crop to the detected subject with a configurable safety margin.
-- Centering → preserve the subject's relative orientation and proportions.
-- Noise reduction/sharpening → conservative defaults; avoid hallucinating texture.
-- Enhancement failure → preserve the original input and show a clear warning rather than silently changing the source.
-
-### Reuse requirements
-
-Inspect and reuse:
-
-- existing RealESRGAN checkpoint/path resolution;
-- existing RMBG/model-specific wrappers;
-- existing image-editor crop/filter functionality;
-- existing upload/proxy APIs;
-- existing workspace generation settings.
-
-Do not duplicate every adapter's background-removal implementation.
-
-### Integration point
-
-Preferred architecture:
-
-\`\`\`
-Upload
-  ↓
-Enhancement/Preview service
-  ↓
-approved image artifact
-  ↓
-scheduler job input
-  ↓
-adapter
-\`\`\`
-
-The enhancer should run once at job preparation level when the selected model can consume the shared result.
-
-Model-specific adapters may retain their own required preprocessing when it is an intrinsic part of the upstream model contract, but the shared layer must avoid double-processing.
-
-### Data/provenance
-
-Record:
-
-- original image ID;
-- enhanced image ID;
-- preprocessing operations;
-- RealESRGAN used/not used;
-- RMBG used/not used;
-- crop rectangle;
-- final dimensions;
-- content hash.
-
-### Acceptance criteria
-
-- Enhancement preview appears before generation.
-- “Looks wrong? Edit manually” uses the existing Image Editor rather than a duplicate editor.
-- Same approved image artifact is used by the final generation job.
-- Low-resolution inputs receive useful upscaling.
-- Good high-resolution inputs are not unnecessarily degraded.
-- Existing alpha is not destroyed.
-- Enhancement failure does not produce a false-success generation.
-- The generated history entry shows that enhancement was used.
-- Existing direct generation still works with enhancement disabled.
-
-### Tests
-
-- RGB input.
-- RGBA input.
-- low-resolution input.
-- already-high-resolution input.
-- subject on complex background.
-- subject already isolated.
-- enhancement disabled.
-- RealESRGAN unavailable.
-- RMBG unavailable.
-- malformed image.
-- crop bounds regression.
-- identical approved-input hash reused by job.
-
----
-
-## SG-07 — Printability Check + Auto-Repair
-
-**Review: DONE — Deterministic topology QA, explicit repair control, final recheck, and degraded-state reporting are implemented in the common post-processing path.**
-
-**Priority:** HIGH  
-**Timing:** P1  
-**Goal:** Make print-readiness an explicit, deterministic production check.
-
-### Phase A — Implement now
-
-Expose existing topology analysis as a first-class production flag.
-
-Recommended flags:
-
-- \`enable_printability_check\`
-- \`enable_auto_repair\`
-
-Defaults:
-
-- normal generation → off unless user/preset enables;
-- \`3d_print\` intent → on by preset.
-
-### Existing implementation to reuse
-
-Use:
-
-- \`backend/postprocess/services/repair.py\`
-- existing watertight/non-manifold/boundary checks;
-- existing repair pipeline;
-- existing quality-report infrastructure.
-
-### Decision flow
-
-\`\`\`
-mesh
- ↓
-printability analysis
- ↓
-PASS → continue
-FAIL + auto_repair=false → keep failure/warning visible
-FAIL + auto_repair=true
- ↓
-repair
- ↓
-recheck
- ↓
-PASS → continue
-FAIL → explicit degraded/failed printability state
-\`\`\`
-
-### Metrics
-
-At minimum record:
-
-- watertight;
-- boundary edges;
-- non-manifold edges;
-- face/vertex counts;
-- connected components;
-- repair attempted;
-- repair result;
-- number of removed/filled/detached faces where available.
-
-### Phase B — Auto-split, only if justified
-
-Do not build a new splitter immediately.
-
-If \`enable_auto_split\` is later activated:
-
-1. Reuse existing segmentation/splitting primitives.
-2. Validate that splitting actually improves printability.
-3. Process each part independently.
-4. Preserve transforms.
-5. Run repair/recheck per part.
-6. Record part count and per-part QA.
-7. Never split merely because a mesh is large.
-
-### Acceptance criteria
-
-- Existing \`repair.py\` logic is reused.
-- Printability status is exposed in production metadata.
-- Auto-repair is explicit and reproducible.
-- A failed repair is visible.
-- Textures/UVs are preserved where the existing UV-preserving repair path supports them.
-- Print intent presets turn the appropriate flags on automatically.
-
-### Tests
-
-- watertight mesh;
-- single-hole mesh;
-- non-manifold edge mesh;
-- repair-success mesh;
-- repair-failure mesh;
-- textured repair regression;
-- printability metadata schema test.
-
----
-
-## SG-08 — Auto-Rigging Wiring
-
-**Review: DONE — Canonical enable_auto_rig scheduling, final-production-mesh UniRig execution, durable rigged artifact delivery, and explicit failure propagation are implemented.**
-
-**Priority:** HIGH  
-**Timing:** P1 after SG-07  
-**Goal:** Make the existing UniRig capability available as a generation pipeline option.
-
-### Current state
-
-The project already has:
-
-- UniRig adapter;
-- scheduler model registration;
-- auto-rigging API;
-- frontend auto-rig utility;
-- \`autoRig\` settings state.
-
-The missing part is a single generation-pipeline contract.
-
-### Required flag
-
-Use one canonical job-level flag:
-
-\`\`\`
-enable_auto_rig: boolean
-\`\`\`
-
-Do not keep multiple aliases.
-
-### Execution flow
-
-\`\`\`
-native generation
- ↓
-production post-process
- ↓
-canonical game-ready.glb
- ↓
-if enable_auto_rig
- ↓
-UniRig
- ↓
-rigged game-ready artifact
- ↓
-QA
- ↓
-history/export
-\`\`\`
-
-### Rules
-
-- Auto-rig must run on the final production mesh, not on the immutable raw master.
-- Preserve the immutable source.
-- Do not claim success until the rigged asset is actually durable.
-- Preserve materials/UVs where the rigging path permits.
-- If UniRig fails, publish an explicit rigging failure/degraded artifact state.
-- Do not silently replace a production result with an unrigged result while reporting “rigged”.
-- Keep the existing manual rigging workflow intact.
-
-### Animation presets
-
-The repository contains ARDY/animation infrastructure, but **do not invent native embedded animation behavior**.
-
-Initial SG-08 scope:
-
-- auto-rig wiring only.
-
-Future animation-preset application can be a separate task after the rigged artifact contract is verified.
-
-### Acceptance criteria
-
-- UI toggle maps to \`enable_auto_rig\`.
-- Job payload contains exactly one canonical rigging flag.
-- Scheduler/post-process invokes existing UniRig path.
-- Rigging is capability-aware.
-- Rigged result exposes skeleton/rig metadata.
-- Failure is explicit.
-- Manual rigging remains functional.
-
-### Tests
-
-- auto-rig off → no UniRig call;
-- auto-rig on + valid model;
-- auto-rig unavailable;
-- UniRig failure;
-- rigged artifact history entry;
-- export preserves rig/animation clips where existing exporter supports them.
-
----
-
-## SG-02.2 — Intent Presets
-
-**Review: DONE — Versioned YAML presets, deterministic capability/readiness/VRAM filtering, and explicit model override semantics are implemented.**
-
-**Priority:** HIGH  
-**Timing:** P1  
-**Goal:** Provide deterministic one-click production recipes without a complex scoring system.
-
-### Critical simplification
-
-Do **not** implement the previous six-dimensional weighted model-scoring algorithm as the first smart-generation layer.
-
-For a self-hosted project, the first useful abstraction is:
-
-\`\`\`
-intent → preset → capability-aware model choice → generation → game-ready
-\`\`\`
-
-### Preset storage
-
-Use a versioned YAML config, preferably:
-
-\`\`\`
-backend/config/smart_presets.yaml
-\`\`\`
-
-Do not duplicate the same values across frontend and backend.
-
-### Initial built-in presets
-
-#### game_ready
-
-- target polycount: 50,000
-- texture resolution: 1024
-- LOD: enabled
-- collision: enabled
-- production QA: enabled
-- auto UV: enabled where needed
-- auto rig: optional / user-selected
-
-#### cinematic
-
-- target polycount: 200,000
-- texture resolution: 2048
-- LOD: enabled
-- collision: off by default
-- preserve maximum source fidelity
-
-#### animation
-
-- target polycount: 30,000
-- texture resolution: 1024
-- LOD: enabled
-- quad/retopo preference as supported
-- auto-rig: enabled or prominently suggested
-
-#### 3d_print
-
-- preserve source detail where possible
-- texture output not required unless user requests it
-- printability check: enabled
-- auto-repair: enabled
-- collision: optional
-- no unnecessary texture baking
-
-#### mobile
-
-- target polycount: 20,000
-- texture resolution: 512
-- LOD: enabled
-- collision: optional
-- resource-efficient model preference
-
-### Model choice policy
-
-Do not score six independent dimensions.
-
-Instead:
-
-1. Filter to models compatible with Image → 3D.
-2. Filter to models that satisfy the intent's minimum capability.
-3. Filter by readiness/installation state.
-4. Filter by VRAM constraints.
-5. Use a deterministic priority order for the remaining models.
-6. Return the chosen model and the exact applied preset.
-
-### User override rule
-
-Preset values are defaults.
-
-Explicit user values win.
-
-\`\`\`
-preset defaults
-   ↓
-model capability constraints
-   ↓
-user explicit overrides
-   ↓
-scheduler safety clamps
-\`\`\`
-
-### Acceptance criteria
-
-- One YAML source of truth.
-- Five intents available.
-- No weighted scoring engine.
-- Model selection is deterministic.
-- User overrides are respected.
-- Scheduler still clamps for VRAM.
-- Applied preset and chosen model are stored in job metadata.
-
----
-
-### P1 Closure Verification
-
-- [x] SG-06 implemented end-to-end on the normal Image → 3D path.
-- [x] SG-07 implemented in the common post-processing path; no duplicate repair pipeline.
-- [x] SG-08 implemented after durable production processing using the existing UniRig adapter.
-- [x] SG-02.2 implemented from one YAML source of truth.
-- [x] Original Phase 1 plan preserved; only status/review annotations were added.
-- [x] Future-agent verification rule preserved.
-- [ ] CUDA/model-weight visual A/B and full production load validation — NOT RUN in this environment.
-
-# 5. Seven New Product Features From The Latest Product Review
-
-These seven features are required in the next product roadmap. Existing partial implementations must be extended rather than duplicated.
-
----
-
-## UX-01 — Asset History / Generations Gallery
-
-**Priority:** HIGH  
-**Current state:** IMPLEMENTED — Asset card enhanced to show generation intent, texture maps, LOD levels, and other metadata.
-
-### Why
-
-Users need to return to previously generated assets across sessions, inspect what was generated, reopen it, compare versions, and export it later.
-
-### Current code to reuse
-
-- \`features/workspace/Dashboard/OutputsPage.tsx\`
-- \`features/workspace/store/WorkspaceContext.tsx\`
-- \`features/workspace/lib/api.ts\`
-- \`stores/useAppStore.ts\`
-- \`/api/v1/system/jobs/history\`
-
-### Required result
-
-Upgrade the current gallery into a durable “My Assets” experience.
-
-### Asset card must show
-
-- thumbnail;
-- asset name;
-- created time;
-- model;
-- generation intent/preset;
-- source type;
-- poly/vertex count;
-- texture resolution/material state;
-- post-process status;
-- printability status where available;
-- rigged/unrigged status;
-- LOD availability;
-- production-ready/degraded/failed state.
-
-### Interaction
-
-Click asset → reopen exact artifact in workspace.
-
-Actions:
-
-- Open;
-- Duplicate/Regenerate;
-- Compare;
-- Diff;
-- Export;
-- Delete;
-- Favorite.
-
-### Filtering
-
-Support at least:
-
-- all;
-- completed;
-- degraded;
-- failed;
-- rigged;
-- textured;
-- game-ready;
-- 3d-print;
-- cinematic;
-- mobile.
-
-### Search
-
-Search by:
-
-- asset name;
-- job ID;
-- model;
-- intent/preset.
-
-### Persistence
-
-Use the existing backend job history and artifact metadata.
-
-Do not introduce a second asset database.
-
-### Acceptance criteria
-
-- Gallery survives page reload.
-- Existing history remains compatible.
-- Thumbnails use existing fallback logic.
-- Deleted jobs disappear from the gallery.
-- Reopening restores the correct artifact.
-- No duplicate history entry is created merely by reopening.
-
----
-
-## UX-02 — Side-by-Side Model Comparison
-
-**Priority:** HIGH
-**Current state:** IMPLEMENTED — Model comparison viewer added with side-by-side viewing, stats, and difference metrics; model selector allows choosing assets to compare.
-
-### Why
-
-Users need an objective way to compare model output quality before selecting the final asset.
-
-### User flow
-
-1. Upload one source image.
-2. Select 2–3 compatible models.
-3. Keep common generation settings synchronized.
-4. Submit the jobs as one comparison group.
-5. Scheduler decides whether they run concurrently or sequentially.
-6. Show results in synchronized viewers.
-7. User can compare and keep one/all.
-
-### Required comparison metadata
-
-For each candidate:
-
-- model name;
-- generation time;
-- VRAM peak if available;
-- vertex count;
-- triangle count;
-- dimensions;
-- UV state;
-- texture state;
-- watertight status;
-- post-process status;
-- error/degraded state.
-
-### Resource behavior
-
-Never start three heavyweight models blindly.
-
-Decision:
-
-\`\`\`
-requested 3 models
- ↓
-estimate/admit resource needs
- ↓
-fits concurrency?
- ├─ yes → concurrent
- └─ no → scheduler queues/sequences
-\`\`\`
-
-### Reuse
-
-- existing generation endpoint;
-- existing scheduler;
-- existing job tracking;
-- existing MeshViewer;
-- existing Outputs/Asset History.
-
-Do not create a parallel model execution engine.
-
-### UI acceptance
-
-- same source image visible for all candidates;
-- synchronized orbit/zoom;
-- identical camera framing when possible;
-- model-specific errors do not hide successful candidates;
-- user can save selected candidate(s) to history.
-
-### Tests
-
-- 2 compatible models;
-- 3 compatible models;
-- one model unavailable;
-- insufficient VRAM;
-- one job failure;
-- sequential fallback;
-- history persistence.
-
----
-
-## UX-03 — Batch Generation From Multiple Images
-
-**Priority:** HIGH
-**Current state:** IMPLEMENTED — Batch queue adapted to image inputs, resource-aware admission, UI controls for batch processing.
-
-### Why
-
-Studios and power users need to process many references without manually repeating Generate.
-
-### Required behavior
-
-User can:
-
-- upload multiple images;
-- optionally choose one shared preset/model/quality;
-- enqueue all inputs;
-- start once.
-
-Each image becomes one independent generation job.
-
-### Important correction to current implementation
-
-The current \`BatchQueueItem\` is prompt-centric in places.
-
-The active product contract requires:
-
-\`\`\`
-BatchQueueItem
-  input image
-  preprocessing recipe
-  model/preset
-  status
-  progress
-  result
-  error
-\`\`\`
-
-Do not keep prompt-only generation as the active 3D batch path.
-
-### Resource-aware admission
-
-This is mandatory.
-
-The browser must not launch all jobs simultaneously.
-
-Required UI states:
-
-- Ready;
-- Queued;
-- Running;
-- Resource-wait;
-- Completed;
-- Failed;
-- Cancelled.
-
-The scheduler decides actual concurrency.
-
-### Example
-
-For ten images:
-
-\`\`\`
-10 inputs
- ↓
-10 queued jobs
- ↓
-scheduler admits 1–N based on VRAM
- ↓
-completed jobs free capacity
- ↓
-next queued jobs start
-\`\`\`
-
-### Batch summary
-
-Show:
-
-- total;
-- completed;
-- failed;
-- queued;
-- average generation time;
-- total elapsed time;
-- resource-wait time.
-
-### Acceptance criteria
-
-- Multiple images can be uploaded in one action.
-- All jobs can be submitted without browser-side OOM.
-- Scheduler controls concurrency.
-- Batch can be cancelled.
-- Failed items can be retried individually.
-- Completed items appear in Asset History automatically.
-- Batch export can reuse existing export dialog.
-
-### Tests
-
-- 2 images;
-- 10+ images;
-- mixed resolutions;
-- duplicate filenames;
-- one corrupt image;
-- insufficient VRAM;
-- cancellation;
-- retry;
-- partial failures;
-- page reload while jobs are running.
-
----
-
-## UX-04 — Generation Presets Save / Load
-
-**Priority:** HIGH
-**Current state:** IMPLEMENTED — Named presets save/load implemented in GenerationSection.tsx with localStorage persistence.
-
-### Why
-
-Artists repeatedly use recipes such as:
-
-- Game Ready 50K;
-- Cinematic 200K;
-- Mobile 20K;
-- 3D Print;
-- Animation Rig.
-
-### Separate two concepts
-
-#### Built-in intent presets
-
-Backend-owned and versioned:
-
-- \`smart_presets.yaml\`
-
-#### User presets
-
-User-owned named settings.
-
-Initial implementation should use the existing persisted frontend settings mechanism unless a cross-device persistence requirement is later established.
-
-### Preset fields
-
-At minimum:
-
-- model;
-- intent;
-- quality;
-- target polycount;
-- texture resolution;
-- LOD settings;
-- collision;
-- printability;
-- auto repair;
-- auto rig;
-- enhancement;
-- seed;
-- relevant model-specific generation parameters.
-
-Do not save transient runtime fields.
-
-### UX
-
-- Save current settings as preset.
-- Load preset.
-- Duplicate preset.
-- Rename.
-- Delete user preset.
-- Restore built-in default.
-- Show “built-in” vs “custom”.
-
-### Override behavior
-
-Loading a preset applies its values, but a later explicit user change overrides the preset.
-
-### Acceptance criteria
-
-- Named presets survive page reload.
-- Built-in presets remain versioned from YAML.
-- User presets cannot overwrite built-in definitions.
-- Invalid/stale fields are safely migrated.
-- Preset loading does not accidentally restore stale runtime job state.
-
----
-
-## UX-05 — Mesh Diff Viewer
-
-**Priority:** HIGH
-**Current state:** IMPLEMENTED — MeshDiffViewer component created and integrated into RightPropertyPanel.
-
-### Why
-
-The user currently cannot easily answer:
-
-> “What exactly did post-processing change?”
-
-This feature must make source → production differences visible.
-
-### Source of truth
-
-Use existing immutable:
-
-\`\`\`
-master/source.glb
-\`\`\`
-
-and existing production artifacts/quality metadata.
-
-Do not regenerate the source mesh just to compare it.
-
-### Required views
-
-Two synchronized panes:
-
-- Source / Native;
-- Game Ready / Final.
-
-Optional stage picker:
-
-- Source;
-- Repaired;
-- Retopologized;
-- LOD0;
-- LOD1;
-- LOD2;
-- collision.
-
-### Metrics
-
-At minimum:
-
-- vertices;
-- triangles/faces;
-- dimensions;
-- bounding box;
-- scale;
-- material count;
-- texture count;
-- texture resolution;
-- UV coverage;
-- UV overlap status;
-- watertight;
-- boundary edges;
-- non-manifold edges;
-- connected components;
-- LOD count;
-- file size;
-- post-process status.
-
-### Delta presentation
-
-Example:
-
-\`\`\`
-Triangles     612,400 → 50,120   -91.8%
-Vertices      318,000 → 27,100   -91.5%
-Watertight    false   → true
-UV coverage  71%     → 96%
-Textures      0       → 4
-LOD levels    0       → 3
-\`\`\`
-
-### Stage attribution
-
-Use existing quality-trace information so the UI can say:
-
-- “repair changed topology”;
-- “decimation reduced face count”;
-- “UV step added charts”;
-- “texture bake created material maps”.
-
-Do not perform expensive duplicate processing just to generate these labels.
-
-### Acceptance criteria
-
-- Source bytes remain unchanged.
-- Final artifact is accurately represented.
-- Stats match stored QA metadata.
-- Viewer camera can be synchronized.
-- Deltas are deterministic.
-- Missing optional metrics are shown as “Unavailable”, not guessed.
-
----
-
-## UX-06 — One-Click Engine Export
-
-**Priority:** HIGH
-**Current state:** IMPLEMENTED — Existing exporter primitives reused; ExportMeshDialog provides one-click engine export.
-
-### Why
-
-“Export” should mean “ready for the selected engine”, not merely “download GLB”.
-
-### Existing code to reuse
-
-- \`features/utils/meshExport.js\`
-- \`features/mesh-extras/ExportMeshDialog.jsx\`
-- existing FBX presets;
-- existing collision merging;
-- existing LOD naming;
-- existing texture export;
-- existing batch export.
-
-### Targets
-
-#### Unreal Engine 5
-
-Default package:
-
-\`\`\`
-Unreal/
-  <AssetName>/
-    Mesh/
-      <AssetName>.fbx
-    Textures/
-      ...
-    LODs/
-      ...
-    Collision/
-      UCX_<AssetName>_01...
-    manifest.json
-    IMPORT.md
-\`\`\`
-
-Requirements:
-
-- centimeters/scale contract documented;
-- skeleton/animations preserved when present;
-- UCX collision naming maintained;
-- LOD naming explicit;
-- texture paths deterministic.
-
-#### Unity
-
-Default package:
-
-\`\`\`
-Unity/
-  <AssetName>/
-    Models/
-      <AssetName>.fbx
-    Textures/
-      ...
-    LODs/
-      ...
-    Materials/
-      ...
-    manifest.json
-    IMPORT.md
-\`\`\`
-
-Requirements:
-
-- Unity-ready FBX;
-- deterministic texture references;
-- optional material metadata/setup instructions;
-- rig/import hints;
-- LOD mapping.
-
-Do not generate fake proprietary Unity assets unless Unity tooling is actually available. A folder package plus import metadata is the default cross-platform contract.
-
-#### Godot
-
-Default package:
-
-\`\`\`
-Godot/
-  <AssetName>/
-    <AssetName>.glb
-    Textures/
-      ...
-    LODs/
-      ...
-    Materials/
-      ...
-    manifest.json
-    IMPORT.md
-\`\`\`
-
-Use GLB/glTF as the default Godot delivery format unless an explicit tested FBX workflow is requested.
-
-### General package contract
-
-Every engine export should contain:
-
-- canonical mesh;
-- textures;
-- LODs when enabled;
-- collision when enabled;
-- rig/animation data when present;
-- deterministic naming;
-- target engine metadata;
-- manifest;
-- human-readable import instructions.
-
-Zip is optional delivery, but the output must first be a valid structured package.
-
-### Acceptance criteria
-
-- One click selects target engine.
-- Existing exporter functions are reused.
-- Package structure is deterministic.
-- No broken relative texture paths.
-- Collision naming is valid for the target.
-- LOD files are consistently named.
-- Manifest lists every generated artifact.
-- Failed optional conversions are clearly marked.
-
-### Tests
-
-- Unreal package;
-- Unity package;
-- Godot package;
-- textured mesh;
-- untextured mesh;
-- rigged mesh;
-- LOD asset;
-- collision asset;
-- batch engine export;
-- missing optional FBX converter.
-
----
-
-## UX-07 — Smart Background Removal Preview
-
-**Priority:** HIGH
-**Current state:** IMPLEMENTED — Background removal preview integrated into generation panel with original vs preview view, approve/edit/manual options.
-
-### Why
-
-Background removal is one of the earliest quality gates.
-
-Users should see what the generator will actually receive before spending GPU time.
-
-### User flow
-
-\`\`\`
-upload image
- ↓
-RMBG preview
- ↓
-show before/after
- ↓
-user accepts
-    OR
-opens existing image editor
-    OR
-disables background removal
- ↓
-generation
-\`\`\`
-
-### UI
-
-Show:
-
-- Original;
-- Processed;
-- transparent checkerboard/background;
-- subject bounds;
-- “Accept”;
-- “Edit Manually”;
-- “Use Original”;
-- “Re-run”.
-
-### Reuse
-
-- existing RMBG model paths;
-- SG-06 preprocessing utility;
-- existing Image Editor for manual edits.
-
-Do not build a second image editing application.
-
-### Acceptance criteria
-
-- preview renders before GPU generation;
-- approved preview becomes the exact generation input;
-- user can reject it;
-- manual edit returns to the same generation flow;
-- original remains available;
-- preprocessing provenance is stored.
-
----
-
-# 6. Simplified Smart Selector — SG-01
-
-**Priority:** MEDIUM/HIGH  
-**Quarter target:** Q4 2026 planning target  
-**Status:** IMPLEMENTED — deterministic intent resolution, image-only smart submission, one-click workspace execution, and explainability are wired to the existing scheduler path.
-
-### Product promise
-
-One click:
-
-\`\`\`
-intent
- → preset
- → compatible model
- → generation
- → production post-process
- → game-ready result
-\`\`\`
-
-### Important scope reduction
-
-Do not implement the old six-weight model-scoring system initially.
-
-### API
-
-Preferred endpoint:
-
-\`\`\`
-POST /api/v1/smart-generation/generation
-\`\`\`
-
-Input:
-
-- image upload;
-- intent;
-- optional preset override fields;
-- optional enhancement setting;
-- optional auto-rig setting.
-
-No Text → 3D prompt mode.
-
-### Internals
-
-1. Validate image.
-2. Resolve intent.
-3. Load preset from \`smart_presets.yaml\`.
-4. Filter models by:
-   - Image → 3D support;
-   - readiness;
-   - minimum capability;
-   - VRAM fit.
-5. Choose a deterministic model priority.
-6. Merge preset + explicit user overrides.
-7. Submit through existing generation scheduler.
-8. Return job ID, selected model, applied preset, candidate order, effective config summary, and explicit runtime-safety responsibility.
-
-### Explainability
-
-Show the user:
-
-- selected model;
-- selected preset;
-- why it was eligible;
-- which settings were applied;
-- which values were clamped for safety.
-
-### Acceptance criteria
-
-- no scoring engine required;
-- deterministic;
-- image-only;
-- uses existing scheduler;
-- user overrides win;
-- VRAM guard remains authoritative;
-- final result appears in Asset History.
-
----
-
-# 7. Hold — SG-11 Real-Time Generation Preview
-
-**Priority:** HIGH future UX, but HOLD until the base pipeline is stable.
-
-### Why it is on hold
-
-Current backend does not expose a real job-preview WebSocket transport.
-
-Current workspace realtime code is intentionally REST/SSE-oriented.
-
-### Do not do
-
-Do not:
-
-- fake a WebSocket;
-- poll and label it “WebSocket”;
-- invent a new protocol without backend event infrastructure;
-- continuously regenerate preview meshes at arbitrary intervals.
-
-### When to activate
-
-After:
-
-- P0 raw quality is stable;
-- SG-06/07/08/02.2 are stable;
-- history and batch flows work;
-- job event publication is well-defined.
-
-### Future design direction
-
-The future implementation may use:
-
-\`\`\`
-scheduler progress events
- ↓
-preview artifact generation
- ↓
-WebSocket transport
- ↓
-GenerationLoadingPreview / MeshViewer
-\`\`\`
-
-But the final transport/protocol must be based on the actual backend event system at implementation time.
-
----
-
-# 8. Features Explicitly Deferred / Do Not Implement Now
-
-These tasks must remain out of the active production milestone unless a future engineering review changes their status.
-
-## SG-03 — Smart-Flow Adapter
-
-**Status:** DEFERRED / RESEARCH
-
-Reason:
-
-- current production task must not depend on uncertain external model/weight availability;
-- introducing a new flow-based generator would add a new inference stack before existing quality issues are closed;
-- the project already has multiple native model adapters that can be improved first.
-
-Exit criteria before reconsideration:
-
-- verified upstream/code availability;
-- verified weight license and redistribution terms;
-- proven quality advantage on ForMash3D test set;
-- VRAM/latency benefit;
-- clear integration path without destabilizing current models.
-
----
-
-## SG-04 — Triplane-Octree Latent Swap
-
-**Status:** DEFERRED / RESEARCH
-
-Reason:
-
-- VAE/encoder replacement is research-heavy;
-- compatibility with current adapters is not assumed;
-- risk is far above current product value.
-
-No production implementation without a dedicated benchmark and architecture proposal.
-
----
-
-## SG-05 — ControlNet-like Spatial Guidance
-
-**Status:** DEFERRED / RESEARCH
-
-Reason:
-
-- current adapters do not expose one common spatial-conditioning contract;
-- forcing bbox/voxel/point-cloud conditioning across unrelated models would create adapter-specific complexity;
-- the feature is not a simple endpoint field addition.
-
-Do not add generic fields that adapters silently ignore.
-
----
-
-## SG-09 — Recursive Part-Based Generation
-
-**Status:** DEFERRED / RESEARCH
-
-Reason:
-
-- split → independent generation → reassembly can introduce seam and alignment artifacts;
-- no evidence yet that this improves the current pipeline relative to a high-fidelity single-pass model plus existing post-processing.
-
-Only reconsider after a benchmark demonstrates consistent quality gain.
-
----
-
-## SG-10 — ONNX / TensorRT Optimization
-
-**Status:** DEFERRED / PERFORMANCE PHASE
-
-Reason:
-
-- quality correctness comes first;
-- model export can introduce numerical or operator incompatibilities;
-- optimization before stable quality measurements is premature.
-
-Only activate after representative benchmarks exist.
-
----
-
-## SG-12 — New External C++ Geometry Stack
-
-**Status:** DEFERRED / RESEARCH
-
-Potential technologies:
-
-- Manifold/ManifoldPlus;
-- CGAL;
-- Mitsuba;
-- OpenVDB;
-- other native geometry toolchains.
-
-Current repair/UV/retopo/collision stack should be proven insufficient before introducing build-heavy alternatives.
-
-The default action is **improve the existing implementation before adding a new geometry backend**.
-
----
-
-# 9. Additional Product Recommendations
-
-These are not part of the seven required screenshot features, but they are strongly recommended because the current architecture can support them with relatively small incremental work.
-
-## R-01 — Reproduce / Duplicate Generation
-
-From any history item:
-
-\`\`\`
-Duplicate generation
- → same image
- → same model/preset
- → same relevant parameters
- → new job
-\`\`\`
-
-Why:
-
-- reproducibility;
-- debugging;
-- seed comparisons;
-- rapid iteration.
-
-Reuse Asset History + existing generation settings.
-
----
-
-## R-02 — Favorites / Collections
-
-Allow users to pin/favorite important assets.
-
-Use metadata, not another asset database.
-
-Possible collections:
-
-- Favorites;
-- Characters;
-- Props;
-- Production;
-- 3D Print;
-- Archived.
-
----
-
-## R-03 — Retry From Failure
-
-Every failed job should expose:
-
-- failed stage;
-- error summary;
-- “Retry same config”;
-- “Retry with safe preset” when a resource issue caused the failure.
-
-Do not rebuild the job manually.
-
----
-
-## R-04 — Explainable Model Choice
-
-For the smart selector, show:
-
-\`\`\`
-Selected: <model>
-Why:
-✓ supports image → raw
-✓ enough VRAM
-✓ supports requested texture mode
-✓ satisfies game-ready preset
-\`\`\`
-
-This is cheaper and more valuable than a complex score visualization.
-
----
-
-# 10. Cross-Feature Data Contract
-
-The following metadata should be shared across generation, history, comparison, diff, and export.
-
-## Job metadata
-
-- job ID;
-- source image ID;
-- source image hash;
-- preprocessed image ID/hash;
-- model ID;
-- preset ID/version;
-- intent;
-- effective generation parameters;
-- scheduler resource decision;
-- timestamps;
-- source/master artifact;
-- production artifacts;
-- QA report;
-- rigging status;
-- printability status;
-- export status.
-
-## Artifact metadata
-
-At minimum:
-
-- canonical path/URL;
-- artifact role;
-- file type;
-- size;
-- hash;
-- vertices;
-- triangles;
-- dimensions;
 - materials;
-- textures;
-- UV metrics;
-- topology metrics;
-- post-process stage;
-- status.
+- UVs;
+- texture images;
+- vertex colors if present;
+- normals.
 
-Do not create separate incompatible schemas for history, comparison, diff, and export.
+Do not strip texture data just because the canonical feature is `image_to_raw_mesh`.
 
----
+Frontend metadata can report:
 
-# 11. Resource Management Specification
-
-Every multi-job feature must use the same rules.
-
-## Scheduler is authoritative
-
-The UI sends jobs.
-
-The scheduler decides:
-
-- run now;
-- queue;
-- reject due to invalid input;
-- cancel;
-- retry.
-
-## Comparison
-
-Requested concurrency = 2–3.
-
-Actual concurrency = scheduler-admitted concurrency.
-
-## Batch
-
-Requested jobs = N.
-
-Actual running jobs = resource-admitted subset.
-
-## Smart Selector
-
-Model selection must consider hard resource constraints before submitting.
-
-## Enhancement
-
-Preprocessing must not accidentally consume the GPU budget intended for the generation model if a CPU/offload path already exists and is sufficient.
-
-## UI requirements
-
-When waiting for resources show:
-
-- “Queued — waiting for VRAM”;
-- selected model;
-- estimated resource requirement when available;
-- queue position when available.
-
-Do not show fake percentages.
+```text
+supportsTexture: true
+```
 
 ---
 
-# 12. Testing Strategy
+# 38. Background Removal / Input Processing
 
-Every feature is incomplete until its regression surface is tested.
+Unique3D exposes input processing/background removal behavior.
 
-## 12.1 Unit tests
+Wire this as a model-native parameter.
 
-Required areas:
+Avoid duplicate processing such as:
 
-- preset parsing;
-- preset merge/override;
-- model capability filtering;
-- resource admission decisions;
-- printability flags;
-- enhancement configuration;
-- history mapping;
-- comparison grouping;
-- batch item state transitions;
-- export manifest creation;
-- diff metric calculation.
+```text
+ForMash3D background removal
+    ↓
+Unique3D background removal
+```
 
-## 12.2 API tests
-
-Required endpoints/contracts:
-
-- image enhancement preview/approval path;
-- smart generation;
-- history;
-- batch submission/state;
-- comparison job grouping;
-- printability metadata;
-- auto-rigging;
-- engine export.
-
-Do not add endpoints merely when an existing endpoint can carry the same contract cleanly.
-
-## 12.3 Frontend tests
-
-Required flows:
-
-- upload → enhancement preview;
-- preview reject/edit/accept;
-- preset save/load;
-- batch upload;
-- batch resource wait;
-- comparison;
-- asset history reopen;
-- diff viewer;
-- engine export;
-- auto-rig toggle.
-
-## 12.4 Integration tests
-
-At minimum:
-
-- image → raw generation;
-- image → textured generation;
-- generation + enhancement;
-- generation + printability;
-- generation + auto-rig;
-- generation + preset;
-- batch generation;
-- comparison;
-- history persistence;
-- export of final asset.
-
-## 12.5 Environment-gated tests
-
-Do not mark these passed without their real runtime:
-
-- full 22-model GPU smoke suite;
-- 4×A100 concurrency;
-- live Redis multi-worker;
-- SAST/DAST;
-- device/browser visual sweep;
-- full WebSocket preview;
-- optional research adapters;
-- TensorRT;
-- native C++ geometry libraries.
-
-The task ledger must continue to say **NOT RUN** for unavailable environments rather than fabricating a result.
+unless the official flow and a measured failure justify it.
 
 ---
 
-# 13. Verification Matrix
+# 39. Input Resolution
 
-| Area | Required evidence |
-|---|---|
-| P0 Q1–Q8 | Root cause + regression + affected-path test |
-| SG-06 | Enhancement preview + approved artifact provenance + generation test |
-| SG-07 | Printability before/after + repair regression |
-| SG-08 | Rigged artifact + failure-path test |
-| SG-02.2 | YAML validation + deterministic model selection |
-| UX-01 | Reload + reopen + metadata integrity |
-| UX-02 | 2–3 model comparison + resource fallback |
-| UX-03 | multi-image batch + resource-aware queue |
-| UX-04 | save/load/migrate user preset |
-| UX-05 | source/final metrics match QA |
-| UX-06 | Unreal/Unity/Godot package validation |
-| UX-07 | preview + manual edit + accept/reject |
-| SG-01 | one-click intent workflow |
-| SG-11 | only after actual backend transport exists |
+Use the upstream Unique3D path for its own resolution handling/super-resolution where available.
+
+Do not add a second generic ForMash3D image upscaler merely because Unique3D accepts small images.
+
+Any global preprocessing already present in ForMash3D must be audited for compatibility with Unique3D's expectations.
 
 ---
 
-# 14. Definition of Done
+# 40. Output Orientation
 
-A task may only be marked **DONE** when all of the following are true:
+Preserve the official Unique3D coordinate transform.
 
-1. Root cause/implementation need is documented.
-2. Existing code was inspected for reusable implementation.
-3. Minimal correct code was added or existing code was extended.
-4. Targeted tests pass.
-5. Relevant integration tests pass where the environment permits.
-6. Failure paths are explicit.
-7. No duplicate subsystem was created.
-8. Relevant documentation is updated.
-9. The task's acceptance criteria are satisfied.
-10. Any environment-gated verification is explicitly marked **NOT RUN** rather than guessed.
-11. The implementation is reflected accurately in this file.
+Do not apply an extra global rotation in the adapter unless tests prove the upstream output needs the project's standard orientation conversion.
 
----
+Validate:
 
-# 15. Execution Order
-
-The implementation must proceed in this order unless an actual blocker requires a deliberate change.
-
-## Phase 0 — Raw quality
-
-1. Recover and document BUG-Q1.
-2. Fix and test BUG-Q1.
-3. Repeat through BUG-Q8.
-4. Re-run source-vs-postprocess quality verification.
-5. Update \`Docs/MEMORY.md\`, \`Docs/CHANGELOG.md\`, and relevant architecture notes.
-
-**Do not move to Phase 1 while unresolved raw-quality blockers remain.**
-
-## Phase 1 — High-value quality/product foundations
-
-6. SG-06 Image Enhancement + preprocessing preview.
-7. SG-07 Printability check + auto-repair.
-8. SG-08 Auto-rig pipeline wiring.
-9. SG-02.2 Intent Presets.
-
-## Phase 2 — Seven product workflow features
-
-10. UX-01 Asset History / Generations Gallery upgrade.
-11. UX-03 Batch Generation retrofit.
-12. UX-04 User Generation Presets.
-13. UX-07 Background Removal Preview integration with SG-06.
-14. UX-02 Side-by-side Model Comparison.
-15. UX-05 Mesh Diff Viewer.
-16. UX-06 One-click Engine Export.
-
-The exact order inside Phase 2 may change based on shared dependencies, but no feature may duplicate an existing subsystem.
-
-## Phase 3 — Simplified Smart Generation
-
-17. SG-01 Smart Selector.
-18. Add explainable model choice.
-19. Validate intent → preset → model → generation → post-process end to end.
-
-## Phase 4 — Hold review
-
-20. Reassess SG-11 WebSocket preview after the above features are stable.
-21. Only activate research tasks if their exit criteria are satisfied.
+- front view;
+- side view;
+- top view;
+- Y-up behavior;
+- viewer orientation;
+- downstream retopo orientation.
 
 ---
 
-# 16. Release Milestones
+# 41. Model Lifecycle
 
-## Milestone A — Quality baseline
+Follow the existing adapter lifecycle:
 
-Complete:
+```text
+load → process → unload
+```
 
-- BUG-Q1 → Q8;
-- raw source fidelity verification;
-- no silent quality loss.
+The adapter should:
 
-## Milestone B — Production-friendly generation
+- load lazily;
+- reuse already-loaded resources where safe;
+- release GPU references on unload;
+- run model-specific cleanup if official code provides it;
+- avoid stale tensors or global model state.
 
-Complete:
-
-- SG-06;
-- SG-07;
-- SG-08;
-- SG-02.2.
-
-## Milestone C — Premium workflow
-
-Complete:
-
-- UX-01;
-- UX-02;
-- UX-03;
-- UX-04;
-- UX-05;
-- UX-06;
-- UX-07.
-
-## Milestone D — One-click smart generation
-
-Complete:
-
-- SG-01 simplified selector;
-- preset/model explainability;
-- end-to-end smart generation.
-
-## Milestone E — Future realtime
-
-Only after all earlier milestones are stable:
-
-- SG-11.
+Do not use `torch.cuda.empty_cache()` as the only cleanup step if model objects still own GPU memory.
 
 ---
 
-# 17. Things That Must NOT Be Done During This Roadmap
+# 42. Concurrency
 
-Do not:
+Initial setting:
 
-- reintroduce Text → 3D;
-- create a new queue when the existing scheduler can be reused;
-- add a new asset database merely for gallery UI;
-- add a new exporter while \`meshExport.js\` already supports the required formats;
-- create a new auto-rigging model when UniRig exists;
-- add a second repair pipeline without proving the current one fails;
-- build six-dimensional smart scoring before a deterministic preset system proves insufficient;
-- claim WebSocket support before the backend actually supports it;
-- add GPU-heavy preprocessing without measuring its resource impact;
-- silently downgrade quality to make a benchmark look faster;
-- report environment-gated checks as passed when they were not run;
-- add speculative external libraries just because another product uses them.
+```yaml
+max_workers: 1
+```
+
+Unique3D should not run concurrently until measured under the shared environment.
+
+Its multi-component generation pipeline and native rasterization make conservative scheduling appropriate initially.
 
 ---
 
-# 17.1 Latest Repository Audit — 2026-10-05
+# 43. Progress Reporting
 
-- Cross-checked all 23 backend model IDs against constants/models.ts, manager.sh, and backend/scripts/download_models.sh.
-- Added the missing VoxHammer download path and verified that it is the only registered model family absent from the model-download surface.
-- Hardened shared Hunyuan3D-2.1 / 2mini checkpoint readiness checks and removed the FastMesh verified-bundle re-download path.
-- Updated root/Docs model-count language to distinguish 23 registered backend adapters from 22 user-selectable models; Zero123++ remains intentionally hidden from the general selector.
-- Full CUDA/model visual validation remains **NOT RUN** and remains the user environment-gated GPU testing responsibility.
+Do not fabricate fake per-iteration progress.
 
-# 17.2 Latest Repository Audit — 2026-10-05 (SG-01 Closure + Contract Cleanup)
+If the official pipeline does not expose a trustworthy callback, use truthful stage-level progress.
 
-- Independently re-read all 2,188 lines of \`Docs/TASKS.md\`, including the acceptance criteria, testing strategy, verification matrix, execution order, release milestones, and final checklist.
-- Re-verified SG-06, SG-07, SG-08, and SG-02.2 against their live API/scheduler/post-process/frontend paths; the core implementations are present.
-- Closed SG-01: added a real smart-generation submission contract, deterministic intent→model resolution, one-click intent execution from the Generate panel when an uploaded image is ready, and explainable model/VRAM selection state.
-- Added focused regression coverage for deterministic intent routing, explicit model override, preprocessing provenance/alpha preservation, built-in intent inventory, and printability reporting.
-- Reconciled stale Text → 3D metadata in PRD/repository SEO surfaces; the active product contract remains Image → 3D plus text-guided painting/editing/motion.
-- GPU/model-weight visual validation and the full production test suite remain NOT RUN here; they are not represented as passed.
+Possible stages:
 
-# 18. Final Agent Checklist
+```text
+prepare/input
+multi-view generation
+normal prediction / mesh reconstruction
+refinement / color projection
+export / validation
+```
 
-Before marking the roadmap implementation cycle complete, the agent must confirm:
-
-- [x] RULES.md reread before implementation.
-- [x] Current Dev branch reread before touching code.
-- [x] \`Docs/TASKS.md\` used as the authoritative task list.
-- [x] BUG-Q1 through BUG-Q8 have exact implementation contracts, source verification, and regression coverage; future agents must independently re-verify rather than trust this status.
-- [x] SG-06 implemented with preview and provenance.
-- [x] SG-07 implemented using existing repair/checking.
-- [x] SG-08 wired through existing UniRig infrastructure.
-- [x] SG-02.2 implemented as YAML intent presets without weighted scoring.
-- [x] UX-01 history upgraded without creating duplicate persistence.
-- [x] UX-02 comparison uses existing scheduler.
-- [x] UX-03 batch uses existing queue/scheduler and is resource-aware.
-- [x] UX-04 named presets reuse existing settings persistence.
-- [x] UX-05 diff viewer uses immutable source + existing QA metadata.
-- [x] UX-06 engine export reuses existing exporter and produces deterministic packages.
-- [x] UX-07 background-removal preview reuses SG-06/RMBG/Image Editor.
-- [x] SG-01 simplified selector uses image-only intent → preset → model → generation; selecting an intent with an uploaded/approved image now triggers the normal generation lifecycle.
-- [x] SG-11 remains held because the backend has no real preview WebSocket transport.
-- [x] SG-03/04/05/09/10/12 remain explicitly deferred; no exit criteria have been met.
-- [x] Relevant documentation was updated.
-- [ ] Targeted tests pass — NOT RUN here because the GitHub execution environment has no repository clone/dependency runtime.
-- [x] Environment-gated tests are honestly marked NOT RUN when unavailable.
-- [x] No duplicate subsystem was introduced.
-- [x] Final Git history contains the intended documentation/code changes and nothing unrelated.
+Use the existing scheduler progress mechanism.
 
 ---
 
-# 19. Phase-0 Verification Rule
+# 44. Temporary Files
 
-**Never trust the status labels in this document as evidence.** A future agent must independently inspect the current branch, verify each Q1–Q8 contract against the live code, run the targeted regression tests, and reopen any item whose implementation or test evidence no longer matches.
+Unique3D's upstream code may create temporary files/directories.
 
-# 20. Authoritative Product Decision
+Ensure job outputs are isolated and cleanup is safe.
 
-The practical product strategy is:
+Do not allow two jobs to share the same temporary output name.
 
-> **Fix quality first, then remove friction.**
+Use the existing job/storage conventions where possible.
 
-The highest-value sequence is:
+---
 
-\`\`\`
-raw-quality closure
-   ↓
-image enhancement + preview
-   ↓
-printability + repair
-   ↓
-auto-rig wiring
-   ↓
-intent presets
-   ↓
-history
-   ↓
-batch + comparison
-   ↓
-named presets
-   ↓
-diff
-   ↓
-engine-ready export
-   ↓
-smart selector
-   ↓
-real-time preview
-\`\`\`
+# 45. Native OpenGL/EGL Risk
 
-Research-heavy adapter rewrites remain out of the production path until the existing architecture proves it needs them.
+This is one of the highest-risk integration points.
 
-This file is intentionally implementation-oriented and its status labels are advisory rather than evidence: every future agent should be able to start from the current \`Dev\` branch, inspect the stated existing code, follow the flow, reuse the existing subsystems, implement the smallest correct change, test it, and update the documentation without needing a second hidden task document.
+The official Unique3D color-projection path uses nvdiffrast's GL context. Upstream issue history includes failures involving:
+
+- OpenGL 4.4+;
+- EGL initialization;
+- headless contexts;
+- Ninja/CUDA plugin compilation.
+
+ForMash3D is a server-side application, so this path MUST be tested in the actual production-like environment.
+
+Do not replace the renderer first. Reproduce the exact failure and prefer environment/configuration fixes.
+
+---
+
+# 46. Official Checkpoint Compatibility Risk
+
+Historical Unique3D issues show checkpoint/model-version mismatches can produce shape errors during loading.
+
+Therefore:
+
+- pin the exact upstream code revision;
+- use the matching official checkpoint package;
+- do not mix checkpoints from unrelated forks/versions;
+- do not silently “fix” mismatched tensors by ignoring shape errors.
+
+A checkpoint mismatch is a deployment defect and must be fixed at the source/version boundary.
+
+---
+
+# 47. Direct Official Baseline Before Adapter
+
+Before debugging the adapter itself:
+
+1. run the vendored official Unique3D inference directly;
+2. use the exact same installed environment;
+3. use the exact same checkpoint package;
+4. generate one known-good sample.
+
+Then run the same input through the ForMash3D adapter.
+
+This separates:
+
+```text
+Unique3D environment failure
+```
+
+from:
+
+```text
+ForMash3D integration failure
+```
+
+---
+
+# 48. Official Parity Test
+
+Add Unique3D to:
+
+```text
+backend/tests/test_official_model_parity_contract.py
+```
+
+At minimum verify:
+
+- adapter imports;
+- correct feature type;
+- correct model ID;
+- supported formats;
+- parameter schema exists;
+- official defaults are preserved;
+- downstream-only controls are not sent as model parameters.
+
+If feasible, compare a direct official inference and adapter inference using the same image/settings.
+
+Byte-identical output is not required; functional/structural parity is the goal.
+
+---
+
+# 49. Readiness Tests
+
+Extend:
+
+```text
+backend/tests/test_model_readiness.py
+```
+
+Add cases for:
+
+### Missing checkpoint
+
+→ not ready.
+
+### Partial checkpoint
+
+→ not ready.
+
+### Empty required file
+
+→ not ready.
+
+### Complete checkpoint set
+
+→ ready.
+
+---
+
+# 50. Model Factory Test
+
+Verify the factory can instantiate:
+
+```text
+unique3d_image_to_raw_mesh
+```
+
+and resolves to:
+
+```text
+Unique3DImageToRawMeshAdapter
+```
+
+---
+
+# 51. Download Manager Tests
+
+Verify the download script recognizes:
+
+```text
+unique3d
+```
+
+and that:
+
+```text
+--list
+-m unique3d
+-v
+```
+
+behave correctly.
+
+Do not perform a multi-gigabyte download as a normal unit test.
+
+---
+
+# 52. Frontend Registry Tests
+
+Verify `constants/models.ts` contains:
+
+```text
+unique3d_image_to_raw_mesh
+```
+
+with:
+
+```text
+feature = image_to_raw_mesh
+input = image
+output = glb
+```
+
+and verified VRAM metadata.
+
+---
+
+# 53. Parameter Wiring Tests
+
+Selecting Unique3D must preserve:
+
+```text
+seed
+do_refine
+expansion_weight
+init_type
+input_processing
+```
+
+and must not accidentally inherit parameters from TripoSR, TripoSG, Hunyuan, TRELLIS, or other models.
+
+---
+
+# 54. End-to-End GPU Smoke Test
+
+Mandatory sequence:
+
+```text
+weight verification
+      ↓
+adapter load
+      ↓
+sample image
+      ↓
+official Unique3D inference
+      ↓
+GLB output
+      ↓
+mesh validation
+      ↓
+texture/material validation
+      ↓
+master/source.glb
+      ↓
+existing postprocess
+      ↓
+viewer
+```
+
+The model cannot be marked “ready to use” until this passes.
+
+---
+
+# 55. Quality Validation
+
+For the generated source asset record at least:
+
+```text
+vertex_count
+face_count
+texture presence
+material count
+UV presence
+bounding box
+output file size
+```
+
+The adapter must not silently decimate the source mesh.
+
+---
+
+# 56. Failure Tests
+
+Verify clean failures for:
+
+- missing image;
+- invalid image;
+- missing weights;
+- incomplete weights;
+- insufficient VRAM;
+- native extension import failure;
+- nvdiffrast GL/EGL failure;
+- invalid model parameter;
+- official inference exception.
+
+Errors should use the standard ForMash3D job failure flow.
+
+---
+
+# 57. Error UX
+
+If weights are missing, use a useful message like:
+
+```text
+Unique3D weights are not installed. Download and verify Unique3D from the Model Manager.
+```
+
+Keep detailed exceptions in backend logs.
+
+Do not expose paths/secrets that should remain internal.
+
+---
+
+# 58. Logging
+
+Log model lifecycle events including:
+
+```text
+model ID
+checkpoint root
+input image
+seed
+official parameters
+VRAM reservation
+inference start/end
+output path
+mesh statistics
+texture status
+```
+
+Do not log authentication tokens.
+
+---
+
+# 59. Existing Model Regression Test
+
+After Unique3D dependency installation and adapter registration, rerun at minimum:
+
+```text
+backend/tests/test_adapter_imports.py
+backend/tests/test_generation_adapter_regressions.py
+backend/tests/test_official_model_parity_contract.py
+backend/tests/test_model_readiness.py
+```
+
+Unique3D must not break existing model imports or execution contracts.
+
+---
+
+# 60. Runtime Version Audit
+
+Before declaring completion, record actual versions of:
+
+```text
+Python
+PyTorch
+TorchVision
+CUDA
+Diffusers
+Transformers
+PyTorch3D
+torch_scatter
+nvdiffrast
+ONNX Runtime GPU
+OpenCV
+Pillow
+PyMeshLab
+xformers
+NumPy
+```
+
+The final environment must be reproducible.
+
+---
+
+# 61. Full Model Selection Flow
+
+The complete product flow must become:
+
+```text
+User uploads image
+        ↓
+Model selector
+        ↓
+Unique3D selected
+        ↓
+UI reads model metadata / readiness
+        ↓
+User selects official Unique3D parameters
+        ↓
+POST image_to_raw_mesh
+        ↓
+Scheduler validates model
+        ↓
+VRAM-aware job execution
+        ↓
+Unique3D adapter
+        ↓
+Official Unique3D code
+        ↓
+GLB
+        ↓
+master/source.glb
+        ↓
+Existing production pipeline
+        ↓
+3D viewer / downloads
+```
+
+---
+
+# 62. Documentation Updates Required
+
+Because `RULES.md` requires documentation to stay current, review all relevant existing docs after implementation.
+
+At minimum inspect:
+
+```text
+README.md
+Docs/ARCHITECTURE.md
+Docs/DESIGN.md
+Docs/PRD.md
+Docs/DECISIONS.md
+Docs/MEMORY.md
+Docs/SYSTEM-BLUEPRINT.md
+Docs/TASKS.md
+Docs/api-documentation.md
+Docs/SECURITY.md
+Docs/CHANGELOG.md
+```
+
+Update only the documents whose factual content changes.
+
+Do not create a duplicate model document if an existing document owns the relevant information.
+
+---
+
+# 63. Architecture Documentation
+
+Add Unique3D to the model execution section of `Docs/ARCHITECTURE.md`.
+
+Include:
+
+```text
+Model: Unique3D
+ID: unique3d_image_to_raw_mesh
+Feature: image_to_raw_mesh
+Input: image
+Output: glb
+Texture: supported
+Official source: AiuniAI/Unique3D
+Weights: backend/pretrained/Unique3D
+VRAM: verified runtime reservation
+```
+
+Update model/adapter counts if those counts are explicitly documented.
+
+---
+
+# 64. README
+
+Update the model matrix in `README.md` if present.
+
+Recommended entry:
+
+```text
+Unique3D | unique3d_image_to_raw_mesh | Single-Image to 3D | <verified VRAM> | High-fidelity textured reconstruction from one image
+```
+
+Do not publish an unverified VRAM number.
+
+---
+
+# 65. API Documentation
+
+Update `Docs/api-documentation.md` so the image-to-raw-mesh model list contains:
+
+```text
+unique3d_image_to_raw_mesh
+```
+
+Document the model-native parameter schema actually exposed.
+
+---
+
+# 66. Architecture Decision
+
+Update `Docs/DECISIONS.md` with a short decision stating:
+
+- official Unique3D source is vendored;
+- `.git` metadata is removed;
+- shared ForMash3D Torch/CUDA runtime is used;
+- a thin adapter bridges official inference to ForMash3D;
+- source fidelity is preserved;
+- downstream optimization remains separate.
+
+Also record the exact upstream commit used.
+
+---
+
+# 67. Licensing / Security
+
+Update the existing third-party/license/security documentation as needed.
+
+Requirements:
+
+- preserve MIT license;
+- preserve upstream attribution;
+- no credentials in code;
+- use existing Hugging Face token mechanism;
+- model downloads remain backend/server-side;
+- generated artifacts use existing validated storage paths.
+
+---
+
+# 68. No Duplicate Model Download Locations
+
+There must be one canonical weight root:
+
+```text
+backend/pretrained/Unique3D
+```
+
+Do not create multiple copies under different project directories without a demonstrated upstream requirement.
+
+---
+
+# 69. No Duplicate Model IDs
+
+After implementation:
+
+```bash
+grep -R "unique3d_image_to_raw_mesh" .
+```
+
+Every registration should resolve to the same ID.
+
+No accidental aliasing is allowed.
+
+---
+
+# 70. Definition of Done
+
+Unique3D is NOT complete merely because the model appears in the UI or its weights download successfully.
+
+The integration is complete only when all of the following work:
+
+```text
+Official Unique3D source
+        +
+Official weights
+        +
+Shared ForMash3D environment
+        +
+Thin adapter
+        +
+Model config
+        +
+Model factory
+        +
+Scheduler
+        +
+API
+        +
+Download manager
+        +
+Readiness
+        +
+Frontend model registry
+        +
+Generation UI
+        +
+Official parameter wiring
+        +
+Job persistence
+        +
+Post-processing
+        +
+Viewer
+        +
+Tests
+        +
+Documentation
+        +
+GPU smoke test
+```
+
+---
+
+# 71. Required Final Verification Report
+
+The coding agent must finish with a report in this exact style:
+
+```text
+Unique3D Integration: COMPLETE / INCOMPLETE
+
+Official upstream commit: <commit>
+Model ID: unique3d_image_to_raw_mesh
+Weights: READY / NOT READY
+VRAM reservation: <verified MB>
+
+Adapter: PASS / FAIL
+Lazy adapter import: PASS / FAIL
+Model factory: PASS / FAIL
+Backend config: PASS / FAIL
+Downloader: PASS / FAIL
+manager.sh: PASS / FAIL
+Frontend registry: PASS / FAIL
+Generate UI: PASS / FAIL
+Parameter parity: PASS / FAIL
+Readiness: PASS / FAIL
+GPU smoke test: PASS / FAIL
+Postprocess: PASS / FAIL
+Viewer: PASS / FAIL
+Regression tests: PASS / FAIL
+Documentation: UPDATED / INCOMPLETE
+```
+
+Do not claim completion while a mandatory verification item remains untested.
+
+---
+
+# 72. Recommended Implementation Order
+
+## Phase 1 — Source and dependency foundation
+
+```text
+Read RULES/docs
+→ inspect official Unique3D
+→ clone official source
+→ record upstream commit
+→ remove .git
+→ preserve license
+→ audit requirements
+→ remove conflicting Torch/TorchVision/Torchaudio requirements
+→ verify shared dependency compatibility
+```
+
+## Phase 2 — Weight management
+
+```text
+Download script
+→ manager.sh
+→ official ckpt layout
+→ verification
+→ readiness
+```
+
+## Phase 3 — Backend model integration
+
+```text
+adapter
+→ lazy adapter map
+→ model factory
+→ models.yaml
+→ system/readiness
+→ API validation
+→ scheduler
+```
+
+## Phase 4 — Frontend
+
+```text
+constants/models.ts
+→ GeneratePanel
+→ buildGenerationParameters
+→ model readiness/status
+→ parameter controls
+```
+
+## Phase 5 — Validation
+
+```text
+adapter tests
+→ readiness tests
+→ parameter parity
+→ dependency regression
+→ direct official baseline
+→ real GPU adapter run
+→ postprocess
+→ viewer
+```
+
+## Phase 6 — Documentation and final audit
+
+```text
+README
+→ ARCHITECTURE
+→ DECISIONS
+→ MEMORY
+→ SYSTEM-BLUEPRINT
+→ TASKS
+→ API docs
+→ SECURITY/license
+→ CHANGELOG
+→ deep gap audit
+```
+
+---
+
+# 73. Final Architectural Rule
+
+The intended architecture is:
+
+```text
+Official AiuniAI/Unique3D
+        │
+        │ vendored source
+        ▼
+backend/thirdparty/Unique3D
+        │
+        │ thin adapter
+        ▼
+Unique3DImageToRawMeshAdapter
+        │
+        ▼
+ForMash3D Model Factory
+        │
+        ▼
+VRAM-Aware Scheduler
+        │
+        ▼
+Image → Raw Mesh API
+        │
+        ▼
+master/source.glb
+        │
+        ▼
+Existing ForMash3D Post-Processing
+        │
+        ├── Retopo
+        ├── UV
+        ├── Texture
+        ├── LOD
+        ├── Collision
+        └── Game Ready
+        │
+        ▼
+Next.js / Three.js Viewer
+```
+
+**Core principle:** integrate around Unique3D; do not rewrite Unique3D.
+
+The ForMash3D integration layer owns model lifecycle, scheduling, storage, API, readiness, download management, UI, and production-pipeline wiring. The official Unique3D source remains responsible for its own inference behavior and model-native parameters.
+
+---
+
+# 74. Audit Findings Used to Produce This Plan
+
+The current Dev branch already has:
+
+- a centralized YAML model manifest;
+- lazy adapter registration;
+- model factory mapping;
+- VRAM-aware scheduling;
+- backend readiness reporting;
+- official-model parity tests;
+- a Hugging Face model downloader;
+- interactive `manager.sh` model installation;
+- frontend model registry;
+- model-specific parameter generation;
+- admin model status UI;
+- immutable source/master post-processing contract.
+
+Therefore the implementation should be an **extension of existing infrastructure**, not a new subsystem.
+
+The most important integration risks identified from the official Unique3D source are:
+
+1. historical Torch/CUDA version assumptions;
+2. PyTorch3D/torch-scatter compatibility;
+3. nvdiffrast native extension build/runtime;
+4. headless OpenGL/EGL initialization;
+5. relative `./ckpt/...` path assumptions;
+6. generic module-name import collisions;
+7. checkpoint/code version mismatch.
+
+These must be tested explicitly before the model is marked production-ready.
+
+---
+
+# 75. Absolute Completion Condition
+
+The implementation is complete only when a user can do:
+
+```text
+Model Manager
+    ↓
+Download Unique3D
+    ↓
+Ready
+    ↓
+Workspace
+    ↓
+Upload one image
+    ↓
+Select Unique3D
+    ↓
+Generate
+    ↓
+Official Unique3D inference
+    ↓
+GLB
+    ↓
+ForMash3D post-processing
+    ↓
+3D viewer
+    ↓
+Download
+```
+
+with no manual copying of model source, no manual Python environment, no second server, no second model manager, no bypass of the scheduler, and no missing registration layer.
+
+**Do not mark the task complete until the entire chain has been tested.**

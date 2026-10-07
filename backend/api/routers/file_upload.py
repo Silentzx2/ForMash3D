@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -30,6 +31,9 @@ from core.utils.file_utils import (
     FileUploadError,
     get_storage_base_dir,
     save_upload_file,
+    validate_image_file,
+    validate_mesh_file,
+    get_file_type_from_extension,
 )
 from core.utils.thumbnail_utils import generate_mesh_thumbnail
 
@@ -266,10 +270,55 @@ async def upload_file_with_validation(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # Save file
-        file_info = await save_upload_file(
-            file, str(upload_dir), max_size_mb=max_size_mb, validate_content=True
-        )
+        # Save file with file_id in filename for recoverability
+        file_ext = Path(file.filename).suffix
+        filename = f"upload_{file_id}{file_ext}"
+        file_path = Path(upload_dir) / filename
+
+        max_size_bytes = max_size_mb * 1024 * 1024
+        total_bytes = 0
+        try:
+            async with aiofiles.open(file_path, "wb") as f:
+                while chunk := await file.read(1024 * 1024):
+                    total_bytes += len(chunk)
+                    if total_bytes > max_size_bytes:
+                        raise FileUploadError(file.filename or "unknown", f"File size exceeds limit ({max_size_mb}MB)")
+                    await f.write(chunk)
+        except Exception:
+            file_path.unlink(missing_ok=True)
+            raise
+        file_size_mb = total_bytes / (1024 * 1024)
+
+        # Validate content if requested
+        validation_info = {}
+        if file.filename:
+            file_type_detected = get_file_type_from_extension(file.filename)
+            if file_type_detected == "image":
+                validation_info = validate_image_file(str(file_path))
+                if not validation_info.get("valid", False):
+                    os.remove(file_path)
+                    raise FileUploadError(
+                        file.filename or "unknown",
+                        validation_info.get("error", "Invalid image file"),
+                    )
+            elif file_type_detected == "mesh":
+                validation_info = validate_mesh_file(str(file_path))
+                if not validation_info.get("valid", False):
+                    os.remove(file_path)
+                    raise FileUploadError(
+                        file.filename or "unknown",
+                        validation_info.get("error", "Invalid mesh file"),
+                    )
+
+        file_info = {
+            "file_path": str(file_path),
+            "original_filename": file.filename or "unknown",
+            "saved_filename": filename,
+            "file_size_mb": file_size_mb,
+            "content_type": file.content_type or "application/octet-stream",
+            "file_type": file_type,
+            "validation_info": validation_info,
+        }
 
         # Store metadata (uses Redis in multi-worker mode, in-memory otherwise)
         await store_file_metadata_impl(file_store, file_id, file_info)
