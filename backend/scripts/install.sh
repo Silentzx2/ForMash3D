@@ -723,6 +723,9 @@ fi
 
 # PyTorch3D
 if ! install_local_wheel "pytorch3d-*.whl" "pytorch3d"; then
+    # Try community prebuilt wheels for cu124 (YanWenKun/ComfyUI-3D-Pack-LinuxWheels)
+    _retry 3 5 $UV_PIP install pytorch3d -f https://github.com/YanWenKun/ComfyUI-3D-Pack-LinuxWheels/releases/download/v5.1/ || \
+    # Fallback to building from official source
     _retry 3 5 $UV_PIP install git+https://github.com/facebookresearch/pytorch3d.git@stable
 fi
 
