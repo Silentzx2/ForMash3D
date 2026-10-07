@@ -28,6 +28,9 @@ def _status_to_str(status: JobStatus) -> str:
 
 
 def _priority_score(priority: int, created_at: datetime) -> float:
+    # Use a valid minimum timestamp (year 1970) instead of datetime.min which causes timestamp() to fail
+    if created_at <= datetime(1970, 1, 1):
+        created_at = datetime(1970, 1, 1)
     return -priority * 1e12 + created_at.timestamp()
 
 

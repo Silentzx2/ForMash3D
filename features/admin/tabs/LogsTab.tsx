@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import {
   Terminal, Search, Trash2, XCircle, CheckCircle, Check,
   RefreshCw, Copy, Pause, WrapText, Download,
-  ArrowDown, X
+  ArrowDown, X, Wifi, WifiOff
 } from "lucide-react";
 import { getApiClient } from '@/services/apiClient';
 import type { AdminLog } from "@/types";
@@ -46,12 +46,13 @@ export function LogsTab() {
   const [autoScroll, setAutoScroll] = useState(true);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sseConnected, setSseConnected] = useState(false);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const seenIds = useRef<Set<string>>(new Set());
   const isAutoScrollRef = useRef(autoScroll);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sseCleanupRef = useRef<(() => void) | null>(null);
   isAutoScrollRef.current = autoScroll;
 
   // Load initial logs
@@ -73,47 +74,42 @@ export function LogsTab() {
     void fetchLogs();
   }, [fetchLogs]);
 
-  // Live polling - fetch new logs every 3s and append smoothly
+  // SSE Streaming - real-time log updates via EventSource
   useEffect(() => {
     if (!live) return;
 
-    const poll = async () => {
-      try {
-        const data = await getApiClient().getLogs(1000, level === "all" ? undefined : level);
-        const newEntries = data.filter(
-          (l) => !seenIds.current.has(l.id || `${l.timestamp}-${l.source}-${l.message}`)
-        );
+    const apiClient = getApiClient();
+    
+    const cleanup = apiClient.streamLogs(
+      (entry) => {
+        // Filter by level if not "all"
+        if (level !== "all" && entry.level !== level) return;
+        
+        const key = entry.id || `${entry.timestamp}-${entry.source}-${entry.message}`;
+        if (seenIds.current.has(key)) return;
+        
+        seenIds.current.add(key);
+        
+        setLogs((prev) => {
+          const next = [...prev, entry];
+          if (next.length > 2500) {
+            return next.slice(-2000);
+          }
+          return next;
+        });
+      },
+      1000 // last_n - fetch recent 1000 lines initially
+    );
 
-        if (newEntries.length > 0) {
-          newEntries.forEach((entry) => {
-            const key = entry.id || `${entry.timestamp}-${entry.source}-${entry.message}`;
-            seenIds.current.add(key);
-          });
-
-          setLogs((prev) => {
-            const next = [...prev, ...newEntries];
-            if (next.length > 2500) {
-              return next.slice(-2000);
-            }
-            return next;
-          });
-        }
-      } catch {
-        // Silent failure for polling - don't spam toasts
-      }
-    };
-
-    // Initial poll
-    void poll();
-
-    // Set up 3-second interval
-    pollTimerRef.current = setInterval(poll, 3000);
+    sseCleanupRef.current = cleanup;
+    setSseConnected(true);
 
     return () => {
-      if (pollTimerRef.current) {
-        clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
+      if (sseCleanupRef.current) {
+        sseCleanupRef.current();
+        sseCleanupRef.current = null;
       }
+      setSseConnected(false);
     };
   }, [live, level]);
 
@@ -267,7 +263,7 @@ export function LogsTab() {
             <span className="text-[hsl(var(--muted-foreground))]">:</span>
             <span className="text-[hsl(var(--foreground))]">~/logs</span>
             <span className="text-[hsl(var(--muted-foreground))]">$</span>
-            <span className="text-[hsl(var(--foreground))] font-normal">poll logs 3s</span>
+            <span className="text-[hsl(var(--foreground))] font-normal">stream logs sse</span>
           </div>
         </div>
 
@@ -281,12 +277,16 @@ export function LogsTab() {
                 ? "bg-[hsl(var(--log-success))]/15 text-[hsl(var(--log-success))] border border-[hsl(var(--log-success))]/30 shadow-sm"
                 : "bg-[hsl(var(--surface-2))]/20 text-[hsl(var(--muted-foreground))] border border-[hsl(var(--border))]/30"
             }`}
-            title={live ? "Click to pause live polling" : "Click to resume live polling"}
+            title={live ? "Click to pause live streaming" : "Click to resume live streaming"}
           >
             {live ? (
               <>
-                <span className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--log-success))] animate-pulse" />
-                <span>POLLING</span>
+                {sseConnected ? (
+                  <span className="w-1.5 h-1.5 rounded-full bg-[hsl(var(--log-success))] animate-pulse" />
+                ) : (
+                  <WifiOff className="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />
+                )}
+                <span>STREAM</span>
               </>
             ) : (
               <>

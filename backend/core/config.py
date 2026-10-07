@@ -251,9 +251,15 @@ def load_logging_dict_config(config_path: str) -> Optional[Dict]:
         with open(config_file, "r") as f:
             logging_config = yaml.safe_load(f)
 
-        # Ensure logs directory exists
-        logs_dir = Path("logs")
-        logs_dir.mkdir(exist_ok=True)
+        # Ensure all log directories exist (from logging.yaml handlers)
+        # logs/, backend/logs/, backend/run/
+        log_dirs = [
+            Path("logs"),
+            Path("backend/logs"),
+            Path("backend/run"),
+        ]
+        for log_dir in log_dirs:
+            log_dir.mkdir(parents=True, exist_ok=True)
 
         return logging_config
     except Exception as e:
@@ -324,9 +330,14 @@ def setup_logging(config: LoggingConfig):
     # Fallback to simple configuration
     level = getattr(logging, config.level.upper())
 
-    # Ensure logs directory exists
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
+    # Ensure all log directories exist
+    log_dirs = [
+        Path("logs"),
+        Path("backend/logs"),
+        Path("backend/run"),
+    ]
+    for log_dir in log_dirs:
+        log_dir.mkdir(parents=True, exist_ok=True)
 
     handlers: List[logging.Handler] = [logging.StreamHandler()]
 
@@ -337,7 +348,7 @@ def setup_logging(config: LoggingConfig):
         handlers.append(logging.FileHandler(config.file))
     else:
         # Default log file
-        default_log_file = logs_dir / "app.log"
+        default_log_file = Path("logs") / "app.log"
         handlers.append(logging.FileHandler(str(default_log_file)))
 
     # Configure root logger
