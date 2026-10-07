@@ -723,8 +723,14 @@ fi
 
 # PyTorch3D
 if ! install_local_wheel "pytorch3d-*.whl" "pytorch3d"; then
-    # Build from official source (community prebuilt wheels are for cp312, we use cp310)
-    _retry 3 5 $UV_PIP install git+https://github.com/facebookresearch/pytorch3d.git@stable
+    # Build from official source and save wheel for future use
+    echo "[INFO] Building pytorch3d from source (this may take 2-5 minutes)..."
+    if _retry 3 5 $UV_PIP install --no-build-isolation git+https://github.com/facebookresearch/pytorch3d.git@stable; then
+        echo "[INFO] Building wheel for pytorch3d..."
+        $UV_PIP wheel --no-deps -w "$WHEEL_DIR" git+https://github.com/facebookresearch/pytorch3d.git@stable || true
+    else
+        exit 1
+    fi
 fi
 
 # torch_scatter (CUDA 12.4)
