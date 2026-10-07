@@ -153,6 +153,22 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertFalse(schema["remesh"]["default"])
         self.assertEqual(schema["texture_size"]["default"], 4096)
 
+    def test_unique3d_adapter_contract(self):
+        from adapters.unique3d_adapter import Unique3DImageToRawMeshAdapter
+
+        adapter = Unique3DImageToRawMeshAdapter(vram_requirement=10240)
+        schema = adapter.get_parameter_schema()["parameters"]
+
+        # Official Unique3D defaults from gradio_3dgen.py
+        self.assertEqual(schema["seed"]["default"], 1145)
+        self.assertEqual(schema["input_processing"]["default"], True)
+        self.assertEqual(schema["do_refine"]["default"], True)
+        self.assertEqual(schema["expansion_weight"]["default"], 0.1)
+        self.assertEqual(schema["init_type"]["default"], "std")
+        self.assertEqual(schema["expansion_weight"]["minimum"], -1.0)
+        self.assertEqual(schema["expansion_weight"]["maximum"], 1.0)
+        self.assertEqual(schema["init_type"]["enum"], ["std", "thin"])
+
 
 class TestGenerationProductionContract(unittest.TestCase):
     def test_postprocess_only_controls_are_not_sent_to_model_adapters(self):
