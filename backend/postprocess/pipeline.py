@@ -606,7 +606,7 @@ def run_postprocess_job(
     job_inputs = job_inputs or {}
     job_metadata = job_metadata or {}
     quality_mode = str(job_inputs.get("quality") or job_inputs.get("meshQuality") or "high").lower()
-    explicit_texture_resolution = job_inputs.get("texture_resolution")
+    explicit_texture_resolution = job_inputs.get("production_texture_resolution", job_inputs.get("texture_resolution"))
     default_texture_resolution = {
         "low": 512,
         "medium": 1024,
