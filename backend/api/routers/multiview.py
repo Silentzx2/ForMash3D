@@ -513,7 +513,8 @@ async def reconstruct_3d_from_multiview(
     lod_enabled = bool(params.pop("generateLOD", req.generateLOD))
     lod_preset = str(params.pop("lodPreset", req.lodPreset))
     lod_count = int(params.pop("lodCount", req.lodCount))
-    texture_resolution = params.pop("texture_resolution", req.texture_resolution)
+    source_texture_resolution = params.pop("texture_resolution", None)
+    texture_resolution = int(req.texture_resolution or 2048)
 
     # Queue multi-view 3D reconstruction job with validated adapter.
     user_id = current_user.user_id if current_user else None
@@ -531,7 +532,8 @@ async def reconstruct_3d_from_multiview(
             "generateLOD": lod_enabled,
             "lodPreset": lod_preset,
             "lodCount": lod_count,
-            "texture_resolution": texture_resolution,
+            "texture_resolution": int(source_texture_resolution or 2048),
+            "production_texture_resolution": texture_resolution,
             "enable_printability_check": req.enable_printability_check,
             "enable_auto_repair": req.enable_auto_repair,
             "enable_auto_rig": req.enable_auto_rig,
@@ -551,6 +553,7 @@ async def reconstruct_3d_from_multiview(
             "quality": quality,
             "target_polycount": target_polycount,
             "texture_resolution": texture_resolution,
+            "production_texture_resolution": texture_resolution,
             "generateLOD": lod_enabled,
             "lodPreset": lod_preset,
             "lodCount": lod_count,
