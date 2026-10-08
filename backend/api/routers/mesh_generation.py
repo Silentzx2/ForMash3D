@@ -743,11 +743,10 @@ async def image_to_textured_mesh(
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
         lod_count = params.pop("lodCount", preset.get("lod_count", 4))
+        source_texture_resolution = params.pop("texture_resolution", None)
         texture_resolution = int(
-            params.pop(
-                "texture_resolution",
-                preset.get("texture_resolution", mesh_request.texture_resolution or 1024),
-            )
+            mesh_request.texture_resolution
+            or preset.get("texture_resolution", 1024)
         )
         enable_printability = bool(
             params.pop(
@@ -776,7 +775,8 @@ async def image_to_textured_mesh(
                 "image_path": image_file_path,
                 "texture_image_path": texture_image_path,
                 "output_format": mesh_request.output_format,
-                "texture_resolution": texture_resolution,
+                "texture_resolution": int(source_texture_resolution or 2048),
+                "production_texture_resolution": texture_resolution,
                 "intent": mesh_request.intent,
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
