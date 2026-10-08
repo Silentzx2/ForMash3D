@@ -86,6 +86,7 @@ export interface JobResultInfo {
     direct_download: string;
     base64_download: string;
   };
+  result_metadata?: Record<string, any>;
 }
 
 // Jobs History Types
@@ -101,6 +102,13 @@ export interface HistoricalJob {
   thumbnail_path?: string;
   mesh_url?: string;
   thumbnail_url?: string;
+  production_status?: 'ready' | 'degraded' | 'failed' | string;
+  degraded_reasons?: string[];
+  high_fidelity_url?: string;
+  game_ready_url?: string;
+  quality_mode?: string;
+  target_polycount?: number;
+  texture_resolution?: number;
   input_image_url?: string;
   input_image_file_info?: {
     filename: string;
