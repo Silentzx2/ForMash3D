@@ -7,6 +7,7 @@ import {
   SystemStats,
   SchedulerStatus,
   AvailableModels,
+  ModelRuntimeDetails,
   FeaturesResponse,
   JobInfo,
   JobResultInfo,
@@ -650,14 +651,12 @@ class ApiClient {
     );
   }
 
-  async listModels(): Promise<any[]> {
+  async listModels(): Promise<ModelRuntimeDetails[]> {
     try {
-      const response: any = await this.client.get('/api/v1/system/models', { params: { feature: undefined } });
-      if (Array.isArray(response)) return response;
-      if (Array.isArray(response?.data?.models)) return response.data.models;
-      if (Array.isArray(response?.models)) return response.models;
-      if (Array.isArray(response?.data)) return response.data;
-      return [];
+      const response = await this.client.get<AvailableModels>('/api/v1/system/models');
+      const details = response.data?.model_details;
+      if (!details || typeof details !== 'object') return [];
+      return Object.values(details);
     } catch {
       return [];
     }
