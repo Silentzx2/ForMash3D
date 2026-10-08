@@ -58,7 +58,7 @@ if torch.cuda.is_available():
         pass
 
 import yaml
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -90,8 +90,8 @@ class ModelConfig(BaseSettings):
     model_path: Optional[str] = None
     enabled: bool = True
     model_parameters: Optional[Dict] = None
-    init_params: Dict[str, Any] = {}
-    capabilities: Dict[str, Any] = {}
+    init_params: Dict[str, Any] = Field(default_factory=dict)
+    capabilities: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = SettingsConfigDict(protected_namespaces=("settings_",), extra="allow")
 
@@ -111,11 +111,7 @@ def normalize_model_capabilities(
     inputs = {str(value).lower() for value in (config.supported_inputs or [])}
     outputs = list(config.supported_outputs or [])
 
-    caps.setdefault("image_to_3d", feature.startswith("image_to_") and "image" in inputs)
-    caps.setdefault("text_to_3d", feature.startswith("text_to_") and "text" in inputs)
-    caps.setdefault("multiview", feature == "image_to_multiview" or "multiview" in inputs)
-    caps.setdefault("multiview_input", caps.get("multiview", False))
-    caps.setdefault("generated_multiview", False)
+    # Only true image/text -> 3D generation features should advertise 3D capability.\n    # Related pipelines such as Zero123++ generate conditioning views, not meshes.\n    image_to_3d_features = {"image_to_raw_mesh", "image_to_textured_mesh"}\n    text_to_3d_features = {"text_to_raw_mesh", "text_to_textured_mesh"}\n    caps.setdefault("image_to_3d", feature in image_to_3d_features and "image" in inputs)\n    caps.setdefault("text_to_3d", feature in text_to_3d_features and "text" in inputs)\n    caps.setdefault("multiview", feature == "image_to_multiview" or "multiview" in inputs)\n    caps.setdefault("multiview_input", "multiview" in inputs or "multiview_image" in inputs)\n    caps.setdefault("generated_multiview", feature == "image_to_multiview")
     caps.setdefault("single_view", "image" in inputs and not bool(caps.get("multiview_input", False)))
     caps.setdefault(
         "texture_generation",
@@ -156,7 +152,7 @@ class Settings(BaseSettings):
     security: SecurityConfig = SecurityConfig()
 
     # Model configurations
-    models: Dict[str, Dict[str, ModelConfig]] = {}
+    models: Dict[str, Dict[str, ModelConfig]] = Field(default_factory=dict)
 
     # Environment
     environment: str = "development"
