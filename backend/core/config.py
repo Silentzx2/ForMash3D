@@ -112,7 +112,10 @@ def normalize_model_capabilities(
     outputs = list(config.supported_outputs or [])
 
     # Only true image/text -> 3D generation features should advertise 3D capability.\n    # Related pipelines such as Zero123++ generate conditioning views, not meshes.\n    image_to_3d_features = {"image_to_raw_mesh", "image_to_textured_mesh"}\n    text_to_3d_features = {"text_to_raw_mesh", "text_to_textured_mesh"}\n    caps.setdefault("image_to_3d", feature in image_to_3d_features and "image" in inputs)\n    caps.setdefault("text_to_3d", feature in text_to_3d_features and "text" in inputs)\n    caps.setdefault("multiview", feature == "image_to_multiview" or "multiview" in inputs)\n    caps.setdefault("multiview_input", "multiview" in inputs or "multiview_image" in inputs)\n    caps.setdefault("generated_multiview", feature == "image_to_multiview")
-    caps.setdefault("single_view", "image" in inputs and not bool(caps.get("multiview_input", False)))
+    caps.setdefault(
+        "single_view",
+        feature in image_to_3d_features and "image" in inputs and not bool(caps.get("multiview_input", False)),
+    )
     caps.setdefault(
         "texture_generation",
         feature in {"image_to_textured_mesh", "image_mesh_painting", "text_mesh_painting"},
