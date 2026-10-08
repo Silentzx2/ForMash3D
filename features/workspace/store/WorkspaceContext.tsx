@@ -19,7 +19,7 @@ import {
 } from '../types';
 import type { BatchQueueItem } from '@/types';
 import { apiClient } from '../lib/api';
-import { getApiClient } from '@/services/apiClient';
+import { getApiClient, normalizeBackendAssetUrl } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
 import { useViewerStore, loadModelInViewer } from '@/stores/useViewerStore';
 import { prefetchGLB } from '../lib/glbCache';
@@ -177,32 +177,8 @@ async function parseApiError(response: Response): Promise<Error> {
 //       error: string|null }
 // Backend result URLs may be absolute or relative; rewrite them to the
 // same-origin /api/v1 proxy path so the browser can always reach them.
-function toProxyUrl(url: unknown): string | undefined {
-  if (typeof url !== 'string' || !url) return undefined;
+const toProxyUrl = normalizeBackendAssetUrl;
 
-  let path = url.trim();
-  if (!path) return undefined;
-
-  // Backend job responses may return absolute URLs. Strip the backend origin so
-  // the browser uses the same-origin Next.js/API proxy instead of navigating to
-  // an unreachable host-relative URL such as "localhost:8000/api/v1/...".
-  if (/^https?:\/\//i.test(path) || path.startsWith('//')) {
-    try {
-      const parsed = new URL(path, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-      path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    } catch {
-      return undefined;
-    }
-  }
-
-  if (path.startsWith('/api/v1/') || path.startsWith('/static/')) {
-    return path;
-  }
-  if (path.startsWith('/')) {
-    return `/api/v1${path}`;
-  }
-  return `/api/v1/${path}`;
-}
 
 interface BackendJobPayload {
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
