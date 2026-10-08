@@ -100,27 +100,32 @@ class BaseModel(ABC):
 
         start_time = time.time()
         logger.info(f"[GPU UNLOAD START] model={self.model_id}")
+        previous_gpu_ids = list(self.gpu_ids)
         try:
             self._unload_model()
             self.model = None
             self.status = ModelStatus.UNLOADED
-            self.gpu_id = None
-            self.gpu_ids = []
-            self.resource_plan = None
 
-            # Clear GPU cache
+            # Clear GPU cache before capturing final memory state.
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
             elapsed = time.time() - start_time
             memory = ""
-            if torch.cuda.is_available() and self.gpu_id is not None:
+            if torch.cuda.is_available() and previous_gpu_ids:
                 try:
-                    allocated = torch.cuda.memory_allocated(self.gpu_id) / (1024 ** 2)
-                    reserved = torch.cuda.memory_reserved(self.gpu_id) / (1024 ** 2)
-                    memory = f" allocated_mb={allocated:.0f} reserved_mb={reserved:.0f}"
+                    samples = []
+                    for gpu_id in previous_gpu_ids:
+                        allocated = torch.cuda.memory_allocated(gpu_id) / (1024 ** 2)
+                        reserved = torch.cuda.memory_reserved(gpu_id) / (1024 ** 2)
+                        samples.append(f"gpu{gpu_id}:allocated_mb={allocated:.0f} reserved_mb={reserved:.0f}")
+                    memory = " " + " ".join(samples)
                 except Exception:
                     pass
+
+            self.gpu_id = None
+            self.gpu_ids = []
+            self.resource_plan = None
             logger.info(
                 f"[GPU UNLOAD SUCCESS] model={self.model_id} "
                 f"elapsed={elapsed:.2f}s{memory}"
