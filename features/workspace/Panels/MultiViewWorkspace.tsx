@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
+import { MULTIVIEW_MODEL_ID } from '@/constants/models';
 import {
   ZoomIn,
   ZoomOut,
@@ -80,13 +81,12 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
   }>>([]);
 
   const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview);
-  const ZERO123_MODEL_ID = 'zero123plus_v12_image_to_multiview';
 
   useEffect(() => {
     let active = true;
     getApiClient().getAvailableModels('image_to_multiview').then(data => {
       if (!active) return;
-      const detail = (data as any)?.model_details?.[ZERO123_MODEL_ID];
+      const detail = (data as any)?.model_details?.[MULTIVIEW_MODEL_ID];
       if (detail?.status === 'ready' || detail?.weights_available === true) {
         setMvModelStatus('ready');
       } else if (detail?.status === 'weights_missing' || detail?.status === 'gpu_unavailable') {
@@ -219,7 +219,7 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
         generate_normals: genNormals,
         save_contact_sheet: saveContactSheet,
         output_format: 'png',
-        model_preference: ZERO123_MODEL_ID,
+        model_preference: MULTIVIEW_MODEL_ID,
         preprocessing_artifact_id: generationSettings.preprocessingArtifactId || undefined,
         enhancement_enabled: Boolean(generationSettings.enhancementEnabled),
       };
