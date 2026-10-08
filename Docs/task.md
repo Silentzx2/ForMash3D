@@ -1110,7 +1110,7 @@ Use multiple sub-agents/workstreams in parallel where the environment supports s
 - Launch **6 worker sub-agents** whenever six concurrent agents are supported.
 - If runtime limits prevent six, launch **4 or 5**, never fewer than 4 without a documented platform limitation.
 - The lead agent remains responsible for integration and the final audit.
-- Every worker MUST read `Docs/task.md`, `RULES.md`, `agent.md` if present; otherwise `RULES.md` is the authoritative agent-engineering contract, `README.md`, and the documentation relevant to its phase before coding.
+- Every worker MUST read `docs/task.md`, `RULES.md`, `agent.md` if present; otherwise `RULES.md` is the authoritative agent-engineering contract, `README.md`, and the documentation relevant to its phase before coding.
 - Every worker MUST search/inspect the repository before deciding what to change.
 - Workers may not remove another worker's implementation to simplify their own task.
 - Workers must preserve existing models/adapters and reconcile shared-file changes with the lead agent.
@@ -1702,7 +1702,7 @@ The lead agent must perform the following in order:
    - tests run
    - remaining blockers
 7. Merge/reconcile all work.
-8. Re-read `Docs/task.md` after implementation.
+8. Re-read `docs/task.md` after implementation.
 9. Re-read the repository documentation after implementation.
 10. Search for regressions, dead code, stale flags, removed model registrations, hidden single-GPU assumptions, CPU oversubscription, broken resource accounting and invalid paths.
 11. Run all available non-hardware verification.
@@ -1723,4 +1723,4 @@ Do not create another differently named task document for the same implementatio
 
 ## Implementation Traceability Addendum
 
-The implementation preserves the repository documentation rule that project documentation lives under `Docs/`. The complete execution contract is stored as `Docs/task.md`; the existing lowercase `docs/` path must not be recreated.
+The implementation preserves the repository documentation rule that project documentation lives under `Docs/`. The complete execution contract is stored as `docs/task.md`; the existing lowercase `docs/` path must not be recreated.
