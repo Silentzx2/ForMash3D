@@ -562,7 +562,11 @@ async def image_to_raw_mesh(
             )
         elif mesh_request.enhancement_enabled:
             model_config = getattr(scheduler, "model_registry", {}).get(model_id, {})
-            capabilities = model_config.get("capabilities", {}) if isinstance(model_config, dict) else {}
+            capabilities = (
+                model_config.get("capabilities", {})
+                if isinstance(model_config, dict)
+                else getattr(model_config, "capabilities", {}) or {}
+            )
             preprocessing_profile = str(capabilities.get("preferred_preprocessing", "default"))
             enhanced = preprocess_image(
                 str(image_file_path),
@@ -712,7 +716,11 @@ async def image_to_textured_mesh(
             )
         elif mesh_request.enhancement_enabled:
             model_config = getattr(scheduler, "model_registry", {}).get(model_id, {})
-            capabilities = model_config.get("capabilities", {}) if isinstance(model_config, dict) else {}
+            capabilities = (
+                model_config.get("capabilities", {})
+                if isinstance(model_config, dict)
+                else getattr(model_config, "capabilities", {}) or {}
+            )
             preprocessing_profile = str(capabilities.get("preferred_preprocessing", "default"))
             enhanced = preprocess_image(
                 str(image_file_path),
