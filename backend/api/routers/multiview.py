@@ -477,9 +477,11 @@ async def reconstruct_3d_from_multiview(
 
     # Look up model configuration and verify multiview capability
     model_cfg = None
+    matched_feature = None
     for feat, models in current_settings.models.items():
         if model_id in models:
             model_cfg = models[model_id]
+            matched_feature = feat
             break
 
     if not model_cfg:
@@ -489,7 +491,7 @@ async def reconstruct_3d_from_multiview(
         )
 
     capabilities = getattr(model_cfg, "capabilities", {}) or {}
-    supports_multiview = capabilities.get("multiview", False)
+    supports_multiview = capabilities.get("multiview_input", False)
 
     if not supports_multiview:
         raise HTTPException(
@@ -501,10 +503,21 @@ async def reconstruct_3d_from_multiview(
         )
 
     max_images = capabilities.get("max_images")
-    if max_images and req.images and len(req.images) > max_images:
+    manifest_view_count = None
+    if req.asset_id:
+        workspace_dir = _find_multiview_workspace(req.asset_id)
+        if workspace_dir is not None:
+            manifest_file = workspace_dir / "multiview" / "manifest.json"
+            if manifest_file.is_file():
+                try:
+                    manifest_view_count = int(json.loads(manifest_file.read_text(encoding="utf-8")).get("view_count", 0))
+                except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                    manifest_view_count = None
+    requested_view_count = len(req.images or []) if req.images else manifest_view_count
+    if max_images and requested_view_count and requested_view_count > max_images:
         raise HTTPException(
             status_code=400,
-            detail=f"Model '{model_id}' accepts at most {max_images} images; {len(req.images)} were supplied.",
+            detail=f"Model '{model_id}' accepts at most {max_images} images; {requested_view_count} views were supplied.",
         )
 
     params = {k: v for k, v in (req.model_parameters or {}).items() if v is not None}
@@ -519,7 +532,7 @@ async def reconstruct_3d_from_multiview(
     # Queue multi-view 3D reconstruction job with validated adapter.
     user_id = current_user.user_id if current_user else None
     job_request = JobRequest(
-        feature=getattr(model_cfg, "feature_type", "image_to_textured_mesh"),
+        feature=matched_feature or "image_to_textured_mesh",
         inputs={
             "multiview_asset_id": req.asset_id,
             "images": req.images,
