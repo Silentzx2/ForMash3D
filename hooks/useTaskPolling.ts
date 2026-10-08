@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { getApiClient } from '@/services/apiClient';
+import { getApiClient, normalizeBackendAssetUrl } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
 import type { JobStatus, JobInfo } from '@/types/api';
 
@@ -75,8 +75,8 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
         if (jobInfo.result) {
           updatedTask.metadata = {
             ...updatedTask.metadata,
-            ...(jobInfo.result.mesh_url ? { outputPath: jobInfo.result.mesh_url } : {}),
-            ...(jobInfo.result.thumbnail_url ? { previewImageUrl: jobInfo.result.thumbnail_url } : {}),
+            ...(jobInfo.result.mesh_url ? { outputPath: normalizeBackendAssetUrl(jobInfo.result.mesh_url) } : {}),
+            ...(jobInfo.result.thumbnail_url ? { previewImageUrl: normalizeBackendAssetUrl(jobInfo.result.thumbnail_url) } : {}),
             ...(jobInfo.result.production_status ? { productionStatus: jobInfo.result.production_status } : {}),
             ...(jobInfo.result.degraded_reasons ? { degradedReasons: jobInfo.result.degraded_reasons } : {}),
             ...(jobInfo.result.source_model_url ? { sourceModelUrl: jobInfo.result.source_model_url } : {}),
