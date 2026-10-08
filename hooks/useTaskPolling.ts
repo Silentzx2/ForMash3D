@@ -8,12 +8,12 @@ export interface UseTaskPollingOptions {
   enabled?: boolean;
 }
 
-const BACKEND_STATUS: Record<JobStatus, 'queued' | 'running' | 'completed' | 'failed'> = {
+const BACKEND_STATUS: Record<JobStatus, 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'> = {
   queued: 'queued',
   processing: 'running',
   completed: 'completed',
   failed: 'failed',
-  cancelled: 'completed',
+  cancelled: 'cancelled',
 };
 
 export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
@@ -28,7 +28,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
   const isPollingRef = useRef(false);
 
   const pollTaskStatus = useCallback(async (task: (typeof tasks)[string]) => {
-    if (!task.id || task.status === 'completed' || task.status === 'failed') {
+    if (!task.id || task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
       return;
     }
 
@@ -62,7 +62,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
       const updatedTask = {
         ...task,
         status,
-        progress: status === 'completed' ? 100 : status === 'failed' ? 0 : normalizedProgress,
+        progress: status === 'completed' ? 100 : status === 'failed' || status === 'cancelled' ? 0 : normalizedProgress,
         updatedAt: Date.now(),
         metadata,
       };
