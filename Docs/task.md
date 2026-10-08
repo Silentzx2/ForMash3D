@@ -5,7 +5,7 @@
 
 > **Execution mode:** autonomous, implementation-first, zero-gap completion.
 >
-> **Mandatory parallel execution:** The lead agent MUST launch **6 worker sub-agents** when the runtime supports six concurrent workers. If the environment cannot sustain six, it MUST launch **at least 4 worker sub-agents** and explicitly record why six was not possible. Every worker must independently read this `Docs/task.md`, `RULES.md`, `agent.md` if present; otherwise `RULES.md` is the authoritative agent-engineering contract, `README.md`, and the relevant project documentation before changing code. Workers must complete their assigned phase/workstream, report files changed and verification performed, and never assume another worker has satisfied a requirement unless the lead agent verifies it.
+Mandatory parallel execution: The lead agent MUST launch 6 worker sub-agents when the runtime supports six concurrent workers. If the environment cannot sustain six, it MUST launch at least 4 worker sub-agents and explicitly record why six was not possible. Every worker must independently read this `docs/task.md`, `RULES.md`, `agent.md`, `README.md`, and the relevant project documentation before changing code. Workers must complete their assigned phase/workstream, report files changed and verification performed, and never assume another worker has satisfied a requirement unless the lead agent verifies it.
 >
 > **Primary rule:** DO NOT remove, disable, delete, de-register, or replace any existing ForMash3D model/adapter as a way to solve this task. Every currently supported model must remain available. Improvements must be additive, model-aware, and backward-compatible.
 >
@@ -1690,8 +1690,8 @@ The following links were extracted from the supplied research report and supplem
 
 The lead agent must perform the following in order:
 
-1. Read `Docs/task.md` completely.
-2. Read `RULES.md`, `agent.md` if present; otherwise `RULES.md` is the authoritative agent-engineering contract, `README.md`, and all relevant project docs completely.
+1. Read `docs/task.md` completely.
+2. Read `RULES.md`, `agent.md`, `README.md`, and all relevant project docs completely.
 3. Launch 6 worker sub-agents; if the runtime caps concurrency, launch at least 4 and document the limitation.
 4. Give each worker a clearly isolated phase/workstream from Section 27A.
 5. Require every worker to read the same task/docs/rules before edits.
@@ -1711,11 +1711,9 @@ The lead agent must perform the following in order:
 14. A blocked hardware test must include exact user commands, expected behavior, and the code path already prepared for validation.
 15. The final implementation is not complete until this process is finished.
 
-**File location requirement:** This document must live in the repository as:
+File location requirement: This document must live in the repository as:
 
-```text
-Docs/task.md
-```
+docs/task.md
 
 Do not create another differently named task document for the same implementation scope.
 
