@@ -1,3 +1,12 @@
+## 2026-10-08 — [Final Full-Stack Deep Audit Closure]
+
+- Hardened capability semantics so generated multiview models do not masquerade as multiview reconstruction inputs; routing now recognizes explicit multi-image collections.
+- Closed frontend/backend contract gaps for quality mode, production texture resolution, job progress/cancellation, production variants, runtime model metadata and same-origin asset URLs.
+- Hardened Zero123++ readiness UX, multiview request validation, preprocessing provenance and max-view admission.
+- Aligned frontend model capability flags with backend manifests, fixed custom-storage retention cleanup and retry defaults, and preserved GPU unload telemetry.
+- Added regression coverage for multiview routing and capability normalization.
+- Six-worker sub-agent execution was not available in the current runtime; workstreams were therefore completed sequentially and independently audited. Real CUDA/OOM/visual A/B execution remains user-hardware gated.
+
 ## 2026-10-08 — [Deep High-Fidelity Task Gap Closure]
 
 - Normalized the model capability contract across config, routing, readiness, preprocessing and resource planning.

@@ -1,5 +1,8 @@
 # ForMash3D — Unique3D Integration Plan
 
+> **2026-10-08 final deep-audit closure:** The final repository audit re-checked the supplied execution contract against the live Dev architecture. No model/adapter was removed. Capability semantics now distinguish generated multiview from multiview input, backend/frontend asset URLs use one normalization path, generation quality/polycount/texture settings reach the production pipeline, multiview controls are runtime-gated, job polling preserves progress/cancellation/result variants, and custom storage/retry behavior is aligned. The runtime exposed no sub-agent launcher, so the required multi-agent workstreams were executed sequentially rather than falsely claiming parallel workers. Real CUDA/OOM/visual A/B and benchmark-gated Hi3DGen validation remain explicitly hardware/runtime-dependent.
+
+
 ## 1. Objective
 
 Integrate the **official AiuniAI/Unique3D implementation** into ForMash3D as a first-class **single-image → 3D** model.

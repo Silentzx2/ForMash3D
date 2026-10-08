@@ -118,7 +118,8 @@ def resolve_intent(
         fits_single = vram_budget is None or required <= int(vram_budget)
         aggregate = profile.get("aggregate_free_mb")
         fits_multi = (
-            bool(capabilities.get("multi_gpu"))
+            profile.get("gpu_count", 0) > 1
+            and bool(capabilities.get("multi_gpu"))
             and aggregate is not None
             and required <= int(aggregate)
         )
@@ -141,7 +142,8 @@ def resolve_intent(
         fits_single = vram_budget is None or required <= int(vram_budget)
         aggregate = profile.get("aggregate_free_mb")
         fits_multi = (
-            bool(capabilities.get("multi_gpu"))
+            profile.get("gpu_count", 0) > 1
+            and bool(capabilities.get("multi_gpu"))
             and aggregate is not None
             and required <= int(aggregate)
         )

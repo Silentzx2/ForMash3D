@@ -160,6 +160,12 @@ async def generate_multiview(
     Loads Zero123++, generates 6 viewpoint images, saves canonical asset workspace, and unloads model.
     """
     try:
+        if req.enhancement_enabled and not req.preprocessing_artifact_id:
+            raise HTTPException(
+                status_code=400,
+                detail="enhancement_enabled requires an approved preprocessing_artifact_id",
+            )
+
         # Resolve reference image path
         temp_dir: Optional[str] = None
         input_image_path: str = ""
@@ -185,6 +191,24 @@ async def generate_multiview(
             if not resolved_path or not Path(resolved_path).exists():
                 raise HTTPException(status_code=404, detail=f"File {req.image_file_id} not found")
             input_image_path = str(resolved_path)
+
+        preprocessing_metadata: Dict[str, Any] = {}
+        if req.preprocessing_artifact_id:
+            input_image_path, preprocessing_metadata = load_preprocessed_artifact(
+                req.preprocessing_artifact_id,
+                "approved",
+            )
+        elif req.enhancement_enabled:
+            model_config = getattr(scheduler, "model_registry", {}).get(req.model_preference, {})
+            capabilities = (
+                model_config.get("capabilities", {})
+                if isinstance(model_config, dict)
+                else getattr(model_config, "capabilities", {}) or {}
+            )
+            preprocessing_profile = str(capabilities.get("preferred_preprocessing", "default"))
+            enhanced = preprocess_image(input_image_path, profile=preprocessing_profile)
+            input_image_path = enhanced["approved_path"]
+            preprocessing_metadata = enhanced["metadata"]
 
         # Derive safe asset name
         raw_stem = Path(input_image_path).stem
@@ -215,6 +239,9 @@ async def generate_multiview(
                 "generate_normals": req.generate_normals,
                 "save_contact_sheet": req.save_contact_sheet,
                 "output_format": req.output_format,
+                "preprocessing_artifact_id": req.preprocessing_artifact_id,
+                "enhancement_enabled": req.enhancement_enabled,
+                "preprocessing_metadata": preprocessing_metadata,
             },
             model_preference=req.model_preference,
             priority=1,
@@ -222,6 +249,8 @@ async def generate_multiview(
                 "feature_type": "image_to_multiview",
                 "asset_name": asset_name,
                 "source_file_id": req.image_file_id,
+                "preprocessing": preprocessing_metadata,
+                "enhancement_enabled": req.enhancement_enabled,
             },
             user_id=user_id,
         )
@@ -438,11 +467,25 @@ async def reconstruct_3d_from_multiview(
     """
     model_id = req.model_preference
 
+    if not req.asset_id and not req.images:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide an existing multiview asset_id or explicit images for reconstruction",
+        )
+
+    if req.enhancement_enabled and not req.preprocessing_artifact_id:
+        raise HTTPException(
+            status_code=400,
+            detail="enhancement_enabled requires an approved preprocessing_artifact_id",
+        )
+
     # Look up model configuration and verify multiview capability
     model_cfg = None
+    matched_feature = None
     for feat, models in current_settings.models.items():
         if model_id in models:
             model_cfg = models[model_id]
+            matched_feature = feat
             break
 
     if not model_cfg:
@@ -452,7 +495,7 @@ async def reconstruct_3d_from_multiview(
         )
 
     capabilities = getattr(model_cfg, "capabilities", {}) or {}
-    supports_multiview = capabilities.get("multiview", False)
+    supports_multiview = capabilities.get("multiview_input", False)
 
     if not supports_multiview:
         raise HTTPException(
@@ -464,29 +507,79 @@ async def reconstruct_3d_from_multiview(
         )
 
     max_images = capabilities.get("max_images")
-    if max_images and req.images and len(req.images) > max_images:
+    manifest_view_count = None
+    if req.asset_id:
+        workspace_dir = _find_multiview_workspace(req.asset_id)
+        if workspace_dir is not None:
+            manifest_file = workspace_dir / "multiview" / "manifest.json"
+            if manifest_file.is_file():
+                try:
+                    manifest_view_count = int(json.loads(manifest_file.read_text(encoding="utf-8")).get("view_count", 0))
+                except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                    manifest_view_count = None
+    requested_view_count = len(req.images or []) if req.images else manifest_view_count
+    if max_images and requested_view_count and requested_view_count > max_images:
         raise HTTPException(
             status_code=400,
-            detail=f"Model '{model_id}' accepts at most {max_images} images; {len(req.images)} were supplied.",
+            detail=f"Model '{model_id}' accepts at most {max_images} images; {requested_view_count} views were supplied.",
         )
 
-    # Queue multi-view 3D reconstruction job with validated adapter
+    params = {k: v for k, v in (req.model_parameters or {}).items() if v is not None}
+    target_polycount = params.pop("target_polycount", req.target_polycount)
+    quality = str(params.pop("quality", req.quality)).lower()
+    lod_enabled = bool(params.pop("generateLOD", req.generateLOD))
+    lod_preset = str(params.pop("lodPreset", req.lodPreset))
+    lod_count = int(params.pop("lodCount", req.lodCount))
+    source_texture_resolution = params.pop("texture_resolution", None)
+    texture_resolution = int(req.texture_resolution or 2048)
+
+    # Queue multi-view 3D reconstruction job with validated adapter.
     user_id = current_user.user_id if current_user else None
     job_request = JobRequest(
-        feature=getattr(model_cfg, "feature_type", "image_to_textured_mesh"),
+        feature=matched_feature or "image_to_textured_mesh",
         inputs={
             "multiview_asset_id": req.asset_id,
             "images": req.images,
             "output_format": req.output_format,
+            "intent": req.intent,
+            "preprocessing_artifact_id": req.preprocessing_artifact_id,
+            "enhancement_enabled": req.enhancement_enabled,
+            "quality": quality,
+            "target_polycount": target_polycount,
+            "generateLOD": lod_enabled,
+            "lodPreset": lod_preset,
+            "lodCount": lod_count,
+            "texture_resolution": int(source_texture_resolution or 2048),
+            "production_texture_resolution": texture_resolution,
+            "enable_printability_check": req.enable_printability_check,
+            "enable_auto_repair": req.enable_auto_repair,
+            "enable_auto_rig": req.enable_auto_rig,
+            "auto_rig_mode": req.auto_rig_mode,
             "topology_mode": req.topology_mode or ("quad" if req.quad_topology else "triangle"),
             "quad_topology": bool(req.quad_topology or req.topology_mode == "quad"),
             "physics_enabled": req.physics_enabled,
+            "physics_config": req.physics_config,
+            **params,
         },
         model_preference=model_id,
         priority=1,
         metadata={
             "input_type": "multiview",
             "source_multiview_asset_id": req.asset_id,
+            "intent": req.intent,
+            "quality": quality,
+            "target_polycount": target_polycount,
+            "texture_resolution": texture_resolution,
+            "production_texture_resolution": texture_resolution,
+            "generateLOD": lod_enabled,
+            "lodPreset": lod_preset,
+            "lodCount": lod_count,
+            "enhancement_enabled": req.enhancement_enabled,
+            "preprocessing_artifact_id": req.preprocessing_artifact_id,
+            "enable_printability_check": req.enable_printability_check,
+            "enable_auto_repair": req.enable_auto_repair,
+            "enable_auto_rig": req.enable_auto_rig,
+            "auto_rig_mode": req.auto_rig_mode,
         },
         user_id=user_id,
     )

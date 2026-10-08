@@ -19,7 +19,7 @@ import {
 } from '../types';
 import type { BatchQueueItem } from '@/types';
 import { apiClient } from '../lib/api';
-import { getApiClient } from '@/services/apiClient';
+import { getApiClient, normalizeBackendAssetUrl } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
 import { useViewerStore, loadModelInViewer } from '@/stores/useViewerStore';
 import { prefetchGLB } from '../lib/glbCache';
@@ -177,22 +177,8 @@ async function parseApiError(response: Response): Promise<Error> {
 //       error: string|null }
 // Backend result URLs may be absolute or relative; rewrite them to the
 // same-origin /api/v1 proxy path so the browser can always reach them.
-function toProxyUrl(url: unknown): string | undefined {
-  if (typeof url !== 'string' || !url) return undefined;
-  // Handle absolute URLs (http://host/path or https://host/path)
-  if (url.startsWith('http://') || url.startsWith('https://')) {
-    return url.replace(/^https?:\/\//, '');
-  }
-  // Handle relative URLs - ensure they go through our /api/v1 proxy
-  if (url.startsWith('/')) {
-    if (!url.startsWith('/api/v1/')) {
-      return `/api/v1${url}`;
-    }
-    return url;
-  }
-  // Handle relative URLs without leading slash
-  return `/api/v1/${url}`;
-}
+const toProxyUrl = normalizeBackendAssetUrl;
+
 
 interface BackendJobPayload {
   status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
@@ -207,10 +193,12 @@ interface BackendJobPayload {
 }
 
 function normalizeBackendJob(raw: BackendJobPayload) {
+  const rawProgress = Number(raw.progress ?? 0);
+  const normalizedProgress = rawProgress <= 1 ? rawProgress * 100 : rawProgress;
   const modelUrl = toProxyUrl(raw.result?.mesh_url ?? raw.result?.model_url);
   return {
     status: raw.status,
-    progress: Math.max(0, Math.min(100, Math.round(Number(raw.progress ?? 0) * 100))),
+    progress: Math.max(0, Math.min(100, Math.round(normalizedProgress))),
     stage: raw.stage || raw.status,
     message: raw.message || (raw.status === 'processing' ? 'Processing' : raw.status === 'queued' ? 'Queued' : undefined),
     error_message: typeof raw.error === 'string' ? raw.error : undefined,
@@ -220,11 +208,10 @@ function normalizeBackendJob(raw: BackendJobPayload) {
       : Array.isArray(raw.metadata?.logs)
         ? raw.metadata.logs
         : undefined,
-    result: modelUrl ? {
+    result: raw.result ? {
       ...raw.result,
-      model_url: modelUrl,
-      active_model_url: modelUrl,
-      thumbnail_url: toProxyUrl(raw.result?.thumbnail_url),
+      ...(modelUrl ? { model_url: modelUrl, active_model_url: modelUrl } : {}),
+      ...(raw.result.thumbnail_url ? { thumbnail_url: toProxyUrl(raw.result.thumbnail_url) } : {}),
     } : undefined,
   } as {
     status: 'queued' | 'processing' | 'completed' | 'failed' | 'cancelled';
@@ -1263,6 +1250,15 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
      const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse ?? undefined, imageFileName, comparisonGroupId ?? undefined);
 
     const currentQuality = generationSettings.meshQuality || 'high';
+    const textureResolutionByQuality: Record<string, number> = {
+      low: 512,
+      medium: 1024,
+      high: 2048,
+      ultra: 4096,
+      '8k': 4096,
+    };
+    const requestedTextureResolution =
+      textureResolutionByQuality[generationSettings.textureQuality] || 2048;
     // Source geometry follows the selected model's official/tuned inference schedule.
     const sourceQuality = 'ultra' as const;
     let modelId = generationSettings.aiModel || '';
@@ -1312,7 +1308,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const isRawModel = capabilities.raw_mesh === true;
       const isTextured = !isRawModel && generationSettings.generateTexture !== false;
       const isPaintModel = capabilities.paint_autochain === true;
-      const isMultiviewCapable = Boolean(capabilities.multiview);
+      const isMultiviewCapable = Boolean(capabilities.multiview_input);
       const hasMvViews = Boolean(
         generationSettings.multiviewAssetId ||
         (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0)
@@ -1351,6 +1347,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         lodCount: generationSettings.lodCount || 4,
         negative_prompt: generationSettings.negativePrompt || undefined,
         source_quality: 'max',
+        quality: currentQuality,
       };
 
       // Source geometry and source textures always use maximum-fidelity generation settings.
@@ -1411,16 +1408,16 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             images: generationSettings.multiviewViews || undefined,
             model_preference: modelId || undefined,
             intent: generationSettings.intent,
-            preprocessing_artifact_id: generationSettings.preprocessingArtifactId || undefined,
-            enhancement_enabled: Boolean(generationSettings.enhancementEnabled),
-            enable_printability_check: Boolean(generationSettings.enablePrintabilityCheck),
-            enable_auto_repair: Boolean(generationSettings.enableAutoRepair),
-            enable_auto_rig: Boolean(generationSettings.enableAutoRig),
-            auto_rig_mode: generationSettings.autoRigMode || 'full',
             output_format: 'glb',
-            topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
-            quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
+            model_parameters: modelParameters,
+            quality: currentQuality,
+            target_polycount: targetPoly,
+            generateLOD: generationSettings.generateLOD !== false,
+            lodPreset: generationSettings.lodPreset || 'high',
+            lodCount: generationSettings.lodCount || 4,
+            texture_resolution: isTextured ? requestedTextureResolution : undefined,
             physics_enabled: physicsForThisJob,
+            physics_config: generationSettings.physics,
           }
         : {
             ...imageInput,
@@ -1444,15 +1441,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           };
 
       if (!useMultiviewReconstruction && isTextured) {
-        const textureResolutionByQuality: Record<string, number> = {
-          low: 512,
-          medium: 1024,
-          high: 2048,
-          ultra: 4096,
-          '8k': 4096,
-        };
-        body.texture_resolution =
-          textureResolutionByQuality[generationSettings.textureQuality] || 2048;
+        body.texture_resolution = requestedTextureResolution;
       }
 
       const res = await fetch(endpoint, {

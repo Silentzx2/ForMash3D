@@ -198,8 +198,9 @@ class ResourcePlanner:
             target_polycount = int(requested_poly) if requested_poly is not None else 0
         except (TypeError, ValueError):
             target_polycount = 0
-        multiview = bool(inputs.get("multiview") or inputs.get("multiview_input"))
+        multiview = bool(inputs.get("multiview_input"))
         multiview = multiview or len(inputs.get("image_paths") or []) > 1
+        multiview = multiview or len(inputs.get("images") or []) > 1
         texture = bool(
             inputs.get("texture")
             or inputs.get("texture_generation")
@@ -215,7 +216,7 @@ class ResourcePlanner:
             points = int(caps.get("quality_priority", 0) or 0)
 
             if multiview:
-                points += 100 if caps.get("multiview_input") or caps.get("multiview") else -200
+                points += 100 if caps.get("multiview_input") else -200
             elif caps.get("single_view"):
                 points += 5
 

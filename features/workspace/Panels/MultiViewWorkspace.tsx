@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
+import { MULTIVIEW_MODEL_ID } from '@/constants/models';
 import {
   ZoomIn,
   ZoomOut,
@@ -46,6 +47,7 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
   const [mvStepText, setMvStepText] = useState<string>('');
   const [mvProgress, setMvProgress] = useState<number>(0);
   const [mvError, setMvError] = useState<string | null>(null);
+  const [mvModelStatus, setMvModelStatus] = useState<'ready' | 'weights_missing' | 'gpu_unavailable' | 'unknown'>('unknown');
 
   // Advanced options drawer toggle
   const [showAdvancedDrawer, setShowAdvancedDrawer] = useState<boolean>(false);
@@ -80,6 +82,24 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
 
   const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview);
 
+  useEffect(() => {
+    let active = true;
+    getApiClient().getAvailableModels('image_to_multiview').then(data => {
+      if (!active) return;
+      const detail = (data as any)?.model_details?.[MULTIVIEW_MODEL_ID];
+      if (detail?.status === 'ready' || detail?.weights_available === true) {
+        setMvModelStatus('ready');
+      } else if (detail?.status === 'weights_missing' || detail?.status === 'gpu_unavailable') {
+        setMvModelStatus(detail.status);
+      } else {
+        setMvModelStatus('unknown');
+      }
+    }).catch(() => {
+      if (active) setMvModelStatus('unknown');
+    });
+    return () => { active = false; };
+  }, []);
+
   // Generated views from state
   const views = generationSettings.multiviewViews || [];
   const hasGeneratedViews = views.length > 0;
@@ -100,10 +120,11 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
       try {
         const jobStatus: any = await api.getJobStatus(jobId);
         const status = jobStatus?.status || jobStatus?.job?.status;
-        const progress = jobStatus?.progress ?? jobStatus?.job?.progress ?? 0;
+        const rawProgress = Number(jobStatus?.progress ?? jobStatus?.job?.progress ?? 0);
+        const progress = rawProgress <= 1 ? rawProgress * 100 : rawProgress;
         const step = jobStatus?.step ?? jobStatus?.job?.step ?? 'Generating views...';
 
-        setMvProgress(Math.min(100, Math.max(10, Math.round(progress * 100))));
+        setMvProgress(Math.min(100, Math.max(10, Math.round(progress))));
         setMvStepText(step);
 
         if (status === 'completed' || status === 'COMPLETED') {
@@ -198,7 +219,9 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
         generate_normals: genNormals,
         save_contact_sheet: saveContactSheet,
         output_format: 'png',
-        model_preference: 'zero123plus_v12_image_to_multiview',
+        model_preference: MULTIVIEW_MODEL_ID,
+        preprocessing_artifact_id: generationSettings.preprocessingArtifactId || undefined,
+        enhancement_enabled: Boolean(generationSettings.enhancementEnabled),
       };
 
       const res = await fetch('/api/v1/multiview/generate', {
@@ -349,7 +372,12 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
             <button
               type="button"
               onClick={handleGenerateViews}
-              disabled={isGeneratingMv || !generationSettings.image}
+              disabled={
+                isGeneratingMv ||
+                !generationSettings.image ||
+                mvModelStatus === 'weights_missing' ||
+                mvModelStatus === 'gpu_unavailable'
+              }
               className={`flex-1 h-8 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                 isGeneratingMv
                   ? 'bg-[hsl(var(--surface-2))] text-primary border border-primary/30'
@@ -364,7 +392,13 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
               ) : (
                 <>
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>Generate Views (Zero123++)</span>
+                  <span>
+                    {mvModelStatus === 'weights_missing'
+                      ? 'Zero123++ Weights Missing'
+                      : mvModelStatus === 'gpu_unavailable'
+                      ? 'Zero123++ GPU Unavailable'
+                      : 'Generate Views (Zero123++)'}
+                  </span>
                 </>
               )}
             </button>
@@ -410,6 +444,19 @@ export const MultiViewWorkspace: React.FC<MultiViewWorkspaceProps> = ({
                   className="bg-primary h-full rounded-full transition-all"
                 />
               </div>
+            </div>
+          )}
+
+          {mvModelStatus !== 'ready' && (
+            <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>
+                {mvModelStatus === 'weights_missing'
+                  ? 'Zero123++ weights are not installed. Download the configured image-to-multiview model before generating views.'
+                  : mvModelStatus === 'gpu_unavailable'
+                  ? 'CUDA/GPU is currently unavailable for Zero123++ multi-view generation.'
+                  : 'Checking Zero123++ runtime readiness...'}
+              </span>
             </div>
           )}
 

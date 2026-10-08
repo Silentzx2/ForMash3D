@@ -382,6 +382,38 @@ GET /api/v1/mesh-generation/models
 }
 ```
 
+### Production generation controls
+
+The image-to-raw and image-to-textured generation contracts accept the same production controls used by the workspace:
+
+- `quality`: `low`, `medium`, `high`, or `ultra`.
+- `target_polycount`: a downstream derivative budget; the immutable high-fidelity master is never reduced to satisfy it.
+- `texture_resolution`: production atlas/bake resolution. Model-native source texture settings remain separate from this downstream target.
+- `generateLOD`, `lodPreset`, `lodCount`: derivative LOD controls.
+- `preprocessing_artifact_id` and `enhancement_enabled`: model-aware preprocessing provenance. Enhancement requires an approved artifact.
+- `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `auto_rig_mode`, and provider-neutral `physics_config`.
+
+Completed jobs expose production metadata through `GET /api/v1/system/jobs/{job_id}`, including `source_model_url`, `high_fidelity_url`, `game_ready_url`, `production_status`, `degraded_reasons`, `quality_mode`, `target_polycount`, `texture_resolution`, `master_to_derivative`, `quality_trace`, `lod_validation`, and artifact status.
+
+### Multi-view generation and reconstruction
+
+Zero123++ generation is exposed separately as `POST /api/v1/multiview/generate`. Its readiness is controlled by the runtime `image_to_multiview` model metadata; missing weights or unavailable CUDA are surfaced to the workspace before generation.
+
+Multi-view -> 3D reconstruction is exposed as `POST /api/v1/multiview/reconstruct-3d`. A target reconstruction model must explicitly advertise `capabilities.multiview_input=true`; a model that merely generates multiview conditioning images is not sufficient. The request can use an existing `asset_id` or explicit `images` and carries the same quality/polycount/LOD/physics controls as the single-image path.
+
+```json
+{
+  "asset_id": "asset_abc123",
+  "model_preference": "model-id-that-supports-multiview-input",
+  "quality": "high",
+  "target_polycount": 50000,
+  "generateLOD": true,
+  "lodPreset": "high",
+  "lodCount": 4,
+  "texture_resolution": 2048
+}
+```
+
 ### Model Parameters Schema
 
 ```http

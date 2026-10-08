@@ -78,6 +78,55 @@ def test_capability_contract_is_normalized():
     assert capabilities["minimum_vram_mb"] == 8192
 
 
+def test_generated_multiview_capability_is_not_image_to_3d():
+    from core.config import ModelConfig, normalize_model_capabilities
+
+    config = ModelConfig(
+        vram_requirement=5120,
+        supported_inputs=["image"],
+        supported_outputs=["png", "zip"],
+        capabilities={"multiview": True, "generated_multiview": True},
+    )
+    normalized = normalize_model_capabilities(
+        "image_to_multiview",
+        "zero123plus_v12_image_to_multiview",
+        config,
+    )
+    capabilities = normalized.capabilities
+    assert capabilities["image_to_3d"] is False
+    assert capabilities["multiview"] is True
+    assert capabilities["multiview_input"] is False
+    assert capabilities["generated_multiview"] is True
+    assert capabilities["single_view"] is False
+
+
+def test_multi_gpu_preset_requires_more_than_one_gpu(tmp_path, monkeypatch):
+    checkpoint = tmp_path / "shape.ckpt"
+    checkpoint.write_bytes(b"weights")
+    settings = SimpleNamespace(
+        models={
+            "image_to_raw_mesh": {
+                "hunyuan3d_shape_v21_image_to_raw_mesh": _model_config(checkpoint, vram=12000),
+            }
+        }
+    )
+
+    monkeypatch.setattr(
+        "core.smart_presets.get_gpu_memory_profile",
+        lambda: {"gpu_count": 1, "free_mb": [8000], "aggregate_free_mb": 8000, "max_free_mb": 8000},
+    )
+    try:
+        resolve_intent(
+            "game_ready",
+            settings,
+            available_vram_mb=8000,
+        )
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("A single GPU must not satisfy a multi-GPU aggregate-only placement")
+
+
 def test_resolve_intent_honors_explicit_model_override(tmp_path):
     checkpoint = tmp_path / "shape.ckpt"
     checkpoint.write_bytes(b"weights")

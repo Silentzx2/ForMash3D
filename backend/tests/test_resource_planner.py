@@ -104,6 +104,42 @@ class ResourcePlannerTests(unittest.TestCase):
         )
         self.assertEqual(chosen, "multi")
 
+    def test_multiview_generation_capability_is_not_treated_as_input(self):
+        registry = {
+            "view_generator": {
+                "vram_requirement": 5000,
+                "capabilities": {"quality_priority": 200, "multiview": True, "generated_multiview": True, "multiview_input": False},
+            },
+            "reconstruction": {
+                "vram_requirement": 9000,
+                "capabilities": {"quality_priority": 100, "multiview_input": True},
+            },
+        }
+        chosen = ResourcePlanner.choose_model(
+            registry,
+            ["view_generator", "reconstruction"],
+            {"multiview_input": True, "available_gpu_count": 2},
+        )
+        self.assertEqual(chosen, "reconstruction")
+
+    def test_image_collection_triggers_multiview_routing(self):
+        registry = {
+            "single": {
+                "vram_requirement": 4000,
+                "capabilities": {"quality_priority": 200, "single_view": True},
+            },
+            "multi": {
+                "vram_requirement": 8000,
+                "capabilities": {"quality_priority": 100, "multiview_input": True},
+            },
+        }
+        chosen = ResourcePlanner.choose_model(
+            registry,
+            ["single", "multi"],
+            {"images": [{"file": "a.png"}, {"file": "b.png"}], "available_gpu_count": 2},
+        )
+        self.assertEqual(chosen, "multi")
+
     def test_cpu_override(self):
         previous = os.environ.get("FORMSH3D_CPU_THREADS")
         try:
