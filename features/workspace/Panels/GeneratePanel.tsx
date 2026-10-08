@@ -453,7 +453,7 @@ export const GeneratePanel: React.FC = () => {
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
-  const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview);
+  const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview_input);
   
   const supportsTextureGeneration = activeModelObj?.supports_texture ?? false;
   const showTextureToggle = supportsTextureGeneration;
