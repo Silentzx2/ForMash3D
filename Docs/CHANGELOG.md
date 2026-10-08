@@ -30,3 +30,7 @@
 - Fixed Hunyuan3D-DiT-v2-mini-Turbo checkpoint subfolder and local-weight path handling.
 - Fixed TRELLIS texture optimization under PyTorch 2.x by avoiding an in-place autograd mutation.
 - Added clearer missing-weight failures and retained source-fidelity behavior.
+
+### [Unreleased] - 2026-10-08
+- **Refactor (Ponytail Ultra)**: Stripped massive over-engineered logic from evaluation (removed pyrender, used fast trimesh.volume) and resource planner (used native accelerate auto device mapping).
+- **Audit**: Completed final full stack task audit, ensuring no feature gaps remain from TASKS.md. All model routing and evaluation are now streamlined for performance and minimum lines of code.

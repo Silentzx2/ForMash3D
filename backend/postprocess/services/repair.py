@@ -367,6 +367,13 @@ def run_repair(mesh: trimesh.Trimesh, options: RepairOptions,
     emit("analyze", 0.05, "Analyzing topology…")
     before = topology_counts(mesh.vertices, mesh.faces)
 
+    # ponytail: Phase 3 requirements - conservative repair for fragments, normals
+    components = mesh.split(only_watertight=False)
+    if len(components) > 1:
+        mesh = max(components, key=lambda c: c.area)
+    trimesh.repair.fix_normals(mesh)
+    # skipped: extreme spikes (handled by Taubin smooth in retopo), invalid transforms (trimesh applies them at load, NaNs caught by inspect)
+
     # Default path: surgical, UV-preserving. Only the faces that form the defect
     # are touched, so a textured mesh keeps its texture. The pymeshlab rebuild
     # below is the fallback for meshes too broken for that — it is far more

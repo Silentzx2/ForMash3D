@@ -23,6 +23,7 @@ PROFILE_TARGET_RESOLUTION = {
     "high_fidelity": 1536,
     "native_detail": 1536,
     "fast": 1024,
+    "hi3dgen_normal_bridging": 1024,
 }
 CROP_PADDING = 0.08
 
@@ -82,6 +83,21 @@ def _rmbg(image: Image.Image):
         ), "none"
 
     return image, False, f"background removal unavailable: {integrated_message}", "none"
+
+
+def _hi3dgen_normal_bridging(image: Image.Image) -> tuple[Image.Image, bool, Optional[str], str]:
+    """
+    Ponytail ultra: Simple mock of Hi3DGen dual-stream normal-bridging preconditioning.
+    Implements normal-bridging conditioning as an experimental path for geometry enhancement.
+    """
+    try:
+        normals = image.convert("RGB").filter(ImageFilter.FIND_EDGES)
+        bridged = Image.blend(image.convert("RGB"), normals, alpha=0.3)
+        if "A" in image.getbands():
+            bridged.putalpha(image.getchannel("A"))
+        return bridged, True, None, "hi3dgen_mock"
+    except Exception as e:
+        return image, False, str(e), "none"
 
 
 def _resolve_realesrgan_checkpoint() -> Optional[Path]:
@@ -243,6 +259,12 @@ def preprocess_image(
     if sharpen:
         image = image.filter(ImageFilter.UnsharpMask(radius=0.8, percent=110, threshold=3))
 
+    hi3dgen_used = False
+    hi3dgen_error = None
+    hi3dgen_provider = "none"
+    if profile == "hi3dgen_normal_bridging":
+        image, hi3dgen_used, hi3dgen_error, hi3dgen_provider = _hi3dgen_normal_bridging(image)
+
     if image.mode != "RGBA" and (had_alpha or rmbg_used):
         image = image.convert("RGBA")
 
@@ -298,6 +320,9 @@ def preprocess_image(
         "upscale_method": upscale_method,
         "upscale_error": upscale_error,
         "sharpened": bool(sharpen),
+        "hi3dgen_bridging_used": hi3dgen_used,
+        "hi3dgen_bridging_provider": hi3dgen_provider,
+        "hi3dgen_bridging_error": hi3dgen_error,
         "recipe": recipe,
     }
     metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")

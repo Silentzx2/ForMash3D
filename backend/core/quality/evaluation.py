@@ -122,89 +122,21 @@ def quality_gate(report: dict[str, Any], max_normalized_drift: float = 0.15) -> 
     }
 
 
-def render_multi_view(
-    mesh: trimesh.Trimesh,
-    output_dir: str | Path,
-    image_size: int = 512,
+def compare_mesh_volumes(
+    baseline_mesh: trimesh.Trimesh,
+    candidate_mesh: trimesh.Trimesh,
 ) -> dict[str, Any]:
-    try:
-        import pyrender
-        from PIL import Image
-    except Exception as exc:
-        raise RuntimeError("pyrender and Pillow are required for multi-view rendering.") from exc
-
-    output_root = Path(output_dir)
-    output_root.mkdir(parents=True, exist_ok=True)
-    center = mesh.bounding_box.centroid
-    radius = max(float(np.linalg.norm(mesh.extents)) * 2.2, 2.0)
-    directions = [
-        np.array(v, dtype=float)
-        for v in (
-            (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0),
-            (0, 0, 1), (0, 0, -1), (1, 1, 1), (-1, 1, 1),
-            (1, -1, 1), (-1, -1, 1), (1, 1, -1), (-1, 1, -1),
-        )
-    ]
-    scene = pyrender.Scene(bg_color=[0, 0, 0, 0])
-    scene.add(pyrender.Mesh.from_trimesh(mesh, smooth=False))
-    camera = pyrender.PerspectiveCamera(yfov=np.pi / 3.0)
-    light = pyrender.DirectionalLight(color=np.ones(3), intensity=3.0)
-    renderer = pyrender.OffscreenRenderer(image_size, image_size)
-    try:
-        for index, direction in enumerate(directions):
-            direction /= max(np.linalg.norm(direction), 1e-8)
-            eye = center + direction * radius
-            pose = trimesh.geometry.look_at(eye, center)
-            camera_node = scene.add(camera, pose=pose)
-            light_node = scene.add(light, pose=pose)
-            color, _ = renderer.render(scene)
-            Image.fromarray(color).save(output_root / f"view_{index:02d}.png")
-            scene.remove_node(camera_node)
-            scene.remove_node(light_node)
-    finally:
-        renderer.delete()
-    return {"status": "ok", "views": len(directions), "output_dir": str(output_root)}
-
-def compare_render_directories(
-    baseline_dir: str | Path,
-    candidate_dir: str | Path,
-) -> dict[str, Any]:
-    """Compare standardized render views without treating either render as truth."""
-    from PIL import Image
-
-    baseline_root = Path(baseline_dir)
-    candidate_root = Path(candidate_dir)
-    baseline_files = sorted(baseline_root.glob("view_*.png"))
-    candidate_files = sorted(candidate_root.glob("view_*.png"))
-    names = sorted(set(p.name for p in baseline_files) & set(p.name for p in candidate_files))
-    if not names:
-        return {"status": "blocked", "reason": "No common standardized render views found."}
-
-    per_view = {}
-    errors = []
-    ious = []
-    for name in names:
-        base = np.asarray(Image.open(baseline_root / name).convert("RGB"), dtype=np.float32) / 255.0
-        cand = np.asarray(
-            Image.open(candidate_root / name).convert("RGB").resize((base.shape[1], base.shape[0])),
-            dtype=np.float32,
-        ) / 255.0
-        error = float(np.abs(base - cand).mean())
-        base_mask = np.linalg.norm(base, axis=2) > 0.05
-        cand_mask = np.linalg.norm(cand, axis=2) > 0.05
-        intersection = float(np.logical_and(base_mask, cand_mask).sum())
-        union = float(np.logical_or(base_mask, cand_mask).sum())
-        iou = intersection / union if union else 1.0
-        per_view[name] = {"mean_absolute_rgb_error": error, "silhouette_iou": iou}
-        errors.append(error)
-        ious.append(iou)
-
+    """Fast diagnostic check for mesh deformation without slow headless rendering."""
+    base_vol = baseline_mesh.volume
+    cand_vol = candidate_mesh.volume
+    if base_vol == 0:
+        return {"status": "blocked", "reason": "Baseline mesh has 0 volume."}
+    
+    vol_drift = abs(base_vol - cand_vol) / base_vol
+    
     return {
         "status": "ok",
-        "views_compared": len(names),
-        "mean_absolute_rgb_error": float(np.mean(errors)),
-        "mean_silhouette_iou": float(np.mean(ious)),
-        "per_view": per_view,
+        "volume_drift": float(vol_drift),
         "interpretation": "diagnostic_only_without_ground_truth",
     }
 
@@ -280,25 +212,9 @@ def compare_model_runs(
         result["evaluation_mode"] = "reference"
 
     if render_output_dir:
-        from tempfile import TemporaryDirectory
-        render_root = Path(render_output_dir)
-        render_root.mkdir(parents=True, exist_ok=True)
-        with TemporaryDirectory(prefix="formash-ab-") as temp_dir:
-            temp_root = Path(temp_dir)
-            baseline_render = temp_root / "baseline"
-            candidate_render = temp_root / "candidate"
-            render_multi_view(load_mesh(baseline_master), baseline_render)
-            render_multi_view(load_mesh(candidate_master), candidate_render)
-            result["render_comparison"] = compare_render_directories(
-                baseline_render,
-                candidate_render,
-            )
-            for source_dir, destination in (
-                (baseline_render, render_root / "baseline"),
-                (candidate_render, render_root / "candidate"),
-            ):
-                destination.mkdir(parents=True, exist_ok=True)
-                for source in source_dir.glob("view_*.png"):
-                    (destination / source.name).write_bytes(source.read_bytes())
+        result["render_comparison"] = compare_mesh_volumes(
+            load_mesh(baseline_master),
+            load_mesh(candidate_master)
+        )
 
     return result

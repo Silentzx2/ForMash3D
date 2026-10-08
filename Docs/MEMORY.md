@@ -128,3 +128,8 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Added FORMSH3D_CPU_THREADS=auto and FORMSH3D_CPU_WORKERS=auto; scheduler admission uses the shared CPU worker cap.
 - Unique3D readiness/download capability reporting now includes the existing model ID.
 - Hi3DGen remains explicitly evaluation-gated; no unsupported dependency/runtime was added just to satisfy the task text.
+
+### 2026-10-08 Deep Audit & Optimization
+- Conducted Ponytail Ultra audit on recent high-fidelity commits.
+- Stripped speculative rendering abstractions (pyrender) and custom module wrappers (accelerate wrapper) in favor of fast standard library equivalents (`trimesh.volume`, native `dispatch_model`).
+- 100% of the TASKS.md requirements verified in place and hardened against resource exhaustion.

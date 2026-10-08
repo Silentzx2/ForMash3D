@@ -180,85 +180,6 @@ class ResourcePlanner:
             reason="Single-GPU placement unavailable; using declared multi-GPU strategy.",
         )
 
-    @staticmethod
-    def choose_model(
-        model_registry: Dict[str, Dict[str, Any]],
-        feature_models: Sequence[str],
-        inputs: Optional[Dict[str, Any]] = None,
-        explicit_model: Optional[str] = None,
-    ) -> Optional[str]:
-        """Deterministic capability/resource/quality-aware model routing."""
-        inputs = inputs or {}
-        if explicit_model and explicit_model in feature_models:
-            return explicit_model
-
-        quality = str(inputs.get("quality") or inputs.get("meshQuality") or "").lower()
-        requested_poly = inputs.get("target_polycount")
-        try:
-            target_polycount = int(requested_poly) if requested_poly is not None else 0
-        except (TypeError, ValueError):
-            target_polycount = 0
-        multiview = bool(inputs.get("multiview_input"))
-        multiview = multiview or len(inputs.get("image_paths") or []) > 1
-        multiview = multiview or len(inputs.get("images") or []) > 1
-        texture = bool(
-            inputs.get("texture")
-            or inputs.get("texture_generation")
-            or inputs.get("texture_image_path")
-        )
-        latency = str(inputs.get("latency") or inputs.get("performance_mode") or "").lower()
-        available_gpus = int(inputs.get("available_gpu_count", 0) or 0)
-
-        def score(model_id: str):
-            config = model_registry.get(model_id, {})
-            caps = config.get("capabilities") or {}
-            vram = int(config.get("vram_requirement", 0) or 0)
-            points = int(caps.get("quality_priority", 0) or 0)
-
-            if multiview:
-                points += 100 if caps.get("multiview_input") else -200
-            elif caps.get("single_view"):
-                points += 5
-
-            if texture:
-                points += 70 if caps.get("texture_generation") else -30
-                points += 25 if caps.get("native_pbr") else 0
-
-            if quality in {"high", "ultra", "cinematic"}:
-                points += 25 if caps.get("raw_mesh") else 0
-                points += 35 if caps.get("high_fidelity_geometry") else 0
-                points += 15 if caps.get("recommended_postprocess_profile") in {"high_fidelity", "cinematic"} else 0
-            elif quality in {"low", "fast", "mobile"}:
-                points += 20 if caps.get("latency_class") in {"fast", "low"} else 0
-
-            if target_polycount >= 100_000:
-                points += 20 if caps.get("high_fidelity_geometry") else 0
-            elif 0 < target_polycount <= 30_000:
-                points += 15 if caps.get("latency_class") in {"fast", "balanced"} else 0
-
-            if inputs.get("source_quality") == "max":
-                points += 20 if caps.get("high_fidelity_geometry") else 0
-                points += 10 if caps.get("raw_mesh") else 0
-
-            if latency in {"fast", "low"}:
-                points += 20 if caps.get("latency_class") in {"fast", "low"} else -5
-            elif latency in {"quality", "high"}:
-                points += 15 if caps.get("high_fidelity_geometry") else 0
-
-            if available_gpus > 1 and caps.get("multi_gpu"):
-                points += 12
-            if vram > 0:
-                points -= min(vram // 8192, 8)
-
-            return (points, int(caps.get("quality_priority", 0) or 0), -vram, model_id)
-
-        ranked = sorted(
-            (model_id for model_id in feature_models if model_id in model_registry),
-            key=score,
-            reverse=True,
-        )
-        return ranked[0] if ranked else None
-
 
     @staticmethod
     def cpu_worker_limit(requested: Optional[int] = None) -> int:
@@ -272,44 +193,8 @@ class ResourcePlanner:
 
 
 def dispatch_pipeline_across_gpus(pipeline: Any, resource_plan: ResourcePlan, offload_dir: Optional[str] = None) -> Dict[str, Any]:
-    if not resource_plan.is_multi_gpu:
-        return {"applied": False, "reason": "single_gpu_plan"}
-    if resource_plan.strategy != "accelerate_component_dispatch":
-        raise RuntimeError(f"Unsupported multi-GPU strategy: {resource_plan.strategy}")
-
+    if not resource_plan.is_multi_gpu: return {"applied": False, "reason": "single_gpu_plan"}
     from accelerate import dispatch_model, infer_auto_device_map
-    import torch.nn as nn
-
-    components = getattr(pipeline, "components", None)
-    if not isinstance(components, dict):
-        raise RuntimeError("Pipeline does not expose a diffusers-style components mapping.")
-
-    class PipelineBundle(nn.Module):
-        def __init__(self, items):
-            super().__init__()
-            for name, component in items.items():
-                if isinstance(component, nn.Module):
-                    setattr(self, name.replace("-", "_"), component)
-
-    items = {name: component for name, component in components.items() if isinstance(component, nn.Module)}
-    if not items:
-        raise RuntimeError("No torch modules were found in the selected pipeline.")
-
-    bundle = PipelineBundle(items)
-    max_memory = {int(device_id): f"{int(memory_mb)}MB" for device_id, memory_mb in resource_plan.max_memory_mb.items() if str(device_id).isdigit()}
-    max_memory["cpu"] = f"{int(resource_plan.max_memory_mb.get('cpu', 4096))}MB"
-
-    device_map = infer_auto_device_map(
-        bundle,
-        max_memory=max_memory,
-        dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        verbose=False,
-    )
-    if any(device == "disk" for device in device_map.values()):
-        raise RuntimeError("Accelerate requested disk offload; refusing an implicit disk-quality/performance fallback.")
-
-    kwargs = {"device_map": device_map, "offload_buffers": True}
-    if offload_dir:
-        kwargs["offload_dir"] = offload_dir
-    dispatch_model(bundle, **kwargs)
-    return {"applied": True, "strategy": resource_plan.strategy, "device_map": {str(k): str(v) for k, v in device_map.items()}}
+    device_map = infer_auto_device_map(pipeline)
+    dispatch_model(pipeline, device_map=device_map)
+    return {"applied": True, "strategy": "accelerate_native", "device_map": str(device_map)}

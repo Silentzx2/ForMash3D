@@ -78,6 +78,8 @@ class TextMeshPaintingRequest(BaseModel):
         1024, description="Texture resolution", ge=256, le=4096
     )
     output_format: str = Field("glb", description="Output mesh format")
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
     model_preference: str = Field(
         "trellis_text_mesh_painting", description="Model name for mesh generation"
     )
@@ -130,6 +132,8 @@ class ImageToRawMeshRequest(BaseModel):
         None, description="File ID from upload endpoint"
     )
     output_format: str = Field("glb", description="Output mesh format")
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
     model_preference: Optional[str] = Field(
         None, description="Explicit model override; intent presets choose a model when omitted"
     )
@@ -201,6 +205,8 @@ class ImageToTexturedMeshRequest(BaseModel):
         1024, description="Texture resolution", ge=256, le=4096
     )
     output_format: str = Field("glb", description="Output mesh format")
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
     model_preference: Optional[str] = Field(
         None, description="Explicit model override; intent presets choose a model when omitted"
     )
@@ -268,6 +274,8 @@ class ImageMeshPaintingRequest(BaseModel):
         1024, description="Texture resolution", ge=256, le=4096
     )
     output_format: str = Field("glb", description="Output mesh format")
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
     model_preference: str = Field(
         "trellis_image_mesh_painting", description="Model name for mesh generation"
     )

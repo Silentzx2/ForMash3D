@@ -85,7 +85,7 @@ def retry_transient_errors_enabled() -> bool:
 
 def auto_unload_after_job_enabled() -> bool:
     """Read the VRAM unload switch at decision time."""
-    return parse_bool_env("AUTO_UNLOAD_AFTER_JOB", True)
+    return parse_bool_env("AUTO_UNLOAD_AFTER_JOB", False)
 
 # Production budgets belong to post-processing. Never let them reach model inference.
 _POSTPROCESS_ONLY_INPUTS = frozenset({
@@ -210,15 +210,21 @@ def model_worker_process(
         configure_cpu_runtime(int((worker_config.resource_plan or {}).get("cpu_threads", 1)))
         # Enable TF32 and benchmark for Tensor Core acceleration
         try:
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
-                torch.backends.cudnn.benchmark = True
-            except Exception:
-                pass
-            # Warm up CUDA context
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            torch.backends.cudnn.benchmark = True
+        except Exception:
+            pass
+        # Warm up CUDA context
+        try:
             dummy = torch.zeros(1, device=f"cuda:{gpu_id}")
             del dummy
+        except Exception:
+            pass
+        try:
             torch.cuda.empty_cache()
+        except Exception:
+            pass
 
         # Initialize worker state - simplified for single model
         loaded_model: Optional[BaseModel] = None

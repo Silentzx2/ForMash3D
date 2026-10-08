@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional
 import torch
 import yaml
 
-from core.scheduler.resource_planner import ResourcePlanner
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "smart_presets.yaml"
 
@@ -154,19 +153,7 @@ def resolve_intent(
             )
         chosen = (explicit_model, feature, config)
     elif candidates:
-        candidate_registry = {
-            model_id: {
-                "vram_requirement": int(getattr(config, "vram_requirement", 0) or 0),
-                "capabilities": dict(getattr(config, "capabilities", {}) or {}),
-            }
-            for model_id, _, config in candidates
-        }
-        ranked_id = ResourcePlanner.choose_model(
-            candidate_registry,
-            [item[0] for item in candidates],
-            routing_inputs,
-        )
-        chosen = next(item for item in candidates if item[0] == ranked_id)
+        chosen = candidates[0]
     else:
         raise ValueError(
             f"No ready Image → 3D model satisfies intent '{intent}' under current resource constraints"

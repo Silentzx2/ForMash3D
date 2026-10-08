@@ -274,12 +274,11 @@ flowchart TD
 
 ## QA Scoring Methodology
 
-```mermaid
-pie title QA Score Weighting Distribution (100 Points Total)
-    "Topology & Geometry Integrity" : 35
-    "UV Mapping & Material Retention" : 35
-    "Platform Polycount Budget" : 30
-```
+| Category | Weight (Points) |
+|---|---|
+| Topology & Geometry Integrity | 35 |
+| UV Mapping & Material Retention | 35 |
+| Platform Polycount Budget | 30 |
 
 - **Topology & Geometry Integrity** (35 pts): Non-zero geometry, consistent normals, watertight manifoldness, connected component cleanliness
 - **UV Mapping & Material Retention** (35 pts): Valid UVs, texture retention, UV overlap detection

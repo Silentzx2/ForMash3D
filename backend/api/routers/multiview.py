@@ -116,6 +116,16 @@ class MultiViewReconstruct3DRequest(BaseModel):
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing")
+    model_parameters: Optional[Dict[str, Any]] = None
+    target_polycount: Optional[int] = None
+    quality: Optional[str] = "high"
+    generateLOD: bool = True
+    lodPreset: str = "high"
+    lodCount: int = 4
+    texture_resolution: Optional[int] = 2048
+    intent: Optional[str] = None
+    preprocessing_artifact_id: Optional[str] = None
+    enhancement_enabled: bool = False
 
 
 def _get_storage_models_root() -> Path:
