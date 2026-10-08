@@ -1308,7 +1308,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const isRawModel = capabilities.raw_mesh === true;
       const isTextured = !isRawModel && generationSettings.generateTexture !== false;
       const isPaintModel = capabilities.paint_autochain === true;
-      const isMultiviewCapable = Boolean(capabilities.multiview);
+      const isMultiviewCapable = Boolean(capabilities.multiview_input);
       const hasMvViews = Boolean(
         generationSettings.multiviewAssetId ||
         (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0)
