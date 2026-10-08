@@ -1,4 +1,20 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
+export function normalizeBackendAssetUrl(url: unknown): string | undefined {
+  if (typeof url !== 'string' || !url.trim()) return undefined;
+  let path = url.trim();
+  if (/^https?:\/\//i.test(path) || path.startsWith('//')) {
+    try {
+      const parsed = new URL(path, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+      path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      return undefined;
+    }
+  }
+  if (path.startsWith('/api/v1/') || path.startsWith('/static/')) return path;
+  if (path.startsWith('/')) return `/api/v1${path}`;
+  return `/api/v1/${path}`;
+}
+
 import { 
   ApiConfig, 
   BaseApiResponse, 
