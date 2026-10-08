@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<!-- ============================================================
+     ForMash3D — Premium Animated Homepage (home/index.html)
+     Palette sourced from assets/colors.jpeg + app/globals.css:
+     bg #080808 · primary gold #ffcc00 · blue #2e81f9 · green #22c55e
+     Routes wired to the real Next.js app: / /dashboard /workspace
+     /outputs /animation /rigging /system /admin
+     ============================================================ -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ForMash3D — Open-Source Generative 3D Mesh Studio</title>
+<meta name="description" content="ForMash3D: a unified, self-hosted 3D creation suite for neural 3D generation, asset finishing, and engine-ready delivery. Image-to-3D, Text-to-Motion, Quad Retopology, PBR Painting, Auto-Rigging, Automated LODs.">
+<link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/Silentzx2/ForMash3D/Dev/app/icon.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/space-grotesk@latest/latin-500-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/space-grotesk@latest/latin-700-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-400-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/inter@latest/latin-500-normal.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/fontsource/css/jetbrains-mono@latest/latin-400-normal.css">
+<style>
+:root{
+  --bg:#080808; --bg2:#0c0c0c; --panel:#101010; --panel2:#151515;
+  --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.14);
+  --gold:#ffcc00; --gold2:#f9c32b; --gold3:#fdcd51;
+  --blue:#2e81f9; --green:#22c55e; --orange:#f97a00;
+  --txt:#f5f5f5; --mut:#a3a3a3; --mut2:#767676;
+  --disp:'Space Grotesk',system-ui,sans-serif;
+  --body:'Inter',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--txt);font-family:var(--body);font-size:16px;line-height:1.6;overflow-x:hidden}
+::selection{background:var(--gold);color:#000}
+a{color:inherit;text-decoration:none}
+img{max-width:100%;display:block}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+.mono{font-family:var(--mono)}
+
+/* ---------- NAV ---------- */
+#nav{position:fixed;top:0;left:0;right:0;z-index:100;transition:background .3s,border-color .3s;border-bottom:1px solid transparent}
+#nav.scrolled{background:rgba(8,8,8,.82);backdrop-filter:blur(14px);border-color:var(--line)}
+.nav-in{max-width:1280px;margin:0 auto;padding:0 24px;height:68px;display:flex;align-items:center;gap:28px}
+.logo{display:flex;align-items:center;gap:10px;font-family:var(--disp);font-weight:700;font-size:19px;letter-spacing:.2px}
+.logo svg{width:30px;height:30px}
+.logo b{color:var(--gold)}
+.links{display:flex;gap:4px;margin-left:auto;align-items:center}
+.links a{padding:8px 13px;border-radius:8px;font-size:14px;color:var(--mut);font-weight:500;transition:color .2s,background .2s}
+.links a:hover{color:var(--txt);background:rgba(255,255,255,.06)}
+.links a.on{color:var(--gold)}
+.nav-cta{display:flex;gap:10px;align-items:center;margin-left:8px}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:10px;font-weight:600;font-size:14px;padding:10px 18px;cursor:pointer;transition:transform .2s,box-shadow .2s,background .2s,border-color .2s;border:1px solid transparent;font-family:var(--body)}
+.btn-gold{background:var(--gold);color:#000}
+.btn-gold:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(255,204,0,.35)}
+.btn-ghost{border-color:var(--line2);color:var(--txt);background:rgba(255,255,255,.03)}
+.btn-ghost:hover{border-color:var(--gold);color:var(--gold);transform:translateY(-2px)}
+.btn-sm{padding:8px 14px;font-size:13px}
+#burger{display:none;margin-left:auto;background:none;border:1px solid var(--line2);border-radius:8px;width:40px;height:40px;cursor:pointer;flex-direction:column;align-items:center;justify-content:center;gap:5px}
+#burger span{display:block;width:18px;height:2px;background:var(--txt);transition:.3s}
+#menu{display:none}
+
+/* ---------- HERO ---------- */
+.hero{position:relative;min-height:100vh;display:flex;align-items:center;padding:140px 0 90px;overflow:hidden}
+#pc{position:absolute;inset:0;width:100%;height:100%;opacity:.9}
+.hero::before{content:"";position:absolute;inset:0;background:
+  radial-gradient(60% 50% at 75% 30%,rgba(46,129,249,.12),transparent 60%),
+  radial-gradient(50% 45% at 20% 70%,rgba(255,204,0,.10),transparent 60%);pointer-events:none}
+.hero::after{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:56px 56px;mask-image:radial-gradient(70% 60% at 50% 40%,#000 30%,transparent 100%);pointer-events:none}
+.hero-in{position:relative;z-index:2;display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,204,0,.35);background:rgba(255,204,0,.08);color:var(--gold);border-radius:999px;padding:7px 15px;font-family:var(--mono);font-size:12px;letter-spacing:.8px;text-transform:uppercase}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.4}}
+h1{font-family:var(--disp);font-weight:700;font-size:clamp(40px,5.4vw,68px);line-height:1.04;letter-spacing:-1.5px;margin:22px 0 20px}
+h1 .grad{background:linear-gradient(92deg,var(--gold) 10%,var(--gold3) 45%,var(--blue) 100%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--mut);font-size:17px;max-width:560px;margin-bottom:32px}
+.sub b{color:var(--txt);font-weight:500}
+.cta-row{display:flex;gap:14px;flex-wrap:wrap}
+.stats{display:flex;gap:38px;margin-top:52px;flex-wrap:wrap}
+.stat .n{font-family:var(--disp);font-weight:700;font-size:32px;color:var(--txt)}
+.stat .n em{color:var(--gold);font-style:normal}
+.stat .l{font-family:var(--mono);font-size:11px;letter-spacing:1.4px;color:var(--mut2);text-transform:uppercase;margin-top:2px}
+.hero-vis{position:relative}
+.glass{position:relative;border:1px solid var(--line2);border-radius:20px;background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.015));backdrop-filter:blur(8px);padding:14px;box-shadow:0 30px 80px rgba(0,0,0,.6);overflow:hidden;animation:float 7s ease-in-out infinite}
+@keyframes float{50%{transform:translateY(-14px)}}
+.glass .shot{border-radius:12px;overflow:hidden;border:1px solid var(--line);background:radial-gradient(80% 80% at 50% 20%,#1a1a1a,#0a0a0a)}
+.glass .shot img{width:100%;height:auto;opacity:.96}
+.chip{position:absolute;display:flex;align-items:center;gap:8px;background:rgba(10,10,10,.85);border:1px solid var(--line2);border-radius:10px;padding:8px 13px;font-family:var(--mono);font-size:12px;backdrop-filter:blur(6px);animation:float 6s ease-in-out infinite}
+.chip i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.chip.c1{top:26px;left:-22px;animation-delay:.6s}
+.chip.c2{bottom:64px;right:-18px;animation-delay:1.4s}
+.chip.c3{bottom:-16px;left:34px;animation-delay:2.2s}
+.glowline{position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:.7}
+
+/* ---------- MARQUEE ---------- */
+.marquee{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg2);overflow:hidden;padding:16px 0}
+.mq-track{display:flex;gap:0;width:max-content;animation:mq 30s linear infinite}
+.marquee:hover .mq-track{animation-play-state:paused}
+.mq-track span{font-family:var(--mono);font-size:13px;letter-spacing:2px;text-transform:uppercase;color:var(--mut);padding:0 26px;white-space:nowrap}
+.mq-track span i{color:var(--gold);font-style:normal;margin-right:26px}
+@keyframes mq{to{transform:translateX(-50%)}}
+
+/* ---------- SECTIONS ---------- */
+section{padding:110px 0}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:2.5px;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
+h2{font-family:var(--disp);font-weight:700;font-size:clamp(30px,3.6vw,44px);letter-spacing:-1px;line-height:1.1}
+.sec-head{max-width:680px;margin-bottom:56px}
+.sec-head p{color:var(--mut);margin-top:14px}
+
+/* features */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.card{position:relative;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,var(--panel),var(--bg2));padding:30px 26px;transition:transform .25s,border-color .25s,box-shadow .25s;overflow:hidden}
+.card:hover{transform:translateY(-6px);border-color:rgba(255,204,0,.4);box-shadow:0 20px 50px rgba(0,0,0,.5)}
+.card::after{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--gold),transparent 70%);opacity:0;transition:opacity .25s}
+.card:hover::after{opacity:1}
+.ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:rgba(255,204,0,.1);border:1px solid rgba(255,204,0,.25);margin-bottom:20px}
+.ic svg{width:22px;height:22px;stroke:var(--gold)}
+.ic.b{background:rgba(46,129,249,.1);border-color:rgba(46,129,249,.3)}
+.ic.b svg{stroke:var(--blue)}
+.ic.g{background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3)}
+.ic.g svg{stroke:var(--green)}
+.card h3{font-family:var(--disp);font-size:19px;font-weight:700;margin-bottom:10px}
+.card p{color:var(--mut);font-size:14.5px}
+.tag{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--line2);color:var(--mut);border-radius:999px;padding:4px 10px;margin-top:16px}
+.tag.gold{color:var(--gold);border-color:rgba(255,204,0,.35)}
+.tag.blue{color:var(--blue);border-color:rgba(46,129,249,.4)}
+.tag.green{color:var(--green);border-color:rgba(34,197,94,.4)}
+
+/* pipeline */
+#pipeline{background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.pipe{display:grid;grid-template-columns:repeat(8,1fr);gap:0;position:relative;margin-top:20px}
+.pipe::before{content:"";position:absolute;top:27px;left:4%;right:4%;height:2px;background:var(--line2)}
+.pipe .bar{position:absolute;top:27px;left:4%;height:2px;width:0;background:linear-gradient(90deg,var(--gold),var(--blue));box-shadow:0 0 14px rgba(255,204,0,.5);transition:width 2.2s cubic-bezier(.2,.7,.2,1)}
+.pipe.rev-in .bar{width:92%}
+.step{position:relative;text-align:center;padding:0 6px}
+.step .nd{width:54px;height:54px;margin:0 auto 16px;border-radius:50%;border:1px solid var(--line2);background:var(--panel);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px;color:var(--gold);position:relative;z-index:2;transition:transform .3s,border-color .3s,box-shadow .3s}
+.step:hover .nd{transform:scale(1.12);border-color:var(--gold);box-shadow:0 0 24px rgba(255,204,0,.35)}
+.step h4{font-family:var(--disp);font-size:14px;font-weight:700}
+.step p{font-size:12px;color:var(--mut2);margin-top:5px;line-height:1.45}
+
+/* models */
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.mcard{border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:20px;transition:transform .2s,border-color .2s}
+.mcard:hover{transform:translateY(-4px);border-color:rgba(46,129,249,.45)}
+.mcard .nm{font-family:var(--disp);font-weight:700;font-size:15.5px}
+.mcard .ds{color:var(--mut);font-size:12.5px;margin-top:7px;line-height:1.5}
+.mcard .row{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+
+/* showcase */
+.wire-card{border:1px solid var(--line);border-radius:16px;background:var(--panel);overflow:hidden;transition:transform .25s,border-color .25s}
+.wire-card:hover{transform:translateY(-6px);border-color:rgba(255,204,0,.4)}
+.wire-card canvas{width:100%;height:240px;display:block}
+.wire-card .cap{padding:20px 22px;border-top:1px solid var(--line)}
+.wire-card h3{font-family:var(--disp);font-size:17px;font-weight:700}
+.wire-card p{color:var(--mut);font-size:13.5px;margin-top:6px}
+
+/* routes */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.route{display:flex;align-items:center;gap:18px;border:1px solid var(--line);border-radius:14px;background:var(--panel);padding:20px 22px;transition:border-color .2s,transform .2s,background .2s}
+.route:hover{border-color:rgba(255,204,0,.45);transform:translateX(6px);background:var(--panel2)}
+.route .pth{font-family:var(--mono);font-size:13px;color:var(--gold);background:rgba(255,204,0,.08);border:1px solid rgba(255,204,0,.25);border-radius:8px;padding:7px 11px;min-width:110px;text-align:center}
+.route h4{font-family:var(--disp);font-size:15.5px;font-weight:700}
+.route p{color:var(--mut);font-size:13px;margin-top:3px}
+.route .ar{margin-left:auto;color:var(--mut2);transition:transform .2s,color .2s;font-size:18px}
+.route:hover .ar{transform:translateX(5px);color:var(--gold)}
+
+/* cta */
+.cta-band{position:relative;border:1px solid var(--line2);border-radius:24px;padding:64px 40px;text-align:center;overflow:hidden;background:linear-gradient(160deg,rgba(255,204,0,.08),rgba(46,129,249,.06))}
+.cta-band::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(60% 80% at 50% 50%,#000,transparent)}
+.cta-band h2{position:relative}
+.cta-band p{position:relative;color:var(--mut);max-width:560px;margin:16px auto 30px}
+.cta-band .cta-row{position:relative;justify-content:center}
+
+/* footer */
+footer{border-top:1px solid var(--line);padding:56px 0 40px;background:var(--bg2)}
+.ft{display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start;justify-content:space-between}
+.ft .col h5{font-family:var(--mono);font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--mut2);margin-bottom:14px}
+.ft .col a{display:block;color:var(--mut);font-size:13.5px;padding:4px 0;transition:color .2s}
+.ft .col a:hover{color:var(--gold)}
+.ft-base{margin-top:44px;padding-top:24px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;color:var(--mut2);font-size:12.5px;font-family:var(--mono)}
+
+/* reveal */
+[data-rev]{opacity:0;transform:translateY(26px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+[data-rev].rev-in{opacity:1;transform:none}
+
+@media(max-width:1020px){
+  .hero-in{grid-template-columns:1fr;gap:60px}
+  .grid3{grid-template-columns:1fr 1fr}
+  .grid4{grid-template-columns:1fr 1fr}
+  .pipe{grid-template-columns:repeat(4,1fr);row-gap:44px}
+  .pipe::before,.pipe .bar{display:none}
+  .links{display:none}
+  #burger{display:flex}
+  #menu{display:block;position:fixed;top:68px;left:0;right:0;background:rgba(8,8,8,.97);backdrop-filter:blur(16px);border-bottom:1px solid var(--line);padding:18px 24px 26px;transform:translateY(-110%);transition:transform .35s;z-index:99}
+  #menu.open{transform:none}
+  #menu a{display:block;padding:13px 6px;border-bottom:1px solid var(--line);color:var(--mut);font-weight:500}
+  #menu a:last-child{border:none}
+}
+@media(max-width:640px){
+  .grid3,.grid4,.grid2{grid-template-columns:1fr}
+  .pipe{grid-template-columns:1fr 1fr}
+  .stats{gap:26px}
+  .nav-cta .btn-ghost{display:none}
+  section{padding:80px 0}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  [data-rev]{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<header id="nav">
+  <div class="nav-in">
+    <a class="logo" href="#home" aria-label="ForMash3D home">
+      <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2 29 9v14L16 30 3 23V9L16 2Z" stroke="#ffcc00" stroke-width="1.6"/><path d="M16 2v13m0 0L3 9m13 6 13-6M16 30V15" stroke="#ffcc00" stroke-width="1.2" opacity=".7"/><circle cx="16" cy="15" r="2.4" fill="#2e81f9"/></svg>
+      For<b>Mash</b>3D
+    </a>
+    <nav class="links" aria-label="Primary">
+      <a href="#home" class="on">Home</a>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/workspace">Workspace</a>
+      <a href="/outputs">Outputs</a>
+      <a href="/animation">Animation</a>
+      <a href="/rigging">Rigging</a>
+      <a href="/system">System</a>
+    </nav>
+    <div class="nav-cta">
+      <a class="btn btn-ghost btn-sm" href="https://github.com/Silentzx2/ForMash3D" target="_blank" rel="noopener">GitHub</a>
+      <a class="btn btn-gold btn-sm" href="/dashboard">Launch Studio</a>
+    </div>
+    <button id="burger" aria-label="Open menu" aria-expanded="false"><span></span><span></span><span></span></button>
+  </div>
+</header>
+<nav id="menu" aria-label="Mobile">
+  <a href="#home">Home</a><a href="/dashboard">Dashboard</a><a href="/workspace">Workspace</a><a href="/outputs">Outputs</a><a href="/animation">Animation</a><a href="/rigging">Rigging</a><a href="/system">System</a><a href="/admin">Admin</a>
+</nav>
+
+<main>
+<!-- HERO -->
+<section class="hero" id="home">
+  <canvas id="pc" aria-hidden="true"></canvas>
+  <div class="wrap hero-in">
+    <div>
+      <span class="badge"><span class="dot"></span>Open-Source · 100% Self-Hosted</span>
+      <h1>Generative <span class="grad">3D Mesh</span> Studio &amp; Production Pipeline</h1>
+      <p class="sub">A unified, self-hosted 3D creation suite for <b>neural 3D generation</b>, <b>asset finishing</b>, and <b>engine-ready delivery</b> — running entirely on your own GPUs.</p>
+      <div class="cta-row">
+        <a class="btn btn-gold" href="/dashboard">Launch Studio
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+        <a class="btn btn-ghost" href="/workspace">Open Workspace</a>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="n"><span data-count="24">0</span><em>+</em></div><div class="l">AI Models</div></div>
+        <div class="stat"><div class="n"><span data-count="8">0</span></div><div class="l">Pipeline Stages</div></div>
+        <div class="stat"><div class="n"><span data-count="4">0</span><em>K</em></div><div class="l">PBR Textures</div></div>
+        <div class="stat"><div class="n"><span data-count="100">0</span><em>%</em></div><div class="l">Local &amp; Private</div></div>
+      </div>
+    </div>
+    <div class="hero-vis" data-rev>
+      <div class="glass">
+        <div class="shot"><img src="https://raw.githubusercontent.com/Silentzx2/ForMash3D/Dev/assets/banner.png" alt="ForMash3D studio banner" loading="eager" onerror="this.parentElement.style.minHeight='260px'"></div>
+        <div class="chip c1"><i style="background:#ffcc00"></i>TRELLIS.2 · 2K Bake</div>
+        <div class="chip c2"><i style="background:#2e81f9"></i>Hunyuan3D 2.1</div>
+        <div class="chip c3"><i style="background:#22c55e"></i>Game-Ready LODs</div>
+        <div class="glowline"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MARQUEE -->
+<div class="marquee" aria-hidden="true">
+  <div class="mq-track" id="mq">
+    <span><i>◆</i>Image-to-3D</span><span><i>◆</i>Text-to-Motion</span><span><i>◆</i>Quad Retopology</span><span><i>◆</i>PBR Material Painting</span><span><i>◆</i>Auto-Rigging</span><span><i>◆</i>Automated LODs</span><span><i>◆</i>UV Unwrapping</span><span><i>◆</i>Mesh Editing</span><span><i>◆</i>Multiview</span><span><i>◆</i>Game-Engine Ready</span>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head" data-rev>
+      <div class="eyebrow">// Capabilities</div>
+      <h2>Everything from pixel to playable asset</h2>
+      <p>One orchestrated pipeline: generation, finishing, optimization and delivery — no cloud, no subscriptions, no data leaving your machine.</p>
+    </div>
+    <div class="grid3">
+      <div class="card tilt" data-rev><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z"/><path d="M12 22V12M12 12 3 7m9 5 9-5"/></svg></div><h3>Image → 3D Generation</h3><p>TRELLIS, TRELLIS.2, Hunyuan3D 2.1, TripoSG, UltraShape and more — routed smartly per input, quality and VRAM.</p><span class="tag gold">10 generators</span></div>
+      <div class="card tilt" data-rev><div class="ic b"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 21a9 9 0 1 1 9-9c0 2-1.5 3-3 3h-2a2 2 0 0 0-2 2v1c0 1.5-1 3-2 3Z"/><circle cx="7.5" cy="10.5" r="1"/><circle cx="12" cy="7" r="1"/><circle cx="16.5" cy="10.5" r="1"/></svg></div><h3>PBR Material Painting</h3><p>Hunyuan3D-Paint and TRELLIS paint paths deliver production PBR textures with up to 4K baking on HQ routes.</p><span class="tag blue">4K baking</span></div>
+      <div class="card tilt" data-rev><div class="ic g"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg></div><h3>Quad Retopology</h3><p>FastMesh 1K/4K converts dense neural meshes into clean, animation-friendly quad topology for games and film.</p><span class="tag green">Game-ready quads</span></div>
+      <div class="card tilt" data-rev><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="5" r="2.5"/><path d="M12 7.5V14m0 0-3.5 6M12 14l3.5 6M8 10.5h8"/></svg></div><h3>Auto-Rigging</h3><p>UniRig generates skeletal rigs automatically, taking static assets straight to poseable, animatable characters.</p><span class="tag gold">One-click rigs</span></div>
+      <div class="card tilt" data-rev><div class="ic b"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M4 20c2-6 4-9 8-9s6 3 8 9"/><circle cx="12" cy="6" r="2.5"/></svg></div><h3>Text-to-Motion</h3><p>NVIDIA ARDY interactive motion synthesis brings rigged characters to life from plain-language direction.</p><span class="tag blue">Motion AI</span></div>
+      <div class="card tilt" data-rev><div class="ic g"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M21 8 12 3 3 8v8l9 5 9-5V8Z"/><path d="M3 8l9 5 9-5M12 13v8"/><path d="M7.5 5.5l9 5"/></svg></div><h3>Engine-Ready Delivery</h3><p>Automated LOD cascades, UV atlases via PartUV, and GLB/OBJ exports tuned for Unity, Unreal and Godot.</p><span class="tag green">LOD 0–2</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- PIPELINE -->
+<section id="pipeline">
+  <div class="wrap">
+    <div class="sec-head" data-rev>
+      <div class="eyebrow">// The Pipeline</div>
+      <h2>Eight stages. Zero quality shortcuts.</h2>
+      <p>Every asset flows through an immutable high-fidelity master before any optimization touches a derivative.</p>
+    </div>
+    <div class="pipe" data-rev>
+      <div class="bar"></div>
+      <div class="step"><div class="nd">01</div><h4>Input</h4><p>Image, text or scribble validated &amp; framed</p></div>
+      <div class="step"><div class="nd">02</div><h4>Preprocess</h4><p>Matting, centering &amp; scale normalization</p></div>
+      <div class="step"><div class="nd">03</div><h4>Generate</h4><p>Model-aware routing across 10 generators</p></div>
+      <div class="step"><div class="nd">04</div><h4>Master</h4><p>Immutable high-fidelity source asset</p></div>
+      <div class="step"><div class="nd">05</div><h4>Retopo + UV</h4><p>FastMesh quads &amp; PartUV atlases</p></div>
+      <div class="step"><div class="nd">06</div><h4>PBR Bake</h4><p>Albedo, normal, roughness, metallic, AO</p></div>
+      <div class="step"><div class="nd">07</div><h4>LODs</h4><p>Derivative-only cascade, silhouette-safe</p></div>
+      <div class="step"><div class="nd">08</div><h4>Delivery</h4><p>GLB / OBJ, engine-ready &amp; validated</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- MODELS -->
+<section id="models">
+  <div class="wrap">
+    <div class="sec-head" data-rev>
+      <div class="eyebrow">// Model Fleet</div>
+      <h2>24 open-weight models, one orchestrator</h2>
+      <p>Capability-aware routing picks the right model for your input, quality target and GPU memory — every model stays available.</p>
+    </div>
+    <div class="grid4">
+      <div class="mcard" data-rev><div class="nm">TRELLIS.2</div><div class="ds">Ultra-HD image-to-3D with 2K texture baking and crisp structured geometry.</div><div class="row"><span class="tag gold">Generation</span><span class="tag">23 GB</span></div></div>
+      <div class="mcard" data-rev><div class="nm">TRELLIS</div><div class="ds">Balanced single-image to textured mesh with fast, reliable generation.</div><div class="row"><span class="tag gold">Generation</span><span class="tag">11.5 GB</span></div></div>
+      <div class="mcard" data-rev><div class="nm">Hunyuan3D-Shape 2.1</div><div class="ds">High-fidelity raw geometry powerhouse for detailed sculptural forms.</div><div class="row"><span class="tag gold">Generation</span><span class="tag">10 GB</span></div></div>
+      <div class="mcard" data-rev><div class="nm">Hunyuan3D-Paint 2.1</div><div class="ds">Production PBR texture painting with strong material accuracy.</div><div class="row"><span class="tag blue">Texturing</span></div></div>
+      <div class="mcard" data-rev><div class="nm">TripoSG</div><div class="ds">High-fidelity image / scribble to 3D with sharp surface detail.</div><div class="row"><span class="tag gold">Generation</span></div></div>
+      <div class="mcard" data-rev><div class="nm">TripoSF · SparseFlex</div><div class="ds">High-res arbitrary topology reconstruction for open, complex surfaces.</div><div class="row"><span class="tag gold">Generation</span></div></div>
+      <div class="mcard" data-rev><div class="nm">UltraShape</div><div class="ds">High-poly geometry refinement for hero-asset surface detail.</div><div class="row"><span class="tag gold">Generation</span></div></div>
+      <div class="mcard" data-rev><div class="nm">Unique3D</div><div class="ds">High-fidelity single image to 3D with consistent multi-angle detail.</div><div class="row"><span class="tag gold">Generation</span></div></div>
+      <div class="mcard" data-rev><div class="nm">FastMesh 1K / 4K</div><div class="ds">Game-ready and hero-asset quad retopology at production quality.</div><div class="row"><span class="tag green">Retopology</span></div></div>
+      <div class="mcard" data-rev><div class="nm">PartUV</div><div class="ds">Automated seam placement and atlas unwrapping for clean bakes.</div><div class="row"><span class="tag green">UV</span></div></div>
+      <div class="mcard" data-rev><div class="nm">UniRig</div><div class="ds">Automated skeletal rigging — static mesh to animatable character.</div><div class="row"><span class="tag blue">Rigging</span></div></div>
+      <div class="mcard" data-rev><div class="nm">NVIDIA ARDY</div><div class="ds">Interactive text-to-motion synthesis for rigged characters.</div><div class="row"><span class="tag blue">Motion</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- SHOWCASE -->
+<section id="showcase" style="background:var(--bg2);border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
+  <div class="wrap">
+    <div class="sec-head" data-rev>
+      <div class="eyebrow">// Detail Preservation</div>
+      <h2>Built to keep every polygon that matters</h2>
+      <p>Live wireframes: the same philosophy that drives the pipeline — geometry where geometry is valuable, maps where it is not.</p>
+    </div>
+    <div class="grid3">
+      <div class="wire-card" data-rev><canvas class="wire" data-shape="knot" data-color="#ffcc00"></canvas><div class="cap"><h3>High-Fidelity Master</h3><p>The first valid neural output is preserved immutably — never destructively optimized.</p></div></div>
+      <div class="wire-card" data-rev><canvas class="wire" data-shape="sphere" data-color="#2e81f9"></canvas><div class="cap"><h3>Adaptive Derivatives</h3><p>Feature-aware retopology allocates polygons to silhouettes, curvature and thin parts.</p></div></div>
+      <div class="wire-card" data-rev><canvas class="wire" data-shape="gem" data-color="#fdcd51"></canvas><div class="cap"><h3>Validated Delivery</h3><p>Quality gates check manifoldness, UVs, texel density and LOD lineage before export.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ROUTES -->
+<section id="routes">
+  <div class="wrap">
+    <div class="sec-head" data-rev>
+      <div class="eyebrow">// The Studio</div>
+      <h2>Every tool, one route away</h2>
+      <p>The full application surface of ForMash3D — each workspace wired into the same orchestrated backend.</p>
+    </div>
+    <div class="grid2">
+      <a class="route" href="/dashboard" data-rev><span class="pth">/dashboard</span><div><h4>Dashboard</h4><p>Mission control — queues, jobs and GPU fleet health.</p></div><span class="ar">→</span></a>
+      <a class="route" href="/workspace" data-rev><span class="pth">/workspace</span><div><h4>Workspace</h4><p>Generation, texturing, retopo, editing — every tool.</p></div><span class="ar">→</span></a>
+      <a class="route" href="/outputs" data-rev><span class="pth">/outputs</span><div><h4>Outputs</h4><p>Masters, derivatives, LODs and exports in one library.</p></div><span class="ar">→</span></a>
+      <a class="route" href="/animation" data-rev><span class="pth">/animation</span><div><h4>Animation</h4><p>Text-to-motion synthesis on your rigged characters.</p></div><span class="ar">→</span></a>
+      <a class="route" href="/rigging" data-rev><span class="pth">/rigging</span><div><h4>Rigging</h4><p>One-click skeletal rigs with UniRig.</p></div><span class="ar">→</span></a>
+      <a class="route" href="/system" data-rev><span class="pth">/system</span><div><h4>System</h4><p>Resource orchestration, VRAM telemetry and models.</p></div><span class="ar">→</span></a>
+      <a class="route" href="/admin" data-rev><span class="pth">/admin</span><div><h4>Admin</h4><p>Configuration and administration controls.</p></div><span class="ar">→</span></a>
+      <a class="route" href="https://github.com/Silentzx2/ForMash3D" target="_blank" rel="noopener" data-rev><span class="pth">github</span><div><h4>Repository</h4><p>Source, docs, issues and releases — fully open.</p></div><span class="ar">↗</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section>
+  <div class="wrap">
+    <div class="cta-band" data-rev>
+      <h2>Your GPUs. Your models. Your assets.</h2>
+      <p>Deploy ForMash3D with one command and run a complete production 3D pipeline entirely on your own hardware.</p>
+      <div class="cta-row">
+        <a class="btn btn-gold" href="/dashboard">Launch Studio</a>
+        <a class="btn btn-ghost" href="https://github.com/Silentzx2/ForMash3D" target="_blank" rel="noopener">Star on GitHub</a>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="ft">
+      <div class="col" style="max-width:300px">
+        <a class="logo" href="#home" style="margin-bottom:14px"><svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M16 2 29 9v14L16 30 3 23V9L16 2Z" stroke="#ffcc00" stroke-width="1.6"/><circle cx="16" cy="15" r="2.4" fill="#2e81f9"/></svg>For<b>Mash</b>3D</a>
+        <p style="color:var(--mut2);font-size:13px;margin-top:12px">Open-source generative 3D mesh studio &amp; production pipeline. Self-hosted, private, production-grade.</p>
+      </div>
+      <div class="col"><h5>Studio</h5><a href="/dashboard">Dashboard</a><a href="/workspace">Workspace</a><a href="/outputs">Outputs</a><a href="/system">System</a></div>
+      <div class="col"><h5>Create</h5><a href="/workspace">Image → 3D</a><a href="/rigging">Auto-Rigging</a><a href="/animation">Text-to-Motion</a><a href="/outputs">LODs &amp; Export</a></div>
+      <div class="col"><h5>Project</h5><a href="https://github.com/Silentzx2/ForMash3D" target="_blank" rel="noopener">GitHub</a><a href="https://github.com/Silentzx2/ForMash3D/blob/Dev/RULES.md" target="_blank" rel="noopener">Rules</a><a href="https://github.com/Silentzx2/ForMash3D/blob/Dev/README.md" target="_blank" rel="noopener">README</a><a href="/admin">Admin</a></div>
+    </div>
+    <div class="ft-base"><span>© <span id="yy">2025</span> ForMash3D — Open Source</span><span>Text-to-Motion · Image-to-3D · Quad Retopo · PBR Paint · Auto-Rig · LODs</span></div>
+  </div>
+</footer>
+
+<script>
+(function(){
+'use strict';
+var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var yy=document.getElementById('yy'); if(yy) yy.textContent=new Date().getFullYear();
+
+/* nav */
+var nav=document.getElementById('nav');
+function onScroll(){ if(window.scrollY>10){nav.classList.add('scrolled');}else{nav.classList.remove('scrolled');} }
+window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+var burger=document.getElementById('burger'), menu=document.getElementById('menu');
+burger.addEventListener('click',function(){var o=menu.classList.toggle('open');burger.setAttribute('aria-expanded',o?'true':'false');});
+menu.querySelectorAll('a').forEach(function(a){a.addEventListener('click',function(){menu.classList.remove('open');});});
+
+/* marquee duplicate for seamless loop */
+var mq=document.getElementById('mq'); mq.innerHTML+=mq.innerHTML;
+
+/* reveal */
+var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){e.target.classList.add('rev-in');io.unobserve(e.target);}});},{threshold:.15});
+document.querySelectorAll('[data-rev]').forEach(function(el){io.observe(el);});
+
+/* counters */
+function animCount(el){var t=parseFloat(el.getAttribute('data-count'));var s=performance.now();function f(n){var p=Math.min(1,(n-s)/1300);p=1-Math.pow(1-p,3);el.textContent=Math.round(t*p);if(p<1)requestAnimationFrame(f);}requestAnimationFrame(f);}
+var cio=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){animCount(e.target);cio.unobserve(e.target);}});},{threshold:.6});
+document.querySelectorAll('[data-count]').forEach(function(el){cio.observe(el);});
+
+/* tilt */
+if(!reduced&&window.matchMedia('(pointer:fine)').matches){
+  document.querySelectorAll('.tilt').forEach(function(card){
+    card.addEventListener('mousemove',function(ev){var r=card.getBoundingClientRect();var x=(ev.clientX-r.left)/r.width-.5,y=(ev.clientY-r.top)/r.height-.5;card.style.transform='perspective(900px) rotateY('+(x*5).toFixed(2)+'deg) rotateX('+(-y*5).toFixed(2)+'deg) translateY(-6px)';});
+    card.addEventListener('mouseleave',function(){card.style.transform='';});
+  });
+}
+
+/* ---------- 3D engines ---------- */
+var DPR=Math.min(2,window.devicePixelRatio||1);
+function sizeCanvas(cv){var r=cv.getBoundingClientRect();cv.width=Math.max(2,r.width*DPR);cv.height=Math.max(2,r.height*DPR);}
+
+/* hero point cloud */
+var pc=document.getElementById('pc'), pctx=pc.getContext('2d');
+var N=460, pts=[], edges=[];
+(function(){
+  var ga=Math.PI*(3-Math.sqrt(5));
+  for(var i=0;i<N;i++){var y=1-(i/(N-1))*2;var rad=Math.sqrt(1-y*y);var th=ga*i;pts.push([Math.cos(th)*rad,y,Math.sin(th)*rad]);}
+  for(var a=0;a<N;a++){var best=[];for(var b=0;b<N;b++){if(a===b)continue;var dx=pts[a][0]-pts[b][0],dy=pts[a][1]-pts[b][1],dz=pts[a][2]-pts[b][2];best.push([dx*dx+dy*dy+dz*dz,b]);}best.sort(function(p,q){return p[0]-q[0];});edges.push([a,best[0][1]]);edges.push([a,best[1][1]]);}
+})();
+function drawHero(t){
+  var W=pc.width,H=pc.height; pctx.clearRect(0,0,W,H);
+  var cx=W/2, cy=H/2, R=Math.min(W,H)*0.42;
+  var ay=t*0.00012, ax=Math.sin(t*0.00007)*0.35;
+  var ca=Math.cos(ay),sa=Math.sin(ay),cb=Math.cos(ax),sb=Math.sin(ax);
+  var proj=[];
+  for(var i=0;i<N;i++){var p=pts[i];
+    var x=p[0]*ca+p[2]*sa, z=-p[0]*sa+p[2]*ca, y=p[1];
+    var y2=y*cb-z*sb, z2=y*sb+z*cb;
+    var s=1/(1.9+z2*0.55);
+    proj.push([cx+x*R*s, cy+y2*R*s, z2]);
+  }
+  pctx.lineWidth=DPR*0.6;
+  for(var e=0;e<edges.length;e++){var A=proj[edges[e][0]],B=proj[edges[e][1]];var d=(A[2]+B[2])/2;var al=Math.max(0,(d+1)/2)*0.16; if(al<0.02)continue; pctx.strokeStyle='rgba(255,204,0,'+al.toFixed(3)+')'; pctx.beginPath(); pctx.moveTo(A[0],A[1]); pctx.lineTo(B[0],B[1]); pctx.stroke();}
+  for(var q=0;q<N;q++){var P=proj[q];var al2=Math.max(0.08,(P[2]+1)/2*0.85);var sz=(P[2]+1.6)*1.15*DPR;
+    pctx.fillStyle=q%7===0?'rgba(46,129,249,'+al2.toFixed(3)+')':'rgba(255,204,0,'+al2.toFixed(3)+')';
+    pctx.beginPath();pctx.arc(P[0],P[1],Math.max(0.6,sz),0,6.2832);pctx.fill();}
+}
+
+/* wireframe showcase shapes */
+function buildShape(type){
+  var v=[],ed=[];
+  if(type==='knot'){var M=240;for(var i=0;i<M;i++){var t=i/M*Math.PI*4;var r=Math.cos(3*t)+2.1;v.push([r*Math.cos(2*t),r*Math.sin(2*t),-Math.sin(3*t)*1.4]);ed.push([i,(i+1)%M]);}}
+  else if(type==='sphere'){var LA=9,LO=14;for(var a2=1;a2<LA;a2++){var ph=a2/LA*Math.PI;for(var b2=0;b2<LO;b2++){var th2=b2/LO*Math.PI*2;v.push([Math.sin(ph)*Math.cos(th2),Math.cos(ph),Math.sin(ph)*Math.sin(th2)]);var idx=(a2-1)*LO+b2;ed.push([idx,(a2-1)*LO+(b2+1)%LO]);if(a2<LA-1)ed.push([idx,idx+LO]);}}for(var c2=0;c2<LO;c2+=2){ed.push([c2,(LA-2)*LO+c2]);}}
+  else{var T=(1+Math.sqrt(5))/2;var base=[[-1,T,0],[1,T,0],[-1,-T,0],[1,-T,0],[0,-1,T],[0,1,T],[0,-1,-T],[0,1,-T],[T,0,-1],[T,0,1],[-T,0,-1],[-T,0,1]];var m=1/Math.sqrt(1+T*T);base.forEach(function(p){v.push([p[0]*m,p[1]*m,p[2]*m]);});for(var i2=0;i2<12;i2++){var d=[];for(var j2=0;j2<12;j2++){if(i2===j2)continue;var dx=v[i2][0]-v[j2][0],dy=v[i2][1]-v[j2][1],dz=v[i2][2]-v[j2][2];d.push([dx*dx+dy*dy+dz*dz,j2]);}d.sort(function(p,q){return p[0]-q[0];});for(var k=0;k<5;k++){var a3=i2,b3=d[k][1];if(a3>b3){var tmp=a3;a3=b3;b3=tmp;}var key=a3+'-'+b3;if(!ed.some(function(e){return e[0]+'-'+e[1]===key;}))ed.push([a3,b3]);}}}
+  return {v:v,ed:ed};
+}
+var wires=[];
+document.querySelectorAll('canvas.wire').forEach(function(cv){
+  sizeCanvas(cv);
+  wires.push({cv:cv,ctx:cv.getContext('2d'),shape:buildShape(cv.getAttribute('data-shape')),color:cv.getAttribute('data-color'),sp:0.00025+Math.random()*0.0002,vis:true});
+});
+var wio=new IntersectionObserver(function(es){es.forEach(function(e){wires.forEach(function(w){if(w.cv===e.target)w.vis=e.isIntersecting;});});},{threshold:0});
+wires.forEach(function(w){wio.observe(w.cv);});
+function drawWire(w,t){
+  var cv=w.cv,ctx=w.ctx,W=cv.width,H=cv.height;ctx.clearRect(0,0,W,H);
+  var cx=W/2,cy=H/2,R=Math.min(W,H)*0.34;
+  var ay=t*w.sp,ax=t*w.sp*0.6;
+  var ca=Math.cos(ay),sa=Math.sin(ay),cb=Math.cos(ax),sb=Math.sin(ax);
+  var pr=[];
+  for(var i=0;i<w.shape.v.length;i++){var p=w.shape.v[i];
+    var x=p[0]*ca+p[2]*sa,z=-p[0]*sa+p[2]*ca,y=p[1];
+    var y2=y*cb-z*sb,z2=y*sb+z*cb;var s=1/(1.7+z2*0.4);
+    pr.push([cx+x*R*s,cy+y2*R*s,z2]);}
+  for(var e=0;e<w.shape.ed.length;e++){var A=pr[w.shape.ed[e][0]],B=pr[w.shape.ed[e][1]];var al=0.14+Math.max(0,(A[2]+B[2])/2)*0.5;
+    ctx.strokeStyle=w.color;ctx.globalAlpha=Math.min(0.85,al);ctx.lineWidth=DPR*0.8;
+    ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();}
+  ctx.globalAlpha=1;
+  for(var q=0;q<pr.length;q++){var P=pr[q];ctx.fillStyle=w.color;ctx.globalAlpha=0.35+Math.max(0,(P[2]+1)/2)*0.6;ctx.beginPath();ctx.arc(P[0],P[1],DPR*1.4,0,6.2832);ctx.fill();}
+  ctx.globalAlpha=1;
+}
+
+/* main loop */
+function frame(t){
+  drawHero(t);
+  for(var i=0;i<wires.length;i++){ if(wires[i].vis) drawWire(wires[i],t); }
+  if(!reduced) requestAnimationFrame(frame);
+}
+function resizeAll(){ sizeCanvas(pc); wires.forEach(function(w){sizeCanvas(w.cv);}); if(reduced){drawHero(1200);wires.forEach(function(w){drawWire(w,1200);});} }
+window.addEventListener('resize',resizeAll);
+resizeAll();
+if(!reduced) requestAnimationFrame(frame); else {drawHero(1200);wires.forEach(function(w){drawWire(w,1200);});}
+})();
+</script>
+</body>
+</html>
