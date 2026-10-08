@@ -1,8 +1,11 @@
 /**
- * Canonical user-selectable Model Registry & Feature Routing
- * Mirrors the 23 visible adapters from backend/config/models.yaml.
- * The backend also registers hidden Zero123++ multi-view support as adapter #24.
+ * Canonical user-selectable model registry and feature routing.
+ * Primary 3D/processing models mirror backend/config/models.yaml.
+ * Zero123++ remains hidden from the main 3D selector and is exposed through the
+ * dedicated multi-view workspace via the runtime image-to-multiview capability.
  */
+
+export const MULTIVIEW_MODEL_ID = 'zero123plus_v12_image_to_multiview' as const;
 
 export type ModelCategory =
   | 'mesh_generation'
@@ -94,7 +97,7 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     vramMb: 6144,
     lowVramSupported: true,
     lowVramMb: 4096,
-    supportsTexture: true,
+    supportsTexture: false,
     supportsFlashVDM: true,
     supportedInputs: ['image'],
     supportedOutputs: ['glb', 'obj'],
@@ -194,7 +197,7 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     featureLabel: 'Image to Geometry',
     vramMb: 10240,
     lowVramSupported: false,
-    supportsTexture: true,
+    supportsTexture: false,
     supportedInputs: ['image'],
     supportedOutputs: ['glb', 'obj'],
     modelPath: 'backend/pretrained/Unique3D',
