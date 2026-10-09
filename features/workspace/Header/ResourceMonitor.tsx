@@ -67,12 +67,14 @@ export const ResourceMonitor: React.FC = () => {
     return () => clearInterval(interval);
   }, [fetchStats]);
 
-  const getColor = (percent: number) => {
-    if (percent >= 90) return 'text-rose-400';
-    if (percent >= 75) return 'text-amber-400';
-    if (percent >= 50) return 'text-yellow-400';
-    return 'text-emerald-400';
+  const getStatusColor = (percent: number) => {
+    if (percent >= 90) return { text: 'text-rose-400', bg: 'bg-rose-500', border: 'border-rose-500/30' };
+    if (percent >= 75) return { text: 'text-amber-400', bg: 'bg-amber-500', border: 'border-amber-500/30' };
+    if (percent >= 50) return { text: 'text-yellow-400', bg: 'bg-yellow-500', border: 'border-yellow-500/30' };
+    return { text: 'text-emerald-400', bg: 'bg-emerald-500', border: 'border-emerald-500/30' };
   };
+
+  const getColor = (percent: number) => getStatusColor(percent).text;
 
   const getBgColor = (percent: number) => {
     if (percent >= 90) return 'bg-rose-500/20 border-rose-500/30';
@@ -83,6 +85,23 @@ export const ResourceMonitor: React.FC = () => {
 
   const formatPercent = (val: number) => `${Math.round(val)}%`;
   const formatGB = (used: number, total: number) => `${used.toFixed(1)}/${total.toFixed(1)} GB`;
+
+  // Outside click listener
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!isExpanded) return;
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [isExpanded]);
 
   if (!stats) {
     return (
@@ -98,46 +117,53 @@ export const ResourceMonitor: React.FC = () => {
   // Determine VRAM percentage to display in collapsed view: use average if available, else fallback to primary GPU
   const vramPercentToShow = stats.avg_vram_percent !== undefined ? stats.avg_vram_percent : stats.vram_percent;
 
+  const metrics = [
+    { id: 'gpu', label: 'GPU', value: vramPercentToShow, icon: GpuIcon },
+    { id: 'ram', label: 'RAM', value: stats.ram_percent, icon: RamMemoryIcon },
+    { id: 'cpu', label: 'CPU', value: stats.cpu_percent, icon: CpuIcon },
+  ];
+
   return (
-    <div className="relative">
-      {/* Collapsed View - always visible in header */}
-      <SimpleTooltip label="System Resources • Click to expand" side="bottom">
+    <div ref={containerRef} className="relative">
+      {/* Collapsed View - vertical pipes with live load colors and percentages */}
+      <SimpleTooltip label="System Telemetry (GPU / RAM / CPU) • Click to open details" side="bottom">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="group flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-primary/30 transition-all cursor-pointer"
+          className={`group flex items-center gap-2 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border transition-all cursor-pointer select-none active:scale-95 ${
+            isExpanded ? 'border-primary/50 bg-[hsl(var(--surface-2))] shadow-sm' : 'border-white/[0.08] hover:border-white/[0.18] hover:bg-[hsl(var(--surface-2))]'
+          }`}
           aria-label={isExpanded ? 'Collapse resource monitor' : 'Expand resource monitor'}
           aria-expanded={isExpanded}
         >
-          <HugeiconsIcon icon={GaugeIcon} size={16} className="w-3 h-3 text-primary" />
-
-          {/* VRAM - most critical for 3D work (showing average across GPUs if available) */}
-          <div className="flex items-center gap-0.5">
-            <HugeiconsIcon icon={GpuIcon} size={12} className={`w-2.5 h-2.5 ${getColor(vramPercentToShow)}`} />
-            <span className={`font-mono text-[10px] font-bold ${getColor(vramPercentToShow)}`}>
-              {formatPercent(vramPercentToShow)}
-            </span>
-          </div>
-
-          {/* RAM */}
-          <div className="flex items-center gap-0.5 ml-1">
-            <HugeiconsIcon icon={RamMemoryIcon} size={12} className={`w-2.5 h-2.5 ${getColor(stats.ram_percent)}`} />
-            <span className={`font-mono text-[10px] font-bold ${getColor(stats.ram_percent)}`}>
-              {formatPercent(stats.ram_percent)}
-            </span>
-          </div>
-
-          {/* CPU */}
-          <div className="flex items-center gap-0.5 ml-1">
-            <HugeiconsIcon icon={CpuIcon} size={12} className={`w-2.5 h-2.5 ${getColor(stats.cpu_percent)}`} />
-            <span className={`font-mono text-[10px] font-bold ${getColor(stats.cpu_percent)}`}>
-              {formatPercent(stats.cpu_percent)}
-            </span>
-          </div>
+          {metrics.map((m) => {
+            const status = getStatusColor(m.value);
+            const clampedVal = Math.min(Math.max(m.value, 6), 100);
+            return (
+              <div key={m.id} className="flex items-center gap-1">
+                {/* Vertical Pipe Bar */}
+                <div className="relative w-1.5 h-4 bg-white/10 rounded-full overflow-hidden flex flex-col justify-end p-[1px]">
+                  <div
+                    className={`w-full rounded-full transition-all duration-500 ${status.bg}`}
+                    style={{ height: `${clampedVal}%` }}
+                  />
+                </div>
+                {/* Metric percentage & label */}
+                <div className="flex flex-col leading-none text-left">
+                  <span className="text-[8px] font-semibold text-zinc-400 uppercase tracking-tighter">
+                    {m.label}
+                  </span>
+                  <span className={`font-mono text-[9px] font-bold ${status.text}`}>
+                    {Math.round(m.value)}%
+                  </span>
+                </div>
+              </div>
+            );
+          })}
 
           <HugeiconsIcon
             icon={isExpanded ? ChevronUp : ChevronDown}
-            size={14}
-            className={`w-3 h-3 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            size={12}
+            className={`w-3 h-3 text-zinc-400 transition-transform ml-0.5 ${isExpanded ? 'rotate-180 text-primary' : 'group-hover:text-zinc-200'}`}
           />
         </button>
       </SimpleTooltip>
@@ -196,49 +222,51 @@ export const ResourceMonitor: React.FC = () => {
 
                 {stats.gpus && stats.gpus.length > 0 ? (
                   <>
-                    {stats.gpus.map((gpu, index) => (
-                      <div key={gpu.id} className="space-y-1 pt-2 border-t border-white/[0.06] first:pt-0 first:border-t-0">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1">
-                            <HugeiconsIcon icon={GpuIcon} size={14} className="w-2.5 h-2.5 text-cyan-300" />
-                            <span className="font-semibold text-zinc-200 text-xs">GPU {gpu.id}: {gpu.name}</span>
+                    {stats.gpus.map((gpu) => {
+                      const utilPercent = gpu.memory_util * 100;
+                      const status = getStatusColor(utilPercent);
+                      return (
+                        <div key={gpu.id} className="space-y-1.5 pt-2 border-t border-white/[0.06] first:pt-0 first:border-t-0">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              <HugeiconsIcon icon={GpuIcon} size={13} className="w-3 h-3 text-cyan-300" />
+                              <span className="font-medium text-zinc-200 text-xs">GPU {gpu.id}: {gpu.name}</span>
+                            </div>
+                            <span className={`font-mono text-[10px] font-bold ${status.text}`}>
+                              {formatPercent(utilPercent)}
+                            </span>
                           </div>
-                          <span className={`font-mono text-[10px] ${getColor(gpu.memory_util * 100)}`}>
-                            {formatPercent(gpu.memory_util * 100)}
-                          </span>
+                          <div className="w-full h-2 bg-black/40 border border-white/[0.06] rounded-full overflow-hidden p-[1px]">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${Math.min(utilPercent, 100)}%` }}
+                              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                              className={`h-full rounded-full transition-all duration-300 ${status.bg}`}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                            <span>{formatGB(gpu.memory_used_mb / 1024, gpu.memory_total_mb / 1024)}</span>
+                            {gpu.temperature !== undefined && (
+                              <span>Temp: {gpu.temperature}°C</span>
+                            )}
+                          </div>
                         </div>
-                        <div className="w-full h-1 bg-[hsl(var(--surface-2))] rounded overflow-hidden">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.min(gpu.memory_util * 100, 100)}%` }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                            className={`h-full rounded ${getBgColor(gpu.memory_util * 100).replace('bg-', 'bg-').replace('border-', '')}`}
-                             style={{ background: `linear-gradient(90deg, ${getColor(gpu.memory_util * 100).replace('text-', '')} 0%, ${getColor(gpu.memory_util * 100).replace('text-', '')} 100%)` }}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between text-[9px] text-zinc-400">
-                          <span>{formatGB(gpu.memory_used_mb / 1024, gpu.memory_total_mb / 1024)}</span>
-                           {gpu.temperature && (
-                             <span className="ml-2">Temp: {gpu.temperature}°C</span>
-                           )}
-                         </div>
-                       </div>
-                     ))}
+                      );
+                    })}
                     {stats.gpus.length > 1 && (
-                      <div className="pt-2 border-t border-white/[0.06]">
+                      <div className="pt-2 border-t border-white/[0.06] space-y-1.5">
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-zinc-200 text-xs">Total VRAM</span>
                           <span className={`font-mono text-[10px] font-bold ${getColor(stats.avg_vram_percent ?? 0)}`}>
                             {formatPercent(stats.avg_vram_percent ?? 0)}
                           </span>
                         </div>
-                        <div className="w-full h-1.5 bg-[hsl(var(--surface-2))] rounded-full overflow-hidden">
+                        <div className="w-full h-2 bg-black/40 border border-white/[0.06] rounded-full overflow-hidden p-[1px]">
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${Math.min(stats.avg_vram_percent ?? 0, 100)}%` }}
                             transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                            className={`h-full rounded-full ${getBgColor(stats.avg_vram_percent ?? 0).replace('bg-', 'bg-').replace('border-', '')}`}
-                             style={{ background: `linear-gradient(90deg, ${getColor(stats.avg_vram_percent ?? 0).replace('text-', '')} 0%, ${getColor(stats.avg_vram_percent ?? 0).replace('text-', '')} 100%)` }}
+                            className={`h-full rounded-full transition-all duration-300 ${getStatusColor(stats.avg_vram_percent ?? 0).bg}`}
                           />
                         </div>
                         <div className="flex items-center justify-between text-[9px] text-zinc-400">
@@ -249,20 +277,19 @@ export const ResourceMonitor: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    {/* Fallback to single GPU display (original behavior) */}
-                    <div className="w-full h-1.5 bg-[hsl(var(--surface-2))] rounded-full overflow-hidden">
-                     <motion.div
-                       initial={{ width: 0 }}
-                       animate={{ width: `${Math.min(stats.vram_percent, 100)}%` }}
-                       transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                       className={`h-full rounded-full ${getBgColor(stats.vram_percent).replace('bg-', 'bg-').replace('border-', '')}`}
-                       style={{ background: `linear-gradient(90deg, ${getColor(stats.vram_percent).replace('text-', '')} 0%, ${getColor(stats.vram_percent).replace('text-', '')} 100%)` }}
-                     />
-                   </div>
-                   <div className="flex items-center justify-between text-[9px] text-zinc-400">
-                     <span>{formatGB(stats.vram_used_gb, stats.vram_total_gb)}</span>
-                     {stats.gpu_name && <span className="truncate max-w-[140px]">{stats.gpu_name}</span>}
-                   </div>
+                    {/* Fallback to single GPU display */}
+                    <div className="w-full h-2 bg-black/40 border border-white/[0.06] rounded-full overflow-hidden p-[1px]">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(stats.vram_percent, 100)}%` }}
+                        transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                        className={`h-full rounded-full transition-all duration-300 ${getStatusColor(stats.vram_percent).bg}`}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                      <span>{formatGB(stats.vram_used_gb, stats.vram_total_gb)}</span>
+                      {stats.gpu_name && <span className="truncate max-w-[140px]">{stats.gpu_name}</span>}
+                    </div>
                     {stats.gpu_temp_c && (
                       <div className="text-[9px] text-zinc-500">
                         GPU Temp: {stats.gpu_temp_c}°C
@@ -273,20 +300,20 @@ export const ResourceMonitor: React.FC = () => {
 
                 {stats.gpus && stats.gpus.length > 0 && stats.gpus[0].temperature !== undefined && (
                   <div className="pt-2 border-t border-white/[0.06]">
-                    <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                    <div className="flex items-center justify-between text-[9px] text-zinc-400 mb-1">
                       <span>GPU Temperatures</span>
                     </div>
                     <div className="space-y-1">
-                      {stats.gpus.map((gpu, index) => (
+                      {stats.gpus.map((gpu) => (
                         <div key={gpu.id} className="flex items-center justify-between">
-                          <span className="text-xs">GPU {gpu.id}: {gpu.name}</span>
-                          <span className="font-mono text-[9px]">{gpu.temperature}°C</span>
+                          <span className="text-xs text-zinc-300">GPU {gpu.id}: {gpu.name}</span>
+                          <span className="font-mono text-[9px] text-zinc-400">{gpu.temperature}°C</span>
                         </div>
                       ))}
-                     </div>
                     </div>
-                  )}
-               </div>
+                  </div>
+                )}
+              </div>
 
               {/* RAM - System Memory */}
               <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
@@ -299,13 +326,12 @@ export const ResourceMonitor: React.FC = () => {
                     {formatPercent(stats.ram_percent)}
                   </span>
                 </div>
-                <div className="w-full h-1.5 bg-[hsl(var(--surface-2))] rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-black/40 border border-white/[0.06] rounded-full overflow-hidden p-[1px]">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${Math.min(stats.ram_percent, 100)}%` }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                     style={{ background: `linear-gradient(90deg, ${getColor(stats.ram_percent).replace('text-', '')} 0%, ${getColor(stats.ram_percent).replace('text-', '')} 100%)` }}
-                    className="h-full rounded-full"
+                    className={`h-full rounded-full transition-all duration-300 ${getStatusColor(stats.ram_percent).bg}`}
                   />
                 </div>
                 <div className="flex items-center justify-between text-[9px] text-zinc-400">
@@ -324,13 +350,12 @@ export const ResourceMonitor: React.FC = () => {
                     {formatPercent(stats.cpu_percent)}
                   </span>
                 </div>
-                <div className="w-full h-1.5 bg-[hsl(var(--surface-2))] rounded-full overflow-hidden">
+                <div className="w-full h-2 bg-black/40 border border-white/[0.06] rounded-full overflow-hidden p-[1px]">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${Math.min(stats.cpu_percent, 100)}%` }}
                     transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                     style={{ background: `linear-gradient(90deg, ${getColor(stats.cpu_percent).replace('text-', '')} 0%, ${getColor(stats.cpu_percent).replace('text-', '')} 100%)` }}
-                    className="h-full rounded-full"
+                    className={`h-full rounded-full transition-all duration-300 ${getStatusColor(stats.cpu_percent).bg}`}
                   />
                 </div>
               </div>
