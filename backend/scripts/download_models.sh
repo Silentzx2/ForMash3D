@@ -801,7 +801,7 @@ download_unique3d() {
 
     # Download controlnet-tile directory
     print_info "Downloading Unique3D controlnet-tile..."
-    if ! hf_download Wuvin/Unique3D \
+    if ! hf_download --repo-type space Wuvin/Unique3D \
         --include "ckpt/controlnet-tile/*" \
         --local-dir "$model_dir"; then
         print_error "Failed to download controlnet-tile"
@@ -810,7 +810,7 @@ download_unique3d() {
 
     # Download image2normal directory
     print_info "Downloading Unique3D image2normal..."
-    if ! hf_download Wuvin/Unique3D \
+    if ! hf_download --repo-type space Wuvin/Unique3D \
         --include "ckpt/image2normal/*" \
         --local-dir "$model_dir"; then
         print_error "Failed to download image2normal"
@@ -819,7 +819,7 @@ download_unique3d() {
 
     # Download img2mvimg directory
     print_info "Downloading Unique3D img2mvimg..."
-    if ! hf_download Wuvin/Unique3D \
+    if ! hf_download --repo-type space Wuvin/Unique3D \
         --include "ckpt/img2mvimg/*" \
         --local-dir "$model_dir"; then
         print_error "Failed to download img2mvimg"
@@ -828,7 +828,7 @@ download_unique3d() {
 
     # Download realesrgan-x4.onnx
     print_info "Downloading Unique3D realesrgan-x4.onnx..."
-    if ! hf_download Wuvin/Unique3D \
+    if ! hf_download --repo-type space Wuvin/Unique3D \
         --include "ckpt/realesrgan-x4.onnx" \
         --local-dir "$model_dir"; then
         print_error "Failed to download realesrgan-x4.onnx"
@@ -837,7 +837,7 @@ download_unique3d() {
 
     # Download v1-inference.yaml
     print_info "Downloading Unique3D v1-inference.yaml..."
-    if ! hf_download Wuvin/Unique3D \
+    if ! hf_download --repo-type space Wuvin/Unique3D \
         --include "ckpt/v1-inference.yaml" \
         --local-dir "$model_dir"; then
         print_error "Failed to download v1-inference.yaml"
