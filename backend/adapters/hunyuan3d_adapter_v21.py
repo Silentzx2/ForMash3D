@@ -119,7 +119,7 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
 
                 logger.info(f"Loading shape generation pipeline from {self.model_path}...")
                 self.pipeline_shapegen = (
-                    Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path))
+                    Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path)).to(getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu'))
                 )
                 try:
                     if hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
@@ -131,7 +131,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
 
                 # Load background remover
                 logger.info("Loading background remover...")
-                self.bg_remover = BackgroundRemover()
+                import rembg
+            self.bg_remover = BackgroundRemover()
+            self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
                 loaded_models["bg_remover"] = self.bg_remover
 
             # Load paint pipeline if needed
@@ -162,7 +164,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 )
 
                 if "bg_remover" not in loaded_models:
-                    self.bg_remover = BackgroundRemover()
+                    import rembg
+            self.bg_remover = BackgroundRemover()
+            self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
                     loaded_models["bg_remover"] = self.bg_remover
 
                 self.paint_pipeline = Hunyuan3DPaintPipeline(conf)

@@ -276,6 +276,7 @@ export const GeneratePanel: React.FC = () => {
     executionProgress,
     executionStep,
     generate3DModel,
+    queueGenerationJob,
     generationSettings,
     setGenerationSettings,
     navigateToTool,
@@ -2167,15 +2168,28 @@ export const GeneratePanel: React.FC = () => {
             <SimpleTooltip label="Queue next model in background or execute on secondary GPU" side="top">
               <button
                 type="button"
-                onClick={() => {
-                  if (generationSettings.imageFileId) {
-                    addToBatchQueue([generationSettings.imageFileId]);
-                    setNoticeMessage('Job added to queue! It will run as soon as VRAM is free or in parallel if GPU has headroom.');
-                    setTimeout(() => setNoticeMessage(null), 5000);
-                  } else {
+                onClick={async () => {
+                  const hasImage = Boolean(
+                    generationSettings.image ||
+                    generationSettings.imageFileId ||
+                    generationSettings.multiviewImages?.front ||
+                    (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
+                  );
+                  if (!hasImage) {
                     setNoticeMessage('Upload or select an image to queue.');
                     setTimeout(() => setNoticeMessage(null), 4000);
+                    return;
                   }
+                  setNoticeMessage('Submitting next generation job to background queue...');
+                  try {
+                    const qId = await queueGenerationJob();
+                    if (qId) {
+                      setNoticeMessage('Job queued successfully! Monitoring progress in viewport.');
+                    }
+                  } catch (err) {
+                    setNoticeMessage('Failed to queue job.');
+                  }
+                  setTimeout(() => setNoticeMessage(null), 5000);
                 }}
                 className="h-10 px-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-primary/20 border border-primary/40 hover:border-primary text-primary font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
               >

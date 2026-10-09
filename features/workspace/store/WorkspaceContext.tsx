@@ -130,6 +130,9 @@ interface WorkspaceContextType {
   processBatchQueue: () => Promise<void>;
   cancelBatchProcessing: () => Promise<void>;
   retryFailedBatchItems: () => Promise<void>;
+  dismissJob: (jobId: string) => void;
+  selectJobToView: (jobId: string) => void;
+  queueGenerationJob: (customSettings?: Partial<GenerationSettings>) => Promise<string | null>;
   navigateToTool: (tool: ToolType) => void;
   navigateToMain: (nav: MainNavRoute) => void;
   navigateToMainNav: (nav: MainNavRoute) => void;
@@ -844,13 +847,27 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setViewportResetTrigger(prev => prev + 1);
   }, []);
 
-  // Poll activeTask from backend so UI pipeline steps, progress, and failure update in real time
+function dataURLtoFile(dataURL: string, filename: string): File {
+  const arr = dataURL.split(',');
+  const mime = arr[0].match(/:(.*?);/)![1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
+  // Poll all active jobs in jobsById from backend so each queued/running job updates in real time
   useEffect(() => {
-    const jobId = activeTask?.id;
-    if (!jobId || activeTask?.isLocal || jobId.startsWith('local_') || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(jobId)) {
-      return;
-    }
-    if (activeTask?.status === 'completed' || activeTask?.status === 'failed' || activeTask?.status === 'interrupted') {
+    const activeJobEntries = Object.entries(jobsById).filter(([id, task]) => {
+      const isTerminal = task.status === 'completed' || task.status === 'failed' || task.status === 'interrupted';
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      return !isTerminal && isUuid && !task.isLocal;
+    });
+
+    if (activeJobEntries.length === 0) {
       return;
     }
 
@@ -860,111 +877,120 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const poll = async () => {
       if (stopped) return;
       try {
-        const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`);
-        if (!res.ok) {
-          if (!stopped) timerId = setTimeout(poll, 2500);
-          return;
-        }
-        const payload = await res.json();
-        const raw = payload?.data ?? payload;
-        if (!raw || stopped) return;
+        await Promise.all(
+          activeJobEntries.map(async ([jobId, task]) => {
+            try {
+              const res = await fetch(`/api/v1/system/jobs/${encodeURIComponent(jobId)}`);
+              if (!res.ok) return;
+              const payload = await res.json();
+              const raw = payload?.data ?? payload;
+              if (!raw || stopped) return;
 
-        const data = normalizeBackendJob(raw);
-        const progress = data.progress;
-        const currentMessage = data.message || (data.status === 'processing' ? 'Processing...' : 'Queued on backend');
+              const data = normalizeBackendJob(raw);
+              const progress = data.progress;
+              const currentMessage = data.message || (data.status === 'processing' ? 'Processing...' : 'Queued on backend');
 
-        setExecutionProgress(progress);
-        setExecutionStep(currentMessage);
+              const nextStatus = data.status === 'completed' ? 'completed'
+                : data.status === 'failed' ? 'failed'
+                : data.status === 'cancelled' ? 'interrupted'
+                : 'running';
 
-        setActiveTask(prev => {
-          if (!prev || prev.id !== jobId) return prev;
-          const nextStatus = data.status === 'completed' ? 'completed'
-            : data.status === 'failed' ? 'failed'
-            : data.status === 'cancelled' ? 'interrupted'
-            : 'running';
-          return {
-            ...prev,
-            status: nextStatus,
-            progress,
-            stage: data.stage,
-            currentStep: currentMessage,
-            errorMessage: data.error_message || prev.errorMessage,
-            errorCode: (data as any).error_code || prev.errorCode,
-            logs: data.logs || prev.logs,
-            result: data.result || prev.result,
-          };
-        });
+              setJobsById(prev => {
+                const existing = prev[jobId];
+                if (!existing) return prev;
+                return {
+                  ...prev,
+                  [jobId]: {
+                    ...existing,
+                    status: nextStatus,
+                    progress,
+                    stage: data.stage || existing.stage,
+                    currentStep: currentMessage,
+                    errorMessage: data.error_message || existing.errorMessage,
+                    errorCode: (data as any).error_code || existing.errorCode,
+                    logs: data.logs || existing.logs,
+                    result: data.result || existing.result,
+                  }
+                };
+              });
 
-        if (data.status === 'failed' || data.status === 'cancelled') {
+              if (activeTaskRef.current?.id === jobId) {
+                setExecutionProgress(progress);
+                setExecutionStep(currentMessage);
+                setActiveTask(prev => prev && prev.id === jobId ? {
+                  ...prev,
+                  status: nextStatus,
+                  progress,
+                  stage: data.stage,
+                  currentStep: currentMessage,
+                  errorMessage: data.error_message || prev.errorMessage,
+                  errorCode: (data as any).error_code || prev.errorCode,
+                  logs: data.logs || prev.logs,
+                  result: data.result || prev.result,
+                } : prev);
+              }
+
+              if (data.status === 'completed' && task.status !== 'completed') {
+                toast.success('Generation complete', {
+                  description: task.title || '3D Asset ready',
+                });
+
+                const result = data.result;
+                if (result?.model_url || result?.active_model_url) {
+                  const modelUrl = (result.active_model_url || result.model_url) as string;
+                  const promptTitle = task.title;
+                  const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
+                  void prefetchGLB(modelUrl);
+                  const outputAsset = normalizeModelAsset({
+                    id: jobId,
+                    name: cleanName,
+                    category: 'generation',
+                    thumbnail: result.thumbnail_url || task.inputImage || '',
+                    source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
+                    polygon_count: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
+                    vertex_count: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
+                    faces: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
+                    vertices: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
+                    triangles: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
+                    statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
+                    topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
+                    format: 'GLB',
+                    postprocessStatus: result.postprocess_status || 'completed',
+                    tags: ['AI Generated'],
+                    collision_url: result.collision_url,
+                    physics_url: result.physics_url,
+                    physics_ready: result.physics_ready,
+                    physics: result.physics,
+                    pbr_maps: result.pbr_maps,
+                    game_ready_formats: result.game_ready_formats,
+                    zip_url: result.zip_url,
+                    qa_report: result.qa_report,
+                    quality_trace: result.quality_trace,
+                    artifacts: result.artifacts,
+                  });
+                  addAsset(outputAsset);
+                  if (activeTaskRef.current?.id === jobId) {
+                    setSelectedAssetId(outputAsset.id);
+                    setViewportResetTrigger(prev => prev + 1);
+                    loadModelInViewer(modelUrl, cleanName, outputAsset as any);
+                  }
+                }
+              } else if ((data.status === 'failed' || data.status === 'cancelled') && task.status !== 'failed' && task.status !== 'interrupted') {
+                const errMsg = data.error_message || 'The job encountered an error during execution';
+                toast.error('Process failed', { description: errMsg });
+              }
+            } catch (jobErr) {
+              // ignore single job polling error
+            }
+          })
+        );
+
+        // Update overall isExecuting
+        const hasRemainingActive = Object.values(jobsByIdRef.current).some(
+          j => j.status === 'queued' || j.status === 'running'
+        );
+        if (!hasRemainingActive) {
           setIsExecuting(false);
-          const errMsg = data.error_message || 'The job encountered an error during execution';
-          setExecutionStep(errMsg);
-          const diagnostic = diagnoseJobError({
-            id: jobId,
-            status: 'failed',
-            error: errMsg,
-            error_message: errMsg,
-            provider: activeTaskRef.current?.provider || '',
-          } as any);
-          setActiveTask(prev => prev && prev.id === jobId ? {
-            ...prev,
-            status: data.status === 'cancelled' ? 'interrupted' : 'failed',
-            currentStep: errMsg,
-            errorMessage: errMsg,
-            diagnostic,
-          } : prev);
-          toast.error('Process failed', { description: errMsg });
-          return;
-        }
-
-        if (data.status === 'completed') {
-          setIsExecuting(false);
-          setExecutionProgress(100);
-          setExecutionStep('Completed');
-          toast.success('Generation complete', {
-            description: activeTaskRef.current?.title || '3D Asset ready',
-          });
-
-          // If output has model_url, hydrate into asset viewer
-          const result = data.result;
-          if (result?.model_url || result?.active_model_url) {
-            const modelUrl = (result.active_model_url || result.model_url) as string;
-            const promptTitle = activeTaskRef.current?.title;
-            const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
-            void prefetchGLB(modelUrl);
-            const outputAsset = normalizeModelAsset({
-              id: jobId,
-              name: cleanName,
-              category: 'generation',
-              thumbnail: result.thumbnail_url || '',
-              source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
-              polygon_count: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-              vertex_count: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
-              faces: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-              vertices: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
-              triangles: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-              statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
-              topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
-              format: 'GLB',
-              postprocessStatus: result.postprocess_status || 'completed',
-              tags: ['AI Generated'],
-              collision_url: result.collision_url,
-              physics_url: result.physics_url,
-              physics_ready: result.physics_ready,
-              physics: result.physics,
-              pbr_maps: result.pbr_maps,
-              game_ready_formats: result.game_ready_formats,
-              zip_url: result.zip_url,
-              qa_report: result.qa_report,
-              quality_trace: result.quality_trace,
-              artifacts: result.artifacts,
-            });
-            addAsset(outputAsset);
-            setSelectedAssetId(outputAsset.id);
-            setViewportResetTrigger(prev => prev + 1);
-            loadModelInViewer(modelUrl, cleanName, outputAsset as any);
-          }
-          return;
         }
 
         if (!stopped) {
@@ -982,7 +1008,56 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       stopped = true;
       if (timerId) clearTimeout(timerId);
     };
-  }, [activeTask?.id, activeTask?.status, addAsset]);
+  }, [jobsById, addAsset]);
+
+  const dismissJob = useCallback((jobId: string) => {
+    setJobsById(prev => {
+      const copy = { ...prev };
+      delete copy[jobId];
+      return copy;
+    });
+    if (activeTaskRef.current?.id === jobId) {
+      setActiveTask(null);
+      setIsExecuting(false);
+      setExecutionStep('');
+    }
+  }, []);
+
+  const selectJobToView = useCallback((jobId: string) => {
+    const job = jobsByIdRef.current[jobId] || (activeTaskRef.current?.id === jobId ? activeTaskRef.current : null);
+    if (!job) return;
+    const result = (job.result || {}) as Record<string, any>;
+    const modelUrl = (result?.active_model_url || result?.model_url || result?.url) as string | undefined;
+    if (modelUrl) {
+      const promptTitle = job.title;
+      const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
+      void prefetchGLB(modelUrl);
+      const outputAsset = normalizeModelAsset({
+        id: jobId,
+        name: cleanName,
+        category: 'generation',
+        thumbnail: result.thumbnail_url || job.inputImage || '',
+        source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
+        polygon_count: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
+        vertex_count: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
+        faces: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
+        vertices: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
+        triangles: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
+        statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
+        topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
+        format: 'GLB',
+        postprocessStatus: result.postprocess_status || 'completed',
+        tags: ['AI Generated'],
+      });
+      addAsset(outputAsset);
+      setSelectedAssetId(outputAsset.id);
+      setViewportResetTrigger(prev => prev + 1);
+      loadModelInViewer(modelUrl, cleanName, outputAsset as any);
+      toast.success('Loaded model in viewport', { description: cleanName });
+    } else {
+      toast.info('Model is still generating or has no output URL yet.');
+    }
+  }, [addAsset]);
 
   const selectAsset = useCallback((id: string) => {
     setSelectedAssetId(id);
@@ -1147,6 +1222,138 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     setActiveTask(prev => prev && prev.id === localTaskId ? { ...prev, ...updates, id: jobId, isLocal: false } : prev);
   }, []);
+
+  const queueGenerationJob = useCallback(async (customSettings?: Partial<GenerationSettings>) => {
+    const effective = { ...generationSettings, ...(customSettings || {}) };
+    let effectiveFileId = effective.imageFileId;
+    const imageInput = effective.image;
+
+    if (!effectiveFileId && imageInput && imageInput.startsWith('data:')) {
+      try {
+        const file = dataURLtoFile(imageInput, effective.imageName || 'image.jpg');
+        const formData = new FormData();
+        formData.append('file', file);
+        const uploadRes = await getApiClient().post<{ file_id: string }>(
+          '/api/v1/file-upload/image',
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+        if (uploadRes?.file_id) {
+          effectiveFileId = uploadRes.file_id;
+          setGenerationSettings(prev => ({ ...prev, imageFileId: uploadRes.file_id }));
+        }
+      } catch (uploadErr) {
+        console.error('Failed to upload image before queueing:', uploadErr);
+      }
+    }
+
+    if (!effectiveFileId && !imageInput) {
+      toast.error('Image required', { description: 'Please upload or select an image to queue.' });
+      return null;
+    }
+
+    const localTaskId = `queue_${crypto.randomUUID()}`;
+    const queueIndex = Object.keys(jobsByIdRef.current).length + 1;
+    const jobTitle = effective.imageName || `Queue #${queueIndex}`;
+    const inputThumbnail = imageInput || (effectiveFileId ? `/api/v1/file-upload/download/${effectiveFileId}` : undefined);
+
+    const newTask: ActiveTask = {
+      id: localTaskId,
+      isLocal: true,
+      type: 'image-to-3d',
+      title: jobTitle,
+      inputImage: inputThumbnail,
+      inputImageName: effective.imageName,
+      startedAt: Date.now(),
+      status: 'queued',
+      progress: 0,
+      currentStep: 'Queueing on backend...',
+      provider: effective.aiModel || 'auto',
+    };
+
+    setJobsById(prev => ({ ...prev, [localTaskId]: newTask }));
+    setIsExecuting(true);
+
+    try {
+      let resolvedModelId = effective.aiModel || '';
+      let finalSettings = { ...effective, imageFileId: effectiveFileId };
+      if (effective.intent) {
+        try {
+          const resolved = await getApiClient().resolveSmartIntent(
+            effective.intent,
+            effective.aiModel || undefined,
+          );
+          resolvedModelId = resolved.model_id;
+          finalSettings = {
+            ...finalSettings,
+            aiModel: resolvedModelId,
+          };
+        } catch {
+          // fallback
+        }
+      }
+
+      const selectedCapabilities = modelDetails[resolvedModelId]?.capabilities || {};
+      const isRawModel = selectedCapabilities.raw_mesh === true || resolvedModelId.endsWith('_image_to_raw_mesh');
+      const { endpoint, body } = buildGenerationParameters(
+        finalSettings,
+        {
+          raw_mesh: isRawModel,
+          paint_autochain: selectedCapabilities.paint_autochain === true,
+          multiview: selectedCapabilities.multiview === true,
+          supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
+        },
+        modelParameterDefaults[resolvedModelId] || {},
+      );
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) throw await parseApiError(res);
+      const data = await parseApiData<{ job_id?: string; id?: string }>(res);
+      const backendJobId = data.job_id ?? data.id;
+      if (!backendJobId) throw new Error('Backend did not return a job ID');
+
+      bindBackendJob(localTaskId, backendJobId, {
+        status: 'queued',
+        currentStep: 'Queued on backend',
+        provider: resolvedModelId,
+        inputImage: inputThumbnail,
+      });
+
+      toast.success('Job Queued in Background', {
+        description: `${jobTitle} (${resolvedModelId || 'Default'})`,
+      });
+
+      return backendJobId;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to queue job';
+      setJobsById(prev => {
+        if (!prev[localTaskId]) return prev;
+        return {
+          ...prev,
+          [localTaskId]: {
+            ...prev[localTaskId],
+            status: 'failed',
+            currentStep: errMsg,
+            errorMessage: errMsg,
+          }
+        };
+      });
+      toast.error('Queue submission failed', { description: errMsg });
+      return null;
+    }
+  }, [
+    generationSettings,
+    modelDetails,
+    modelParameterDefaults,
+    bindBackendJob,
+    parseApiError,
+    parseApiData,
+  ]);
 
   const startComparisonGroup = useCallback((name: string, sourceImage: string | null, sourceImageName: string | null, modelIds: string[], prompts: string[]) => {
     const groupId = `comp_${nextComparisonGroupId}`;
@@ -2268,8 +2475,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const executionValue = useMemo(() => ({
     activeTask, jobsById, dismissActiveTask,
     isExecuting, executionProgress, executionStep, cancelExecution,
+    dismissJob, selectJobToView, queueGenerationJob,
   }), [activeTask, jobsById, dismissActiveTask,
-    isExecuting, executionProgress, executionStep, cancelExecution]);
+    isExecuting, executionProgress, executionStep, cancelExecution,
+    dismissJob, selectJobToView, queueGenerationJob]);
 
   const generationSettingsValue = useMemo(() => ({
     generationSettings, setGenerationSettings,

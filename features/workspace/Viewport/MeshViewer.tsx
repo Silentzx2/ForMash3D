@@ -24,7 +24,7 @@ import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
+import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
 import {
   StandardBrushIcon,
   ClayBrushIcon,
@@ -620,11 +620,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     rightPanelWidth,
     sculptSettings,
     paintBrushSettings,
+    jobsById = {},
+    dismissJob,
+    selectJobToView,
   } = useWorkspace();
 
   const { batchQueue, updateBatchItem } = useAppStore();
 
   const [isDesktopScreen, setIsDesktopScreen] = useState(true);
+  const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState(true);
 
   const brushCursorRef = useRef<THREE.Mesh | null>(null);
   const isBrushingRef = useRef(false);
@@ -4301,92 +4305,200 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             </div>
           )}
 
-          {/* Top-Right Horizontal Job & Queue Tracker Capsule */}
-          {(isExecuting || (batchQueue && batchQueue.length > 0)) && (
-            <div
-              style={{ right: `${rightOffset}px` }}
-              className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200"
-            >
-              <div className="flex items-center gap-2 p-1.5 pl-2 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none">
-                {/* Reference Thumbnail or Active Icon */}
-                <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
-                  {generationSettings.image ? (
-                    <img
-                      src={generationSettings.image}
-                      alt="Active generation reference"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary animate-pulse" />
+          {/* Top-Right Horizontal Job & Queue Tracker (Line-by-line & Drawer for >4 jobs) */}
+          {(() => {
+            const jobList = Object.values(jobsById || {}).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+            const hasJobs = jobList.length > 0;
+            const showHUD = hasJobs || isExecuting || (batchQueue && batchQueue.length > 0);
+
+            if (!showHUD) return null;
+
+            const renderCard = (job: any) => {
+              const isRunning = job.status === 'running';
+              const isCompleted = job.status === 'completed';
+              const isFailed = job.status === 'failed';
+              const isQueued = job.status === 'queued';
+              const thumbUrl = job.inputImage || (isCompleted && job.result?.thumbnail_url) || '';
+
+              return (
+                <div
+                  key={job.id}
+                  className="flex items-center gap-2.5 p-2 pl-2.5 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none min-w-[240px] max-w-[270px]"
+                >
+                  {/* Reference Thumbnail or Active Icon */}
+                  <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                    {thumbUrl ? (
+                      <img
+                        src={thumbUrl}
+                        alt={job.modelName || 'Job'}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className={`w-4 h-4 ${isRunning ? 'text-primary animate-pulse' : 'text-zinc-400'}`} />
+                    )}
+                    {isRunning && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Job Info and Stage Progress */}
+                  <div className="flex flex-col min-w-[110px] max-w-[160px] flex-1">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-bold text-white truncate">
+                        {job.modelName || job.title || '3D Generating'}
+                      </span>
+                      <span className="font-mono text-[9px] font-bold">
+                        {isCompleted && <span className="text-emerald-400">Ready</span>}
+                        {isFailed && <span className="text-red-400">Failed</span>}
+                        {isQueued && <span className="text-amber-300">Queued</span>}
+                        {isRunning && <span className="text-primary">{Math.round(job.progress || 0)}%</span>}
+                      </span>
+                    </div>
+
+                    {/* Horizontal Progress bar */}
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isCompleted
+                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                            : isFailed
+                            ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                            : isQueued
+                            ? 'bg-amber-400/50'
+                            : 'bg-gradient-to-r from-amber-400 to-primary shadow-[0_0_8px_rgba(255,204,0,0.6)]'
+                        }`}
+                        style={{
+                          width: `${isCompleted || isFailed ? 100 : isQueued ? 15 : Math.max(job.progress || 0, 5)}%`,
+                        }}
+                      />
+                    </div>
+
+                    <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
+                      {job.stage || (isQueued ? 'In queue (waiting for GPU)' : isRunning ? 'Processing...' : isCompleted ? 'Completed' : 'Error')}
+                    </span>
+                  </div>
+
+                  {/* Actions: View when completed & Dismiss */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {isCompleted && (
+                      <button
+                        type="button"
+                        onClick={() => selectJobToView(job.id)}
+                        className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[9px] font-bold transition-all cursor-pointer flex items-center gap-0.5"
+                        title="Load into 3D Viewport"
+                      >
+                        <HugeiconsIcon icon={EyeIcon} size={11} />
+                        View
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => dismissJob(job.id)}
+                      title="Dismiss"
+                      className="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <HugeiconsIcon icon={Cancel01Icon} size={11} />
+                    </button>
+                  </div>
+                </div>
+              );
+            };
+
+            if (hasJobs) {
+              const isMultiJob = jobList.length > 4;
+              const activeRunningCount = jobList.filter(j => j.status === 'running' || j.status === 'queued').length;
+
+              return (
+                <div
+                  style={{ right: `${rightOffset}px` }}
+                  className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200 flex flex-col gap-2"
+                >
+                  {isMultiJob && (
+                    <div
+                      onClick={() => setIsQueueDrawerOpen(!isQueueDrawerOpen)}
+                      className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-black/90 backdrop-blur-xl border border-white/[0.16] shadow-xl text-xs font-semibold text-white cursor-pointer hover:border-primary/50 transition-all select-none min-w-[240px] max-w-[270px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <HugeiconsIcon icon={Layers01Icon} size={14} className="text-primary animate-pulse" />
+                        <span>Queue ({jobList.length})</span>
+                        {activeRunningCount > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-bold">
+                            {activeRunningCount} active
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white">
+                        <span>{isQueueDrawerOpen ? 'Collapse' : 'Expand'}</span>
+                        <HugeiconsIcon
+                          icon={ChevronDown}
+                          size={12}
+                          className={`transition-transform duration-200 ${isQueueDrawerOpen ? 'rotate-180' : ''}`}
+                        />
+                      </div>
+                    </div>
                   )}
-                  {isExecuting && (
-                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
-                      <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+
+                  {/* If <= 4 jobs: stack line by line. If > 4 jobs: show inside scrollable drawer when open */}
+                  {(!isMultiJob || isQueueDrawerOpen) && (
+                    <div className={`flex flex-col gap-2 ${isMultiJob ? 'max-h-[60vh] overflow-y-auto pr-1' : ''}`}>
+                      {jobList.map(job => renderCard(job))}
                     </div>
                   )}
                 </div>
+              );
+            }
 
-                {/* Job Info and Stage Progress */}
-                <div className="flex flex-col min-w-[120px] max-w-[180px]">
-                  <div className="flex items-center justify-between gap-1 text-[10px]">
-                    <span className="font-bold text-white truncate">
-                      {isExecuting ? (activeTask?.title || '3D Generating...') : 'Queue Ready'}
-                    </span>
-                    <span className="font-mono text-primary font-bold text-[9px]">
-                      {isExecuting ? `${Math.round(executionProgress || 0)}%` : `${batchQueue.length} queued`}
+            return (
+              <div
+                style={{ right: `${rightOffset}px` }}
+                className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200"
+              >
+                <div className="flex items-center gap-2 p-1.5 pl-2 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none">
+                  <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                    {generationSettings.image ? (
+                      <img
+                        src={generationSettings.image}
+                        alt="Active generation reference"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary animate-pulse" />
+                    )}
+                    {isExecuting && (
+                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                        <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col min-w-[120px] max-w-[180px]">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-bold text-white truncate">
+                        {isExecuting ? (activeTask?.title || '3D Generating...') : 'Queue Ready'}
+                      </span>
+                      <span className="font-mono text-primary font-bold text-[9px]">
+                        {isExecuting ? `${Math.round(executionProgress || 0)}%` : `${batchQueue.length} queued`}
+                      </span>
+                    </div>
+
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-400 to-primary rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(255,204,0,0.6)]"
+                        style={{ width: `${isExecuting ? Math.max(executionProgress || 0, 5) : 100}%` }}
+                      />
+                    </div>
+
+                    <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
+                      {executionStep || (batchQueue.length > 0 ? `${batchQueue.length} jobs in background` : 'Idle')}
                     </span>
                   </div>
-                  
-                  {/* Horizontal mini Progress bar */}
-                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
-                    <div
-                      className="h-full bg-gradient-to-r from-amber-400 to-primary rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(255,204,0,0.6)]"
-                      style={{ width: `${isExecuting ? Math.max(executionProgress || 0, 5) : 100}%` }}
-                    />
-                  </div>
-
-                  <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
-                    {executionStep || (batchQueue.length > 0 ? `${batchQueue.length} jobs in background` : 'Idle')}
-                  </span>
                 </div>
-
-                {/* Clickable Action: Open job in panel / View completed outputs */}
-                {batchQueue.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigateToTool('model');
-                      // If there is an output model in the queue, inspect it
-                      const completed = batchQueue.find(q => q.status === 'completed' && q.result?.modelUrl);
-                      if (completed && completed.result?.modelUrl) {
-                        const newAsset = normalizeModelAsset({
-                          id: completed.id,
-                          name: `Batch_${completed.id.slice(0, 6)}`,
-                          category: 'generation',
-                          meshType: 'custom',
-                          thumbnail: completed.imageFileId ? `/api/v1/file-upload/download/${completed.imageFileId}` : '',
-                          faces: 0,
-                          vertices: 0,
-                          triangles: 0,
-                          statsAvailable: false,
-                          source: { filename: `${completed.id}.glb`, subfolder: '', type: 'output', viewUrl: completed.result.modelUrl },
-                          topology: 'Triangle',
-                          format: 'GLB',
-                          dateCreated: new Date().toISOString(),
-                          tags: ['Batch Generated'],
-                        });
-                        addAsset(newAsset);
-                        setCurrentAsset(newAsset);
-                      }
-                    }}
-                    className="px-2 py-1 rounded-lg bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-[9px] font-bold transition-all cursor-pointer flex-shrink-0"
-                  >
-                    View
-                  </button>
-                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {reflectionPeekEnabled && (
             <div

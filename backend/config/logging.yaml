@@ -21,97 +21,67 @@ handlers:
     formatter: default
     stream: ext://sys.stdout
   
-  file:
+  master_file:
     class: logging.handlers.RotatingFileHandler
     level: DEBUG
     formatter: detailed
-    filename: logs/app.log
+    filename: logs/master.log
     maxBytes: 10485760  # 10MB
     backupCount: 5
-    mode: a
-    encoding: utf8
-  
-  api_file:
-    class: logging.handlers.RotatingFileHandler
-    level: INFO
-    formatter: default
-    filename: logs/api.log
-    maxBytes: 10485760  # 10MB
-    backupCount: 3
-    mode: a
-    encoding: utf8
-  
-  error_file:
-    class: logging.handlers.RotatingFileHandler
-    level: ERROR
-    formatter: detailed
-    filename: logs/error.log
-    maxBytes: 10485760  # 10MB
-    backupCount: 5
-    mode: a
-    encoding: utf8
-  
-  scheduler_file:
-    class: logging.handlers.RotatingFileHandler
-    level: DEBUG
-    formatter: detailed
-    filename: logs/scheduler.log
-    maxBytes: 10485760  # 10MB
-    backupCount: 3
     mode: a
     encoding: utf8
 
 loggers:
   "":  # Root logger
     level: INFO
-    handlers: [console, file, error_file]
+    handlers: [console, master_file]
     propagate: false
   
   api:
     level: INFO
-    handlers: [console, api_file, error_file]
+    handlers: [console, master_file]
     propagate: false
   
   core.scheduler:
     level: DEBUG
-    handlers: [console, scheduler_file, error_file]
+    handlers: [console, master_file]
     propagate: false
 
   core.models:
     level: INFO
-    handlers: [console, file, error_file]
+    handlers: [console, master_file]
     propagate: false
 
   core:
     level: INFO
-    handlers: [console, file, error_file]
+    handlers: [console, master_file]
     propagate: false
   
   adapters:
     level: INFO
-    handlers: [console, file, error_file]
+    handlers: [console, master_file]
     propagate: false
 
   postprocess:
     level: INFO
-    handlers: [console, file, error_file]
+    handlers: [console, master_file]
     propagate: false
   
   uvicorn:
     level: INFO
-    handlers: [console, api_file]
+    handlers: [console, master_file]
     propagate: false
   
   uvicorn.access:
     level: INFO
-    handlers: [api_file]
+    handlers: [console, master_file]
     propagate: false
   
   uvicorn.error:
     level: INFO
-    handlers: [console, error_file]
+    handlers: [console, master_file]
     propagate: false
 
 root:
   level: INFO
-  handlers: [console, file, error_file]
+  handlers: [console, master_file]

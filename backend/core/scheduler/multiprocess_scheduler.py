@@ -545,8 +545,8 @@ def _process_job_in_worker(
             )
         )
 
-        # Process job with inference mode for zero autograd tracking overhead
-        with torch.inference_mode():
+        # Process job with no_grad (allows overriding with enable_grad for Trellis opt)
+        with torch.no_grad():
             result = loaded_model._process_request(model_inputs)
 
         elapsed = time.time() - start_time
@@ -771,7 +771,8 @@ class MultiprocessModelScheduler:
         """
         model_id = model_config["model_id"]
         feature_type = model_config["feature_type"]
-        max_workers = model_config.get("max_workers", 1)
+        gpu_count = max(len(self.gpu_monitor.get_gpu_status()), 1)
+        max_workers = max(model_config.get("max_workers", 1), gpu_count)
 
         capabilities = dict(model_config.get("capabilities") or {})
         capabilities.setdefault("image_to_3d", feature_type.startswith("image_to_"))
@@ -1827,7 +1828,9 @@ class MultiprocessModelScheduler:
 
         # Check if we can create a new worker for this model
         current_workers = len(self.worker_assignments.get(target_model_id, []))
-        max_workers = self.model_max_workers.get(target_model_id, 1)
+        gpu_count = max(len(self.gpu_monitor.get_gpu_status()), 1)
+        configured_max = self.model_max_workers.get(target_model_id, 1)
+        max_workers = max(configured_max, gpu_count)
 
         if current_workers >= max_workers:
             logger.info(
@@ -2198,9 +2201,10 @@ class MultiprocessModelScheduler:
             self.worker_locks[worker_id] = asyncio.Lock()
         
         async with self.worker_locks[worker_id]:
-            # Double-check worker is still available
-            if self.worker_status.get(worker_id, False):
-                return False  # Already busy
+            # Double-check worker is still available or was tentatively reserved for this job
+            current_job = self.worker_current_job.get(worker_id)
+            if current_job is not None and current_job != job_id:
+                return False  # Truly busy with another active job
             
             self.worker_status[worker_id] = True
             self.worker_last_used[worker_id] = time.time()

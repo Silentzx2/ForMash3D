@@ -123,23 +123,23 @@ flowchart TD
     classDef amber fill:#2d1b0d,stroke:#f59e0b,stroke-width:2px,color:#fde68a;
     classDef slate fill:#181c24,stroke:#64748b,stroke-width:2px,color:#f1f5f9;
 
-    subgraph Client["Studio Frontend — Next.js 16 (:3000)"]
+    subgraph Client [Studio Frontend — Next.js 16 (:3000)]
         UI["Studio Workspace UI<br/>React 19 + Radix UI"]:::gold
         VIEWER["3D WebGL Viewport<br/>Three.js / React Three Fiber"]:::gold
         STORES["Reactive State Stores<br/>Zustand + TanStack Query"]:::gold
     end
 
-    subgraph Gateway["API Gateway & Control Plane — FastAPI (:7842)"]
+    subgraph Gateway [API Gateway & Control Plane — FastAPI (:7842)]
         ROUTERS["API Routers<br/>Generation / Retopo / UV / Rigging"]:::cyan
         QUEUE["Distributed Job Queue<br/>Redis 7 + Single-Worker Memory"]:::cyan
     end
 
-    subgraph Scheduler["VRAM-Aware Multi-Process Scheduler"]
+    subgraph Scheduler [VRAM-Aware Multi-Process Scheduler]
         GPU_LOCK["GPU Mutual Exclusion<br/>Single Job Concurrency"]:::amber
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines["Neural 3D Synthesis Engines (23 selectable / 24 registered adapters)"]
+    subgraph Engines [Neural 3D Synthesis Engines (23 selectable / 24 registered adapters)]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
         TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
@@ -150,7 +150,7 @@ flowchart TD
         UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
 
-    subgraph PostProcess["Production Post-Processing Core (Ported from 3DGenStudio)"]
+    subgraph PostProcess [Production Post-Processing Core (Ported from 3DGenStudio)]
         CHECKPOINT["source.glb<br/>Immutable Master Raw Mesh"]:::green
         REPAIR["Watertight Repair<br/>Boundary Component Guard"]:::green
         SIMPLIFY["PyMeshLab Decimator<br/>Texture-Preserving Fallback"]:::green
@@ -161,7 +161,7 @@ flowchart TD
         QA["QA Diagnostic Engine<br/>0-100 Quality Trace"]:::green
     end
 
-    subblock Delivery["Game Engine Ready Delivery"]
+    subgraph Delivery [Game Engine Ready Delivery]
         ASSET_STORE["backend/storage/models/meshes/<br/>Canonical Asset Hierarchy"]:::slate
         ZIP["Structured ZIP Export<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end

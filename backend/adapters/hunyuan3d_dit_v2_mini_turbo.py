@@ -102,7 +102,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             logger.info("Loading Mini Turbo pipeline...")
             self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                 str(self.model_path), subfolder='hunyuan3d-dit-v2-mini-turbo'
-            )
+            ).to(getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu'))
 
             try:
                 if hasattr(self.pipeline, "enable_model_cpu_offload"):
@@ -112,7 +112,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 logger.warning(f"Could not enable CPU offload: {offload_err}")
 
             logger.info("Loading background remover...")
+            import rembg
             self.bg_remover = BackgroundRemover()
+            self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
             logger.info("Hunyuan3D-DiT-v2-mini-Turbo loaded successfully")
             return {"pipeline": self.pipeline, "bg_remover": self.bg_remover}

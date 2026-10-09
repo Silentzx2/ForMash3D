@@ -49,6 +49,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         unique3d_root: Optional[str] = None,
         feature_type: Optional[str] = None,
         supported_output_formats: Optional[List[str]] = None,
+        **kwargs,
     ):
         if vram_requirement is None:
             raise ValueError(

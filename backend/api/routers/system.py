@@ -649,114 +649,31 @@ async def stream_logs(
     _: bool = Depends(verify_api_key),
 ):
     """Stream log entries via Server-Sent Events for real-time updates"""
-
     import asyncio
     from fastapi.responses import StreamingResponse
 
     async def event_generator():
-        # Get initial logs
-        repo_root = Path(__file__).resolve().parents[3]
-        backend_root = Path(__file__).resolve().parents[2]
-        log_dirs = [repo_root / "logs", backend_root / "logs", backend_root / "run"]
-        existing_log_dirs = [d for d in log_dirs if d.exists() and d.is_dir()]
+        log_path = Path(__file__).resolve().parents[3] / "logs" / "master.log"
+        if not log_path.exists():
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.touch()
 
-        # Track file positions for tailing
-        file_positions = {}
-
-        # Initial load
-        log_files = []
-        for log_dir in existing_log_dirs:
-            log_files.extend(list(log_dir.glob("*.log")))
-        seen = set()
-        unique_log_files = []
-        for f in log_files:
-            resolved = f.resolve()
-            if resolved not in seen:
-                seen.add(resolved)
-                unique_log_files.append(f)
-        log_files = unique_log_files
-
-        # Initialize file positions at end
-        for log_file in log_files:
+        process = await asyncio.create_subprocess_exec(
+            "tail", "-n", str(last_n), "-f", str(log_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        try:
+            while True:
+                line = await process.stdout.readline()
+                if not line:
+                    break
+                yield f"data: {line.decode('utf-8', errors='replace')}\n\n"
+        finally:
             try:
-                file_positions[str(log_file)] = log_file.stat().st_size
+                process.terminate()
             except Exception:
-                file_positions[str(log_file)] = 0
-
-        # Send initial logs
-        per_file_lines = max(last_n * 2, 100)
-        all_entries = []
-        for log_file in log_files:
-            try:
-                recent_lines = _tail_file_lines(log_file, per_file_lines)
-                for line in recent_lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    log_entry = _parse_log_line(line)
-                    ts_str = log_entry.get("timestamp", "")
-                    try:
-                        if ts_str:
-                            if ts_str.endswith('Z'):
-                                ts_str = ts_str[:-1] + '+00:00'
-                            parsed_ts = datetime.fromisoformat(ts_str)
-                        else:
-                            parsed_ts = datetime.min
-                    except Exception:
-                        parsed_ts = datetime.min
-                    log_entry["_parsed_timestamp"] = parsed_ts
-                    all_entries.append(log_entry)
-            except Exception:
-                continue
-
-        all_entries.sort(key=lambda x: x.get("_parsed_timestamp", datetime.min), reverse=True)
-        initial_entries = all_entries[:last_n]
-        for entry in initial_entries:
-            entry.pop("_parsed_timestamp", None)
-            yield f"data: {json.dumps(entry)}\n\n"
-
-        # Now tail for new lines
-        while True:
-            await asyncio.sleep(3)  # Poll every 3 seconds
-
-            # Check for new log files
-            for log_dir in existing_log_dirs:
-                for log_file in log_dir.glob("*.log"):
-                    log_file_str = str(log_file)
-                    if log_file_str not in file_positions:
-                        try:
-                            file_positions[log_file_str] = log_file.stat().st_size
-                        except Exception:
-                            file_positions[log_file_str] = 0
-
-            # Read new lines from each file
-            for log_file_str, last_pos in list(file_positions.items()):
-                try:
-                    log_file = Path(log_file_str)
-                    if not log_file.exists():
-                        continue
-                    current_size = log_file.stat().st_size
-                    if current_size < last_pos:
-                        # File was rotated/truncated
-                        file_positions[log_file_str] = 0
-                        last_pos = 0
-
-                    if current_size > last_pos:
-                        with open(log_file, "rb") as f:
-                            f.seek(last_pos)
-                            new_data = f.read().decode("utf-8", errors="replace")
-                            file_positions[log_file_str] = current_size
-
-                        lines = new_data.splitlines()
-                        for line in lines:
-                            line = line.strip()
-                            if not line:
-                                continue
-                            log_entry = _parse_log_line(line)
-                            log_entry["id"] = f"log-{datetime.now().timestamp()}-{hash(line) & 0xFFFFFFFF}"
-                            yield f"data: {json.dumps(log_entry)}\n\n"
-                except Exception:
-                    continue
+                pass
 
     return StreamingResponse(
         event_generator(),

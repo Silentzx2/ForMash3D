@@ -143,3 +143,9 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - **Quality Evaluation Export**: Implemented `compare_render_directories` in `backend/core/quality/evaluation.py` to fix `ImportError: cannot import name 'compare_render_directories'`.
 - **Redis Job Queue Deletion**: Fixed `delete_job` in `backend/core/scheduler/redis_job_queue.py` to delete from both Redis and SQLite (`db_manager`), preventing `500 Failed to delete job from database`.
 
+
+### Update 2026-10-09
+- Fixed multiple critical backend adapter crashes (Trellis autograd baking, Unique3D seed initialization, Hunyuan3D CPU hardware offloading).
+- Refactored frontend UI for logs tab to mirror an authentic, low-latency VS Code style terminal (`features/admin/tabs/LogsTab.tsx`).
+- Streamlined unified master logging across backend and multiprocess workers.
+- Addressed active generation UI blocking and rendering anomalies in MeshViewer queue.

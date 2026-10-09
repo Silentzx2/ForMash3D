@@ -337,17 +337,12 @@ show_logs(){
   # Ensure log files exist so tail doesn't fail
   touch "$PROJECT_ROOT/logs/frontend.log" "$PROJECT_ROOT/logs/frontend-build.log" \
         "$PROJECT_ROOT/logs/backend.log" "$PROJECT_ROOT/logs/backend-supervisor.log" \
-        "$PROJECT_ROOT/backend/logs/scheduler.log" "$PROJECT_ROOT/backend/logs/api.log" 2>/dev/null || true
+        "$PROJECT_ROOT/backend/logs/scheduler.log" "$PROJECT_ROOT/backend/logs/api.log" "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
 
   case "$choice" in
     0)
       printf "\n${CYAN}[INFO]${NC} Streaming ALL logs in real time... (Press Ctrl+C to exit)\n\n"
-      tail -n 30 -f \
-        "$PROJECT_ROOT/logs/frontend.log" \
-        "$PROJECT_ROOT/logs/frontend-build.log" \
-        "$PROJECT_ROOT/logs/backend.log" \
-        "$PROJECT_ROOT/backend/logs/scheduler.log" \
-        "$PROJECT_ROOT/backend/logs/api.log" 2>/dev/null || true
+      tail -n 30 -f "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
       ;;
     1) tail -n 80 -f "$PROJECT_ROOT/logs/frontend.log" 2>/dev/null || true ;;
     2) tail -n 80 -f "$PROJECT_ROOT/logs/frontend-build.log" 2>/dev/null || true ;;

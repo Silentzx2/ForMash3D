@@ -118,9 +118,9 @@ start_backend() {
 
     # Run backend detached with setsid + nohup so terminal interrupts / manager exit do not kill it
     if command -v setsid >/dev/null 2>&1; then
-      setsid nohup bash "$script" >> "$PROJECT_ROOT/logs/backend.log" 2>&1 &
+      setsid nohup bash "$script" >> "$PROJECT_ROOT/logs/master.log" 2>&1 &
     else
-      nohup bash "$script" >> "$PROJECT_ROOT/logs/backend.log" 2>&1 &
+      nohup bash "$script" >> "$PROJECT_ROOT/logs/master.log" 2>&1 &
     fi
     local b_pid=$!
     disown "$b_pid" 2>/dev/null || true
@@ -143,7 +143,7 @@ start_backend() {
 
     [[ "$attempt" -eq 1 ]] && {
       warn "Backend did not respond yet. Checking logs..."
-      tail -n 15 "$PROJECT_ROOT/logs/backend.log" 2>/dev/null || true
+      tail -n 15 "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
       warn "Retrying backend start..."
       kill "$(cat "$PID_DIR/backend.pid" 2>/dev/null || true)" 2>/dev/null || true
       fuser -k 7842/tcp 2>/dev/null || true
@@ -155,7 +155,7 @@ start_backend() {
 
 
   warn "━━━━━━━━━━━━━━━━ Backend Startup Failure Log ━━━━━━━━━━━━━━━━"
-  tail -n 35 "$PROJECT_ROOT/logs/backend.log" 2>/dev/null || true
+  tail -n 35 "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
   if [[ -f "$PROJECT_ROOT/backend/logs/scheduler.log" ]]; then
     warn "━━━━━━━━━━━━━━━━ Scheduler Log ━━━━━━━━━━━━━━━━"
     tail -n 25 "$PROJECT_ROOT/backend/logs/scheduler.log" 2>/dev/null || true
@@ -183,9 +183,9 @@ start_frontend(){
   if [[ ! -f "$PROJECT_ROOT/.next/BUILD_ID" ]]; then
     info "Production build not found. Building Next.js..."
     if command -v bun >/dev/null 2>&1; then
-      bun run build > "$LOG_DIR/frontend-build.log" 2>&1
+      bun run build >> "$LOG_DIR/master.log" 2>&1
     else
-      npm run build > "$LOG_DIR/frontend-build.log" 2>&1
+      npm run build >> "$LOG_DIR/master.log" 2>&1
     fi
     log "Frontend build completed."
   fi
@@ -199,12 +199,12 @@ start_frontend(){
 
   info "Launching frontend on http://localhost:3000"
   setsid env BACKEND_URL="$BACKEND_URL" AI_PROVIDER=3d_aigc_api RUNTIME_MODE=3d_aigc_api \
-    "${cmd[@]}" > "$LOG_DIR/frontend.log" 2>&1 &
+    "${cmd[@]}" >> "$LOG_DIR/master.log" 2>&1 &
   write_pid "$PID_DIR/frontend.pid" "$!"
   sleep 2
 
   if ! is_alive "$(cat "$PID_DIR/frontend.pid" 2>/dev/null || true)"; then
-    fail "Frontend failed to start. Inspect logs/frontend.log."
+    fail "Frontend failed to start. Inspect logs/master.log."
   fi
   log "Frontend started: $FRONTEND_URL"
 }

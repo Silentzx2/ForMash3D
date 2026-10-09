@@ -27,13 +27,13 @@ export const RightWorkspacePanel: React.FC = () => {
 
   // Context-aware auto-switching:
   // When generation starts running -> switch to live execution
+  const prevIsRunning = React.useRef(isRunning);
   useEffect(() => {
-    if (isRunning) {
-      if (rightPanelMode !== 'prompt') {
-        setRightPanelMode('prompt');
-      }
+    if (isRunning && !prevIsRunning.current) {
+      setRightPanelMode('prompt');
     }
-  }, [isRunning, rightPanelMode, setRightPanelMode]);
+    prevIsRunning.current = isRunning;
+  }, [isRunning, setRightPanelMode]);
 
   // When task completes -> switch to properties inspector so user can immediately inspect geometry & export
   useEffect(() => {

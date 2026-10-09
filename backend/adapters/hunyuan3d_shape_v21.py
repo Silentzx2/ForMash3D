@@ -136,7 +136,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             logger.info("Loading shape generation pipeline...")
             self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                 str(self.model_path)
-            )
+            ).to(getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu'))
             multi_gpu_applied = False
             if len(getattr(self, "gpu_ids", [])) > 1:
                 from core.scheduler.resource_planner import dispatch_pipeline_across_gpus
@@ -165,7 +165,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 logger.warning(f"Could not enable CPU offload: {offload_err}")
 
             logger.info("Loading background remover...")
+            import rembg
             self.bg_remover = BackgroundRemover()
+            self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
 
             logger.info("Hunyuan3D-Shape-v2-1 loaded successfully")
             return {"shapegen": self.pipeline_shapegen, "bg_remover": self.bg_remover}

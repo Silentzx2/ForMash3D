@@ -247,16 +247,17 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             postprocess_mode = "none" if simplify == 0.0 else "simplify"
             fill_holes = simplify != 0.0
             
-            mesh = self.postprocessing_utils.to_trimesh(
-                outputs["gaussian"][0],
-                candidate_mesh,
-                simplify=simplify,
-                fill_holes=fill_holes,
-                texture_size=texture_resolution,
-                texture_bake_mode=texture_bake_mode,
-                forward_rot=True,
-                postprocess_mode=postprocess_mode,
-            )
+            with torch.enable_grad():
+                mesh = self.postprocessing_utils.to_trimesh(
+                    outputs["gaussian"][0],
+                    candidate_mesh,
+                    simplify=simplify,
+                    fill_holes=fill_holes,
+                    texture_size=texture_resolution,
+                    texture_bake_mode=texture_bake_mode,
+                    forward_rot=True,
+                    postprocess_mode=postprocess_mode,
+                )
 
             # Save mesh in requested format
             output_path = self._generate_output_path(text_prompt, output_format)
@@ -623,16 +624,17 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             postprocess_mode = "none" if simplify == 0.0 else "simplify"
             fill_holes = simplify != 0.0
             
-            mesh = self.postprocessing_utils.to_trimesh(
-                outputs["gaussian"][0],
-                candidate_mesh,
-                simplify=simplify,
-                fill_holes=fill_holes,
-                texture_size=texture_resolution,
-                texture_bake_mode=tex_bake_mode,
-                forward_rot=True,
-                postprocess_mode=postprocess_mode,
-            )
+            with torch.enable_grad():
+                mesh = self.postprocessing_utils.to_trimesh(
+                    outputs["gaussian"][0],
+                    candidate_mesh,
+                    simplify=simplify,
+                    fill_holes=fill_holes,
+                    texture_size=texture_resolution,
+                    texture_bake_mode=tex_bake_mode,
+                    forward_rot=True,
+                    postprocess_mode=postprocess_mode,
+                )
 
             # Save mesh in requested format
             output_path = self._generate_output_path(
