@@ -7,11 +7,12 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { CameraViewPreset, ModelAsset } from '../types';
+import { CameraViewPreset, ModelAsset, normalizeModelAsset } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
 import { useAnimationStore, BoneItem } from '@/stores/useAnimationStore';
 import { loadModelInViewer, useViewerStore } from '@/stores/useViewerStore';
+import { useAppStore } from '@/stores/useAppStore';
 
 import { validate3DFile } from '../lib/fileValidation';
 import { createPointCloudFromImage, disposePointCloud } from './ImagePointCloud';
@@ -620,6 +621,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     sculptSettings,
     paintBrushSettings,
   } = useWorkspace();
+
+  const { batchQueue, updateBatchItem } = useAppStore();
 
   const [isDesktopScreen, setIsDesktopScreen] = useState(true);
 
@@ -3320,10 +3323,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           formData,
           { headers: { 'Content-Type': 'multipart/form-data' } }
         ).then(res => {
+          const serverUrl = res?.file_id ? `/api/v1/file-upload/download/${res.file_id}` : previewUrl;
           setGenerationSettings(prev => ({
             ...prev,
             mode: 'image-to-3d',
-            image: previewUrl,
+            image: serverUrl,
             imageFileId: res?.file_id || '',
             prompt: cleanPrompt,
             imageName: cleanPrompt,
@@ -4297,9 +4301,96 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             </div>
           )}
 
+          {/* Top-Right Horizontal Job & Queue Tracker Capsule */}
+          {(isExecuting || (batchQueue && batchQueue.length > 0)) && (
+            <div
+              style={{ right: `${rightOffset}px` }}
+              className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200"
+            >
+              <div className="flex items-center gap-2 p-1.5 pl-2 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none">
+                {/* Reference Thumbnail or Active Icon */}
+                <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                  {generationSettings.image ? (
+                    <img
+                      src={generationSettings.image}
+                      alt="Active generation reference"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary animate-pulse" />
+                  )}
+                  {isExecuting && (
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                      <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  )}
+                </div>
+
+                {/* Job Info and Stage Progress */}
+                <div className="flex flex-col min-w-[120px] max-w-[180px]">
+                  <div className="flex items-center justify-between gap-1 text-[10px]">
+                    <span className="font-bold text-white truncate">
+                      {isExecuting ? (activeTask?.title || '3D Generating...') : 'Queue Ready'}
+                    </span>
+                    <span className="font-mono text-primary font-bold text-[9px]">
+                      {isExecuting ? `${Math.round(executionProgress || 0)}%` : `${batchQueue.length} queued`}
+                    </span>
+                  </div>
+                  
+                  {/* Horizontal mini Progress bar */}
+                  <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
+                    <div
+                      className="h-full bg-gradient-to-r from-amber-400 to-primary rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(255,204,0,0.6)]"
+                      style={{ width: `${isExecuting ? Math.max(executionProgress || 0, 5) : 100}%` }}
+                    />
+                  </div>
+
+                  <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
+                    {executionStep || (batchQueue.length > 0 ? `${batchQueue.length} jobs in background` : 'Idle')}
+                  </span>
+                </div>
+
+                {/* Clickable Action: Open job in panel / View completed outputs */}
+                {batchQueue.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigateToTool('model');
+                      // If there is an output model in the queue, inspect it
+                      const completed = batchQueue.find(q => q.status === 'completed' && q.result?.modelUrl);
+                      if (completed && completed.result?.modelUrl) {
+                        const newAsset = normalizeModelAsset({
+                          id: completed.id,
+                          name: `Batch_${completed.id.slice(0, 6)}`,
+                          category: 'generation',
+                          meshType: 'custom',
+                          thumbnail: completed.imageFileId ? `/api/v1/file-upload/download/${completed.imageFileId}` : '',
+                          faces: 0,
+                          vertices: 0,
+                          triangles: 0,
+                          statsAvailable: false,
+                          source: { filename: `${completed.id}.glb`, subfolder: '', type: 'output', viewUrl: completed.result.modelUrl },
+                          topology: 'Triangle',
+                          format: 'GLB',
+                          dateCreated: new Date().toISOString(),
+                          tags: ['Batch Generated'],
+                        });
+                        addAsset(newAsset);
+                        setCurrentAsset(newAsset);
+                      }
+                    }}
+                    className="px-2 py-1 rounded-lg bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-[9px] font-bold transition-all cursor-pointer flex-shrink-0"
+                  >
+                    View
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {reflectionPeekEnabled && (
             <div
-              className="absolute top-14 z-10 pointer-events-auto transition-[right] duration-200"
+              className="absolute top-28 z-10 pointer-events-auto transition-[right] duration-200"
               style={{ right: `${rightOffset}px` }}
               onMouseEnter={handleReflectionPeekEnter}
               onMouseLeave={handleReflectionPeekLeave}

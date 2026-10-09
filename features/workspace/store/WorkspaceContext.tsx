@@ -333,13 +333,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const formattedName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1);
         const ext = m.filename?.split('.').pop()?.toUpperCase() || (m.file_type === 'mesh' ? 'GLB' : 'GLB');
         const viewUrl = m.file_id ? `/api/v1/file-upload/download/${m.file_id}` : '';
+        const thumbUrl = m.thumbnail_url || (m.file_id ? `/api/v1/file-upload/thumbnail/${m.file_id}` : '');
         return normalizeModelAsset({
           id: m.file_id || m.filename,
           fileId: m.file_id,
           name: formattedName,
           category: 'mesh',
           meshType: 'custom',
-          thumbnail: '',
+          thumbnail: thumbUrl,
           polygon_count: 0,
           vertex_count: 0,
           faces: 0,

@@ -68,19 +68,39 @@ export const ResourceMonitor: React.FC = () => {
   }, [fetchStats]);
 
   const getStatusColor = (percent: number) => {
-    if (percent >= 90) return { text: 'text-rose-400', bg: 'bg-rose-500', border: 'border-rose-500/30' };
-    if (percent >= 75) return { text: 'text-amber-400', bg: 'bg-amber-500', border: 'border-amber-500/30' };
-    if (percent >= 50) return { text: 'text-yellow-400', bg: 'bg-yellow-500', border: 'border-yellow-500/30' };
-    return { text: 'text-emerald-400', bg: 'bg-emerald-500', border: 'border-emerald-500/30' };
+    if (percent >= 85) return { 
+      text: 'text-[#FF3366]', 
+      bg: 'bg-gradient-to-t from-[#FF0055] to-[#FF3366] shadow-[0_0_8px_rgba(255,51,102,0.8)]', 
+      border: 'border-[#FF3366]/40',
+      fill: '#f40000'
+    };
+    if (percent >= 70) return { 
+      text: 'text-[#FF9900]', 
+      bg: 'bg-gradient-to-t from-[#FF7700] to-[#FFB700] shadow-[0_0_8px_rgba(255,153,0,0.8)]', 
+      border: 'border-[#FF9900]/40',
+      fill: '#FF9900'
+    };
+    if (percent >= 45) return { 
+      text: 'text-[#FFD700]', 
+      bg: 'bg-gradient-to-t from-[#FFB800] to-[#FFE600] shadow-[0_0_8px_rgba(255,215,0,0.8)]', 
+      border: 'border-[#FFD700]/40',
+      fill: '#ffd900'
+    };
+    return { 
+      text: 'text-[#00FF88]', 
+      bg: 'bg-gradient-to-t from-[#00CC66] to-[#00FF88] shadow-[0_0_8px_rgba(0,255,136,0.8)]', 
+      border: 'border-[#00FF88]/40',
+      fill: '#00b209'
+    };
   };
 
   const getColor = (percent: number) => getStatusColor(percent).text;
 
   const getBgColor = (percent: number) => {
-    if (percent >= 90) return 'bg-rose-500/20 border-rose-500/30';
-    if (percent >= 75) return 'bg-amber-500/20 border-amber-500/30';
-    if (percent >= 50) return 'bg-yellow-500/20 border-yellow-500/30';
-    return 'bg-emerald-500/20 border-emerald-500/30';
+    if (percent >= 85) return 'bg-[#FF3366]/20 border-[#FF3366]/30';
+    if (percent >= 70) return 'bg-[#FF9900]/20 border-[#FF9900]/30';
+    if (percent >= 45) return 'bg-[#FFD700]/20 border-[#FFD700]/30';
+    return 'bg-[#00FF88]/20 border-[#00FF88]/30';
   };
 
   const formatPercent = (val: number) => `${Math.round(val)}%`;
@@ -141,7 +161,7 @@ export const ResourceMonitor: React.FC = () => {
             return (
               <div key={m.id} className="flex items-center gap-1">
                 {/* Vertical Pipe Bar */}
-                <div className="relative w-1.5 h-4 bg-white/10 rounded-full overflow-hidden flex flex-col justify-end p-[1px]">
+                <div className="relative w-2 h-5 bg-black/60 rounded-full overflow-hidden flex flex-col justify-end p-[1.5px] border border-white/10 shadow-inner">
                   <div
                     className={`w-full rounded-full transition-all duration-500 ${status.bg}`}
                     style={{ height: `${clampedVal}%` }}

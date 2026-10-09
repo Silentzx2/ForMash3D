@@ -70,6 +70,7 @@ class FileMetadataResponse(BaseModel):
     upload_time: datetime = Field(..., description="Upload timestamp")
     expires_at: Optional[datetime] = Field(None, description="File expiration time")
     is_available: bool = Field(..., description="Whether the file is still available")
+    thumbnail_url: Optional[str] = Field(None, description="Thumbnail URL for the file")
 
 
 def validate_file_type(filename: str, allowed_types: List[str]) -> bool:
@@ -496,6 +497,8 @@ async def list_files(
         if isinstance(expires_at, str):
             expires_at = datetime.fromisoformat(expires_at)
         
+        thumb_url = f"/api/v1/file-upload/thumbnail/{metadata['file_id']}" if metadata.get("file_type") == "mesh" else None
+
         result.append(FileMetadataResponse(
             file_id=metadata["file_id"],
             filename=metadata["filename"],
@@ -504,6 +507,7 @@ async def list_files(
             upload_time=upload_time,
             expires_at=expires_at,
             is_available=is_available,
+            thumbnail_url=thumb_url,
         ))
     
     return result

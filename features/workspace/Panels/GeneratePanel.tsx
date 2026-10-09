@@ -541,11 +541,11 @@ export const GeneratePanel: React.FC = () => {
       );
       finishUpload();
       if (!res.file_id) throw new Error('Backend did not return a file ID for the uploaded image.');
-      const previewUrl = ownBlobUrl(URL.createObjectURL(file));
+      const serverUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
       const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       setGenerationSettings(prev => ({
         ...prev,
-        image: previewUrl,
+        image: serverUrl,
         imageFileId: res.file_id,
         preprocessingArtifactId: null,
         preprocessingPreviewUrl: null,
@@ -592,11 +592,11 @@ export const GeneratePanel: React.FC = () => {
             }
           );
           finishUpload();
-          const previewUrl = ownBlobUrl(URL.createObjectURL(file));
+          const persistentUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
           resolve({ 
             file, 
             fileId: res.file_id || null, 
-            previewUrl: previewUrl || null 
+            previewUrl: persistentUrl || null 
           });
         } catch (err) {
           failUpload();
@@ -754,11 +754,11 @@ export const GeneratePanel: React.FC = () => {
             }
           );
           finishUpload();
-          const previewUrl = ownBlobUrl(URL.createObjectURL(file));
+          const persistentUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
           resolve({ 
             file, 
             fileId: res.file_id || null, 
-            previewUrl: previewUrl || null 
+            previewUrl: persistentUrl || null 
           });
         } catch (err) {
           failUpload();
@@ -2129,38 +2129,62 @@ export const GeneratePanel: React.FC = () => {
         </div>
 
         {/* Bottom Sticky Action Button */}
-        <ShimmerButton
-          id="btn-generate-model-action"
-          onClick={handleGenerate}
-          disabled={isExecuting || (subAction === 'crop' && !isModelMultiviewCapable)}
-          title={subAction === 'crop' && !isModelMultiviewCapable ? 'Selected 3D model does not support multi-view reconstruction' : undefined}
-          shimmerColor="hsl(var(--neon-amber))"
-          shimmerSize="0.1em"
-          shimmerDuration="2.5s"
-          borderRadius="12px"
-          background={
-            isExecuting
-              ? "hsl(var(--surface-2))"
-              : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
-          }
-          className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed btn-lighting-shine ${
-            isExecuting 
-              ? 'text-primary border border-primary/30 is-executing' 
-              : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
-          }`}
-        >
-          {isExecuting ? (
-            <>
-              <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
-              <span className="tracking-wide">{executionStep || 'Generating 3D Model...'}</span>
-            </>
-          ) : (
-            <>
-              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="tracking-wider">{isExecuting ? 'GENERATE ANOTHER' : 'GENERATE 3D MODEL'}</span>
-            </>
+        <div className="flex items-center gap-1.5 w-full">
+          <ShimmerButton
+            id="btn-generate-model-action"
+            onClick={handleGenerate}
+            disabled={isExecuting || (subAction === 'crop' && !isModelMultiviewCapable)}
+            title={subAction === 'crop' && !isModelMultiviewCapable ? 'Selected 3D model does not support multi-view reconstruction' : undefined}
+            shimmerColor="hsl(var(--neon-amber))"
+            shimmerSize="0.1em"
+            shimmerDuration="2.5s"
+            borderRadius="12px"
+            background={
+              isExecuting
+                ? "hsl(var(--surface-2))"
+                : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
+            }
+            className={`flex-1 h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed btn-lighting-shine ${
+              isExecuting 
+                ? 'text-primary border border-primary/30 is-executing' 
+                : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
+            }`}
+          >
+            {isExecuting ? (
+              <>
+                <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
+                <span className="tracking-wide truncate max-w-[170px]">{executionStep || 'Generating 3D Model...'}</span>
+              </>
+            ) : (
+              <>
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span className="tracking-wider">GENERATE 3D MODEL</span>
+              </>
+            )}
+          </ShimmerButton>
+
+          {isExecuting && (
+            <SimpleTooltip label="Queue next model in background or execute on secondary GPU" side="top">
+              <button
+                type="button"
+                onClick={() => {
+                  if (generationSettings.imageFileId) {
+                    addToBatchQueue([generationSettings.imageFileId]);
+                    setNoticeMessage('Job added to queue! It will run as soon as VRAM is free or in parallel if GPU has headroom.');
+                    setTimeout(() => setNoticeMessage(null), 5000);
+                  } else {
+                    setNoticeMessage('Upload or select an image to queue.');
+                    setTimeout(() => setNoticeMessage(null), 4000);
+                  }
+                }}
+                className="h-10 px-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-primary/20 border border-primary/40 hover:border-primary text-primary font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
+              >
+                <HugeiconsIcon icon={Plus} size={14} className="w-3.5 h-3.5" />
+                <span>Queue Next</span>
+              </button>
+            </SimpleTooltip>
           )}
-        </ShimmerButton>
+        </div>
         {isExecuting && (
           <div className="relative mt-1 p-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] overflow-hidden space-y-1">
             <div className="flex items-center justify-between text-[9px] font-mono text-zinc-400 px-0.5">
