@@ -229,6 +229,10 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Using device '{device}' for generator")
             generator = torch.Generator(device=device).manual_seed(seed)
 
+            # Ensure pipeline is loaded
+            if self.pipeline_shapegen is None:
+                raise RuntimeError("Hunyuan3D-Shape-v2-1 pipeline not loaded. Call _load_model() first or check model weights.")
+
             mesh_result = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
