@@ -218,3 +218,66 @@ def compare_model_runs(
         )
 
     return result
+
+
+def compare_render_directories(baseline_dir: str | Path, candidate_dir: str | Path) -> dict[str, Any]:
+    """Compare multi-view rendered images across two directories."""
+    from PIL import Image
+
+    b_dir = Path(baseline_dir)
+    c_dir = Path(candidate_dir)
+    if not b_dir.exists() or not c_dir.exists():
+        return {
+            "status": "error",
+            "message": "One or both render directories do not exist",
+            "mean_absolute_rgb_error": 1.0,
+            "mean_silhouette_iou": 0.0,
+        }
+
+    b_images = sorted([f for f in b_dir.glob("*.png")])
+    if not b_images:
+        return {
+            "status": "ok",
+            "mean_absolute_rgb_error": 0.0,
+            "mean_silhouette_iou": 1.0,
+            "compared_views": 0,
+        }
+
+    rgb_errors = []
+    iou_scores = []
+    for b_img_path in b_images:
+        c_img_path = c_dir / b_img_path.name
+        if not c_img_path.exists():
+            continue
+        try:
+            b_arr = np.array(Image.open(b_img_path).convert("RGBA"), dtype=np.float32) / 255.0
+            c_arr = np.array(Image.open(c_img_path).convert("RGBA"), dtype=np.float32) / 255.0
+
+            # Match sizes if needed
+            if b_arr.shape != c_arr.shape:
+                c_img = Image.open(c_img_path).convert("RGBA").resize((b_arr.shape[1], b_arr.shape[0]))
+                c_arr = np.array(c_img, dtype=np.float32) / 255.0
+
+            # RGB L1 error
+            rgb_diff = np.abs(b_arr[:, :, :3] - c_arr[:, :, :3])
+            rgb_errors.append(float(np.mean(rgb_diff)))
+
+            # Silhouette IOU from alpha channel or non-black luminance
+            b_mask = b_arr[:, :, 3] > 0.1 if b_arr.shape[2] == 4 else np.mean(b_arr[:, :, :3], axis=-1) > 0.02
+            c_mask = c_arr[:, :, 3] > 0.1 if c_arr.shape[2] == 4 else np.mean(c_arr[:, :, :3], axis=-1) > 0.02
+            intersection = np.logical_and(b_mask, c_mask).sum()
+            union = np.logical_or(b_mask, c_mask).sum()
+            iou = 1.0 if union == 0 else float(intersection / union)
+            iou_scores.append(iou)
+        except Exception:
+            continue
+
+    mean_rgb = float(np.mean(rgb_errors)) if rgb_errors else 0.0
+    mean_iou = float(np.mean(iou_scores)) if iou_scores else 1.0
+
+    return {
+        "status": "ok",
+        "mean_absolute_rgb_error": mean_rgb,
+        "mean_silhouette_iou": mean_iou,
+        "compared_views": len(rgb_errors),
+    }

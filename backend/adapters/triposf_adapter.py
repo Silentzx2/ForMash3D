@@ -172,7 +172,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         """Generate a coarse 3D mesh from an input image to seed TripoSF VAE reconstruction."""
         try:
             from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
-            tsr = TripoSRImageToRawMeshAdapter()
+            tsr = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
             tsr.load()
             result = tsr.generate_mesh({"image_path": str(image_path), "output_format": "obj"})
             return result["output_mesh_path"]

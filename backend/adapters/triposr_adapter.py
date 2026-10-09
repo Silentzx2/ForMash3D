@@ -43,9 +43,16 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
         mc_resolution: int = 320,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            try:
+                from core.models.model_manifest import ModelManifest
+                manifest = ModelManifest()
+                meta = manifest.get_model_metadata(model_id) or manifest.get_model_metadata(self.MODEL_ID)
+                if meta and meta.vram_requirement:
+                    vram_requirement = meta.vram_requirement
+            except Exception:
+                pass
+            if vram_requirement is None:
+                vram_requirement = 6144
         if model_path is None:
             model_path = "backend/pretrained/TripoSR"
 

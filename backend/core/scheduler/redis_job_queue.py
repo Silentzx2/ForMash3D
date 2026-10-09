@@ -625,7 +625,7 @@ class RedisJobQueue:
         return matching_jobs
     
     async def delete_job(self, job_id: str) -> bool:
-        """Delete a job from Redis (compatibility method)"""
+        """Delete a job from Redis and database"""
         if not self.redis:
             raise RuntimeError("Redis not connected")
         
@@ -639,15 +639,25 @@ class RedisJobQueue:
             # Delete job data
             deleted_count = await self.redis.hdel(self.jobs_hash_key, job_id)
             
+            # Delete auxiliary hot keys
+            await self.redis.hdel(self.progress_hash_key, job_id)
+            await self.redis.hdel(self.stage_hash_key, job_id)
+            await self.redis.hdel(self.message_hash_key, job_id)
+            await self.redis.zrem(self.completed_index_key, job_id)
+            
             # Delete result if exists
             await self.redis.hdel(self.results_hash_key, job_id)
+            await self.redis.delete(f"{self.results_prefix}{job_id}")
             self._last_get_job_log.pop(job_id, None)
             
-            if deleted_count > 0:
-                logger.info(f"Deleted job {job_id} from Redis")
+            # Also delete from SQLite/DatabaseManager
+            db_deleted = await asyncio.to_thread(self.db_manager.delete_job, job_id)
+            
+            if deleted_count > 0 or db_deleted:
+                logger.info(f"Deleted job {job_id} (redis_deleted={deleted_count > 0}, db_deleted={db_deleted})")
                 return True
             else:
-                logger.warning(f"Job {job_id} not found in Redis")
+                logger.warning(f"Job {job_id} not found in Redis or database")
                 return False
         except Exception as e:
             logger.error(f"Error deleting job {job_id}: {e}")
