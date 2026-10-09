@@ -1,5 +1,5 @@
 accelerate
-datasets
+datasets==2.14.5
 diffusers>=0.26.3
 fire
 gradio
@@ -20,8 +20,9 @@ git+https://github.com/facebookresearch/pytorch3d.git@stable
 rembg[gpu]
 torch_scatter
 tqdm
-transformers
+transformers==4.47.0
 trimesh
 typeguard
 wandb
 xformers
+huggingface_hub==0.25.0
