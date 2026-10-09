@@ -46,6 +46,8 @@ BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
 PID_DIR="$PROJECT_ROOT/.pids"
 LOG_DIR="$PROJECT_ROOT/logs"
 mkdir -p "$PID_DIR" "$LOG_DIR"
+# Keep startup/build status visible and persisted in the master log.
+exec > >(tee -a "$LOG_DIR/master.log") 2>&1
 
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:7842}"
 FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1:3000}"
@@ -57,48 +59,49 @@ is_alive(){ [[ -n "${1:-}" ]] && kill -0 "$1" 2>/dev/null; }
 
 start_redis(){
   section "1/2 Redis"
-  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
+  local redis_url="${REDIS_URL:-redis://localhost:6379/0}"
+
+  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "$redis_url" ping >/dev/null 2>&1; then
     log "Redis is already running."
+    # Only redirect a local Redis process; a remote server has its own filesystem/log sink.
+    case "$redis_url" in
+      redis://localhost*|redis://127.0.0.1*|redis://\[::1\]*)
+        if redis-cli -u "$redis_url" CONFIG SET logfile "$LOG_DIR/master.log" >/dev/null 2>&1; then
+          redis-cli -u "$redis_url" CONFIG SET syslog-enabled no >/dev/null 2>&1 || true
+          log "Local Redis logs routed to $LOG_DIR/master.log"
+        else
+          warn "Redis rejected runtime log redirection; its external logging configuration is unchanged."
+        fi
+        ;;
+    esac
     return 0
   fi
 
-  # Auto-install Redis if missing (Colab / generic VPS)
   if ! command -v redis-server >/dev/null 2>&1 || ! command -v redis-cli >/dev/null 2>&1; then
-    info "Redis not found. Auto-installing via apt..."
+    info "Redis not found. Installing Redis tools..."
     local sudo_cmd=""
     command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
     if command -v apt-get >/dev/null 2>&1; then
       $sudo_cmd apt-get update -qq 2>/dev/null || true
-      $sudo_cmd apt-get install -y --no-install-recommends redis-server redis-tools 2>/dev/null || true
+      $sudo_cmd apt-get install -y --no-install-recommends redis-server redis-tools 2>>"$LOG_DIR/master.log" || true
     fi
   fi
 
-  # Try SysV init / Colab service first, then systemctl (systemd VPS), then direct daemon
-  if command -v service >/dev/null 2>&1; then
-    service redis-server start >/dev/null 2>&1 || true
-  elif command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl start redis-server >/dev/null 2>&1 || true
+  if ! command -v redis-server >/dev/null 2>&1 || ! command -v redis-cli >/dev/null 2>&1; then
+    fail "Redis is unavailable. Install Redis and rerun setup."
   fi
 
-  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
+  info "Starting project-managed Redis with logs in $LOG_DIR/master.log..."
+  redis-server --daemonize yes --bind 127.0.0.1 --port 6379 --save '' --appendonly no \
+    --logfile "$LOG_DIR/master.log" >> "$LOG_DIR/master.log" 2>&1 || true
+  sleep 1
+
+  if redis-cli -u "$redis_url" ping >/dev/null 2>&1; then
     log "Redis is ready."
-    return 0
+  else
+    fail "Redis is unavailable. Inspect $LOG_DIR/master.log."
   fi
-
-  if command -v redis-server >/dev/null 2>&1; then
-    info "Starting local Redis daemon..."
-    redis-server --daemonize yes --bind 127.0.0.1 --port 6379 --save '' --appendonly no >/dev/null 2>&1 || true
-    sleep 1
-  fi
-
-  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
-    log "Redis is ready."
-    return 0
-  fi
-
-  fail "Redis is unavailable. Install Redis and rerun setup."
 }
-
 
 start_backend() {
   section "2/2 Backend API"

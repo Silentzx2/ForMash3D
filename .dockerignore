@@ -44,6 +44,8 @@ backend/data
 backend/uploads
 backend/models
 backend/logs
+logs/
+.pids/
 backend/.hf_token
 
 # IDE & OS files

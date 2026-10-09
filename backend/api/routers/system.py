@@ -507,48 +507,19 @@ async def get_logs(
     ),
     _: bool = Depends(verify_api_key),
 ):
-    """Get recent log entries from log files"""
+    """Get recent log entries from the canonical master.log."""
 
     try:
-        # Define log directories to search: repo root logs, backend logs, and backend run
         repo_root = Path(__file__).resolve().parents[3]
-        backend_root = Path(__file__).resolve().parents[2]
-        log_dirs = [repo_root / "logs", backend_root / "logs", backend_root / "run"]
-        # Filter to existing directories
-        existing_log_dirs = [d for d in log_dirs if d.exists() and d.is_dir()]
-        if not existing_log_dirs:
-            return {
-                "error": "No logs directories found",
-                "message": "Logging directories not found in repo root or backend",
-                "logs": [],
-                "directories_searched": [str(d) for d in log_dirs],
-            }
+        logs_dir = repo_root / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        master_log = logs_dir / "master.log"
+        master_log.touch(exist_ok=True)
+        existing_log_dirs = [logs_dir]
+        log_files = [master_log]
 
-        # Find all .log files in the directories
-        log_files = []
-        for log_dir in existing_log_dirs:
-            log_files.extend(list(log_dir.glob("*.log")))
-        # Deduplicate by resolved path
-        seen = set()
-        unique_log_files = []
-        for f in log_files:
-            resolved = f.resolve()
-            if resolved not in seen:
-                seen.add(resolved)
-                unique_log_files.append(f)
-        log_files = unique_log_files
-
-        if not log_files:
-            return {
-                "message": "No log files found in directories",
-                "logs": [],
-                "available_files": [],
-                "directories_searched": [str(d) for d in existing_log_dirs],
-            }
-
-        # Determine how many lines to read from each file to ensure we have enough after merging
-        # We'll read 2x the requested lines from each file to have buffer for merging and filtering
-        per_file_lines = max(lines * 2, 100)  # at least 100 lines per file
+        # Read extra lines before applying timestamp/level/logger filters.
+        per_file_lines = max(lines * 2, 100)
 
         # Collect log entries from all files
         all_entries = []
@@ -648,35 +619,14 @@ async def stream_logs(
     last_n: int = Query(200, description="Number of recent lines to include initially"),
     _: bool = Depends(verify_api_key),
 ):
-    """Stream log entries via Server-Sent Events for real-time updates.
-    Tails master.log, with automatic fallback to other log files.
-    Sends SSE heartbeats every 15s to keep the connection alive.
-    """
+    """Stream the canonical master.log over SSE with 15-second heartbeats."""
     import asyncio
     from fastapi.responses import StreamingResponse
 
-    # Find the best log file: prefer master.log, fallback to any available log
     project_root = Path(__file__).resolve().parents[3]
-    candidates = [
-        project_root / "logs" / "master.log",
-        project_root / "backend" / "logs" / "api.log",
-        project_root / "logs" / "api.log",
-        project_root / "logs" / "backend.log",
-        project_root / "logs" / "app.log",
-    ]
-
-    # Always ensure master.log exists
-    master_log = candidates[0]
-    master_log.parent.mkdir(parents=True, exist_ok=True)
-    if not master_log.exists():
-        master_log.touch()
-
-    # Pick the first non-empty file or fallback to master.log
-    log_path = master_log
-    for c in candidates:
-        if c.exists() and c.stat().st_size > 0:
-            log_path = c
-            break
+    log_path = project_root / "logs" / "master.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.touch(exist_ok=True)
 
     async def event_generator():
         process = await asyncio.create_subprocess_exec(
@@ -777,152 +727,71 @@ def _parse_log_line(line: str) -> dict:
         }
 
 
-@router.get("/logs/files", summary="List available log files")
+@router.get("/logs/files", summary="List the master log")
 async def list_log_files(_: bool = Depends(verify_api_key)):
-    """List all available log files"""
-    try:
-        logs_dir = Path("logs")
-        if not logs_dir.exists():
-            return {"files": [], "message": "Logs directory not found"}
-
-        log_files = []
-        for log_file in logs_dir.glob("*.log"):
-            try:
-                stat = log_file.stat()
-                log_files.append(
-                    {
-                        "name": log_file.name,
-                        "path": str(log_file),
-                        "size_bytes": stat.st_size,
-                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    }
-                )
-            except Exception as e:
-                log_files.append(
-                    {
-                        "name": log_file.name,
-                        "path": str(log_file),
-                        "error": f"Could not read file stats: {str(e)}",
-                    }
-                )
-
-        return {
-            "files": sorted(
-                log_files, key=lambda x: x.get("modified", ""), reverse=True
-            ),
-            "total_files": len(log_files),
-        }
-
-    except Exception as e:
-        logger.error(f"Error listing log files: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error listing log files: {str(e)}"
-        )
+    """Return the single canonical runtime log file."""
+    logs_dir = Path(__file__).resolve().parents[3] / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    master_log = logs_dir / "master.log"
+    master_log.touch(exist_ok=True)
+    stat = master_log.stat()
+    return {
+        "files": [{
+            "name": master_log.name,
+            "path": str(master_log),
+            "size_bytes": stat.st_size,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        }],
+        "total_files": 1,
+    }
 
 
-@router.get("/logs/files/{filename}", summary="Get specific log file")
+@router.get("/logs/files/{filename}", summary="Get master log contents")
 async def get_log_file(
     filename: str,
     lines: int = Query(100, description="Number of recent lines to return"),
     _: bool = Depends(verify_api_key),
 ):
-    """Get contents of a specific log file"""
-    try:
-        logs_dir = Path("logs")
-        log_file = logs_dir / filename
+    """Read recent entries from the canonical master log."""
+    if filename != "master.log":
+        raise HTTPException(status_code=404, detail="Only master.log is retained")
 
-        # Security check - ensure the file is within logs directory
-        if not str(log_file.resolve()).startswith(str(logs_dir.resolve())):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-
-        if not log_file.exists():
-            raise HTTPException(
-                status_code=404, detail=f"Log file '{filename}' not found"
-            )
-
-        if not log_file.suffix == ".log":
-            raise HTTPException(status_code=400, detail="Only .log files are allowed")
-
-        log_entries = []
-        try:
-            recent_lines = _tail_file_lines(log_file, lines)
-            for line in recent_lines:
-                line = line.strip()
-                if line:
-                    log_entries.append(_parse_log_line(line))
-
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to read log file: {str(e)}"
-            )
-
-        # Get file stats
-        stat = log_file.stat()
-
-        return {
-            "filename": filename,
-            "logs": log_entries,
-            "total_entries": len(log_entries),
-            "file_info": {
-                "size_bytes": stat.st_size,
-                "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "lines_requested": lines,
-                "total_lines_returned": len(log_entries),
-            },
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error reading log file {filename}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error reading log file: {str(e)}")
+    log_file = Path(__file__).resolve().parents[3] / "logs" / "master.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.touch(exist_ok=True)
+    entries = [
+        _parse_log_line(line.strip())
+        for line in _tail_file_lines(log_file, lines)
+        if line.strip()
+    ]
+    stat = log_file.stat()
+    return {
+        "filename": log_file.name,
+        "logs": entries,
+        "total_entries": len(entries),
+        "file_info": {
+            "size_bytes": stat.st_size,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "lines_requested": lines,
+            "total_lines_returned": len(entries),
+        },
+    }
 
 
-@router.delete("/logs/files/{filename}", summary="Delete log file")
+@router.delete("/logs/files/{filename}", summary="Clear master log")
 async def delete_log_file(filename: str, _: bool = Depends(verify_api_key)):
-    """Delete a specific log file (admin only)"""
-    try:
-        logs_dir = Path("logs")
-        log_file = logs_dir / filename
+    """Clear master.log in place so active process file handles remain valid."""
+    if filename != "master.log":
+        raise HTTPException(status_code=404, detail="Only master.log is retained")
 
-        # Security check
-        if not str(log_file.resolve()).startswith(str(logs_dir.resolve())):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-
-        if not log_file.exists():
-            raise HTTPException(
-                status_code=404, detail=f"Log file '{filename}' not found"
-            )
-
-        if not log_file.suffix == ".log":
-            raise HTTPException(
-                status_code=400, detail="Only .log files can be deleted"
-            )
-
-        # Don't allow deletion of the main app.log while the server is running
-        if filename == "app.log":
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot delete main application log file while server is running",
-            )
-
-        log_file.unlink()
-
-        return {
-            "message": f"Log file '{filename}' deleted successfully",
-            "deleted_file": filename,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting log file {filename}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting log file: {str(e)}"
-        )
+    log_file = Path(__file__).resolve().parents[3] / "logs" / "master.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    with log_file.open("w", encoding="utf-8"):
+        pass
+    return {"message": "Master log cleared", "cleared_file": log_file.name}
 
 
 @router.get("/scheduler-status", summary="Get scheduler status")
@@ -2464,8 +2333,9 @@ async def get_logging_config(_: bool = Depends(verify_api_key)):
             "loggers": loggers_info,
             "available_levels": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
             "logs_directory": "logs",
+            "logs_file": str(Path(__file__).resolve().parents[3] / "logs" / "master.log"),
             "config_source": "YAML configuration"
-            if Path("config/logging.yaml").exists()
+            if (Path(__file__).resolve().parents[2] / "config" / "logging.yaml").exists()
             else "Simple configuration",
         }
 

@@ -161,8 +161,10 @@ echo ""
 
 # Create PID and log directories for tracking processes
 PID_DIR="./run"
-LOG_DIR="./logs"
+LOG_DIR="$PROJECT_ROOT/logs"
 mkdir -p "$PID_DIR" "$LOG_DIR"
+# Capture this launcher's status messages even when invoked directly.
+exec >> "$LOG_DIR/master.log" 2>&1
 
 SCHEDULER_PID_FILE="$PID_DIR/scheduler.pid"
 API_PID_FILE="$PID_DIR/api.pid"
@@ -340,11 +342,11 @@ fi
 
 # Start scheduler service
 echo "🔧 Starting scheduler service ($PYTHON_BIN)..."
-"$PYTHON_BIN" scripts/scheduler_service.py --redis-url "$REDIS_URL" --log-level "$LOG_LEVEL" > logs/scheduler.log 2>&1 &
+"$PYTHON_BIN" scripts/scheduler_service.py --redis-url "$REDIS_URL" --log-level "$LOG_LEVEL" >> "$LOG_DIR/master.log" 2>&1 &
 SCHEDULER_PID=$!
 echo $SCHEDULER_PID > "$SCHEDULER_PID_FILE"
 echo "   Scheduler service started (PID: $SCHEDULER_PID)"
-echo "   Logs: logs/scheduler.log"
+echo "   Logs: $LOG_DIR/master.log"
 
 # Wait for scheduler to initialize
 echo "   Waiting for scheduler to initialize..."
@@ -354,7 +356,7 @@ sleep 4
 if ! ps -p "$SCHEDULER_PID" > /dev/null 2>&1; then
     echo "❌ Scheduler service failed to start"
     echo "━━━━━━━━━━━━ Scheduler Log ━━━━━━━━━━━━"
-    tail -n 30 logs/scheduler.log 2>/dev/null || true
+    tail -n 30 "$LOG_DIR/master.log" 2>/dev/null || true
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     cleanup
     exit 1
@@ -370,11 +372,11 @@ echo "🌐 Starting FastAPI with $API_WORKERS workers ($PYTHON_BIN -m uvicorn)..
     --workers "$API_WORKERS" \
     --timeout-keep-alive 65 \
     --log-level "$LOG_LEVEL" \
-    > logs/api.log 2>&1 &
+    >> "$LOG_DIR/master.log" 2>&1 &
 API_PID=$!
 echo $API_PID > "$API_PID_FILE"
 echo "   API workers started (PID: $API_PID)"
-echo "   Logs: logs/api.log"
+echo "   Logs: $LOG_DIR/master.log"
 echo ""
 
 # Wait for API to initialize
@@ -385,7 +387,7 @@ sleep 3
 if ! ps -p "$API_PID" > /dev/null 2>&1; then
     echo "❌ API workers failed to start"
     echo "━━━━━━━━━━━━ API Log ━━━━━━━━━━━━"
-    tail -n 30 logs/api.log 2>/dev/null || true
+    tail -n 30 "$LOG_DIR/master.log" 2>/dev/null || true
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     cleanup
     exit 1
@@ -408,8 +410,7 @@ echo "   Docs:    http://$API_HOST:$API_PORT/docs"
 echo "   Health:  http://$API_HOST:$API_PORT/health"
 echo ""
 echo "📝 Logs:"
-echo "   Scheduler: tail -f logs/scheduler.log"
-echo "   API:       tail -f logs/api.log"
+echo "   All services: tail -f $LOG_DIR/master.log"
 echo ""
 echo "🛑 To stop services: Press Ctrl+C or run: kill $API_PID $SCHEDULER_PID"
 echo "═══════════════════════════════════════════════════════════════"
@@ -424,7 +425,7 @@ while true; do
     if ! ps -p "$SCHEDULER_PID" > /dev/null 2>&1; then
         echo "❌ Scheduler service has stopped unexpectedly!"
         echo "━━━━━━━━━━━━ Scheduler Log Tail ━━━━━━━━━━━━"
-        tail -n 40 logs/scheduler.log 2>/dev/null || true
+        tail -n 40 "$LOG_DIR/master.log" 2>/dev/null || true
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         cleanup
         exit 1
@@ -434,7 +435,7 @@ while true; do
     if ! ps -p "$API_PID" > /dev/null 2>&1; then
         echo "❌ API workers have stopped unexpectedly!"
         echo "━━━━━━━━━━━━ API Log Tail ━━━━━━━━━━━━"
-        tail -n 40 logs/api.log 2>/dev/null || true
+        tail -n 40 "$LOG_DIR/master.log" 2>/dev/null || true
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         cleanup
         exit 1

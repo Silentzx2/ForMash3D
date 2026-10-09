@@ -100,9 +100,12 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             from hy3dgen.rembg import BackgroundRemover
 
             logger.info("Loading Mini Turbo pipeline...")
+            device = getattr(self, "device", "cuda" if torch.cuda.is_available() else "cpu")
             self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-                str(self.model_path), subfolder='hunyuan3d-dit-v2-mini-turbo'
-            ).to(getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu'))
+                str(self.model_path),
+                subfolder="hunyuan3d-dit-v2-mini-turbo",
+                device=device,
+            )
 
             try:
                 if hasattr(self.pipeline, "enable_model_cpu_offload"):

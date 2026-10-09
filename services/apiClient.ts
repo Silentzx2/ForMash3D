@@ -646,7 +646,7 @@ class ApiClient {
   }
 
   async clearLogs(): Promise<void> {
-    await this.client.delete('/api/v1/system/logs/files/app.log');
+    await this.client.delete('/api/v1/system/logs/files/master.log');
   }
 
   streamLogs(onEntry: (log: any) => void, lastN: number = 100): () => void {

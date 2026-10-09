@@ -469,6 +469,14 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 
 ---
 
+## Centralized Runtime Logging
+
+All project-managed runtime output is consolidated in `logs/master.log`: Python/API logging, scheduler and worker events, jobs, Next.js server/build output, startup scripts, and Redis when ForMash3D manages or can reconfigure the local Redis instance. The file is append-only while the app runs and does not rotate into numbered sibling logs.
+
+Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/api/v1/system/logs/stream` read this same file. Docker and Docker Compose persist it through the repository-root `logs/` mount. A separately managed remote Redis service keeps its own logs on its host.
+
+---
+
 ## 📚 Documentation Index
 
 | Documentation Guide | Description |

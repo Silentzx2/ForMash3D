@@ -273,7 +273,16 @@ cd backend && conda activate 3daigc-api
 uvicorn api.main_multiworker:app --workers 4 --port 7842
 ```
 
-### 6.3 Shutdown (`scripts/stop.sh`)
+### 6.3 Centralized Runtime Logging
+
+The only retained project runtime log is the repository-root `logs/master.log`. `core.config.setup_logging()` resolves it to an absolute path, independent of the process working directory. Python API loggers, the scheduler and worker processes use one non-rotating file handler; service stdout/stderr append to the same file. This avoids per-service files and rotating `master.log.1` siblings.
+
+- Local startup routes Next.js build/runtime, launcher output, API/Uvicorn, scheduler, job/model-worker output, and project-managed Redis logs to the master file.
+- Docker Compose and `manager.sh docker-run` mount root `logs/` into `/app/logs`; Supervisor forwards Redis, scheduler, API and frontend output to the same append target.
+- The Admin Logs API and UI read only `master.log`. Clearing logs truncates the active file in place rather than unlinking it.
+- A remote Redis instance cannot write into the application host's local file; its server-side logs remain on the Redis host.
+
+### 6.4 Shutdown (`scripts/stop.sh`)
 - Gracefully terminates Next.js, Uvicorn, and Redis processes.
 - Releases TCP ports 3000, 7842, and 6379.
 - Cleans up stale PID files.

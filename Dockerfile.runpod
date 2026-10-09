@@ -116,4 +116,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:7842/health && curl -f http://localhost:3000 || exit 1
 
 # Start Supervisor managing Redis, Scheduler, API, and Frontend
-CMD ["/bin/bash", "-c", "rm -f /var/run/supervisord.pid /var/run/supervisor.sock && exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"]
+CMD ["/bin/bash", "-c", "mkdir -p /app/logs && rm -f /var/run/supervisord.pid /var/run/supervisor.sock && exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf >> /app/logs/master.log 2>&1"]

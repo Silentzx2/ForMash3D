@@ -150,3 +150,12 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Streamlined unified master logging across backend and multiprocess workers.
 - Addressed active generation UI blocking and rendering anomalies in MeshViewer queue.
 - Implemented deep-linked dynamic routing for generations (`/workspace/[tool]/[job_id]`) to persist user context across reloads and shares.
+
+
+## 2026-10-09 — Unified Runtime Logging & Mini Turbo Initialization
+
+- Mini Turbo root cause: upstream `Hunyuan3DDiTFlowMatchingPipeline.to()` mutates the pipeline and returns `None`; chaining it into `self.pipeline = ...` replaced the valid pipeline with `None`. Initialization now passes `device` to `from_pretrained()` and retains its returned pipeline.
+- Added a regression test that mirrors the upstream in-place `.to()` contract and verifies the adapter keeps a callable pipeline.
+- Canonical runtime log: repository-root `logs/master.log`, absolute-path resolution, append-only/non-rotating file handling, and one target for API, scheduler/workers, startup, frontend runtime/build, and project-managed Redis.
+- Removed separate API/scheduler/Supervisor/frontend log-file targets from startup and Docker configuration. Admin/API log reading and clearing now operate on the same master file.
+- A remote Redis instance keeps host-side logs; only a local Redis instance can be redirected to the application's master file.

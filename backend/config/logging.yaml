@@ -1,6 +1,5 @@
-# Logging Configuration for 3D Generative Models API
-# This configuration uses Python's dictConfig format
-
+# All Python services and workers write to repository-root logs/master.log.
+# core.config.setup_logging resolves the filename absolutely so CWD does not matter.
 version: 1
 disable_existing_loggers: false
 
@@ -15,73 +14,56 @@ formatters:
     format: "%(levelname)s - %(name)s - %(message)s"
 
 handlers:
-  console:
-    class: logging.StreamHandler
-    level: INFO
-    formatter: default
-    stream: ext://sys.stdout
-  
   master_file:
-    class: logging.handlers.RotatingFileHandler
+    class: logging.FileHandler
     level: DEBUG
     formatter: detailed
     filename: logs/master.log
-    maxBytes: 10485760  # 10MB
-    backupCount: 5
     mode: a
-    encoding: utf8
+    encoding: utf-8
 
 loggers:
   "":  # Root logger
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-  
   api:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-  
   core.scheduler:
     level: DEBUG
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-
   core.models:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-
   core:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-  
   adapters:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-
   postprocess:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-  
   uvicorn:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-  
   uvicorn.access:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
-  
   uvicorn.error:
     level: INFO
-    handlers: [console, master_file]
+    handlers: [master_file]
     propagate: false
 
 root:
   level: INFO
-  handlers: [console, master_file]
+  handlers: [master_file]

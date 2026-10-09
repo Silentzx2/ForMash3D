@@ -8,6 +8,7 @@ import pytest
 import trimesh
 from PIL import Image
 
+from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter
 from adapters.hunyuan3d_paint_v21 import Hunyuan3DPaintV21ImageMeshPaintingAdapter
 from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
 from adapters.triposf_adapter import TripoSFImageToRawMeshAdapter
@@ -132,3 +133,58 @@ def test_hunyuan_reference_resize_preserves_aspect_ratio(size, content_box):
     if left:
         assert prepared.getpixel((left - 1, 0)) == (255, 255, 255)
         assert prepared.getpixel((right, 0)) == (255, 255, 255)
+
+
+
+def test_hunyuan_mini_turbo_keeps_pipeline_when_to_returns_none(monkeypatch, tmp_path):
+    import adapters.hunyuan3d_dit_v2_mini_turbo as adapter_module
+
+    class FakePipeline:
+        @classmethod
+        def from_pretrained(cls, *args, device, **kwargs):
+            pipeline = cls()
+            pipeline.to(device)
+            return pipeline
+
+        def to(self, device):
+            self.device = device
+            # Mirrors the upstream API: in-place mutation, no return value.
+
+        def __call__(self, **kwargs):
+            return [object()]
+
+    class FakeBackgroundRemover:
+        session = None
+
+    package = ModuleType("hy3dgen")
+    package.__path__ = []
+    shapegen = ModuleType("hy3dgen.shapegen")
+    shapegen.__path__ = []
+    pipelines = ModuleType("hy3dgen.shapegen.pipelines")
+    pipelines.Hunyuan3DDiTFlowMatchingPipeline = FakePipeline
+    rembg_package = ModuleType("hy3dgen.rembg")
+    rembg_package.BackgroundRemover = FakeBackgroundRemover
+    rembg_module = ModuleType("rembg")
+    rembg_module.new_session = lambda **kwargs: object()
+
+    for name, module in {
+        "hy3dgen": package,
+        "hy3dgen.shapegen": shapegen,
+        "hy3dgen.shapegen.pipelines": pipelines,
+        "hy3dgen.rembg": rembg_package,
+        "rembg": rembg_module,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(adapter_module.torch.cuda, "is_available", lambda: False)
+
+    adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(
+        model_path=str(tmp_path),
+        hunyuan3d_root=str(tmp_path),
+        vram_requirement=1,
+    )
+    loaded = adapter._load_model()
+
+    assert adapter.pipeline is loaded["pipeline"]
+    assert callable(adapter.pipeline)
+    assert adapter.pipeline.device == "cpu"
+    assert adapter.pipeline() is not None

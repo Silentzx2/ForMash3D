@@ -323,34 +323,10 @@ run_restart(){
 
 show_logs(){
   banner
-  printf "${WHITE}${BOLD}LOG VIEWER (Press Ctrl+C to return)${NC}\n\n"
-  printf "  ${CYAN}[0]${NC} ${GREEN}${BOLD}ALL LOGS (Live Stream Combined)${NC}\n"
-  printf "  ${CYAN}[1]${NC} Frontend (Runtime)\n"
-  printf "  ${CYAN}[2]${NC} Frontend (Build log)\n"
-  printf "  ${CYAN}[3]${NC} Backend (Combined / Supervisor)\n"
-  printf "  ${CYAN}[4]${NC} Backend (Scheduler)\n"
-  printf "  ${CYAN}[5]${NC} Backend (API Workers)\n"
-  printf "  ${CYAN}[b]${NC} Back\n\n"
-  printf "  ${BOLD}Select an action:${NC} "
-  read -r choice
-
-  # Ensure log files exist so tail doesn't fail
-  touch "$PROJECT_ROOT/logs/frontend.log" "$PROJECT_ROOT/logs/frontend-build.log" \
-        "$PROJECT_ROOT/logs/backend.log" "$PROJECT_ROOT/logs/backend-supervisor.log" \
-        "$PROJECT_ROOT/backend/logs/scheduler.log" "$PROJECT_ROOT/backend/logs/api.log" "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
-
-  case "$choice" in
-    0)
-      printf "\n${CYAN}[INFO]${NC} Streaming ALL logs in real time... (Press Ctrl+C to exit)\n\n"
-      tail -n 30 -f "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
-      ;;
-    1) tail -n 80 -f "$PROJECT_ROOT/logs/frontend.log" 2>/dev/null || true ;;
-    2) tail -n 80 -f "$PROJECT_ROOT/logs/frontend-build.log" 2>/dev/null || true ;;
-    3) tail -n 80 -f "$PROJECT_ROOT/logs/backend.log" "$PROJECT_ROOT/logs/backend-supervisor.log" 2>/dev/null || true ;;
-    4) tail -n 80 -f "$PROJECT_ROOT/backend/logs/scheduler.log" "$PROJECT_ROOT/logs/scheduler.log" 2>/dev/null || true ;;
-    5) tail -n 80 -f "$PROJECT_ROOT/backend/logs/api.log" "$PROJECT_ROOT/logs/api.log" 2>/dev/null || true ;;
-    b|B) return 0 ;;
-  esac
+  mkdir -p "$PROJECT_ROOT/logs"
+  touch "$PROJECT_ROOT/logs/master.log"
+  printf "${WHITE}${BOLD}MASTER LOG — all project-managed services (Ctrl+C to return)${NC}\n\n"
+  tail -n 80 -F "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
   pause
 }
 
@@ -390,9 +366,8 @@ docker_build() {
 
   check_docker_cli || { pause; return 1; }
 
-  mkdir -p "$PROJECT_ROOT/backend/storage" "$PROJECT_ROOT/backend/pretrained" \
-           "$PROJECT_ROOT/backend/models" "$PROJECT_ROOT/backend/logs" \
-           "$PROJECT_ROOT/backend/data" "$PROJECT_ROOT/backend/uploads"
+  mkdir -p "$PROJECT_ROOT/logs" "$PROJECT_ROOT/backend/storage" "$PROJECT_ROOT/backend/pretrained" \
+           "$PROJECT_ROOT/backend/models" "$PROJECT_ROOT/backend/data" "$PROJECT_ROOT/backend/uploads"
 
   printf "${CYAN}[INFO]${NC} Starting docker build from repository root...\n"
   printf "${GRAY}Command: docker build -t formash3d:latest -f Dockerfile .${NC}\n\n"
@@ -460,7 +435,7 @@ docker_run() {
       -v "$PROJECT_ROOT/backend/storage:/app/backend/storage" \
       -v "$PROJECT_ROOT/backend/pretrained:/app/backend/pretrained" \
       -v "$PROJECT_ROOT/backend/models:/app/backend/models" \
-      -v "$PROJECT_ROOT/backend/logs:/app/backend/logs" \
+      -v "$PROJECT_ROOT/logs:/app/logs" \
       -v "$PROJECT_ROOT/backend/data:/app/backend/data" \
       -v "$PROJECT_ROOT/backend/uploads:/app/backend/uploads" \
       -v "$PROJECT_ROOT/backend/config:/app/backend/config" \
@@ -495,9 +470,11 @@ docker_stop() {
 docker_logs() {
   check_docker_cli || { pause; return 1; }
   banner
-  printf "${WHITE}${BOLD}CONTAINER LOGS (Press Ctrl+C to return)${NC}\n\n"
-  docker logs -f formash3d 2>&1 || {
-    printf "${RED}[✗] Could not fetch logs. Is 'formash3d' running?${NC}\n"
+  printf "${WHITE}${BOLD}CONTAINER MASTER LOG (Press Ctrl+C to return)${NC}\n\n"
+  mkdir -p "$PROJECT_ROOT/logs"
+  touch "$PROJECT_ROOT/logs/master.log"
+  tail -n 80 -F "$PROJECT_ROOT/logs/master.log" 2>/dev/null || {
+    printf "${RED}[✗] Could not read logs. Is 'formash3d' running?${NC}\n"
     pause
   }
 }

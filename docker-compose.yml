@@ -18,7 +18,7 @@ services:
       - ./backend/storage:/app/backend/storage
       - ./backend/pretrained:/app/backend/pretrained
       - ./backend/models:/app/backend/models
-      - ./backend/logs:/app/backend/logs
+      - ./logs:/app/logs
       - ./backend/data:/app/backend/data
       - ./backend/uploads:/app/backend/uploads
       - ./backend/config:/app/backend/config

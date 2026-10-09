@@ -3,7 +3,7 @@
 logging:
   level: "INFO"
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-  file: null  # Set to file path to enable file logging
+  file: null  # Runtime logging is centralized at repository-root logs/master.log
 
 # Security configuration
 security:

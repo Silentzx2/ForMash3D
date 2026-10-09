@@ -311,16 +311,8 @@ def load_logging_dict_config(config_path: str) -> Optional[Dict]:
         with open(config_file, "r") as f:
             logging_config = yaml.safe_load(f)
 
-        # Ensure all log directories exist (from logging.yaml handlers)
-        # logs/, backend/logs/, backend/run/
-        log_dirs = [
-            Path("logs"),
-            Path("backend/logs"),
-            Path("backend/run"),
-        ]
-        for log_dir in log_dirs:
-            log_dir.mkdir(parents=True, exist_ok=True)
-
+        # Runtime logs live only in the repository-root logs/ directory.
+        (Path(__file__).resolve().parents[2] / "logs").mkdir(parents=True, exist_ok=True)
         return logging_config
     except Exception as e:
         logger.error(f"Error loading logging config from {config_path}: {str(e)}")
@@ -369,63 +361,31 @@ def reload_settings() -> Settings:
 
 
 def setup_logging(config: LoggingConfig):
-    """Setup logging configuration with support for both simple and dictConfig formats"""
+    """Route Python application, API, scheduler and worker logs to one master file."""
+    master_log = Path(__file__).resolve().parents[2] / "logs" / "master.log"
+    master_log.parent.mkdir(parents=True, exist_ok=True)
 
-    # Try to use dictConfig first if available
-    config_dir = Path(__file__).parent.parent / "config"
-    logging_yaml_path = config_dir / "logging.yaml"
+    logging_yaml_path = Path(__file__).resolve().parent.parent / "config" / "logging.yaml"
+    dict_config = load_logging_dict_config(str(logging_yaml_path)) if logging_yaml_path.exists() else None
+    if dict_config:
+        # Resolve the configured path against the repository rather than process CWD.
+        for handler in dict_config.get("handlers", {}).values():
+            if "filename" in handler:
+                handler["filename"] = str(master_log)
+        try:
+            logging.config.dictConfig(dict_config)
+            logging.getLogger(__name__).info("Logging configured: %s", master_log)
+            return
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to load YAML logging config; using the same master log")
 
-    if logging_yaml_path.exists():
-        # Use the YAML logging configuration file
-        dict_config = load_logging_dict_config(str(logging_yaml_path))
-        if dict_config:
-            try:
-                logging.config.dictConfig(dict_config)
-                logger.info(f"Logging configured from YAML: {logging_yaml_path}")
-                return
-            except Exception as e:
-                logger.error(f"Failed to configure logging from YAML: {str(e)}")
-                logger.info("Falling back to simple logging configuration")
-
-    # Fallback to simple configuration
-    level = getattr(logging, config.level.upper())
-
-    # Ensure all log directories exist
-    log_dirs = [
-        Path("logs"),
-        Path("backend/logs"),
-        Path("backend/run"),
-    ]
-    for log_dir in log_dirs:
-        log_dir.mkdir(parents=True, exist_ok=True)
-
-    handlers: List[logging.Handler] = [logging.StreamHandler()]
-
-    # Add file handler if specified
-    if config.file:
-        file_path = Path(config.file)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(config.file))
-    else:
-        # Default log file
-        default_log_file = Path("logs") / "app.log"
-        handlers.append(logging.FileHandler(str(default_log_file)))
-
-    # Configure root logger
     logging.basicConfig(
-        level=level,
+        level=getattr(logging, config.level.upper(), logging.INFO),
         format=config.format,
-        handlers=handlers,
-        force=True,  # Override any existing configuration
+        handlers=[logging.FileHandler(master_log, mode="a", encoding="utf-8")],
+        force=True,
     )
-
-    # Configure uvicorn logger
-    uvicorn_logger = logging.getLogger("uvicorn")
-    uvicorn_logger.setLevel(level)
-
-    logger.info(
-        f"Logging configured: level={config.level}, file={config.file or 'logs/app.log'}"
-    )
+    logging.getLogger(__name__).info("Logging configured: %s", master_log)
 
 
 # def create_directories(storage_config: StorageConfig):
