@@ -197,7 +197,7 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     featureLabel: 'Image to Geometry',
     vramMb: 10240,
     lowVramSupported: false,
-    supportsTexture: false,
+    supportsTexture: true,
     supportedInputs: ['image'],
     supportedOutputs: ['glb', 'obj'],
     modelPath: 'backend/pretrained/Unique3D',

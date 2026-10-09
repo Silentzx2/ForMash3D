@@ -785,14 +785,15 @@ download_unique3d() {
     print_info "Downloading Unique3D Model"
     print_info "========================================"
 
-    local model_dir="$PRETRAINED_DIR/Unique3D/ckpt"
+    # Download to Unique3D root, not ckpt subdir - HF repo has ckpt/ prefix
+    local model_dir="$PRETRAINED_DIR/Unique3D"
     
     if [ "$FORCE_DOWNLOAD" = false ] && \
-       verify_directory "$model_dir/controlnet-tile" 1 && \
-       verify_directory "$model_dir/image2normal" 1 && \
-       verify_directory "$model_dir/img2mvimg" 1 && \
-       verify_file "$model_dir/realesrgan-x4.onnx" 50000000 && \
-       verify_file "$model_dir/v1-inference.yaml" 1000; then
+       verify_directory "$model_dir/ckpt/controlnet-tile" 1 && \
+       verify_directory "$model_dir/ckpt/image2normal" 1 && \
+       verify_directory "$model_dir/ckpt/img2mvimg" 1 && \
+       verify_file "$model_dir/ckpt/realesrgan-x4.onnx" 50000000 && \
+       verify_file "$model_dir/ckpt/v1-inference.yaml" 1000; then
         print_info "Unique3D model already exists and verified"
         return 0
     fi
@@ -842,13 +843,6 @@ download_unique3d() {
         --local-dir "$model_dir"; then
         print_error "Failed to download v1-inference.yaml"
         return 1
-    fi
-
-    # Fix directory structure: move from ckpt/ckpt/ to ckpt/
-    if [ -d "$model_dir/ckpt" ]; then
-        print_info "Fixing directory structure..."
-        mv "$model_dir/ckpt"/* "$model_dir/" 2>/dev/null || true
-        rmdir "$model_dir/ckpt" 2>/dev/null || true
     fi
 
     print_success "Unique3D model downloaded successfully"

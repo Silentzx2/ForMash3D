@@ -446,7 +446,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                     "output_format": output_format,
                     "vertex_count": mesh_stats["vertex_count"],
                     "face_count": mesh_stats["face_count"],
-                    "has_texture": False,
+                    "has_texture": True,
                     "seed": seed,
                     "input_processing": input_processing,
                     "do_refine": do_refine,

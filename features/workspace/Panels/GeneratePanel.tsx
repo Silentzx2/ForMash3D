@@ -250,6 +250,7 @@ function formatGenerateModel(
   else if (id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
   else if (id === 'partpacker_image_to_raw_mesh') cleanLabel = 'PartPacker (Modular Mesh)';
   else if (id === 'ultrashape_image_to_raw_mesh') cleanLabel = 'UltraShape (High-Poly Geometry)';
+  else if (id === 'unique3d_image_to_raw_mesh') cleanLabel = 'Unique3D (High-Fidelity Diffusion)';
 
   return {
     id,

@@ -157,7 +157,7 @@ image_to_raw_mesh:
       multiview: false
       multiview_input: false
       generated_multiview: true
-      texture_generation: false
+      texture_generation: true
       raw_mesh: true
       high_fidelity_geometry: true
       vertex_color: true
