@@ -684,3 +684,45 @@ ForMash3D provides a lightweight offline A/B harness that requires identical inp
 **Status:** Accepted
 
 Hi3DGen-style normal bridging is not hard-wired into production without controlled evidence. The current integration preserves the model-aware preprocessing/capability contract and leaves normal-bridging adoption behind an explicit benchmark gate until a compatible runtime, dependency set, and measurable quality improvement are verified.
+
+## ADR-060 — Persistent Asset Previews and Thumbnails Over Blob URLs
+
+**Date:** 2026-10-09  
+**Status:** Accepted
+
+**Decision**: Replace browser-local blob URLs (`URL.createObjectURL(file)`) with persistent backend storage endpoints (`/api/v1/file-upload/download/{file_id}` and `/api/v1/file-upload/thumbnail/{file_id}`).
+
+**Reason**: Ephemeral object URLs are lost on component unmount or route changes, causing image previews and model thumbnails to vanish when users switch between single-view, multiview, and assets panels.
+
+**Consequences**:
+- Uploaded assets immediately obtain durable server-side IDs and persistent thumbnail endpoints.
+- Previews and reference thumbnails remain stable across all workspace views and page reloads.
+- Shared asset store allows multiview and single-view workspaces to seamlessly cross-reference uploaded media.
+
+## ADR-061 — Dual-Action Generation Queueing and Viewport HUD Capsule
+
+**Date:** 2026-10-09  
+**Status:** Accepted
+
+**Decision**: Support continuous workflow by displaying in-progress feedback on the active generation button alongside a secondary "Queue Next" button when a job is active. Provide a top-right viewport HUD capsule in the 3D viewport for monitoring background jobs.
+
+**Reason**: Long neural inferences should not lock the artist workspace or prevent enqueuing subsequent tasks.
+
+**Consequences**:
+- When GPU/VRAM is busy, new submissions are safely queued in the background scheduler without crashing or risking OOM.
+- If multiple GPUs have available VRAM, concurrent batch generation executes automatically.
+- Artists can monitor queue progress and load newly completed models directly into the MeshViewer viewport via a single click.
+
+## ADR-062 — Dual-Store Synchronization for Job Deletion
+
+**Date:** 2026-10-09  
+**Status:** Accepted
+
+**Decision**: Ensure `delete_job` cleanly purges job entries from both Redis hot keys and the persistent SQLite database (`db_manager`).
+
+**Reason**: Inconsistent key deletion between Redis and SQLite previously caused `500 Failed to delete job from database` errors when attempting to delete completed or failed jobs.
+
+**Consequences**:
+- Deletions are coordinated across both storage tiers without throwing 500 errors.
+- Prevents orphaned job records in the scheduler database.
+

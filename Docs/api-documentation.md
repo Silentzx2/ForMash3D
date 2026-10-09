@@ -207,6 +207,36 @@ GET /api/v1/file-upload/download/{file_id}
 
 **Response (200):** Direct binary stream of the uploaded file or registered output mesh asset.
 
+### Get Thumbnail
+
+```http
+GET /api/v1/file-upload/thumbnail/{file_id}
+```
+
+**Response (200):** Direct binary stream of the persistent 256x256 thumbnail preview for the uploaded image or asset. If a dedicated thumbnail does not yet exist, generates or falls back to the original source image stream.
+
+### List Uploaded Files
+
+```http
+GET /api/v1/file-upload/list
+```
+
+**Response (200):** List of metadata objects for all registered uploaded assets, including `url` and `thumbnail_url`.
+
+```json
+[
+  {
+    "file_id": "img_abc123",
+    "filename": "reference.png",
+    "file_type": "image",
+    "file_size_mb": 2.5,
+    "upload_time": "2026-10-09T00:00:00Z",
+    "url": "/api/v1/file-upload/download/img_abc123",
+    "thumbnail_url": "/api/v1/file-upload/thumbnail/img_abc123"
+  }
+]
+```
+
 ### Get File Metadata
 
 ```http
@@ -394,6 +424,14 @@ The image-to-raw and image-to-textured generation contracts accept the same prod
 - `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `auto_rig_mode`, and provider-neutral `physics_config`.
 
 Completed jobs expose production metadata through `GET /api/v1/system/jobs/{job_id}`, including `source_model_url`, `high_fidelity_url`, `game_ready_url`, `production_status`, `degraded_reasons`, `quality_mode`, `target_polycount`, `texture_resolution`, `master_to_derivative`, `quality_trace`, `lod_validation`, and artifact status.
+
+### Delete Job
+
+```http
+DELETE /api/v1/system/jobs/{job_id}
+```
+
+Purges the job from both the active Redis queue/hot keys and the persistent SQLite database store. Guarantees safe atomic removal without throwing 500 internal errors for previously completed, cancelled, or failed jobs.
 
 ### Multi-view generation and reconstruction
 

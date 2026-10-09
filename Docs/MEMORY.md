@@ -133,3 +133,13 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Conducted Ponytail Ultra audit on recent high-fidelity commits.
 - Stripped speculative rendering abstractions (pyrender) and custom module wrappers (accelerate wrapper) in favor of fast standard library equivalents (`trimesh.volume`, native `dispatch_model`).
 - 100% of the TASKS.md requirements verified in place and hardened against resource exhaustion.
+
+## 2026-10-09 Studio Telemetry, Preview Persistence, Multi-Job Queueing & Engine Fixes
+- **Telemetry UI**: Upgraded Header resource meters to vertical pipe mini-gauges with dynamic saturated status colors: Neon Emerald (`#00FF88`), Gold (`#FFD700`), Vivid Amber (`#FF9900`), Crimson (`#FF3366`), percentage readouts, and outside-click auto-dismissal.
+- **Persistent Asset Storage**: Replaced fragile `URL.createObjectURL(file)` across workspace tabs with backend persistent endpoints (`/api/v1/file-upload/download/{file_id}`, `/api/v1/file-upload/thumbnail/{file_id}`). Previews and reference thumbnails remain durable when switching between single-view, multiview, and assets panels.
+- **Continuous Generation & Background Queueing**: Added dual-action generation button: primary button shows active progress while secondary "Queue Next" button enqueues subsequent generation jobs without blocking the studio. If VRAM is full, jobs wait in the scheduler queue safely; if multiple GPUs are available, concurrent jobs execute.
+- **MeshViewer HUD Job Capsule**: Added top-right horizontal mini-capsule in the 3D viewport displaying reference thumbnail, active spinner, progress %, stage details, and an interactive "View" button to load completed models directly into the viewport.
+- **TripoSF/TripoSR VRAM Manifest Fix**: Fixed `ValueError: VRAM requirement for triposr_image_to_raw_mesh must come from the model manifest` during coarse mesh generation by passing `vram_requirement=6144` explicitly from `triposf_adapter.py` and adding a manifest/default fallback in `triposr_adapter.py`.
+- **Quality Evaluation Export**: Implemented `compare_render_directories` in `backend/core/quality/evaluation.py` to fix `ImportError: cannot import name 'compare_render_directories'`.
+- **Redis Job Queue Deletion**: Fixed `delete_job` in `backend/core/scheduler/redis_job_queue.py` to delete from both Redis and SQLite (`db_manager`), preventing `500 Failed to delete job from database`.
+

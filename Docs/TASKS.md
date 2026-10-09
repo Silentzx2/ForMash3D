@@ -1233,6 +1233,10 @@ Required:
 - errors/fallback
 - variant outputs
 - documentation updates
+- persistent asset previews & thumbnails across workspace navigation
+- header hardware telemetry vertical gauges with dynamic saturated status colors
+- dual-state generation queueing ("Queue Next") & viewport HUD job capsule
+- dual Redis/SQLite atomic job deletion synchronization
 
 ## Phase 6 — Cross-Phase Verification
 **Owner:** Lead  
