@@ -615,13 +615,29 @@ export const GeneratePanel: React.FC = () => {
       const failedUploads = results.filter(r => r.fileId === null);
       
       if (successfulUploads.length > 0) {
-        // Add successfully uploaded images to batch queue
-        const imageFileIds = successfulUploads.map(r => r.fileId!);
-        addToBatchQueue(imageFileIds);
-        
-        // Show success message
-        setNoticeMessage(`${successfulUploads.length} image${successfulUploads.length === 1 ? '' : 's'} added to batch queue.`);
-        setTimeout(() => setNoticeMessage(null), 5000);
+        // Set the primary reference image to the first uploaded file so it displays immediately
+        const first = successfulUploads[0];
+        const cleanPrompt = first.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        setGenerationSettings(prev => ({
+          ...prev,
+          image: first.previewUrl,
+          imageFileId: first.fileId,
+          preprocessingArtifactId: null,
+          preprocessingPreviewUrl: null,
+          preprocessingMetadata: null,
+          enhancementEnabled: false,
+          prompt: cleanPrompt,
+          imageName: cleanPrompt,
+          mode: 'image-to-3d',
+        }));
+
+        // If multiple images were selected, add remaining to batch queue
+        if (successfulUploads.length > 1) {
+          const imageFileIds = successfulUploads.slice(1).map(r => r.fileId!);
+          addToBatchQueue(imageFileIds);
+          setNoticeMessage(`Primary image loaded. ${imageFileIds.length} additional image${imageFileIds.length === 1 ? '' : 's'} added to batch queue.`);
+          setTimeout(() => setNoticeMessage(null), 5000);
+        }
       }
       
       if (failedUploads.length > 0) {
@@ -761,13 +777,29 @@ export const GeneratePanel: React.FC = () => {
       const failedUploads = results.filter(r => r.fileId === null);
       
       if (successfulUploads.length > 0) {
-        // Add successfully uploaded images to batch queue
-        const imageFileIds = successfulUploads.map(r => r.fileId!);
-        addToBatchQueue(imageFileIds);
-        
-        // Show success message
-        setNoticeMessage(`${successfulUploads.length} image${successfulUploads.length === 1 ? '' : 's'} added to batch queue.`);
-        setTimeout(() => setNoticeMessage(null), 5000);
+        // Set the primary reference image to the first uploaded file so it displays immediately
+        const first = successfulUploads[0];
+        const cleanPrompt = first.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        setGenerationSettings(prev => ({
+          ...prev,
+          image: first.previewUrl,
+          imageFileId: first.fileId,
+          preprocessingArtifactId: null,
+          preprocessingPreviewUrl: null,
+          preprocessingMetadata: null,
+          enhancementEnabled: false,
+          prompt: cleanPrompt,
+          imageName: cleanPrompt,
+          mode: 'image-to-3d',
+        }));
+
+        // If multiple images were dropped, add remaining to batch queue
+        if (successfulUploads.length > 1) {
+          const imageFileIds = successfulUploads.slice(1).map(r => r.fileId!);
+          addToBatchQueue(imageFileIds);
+          setNoticeMessage(`Primary image loaded. ${imageFileIds.length} additional image${imageFileIds.length === 1 ? '' : 's'} added to batch queue.`);
+          setTimeout(() => setNoticeMessage(null), 5000);
+        }
       }
       
       if (failedUploads.length > 0) {
