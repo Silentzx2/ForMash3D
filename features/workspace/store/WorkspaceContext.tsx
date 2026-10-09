@@ -1039,7 +1039,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     if (!job) return;
 
     if (typeof window !== 'undefined') {
-      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
+      const toolRoute = TOOL_TO_ROUTE[activeTool] || '/workspace/generate';
       window.history.replaceState(null, '', `${toolRoute}/${jobId}`);
     }
 
@@ -1080,7 +1080,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     setSelectedAssetId(id);
     
     if (typeof window !== 'undefined') {
-      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
+      const toolRoute = TOOL_TO_ROUTE[activeTool] || '/workspace/generate';
       window.history.replaceState(null, '', `${toolRoute}/${id}`);
     }
 
@@ -1231,7 +1231,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     setActiveTask(task);
 
     if (typeof window !== 'undefined') {
-      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
+      const toolRoute = TOOL_TO_ROUTE[activeTool] || '/workspace/generate';
       window.history.replaceState(null, '', `${toolRoute}/${taskId}`);
     }
     setJobsById(prev => ({ ...prev, [taskId]: task }));

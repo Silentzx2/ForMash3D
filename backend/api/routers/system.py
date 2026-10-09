@@ -645,30 +645,57 @@ async def get_logs(
 
 @router.get("/logs/stream", summary="Stream logs via SSE")
 async def stream_logs(
-    last_n: int = Query(100, description="Number of recent lines to include initially"),
+    last_n: int = Query(200, description="Number of recent lines to include initially"),
     _: bool = Depends(verify_api_key),
 ):
-    """Stream log entries via Server-Sent Events for real-time updates"""
+    """Stream log entries via Server-Sent Events for real-time updates.
+    Tails master.log, with automatic fallback to other log files.
+    Sends SSE heartbeats every 15s to keep the connection alive.
+    """
     import asyncio
     from fastapi.responses import StreamingResponse
 
-    async def event_generator():
-        log_path = Path(__file__).resolve().parents[3] / "logs" / "master.log"
-        if not log_path.exists():
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_path.touch()
+    # Find the best log file: prefer master.log, fallback to any available log
+    project_root = Path(__file__).resolve().parents[3]
+    candidates = [
+        project_root / "logs" / "master.log",
+        project_root / "backend" / "logs" / "api.log",
+        project_root / "logs" / "api.log",
+        project_root / "logs" / "backend.log",
+        project_root / "logs" / "app.log",
+    ]
 
+    # Always ensure master.log exists
+    master_log = candidates[0]
+    master_log.parent.mkdir(parents=True, exist_ok=True)
+    if not master_log.exists():
+        master_log.touch()
+
+    # Pick the first non-empty file or fallback to master.log
+    log_path = master_log
+    for c in candidates:
+        if c.exists() and c.stat().st_size > 0:
+            log_path = c
+            break
+
+    async def event_generator():
         process = await asyncio.create_subprocess_exec(
             "tail", "-n", str(last_n), "-f", str(log_path),
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL
+            stderr=asyncio.subprocess.DEVNULL,
         )
         try:
             while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
-                yield f"data: {line.decode('utf-8', errors='replace')}\n\n"
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=15.0)
+                    if not line:
+                        break
+                    text = line.decode("utf-8", errors="replace").rstrip("\n\r")
+                    if text:
+                        yield f"data: {text}\n\n"
+                except asyncio.TimeoutError:
+                    # Heartbeat to keep SSE connection alive
+                    yield ": heartbeat\n\n"
         finally:
             try:
                 process.terminate()
