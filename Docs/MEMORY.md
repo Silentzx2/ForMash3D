@@ -149,3 +149,4 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Refactored frontend UI for logs tab to mirror an authentic, low-latency VS Code style terminal (`features/admin/tabs/LogsTab.tsx`).
 - Streamlined unified master logging across backend and multiprocess workers.
 - Addressed active generation UI blocking and rendering anomalies in MeshViewer queue.
+- Implemented deep-linked dynamic routing for generations (`/workspace/[tool]/[job_id]`) to persist user context across reloads and shares.

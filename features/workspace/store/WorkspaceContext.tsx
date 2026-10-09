@@ -435,7 +435,18 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
   }, [historyAssets, uploadedAssets, localAssets, deletedAssetIds]);
 
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname;
+      if (path.startsWith('/workspace/')) {
+        const parts = path.replace('/workspace/', '').split('/');
+        if (parts.length > 1 && parts[1]) {
+           return parts[1];
+        }
+      }
+    }
+    return null;
+  });
   const selectedAssetIdRef = useRef(selectedAssetId);
   const mainNavRef = useRef(mainNav);
 
@@ -1026,6 +1037,12 @@ function dataURLtoFile(dataURL: string, filename: string): File {
   const selectJobToView = useCallback((jobId: string) => {
     const job = jobsByIdRef.current[jobId] || (activeTaskRef.current?.id === jobId ? activeTaskRef.current : null);
     if (!job) return;
+
+    if (typeof window !== 'undefined') {
+      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
+      window.history.replaceState(null, '', `${toolRoute}/${jobId}`);
+    }
+
     const result = (job.result || {}) as Record<string, any>;
     const modelUrl = (result?.active_model_url || result?.model_url || result?.url) as string | undefined;
     if (modelUrl) {
@@ -1061,6 +1078,12 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
   const selectAsset = useCallback((id: string) => {
     setSelectedAssetId(id);
+    
+    if (typeof window !== 'undefined') {
+      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
+      window.history.replaceState(null, '', `${toolRoute}/${id}`);
+    }
+
     // Increment viewport trigger to force MeshViewer reload
     setViewportResetTrigger(prev => prev + 1);
   }, [assets]);
@@ -1206,6 +1229,11 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     setExecutionProgress(0);
     setExecutionStep('Queued');
     setActiveTask(task);
+
+    if (typeof window !== 'undefined') {
+      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
+      window.history.replaceState(null, '', `${toolRoute}/${taskId}`);
+    }
     setJobsById(prev => ({ ...prev, [taskId]: task }));
     return taskId;
   }, []);

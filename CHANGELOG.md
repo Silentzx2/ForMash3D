@@ -13,3 +13,6 @@
 - **Hunyuan3D CPU Hanging**: Fixed an issue where the Hunyuan3D 2.1 pipeline and Rembg component would silently fail over to the CPU, locking up system resources for 11+ minutes without progress. Pipelines now strictly enforce `.to("cuda")` initialization.
 - **Unique3D Adapter Initialization Crash**: Resolved `TypeError: Unique3DImageToRawMeshAdapter.__init__() got an unexpected keyword argument 'seed'` by widening the signature constraints to accept `**kwargs` from the dynamically routed job config.
 - **README Mermaid Syntax Error**: Corrected `subgraph` title formatting to strictly adhere to Mermaid compiler specifications, fixing rendering drops.
+
+### Changed (Routing)
+- **Dynamic Job Routing**: Workspace URLs now dynamically update to include the specific `job_id` when a generation starts, a queue item is clicked, or an asset is selected (e.g., `/workspace/generate/job_123abc`). Reloading or sharing this URL will automatically pre-select and load that specific asset/job into the viewport on initialization.
