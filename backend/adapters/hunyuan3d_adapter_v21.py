@@ -132,8 +132,8 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 # Load background remover
                 logger.info("Loading background remover...")
                 import rembg
-            self.bg_remover = BackgroundRemover()
-            self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+                self.bg_remover = BackgroundRemover()
+                self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
                 loaded_models["bg_remover"] = self.bg_remover
 
             # Load paint pipeline if needed
@@ -165,8 +165,8 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
 
                 if "bg_remover" not in loaded_models:
                     import rembg
-            self.bg_remover = BackgroundRemover()
-            self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+                    self.bg_remover = BackgroundRemover()
+                    self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
                     loaded_models["bg_remover"] = self.bg_remover
 
                 self.paint_pipeline = Hunyuan3DPaintPipeline(conf)

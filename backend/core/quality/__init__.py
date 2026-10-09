@@ -8,7 +8,6 @@ from .evaluation import (
     density_aware_chamfer_distance,
     f_score,
     quality_gate,
-    render_multi_view,
 )
 
 __all__ = [
@@ -20,5 +19,4 @@ __all__ = [
     "density_aware_chamfer_distance",
     "f_score",
     "quality_gate",
-    "render_multi_view",
 ]
