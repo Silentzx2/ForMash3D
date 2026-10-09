@@ -281,3 +281,70 @@ def compare_render_directories(baseline_dir: str | Path, candidate_dir: str | Pa
         "mean_silhouette_iou": mean_iou,
         "compared_views": len(rgb_errors),
     }
+
+
+def render_multi_view(
+    mesh: "trimesh.Trimesh",
+    output_dir: "str | Path | None" = None,
+    n_views: int = 8,
+    resolution: "tuple" = (512, 512),
+) -> "dict":
+    """Render turntable views of *mesh* and optionally save PNGs.
+
+    Falls back gracefully when pyrender/display is unavailable (headless server).
+    Returns dict: {status: ok|skipped|error, views: [{angle_deg, path}], n_views}
+    """
+    import math
+
+    results = []
+    out_path = Path(output_dir) if output_dir else None
+    if out_path:
+        out_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import pyrender  # type: ignore
+
+        scene = pyrender.Scene.from_trimesh_scene(
+            trimesh.Scene(geometry={"mesh": mesh})
+        )
+        camera = pyrender.PerspectiveCamera(yfov=math.radians(45))
+        light = pyrender.DirectionalLight(color=np.ones(3), intensity=3.0)
+        renderer = pyrender.OffscreenRenderer(*resolution)
+        radius = mesh.bounding_sphere.primitive.radius * 2.5
+
+        for i in range(n_views):
+            angle_deg = (360.0 / n_views) * i
+            angle_rad = math.radians(angle_deg)
+            eye = np.array([
+                radius * math.sin(angle_rad),
+                0.0,
+                radius * math.cos(angle_rad),
+            ])
+            z = eye / max(np.linalg.norm(eye), 1e-8)
+            x = np.cross(np.array([0.0, 1.0, 0.0]), z)
+            x = x / max(np.linalg.norm(x), 1e-8)
+            y = np.cross(z, x)
+            cam_pose = np.eye(4)
+            cam_pose[:3, 0] = x; cam_pose[:3, 1] = y
+            cam_pose[:3, 2] = z; cam_pose[:3, 3] = eye
+
+            cam_node = scene.add(camera, pose=cam_pose)
+            scene.add(light, pose=cam_pose)
+            color, _ = renderer.render(scene)
+            scene.remove_node(cam_node)
+
+            saved = None
+            if out_path:
+                from PIL import Image  # type: ignore
+                img_path = out_path / f"view_{i:03d}.png"
+                Image.fromarray(color).save(str(img_path))
+                saved = str(img_path)
+
+            results.append({"angle_deg": angle_deg, "path": saved})
+
+        renderer.delete()
+        return {"status": "ok", "views": results, "n_views": len(results)}
+
+    except Exception as exc:
+        # Headless env / missing dep — skip silently, never crash post-processing
+        return {"status": "skipped", "reason": str(exc), "views": [], "n_views": 0}
