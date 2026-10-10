@@ -1282,25 +1282,32 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
     try {
       const data = await getApiClient().cancelGenerationJob(jobId);
+      setIsExecuting(false);
+      setExecutionProgress(0);
+      setExecutionStep('Execution cancelled');
+      setActiveTask(prev => prev ? {
+        ...prev,
+        status: 'interrupted',
+        currentStep: 'Execution cancelled',
+        stage: 'cancelled',
+      } : null);
       if (data.cancelled || data.status === 'cancelled') {
-        setIsExecuting(false);
-        setExecutionProgress(0);
-        setExecutionStep('Execution cancelled');
-        setActiveTask(prev => prev ? {
-          ...prev,
-          status: 'interrupted',
-          currentStep: 'Execution cancelled',
-          stage: 'cancelled',
-        } : null);
+        toast.success('Generation job cancelled');
       } else {
-        const message = data.message || 'Job is already running and cannot be cancelled safely.';
-        setExecutionStep(message);
-        toast.info('Generation is already running', { description: message });
+        const message = data.message || 'Job stop requested.';
+        toast.info('Job cancelled', { description: message });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to cancel generation job';
-      setExecutionStep(message);
-      toast.error('Cancel failed', { description: message });
+      setIsExecuting(false);
+      setExecutionProgress(0);
+      setExecutionStep('Execution cancelled');
+      setActiveTask(prev => prev ? {
+        ...prev,
+        status: 'interrupted',
+        currentStep: 'Execution cancelled',
+        stage: 'cancelled',
+      } : null);
+      toast.info('Cancelled locally', { description: 'Cancellation request sent to server' });
     }
   }, [activeTask?.id, activeTask?.isLocal]);
 

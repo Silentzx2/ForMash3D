@@ -977,10 +977,7 @@ async def cancel_mesh_generation(
 
         cancelled = await scheduler.cancel_job(job_id)
         if not cancelled:
-            raise HTTPException(
-                status_code=409,
-                detail="Job is already running in the worker and cannot be cancelled safely.",
-            )
+            await scheduler.job_queue.cancel_job(job_id, force=True)
 
         return {
             "job_id": job_id,

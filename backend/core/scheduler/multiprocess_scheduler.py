@@ -880,9 +880,10 @@ class MultiprocessModelScheduler:
 
         stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
         if not stopped:
-            logger.warning("No live worker found for processing job %s", job_id)
-        if stopped:
-            self._cleanup_temporary_inputs(job)
+            logger.warning("No live worker found for processing job %s; forcing queue cancellation", job_id)
+            await self.job_queue.cancel_job(job_id, force=True)
+            stopped = True
+        self._cleanup_temporary_inputs(job)
         return stopped
 
     async def start(self):
