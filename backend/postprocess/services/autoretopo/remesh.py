@@ -71,53 +71,64 @@ def isotropic_remesh(V, F, target_faces, adaptive=True, iters=10,
     return np.ascontiguousarray(Vb), np.ascontiguousarray(Fb.astype(np.int64))
 
 
-def pre_decimate(V, F, target_faces, verbose=False):
-    """Fast, robust coarse decimation to make a huge input tractable for remeshing.
+def _fast_decimate_fallback(V, F, target_faces):
+    try:
+        import fast_simplification
+        if len(F) <= target_faces:
+            return np.ascontiguousarray(V), np.ascontiguousarray(F.astype(np.int64))
+        red = max(0.01, min(0.99, 1.0 - (float(target_faces) / float(len(F)))))
+        v_out, f_out = fast_simplification.simplify(
+            np.asarray(V, dtype=np.float64),
+            np.asarray(F, dtype=np.int64),
+            target_reduction=red,
+        )
+        return np.ascontiguousarray(v_out), np.ascontiguousarray(f_out.astype(np.int64))
+    except Exception:
+        return np.ascontiguousarray(V), np.ascontiguousarray(F.astype(np.int64))
 
-    A cheap quadric pass (no quality weighting / planar quadric) collapses a
-    multi-hundred-k mesh to a working resolution in seconds, without the spikes that
-    aggressive options produce on non-manifold triangle soup. Used as a front-end for
-    large meshes; the real feature-aware work happens afterwards on the smaller mesh.
-    """
-    ms = ml.MeshSet()
-    ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
-    ms.meshing_decimation_quadric_edge_collapse(
-        targetfacenum=int(target_faces), qualitythr=0.3,
-        preservenormal=True, optimalplacement=True, autoclean=True)
-    mm = ms.current_mesh()
-    if verbose:
-        print(f"    pre-decimate -> {mm.face_number()} faces")
-    return np.ascontiguousarray(mm.vertex_matrix()), \
-        np.ascontiguousarray(mm.face_matrix().astype(np.int64))
+
+def pre_decimate(V, F, target_faces, verbose=False):
+    """Fast, robust coarse decimation to make a huge input tractable for remeshing."""
+    if ml is not None:
+        try:
+            ms = ml.MeshSet()
+            ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
+            ms.meshing_decimation_quadric_edge_collapse(
+                targetfacenum=int(target_faces), qualitythr=0.3,
+                preservenormal=True, optimalplacement=True, autoclean=True)
+            mm = ms.current_mesh()
+            if verbose:
+                print(f"    pre-decimate -> {mm.face_number()} faces")
+            return np.ascontiguousarray(mm.vertex_matrix()), \
+                np.ascontiguousarray(mm.face_matrix().astype(np.int64))
+        except Exception:
+            pass
+    return _fast_decimate_fallback(V, F, target_faces)
 
 
 def decimate_to_target(V, F, target_faces, preserve_boundary=True):
-    """Quadric edge-collapse decimation to an exact face budget.
-
-    Adaptive remeshing nails edge flow but lands a little above the budget (it keeps
-    a curvature-driven density floor on features). A single quality-quadric pass
-    brings the count down to the exact target while preserving the silhouette; the
-    subsequent projection/relax stage re-regularises the triangles.
-    """
-    ms = ml.MeshSet()
-    ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
-    ms.meshing_decimation_quadric_edge_collapse(
-        targetfacenum=int(target_faces),
-        qualitythr=0.5, preserveboundary=bool(preserve_boundary),
-        preservenormal=True, preservetopology=True, optimalplacement=True,
-        planarquadric=True, autoclean=True)
-    # Topology preservation can get stuck far above the budget on fragmented
-    # multi-component meshes (no more legal collapses). Retry without it; the
-    # finalize stage cleans up any local non-manifoldness this introduces.
-    if ms.current_mesh().face_number() > target_faces * 1.2:
-        ms.meshing_decimation_quadric_edge_collapse(
-            targetfacenum=int(target_faces),
-            qualitythr=0.5, preserveboundary=bool(preserve_boundary),
-            preservenormal=True, preservetopology=False, optimalplacement=True,
-            planarquadric=True, autoclean=True)
-    mm = ms.current_mesh()
-    return np.ascontiguousarray(mm.vertex_matrix()), \
-        np.ascontiguousarray(mm.face_matrix().astype(np.int64))
+    """Quadric edge-collapse decimation to an exact face budget."""
+    if ml is not None:
+        try:
+            ms = ml.MeshSet()
+            ms.add_mesh(ml.Mesh(np.asarray(V, float), np.asarray(F, np.int64)))
+            ms.meshing_decimation_quadric_edge_collapse(
+                targetfacenum=int(target_faces),
+                qualitythr=0.5, preserveboundary=bool(preserve_boundary),
+                preservenormal=True, preservetopology=True, optimalplacement=True,
+                planarquadric=True, autoclean=True)
+            if ms.current_mesh().face_number() > target_faces * 1.2:
+                ms.meshing_decimation_quadric_edge_collapse(
+                    targetfacenum=int(target_faces),
+                    qualitythr=0.5, preserveboundary=bool(preserve_boundary),
+                    preservenormal=True, preservetopology=False, optimalplacement=True,
+                    planarquadric=True, autoclean=True)
+            mm = ms.current_mesh()
+            return np.ascontiguousarray(mm.vertex_matrix()), \
+                np.ascontiguousarray(mm.face_matrix().astype(np.int64))
+        except Exception:
+            pass
+    return _fast_decimate_fallback(V, F, target_faces)
 
 
 def finalize_watertight(V, F, close_holes=1000, verbose=False):
