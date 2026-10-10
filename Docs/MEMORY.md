@@ -1,3 +1,15 @@
+## 2026-10-10 Hunyuan3D-Shape-v2-1 Pipeline Load & Frontend Job Failure Hydration
+- **Hunyuan3D-Shape-v2-1 Pipeline Loading**: Fixed `RuntimeError: Hunyuan3D-Shape-v2-1 pipeline not loaded. Call _load_model() first or check model weights.`
+  - Root cause: `Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path)).to(device)` returned `None` because the underlying `.to()` method mutates components in place and returns `None` rather than `self`.
+  - Fix: Passed `device=device` directly to `from_pretrained()` and separated `.to(device)` as an in-place call across `hunyuan3d_shape_v21.py`, `hunyuan3d_adapter_v21.py`, and `ultrashape_adapter.py`.
+- **Frontend Job Failure & Deep Link Hydration**:
+  - Root cause: When a generation job failed or when navigating directly to `/workspace/[tool]/[job_id]`, `jobsById` was unpopulated on initial load and `activeTask` failed state was not hydrated, causing the UI to either spin indefinitely or not reflect the failure card and diagnostic trace.
+  - Fix: Added URL job hydration effect in [WorkspaceContext.tsx](file:///teamspace/studios/this_studio/ForMash3D/features/workspace/store/WorkspaceContext.tsx) to fetch `/api/v1/system/jobs/[id]` and properly populate `activeTask` (with `status: 'failed'`, diagnostic, and error message) and stop `isExecuting`. Also wired failure diagnostics into the active job polling loop.
+
+## 2026-10-10 Model Downloader CLI Resolution
+- Fixed root cause of `[ERROR] hf is not installed`: `download_models.sh` strictly checked for command `hf` instead of supporting `huggingface-cli`, and did not prepend `$PROJECT_ROOT/3daigc-api/bin` where `huggingface_hub` is installed.
+- Created `hf` symlink to `huggingface-cli` in `3daigc-api/bin` and `~/.local/bin`, added auto-PATH export for `3daigc-api/bin`, and widened CLI check to accept either `hf` or `huggingface-cli`.
+
 ## 2026-10-05 Frontend Dependency Version Upgrade
 - Upgraded all frontend dependencies to the latest stable versions verified against the npm registry and peer requirements: next 16.3.8, react/react-dom 19.3.0, three 0.186.1, @react-three/fiber 9.8.1, @react-three/drei 10.7.9, all 27 Radix packages at latest 1.x/2.x, tailwindcss 4.3.3 / @tailwindcss/postcss 4.3.3, typescript 7.0.2, @types/node 24.19.1 / @types/react 19.3.0 / @types/react-dom 19.3.0 / @types/three 0.186.0, eslint 9.39.5 / eslint-config-next 16.3.8, zustand 5.0.15, @tanstack/react-query 5.104.1, motion 13.4.6, lucide-react 1.52.0, axios 1.20.0, react-hook-form 7.89.0, sonner 2.0.8, input-otp 1.5.0, vaul 1.1.2, cmdk 1.1.1, embla-carousel-react 8.6.0, recharts 3.10.1, clipper-lib 6.4.2, clsx 2.1.1, class-variance-authority 0.7.1, tailwind-merge 3.7.0, three-mesh-bvh 0.9.15, three-bvh-csg 0.0.18, @dimforge/rapier3d-compat 0.21.0, meshoptimizer 1.3.0, @hugeicons/react 1.1.10, @dnd-kit/* at latest. Runtime locked: Node.js 24.21.0 LTS, npm 11.19.0, Bun 1.4.2 (package.json engines + "_runtime" field + scripts/setup.sh _ensure_* functions).
 - Regenerated bun.lock with Bun 1.4.2; removed the stale package-lock.json. All 60 dependencies + 10 devDependencies resolved with zero peer conflicts.

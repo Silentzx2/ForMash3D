@@ -38,6 +38,8 @@
   ],
   "exclude": [
     "node_modules",
-    "ui_extracted"
+    "ui_extracted",
+    "3daigc-api",
+    "backend"
   ]
 }

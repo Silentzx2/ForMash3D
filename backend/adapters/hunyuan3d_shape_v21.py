@@ -134,9 +134,13 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             sys.modules["hy3dshape.hy3dshape"] = hy3dshape
 
             logger.info("Loading shape generation pipeline...")
+            device = getattr(self, "device", "cuda" if torch.cuda.is_available() else "cpu")
             self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-                str(self.model_path)
-            ).to(getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu'))
+                str(self.model_path),
+                device=device,
+            )
+            if hasattr(self.pipeline_shapegen, "to"):
+                self.pipeline_shapegen.to(device)
             multi_gpu_applied = False
             if len(getattr(self, "gpu_ids", [])) > 1:
                 from core.scheduler.resource_planner import dispatch_pipeline_across_gpus

@@ -118,9 +118,13 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 from hy3dshape.rembg import BackgroundRemover
 
                 logger.info(f"Loading shape generation pipeline from {self.model_path}...")
-                self.pipeline_shapegen = (
-                    Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path)).to(getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu'))
+                shape_dev = getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu')
+                self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+                    str(self.model_path),
+                    device=shape_dev,
                 )
+                if hasattr(self.pipeline_shapegen, "to"):
+                    self.pipeline_shapegen.to(shape_dev)
                 try:
                     if hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
                         self.pipeline_shapegen.enable_model_cpu_offload()

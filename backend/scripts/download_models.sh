@@ -21,6 +21,11 @@ BACKEND_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_ROOT="$(cd "$BACKEND_DIR/.." && pwd)"
 PRETRAINED_DIR="$SCRIPT_DIR/../pretrained"
 
+# Add 3daigc-api virtual environment to PATH if present
+if [[ -d "$PROJECT_ROOT/3daigc-api/bin" ]]; then
+    export PATH="$PROJECT_ROOT/3daigc-api/bin:$PATH"
+fi
+
 # Load .env if present
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set -a
@@ -990,9 +995,9 @@ print_info "========================================"
 print_info "3DAIGC Model Download Script"
 print_info "========================================"
 
-# Check if hf is available
-if ! command -v hf &> /dev/null; then
-    print_error "hf is not installed. Please install it first:"
+# Check if hf or huggingface-cli is available
+if ! command -v hf &> /dev/null && ! command -v huggingface-cli &> /dev/null; then
+    print_error "huggingface-cli / hf is not installed. Please install it first:"
     print_error "uv pip --python ${UV_PYTHON:-python3.10} install huggingface_hub"
     exit 1
 fi

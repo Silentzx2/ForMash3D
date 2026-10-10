@@ -646,6 +646,74 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } catch { /* ignore */ }
   }, []);
 
+  // Hydrate job from URL /workspace/[tool]/[job_id] if present so failed or running status is never lost
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const path = window.location.pathname;
+    if (!path.startsWith('/workspace/')) return;
+    const parts = path.replace('/workspace/', '').split('/');
+    if (parts.length < 2 || !parts[1]) return;
+    const routeJobId = parts[1];
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(routeJobId);
+    if (!isUuid) return;
+
+    if (!jobsByIdRef.current[routeJobId] && !activeTaskRef.current) {
+      let cancelled = false;
+      fetch(`/api/v1/system/jobs/${encodeURIComponent(routeJobId)}`)
+        .then(res => (res.ok ? res.json() : null))
+        .then(payload => {
+          if (cancelled || !payload) return;
+          const raw = payload?.data ?? payload;
+          if (!raw) return;
+          const data = normalizeBackendJob(raw);
+          const nextStatus: ActiveTask['status'] = data.status === 'completed' ? 'completed'
+            : data.status === 'failed' ? 'failed'
+            : data.status === 'cancelled' ? 'interrupted'
+            : data.status === 'queued' ? 'queued'
+            : 'running';
+          const currentMessage = data.message || (data.status === 'processing' ? 'Processing...' : data.status === 'failed' ? 'Process failed' : 'Queued on backend');
+          const diagnostic = (data.status === 'failed' || data.status === 'cancelled') ? diagnoseJobError({
+            id: routeJobId,
+            status: data.status,
+            error: data.error_message,
+            error_message: data.error_message,
+            model_id: (raw as any)?.model_id || (raw as any)?.model_preference,
+            provider: (raw as any)?.model_id || (raw as any)?.model_preference,
+          } as any) : undefined;
+
+          const hydratedTask: ActiveTask = {
+            id: routeJobId,
+            isLocal: false,
+            type: 'image-to-3d',
+            title: (raw as any)?.metadata?.asset_name || (raw as any)?.inputs?.asset_name || `Job_${routeJobId.slice(0, 6)}`,
+            startedAt: raw.created_at ? new Date(raw.created_at).getTime() : Date.now(),
+            status: nextStatus,
+            progress: data.progress,
+            stage: data.stage,
+            currentStep: currentMessage,
+            provider: (raw as any)?.model_id || (raw as any)?.model_preference,
+            errorMessage: data.error_message,
+            errorCode: (data as any).error_code,
+            diagnostic,
+            logs: data.logs,
+            result: data.result,
+          };
+
+          setJobsById(prev => ({ ...prev, [routeJobId]: hydratedTask }));
+          setActiveTask(hydratedTask);
+          if (nextStatus === 'running' || nextStatus === 'queued') {
+            setIsExecuting(true);
+            setExecutionProgress(data.progress);
+            setExecutionStep(currentMessage);
+          } else {
+            setIsExecuting(false);
+          }
+        })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTool === 'remesh') setShowWireframeState(true);
   }, [activeTool]);
@@ -928,6 +996,14 @@ function dataURLtoFile(dataURL: string, filename: string): File {
               if (activeTaskRef.current?.id === jobId) {
                 setExecutionProgress(progress);
                 setExecutionStep(currentMessage);
+                const diagnostic = (nextStatus === 'failed' || nextStatus === 'interrupted') ? diagnoseJobError({
+                  id: jobId,
+                  status: data.status,
+                  error: data.error_message,
+                  error_message: data.error_message,
+                  model_id: (task as any)?.provider || (data as any)?.model_id,
+                  provider: (task as any)?.provider || (data as any)?.model_id,
+                } as any) : undefined;
                 setActiveTask(prev => prev && prev.id === jobId ? {
                   ...prev,
                   status: nextStatus,
@@ -936,6 +1012,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                   currentStep: currentMessage,
                   errorMessage: data.error_message || prev.errorMessage,
                   errorCode: (data as any).error_code || prev.errorCode,
+                  diagnostic: diagnostic || prev.diagnostic,
                   logs: data.logs || prev.logs,
                   result: data.result || prev.result,
                 } : prev);

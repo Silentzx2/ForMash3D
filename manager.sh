@@ -321,12 +321,24 @@ run_restart(){
   pause
 }
 
+colorize_logs(){
+  sed -u -E \
+    -e 's/(ERROR|FATAL|CRITICAL)/\o033[1;31m\1\o033[0m/g' \
+    -e 's/(WARN|WARNING)/\o033[1;33m\1\o033[0m/g' \
+    -e 's/(INFO)/\o033[0;32m\1\o033[0m/g' \
+    -e 's/(DEBUG)/\o033[0;34m\1\o033[0m/g' \
+    -e 's/([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})/\o033[0;36m\1\o033[0m/g' \
+    -e 's/("GET [^"]*"|"POST [^"]*"|"DELETE [^"]*"|"PUT [^"]*")/\o033[0;35m\1\o033[0m/g' \
+    -e 's/( 200 | 200$| 201 )/\o033[0;32m\1\o033[0m/g' \
+    -e 's/( [45][0-9]{2} | [45][0-9]{2}$)/\o033[1;31m\1\o033[0m/g'
+}
+
 show_logs(){
   banner
   mkdir -p "$PROJECT_ROOT/logs"
   touch "$PROJECT_ROOT/logs/master.log"
   printf "${WHITE}${BOLD}MASTER LOG — all project-managed services (Ctrl+C to return)${NC}\n\n"
-  tail -n 80 -F "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
+  tail -n 80 -F "$PROJECT_ROOT/logs/master.log" 2>/dev/null | colorize_logs || true
   pause
 }
 
@@ -473,7 +485,7 @@ docker_logs() {
   printf "${WHITE}${BOLD}CONTAINER MASTER LOG (Press Ctrl+C to return)${NC}\n\n"
   mkdir -p "$PROJECT_ROOT/logs"
   touch "$PROJECT_ROOT/logs/master.log"
-  tail -n 80 -F "$PROJECT_ROOT/logs/master.log" 2>/dev/null || {
+  tail -n 80 -F "$PROJECT_ROOT/logs/master.log" 2>/dev/null | colorize_logs || {
     printf "${RED}[✗] Could not read logs. Is 'formash3d' running?${NC}\n"
     pause
   }

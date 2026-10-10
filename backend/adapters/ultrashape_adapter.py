@@ -121,9 +121,13 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
             from hy3dshape.rembg import BackgroundRemover
             
+            hy_dev = getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu')
             self.hunyuan_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
-                str(self.hunyuan_model_path)
-            ).to(getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu'))
+                str(self.hunyuan_model_path),
+                device=hy_dev,
+            )
+            if hasattr(self.hunyuan_pipeline, "to"):
+                self.hunyuan_pipeline.to(hy_dev)
             import rembg
             self.hunyuan_bg_remover = BackgroundRemover()
             self.hunyuan_bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
