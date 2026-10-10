@@ -1,3 +1,10 @@
+## 2026-10-10 — [Paint Adapter Import Fix, Unconditional Production Post-Processing & VRAM Requeue Backoff]
+
+- **Hunyuan3D-Paint-v2.1 load failure (`ModuleNotFoundError: No module named 'utils.simplify_mesh_utils'`)**: the adapter appended the `hy3dpaint` thirdparty paths with `sys.path.append`, so the process CWD (`backend/`) and site-packages shadowed the `utils` package (`backend/utils` won resolution). Paths are now inserted at the front of `sys.path` in `backend/adapters/hunyuan3d_paint_v21.py`, so `utils.simplify_mesh_utils` resolves from `hy3dpaint/utils`.
+- **Production post-processing skipped when texture auto-chaining a paint job**: `_handle_job_result` in `multiprocess_scheduler.py` gated the postprocess block on `not auto_paint`, contradicting its own comment ("Postprocessing must ALWAYS run for raw-mesh jobs with production_mesh mode") — raw generations with Texture ON produced no canonical workspace (`master/source.glb`, `game_ready/`, previews) at all. Post-processing now always runs for `production_mesh` jobs; the chained paint child now reads the canonical `master/source.glb` (computed via `canonical_asset_workspace`) instead of the raw output that the pipeline unlinks after master promotion.
+- **Scheduler VRAM requeue busy-loop**: jobs rejected with NO_VRAM were re-dequeued every ~1s (log/DB spam) until VRAM freed. Added a 5s monotonic backoff (`_vram_wait_until`) in the processing loop, set on NO_VRAM and cleared once a worker is placed.
+- Docs updated: MEMORY, CHANGELOG.
+
 ## 2026-10-10 — [Restart-Durable Asset Persistence: History URL Backfill, Redis History Fallback & Postprocess Crash Fix]
 
 - **Asset persistence after refresh/restart (UI)**: Job history now returns canonical production artifact URLs for every completed job (`model_url`/`game_ready_url` = game-ready GLB, `source_model_url`/`high_fidelity_url` = `master/source.glb`, `thumbnail_url` = job thumbnail endpoint). The workspace history mapping (`features/workspace/lib/api.ts`, `WorkspaceContext.tsx`, `normalizeModelAsset` in `features/workspace/types.ts`) always populates game-ready (default view) and source artifact URLs plus a thumbnail endpoint fallback, so models and thumbnails load from the backend even after a page refresh or backend restart. The viewer artifact rail fetches `game_ready/*.glb` by default and `master/source.glb` when Source is selected.
@@ -12,11 +19,3 @@
 - **Hunyuan3D Shape v2.1 Fast Preset**: Aligned default inference steps to 30 and `octree_resolution=256` for fast raw generation while supporting 50 steps for high fidelity.
 - **Strict GPU Inference Enforcement**: Audited and hardened all model adapters (`TRELLIS`, `TripoSR`, `TripoSG`, `TripoSF`, `Zero123++`, `Unique3D`, `UltraShape`, `VoxHammer`) to guarantee execution strictly on CUDA devices (`cuda:0`), raising immediate errors rather than silently falling back to slow CPU inference.
 - **TRELLIS Parity & Compatibility**: Added backward-compatible `TrellisTextToTexturedMeshAdapter` alias and matched frontend contract parity schemas.
-
-## 2026-10-09 — [Unified Runtime Logging & Mini Turbo Initialization]
-
-- Fixed Mini Turbo's `NoneType is not callable` failure by passing `device` to `from_pretrained()` instead of chaining the upstream in-place `.to()` method.
-- Added regression coverage for the pipeline initialization contract.
-- Consolidated project-managed API, scheduler/worker, frontend, launcher, and local Redis output into repository-root `logs/master.log`; removed per-service log targets and rotating siblings.
-- Updated the startup scripts, Supervisor, Docker/Compose mounts, manager log viewer, and Admin Logs API/client to use the master log.
-- Updated the existing README, architecture, memory and changelog documentation.

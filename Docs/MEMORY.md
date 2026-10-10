@@ -1,3 +1,13 @@
+## 2026-10-10 Paint Adapter Import, Unconditional Postprocessing & VRAM Backoff
+- **Hunyuan3D-Paint-v2.1 `ModuleNotFoundError: No module named 'utils.simplify_mesh_utils'`**:
+  - Root cause: `hunyuan3d_paint_v21.py` appended `hunyuan3d_root` and `hunyuan3d_root/hy3dpaint` via `sys.path.append`; appended entries sit behind the process CWD (`backend/`), so `backend/utils` shadowed `hy3dpaint/utils` and `from utils.simplify_mesh_utils import remesh_mesh` (textureGenPipeline.py:23) failed.
+  - Fix: insert both paths at the front of `sys.path` (guards unchanged); verified in the worker venv that `utils` resolves to `hy3dpaint/utils` and `remesh_mesh` imports.
+- **Production post-processing did not run when Texture ON chained a paint job**:
+  - Root cause: `multiprocess_scheduler.py` gated postprocess on `not auto_paint`, contradicting its own comment — texture-ON raw generations never produced `master/source.glb`/`game_ready/`/previews, and the chained paint child pointed at the raw output that the pipeline unlinks after master promotion (child would fail even after the import fix).
+  - Fix: postprocess always runs for `production_mesh` jobs; the paint child input now uses `canonical_asset_workspace(job_id, ...)` → `master/source.glb`.
+- **NO_VRAM requeue busy-loop**: queue rotated the job every ~1s with repeated dequeue/DB-save until VRAM freed. Added `self._vram_wait_until` monotonic backoff (5s) set on NO_VRAM in `_process_job_with_queue_integration`, honored in `_job_processing_loop`, cleared once a worker is placed.
+- Validation: `compileall` + `npx tsc --noEmit` clean; adapter import repro passes in the worker venv (`3daigc-api/bin/python`, CWD=`backend/`). End-to-end GPU generation/postprocess validation remains user-hardware gated.
+
 ## 2026-10-10 Restart-Durable Asset Persistence (Models & Thumbnails After Refresh)
 - **Symptom**: After a mesh generation completed, refreshing the page or restarting the backend made generated models and their thumbnails disappear from the workspace.
 - **Root causes (three independent layers)**:

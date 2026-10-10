@@ -71,10 +71,11 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
+        # insert(0) not append: backend/utils (CWD) must not shadow hy3dpaint's utils package
         if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root))
+            sys.path.insert(0, str(self.hunyuan3d_root))
         if str(self.hunyuan3d_root / "hy3dpaint") not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root / "hy3dpaint"))
+            sys.path.insert(0, str(self.hunyuan3d_root / "hy3dpaint"))
 
     def _resolve_realesrgan_path(self) -> str:
         """Resolve RealESRGAN checkpoint path, checking both thirdparty and pretrained locations."""

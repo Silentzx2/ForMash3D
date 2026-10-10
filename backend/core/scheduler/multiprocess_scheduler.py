@@ -753,6 +753,8 @@ class MultiprocessModelScheduler:
         self.result_lock = threading.Lock()
         self.main_event_loop: Optional[asyncio.AbstractEventLoop] = None
         self.last_worker_error: Dict[str, str] = {}
+        # Backoff before the next VRAM placement attempt (monotonic deadline, 0 = none)
+        self._vram_wait_until: float = 0.0
 
         # Per-worker locks to prevent race conditions between check-and-mark
         self.worker_locks: Dict[str, asyncio.Lock] = {}
@@ -1161,6 +1163,11 @@ class MultiprocessModelScheduler:
         while self.running:
             try:
                 await self._process_external_cancellations()
+                # Backoff after a VRAM rejection: skip dequeuing so the same blocked
+                # job is not re-requeued in a tight loop.
+                if time.monotonic() < self._vram_wait_until:
+                    await asyncio.sleep(0.5)
+                    continue
                 # Try to get next job from queue
                 job_request = await self.job_queue.dequeue()
 
@@ -1287,6 +1294,8 @@ class MultiprocessModelScheduler:
                     )
                     return
                 if worker_result in {"WORKERS_BUSY", "NO_VRAM"}:
+                    if worker_result == "NO_VRAM":
+                        self._vram_wait_until = time.monotonic() + 5.0
                     await self.job_queue.requeue_job(job_request.job_id, front=False)
                     await asyncio.sleep(2.0)
                     return
@@ -1296,6 +1305,8 @@ class MultiprocessModelScheduler:
                 logger.info(
                     f"Job {job_request.job_id} cannot be processed now ({worker_result}), rotating queue"
                 )
+                if worker_result == "NO_VRAM":
+                    self._vram_wait_until = time.monotonic() + 5.0
                 await self.job_queue.requeue_job(job_request.job_id, front=False)
 
                 # Add a short delay to prevent busy waiting
@@ -1303,6 +1314,7 @@ class MultiprocessModelScheduler:
                 return
             elif isinstance(worker_result, str):
                 # Got a worker ID - proceed with job processing
+                self._vram_wait_until = 0.0
                 worker_id = worker_result
             else:
                 # Unexpected result
@@ -1489,13 +1501,23 @@ class MultiprocessModelScheduler:
                     bool(job_request.metadata.get("auto_paint") or job_request.inputs.get("auto_paint"))
                     and postprocess_mode == "production_mesh"
                 )
+                # Canonical workspace is required by both the paint child and
+                # post-processing; compute it once up front.
+                from postprocess.pipeline import canonical_asset_workspace
+
+                canonical_root = canonical_asset_workspace(
+                    job_id, final_result, job_request.inputs
+                )
                 if auto_paint and final_result.get("output_mesh_path"):
                     workflow_id = str(job_request.metadata.get("workflow_id") or job_id)
                     child_request = JobRequest(
                         feature="image_mesh_painting",
                         inputs={
                             "image_path": job_request.inputs.get("image_path"),
-                            "mesh_path": final_result["output_mesh_path"],
+                            # Post-processing promotes the raw output to
+                            # master/source.glb and deletes the raw file, so the
+                            # paint child must consume the canonical master.
+                            "mesh_path": str(canonical_root / "master" / "source.glb"),
                             "output_format": "glb",
                             "texture_resolution": int(job_request.inputs.get("paint_resolution") or 512),
                             "target_polycount": job_request.inputs.get("target_polycount"),
@@ -1545,7 +1567,7 @@ class MultiprocessModelScheduler:
                     )
                 # Postprocessing must ALWAYS run for raw-mesh jobs with production_mesh mode,
                 # regardless of whether a paint child was also queued.
-                if not auto_paint and final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
+                if final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
                     await self.job_queue.update_job_progress(
                         job_id, 0.75, "postprocess", "Running production post-processing"
                     )
