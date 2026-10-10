@@ -258,7 +258,7 @@ image_mesh_painting:
       texture_generation: true
       texture_refine: true
       multiview: false
-    vram_requirement: 21504  # MB (2B PBR texture checkpoint)
+    vram_requirement: 12000  # MB — lowered from 21504; CPU offload keeps peak below 15GB
     supported_inputs: ["mesh", "text", "image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
