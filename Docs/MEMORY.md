@@ -1,3 +1,16 @@
+## 2026-10-10 Restart-Durable Asset Persistence (Models & Thumbnails After Refresh)
+- **Symptom**: After a mesh generation completed, refreshing the page or restarting the backend made generated models and their thumbnails disappear from the workspace.
+- **Root causes (three independent layers)**:
+  1. `GET /api/v1/system/jobs/history` returned the raw persisted job result. Results written by raw-shape workflow stages (or before a backfill) carry no production URLs, so the frontend had no game-ready/master/thumbnail URLs after refresh. `GET /api/v1/system/jobs/{id}` normalized these URLs lazily, but history did not.
+  2. In the default multi-worker (Redis) deployment the history endpoint only consulted SQLite when `scheduler.job_queue.db_manager` existed. Durable jobs live in Redis; with an empty SQLite page history returned `[]`. `RedisJobQueue.get_jobs_by_status` additionally reconstructed jobs without their real `status`/`result`, so even the Redis listing would not surface completed results.
+  3. `postprocess/pipeline.py::_sha256_file` raised `AttributeError: 'str' object has no attribute 'open'` for `str` paths returned by `resolve_server_file_path`, crashing production post-processing at stage 0 for every mesh job — no canonical workspace (`master/source.glb`, `game_ready/`, previews) was ever written.
+- **Fixes**:
+  - `system.py`: `_ensure_production_result_urls()` backfills canonical URLs on every completed job in history and job detail — `model_url`/`game_ready_url`/`download_url` → `/download?artifact_format=glb` (game_ready GLB, the UI default), `source_model_url`/`high_fidelity_url` → `?artifact_format=master` (`master/source.glb`), `thumbnail_url` → `/thumbnail` (resolves file → input image → placeholder). Postprocess-populated values always win (`setdefault`). URLs only reference job endpoints that resolve artifacts from disk, so they survive restarts.
+  - `system.py` history: falls back to the Redis job listing when the SQLite page is empty. `redis_job_queue.py::get_jobs_by_status` restores `status`, `progress`, `result`, `completed_at` from Redis.
+  - `pipeline.py`: `_sha256_file` accepts `Path | str`.
+  - Frontend: `getHistory` (`features/workspace/lib/api.ts`) always emits game-ready/source/thumbnail URLs; the workspace history mapping and `normalizeModelAsset` populate `artifacts.source` (master/source.glb) and `artifacts.gameReady` (game_ready GLB); `normalizeBackendJob` prefers the canonical game-ready URL. Viewer default view = game-ready GLB; Source selection fetches `master/source.glb`.
+- **Verified**: history returns jobs from Redis with normalized URLs; `?artifact_format=glb`/`master` and `/thumbnail` return binary through the Next.js proxy (200); `npx tsc --noEmit` clean; `py_compile` clean. Real GPU validation remains user-hardware gated.
+
 ## 2026-10-10 CPU Multi-Core Concurrency, Hunyuan Turbo Speed & Strict GPU Enforcement
 - **CPU Multi-Core Concurrency Across Scheduler & Postprocessing**:
   - Root cause: Workers ran with `cpu_threads=1` due to division logic in `resource_planner.py` and fallback in `multiprocess_scheduler.py`, causing marching cubes and mesh decimation/smoothing to execute on a single core.

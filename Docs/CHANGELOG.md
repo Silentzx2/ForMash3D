@@ -1,3 +1,10 @@
+## 2026-10-10 — [Restart-Durable Asset Persistence: History URL Backfill, Redis History Fallback & Postprocess Crash Fix]
+
+- **Asset persistence after refresh/restart (UI)**: Job history now returns canonical production artifact URLs for every completed job (`model_url`/`game_ready_url` = game-ready GLB, `source_model_url`/`high_fidelity_url` = `master/source.glb`, `thumbnail_url` = job thumbnail endpoint). The workspace history mapping (`features/workspace/lib/api.ts`, `WorkspaceContext.tsx`, `normalizeModelAsset` in `features/workspace/types.ts`) always populates game-ready (default view) and source artifact URLs plus a thumbnail endpoint fallback, so models and thumbnails load from the backend even after a page refresh or backend restart. The viewer artifact rail fetches `game_ready/*.glb` by default and `master/source.glb` when Source is selected.
+- **Job history in Redis (multi-worker) mode**: `get_jobs_history` only consulted SQLite when a `db_manager` existed; with durable jobs living in Redis (empty SQLite) history returned `[]` and the UI lost all assets after refresh. It now falls back to the Redis job listing when the SQLite page is empty. `RedisJobQueue.get_jobs_by_status` now restores each job's real `status`, `progress`, `result`, and `completed_at` from Redis instead of returning reconstructed requests with default status and no result.
+- **Production post-processing crash fix**: `postprocess/pipeline.py::_sha256_file` was typed `Path` but received `str` paths from `resolve_server_file_path`, raising `AttributeError: 'str' object has no attribute 'open'` at the first pipeline stage for every mesh job — no canonical workspace (`master/source.glb`, `game_ready/`, thumbnails) was ever written. The shared helper now accepts `Path | str`.
+- Docs updated: ARCHITECTURE, api-documentation, MEMORY, CHANGELOG.
+
 ## 2026-10-10 — [Full CPU Multi-Core Concurrency, Hunyuan Turbo Acceleration & Strict GPU Enforcement]
 
 - **Full CPU Core Concurrency**: Configured `resource_planner.py` and `multiprocess_scheduler.py` so all scheduler workers and mesh postprocessing threads utilize all available CPU cores (`nproc=8`, `OMP_NUM_THREADS=8`, PyTorch intra-op threads) instead of bottlenecking on a single thread.
@@ -13,28 +20,3 @@
 - Consolidated project-managed API, scheduler/worker, frontend, launcher, and local Redis output into repository-root `logs/master.log`; removed per-service log targets and rotating siblings.
 - Updated the startup scripts, Supervisor, Docker/Compose mounts, manager log viewer, and Admin Logs API/client to use the master log.
 - Updated the existing README, architecture, memory and changelog documentation.
-
-## 2026-10-09 — [Studio Telemetry, Asset Preview Persistence & Queueing Hardening]
-
-- **Header Telemetry Gauges**: Redesigned header hardware telemetry with vertical pipe meters, saturated glow indicators based on real-time load (Neon Emerald `<50%`, Gold `<75%`, Vivid Amber `<90%`, Crimson `≥90%`), percentage readouts, and outside-click auto-dismissal.
-- **Upload & Thumbnail Persistence**: Replaced ephemeral blob URLs with backend persistent asset endpoints (`/api/v1/file-upload/download/{file_id}`, `/api/v1/file-upload/thumbnail/{file_id}`); thumbnail preview stays retained across tab switches, route navigation, and component unmounts.
-- **Dual-Action Generation & Queueing**: Generation button provides active progress tracking while exposing a secondary "Queue Next" button to enqueue jobs when GPU/VRAM is busy. Jobs process concurrently if GPU resources permit or wait in the queue safely.
-- **MeshViewer HUD Job Capsule**: Added top-right horizontal status capsule in 3D viewport displaying reference thumbnail, active spinner, progress %, stage details, and direct "View" action to load completed models into the viewport.
-- **TripoSF Coarse Mesh VRAM Fix**: Passed explicit `vram_requirement=6144` when instantiating `TripoSRImageToRawMeshAdapter` in `triposf_adapter.py`, and added manifest fallback to `triposr_adapter.py` to prevent coarse mesh generation failures.
-- **Quality Evaluation Export**: Implemented `compare_render_directories` in `backend/core/quality/evaluation.py` to eliminate `ImportError` during automated quality evaluation and pipeline verification.
-- **Job Queue Deletion Consistency**: Fixed `delete_job` in `backend/core/scheduler/redis_job_queue.py` to purge job records from both Redis hot keys and SQLite database, eliminating `500 Internal Server Error: Failed to delete job from database`.
-
-
-## 2026-10-08 — [Final Full-Stack Deep Audit Closure]
-
-- Hardened capability semantics so generated multiview models do not masquerade as multiview reconstruction inputs; routing now recognizes explicit multi-image collections.
-- Closed frontend/backend contract gaps for quality mode, production texture resolution, job progress/cancellation, production variants, runtime model metadata and same-origin asset URLs.
-- Hardened Zero123++ readiness UX, multiview request validation, preprocessing provenance and max-view admission.
-- Aligned frontend model capability flags with backend manifests, fixed custom-storage retention cleanup and retry defaults, and preserved GPU unload telemetry.
-- Added regression coverage for multiview routing and capability normalization.
-- Six-worker sub-agent execution was not available in the current runtime; workstreams were therefore completed sequentially and independently audited. Real CUDA/OOM/visual A/B execution remains user-hardware gated.
-
-### [Unreleased] - 2026-10-08
-- **Refactor (Ponytail Ultra)**: Stripped massive over-engineered logic from evaluation (removed pyrender, used fast trimesh.volume) and resource planner (used native accelerate auto device mapping).
-- **Audit**: Completed final full stack task audit, ensuring no feature gaps remain from TASKS.md. All model routing and evaluation are now streamlined for performance and minimum lines of code.
-\n## 2026-10-10 Batches 1-4 Hotfixes\n\n- Fixed NameError in model_factory.py config fallback (A-01).\n- Fixed triposf_adapter image load gpu_id assignment and nonexistent generation call (A-03).\n- Fixed ardy_adapter output URL references (A-04).\n- Fixed readiness validation for TRELLIS pipeline.json (W-01).\n- Hardened path resolution against multi-root ambiguity (W-09).\n- Added single budget derivation and guarded polycount parsing (Q-03, Q-06).\n- Changed repair service to retain disconnected components instead of dropping them (Q-01).\n- Added convex_hull fallback to pipeline collision service to prevent late pipeline hard-raises (Q-02).\n- Hardened master asset copying to atomic temp rename and fixed hash comparison bug (Q-04).\n- Hardened workspace json load recovery (Q-05).\n- Fixed worker-init await loop, missing prepare_postprocess_retry, and orphaned jobs logic (C-01, C-02, C-03, C-04).\n

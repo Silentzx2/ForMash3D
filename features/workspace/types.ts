@@ -133,8 +133,24 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
   );
 
   const qaReport = rawArtifacts.qaReport || raw.qa_report || raw.quality_trace?.game_ready?.qa || undefined;
-  const sourceUrl = rawArtifacts.source || raw.source_model_url || rawArtifacts.master?.url || undefined;
-  const gameReadyUrl = rawArtifacts.gameReady || raw.game_ready_url || raw.model_url || rawArtifacts.game_ready?.glb?.url || undefined;
+  // Generation assets are always addressable through the job download API:
+  // game_ready GLB by default, master/source.glb for the source view. These
+  // endpoints resolve artifacts from disk, so they survive restarts.
+  const jobArtifactBase =
+    raw.category === 'generation' && raw.id
+      ? `/api/v1/system/jobs/${raw.id}/download`
+      : undefined;
+  const sourceUrl =
+    rawArtifacts.source ||
+    raw.source_model_url ||
+    rawArtifacts.master?.url ||
+    (jobArtifactBase ? `${jobArtifactBase}?artifact_format=master` : undefined);
+  const gameReadyUrl =
+    rawArtifacts.gameReady ||
+    raw.game_ready_url ||
+    raw.model_url ||
+    rawArtifacts.game_ready?.glb?.url ||
+    (jobArtifactBase ? `${jobArtifactBase}?artifact_format=glb` : undefined);
   const rawLods = rawArtifacts.lods ?? raw.lod_urls ?? (raw.artifacts as any)?.lods;
   const lods: string[] | undefined = Array.isArray(rawLods)
     ? rawLods.map((l: any) => (typeof l === 'string' ? l : l?.url || '')).filter(Boolean)

@@ -648,6 +648,19 @@ class RedisJobQueue:
             try:
                 job_data = json.loads(job_data_str)
                 if job_data.get("status") == target_status:
+                    # Hot keys hold the live progress/stage/message written by workers
+                    hot_progress, hot_stage, hot_message = await asyncio.gather(
+                        self.redis.hget(self.progress_hash_key, job_id),
+                        self.redis.hget(self.stage_hash_key, job_id),
+                        self.redis.hget(self.message_hash_key, job_id),
+                    )
+                    if hot_progress is not None:
+                        job_data["progress"] = float(hot_progress)
+                    if hot_stage is not None:
+                        job_data["stage"] = hot_stage
+                    if hot_message is not None:
+                        job_data["message"] = hot_message
+
                     # Reconstruct JobRequest for compatibility
                     job_request = JobRequest(
                         feature=job_data["feature"],
@@ -659,6 +672,20 @@ class RedisJobQueue:
                     )
                     job_request.job_id = job_id
                     job_request.created_at = datetime.fromisoformat(job_data["created_at"])
+                    job_request.status = JobStatus(job_data["status"])
+                    job_request.progress = float(job_data.get("progress", 0.0) or 0.0)
+                    if job_data.get("error"):
+                        job_request.error = job_data["error"]
+                    if job_data.get("stage") is not None:
+                        job_request.metadata["stage"] = job_data["stage"]
+                    if job_data.get("message") is not None:
+                        job_request.metadata["message"] = job_data["message"]
+                    if job_data.get("completed_at"):
+                        job_request.completed_at = datetime.fromisoformat(job_data["completed_at"])
+                    if job_request.status == JobStatus.COMPLETED:
+                        result_str = await self.redis.get(f"{self.results_prefix}{job_id}")
+                        if result_str:
+                            job_request.result = json.loads(result_str)
                     matching_jobs.append(job_request)
             except Exception as e:
                 logger.error(f"Error parsing job {job_id}: {e}")

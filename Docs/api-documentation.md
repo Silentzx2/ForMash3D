@@ -433,6 +433,20 @@ DELETE /api/v1/system/jobs/{job_id}
 
 Purges the job from both the active Redis queue/hot keys and the persistent SQLite database store. Guarantees safe atomic removal without throwing 500 internal errors for previously completed, cancelled, or failed jobs.
 
+### Job History
+
+```http
+GET /api/v1/system/jobs/history?limit=100&offset=0&status=completed&feature=image_to_raw_mesh
+```
+
+Returns durable job history (SQLite page, falling back to the Redis job listing when the SQLite page is empty). Every completed job carries canonical production artifact URLs regardless of what was persisted, so the workspace can resolve models and thumbnails from the backend after a page refresh or backend restart:
+
+- `model_url`, `game_ready_url`, `download_url` — `/api/v1/system/jobs/{job_id}/download?artifact_format=glb` (game-ready GLB; the default viewer artifact)
+- `source_model_url`, `high_fidelity_url` — `/api/v1/system/jobs/{job_id}/download?artifact_format=master` (immutable `master/source.glb`)
+- `thumbnail_url` — `/api/v1/system/jobs/{job_id}/thumbnail` (rendered preview, input-image, or placeholder fallback)
+
+Values populated by production post-processing are never overwritten; only missing URLs are backfilled.
+
 ### Multi-view generation and reconstruction
 
 Zero123++ generation is exposed separately as `POST /api/v1/multiview/generate`. Its readiness is controlled by the runtime `image_to_multiview` model metadata; missing weights or unavailable CUDA are surfaced to the workspace before generation.

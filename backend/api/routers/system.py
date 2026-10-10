@@ -846,6 +846,27 @@ async def get_queue_stats(
         )
 
 
+def _ensure_production_result_urls(job_id: str, result: dict) -> dict:
+    """Guarantee canonical production artifact URLs on a completed job result.
+
+    Jobs persist in SQLite across restarts, but persisted results can lack
+    production URLs (raw-shape workflow stages, results written before a
+    backfill). These URLs only reference the job endpoints, which resolve
+    artifacts from the on-disk canonical workspace, so they stay valid after
+    a backend restart. Values populated by post-processing always win.
+    """
+    if not isinstance(result, dict) or not job_id:
+        return result
+    base = f"/api/v1/system/jobs/{job_id}"
+    result.setdefault("model_url", f"{base}/download?artifact_format=glb")
+    result.setdefault("game_ready_url", f"{base}/download?artifact_format=glb")
+    result.setdefault("download_url", f"{base}/download?artifact_format=glb")
+    result.setdefault("source_model_url", f"{base}/download?artifact_format=master")
+    result.setdefault("high_fidelity_url", f"{base}/download?artifact_format=master")
+    result.setdefault("thumbnail_url", f"{base}/thumbnail")
+    return result
+
+
 @router.get("/jobs/history")
 async def get_jobs_history(
     limit: int = 100,
@@ -926,23 +947,27 @@ async def get_jobs_history(
                 limit=limit,
                 offset=offset,
             )
-            jobs = [job.to_dict() for job in page_jobs]
-            return {
-                "jobs": jobs,
-                "pagination": {
-                    "limit": limit,
-                    "offset": offset,
-                    "total": total_jobs,
-                    "has_more": offset + len(jobs) < total_jobs,
-                },
-                "filters": {
-                    "status": status,
-                    "feature": feature,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                },
-                "timestamp": time.time(),
-            }
+            if page_jobs or total_jobs:
+                jobs = [job.to_dict() for job in page_jobs]
+                for job_dict in jobs:
+                    if job_dict.get("status") == "completed" and job_dict.get("result"):
+                        _ensure_production_result_urls(job_dict.get("job_id") or job_dict.get("id"), job_dict["result"])
+                return {
+                    "jobs": jobs,
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "total": total_jobs,
+                        "has_more": offset + len(jobs) < total_jobs,
+                    },
+                    "filters": {
+                        "status": status,
+                        "feature": feature,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                    },
+                    "timestamp": time.time(),
+                }
 
         # Redis queue fallback: retain its current status-based API until a
         # dedicated history sorted-set index is introduced.
@@ -983,6 +1008,8 @@ async def get_jobs_history(
             jobs = await scheduler.job_queue.get_jobs_by_status(job_status)
             for job in jobs:
                 job_dict = job.to_dict()
+                if job_dict.get("status") == "completed" and job_dict.get("result"):
+                    _ensure_production_result_urls(job_dict.get("job_id") or job_dict.get("id"), job_dict["result"])
                 
                 # User filtering: non-admin users can only see their own jobs
                 if current_user and current_user.role != UserRole.ADMIN:
@@ -1170,6 +1197,11 @@ async def get_job_status(job_id: str, request: Request):
                 f"{request.base_url}api/v1/system/jobs/{job_id}/thumbnail"
             )
             result["thumbnail_url"] = thumbnail_url
+
+            # Canonical production artifact URLs (game-ready GLB by default,
+            # master/source.glb for the source view). Stable across restarts
+            # because they only reference this job's download endpoints.
+            _ensure_production_result_urls(job_id, result)
 
             if thumbnail_path and os.path.exists(thumbnail_path):
                 # Add thumbnail file info

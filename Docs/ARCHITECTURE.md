@@ -297,7 +297,7 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 - `GET /api/v1/system/health`: Extended system health.
 - `GET /api/v1/system/info`: Host hardware specs, OS, RAM, GPU telemetry.
 - `GET /api/v1/system/models`: Model registry with VRAM budgets and weights status.
-- `GET /api/v1/system/jobs/history`: Job history with search and status filtering.
+- `GET /api/v1/system/jobs/history`: Job history with search and status filtering. Reads the SQLite page and falls back to the Redis job listing when SQLite is empty; completed jobs always carry canonical production URLs (game-ready GLB, `master/source.glb`, thumbnail) so assets remain resolvable after refresh/restart.
 
 ### File Upload & Storage
 - `POST /api/v1/file-upload/image`: Upload reference image.

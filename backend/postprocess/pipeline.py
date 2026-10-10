@@ -106,7 +106,8 @@ def canonical_asset_workspace(
     return _storage_root() / f"{asset_name}_{clean_job_id}"
 
 
-def _sha256_file(path: Path) -> str:
+def _sha256_file(path: "Path | str") -> str:
+    path = Path(path)
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):

@@ -198,7 +198,8 @@ interface BackendJobPayload {
 function normalizeBackendJob(raw: BackendJobPayload) {
   const rawProgress = Number(raw.progress ?? 0);
   const normalizedProgress = rawProgress <= 1 ? rawProgress * 100 : rawProgress;
-  const modelUrl = toProxyUrl(raw.result?.mesh_url ?? raw.result?.model_url);
+  // Prefer the canonical game-ready GLB URL; mesh_url is the legacy raw path
+  const modelUrl = toProxyUrl(raw.result?.model_url ?? raw.result?.mesh_url);
   return {
     status: raw.status,
     progress: Math.max(0, Math.min(100, Math.round(normalizedProgress))),
@@ -306,6 +307,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           dateCreated: '',
           tags: ['AI Generated'],
           materials: [],
+          model_url: outputUrl,
+          game_ready_url: (outputs.game_ready_url as string) || outputUrl,
+          source_model_url: (outputs.source_model_url as string) || (outputs.source as string) || undefined,
           collision_url: outputs.collision_url,
           physics_url: outputs.physics_url,
           physics_ready: outputs.physics_ready,
@@ -1044,6 +1048,8 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                     topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
                     format: 'GLB',
                     postprocessStatus: result.postprocess_status || 'completed',
+                    game_ready_url: (result.game_ready_url as string) || modelUrl,
+                    source_model_url: (result.source_model_url as string) || (result.high_fidelity_url as string) || undefined,
                     tags: ['AI Generated'],
                     collision_url: result.collision_url,
                     physics_url: result.physics_url,
@@ -1141,6 +1147,8 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
         format: 'GLB',
         postprocessStatus: result.postprocess_status || 'completed',
+        game_ready_url: (result.game_ready_url as string) || modelUrl,
+        source_model_url: (result.source_model_url as string) || (result.high_fidelity_url as string) || undefined,
         tags: ['AI Generated'],
       });
       addAsset(outputAsset);
