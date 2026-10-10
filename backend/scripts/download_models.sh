@@ -632,7 +632,10 @@ download_triposg() {
         print_info "RMBG-1.4 already exists and verified"
     else
         print_info "Downloading RMBG-1.4..."
-        hf_download briaai/RMBG-1.4 --local-dir "$rmbg_dir" || print_warning "RMBG-1.4 download warning"
+        if ! hf_download briaai/RMBG-1.4 --local-dir "$rmbg_dir" || ! verify_directory "$rmbg_dir" 2; then
+            print_error "Failed to download RMBG-1.4"
+            return 1
+        fi
     fi
 
     mkdir -p "$triposg_dir"
@@ -640,7 +643,10 @@ download_triposg() {
         print_info "TripoSG already exists and verified"
     else
         print_info "Downloading TripoSG..."
-        hf_download VAST-AI/TripoSG --local-dir "$triposg_dir" || print_warning "TripoSG download warning"
+        if ! hf_download VAST-AI/TripoSG --local-dir "$triposg_dir" || ! verify_directory "$triposg_dir" 3; then
+            print_error "Failed to download TripoSG"
+            return 1
+        fi
     fi
 
     mkdir -p "$scribble_dir"
@@ -697,11 +703,13 @@ download_ardy() {
     fi
 
     print_info "Downloading ARDY checkpoints from nv-tlabs/ardy..."
-    if hf_download nv-tlabs/ardy --local-dir "$ardy_dir" 2>/dev/null; then
+    if hf_download nv-tlabs/ardy --local-dir "$ardy_dir" && verify_directory "$ardy_dir" 1; then
         print_success "ARDY checkpoints downloaded successfully"
     else
-        print_warning "ARDY Hugging Face repository requires Meta-Llama gated access or HF token."
-        print_warning "If you have a token, run: export HF_TOKEN=<token> and re-run this script."
+        print_error "Failed to download ARDY checkpoints"
+        print_warning "The nv-tlabs/ardy Hugging Face repository is gated (Meta-Llama access)."
+        print_warning "Request access at https://huggingface.co/nv-tlabs/ardy, then run: export HF_TOKEN=<token> and re-run this script."
+        return 1
     fi
 }
 
@@ -1018,6 +1026,7 @@ fi
 IFS=',' read -ra MODELS_ARRAY <<< "$MODELS_TO_DOWNLOAD"
 
 # Download requested models
+failed=false
 for model in "${MODELS_ARRAY[@]}"; do
     case "$model" in
         "partfield")
@@ -1121,7 +1130,17 @@ for model in "${MODELS_ARRAY[@]}"; do
             exit 1
             ;;
     esac
+    [ $? -ne 0 ] && failed=true
 done
+
+if [ "$failed" = true ]; then
+    print_error "========================================"
+    print_error "Some model downloads FAILED — see the errors above."
+    print_error "========================================"
+    print_info "Fix the access/token issue and re-run this script for the failed models only."
+    print_info "You can verify existing downloads by running: $0 -v"
+    exit 1
+fi
 
 print_success "========================================"
 print_success "Model Download Complete!"

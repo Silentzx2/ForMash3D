@@ -1,3 +1,9 @@
+## 2026-10-10 Downloader False-Success Fix
+- **Symptom**: selecting ARDY [18] in `download_models.sh` printed "[WARNING] ARDY Hugging Face repository requires Meta-Llama gated access or HF token." followed by "[SUCCESS] Model Download Complete! / All requested models have been downloaded successfully." while `pretrained/ardy` had 0 files.
+- **Root cause**: `download_ardy()` printed warnings and fell through to an implicit `return 0`; the main loop never checked `download_*` return codes before the success banner. `download_triposg()` had the same swallow for RMBG-1.4 and TripoSG (warnings only).
+- **Fix**: failure branches now `print_error` + `return 1` (ARDY guidance: gated Meta-Llama repo, request access at https://huggingface.co/nv-tlabs/ardy then `export HF_TOKEN=<token>`); the loop sets `failed=true` on any non-zero case status and exits 1 with an error summary instead of the success banner. TripoSG-scribble stays optional by design.
+- Verified: gated ARDY run → exit 1 with real HF error; already-verified `hunyuan2mini` run → exit 0 with banner.
+
 ## 2026-10-10 Mesh-Tool File References (remesh/texture/UV/segment/edit)
 - **Symptom**: mesh tools returned 500 "File upload failed for 'https://<origin>/<uuid>': Server file path is outside configured input roots. Use file_id input instead."
 - **Root causes (frontend + backend)**:
