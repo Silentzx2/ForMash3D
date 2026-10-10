@@ -273,7 +273,11 @@ def validate_base64_data(
         if len(base64_data) > ((max_bytes + 2) // 3) * 4:
             return False, None, None
         try:
-            decoded_data = base64.b64decode(base64_data, validate=True)
+            # Handle missing base64 padding
+            missing_padding = len(base64_data) % 4
+            if missing_padding:
+                base64_data += "=" * (4 - missing_padding)
+            decoded_data = base64.b64decode(base64_data)
         except Exception:
             return False, None, None
 

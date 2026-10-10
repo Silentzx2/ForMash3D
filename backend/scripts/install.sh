@@ -634,6 +634,8 @@ cd "$THIRDPARTY_DIR/UniRig"
 echo "[INFO] Installing spconv-cu124 for UniRig..."
 $UV_PIP install --find-links="$WHEEL_DIR" spconv-cu124
 $UV_PIP install --find-links="$WHEEL_DIR" pyrender fast-simplification python-box timm
+# Install bpy 4.0 for Python 3.10 from Blender's official prebuilt wheel index
+$UV_PIP install --no-deps "https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl" || true
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] UniRig dependencies installed"
 else

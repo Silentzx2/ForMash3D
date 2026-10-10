@@ -351,6 +351,13 @@ async def process_file_input(
 ) -> str:
     """Process various file input formats and return the processed file path"""
 
+    # A data URL (e.g. "data:image/webp;base64,...") is an inline base64 payload,
+    # not a server path, so normalize it before checking provided inputs.
+    if file_path and isinstance(file_path, str) and file_path.strip().startswith("data:"):
+        if not base64_data:
+            base64_data = file_path.strip()
+            file_path = None
+
     inputs = [file_path, base64_data, file_id, upload_file]
     provided_inputs = [x for x in inputs if x is not None]
 
@@ -366,12 +373,6 @@ async def process_file_input(
     temp_dir: Optional[str] = None
 
     try:
-        # A data URL (e.g. "data:image/webp;base64,...") is an inline base64 payload,
-        # not a server path, so route it through the base64 branch below.
-        if file_path and file_path.strip().startswith("data:"):
-            base64_data = file_path.strip()
-            file_path = None
-
         if file_path:
             from api.routers.file_upload import resolve_input_reference_async
 

@@ -1922,14 +1922,32 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     setExecutionStep,
   ]);
 
+function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: string; mesh_path?: string } {
+  if (!asset) {
+    throw new Error('No model selected. Generate or import a model first.');
+  }
+  const explicitFileId = asset.source?.fileId || asset.fileId;
+  if (explicitFileId) {
+    return { mesh_file_id: explicitFileId };
+  }
+  const rawUrl = asset.source?.localUrl || asset.source?.viewUrl || '';
+  if (!rawUrl) {
+    throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
+  }
+  const matchFileId = rawUrl.match(/\/api\/v1\/file-upload\/download\/([^/?#]+)/i);
+  if (matchFileId) {
+    return { mesh_file_id: matchFileId[1] };
+  }
+  if (!rawUrl.startsWith('blob:')) {
+    return { mesh_path: rawUrl };
+  }
+  throw new Error('This model is only loaded locally in browser. Upload or re-import it via Assets to run this tool.');
+}
+
     const runRemeshGeneration = useCallback(async () => {
       const localTaskId = startTask('remesh', 'Remesh / topology optimization', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
-      const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
-      if (!sourceMeshUrl && !meshFileId) {
-        throw new Error('No source mesh available for remeshing. Generate or import a model first.');
-      }
+      const meshRef = resolveMeshReference(currentAsset);
 
       const body: Record<string, unknown> = {
         output_format: 'glb',
@@ -1938,14 +1956,8 @@ function dataURLtoFile(dataURL: string, filename: string): File {
           : 'fastmesh_v1k_retopology',
         poly_type: remeshSettings.polyType,
         target_polycount: remeshSettings.targetPolycount,
+        ...meshRef,
       };
-      if (meshFileId) {
-        body.mesh_file_id = meshFileId;
-      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
-        body.mesh_path = sourceMeshUrl;
-      } else {
-        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
-      }
 
       const res = await fetch('/api/v1/mesh-retopology/retopologize-mesh', {
         method: 'POST',
@@ -1970,11 +1982,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     const runTextureGeneration = useCallback(async () => {
       const localTaskId = startTask('texture', 'Texture generation', undefined, textureSettings.modelId, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
-      const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
-      if (!sourceMeshUrl && !meshFileId) {
-        throw new Error('No source mesh available for texturing. Generate or import a model first.');
-      }
+      const meshRef = resolveMeshReference(currentAsset);
 
       const isTextPaintingModel = textureSettings.modelId === 'trellis_text_mesh_painting';
       const hasTexturePrompt = Boolean(textureSettings.prompt?.trim());
@@ -1995,6 +2003,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         texture_resolution: { '1K': 1024, '2K': 2048, '4K': 4096, '8K': 4096 }[textureSettings.resolution || '2K'],
         output_format: 'glb',
         model_preference: textureSettings.modelId || fallbackModel,
+        ...meshRef,
       };
 
       if (isPaintModel) {
@@ -2007,14 +2016,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
       if (textureSettings.generatePBR !== false) {
         body.generate_pbr = true;
-      }
-
-      if (meshFileId) {
-        body.mesh_file_id = meshFileId;
-      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
-        body.mesh_path = sourceMeshUrl;
-      } else {
-        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       if (hasTexturePrompt) {
@@ -2070,11 +2071,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
    }) => {
       const localTaskId = startTask('uv', 'UV Unwrapping (PartUV)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
-      const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
-      if (!sourceMeshUrl && !meshFileId) {
-        throw new Error('No source mesh available for UV unwrapping. Generate or import a model first.');
-      }
+      const meshRef = resolveMeshReference(currentAsset);
 
       const body: Record<string, unknown> = {
         distortion_threshold: customSettings?.distortionThreshold ?? 1.25,
@@ -2083,17 +2080,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         save_visuals: false,
         output_format: customSettings?.outputFormat || 'obj',
         model_preference: 'partuv_uv_unwrapping',
+        ...meshRef,
       };
       if (customSettings?.modelParameters) {
         body.model_parameters = customSettings.modelParameters;
-      }
-
-      if (meshFileId) {
-        body.mesh_file_id = meshFileId;
-      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
-        body.mesh_path = sourceMeshUrl;
-      } else {
-        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       const res = await fetch('/api/v1/mesh-uv-unwrapping/unwrap-mesh', {
@@ -2127,11 +2117,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     const pref = (typeof customSettings === 'object' && customSettings?.modelPreference) || 'partfield_mesh_segmentation';
      const localTaskId = startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`, undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
-      const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
-      if (!sourceMeshUrl && !meshFileId) {
-        throw new Error('No source mesh available for segmentation. Generate or import a model first.');
-      }
+      const meshRef = resolveMeshReference(currentAsset);
 
       const numParts = typeof customSettings === 'number' ? customSettings : (customSettings?.numParts ?? 8);
       const outputFormat = typeof customSettings === 'object' ? (customSettings.outputFormat ?? 'glb') : 'glb';
@@ -2140,17 +2126,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         num_parts: numParts,
         output_format: outputFormat,
         model_preference: pref,
+        ...meshRef,
       };
       if (typeof customSettings === 'object' && customSettings?.modelParameters) {
         body.model_parameters = customSettings.modelParameters;
-      }
-
-      if (meshFileId) {
-        body.mesh_file_id = meshFileId;
-      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
-        body.mesh_path = sourceMeshUrl;
-      } else {
-        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       const res = await fetch('/api/v1/mesh-segmentation/segment-mesh', {
@@ -2186,11 +2165,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
   }) => {
      const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
-      const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
-      if (!sourceMeshUrl && !meshFileId) {
-        throw new Error('No source mesh available for mesh editing. Generate or import a model first.');
-      }
+      const meshRef = resolveMeshReference(currentAsset);
 
       const isImage = customSettings?.mode === 'image';
       const endpoint = isImage ? '/api/v1/mesh-editing/image-mesh-editing' : '/api/v1/mesh-editing/text-mesh-editing';
@@ -2204,6 +2179,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
           center: [0.0, 0.45, -0.15],
           dimensions: [0.42, 0.36, 0.50],
         },
+        ...meshRef,
       };
 
       if (isImage) {
@@ -2221,14 +2197,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
       } else {
         body.source_prompt = customSettings?.sourcePrompt || '3D mesh model';
         body.target_prompt = customSettings?.targetPrompt || 'Add high-resolution surface details';
-      }
-
-      if (meshFileId) {
-        body.mesh_file_id = meshFileId;
-      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
-        body.mesh_path = sourceMeshUrl;
-      } else {
-        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       const res = await fetch(endpoint, {

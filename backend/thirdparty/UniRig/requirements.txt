@@ -7,7 +7,7 @@ lightning
 addict
 timm
 fast-simplification
-bpy==4.0
+https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl
 flash_attn
 trimesh
 open3d
