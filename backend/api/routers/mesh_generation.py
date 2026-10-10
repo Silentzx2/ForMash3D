@@ -14,7 +14,7 @@ from uuid import uuid4
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from api.dependencies import get_current_settings, get_current_user_or_none, get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async
@@ -163,13 +163,13 @@ class ImageToRawMeshRequest(BaseModel):
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
 
-    @field_validator("image_file_id")
-    @classmethod
-    def validate_inputs(cls, v, info):
-        image_path = info.data.get("image_path")
-        image_base64 = info.data.get("image_base64")
+    @model_validator(mode="after")
+    def validate_inputs(self):
+        image_path = self.image_path
+        image_base64 = self.image_base64
+        image_file_id = self.image_file_id
 
-        inputs_provided = sum(bool(x) for x in [image_path, image_base64, v])
+        inputs_provided = sum(bool(x) for x in [image_path, image_base64, image_file_id])
 
         if inputs_provided == 0:
             raise ValueError(
@@ -179,7 +179,7 @@ class ImageToRawMeshRequest(BaseModel):
             raise ValueError(
                 "Only one of image_path, image_base64, or image_file_id should be provided"
             )
-        return v
+        return self
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -366,6 +366,12 @@ async def process_file_input(
     temp_dir: Optional[str] = None
 
     try:
+        # A data URL (e.g. "data:image/webp;base64,...") is an inline base64 payload,
+        # not a server path, so route it through the base64 branch below.
+        if file_path and file_path.strip().startswith("data:"):
+            base64_data = file_path.strip()
+            file_path = None
+
         if file_path:
             from api.routers.file_upload import resolve_input_reference_async
 
@@ -384,7 +390,7 @@ async def process_file_input(
 
         elif base64_data:
             temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
-            # Process base64 data
+            # Process base64 data (also accepts a full "data:...;base64," data URL)
             file_info = await save_base64_file(
                 base64_data, f"input_{input_type}", temp_dir
             )

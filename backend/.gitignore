@@ -432,6 +432,10 @@ assets/example_mesh/white_mesh_remesh.obj.mtl
 
 # experiments
 data/
+# ponytail: keep vendored UniRig data modules tracked — a bare `data/` rule
+# above silently drops src/data and configs/data on clone and breaks rigging
+!thirdparty/UniRig/src/data/
+!thirdparty/UniRig/configs/data/
 uploads/
 test_outputs/
 

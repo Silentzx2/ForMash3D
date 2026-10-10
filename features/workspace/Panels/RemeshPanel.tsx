@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { createUploadedMeshAsset } from '../types';
+import { uploadMeshAsset } from '../types';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -40,10 +40,10 @@ export const RemeshPanel: React.FC = () => {
     }
   }, [currentAsset, assets, selectAsset]);
 
-  const handleUploadNew = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadNew = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setCurrentAsset(createUploadedMeshAsset(file));
+      setCurrentAsset(await uploadMeshAsset(file));
       setMeshDropdownOpen(false);
     }
   };

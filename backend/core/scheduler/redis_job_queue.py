@@ -714,8 +714,7 @@ class RedisJobQueue:
             await self.redis.hdel(self.message_hash_key, job_id)
             await self.redis.zrem(self.completed_index_key, job_id)
             
-            # Delete result if exists
-            await self.redis.hdel(self.results_hash_key, job_id)
+            # Delete result if exists (string key; there is no results hash)
             await self.redis.delete(f"{self.results_prefix}{job_id}")
             self._last_get_job_log.pop(job_id, None)
             

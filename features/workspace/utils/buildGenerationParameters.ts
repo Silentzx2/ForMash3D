@@ -102,7 +102,12 @@ export function buildGenerationParameters(
     } else if (typeof settings.image === 'string' && settings.image.startsWith('data:')) {
       imageInput.image_base64 = settings.image;
     }
-    
+    if (Object.keys(imageInput).length === 0) {
+      // The backend rejects a request with no image field at all (400 "No image
+      // input provided"). Fail here with an actionable message instead.
+      throw new Error('No usable image input. Upload an image or pick a sample first.');
+    }
+
     const cleanStem = (settings.imageName || settings.prompt || 'asset')
       .replace(/\.[^/.]+$/, '')
       .replace(/[^A-Za-z0-9._-]+/g, '_')

@@ -186,23 +186,29 @@ async def get_file_path_impl(
     id_hash = hashlib.sha256(clean_id.encode("utf-8")).hexdigest()[:8]
     storage_base = get_storage_base_dir()
     for base in [storage_base, Path("backend/storage"), Path("/app/backend/storage")]:
-        models_dir = Path(base) / "models"
-        if not models_dir.is_dir():
-            continue
-        # Direct folder match or hash-suffixed folder match
-        candidates = list(models_dir.glob(f"*{clean_id}*")) + list(models_dir.glob(f"*{id_hash}*"))
-        for candidate_dir in candidates:
-            if candidate_dir.is_dir():
-                for glb in candidate_dir.glob("game_ready/*.glb"):
-                    return str(glb)
-                for obj in candidate_dir.glob("game_ready/*.obj"):
-                    return str(obj)
-                for glb in candidate_dir.glob("master/*.glb"):
-                    return str(glb)
-                for glb in candidate_dir.glob("*.glb"):
-                    return str(glb)
-                for obj in candidate_dir.glob("*.obj"):
-                    return str(obj)
+        # ponytail: meshes live in models/meshes/, but legacy loose files can sit
+        # directly in models/ — glob both so id-named workspaces always resolve
+        models_dirs = [
+            Path(base) / "models" / "meshes",
+            Path(base) / "models",
+        ]
+        for models_dir in models_dirs:
+            if not models_dir.is_dir():
+                continue
+            # Direct folder match or hash-suffixed folder match
+            candidates = list(models_dir.glob(f"*{clean_id}*")) + list(models_dir.glob(f"*{id_hash}*"))
+            for candidate_dir in candidates:
+                if candidate_dir.is_dir():
+                    for glb in candidate_dir.glob("game_ready/*.glb"):
+                        return str(glb)
+                    for obj in candidate_dir.glob("game_ready/*.obj"):
+                        return str(obj)
+                    for glb in candidate_dir.glob("master/*.glb"):
+                        return str(glb)
+                    for glb in candidate_dir.glob("*.glb"):
+                        return str(glb)
+                    for obj in candidate_dir.glob("*.obj"):
+                        return str(obj)
 
     # Fallback 2: check uploads directory (for uploaded images/meshes when metadata is lost)
     # Files are stored in uploads/{file_type}/{file_id[:2]}/

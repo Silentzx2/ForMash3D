@@ -464,6 +464,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
   const selectedAssetIdRef = useRef(selectedAssetId);
   const mainNavRef = useRef(mainNav);
+  const activeToolRef = useRef(activeTool);
 
   const [shadingMode, setShadingModeState] = useState<ShadingMode>('textured');
   const [showWireframe, setShowWireframeState] = useState(false);
@@ -648,8 +649,9 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     selectedAssetIdRef.current = selectedAssetId;
     currentAssetRef.current = currentAsset;
     mainNavRef.current = mainNav;
+    activeToolRef.current = activeTool;
     systemStatsStatusRef.current = systemStats.status;
-  }, [selectedAssetId, currentAsset, mainNav, systemStats.status]);
+  }, [selectedAssetId, currentAsset, mainNav, activeTool, systemStats.status]);
 
   useEffect(() => {
     try {
@@ -1133,7 +1135,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     if (!job) return;
 
     if (typeof window !== 'undefined') {
-      const toolRoute = TOOL_TO_ROUTE[activeTool] || '/workspace/generate';
+      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
       window.history.replaceState(null, '', `${toolRoute}/${jobId}`);
     }
 
@@ -1174,9 +1176,11 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
   const selectAsset = useCallback((id: string) => {
     setSelectedAssetId(id);
-    
+
     if (typeof window !== 'undefined') {
-      const toolRoute = TOOL_TO_ROUTE[activeTool] || '/workspace/generate';
+      // Must use the live activeTool (ref) — a stale closure here would rewrite
+      // the URL to the wrong tool route and bounce the user to the Generate panel.
+      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
       window.history.replaceState(null, '', `${toolRoute}/${id}`);
     }
 
@@ -1334,7 +1338,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     setActiveTask(task);
 
     if (typeof window !== 'undefined') {
-      const toolRoute = TOOL_TO_ROUTE[activeTool] || '/workspace/generate';
+      const toolRoute = TOOL_TO_ROUTE[activeToolRef.current] || '/workspace/generate';
       window.history.replaceState(null, '', `${toolRoute}/${taskId}`);
     }
     setJobsById(prev => ({ ...prev, [taskId]: task }));
@@ -2020,7 +2024,14 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         if (!refImageUrl) {
           throw new Error('No texture prompt or reference image provided. Please supply one.');
         }
-        body.image_path = refImageUrl;
+        if (textureSettings.referenceImageFileId) {
+          body.image_file_id = textureSettings.referenceImageFileId;
+        } else if (refImageUrl.startsWith('data:')) {
+          // Backend expects base64 WITHOUT the data-URL prefix
+          body.image_base64 = refImageUrl.replace(/^data:image\/[a-z0-9.+-]+;base64,/, '');
+        } else {
+          body.image_path = refImageUrl;
+        }
       }
 
       const res = await fetch(endpoint, {

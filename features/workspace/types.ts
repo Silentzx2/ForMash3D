@@ -1,4 +1,5 @@
 import type { JobDiagnostic } from '@/lib/jobDiagnostics';
+import { getApiClient } from '@/services/apiClient';
 
 export type ToolType =
   | 'model'
@@ -238,6 +239,47 @@ export function createUploadedMeshAsset(file: File): ModelAsset {
   });
 }
 
+/**
+ * Upload a mesh through the same backend endpoint as the Assets panel and
+ * return an asset that carries a resolvable backend `fileId` (top-level and in
+ * `source`) so mesh tools (remesh, texture, segment, UV, edit) can run on it.
+ * Falls back to a local blob asset when the upload fails.
+ */
+export async function uploadMeshAsset(file: File): Promise<ModelAsset> {
+  try {
+    const result = await getApiClient().uploadMeshFile(file);
+    const fileId = result?.file_id || (result as any)?.id;
+    const serverUrl = result?.url || (fileId ? `/api/v1/file-upload/download/${encodeURIComponent(fileId)}` : '');
+    const meshStats = (result as any)?.mesh_stats as { polygon_count: number; vertex_count: number } | undefined;
+    return normalizeModelAsset({
+      id: fileId || (result as any)?.stored_filename || `user-upload-${Date.now()}`,
+      fileId,
+      name: file.name.replace(/\.[^/.]+$/, ''),
+      category: 'mesh',
+      meshType: 'custom',
+      thumbnail: (result as any)?.thumbnail_url || '',
+      faces: meshStats?.polygon_count || 0,
+      vertices: meshStats?.vertex_count || 0,
+      triangles: meshStats?.polygon_count || 0,
+      statsAvailable: Boolean((meshStats?.polygon_count ?? 0) > 0 || (meshStats?.vertex_count ?? 0) > 0),
+      format: (file.name.split('.').pop()?.toUpperCase() || 'GLB') as any,
+      fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
+      source: {
+        filename: result?.filename || file.name,
+        subfolder: 'models',
+        type: 'upload',
+        viewUrl: serverUrl,
+        fileId,
+      },
+      topology: 'Triangle',
+      dateCreated: '',
+      tags: ['Custom', 'UserIcon-UploadIcon', 'Mesh'],
+    });
+  } catch {
+    return createUploadedMeshAsset(file);
+  }
+}
+
 export type Asset3D = ModelAsset;
 
 export interface MaterialConfig {
@@ -322,6 +364,7 @@ export interface TextureSettings {
   resolution: '1K' | '2K' | '4K' | '8K';
   paintResolution?: 512 | 768;
   referenceImage: string | null;
+  referenceImageFileId?: string | null;
   prompt: string;
   modelId: string;
   maps: {

@@ -3425,6 +3425,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             subfolder: 'models',
             type: 'upload',
             viewUrl: serverUrl,
+            fileId: uploadRes?.file_id,
           },
         };
         // Update temp asset in place to avoid duplicate cards in the workspace

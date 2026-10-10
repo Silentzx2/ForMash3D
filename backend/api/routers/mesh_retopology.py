@@ -167,7 +167,15 @@ async def retopologize_mesh(
         # Resolve server path if URL or relative path was provided
         if mesh_file_path:
             from core.utils.file_utils import resolve_server_file_path
-            mesh_file_path = resolve_server_file_path(mesh_file_path)
+            from core.utils.exceptions import FileUploadError
+            try:
+                mesh_file_path = resolve_server_file_path(mesh_file_path)
+            except FileUploadError:
+                # Unresolvable URL/path (asset deleted or never registered on disk)
+                raise HTTPException(
+                    status_code=404,
+                    detail="Mesh file not found on the server. Re-import or regenerate the model, then retry.",
+                )
 
         # Validate mesh file exists
         if not mesh_file_path:
