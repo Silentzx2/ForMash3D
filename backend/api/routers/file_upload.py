@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -30,6 +31,9 @@ from core.utils.file_utils import (
     FileUploadError,
     get_storage_base_dir,
     save_upload_file,
+    validate_image_file,
+    validate_mesh_file,
+    get_file_type_from_extension,
 )
 from core.utils.thumbnail_utils import generate_mesh_thumbnail
 
@@ -41,15 +45,12 @@ router = APIRouter(prefix="/file-upload", tags=["file_upload"])
 UPLOAD_BASE_DIR = get_storage_base_dir() / "uploads"
 UPLOAD_BASE_DIR.mkdir(parents=True, exist_ok=True)
 
-# In-memory file metadata storage (fallback for single-worker mode)
-# In multi-worker mode, FileStore (Redis) is used instead
-_local_file_metadata: Dict[str, Dict] = {}
-
 
 class FileUploadResponse(BaseModel):
     """Response for file upload requests"""
 
     file_id: str = Field(..., description="Unique identifier for the uploaded file")
+    file_path: str = Field(..., description="Server file path")
     filename: str = Field(..., description="Original filename")
     file_type: str = Field(..., description="Type of file (image/mesh)")
     file_size_mb: float = Field(..., description="File size in MB")
@@ -69,6 +70,7 @@ class FileMetadataResponse(BaseModel):
     upload_time: datetime = Field(..., description="Upload timestamp")
     expires_at: Optional[datetime] = Field(None, description="File expiration time")
     is_available: bool = Field(..., description="Whether the file is still available")
+    thumbnail_url: Optional[str] = Field(None, description="Thumbnail URL for the file")
 
 
 def validate_file_type(filename: str, allowed_types: List[str]) -> bool:
@@ -109,8 +111,8 @@ async def store_file_metadata_impl(
         # Multi-worker mode: use Redis
         await file_store.store_file_metadata(file_id, metadata)
     else:
-        # Single-worker mode: use in-memory dict
-        _local_file_metadata[file_id] = metadata
+        # Single-worker mode: the app.state.file_store is an InMemoryFileStore
+        await file_store.store_file_metadata(file_id, metadata)
 
 
 async def get_file_metadata_impl(
@@ -123,7 +125,7 @@ async def get_file_metadata_impl(
     if file_store is not None:
         return await file_store.get_file_metadata(file_id)
     else:
-        return _local_file_metadata.get(file_id)
+        return None
 
 
 async def delete_file_metadata_impl(
@@ -136,9 +138,6 @@ async def delete_file_metadata_impl(
     if file_store is not None:
         return await file_store.delete_file_metadata(file_id)
     else:
-        if file_id in _local_file_metadata:
-            _local_file_metadata[file_id]["is_available"] = False
-            return True
         return False
 
 
@@ -153,14 +152,7 @@ async def list_file_metadata_impl(
     if file_store is not None:
         return await file_store.list_file_metadata(file_type=file_type, limit=limit)
     else:
-        files = []
-        for metadata in _local_file_metadata.values():
-            if file_type and metadata.get("file_type") != file_type:
-                continue
-            if len(files) >= limit:
-                break
-            files.append(metadata)
-        return files
+        return []
 
 
 async def count_files_impl(
@@ -173,12 +165,7 @@ async def count_files_impl(
     if file_store is not None:
         return await file_store.count_files(file_type=file_type)
     else:
-        if file_type:
-            return sum(
-                1 for m in _local_file_metadata.values() 
-                if m.get("file_type") == file_type
-            )
-        return len(_local_file_metadata)
+        return 0
 
 
 async def get_file_path_impl(
@@ -194,28 +181,52 @@ async def get_file_path_impl(
         if file_path and os.path.exists(file_path):
             return file_path
 
-    # Fallback: check if file_id corresponds to a job output in canonical storage
+    # Fallback 1: check if file_id corresponds to a job output in canonical storage
     clean_id = file_id.removeprefix("job-")
     id_hash = hashlib.sha256(clean_id.encode("utf-8")).hexdigest()[:8]
     storage_base = get_storage_base_dir()
     for base in [storage_base, Path("backend/storage"), Path("/app/backend/storage")]:
-        models_dir = Path(base) / "models"
-        if not models_dir.is_dir():
+        # ponytail: meshes live in models/meshes/, but legacy loose files can sit
+        # directly in models/ — glob both so id-named workspaces always resolve
+        models_dirs = [
+            Path(base) / "models" / "meshes",
+            Path(base) / "models",
+        ]
+        for models_dir in models_dirs:
+            if not models_dir.is_dir():
+                continue
+            # Direct folder match or hash-suffixed folder match
+            candidates = list(models_dir.glob(f"*{clean_id}*")) + list(models_dir.glob(f"*{id_hash}*"))
+            for candidate_dir in candidates:
+                if candidate_dir.is_dir():
+                    for glb in candidate_dir.glob("game_ready/*.glb"):
+                        return str(glb)
+                    for obj in candidate_dir.glob("game_ready/*.obj"):
+                        return str(obj)
+                    for glb in candidate_dir.glob("master/*.glb"):
+                        return str(glb)
+                    for glb in candidate_dir.glob("*.glb"):
+                        return str(glb)
+                    for obj in candidate_dir.glob("*.obj"):
+                        return str(obj)
+
+    # Fallback 2: check uploads directory (for uploaded images/meshes when metadata is lost)
+    # Files are stored in uploads/{file_type}/{file_id[:2]}/
+    upload_prefix = file_id[:2]
+    for base in [storage_base, Path("backend/storage"), Path("/app/backend/storage")]:
+        uploads_dir = Path(base) / "uploads"
+        if not uploads_dir.is_dir():
             continue
-        # Direct folder match or hash-suffixed folder match
-        candidates = list(models_dir.glob(f"*{clean_id}*")) + list(models_dir.glob(f"*{id_hash}*"))
-        for candidate_dir in candidates:
-            if candidate_dir.is_dir():
-                for glb in candidate_dir.glob("game_ready/*.glb"):
-                    return str(glb)
-                for obj in candidate_dir.glob("game_ready/*.obj"):
-                    return str(obj)
-                for glb in candidate_dir.glob("master/*.glb"):
-                    return str(glb)
-                for glb in candidate_dir.glob("*.glb"):
-                    return str(glb)
-                for obj in candidate_dir.glob("*.obj"):
-                    return str(obj)
+        # Search in both image and mesh subdirectories
+        for file_type_dir in ["image", "mesh"]:
+            type_dir = uploads_dir / file_type_dir / upload_prefix
+            if not type_dir.is_dir():
+                continue
+            # Look for any file with this file_id in the filename
+            candidates = list(type_dir.glob(f"*{file_id}*"))
+            for candidate in candidates:
+                if candidate.is_file() and os.path.exists(candidate):
+                    return str(candidate)
 
     return None
 
@@ -238,6 +249,7 @@ def _generate_thumbnail_for_mesh(file_path: str, file_id: str) -> Optional[str]:
     except Exception as exc:
         logger.warning(f"Thumbnail generation failed for {file_id}: {exc}")
     return None
+
 
 async def upload_file_with_validation(
     file: UploadFile,
@@ -266,10 +278,55 @@ async def upload_file_with_validation(
     upload_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        # Save file
-        file_info = await save_upload_file(
-            file, str(upload_dir), max_size_mb=max_size_mb, validate_content=True
-        )
+        # Save file with file_id in filename for recoverability
+        file_ext = Path(file.filename).suffix
+        filename = f"upload_{file_id}{file_ext}"
+        file_path = Path(upload_dir) / filename
+
+        max_size_bytes = max_size_mb * 1024 * 1024
+        total_bytes = 0
+        try:
+            async with aiofiles.open(file_path, "wb") as f:
+                while chunk := await file.read(1024 * 1024):
+                    total_bytes += len(chunk)
+                    if total_bytes > max_size_bytes:
+                        raise FileUploadError(file.filename or "unknown", f"File size exceeds limit ({max_size_mb}MB)")
+                    await f.write(chunk)
+        except Exception:
+            file_path.unlink(missing_ok=True)
+            raise
+        file_size_mb = total_bytes / (1024 * 1024)
+
+        # Validate content if requested
+        validation_info = {}
+        if file.filename:
+            file_type_detected = get_file_type_from_extension(file.filename)
+            if file_type_detected == "image":
+                validation_info = validate_image_file(str(file_path))
+                if not validation_info.get("valid", False):
+                    os.remove(file_path)
+                    raise FileUploadError(
+                        file.filename or "unknown",
+                        validation_info.get("error", "Invalid image file"),
+                    )
+            elif file_type_detected == "mesh":
+                validation_info = validate_mesh_file(str(file_path))
+                if not validation_info.get("valid", False):
+                    os.remove(file_path)
+                    raise FileUploadError(
+                        file.filename or "unknown",
+                        validation_info.get("error", "Invalid mesh file"),
+                    )
+
+        file_info = {
+            "file_path": str(file_path),
+            "original_filename": file.filename or "unknown",
+            "saved_filename": filename,
+            "file_size_mb": file_size_mb,
+            "content_type": file.content_type or "application/octet-stream",
+            "file_type": file_type,
+            "validation_info": validation_info,
+        }
 
         # Store metadata (uses Redis in multi-worker mode, in-memory otherwise)
         await store_file_metadata_impl(file_store, file_id, file_info)
@@ -278,6 +335,7 @@ async def upload_file_with_validation(
 
         return {
             "file_id": file_id,
+            "file_path": str(file_path),
             "filename": file.filename,
             "file_type": file_type,
             "file_size_mb": file_info["file_size_mb"],
@@ -318,7 +376,7 @@ async def upload_image(
 async def upload_mesh(
     file: UploadFile = File(..., description="Mesh file to upload"),
     file_store: Optional[FileStore] = Depends(get_file_store),
-    background_tasks: BackgroundTasks = Depends(),
+    background_tasks: BackgroundTasks = None,
 ):
     """
     Upload a mesh file.
@@ -396,72 +454,27 @@ async def delete_file(
 
     Args:
         file_id: Unique file identifier
-
-    Returns:
-        Deletion confirmation
     """
     metadata = await get_file_metadata_impl(file_store, file_id)
-
     if not metadata:
         raise HTTPException(status_code=404, detail="File not found")
 
-    try:
-        # Remove file from disk
-        file_path = metadata.get("file_path")
-        if file_path and os.path.exists(file_path):
+    file_path = metadata.get("file_path")
+    if file_path and os.path.exists(file_path):
+        try:
             os.remove(file_path)
+        except OSError as e:
+            logger.warning(f"Failed to delete file {file_path}: {e}")
 
-        # Mark as unavailable / delete metadata
-        await delete_file_metadata_impl(file_store, file_id)
+    deleted = await delete_file_metadata_impl(file_store, file_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="File metadata not found")
 
-        logger.info(f"Deleted file {file_id}: {metadata.get('filename')}")
-
-        return {
-            "file_id": file_id,
-            "message": "File deleted successfully",
-            "filename": metadata.get("filename"),
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to delete file {file_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete file: {str(e)}")
+    return {"message": f"File {file_id} deleted successfully"}
 
 
-@router.get("/download/{file_id}", summary="Download uploaded file")
-async def download_file(
-    file_id: str,
-    file_store: Optional[FileStore] = Depends(get_file_store),
-):
-    """Download an uploaded file or registered job asset by ID."""
-    file_path = await get_file_path_impl(file_store, file_id)
-    if not file_path or not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="File not found")
-
-    metadata = await get_file_metadata_impl(file_store, file_id)
-    filename = (metadata.get("filename") if metadata else None) or Path(file_path).name
-    media_type, _ = mimetypes.guess_type(file_path)
-
-    return FileResponse(
-        path=file_path,
-        filename=filename,
-        media_type=media_type or "application/octet-stream",
-    )
-
-
-@router.get("/thumbnail/{file_id}", summary="Get uploaded mesh thumbnail")
-async def get_thumbnail(
-    file_id: str,
-    file_store: Optional[FileStore] = Depends(get_file_store),
-):
-    """Return the generated thumbnail PNG for an uploaded mesh."""
-    thumbnail_path = _THUMBNAIL_DIR / f"{file_id}.png"
-    if not thumbnail_path.exists():
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
-    return FileResponse(path=str(thumbnail_path), media_type="image/png")
-
-
-@router.get("/list")
-async def list_uploaded_files(
+@router.get("/list", response_model=List[FileMetadataResponse])
+async def list_files(
     file_type: Optional[str] = None,
     limit: int = 100,
     file_store: Optional[FileStore] = Depends(get_file_store),
@@ -470,37 +483,115 @@ async def list_uploaded_files(
     List uploaded files.
 
     Args:
-        file_type: Optional filter by file type (image/mesh)
+        file_type: Filter by file type (image/mesh)
         limit: Maximum number of files to return
-
-    Returns:
-        List of uploaded files
     """
-    files_metadata = await list_file_metadata_impl(file_store, file_type, limit)
-    total_count = await count_files_impl(file_store, file_type)
+    files = await list_file_metadata_impl(file_store, file_type=file_type, limit=limit)
     
-    files = []
-    for metadata in files_metadata:
+    result = []
+    for metadata in files:
         file_path = metadata.get("file_path")
         is_available = metadata.get("is_available", True) and (
             file_path and os.path.exists(file_path)
         )
         
-        # Parse datetime strings if they're strings (from Redis)
         upload_time = metadata.get("upload_time")
+        expires_at = metadata.get("expires_at")
+        
         if isinstance(upload_time, str):
             upload_time = datetime.fromisoformat(upload_time)
+        if isinstance(expires_at, str):
+            expires_at = datetime.fromisoformat(expires_at)
         
-        files.append({
-            "file_id": metadata.get("file_id"),
-            "filename": metadata.get("filename"),
-            "file_type": metadata.get("file_type"),
-            "file_size_mb": metadata.get("file_size_mb"),
-            "upload_time": upload_time,
-            "is_available": is_available,
-        })
+        thumb_url = f"/api/v1/file-upload/thumbnail/{metadata['file_id']}" if metadata.get("file_type") == "mesh" else None
 
-    return {"files": files, "count": len(files), "total_files": total_count}
+        result.append(FileMetadataResponse(
+            file_id=metadata["file_id"],
+            filename=metadata["filename"],
+            file_type=metadata["file_type"],
+            file_size_mb=metadata["file_size_mb"],
+            upload_time=upload_time,
+            expires_at=expires_at,
+            is_available=is_available,
+            thumbnail_url=thumb_url,
+        ))
+    
+    return result
+
+
+@router.get("/count")
+async def count_files(
+    file_type: Optional[str] = None,
+    file_store: Optional[FileStore] = Depends(get_file_store),
+):
+    """
+    Count uploaded files.
+    """
+    count = await count_files_impl(file_store, file_type=file_type)
+    return {"count": count}
+
+
+@router.get("/thumbnail/{file_id}", summary="Get uploaded mesh thumbnail")
+async def get_thumbnail(
+    file_id: str,
+    file_store: Optional[FileStore] = Depends(get_file_store),
+):
+    """
+    Get thumbnail for an uploaded mesh file.
+    """
+    metadata = await get_file_metadata_impl(file_store, file_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = metadata.get("file_path")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    # Look for thumbnail
+    thumbnail_path = _THUMBNAIL_DIR / f"{file_id}.png"
+    if thumbnail_path.exists():
+        return FileResponse(
+            path=str(thumbnail_path),
+            media_type="image/png",
+            filename=f"{file_id}_thumb.png",
+        )
+    
+    # Generate thumbnail on-demand
+    try:
+        thumbnail_path_str = _generate_thumbnail_for_mesh(file_path, file_id)
+        if thumbnail_path_str and os.path.exists(thumbnail_path_str):
+            return FileResponse(
+                path=thumbnail_path_str,
+                media_type="image/png",
+                filename=f"{file_id}_thumb.png",
+            )
+    except Exception as exc:
+        logger.warning(f"Thumbnail generation failed for {file_id}: {exc}")
+
+    raise HTTPException(status_code=404, detail="Thumbnail not available")
+
+
+@router.get("/download/{file_id}")
+async def download_file(
+    file_id: str,
+    file_store: Optional[FileStore] = Depends(get_file_store),
+):
+    """
+    Download an uploaded file.
+    """
+    metadata = await get_file_metadata_impl(file_store, file_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = metadata.get("file_path")
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(
+        path=file_path,
+        filename=metadata["filename"],
+        media_type=mimetypes.guess_type(file_path)[0] or "application/octet-stream",
+    )
 
 
 @router.get("/supported-formats")
@@ -546,11 +637,65 @@ async def resolve_file_id_async(
     Args:
         file_id: The unique file identifier
         file_store: Optional FileStore instance (for multi-worker mode)
-        
+       
     Returns:
         The file path if found and available, None otherwise
     """
     return await get_file_path_impl(file_store, file_id)
+
+
+async def resolve_input_reference_async(
+    input_ref: Optional[str],
+    file_store: Optional[FileStore] = None,
+) -> Optional[str]:
+    """
+    Resolve an input reference (URL or bare id path) to its actual file path.
+
+    Accepts an input that may be an /api/v1/file-upload/download/{file_id} URL
+    (absolute or relative, with optional query string), an
+    /api/v1/system/jobs/{job_id}/download... URL, or a bare /{uuid} path.
+    Lookup is performed via the file store using the identifier, then
+    "job-{identifier}".
+
+    This function can be imported and used by other modules that accept a
+    URL-or-path reference pointing at an uploaded or job-produced file.
+
+    Args:
+        input_ref: The URL, path, or identifier to resolve
+        file_store: Optional FileStore instance (for multi-worker mode)
+
+    Returns:
+        The file path if resolvable via the file store, None otherwise
+    """
+    if not input_ref:
+        return None
+
+    path_str = str(input_ref).strip()
+    if "://" in path_str:
+        from urllib.parse import urlparse
+
+        path_str = urlparse(path_str).path
+    path_str = path_str.split("?", 1)[0].strip().strip("/")
+
+    if not path_str:
+        return None
+
+    identifier: Optional[str] = None
+    if path_str.startswith("api/v1/system/jobs/"):
+        identifier = path_str[len("api/v1/system/jobs/"):].split("/", 1)[0]
+    elif path_str.startswith("api/v1/file-upload/download/"):
+        identifier = path_str[len("api/v1/file-upload/download/"):].strip("/")
+    elif "/" not in path_str:
+        identifier = path_str
+
+    if not identifier or "." in identifier:
+        return None
+
+    for candidate in (identifier, f"job-{identifier}"):
+        resolved = await get_file_path_impl(file_store, candidate)
+        if resolved:
+            return resolved
+    return None
 
 
 def resolve_file_id(file_id: str) -> Optional[str]:
@@ -562,13 +707,9 @@ def resolve_file_id(file_id: str) -> Optional[str]:
     
     Args:
         file_id: The unique file identifier
-        
+       
     Returns:
         The file path if found and available, None otherwise
     """
-    metadata = _local_file_metadata.get(file_id)
-    if metadata and metadata.get("is_available", True):
-        file_path = metadata.get("file_path")
-        if file_path and os.path.exists(file_path):
-            return file_path
+    # This is now deprecated - file_store is always available via dependency injection
     return None

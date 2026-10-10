@@ -5,12 +5,63 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { apiClient } from '../lib/api';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
-
 import { HugeiconsIcon } from '@hugeicons/react';
 import { AlertCircle, BrushIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, GridIcon, Monitor, RefreshCw, ServerIcon, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 type SettingsTab = 'server' | 'viewport' | 'sculpt' | 'ai';
 
 export const SettingsModal: React.FC = () => {
+  let workspaceContext;
+  try {
+    workspaceContext = useWorkspace();
+  } catch (error) {
+    return (
+      <div
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            // We don't have setIsSettingsOpen, so we can't close the modal this way.
+            // But we can still close it by clicking on the backdrop? We'll leave it open for now.
+            // Alternatively, we can reload the page on click? Not ideal.
+            // We'll just not close it.
+          }
+        }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-3 sm:p-4"
+      >
+        <div className="w-full max-w-2xl max-h-[88vh] rounded-2xl bg-[hsl(var(--surface-1))] border border-white/[0.12] shadow-2xl overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-primary/20 border border-primary/30 flex items-center justify-center text-primary">
+                <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-white">Studio Settings</h3>
+                <p className="text-[10.5px] text-zinc-400">Configure viewport, pipeline defaults, and local AI runtime</p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                // We don't have setIsSettingsOpen, so we can't close the modal.
+                // We'll just do nothing.
+              }}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.08] transition-colors cursor-pointer"
+            >
+              <HugeiconsIcon icon={Cancel} size={16} className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Body Content */}
+          <div className="p-5 space-y-4 text-xs bg-[hsl(var(--surface-0))] flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
+            <div className="text-center py-10">
+              <p className="text-zinc-400">
+                Error: Unable to access workspace context. Please refresh the page.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const {
     isSettingsOpen,
     setIsSettingsOpen,
@@ -26,7 +77,7 @@ export const SettingsModal: React.FC = () => {
     setPaintBrushSettings,
     showGrid,
     setShowGrid,
-  } = useWorkspace();
+  } = workspaceContext;
 
   const [activeTab, setActiveTab] = useState<SettingsTab>('server');
 
@@ -40,7 +91,18 @@ export const SettingsModal: React.FC = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [isSettingsOpen, setIsSettingsOpen]);
 
-  // ServerIcon settings state
+  const getVramColor = (percent: number) => {
+    if (percent >= 90) return 'text-rose-400';
+    if (percent >= 75) return 'text-amber-400';
+    if (percent >= 50) return 'text-yellow-400';
+    return 'text-emerald-400';
+  };
+
+  const formatGB = (used: number, total: number) => `${used.toFixed(1)}/${total.toFixed(1)} GB`;
+  const formatPercent = (val: number) => `${Math.round(val)}%`;
+
+
+   // ServerIcon settings state
   const [host, setHost] = useState(() => {
     try {
       return localStorage.getItem('ai3d_api_host') || apiClient.getBaseUrl();
@@ -124,7 +186,7 @@ export const SettingsModal: React.FC = () => {
               <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-white">Studio SettingsIcon</h3>
+              <h3 className="font-bold text-sm text-white">Studio Settings</h3>
               <p className="text-[10.5px] text-zinc-400">Configure viewport, pipeline defaults, and local AI runtime</p>
             </div>
           </div>
@@ -139,9 +201,9 @@ export const SettingsModal: React.FC = () => {
         {/* Tab Navigation */}
         <div className="flex items-center gap-1 px-5 pt-2.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
           {[
-            { id: 'server' as const, label: 'Backend & ServerIcon', icon: (props: any) => <HugeiconsIcon icon={ServerIcon} size={16} {...props} /> },
+            { id: 'server' as const, label: 'Backend & Server', icon: (props: any) => <HugeiconsIcon icon={ServerIcon} size={16} {...props} /> },
             { id: 'viewport' as const, label: '3D Viewport', icon: (props: any) => <HugeiconsIcon icon={Monitor} size={16} {...props} /> },
-            { id: 'sculpt' as const, label: 'Sculpt & BrushIcon', icon: (props: any) => <HugeiconsIcon icon={BrushIcon} size={16} {...props} /> },
+            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: (props: any) => <HugeiconsIcon icon={BrushIcon} size={16} {...props} /> },
             { id: 'ai' as const, label: 'AI Inference', icon: (props: any) => <HugeiconsIcon icon={SparklesIcon} size={16} {...props} /> },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -165,12 +227,12 @@ export const SettingsModal: React.FC = () => {
 
         {/* Body Content */}
         <div className="p-5 space-y-4 text-xs bg-[hsl(var(--surface-0))] flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700">
-          {/* TAB 1: ServerIcon & Backend */}
+          {/* TAB 1: Server & Backend */}
           {activeTab === 'server' && (
             <div className="space-y-4 animate-in fade-in duration-100">
               <div className="space-y-1.5">
                 <label className="font-semibold text-zinc-300 flex items-center justify-between">
-                  <span>FastAPI Backend ServerIcon URL</span>
+                  <span>FastAPI Backend Server URL</span>
                   <span className="text-[10px] text-zinc-500 font-mono">Default: /api/v1</span>
                 </label>
                 <div className="flex gap-2">
@@ -209,59 +271,89 @@ export const SettingsModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Hardware and System Details */}
-              <div className="space-y-2 pt-1">
-                <span className="font-semibold text-[11px] text-zinc-400 uppercase tracking-wider">
-                  Hardware &amp; Engine Telemetry
-                </span>
-                <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-zinc-400">FastAPI Pipeline Status</span>
-                    <span
-                      className={`text-xs font-mono font-bold flex items-center gap-1.5 ${
-                        systemStats.status === 'online' ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          systemStats.status === 'online' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
-                        }`}
-                      />
-                      {systemStats.status === 'online'
-                        ? `Online (${systemStats.lastPingMs || 12}ms)`
-                        : 'Offline / Connecting'}
-                    </span>
-                  </div>
+               {/* Hardware and System Details */}
+               <div className="space-y-2 pt-1">
+                 <span className="font-semibold text-[11px] text-zinc-400 uppercase tracking-wider">
+                   Hardware &amp; Engine Telemetry
+                 </span>
+                 <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-2.5">
+                   <div className="flex items-center justify-between">
+                     <span className="text-zinc-400">FastAPI Pipeline Status</span>
+                     <span
+                       className={`text-xs font-mono font-bold flex items-center gap-1.5 ${
+                         systemStats.status === 'online' ? 'text-emerald-400' : 'text-rose-400'
+                       }`}
+                     >
+                       <span
+                         className={`w-2 h-2 rounded-full ${
+                           systemStats.status === 'online' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
+                         }`}
+                       />
+                       {systemStats.status === 'online'
+                         ? `Online (${systemStats.lastPingMs || 12}ms)`
+                         : 'Offline / Connecting'}
+                     </span>
+                   </div>
 
-                  <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-zinc-400">Acceleration Device</span>
-                    <span className="font-mono text-zinc-200">
-                      {systemStats.gpu && systemStats.gpu !== 'Unavailable' ? systemStats.gpu : 'NVIDIA CUDA / PyTorch'}
-                    </span>
-                  </div>
+                   {/* GPU Information */}
+                   <div className="space-y-1.5">
+                     <div className="flex items-center justify-between text-[11.5px]">
+                       <span className="text-zinc-400">GPU(s)</span>
+                       {systemStats.gpus && systemStats.gpus.length > 0 ? (
+                         <>
+                           {systemStats.gpus.map((gpu, index) => (
+                             <div key={gpu.id} className="flex items-center justify-between space-x-2">
+                               <span className="font-mono text-zinc-200">GPU {gpu.id}:</span>
+                               <span className="font-mono text-primary">
+                                 {gpu.name}
+                               </span>
+                             </div>
+                           ))}
+                           {systemStats.gpus.length > 1 && (
+                             <div className="flex items-center justify-between pt-1 border-t border-white/[0.08]">
+                               <span className="font-mono text-zinc-200">Total VRAM:</span>
+                               <span className={`font-mono text-primary font-bold ${getVramColor(systemStats.avg_vram_percent ?? 0)}`}>
+                                 {formatGB(systemStats.total_vram_used_gb, systemStats.total_vram_total_gb)} ({formatPercent(systemStats.avg_vram_percent ?? 0)})
+                               </span>
+                             </div>
+                           )}
+                         </>
+                       ) : (
+                         <span className="font-mono text-zinc-200">
+                           {systemStats.gpu && systemStats.gpu !== 'Unavailable' ? systemStats.gpu : 'NVIDIA CUDA / PyTorch'}
+                         </span>
+                       )}
+                     </div>
+                     {systemStats.gpus && systemStats.gpus.length > 0 && systemStats.gpus[0].temperature !== undefined && (
+                       <div className="space-y-1">
+                         <div className="flex items-center justify-between text-[11.5px]">
+                           <span className="text-zinc-400">GPU Temperatures</span>
+                         </div>
+                         <div className="space-y-0.5">
+                           {systemStats.gpus.map((gpu, index) => (
+                             <div key={gpu.id} className="flex items-center justify-between">
+                               <span className="text-xs">GPU {gpu.id}:</span>
+                               <span className="font-mono text-[9px]">{gpu.temperature}°C</span>
+                             </div>
+                            ))}
+                           </div>
+                        </div>
+                      )}
+                    </div>
 
-                  <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-zinc-400">VRAM Allocation</span>
-                    <span className="font-mono text-primary font-semibold">
-                      {systemStats.vramUsedGb != null
-                        ? `${systemStats.vramUsedGb} / ${systemStats.vramTotalGb || 16} GB`
-                        : 'Dynamic GPU Memory'}
-                    </span>
-                  </div>
+                   <div className="flex items-center justify-between text-[11.5px]">
+                     <span className="text-zinc-400">Python / PyTorch</span>
+                     <span className="font-mono text-zinc-400">
+                       {systemStats.pythonVersion || 'Python 3.10+'} · PyTorch 2.4.0 CUDA
+                     </span>
+                   </div>
+                 </div>
+               </div>
 
-                  <div className="flex items-center justify-between text-[11.5px]">
-                    <span className="text-zinc-400">Python / PyTorch</span>
-                    <span className="font-mono text-zinc-400">
-                      {systemStats.pythonVersion || 'Python 3.10+'} · PyTorch 2.4.0 CUDA
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Auto-SaveIcon Configuration */}
+              {/* Auto-Save Configuration */}
               <div className="flex items-center justify-between p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08]">
                 <div>
-                  <div className="font-semibold text-zinc-200">Continuous Auto-SaveIcon</div>
+                  <div className="font-semibold text-zinc-200">Continuous Auto-Save</div>
                   <div className="text-[11px] text-zinc-400">Automatically save modified meshes &amp; scene state</div>
                 </div>
                 <button
@@ -322,13 +414,13 @@ export const SettingsModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* GridIcon & Lighting Controls */}
+              {/* Grid & Lighting Controls */}
               <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4 text-primary" />
                     <div>
-                      <div className="font-semibold text-zinc-200">Floor Reference GridIcon</div>
+                      <div className="font-semibold text-zinc-200">Floor Reference Grid</div>
                       <div className="text-[10.5px] text-zinc-400">Display infinite metric grid plane in 3D viewport</div>
                     </div>
                   </div>
@@ -349,7 +441,7 @@ export const SettingsModal: React.FC = () => {
 
                 <div className="pt-2 border-t border-white/[0.08] space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300">Studio KeyIcon Light Intensity</span>
+                    <span className="text-zinc-300">Studio Key Light Intensity</span>
                     <span className="font-mono text-primary font-bold">{(environmentSettings.keyLightIntensity || 1.0).toFixed(1)}x</span>
                   </div>
                   <input
@@ -371,11 +463,11 @@ export const SettingsModal: React.FC = () => {
             </div>
           )}
 
-          {/* TAB 3: Sculpt & BrushIcon */}
+          {/* TAB 3: Sculpt & Brush */}
           {activeTab === 'sculpt' && (
             <div className="space-y-4 animate-in fade-in duration-100">
               <div className="space-y-2">
-                <label className="font-semibold text-zinc-300">Default Sculpt BrushIcon</label>
+                <label className="font-semibold text-zinc-300">Default Sculpt Brush</label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {['standard', 'inflate', 'smooth', 'flatten'].map((b) => (
                     <button
@@ -397,7 +489,7 @@ export const SettingsModal: React.FC = () => {
               <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-3.5">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300">Default BrushIcon Radius</span>
+                    <span className="text-zinc-300">Default Brush Radius</span>
                     <span className="font-mono text-primary font-bold">{(sculptSettings.radius || 0.15).toFixed(2)}</span>
                   </div>
                   <input
@@ -439,7 +531,7 @@ export const SettingsModal: React.FC = () => {
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300">BrushIcon Hardness / Sharp Falloff</span>
+                    <span className="text-zinc-300">Brush Hardness / Sharp Falloff</span>
                     <span className="font-mono text-primary font-bold">{(sculptSettings.hardness || 0.50).toFixed(2)}</span>
                   </div>
                   <input
@@ -498,7 +590,7 @@ export const SettingsModal: React.FC = () => {
               {/* Polycount Slider */}
               <div className="p-3.5 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-300 font-semibold">Default TargetIcon Polycount</span>
+                  <span className="text-zinc-300 font-semibold">Default Target Polycount</span>
                   <span className="font-mono text-primary font-bold">
                     {generationSettings.autoOptimizeSettings.targetPolycount.toLocaleString()} triangles
                   </span>
@@ -568,7 +660,7 @@ export const SettingsModal: React.FC = () => {
             onClick={handleSave}
             className="px-5 py-2 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-black font-extrabold text-xs shadow-md shadow-primary/20 transition-all cursor-pointer"
           >
-            SaveIcon SettingsIcon
+            Save Settings
           </button>
         </div>
       </div>

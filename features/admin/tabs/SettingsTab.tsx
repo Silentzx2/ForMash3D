@@ -70,12 +70,6 @@ export function SettingsTab({ initialSection }: { initialSection?: string }) {
   const resolvedInitial = (initialSection && VALID_SUB_TABS[initialSection.toLowerCase()]) || 'general';
   const [activeSubTab, setActiveSubTab] = useState<SettingsSubTab>(resolvedInitial);
 
-  useEffect(() => {
-    if (initialSection && VALID_SUB_TABS[initialSection.toLowerCase()]) {
-      setActiveSubTab(VALID_SUB_TABS[initialSection.toLowerCase()]);
-    }
-  }, [initialSection]);
-
   const [runtime, setRuntime] = useState<RuntimeStatus | null>(null);
 
   const load = useCallback(async () => {

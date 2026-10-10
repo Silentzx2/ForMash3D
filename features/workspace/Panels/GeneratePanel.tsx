@@ -1,16 +1,31 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
-import type { PhysicsSettings } from '../types';
+import { useAppStore } from '@/stores/useAppStore';
+import type { GenerationSettings, PhysicsSettings } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
-
+import { MultiViewWorkspace } from './MultiViewWorkspace';
+import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
+
+function dataURLtoFile(dataURL: string, filename: string): File {
+  const arr = dataURL.split(',');
+  const mime = arr[0].match(/:(.*?);/)![1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
 export interface MeshQualityPreset {
   id: 'low' | 'medium' | 'high' | 'ultra';
   label: string;
@@ -68,7 +83,6 @@ export const MESH_QUALITY_OPTIONS: MeshQualityPreset[] = [
     badge: '640³ • 75 steps (Maximum)',
     tooltip: 'Ultra: Maximum fidelity (640³ grid • 75 steps • ~100k tris)',
   },
-  // 'raw' quality removed: text-to-raw-mesh has no registered backend model
 ];
 
 interface DiscoveredModel {
@@ -85,12 +99,139 @@ interface DiscoveredModel {
   shape_vram_mb: number;
   texture_vram_mb: number;
   supports_flashvdm?: boolean;
+  capabilities?: Record<string, any>;
 }
+
+const SMART_PRESET_FALLBACK: Record<string, any> = {
+  game_ready: {
+    label: 'Game Ready',
+    target_polycount: 50000,
+    texture_resolution: 1024,
+    generate_lod: true,
+    lod_preset: 'high',
+    lod_count: 4,
+    collision: true,
+    production_qa: true,
+    auto_uv: true,
+    enable_auto_rig: false,
+    enable_printability_check: false,
+    enable_auto_repair: false,
+    preferred_features: ['image_to_textured_mesh', 'image_to_raw_mesh'],
+    model_priority: [
+      'trellis2_image_to_textured_mesh',
+      'trellis_image_to_textured_mesh',
+      'unique3d_image_to_raw_mesh',
+      'hunyuan3d_shape_v21_image_to_raw_mesh',
+      'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
+      'triposf_image_to_raw_mesh',
+      'triposg_image_to_raw_mesh',
+      'triposr_image_to_raw_mesh',
+      'partpacker_image_to_raw_mesh',
+      'ultrashape_image_to_raw_mesh',
+    ],
+  },
+  cinematic: {
+    label: 'Cinematic',
+    target_polycount: 200000,
+    texture_resolution: 2048,
+    generate_lod: true,
+    lod_preset: 'high',
+    lod_count: 4,
+    collision: false,
+    production_qa: true,
+    auto_uv: true,
+    enable_auto_rig: false,
+    enable_printability_check: false,
+    enable_auto_repair: false,
+    preferred_features: ['image_to_textured_mesh', 'image_to_raw_mesh'],
+    model_priority: [
+      'trellis2_image_to_textured_mesh',
+      'trellis_image_to_textured_mesh',
+      'unique3d_image_to_raw_mesh',
+      'ultrashape_image_to_raw_mesh',
+      'triposf_image_to_raw_mesh',
+      'hunyuan3d_shape_v21_image_to_raw_mesh',
+      'triposg_image_to_raw_mesh',
+      'triposr_image_to_raw_mesh',
+    ],
+  },
+  animation: {
+    label: 'Animation',
+    target_polycount: 30000,
+    texture_resolution: 1024,
+    generate_lod: true,
+    lod_preset: 'high',
+    lod_count: 4,
+    collision: false,
+    production_qa: true,
+    auto_uv: true,
+    enable_auto_rig: true,
+    enable_printability_check: false,
+    enable_auto_repair: false,
+    preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
+    model_priority: [
+      'unique3d_image_to_raw_mesh',
+      'hunyuan3d_shape_v21_image_to_raw_mesh',
+      'trellis2_image_to_textured_mesh',
+      'trellis_image_to_textured_mesh',
+      'triposf_image_to_raw_mesh',
+      'triposg_image_to_raw_mesh',
+      'triposr_image_to_raw_mesh',
+    ],
+  },
+  '3d_print': {
+    label: '3D Print',
+    target_polycount: 0,
+    texture_resolution: 0,
+    generate_lod: false,
+    lod_preset: 'high',
+    lod_count: 0,
+    collision: false,
+    production_qa: true,
+    auto_uv: false,
+    enable_auto_rig: false,
+    enable_printability_check: true,
+    enable_auto_repair: true,
+    preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
+    model_priority: [
+      'unique3d_image_to_raw_mesh',
+      'ultrashape_image_to_raw_mesh',
+      'triposf_image_to_raw_mesh',
+      'hunyuan3d_shape_v21_image_to_raw_mesh',
+      'triposg_image_to_raw_mesh',
+      'triposr_image_to_raw_mesh',
+      'partpacker_image_to_raw_mesh',
+    ],
+  },
+  mobile: {
+    label: 'Mobile',
+    target_polycount: 20000,
+    texture_resolution: 512,
+    generate_lod: true,
+    lod_preset: 'mobile',
+    lod_count: 4,
+    collision: false,
+    production_qa: true,
+    auto_uv: true,
+    enable_auto_rig: false,
+    enable_printability_check: false,
+    enable_auto_repair: false,
+    preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
+    model_priority: [
+      'unique3d_image_to_raw_mesh',
+      'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
+      'triposr_image_to_raw_mesh',
+      'triposg_image_to_raw_mesh',
+      'partpacker_image_to_raw_mesh',
+      'hunyuan3d_shape_v21_image_to_raw_mesh',
+    ],
+  },
+};
 
 function formatGenerateModel(
   id: string,
   isAvailable = true,
-  detail?: { status?: string; vram_requirement?: number; capabilities?: Record<string, boolean> }
+  detail?: { status?: string; vram_requirement?: number; capabilities?: Record<string, any> }
 ): DiscoveredModel {
   const def = getModelDefinition(id);
   const isTextured = def?.supportsTexture ?? id.includes('textured');
@@ -101,7 +242,6 @@ function formatGenerateModel(
 
   let cleanLabel = def?.name || id;
   if (id === 'trellis_image_to_textured_mesh') cleanLabel = 'TRELLIS (PBR Textured Mesh)';
-  else if (id === 'trellis_text_to_textured_mesh') cleanLabel = 'TRELLIS (Text-to-3D Textured)';
   else if (id === 'triposr_image_to_raw_mesh') cleanLabel = 'TripoSR (Ultra-Fast Geometry)';
   else if (id === 'triposg_image_to_raw_mesh') cleanLabel = 'TripoSG (Fast Feed-Forward Geometry)';
   else if (id === 'triposf_image_to_raw_mesh') cleanLabel = 'TripoSF (High-Density Neural Raw Mesh)';
@@ -110,6 +250,7 @@ function formatGenerateModel(
   else if (id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
   else if (id === 'partpacker_image_to_raw_mesh') cleanLabel = 'PartPacker (Modular Mesh)';
   else if (id === 'ultrashape_image_to_raw_mesh') cleanLabel = 'UltraShape (High-Poly Geometry)';
+  else if (id === 'unique3d_image_to_raw_mesh') cleanLabel = 'Unique3D (High-Fidelity Diffusion)';
 
   return {
     id,
@@ -125,6 +266,7 @@ function formatGenerateModel(
     shape_vram_mb: Math.round(vram * 0.6),
     texture_vram_mb: vram,
     supports_flashvdm: supportsFlashVDM,
+    capabilities: detail?.capabilities || {},
   };
 }
 
@@ -134,23 +276,60 @@ export const GeneratePanel: React.FC = () => {
     executionProgress,
     executionStep,
     generate3DModel,
+    queueGenerationJob,
     generationSettings,
-    setGenerationSettings
+    setGenerationSettings,
+    navigateToTool,
   } = useWorkspace();
+  
+  const {
+    batchGenerationEnabled,
+    setBatchGenerationEnabled,
+    addToBatchQueue,
+    removeFromBatchQueue,
+    clearBatchQueue,
+    updateBatchItem,
+    setBatchQueue,
+  } = useAppStore();
+  
+  const router = useRouter();
 
-  const currentMode = generationSettings.mode || 'image-to-3d';
+  const currentMode = 'image-to-3d';
   const [modelRegistry, setModelRegistry] = useState<Record<string, string[]> | null>(null);
   const [weightsStatus, setWeightsStatus] = useState<Record<string, boolean>>({});
   const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
   const [optionsLoading, setOptionsLoading] = useState(false);
   const pendingGenerateRef = useRef(false);
   const ownedBlobUrlsRef = useRef<Set<string>>(new Set());
+  const [smartPresets, setSmartPresets] = useState<Record<string, any>>({});
+  const [smartResolution, setSmartResolution] = useState<any | null>(null);
+  const [enhancementLoading, setEnhancementLoading] = useState(false);
+  const [enhancementError, setEnhancementError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!pendingGenerateRef.current) return;
     pendingGenerateRef.current = false;
-    void generate3DModel('image-to-3d');
+    void generate3DModel();
   }, [generationSettings, generate3DModel]);
+
+   useEffect(() => {
+      let active = true;
+      getApiClient().getSmartPresets().then(data => {
+        if (active) {
+          const intents = data?.intents;
+          if (intents && Object.keys(intents).length > 0) {
+            setSmartPresets(intents);
+          } else {
+            console.warn('Smart presets response empty; using fallback presets:', intents);
+            setSmartPresets(SMART_PRESET_FALLBACK);
+          }
+        }
+      }).catch(err => {
+        console.warn('Failed to load smart-generation presets:', err);
+        setSmartPresets(SMART_PRESET_FALLBACK);
+      });
+      return () => { active = false; };
+    }, []);
 
   useEffect(() => {
     let active = true;
@@ -175,105 +354,100 @@ export const GeneratePanel: React.FC = () => {
     return () => { active = false; };
   }, []);
 
+
+  // Keep the user's model selection. Only repair an invalid selection after
+  // the available-model list changes; never rank or silently replace models.
+
+  // Memoize modelDetails to prevent infinite re-renders (HIGH-003)
+  const memoizedModelDetails = useMemo(() => {
+    if (!modelRegistry) return {};
+    const details: Record<string, any> = {};
+    for (const [feature, ids] of Object.entries(modelRegistry)) {
+      for (const id of ids) {
+        if (modelDetails[id]) {
+          details[id] = modelDetails[id];
+        }
+      }
+    }
+    return details;
+  }, [modelRegistry, modelDetails]);
+
   const relevantModelIds = useMemo(() => {
     let ids: string[] = [];
-    if (currentMode === 'text-to-3d') {
-      const textModels = (modelRegistry?.['text_to_textured_mesh'] || []).filter(isMeshGenerationModel);
-      ids = textModels.length > 0 ? textModels : ['trellis_text_to_textured_mesh'];
-    } else {
-      const textured = (modelRegistry?.['image_to_textured_mesh'] || []).filter(isMeshGenerationModel);
-      const raw = (modelRegistry?.['image_to_raw_mesh'] || []).filter(isMeshGenerationModel);
-      const combined = Array.from(new Set([...textured, ...raw]));
-      const defaults = [
-        'trellis_image_to_textured_mesh',
-        'triposr_image_to_raw_mesh',
-        'triposg_image_to_raw_mesh',
-        'hunyuan3d_shape_v21_image_to_raw_mesh',
-        'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-        'triposf_image_to_raw_mesh',
-      ];
-      ids = combined.length > 0 ? combined : defaults;
-    }
+    
+    const textured = (modelRegistry?.['image_to_textured_mesh'] || []).filter(isMeshGenerationModel);
+    const raw = (modelRegistry?.['image_to_raw_mesh'] || []).filter(isMeshGenerationModel);
+    const combined = Array.from(new Set([...textured, ...raw]));
+    const defaults = [
+      'trellis_image_to_textured_mesh',
+      'triposr_image_to_raw_mesh',
+      'triposg_image_to_raw_mesh',
+      'hunyuan3d_shape_v21_image_to_raw_mesh',
+      'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
+      'triposf_image_to_raw_mesh',
+      'trellis2_image_to_textured_mesh',
+      'unique3d_image_to_raw_mesh',
+      'partpacker_image_to_raw_mesh',
+      'ultrashape_image_to_raw_mesh',
+    ];
+    ids = combined.length > 0 ? combined : defaults;
 
-    // Select only models that the backend currently reports as ready.
-    // This prevents a CPU-only/missing-weight machine from presenting unusable models.
-    if (modelDetails && Object.keys(modelDetails).length > 0) {
-      return ids.filter(id => modelDetails[id]?.status === 'ready');
-    }
-    if (weightsStatus && Object.keys(weightsStatus).length > 0) {
-      return ids.filter(id => weightsStatus[id] === true);
-    }
-    return ids;
-  }, [modelRegistry, currentMode, weightsStatus, modelDetails]);
-
-  const meshCapableModels = useMemo(() => {
-    return relevantModelIds.map(id =>
-      formatGenerateModel(id, weightsStatus[id] !== false, modelDetails[id])
-    );
-  }, [relevantModelIds, weightsStatus, modelDetails]);
-
-  const providersList = meshCapableModels;
-
-  // Auto-correct selected model if it does not belong to the current mode / mesh generation
-  useEffect(() => {
-    if (providersList.length === 0) return;
-    const isCurrentModelValid = providersList.some(m => m.id === generationSettings.aiModel);
-    if (!isCurrentModelValid) {
-      setGenerationSettings(prev => ({
-        ...prev,
-        aiModel: providersList[0].id,
-      }));
-    }
-  }, [providersList, generationSettings.aiModel, setGenerationSettings]);
-
-  // Status pill logic — shows what's wrong with the selected model
+    // Prioritize ready / installed models at the top, while keeping all supported models
+    // visible in the selector so users can see available engines and their readiness status.
+    const readyIds = ids.filter(id => memoizedModelDetails[id]?.status === 'ready' || weightsStatus[id] === true);
+    const otherIds = ids.filter(id => !readyIds.includes(id));
+    return [...readyIds, ...otherIds];
+  }, [modelRegistry, weightsStatus, memoizedModelDetails]);
+  const [subAction, setSubAction] = useState<'upload' | 'crop'>('upload');
+  const [activeMvSlot, setActiveMvSlot] = useState<'front' | 'back' | 'left' | 'right'>('front');
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
+  const modelDropdownRef = useRef<HTMLDivElement>(null);
+  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const getStatusInfo = () => {
     const selected = providersList.find(m => m.id === generationSettings.aiModel);
     if (!selected) {
       if (providersList.length === 0) return { label: 'No models installed', tone: 'warn' as const };
       return null;
     }
-    if (selected.available) return null; // ready → no pill
-    if (selected.status === 'weights_missing') return { label: 'Weights missing', tone: 'warn' as const };
-    if (!selected.installed) return { label: 'Model not installed', tone: 'warn' as const };
+    // Check both weightsStatus and modelDetails for readiness (MED-001)
+    const details = memoizedModelDetails[selected.id];
+    const isReady = weightsStatus[selected.id] === true || details?.status === 'ready';
+    if (isReady) return null; // ready → no pill
+    if (details?.status === 'weights_missing') return { label: 'Weights missing (download via manager)', tone: 'warn' as const };
+    if (details?.status === 'gpu_unavailable') return { label: 'GPU unavailable (requires CUDA)', tone: 'warn' as const };
+    if (!selected.installed) return { label: 'Model weights missing', tone: 'warn' as const };
     if (selected.status) return { label: selected.status, tone: 'warn' as const };
     return { label: 'Not ready', tone: 'warn' as const };
   };
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
+  const meshCapableModels = useMemo(() => {
+    return relevantModelIds.map(id => {
+      const isReady = memoizedModelDetails[id]?.status === 'ready' || weightsStatus[id] === true;
+      return formatGenerateModel(id, isReady, memoizedModelDetails[id]);
+    });
+  }, [relevantModelIds, weightsStatus, memoizedModelDetails]);
+
+  const providersList = meshCapableModels;
   const statusInfo = getStatusInfo();
 
-  // Keep the user's model selection. Only repair an invalid selection after
-  // the available-model list changes; never rank or silently replace models.
-
-  const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
-  const modelDropdownRef = useRef<HTMLDivElement>(null);
-  const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
-
+  // Auto-correct selected model: if current selection is invalid, prefer the first ready model, or first available model
   useEffect(() => {
-    if (!modelDropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (modelDropdownRef.current && !modelDropdownRef.current.contains(e.target as Node)) {
-        setModelDropdownOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setModelDropdownOpen(false);
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [modelDropdownOpen]);
+    if (providersList.length === 0 || generationSettings.intent) return;
+    const isCurrentModelValid = providersList.some(m => m.id === generationSettings.aiModel);
+    if (!isCurrentModelValid) {
+      const firstReady = providersList.find(m => m.available || m.installed);
+      setGenerationSettings(prev => ({
+        ...prev,
+        aiModel: firstReady ? firstReady.id : providersList[0].id,
+      }));
+    }
+  }, [providersList, generationSettings.aiModel, setGenerationSettings]);
 
-  const [subAction, setSubAction] = useState<'upload' | 'crop'>('upload');
-  const [activeMvSlot, setActiveMvSlot] = useState<'front' | 'back' | 'left' | 'right'>('front');
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
-
-  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Status pill logic — shows what's wrong with the selected model
   const { progress: uploadProgress, startUpload, updateProgress, finishUpload, failUpload } = useUploadProgress();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -281,6 +455,10 @@ export const GeneratePanel: React.FC = () => {
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
+  const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview_input);
+  
+  const supportsTextureGeneration = activeModelObj?.supports_texture ?? false;
+  const showTextureToggle = supportsTextureGeneration;
 
   const physics = generationSettings.physics ?? {
     bodyType: 'auto' as const,
@@ -310,8 +488,6 @@ export const GeneratePanel: React.FC = () => {
     });
   };
 
-  const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
-
   const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
 
   const ownBlobUrl = useCallback((url: string) => {
@@ -331,12 +507,21 @@ export const GeneratePanel: React.FC = () => {
     }
     ownedBlobUrlsRef.current.clear();
   }, []);
-  const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/x-png', 'image/jpg'];
+  const ACCEPTED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'];
+
+  const isAcceptedImage = (file: File) => {
+    if (file.type && ACCEPTED_IMAGE_TYPES.includes(file.type.toLowerCase())) {
+      return true;
+    }
+    const name = (file.name || '').toLowerCase();
+    return ACCEPTED_IMAGE_EXTS.some(ext => name.endsWith(ext));
+  };
 
   const processImageFile = async (file: File) => {
     setUploadError(null);
 
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    if (!isAcceptedImage(file)) {
       setUploadError('Invalid file type. Use JPG, PNG, or WEBP.');
       return;
     }
@@ -357,12 +542,16 @@ export const GeneratePanel: React.FC = () => {
       );
       finishUpload();
       if (!res.file_id) throw new Error('Backend did not return a file ID for the uploaded image.');
-      const previewUrl = ownBlobUrl(URL.createObjectURL(file));
+      const serverUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
       const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       setGenerationSettings(prev => ({
         ...prev,
-        image: previewUrl,
+        image: serverUrl,
         imageFileId: res.file_id,
+        preprocessingArtifactId: null,
+        preprocessingPreviewUrl: null,
+        preprocessingMetadata: null,
+        enhancementEnabled: false,
         prompt: cleanPrompt,
         imageName: cleanPrompt,
       }));
@@ -373,14 +562,97 @@ export const GeneratePanel: React.FC = () => {
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processImageFile(file);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    // Process each file
+    const validFiles = Array.from(files).filter(isAcceptedImage);
+    if (validFiles.length === 0) {
+      setUploadError('No valid image files selected. Use JPG, PNG, or WEBP.');
+      return;
+    }
+    
+    if (validFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
+      setUploadError('One or more files are too large. Maximum size is 20MB per file.');
+      return;
+    }
+    
+    // Upload all valid files and collect their file IDs
+    const uploadPromises = validFiles.map(file => 
+      new Promise<{file: File, fileId: string | null, previewUrl: string | null}>(async (resolve) => {
+        try {
+          startUpload(file.name, file.size);
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await getApiClient().post<{ file_id: string }>(
+            '/api/v1/file-upload/image',
+            formData,
+            { 
+              headers: { 'Content-Type': 'multipart/form-data' }, 
+              onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) 
+            }
+          );
+          finishUpload();
+          const persistentUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
+          resolve({ 
+            file, 
+            fileId: res.file_id || null, 
+            previewUrl: persistentUrl || null 
+          });
+        } catch (err) {
+          failUpload();
+          resolve({ 
+            file, 
+            fileId: null, 
+            previewUrl: null 
+          });
+        }
+      })
+    );
+    
+    // Wait for all uploads to complete
+    Promise.all(uploadPromises).then(results => {
+      const successfulUploads = results.filter(r => r.fileId !== null);
+      const failedUploads = results.filter(r => r.fileId === null);
+      
+      if (successfulUploads.length > 0) {
+        // Set the primary reference image to the first uploaded file so it displays immediately
+        const first = successfulUploads[0];
+        const cleanPrompt = first.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        setGenerationSettings(prev => ({
+          ...prev,
+          image: first.previewUrl,
+          imageFileId: first.fileId,
+          preprocessingArtifactId: null,
+          preprocessingPreviewUrl: null,
+          preprocessingMetadata: null,
+          enhancementEnabled: false,
+          prompt: cleanPrompt,
+          imageName: cleanPrompt,
+          mode: 'image-to-3d',
+        }));
+
+        // If multiple images were selected, add remaining to batch queue
+        if (successfulUploads.length > 1) {
+          const imageFileIds = successfulUploads.slice(1).map(r => r.fileId!);
+          addToBatchQueue(imageFileIds);
+          setNoticeMessage(`Primary image loaded. ${imageFileIds.length} additional image${imageFileIds.length === 1 ? '' : 's'} added to batch queue.`);
+          setTimeout(() => setNoticeMessage(null), 5000);
+        }
+      }
+      
+      if (failedUploads.length > 0) {
+        setUploadError(`${failedUploads.length} image${failedUploads.length === 1 ? '' : 's'} failed to upload.`);
+      }
+      
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    });
   };
 
   const processImageFileForSlot = async (file: File, slot: 'front' | 'back' | 'left' | 'right') => {
     setUploadError(null);
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+    if (!isAcceptedImage(file)) {
       setUploadError('Invalid file type. Use JPG, PNG, or WEBP.');
       return;
     }
@@ -409,6 +681,10 @@ export const GeneratePanel: React.FC = () => {
         },
         image: slot === 'front' || !prev.image ? previewUrl : prev.image,
         imageFileId: slot === 'front' || !prev.imageFileId ? res.file_id : prev.imageFileId,
+        preprocessingArtifactId: slot === 'front' || !prev.image ? null : prev.preprocessingArtifactId,
+        preprocessingPreviewUrl: slot === 'front' || !prev.image ? null : prev.preprocessingPreviewUrl,
+        preprocessingMetadata: slot === 'front' || !prev.image ? null : prev.preprocessingMetadata,
+        enhancementEnabled: slot === 'front' || !prev.image ? false : prev.enhancementEnabled,
         imageName: slot === 'front' || !prev.imageName ? cleanPrompt : prev.imageName,
         mode: 'image-to-3d',
       }));
@@ -443,17 +719,117 @@ export const GeneratePanel: React.FC = () => {
     setIsDragOver(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
 
-    const file = e.dataTransfer.files?.[0];
-    if (file) processImageFile(file);
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+    
+    // Process each file
+    const validFiles = Array.from(files).filter(isAcceptedImage);
+    if (validFiles.length === 0) {
+      setUploadError('No valid image files dropped. Use JPG, PNG, or WEBP.');
+      return;
+    }
+    
+    if (validFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
+      setUploadError('One or more files are too large. Maximum size is 20MB per file.');
+      return;
+    }
+    
+    // Upload all valid files and collect their file IDs
+    const uploadPromises = validFiles.map(file => 
+      new Promise<{file: File, fileId: string | null, previewUrl: string | null}>(async (resolve) => {
+        try {
+          startUpload(file.name, file.size);
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await getApiClient().post<{ file_id: string }>(
+            '/api/v1/file-upload/image',
+            formData,
+            { 
+              headers: { 'Content-Type': 'multipart/form-data' }, 
+              onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) 
+            }
+          );
+          finishUpload();
+          const persistentUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
+          resolve({ 
+            file, 
+            fileId: res.file_id || null, 
+            previewUrl: persistentUrl || null 
+          });
+        } catch (err) {
+          failUpload();
+          resolve({ 
+            file, 
+            fileId: null, 
+            previewUrl: null 
+          });
+        }
+      })
+    );
+    
+    // Wait for all uploads to complete
+    Promise.all(uploadPromises).then(results => {
+      const successfulUploads = results.filter(r => r.fileId !== null);
+      const failedUploads = results.filter(r => r.fileId === null);
+      
+      if (successfulUploads.length > 0) {
+        // Set the primary reference image to the first uploaded file so it displays immediately
+        const first = successfulUploads[0];
+        const cleanPrompt = first.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+        setGenerationSettings(prev => ({
+          ...prev,
+          image: first.previewUrl,
+          imageFileId: first.fileId,
+          preprocessingArtifactId: null,
+          preprocessingPreviewUrl: null,
+          preprocessingMetadata: null,
+          enhancementEnabled: false,
+          prompt: cleanPrompt,
+          imageName: cleanPrompt,
+          mode: 'image-to-3d',
+        }));
+
+        // If multiple images were dropped, add remaining to batch queue
+        if (successfulUploads.length > 1) {
+          const imageFileIds = successfulUploads.slice(1).map(r => r.fileId!);
+          addToBatchQueue(imageFileIds);
+          setNoticeMessage(`Primary image loaded. ${imageFileIds.length} additional image${imageFileIds.length === 1 ? '' : 's'} added to batch queue.`);
+          setTimeout(() => setNoticeMessage(null), 5000);
+        }
+      }
+      
+      if (failedUploads.length > 0) {
+        setUploadError(`${failedUploads.length} image${failedUploads.length === 1 ? '' : 's'} failed to upload.`);
+      }
+    });
+  };
+
+  const handlePanelDragOver = (e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('Files')) {
+      e.preventDefault();
+    }
+  };
+
+  const handlePanelDrop = (e: React.DragEvent) => {
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (isAcceptedImage(file)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSubAction('upload');
+        processImageFile(file);
+      }
+    }
   };
 
   const handleImageTo3DTabClick = () => {
     setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
+    navigateToTool('model');
   };
 
   const handleModelSelect = (model: any) => {
@@ -468,26 +844,123 @@ export const GeneratePanel: React.FC = () => {
     {
       id: 'mech-sentinel',
       name: 'Mech Sentinel',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><polygon points="150,40 230,100 210,240 90,240 70,100" fill="%232e3440" stroke="%23F9CF00" stroke-width="4"/><circle cx="150" cy="120" r="35" fill="%23F9CF00"/><circle cx="150" cy="120" r="15" fill="%23111"/><rect x="110" y="180" width="80" height="40" rx="8" fill="%23434c5e" stroke="%23d8dee9" stroke-width="2"/><text x="150" y="270" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="12" font-weight="bold">MECH SENTINEL</text></svg>',
+      url: '/samples/mech-sentinel.svg',
     },
     {
       id: 'cyber-drone',
       name: 'Cyber Drone',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><circle cx="150" cy="140" r="70" fill="%232b303c" stroke="%2338bdf8" stroke-width="4"/><path d="M120,130 Q150,110 180,130" stroke="%2338bdf8" stroke-width="8" stroke-linecap="round" fill="none"/><circle cx="130" cy="155" r="8" fill="%23F9CF00"/><circle cx="170" cy="155" r="8" fill="%23F9CF00"/><text x="150" y="260" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="12" font-weight="bold">CYBER DROID</text></svg>',
+      url: '/samples/cyber-drone.svg',
     },
     {
       id: 'sci-fi-helmet',
       name: 'Sci-Fi Helmet',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><path d="M90,80 Q150,30 210,80 Q240,160 210,230 Q150,260 90,230 Q60,160 90,80 Z" fill="%232e3440" stroke="%23a855f7" stroke-width="4"/><path d="M100,120 Q150,90 200,120 Q210,160 195,180 Q150,200 105,180 Z" fill="%23F9CF00"/><text x="150" y="270" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="12" font-weight="bold">HELMET MK-IV</text></svg>',
+      url: '/samples/sci-fi-helmet.svg',
     },
     {
       id: 'obsidian-blade',
       name: 'Obsidian Blade',
-      url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="%231a1c23"/><path d="M150,30 L175,170 L150,190 L125,170 Z" fill="%233b4252" stroke="%2310b981" stroke-width="3"/><rect x="110" y="190" width="80" height="12" rx="4" fill="%234c566a"/><rect x="142" y="202" width="16" height="60" rx="3" fill="%232e3440" stroke="%23F9CF00" stroke-width="2"/><circle cx="150" cy="272" r="10" fill="%23F9CF00"/><text x="150" y="292" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="11" font-weight="bold">OBSIDIAN BLADE</text></svg>',
+      url: '/samples/obsidian-blade.svg',
     },
   ];
 
-  const handleGenerate = () => {
+  const applyIntentPreset = async (intent: string) => {
+    const preset = smartPresets[intent];
+    if (!preset) return;
+
+    let chosenModel = '';
+    let resolved: { model_id?: string } | null = null;
+    try {
+      resolved = await getApiClient().resolveSmartIntent(intent);
+      chosenModel = resolved!.model_id || '';
+    } catch (error) {
+      setEnhancementError(error instanceof Error ? error.message : 'No ready model satisfies this intent');
+      return;
+    }
+
+    const textureResolution = Number(preset.texture_resolution || 0);
+    const textureQuality: GenerationSettings['textureQuality'] =
+      textureResolution <= 512 ? 'low'
+        : textureResolution <= 1024 ? 'medium'
+          : textureResolution <= 2048 ? 'high'
+            : '8k';
+
+    setSmartResolution(resolved!);
+    const canAutoGenerate = Boolean(generationSettings.imageFileId)
+      && (!generationSettings.enhancementEnabled || Boolean(generationSettings.preprocessingArtifactId))
+      && !batchGenerationEnabled;
+    if (canAutoGenerate) pendingGenerateRef.current = true;
+
+    setGenerationSettings(prev => ({
+      ...prev,
+      intent: intent as GenerationSettings['intent'],
+      aiModel: chosenModel,
+      textureQuality,
+      generateTexture: textureResolution > 0,
+      generateLOD: Boolean(preset.generate_lod),
+      lodPreset: preset.lod_preset || prev.lodPreset,
+      lodCount: Number(preset.lod_count || 0),
+      generateCollision: Boolean(preset.collision),
+      enablePrintabilityCheck: Boolean(preset.enable_printability_check),
+      enableAutoRepair: Boolean(preset.enable_auto_repair),
+      enableAutoRig: Boolean(preset.enable_auto_rig),
+      autoOptimizeSettings: {
+        ...prev.autoOptimizeSettings,
+        targetPolycount: Number(preset.target_polycount || 0),
+      },
+    }));
+    setEnhancementError(null);
+  };
+
+  const previewEnhancement = async () => {
+    if (!generationSettings.imageFileId) {
+      setEnhancementError('Upload the source image first. Preview enhancement requires an uploaded file.');
+      return;
+    }
+    setEnhancementLoading(true);
+    setEnhancementError(null);
+    try {
+      const result = await getApiClient().previewImageEnhancement({
+        image_file_id: generationSettings.imageFileId,
+        remove_background: true,
+        auto_crop: true,
+        upscale: true,
+        sharpen: false,
+      });
+      setGenerationSettings(prev => ({
+        ...prev,
+        enhancementEnabled: true,
+        preprocessingArtifactId: result.artifact_id,
+        preprocessingPreviewUrl: result.preview_url,
+        preprocessingMetadata: result.metadata || null,
+      }));
+      if (result.warning) setEnhancementError(String(result.warning));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Image enhancement failed';
+      setEnhancementError(message);
+      setGenerationSettings(prev => ({
+        ...prev,
+        enhancementEnabled: false,
+        preprocessingArtifactId: null,
+        preprocessingPreviewUrl: null,
+        preprocessingMetadata: null,
+      }));
+    } finally {
+      setEnhancementLoading(false);
+    }
+  };
+
+  const disableEnhancement = () => {
+    setGenerationSettings(prev => ({
+      ...prev,
+      enhancementEnabled: false,
+      preprocessingArtifactId: null,
+      preprocessingPreviewUrl: null,
+      preprocessingMetadata: null,
+    }));
+    setEnhancementError(null);
+  };
+
+   const handleGenerate = () => {
     const hasImage = Boolean(
       generationSettings.image ||
       generationSettings.multiviewImages?.front ||
@@ -498,30 +971,106 @@ export const GeneratePanel: React.FC = () => {
       setTimeout(() => setNoticeMessage(null), 4000);
       return;
     }
-    const multiviewCount = Object.values(generationSettings.multiviewImages || {}).filter(Boolean).length;
-    if (subAction === 'crop' || multiviewCount > 1) {
-      setNoticeMessage('The current backend generation contract is single-image. Use the Single Image tab; collected multiview files are not sent as a multi-view request.');
+    if (generationSettings.enhancementEnabled && !generationSettings.preprocessingArtifactId) {
+      setNoticeMessage('Approve the Generation Preview or disable enhancement before generating.');
       setTimeout(() => setNoticeMessage(null), 5000);
       return;
     }
-    // Commit the request settings first; the effect above submits only after React
-    // has installed this exact snapshot, avoiding stale-state generation requests.
-    pendingGenerateRef.current = true;
+    if (subAction === 'crop') {
+      if (!isModelMultiviewCapable) {
+        setNoticeMessage(`The selected model "${activeModelObj?.label || activeModelId}" does not support multi-view reconstruction. Please choose a multi-view enabled 3D engine or use Single Image mode.`);
+        setTimeout(() => setNoticeMessage(null), 5000);
+        return;
+      }
+      const hasMvViews = (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0) ||
+        Boolean(generationSettings.multiviewAssetId);
+      if (!hasMvViews) {
+        setNoticeMessage('Please generate or upload multi-view images before running 3D reconstruction.');
+        setTimeout(() => setNoticeMessage(null), 5000);
+        return;
+      }
+    }
+    
+    // If batch generation is enabled, add current image to batch queue instead of generating immediately
+    if (batchGenerationEnabled) {
+      // Upload current image if not already uploaded
+      if (generationSettings.image && !generationSettings.imageFileId) {
+        // Convert base64 image to file and upload
+        const imageBlob = dataURLtoFile(generationSettings.image, 'image.jpg');
+        const formData = new FormData();
+        formData.append('file', imageBlob);
+        
+        getApiClient().post<{ file_id: string }>(
+          '/api/v1/file-upload/image',
+          formData,
+          { 
+            headers: { 'Content-Type': 'multipart/form-data' } 
+          }
+        ).then(res => {
+          const imageFileId = res.file_id;
+          if (imageFileId) {
+            // Save file_id to generation settings so UI keeps the image reference
+            setGenerationSettings(prev => ({ ...prev, imageFileId }));
+            // Add to batch queue
+            addToBatchQueue([imageFileId]);
+            setNoticeMessage('Image added to batch queue.');
+            setTimeout(() => setNoticeMessage(null), 5000);
+          }
+        }).catch(err => {
+          setNoticeMessage('Failed to upload image for batch.');
+          setTimeout(() => setNoticeMessage(null), 5000);
+        });
+      } else if (generationSettings.imageFileId) {
+        // Image already uploaded, add to batch queue
+        addToBatchQueue([generationSettings.imageFileId]);
+        setNoticeMessage('Image added to batch queue.');
+        setTimeout(() => setNoticeMessage(null), 5000);
+      }
+    } else {
+      // Standard single image generation
+      // Commit the request settings first; the effect above submits only after React
+      // has installed this exact snapshot, avoiding stale-state generation requests.
+      pendingGenerateRef.current = true;
+      setGenerationSettings(prev => ({
+        ...prev,
+        generateTexture: prev.generateTexture !== false,
+        removeBackground: true,
+        autoOptimizeSettings: {
+          ...prev.autoOptimizeSettings,
+          targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
+            ? prev.autoOptimizeSettings.targetPolycount
+            : 50000,
+        },
+      }));
+    }
+  };
+  const applyWorkflowRecipe = (recipe: 'mobile' | 'game' | 'cinematic' | 'native') => {
+    const presets = {
+      mobile: { meshQuality: 'medium' as const, targetPolycount: 15000, generateLOD: true, lodPreset: 'mobile', lodCount: 4, generateCollision: true },
+      game: { meshQuality: 'high' as const, targetPolycount: 35000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
+      cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
+      native: { meshQuality: 'ultra' as const, targetPolycount: 0, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: true },
+    }[recipe];
     setGenerationSettings(prev => ({
       ...prev,
-      generateTexture: prev.generateTexture !== false,
-      removeBackground: true,
-      autoOptimizeSettings: {
-        ...prev.autoOptimizeSettings,
-        targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
-          ? prev.autoOptimizeSettings.targetPolycount
-          : 50000,
-      },
+      intent: undefined,
+      aiModel: '',
+      meshQuality: presets.meshQuality,
+      autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount },
+      generateLOD: presets.generateLOD,
+      lodPreset: presets.lodPreset as 'mobile' | 'low' | 'medium' | 'high' | 'custom' | undefined,
+      lodCount: presets.lodCount,
+      generateCollision: presets.generateCollision,
     }));
   };
 
   return (
-    <div id="panel-generate-model" className="relative flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden">
+    <div 
+      id="panel-generate-model" 
+      onDragOver={handlePanelDragOver}
+      onDrop={handlePanelDrop}
+      className="relative flex flex-col h-full bg-[hsl(var(--surface-1))] text-xs select-none overflow-x-hidden overflow-y-hidden"
+    >
       {/* Panel Header */}
       <div className="px-3 py-2.5 border-b border-white/[0.08] flex items-center justify-between flex-shrink-0">
         <span className="font-bold text-xs text-white flex items-center gap-1.5">
@@ -582,12 +1131,12 @@ export const GeneratePanel: React.FC = () => {
                   {
                     id: 'crop',
                     domId: 'subaction-btn-crop',
-                    label: 'Multiview (Unavailable)',
-                    tooltip: 'Multiview is disabled until a model-specific backend contract is available.',
+                    label: 'Multi-View',
+                    tooltip: 'Zero123++ Multi-View generation & manual view collections',
                     icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
                     onClick: () => {
-                      setNoticeMessage('Multiview is disabled until the backend exposes a real multi-view generation contract.');
-                      setTimeout(() => setNoticeMessage(null), 5000);
+                      setSubAction('crop');
+                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
                     },
                   },
                 ].map((tab) => {
@@ -599,7 +1148,7 @@ export const GeneratePanel: React.FC = () => {
                         id={tab.domId}
                         type="button"
                         onClick={tab.onClick}
-                        disabled={tab.id === 'crop'}
+                        disabled={false}
                         className={`relative w-full py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95 z-10 ${
                           active ? 'text-primary font-bold' : 'text-zinc-400 hover:text-zinc-200'
                         }`}
@@ -622,13 +1171,14 @@ export const GeneratePanel: React.FC = () => {
               {/* Mode 1: Single Image UploadIcon */}
               {subAction === 'upload' && (
                 <>
-                  <input 
-                    ref={fileInputRef}
-                    type="file" 
-                    accept="image/jpeg,image/png,image/webp" 
-                    className="hidden" 
-                    onChange={handleFileUpload} 
-                  />
+                   <input 
+                     ref={fileInputRef}
+                     type="file" 
+                     accept="image/jpeg,image/png,image/webp" 
+                     multiple
+                     className="hidden" 
+                     onChange={handleFileUpload} 
+                   />
                   
                   <motion.div 
                     onDragOver={handleDragOver}
@@ -639,7 +1189,7 @@ export const GeneratePanel: React.FC = () => {
                       scale: isDragOver ? 1.02 : 1,
                       borderColor: isDragOver ? 'hsl(var(--primary))' : uploadError ? '#ef4444' : 'rgba(255,255,255,0.08)',
                     }}
-                    transition={springTransition}
+                    transition={{ type: 'spring' as const, stiffness: 400, damping: 25 }}
                     className="relative w-full h-24 rounded-lg border border-dashed border-white/[0.12] cursor-pointer overflow-hidden flex flex-col items-center justify-center p-2 group/dropzone bg-[hsl(var(--surface-1))]/50 hover:bg-[hsl(var(--surface-1))]"
                   >
                     {uploadProgress.active ? (
@@ -701,7 +1251,17 @@ export const GeneratePanel: React.FC = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             revokeOwnedBlobUrl(generationSettings.image);
-                            setGenerationSettings(prev => ({ ...prev, image: null, imageName: undefined, mode: 'image-to-3d' }));
+                            setGenerationSettings(prev => ({
+  ...prev,
+  image: null,
+  imageFileId: null,
+  imageName: undefined,
+  preprocessingArtifactId: null,
+  preprocessingPreviewUrl: null,
+  preprocessingMetadata: null,
+  enhancementEnabled: false,
+  mode: 'image-to-3d',
+}));
                           }}
                           className="text-rose-400 hover:underline cursor-pointer font-medium"
                         >
@@ -733,132 +1293,66 @@ export const GeneratePanel: React.FC = () => {
                 </>
               )}
 
-              {/* Mode 2: Multi-View GridIcon */}
-              {subAction === 'crop' && (
-                <>
-                  <input
-                    ref={multiFileInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={handleMultiFileUpload}
-                  />
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px]">
-                      <span className="font-semibold text-zinc-300 flex items-center gap-1.5">
-                        <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-                        <span>Multiview Perspective Angles</span>
-                      </span>
-                      <span className="text-[9px] text-zinc-400 font-mono">
-                        {Object.values(generationSettings.multiviewImages || {}).filter(Boolean).length}/4 loaded
-                      </span>
+              {generationSettings.image && (
+                <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] font-bold text-white">Generation Preview</div>
+                      <div className="text-[9px] text-zinc-400">Optional adaptive preprocessing before AI generation</div>
                     </div>
-
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {([
-                        { key: 'front', label: 'Front', req: true },
-                        { key: 'right', label: 'Right', req: false },
-                        { key: 'back', label: 'Back', req: false },
-                        { key: 'left', label: 'Left', req: false },
-                      ] as const).map(({ key, label, req }) => {
-                        const imgUrl = generationSettings.multiviewImages?.[key];
-                        return (
-                          <div
-                            key={key}
-                            onClick={() => {
-                              setActiveMvSlot(key);
-                              multiFileInputRef.current?.click();
-                            }}
-                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const f = e.dataTransfer.files?.[0];
-                              if (f) processImageFileForSlot(f, key);
-                            }}
-                            className={`relative h-20 rounded-lg border flex flex-col items-center justify-center p-1 cursor-pointer transition-all overflow-hidden group ${
-                              imgUrl
-                                ? 'border-primary/50 bg-[hsl(var(--surface-2))] shadow-sm'
-                                : 'border-dashed border-white/[0.14] bg-[hsl(var(--surface-1))]/60 hover:bg-[hsl(var(--surface-1))] hover:border-primary/50'
-                            }`}
-                          >
-                            {imgUrl ? (
-                              <>
-                                <img src={imgUrl} alt={`${label} view`} className="w-full h-full object-contain" />
-                                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                  <span className="text-[8px] font-bold text-white bg-black/80 px-1.5 py-0.5 rounded">Change</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setGenerationSettings(prev => {
-                                      const nextMv = { ...(prev.multiviewImages || {}) };
-                                      delete nextMv[key];
-                                      return {
-                                        ...prev,
-                                        multiviewImages: nextMv,
-                                        image: key === 'front' ? (nextMv.right || nextMv.back || nextMv.left || null) : prev.image,
-                                      };
-                                    });
-                                  }}
-                                  className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/70 hover:bg-rose-600 text-white transition-colors cursor-pointer"
-                                  title={`Remove ${label} view`}
-                                >
-                                  <HugeiconsIcon icon={Cancel} size={16} className="w-2.5 h-2.5" />
-                                </button>
-                              </>
-                            ) : (
-                              <div className="text-center space-y-0.5">
-                                <HugeiconsIcon icon={Plus} size={16} className="w-4 h-4 mx-auto text-zinc-500 group-hover:text-primary transition-colors" />
-                                <span className="text-[8px] text-zinc-400 font-medium block">{label}</span>
-                              </div>
-                            )}
-                            <div className="absolute bottom-0.5 left-0.5 px-1 py-0.2 rounded text-[7px] font-bold bg-black/70 text-zinc-300">
-                              {label}{req ? ' *' : ''}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-between text-[9.5px] pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGenerationSettings(prev => ({
-                            ...prev,
-                            multiviewImages: SAMPLE_MULTIVIEW,
-                            image: SAMPLE_MULTIVIEW.front,
-                            imageName: 'Sample Multiview Set',
-                            mode: 'image-to-3d',
-                          }));
-                        }}
-                        className="text-primary hover:underline font-medium cursor-pointer"
-                      >
-                        Load 4-View Sample &gt;
-                      </button>
-                      {Boolean(generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean)) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            for (const value of Object.values(generationSettings.multiviewImages || {})) revokeOwnedBlobUrl(value || undefined);
-                            revokeOwnedBlobUrl(generationSettings.image);
-                            setGenerationSettings(prev => ({
-                              ...prev,
-                              multiviewImages: undefined,
-                              image: null,
-                              imageName: undefined,
-                            }));
-                          }}
-                          className="text-rose-400 hover:underline cursor-pointer"
-                        >
-                          Clear All Views
-                        </button>
-                      )}
-                    </div>
+                    <span className={generationSettings.enhancementEnabled ? 'text-[9px] font-bold text-emerald-300' : 'text-[9px] text-zinc-500'}>
+                      {generationSettings.enhancementEnabled ? 'Approved' : 'Original'}
+                    </span>
                   </div>
-                </>
+                  {generationSettings.preprocessingPreviewUrl && (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <div className="rounded-lg overflow-hidden border border-white/[0.06] bg-black/20">
+                        <img src={generationSettings.image} alt="Original reference" className="w-full h-20 object-contain" />
+                        <div className="px-1.5 py-1 text-[8px] text-zinc-500">Original</div>
+                      </div>
+                      <div className="rounded-lg overflow-hidden border border-primary/20 bg-black/20">
+                        <img src={generationSettings.preprocessingPreviewUrl} alt="Generation preview" className="w-full h-20 object-contain" />
+                        <div className="px-1.5 py-1 text-[8px] text-primary">Generation Preview</div>
+                      </div>
+                    </div>
+                  )}
+                  {enhancementError && (
+                    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[9px] text-amber-300">
+                      {enhancementError}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button type="button" onClick={() => void previewEnhancement()} disabled={enhancementLoading}
+                      className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-[9px] font-bold text-primary disabled:opacity-50">
+                      {enhancementLoading ? 'Preparing Preview…' : generationSettings.preprocessingArtifactId ? 'Regenerate Preview' : 'Create Generation Preview'}
+                    </button>
+                    {generationSettings.preprocessingArtifactId ? (
+                      <button type="button" onClick={() => setGenerationSettings(prev => ({ ...prev, enhancementEnabled: true }))}
+                        className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[9px] font-bold text-emerald-300">
+                        Use Approved
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => navigateToTool('edit')}
+                        className="rounded-lg border border-white/[0.08] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-[9px] font-bold text-zinc-300">
+                        Edit Manually
+                      </button>
+                    )}
+                  </div>
+                  {generationSettings.preprocessingArtifactId && (
+                    <button type="button" onClick={disableEnhancement} className="w-full text-[9px] text-zinc-500 hover:text-white">
+                      Disable enhancement and use original input
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Mode 2: Multi-View Zero123++ & Manual Collections */}
+              {subAction === 'crop' && (
+                <MultiViewWorkspace
+                  fileInputRef={fileInputRef}
+                  activeModelObj={activeModelObj}
+                  setNoticeMessage={setNoticeMessage}
+                />
               )}
             </div>
 
@@ -920,7 +1414,7 @@ export const GeneratePanel: React.FC = () => {
                           setGenerationSettings(prev => ({
                             ...prev,
                             aiModel: m.id,
-                            generateTexture: m.supports_texture ? (prev.generateTexture !== false) : false,
+                            generateTexture: m.supports_texture ? true : false,
                           }));
                           setModelDropdownOpen(false);
                         }}
@@ -951,6 +1445,16 @@ export const GeneratePanel: React.FC = () => {
                             }`}>
                               {m.supports_texture ? 'PBR Texture' : 'Raw Mesh'}
                             </span>
+                            {!(m.available || m.installed) && (
+                              <>
+                                <span className={isSelected ? 'text-black/60' : 'text-zinc-600'}>•</span>
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-semibold ${
+                                  isSelected ? 'bg-black/20 text-black' : 'bg-amber-500/15 text-amber-300'
+                                }`}>
+                                  {m.status === 'gpu_unavailable' ? 'GPU Req' : 'Weights Missing'}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                         {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 text-black flex-shrink-0 stroke-[2.5]" />}
@@ -962,33 +1466,35 @@ export const GeneratePanel: React.FC = () => {
 
               {/* Engine Feature Toggles: PBR Texture & Low VRAM */}
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
-                {/* PBR Texture Toggle */}
-                <button
-                  type="button"
-                  onClick={() => setGenerationSettings(prev => ({
-                    ...prev,
-                    generateTexture: prev.generateTexture === false,
-                  }))}
-                  className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
-                    generationSettings.generateTexture !== false
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
-                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
-                  }`}
-                >
-                  <div className="flex flex-col min-w-0 pr-1">
-                    <span className="text-[11px] font-bold text-white leading-tight">PBR Texture</span>
-                    <span className="text-[9px] text-zinc-400">
-                      {generationSettings.generateTexture !== false ? 'Color Maps' : 'Disabled'}
-                    </span>
-                  </div>
-                  <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
-                    generationSettings.generateTexture !== false ? 'bg-emerald-500' : 'bg-zinc-700'
-                  }`}>
-                    <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
-                      generationSettings.generateTexture !== false ? 'left-4' : 'left-0.5 bg-zinc-300'
-                    }`} />
-                  </div>
-                </button>
+                {/* PBR Texture Toggle - shown only when the selected model supports texture generation */}
+                {showTextureToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setGenerationSettings(prev => ({
+                      ...prev,
+                      generateTexture: prev.generateTexture === false,
+                    }))}
+                    className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
+                      generationSettings.generateTexture !== false
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
+                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
+                    }`}
+                  >
+                    <div className="flex flex-col min-w-0 pr-1">
+                      <span className="text-[11px] font-bold text-white leading-tight">PBR Texture</span>
+                      <span className="text-[9px] text-zinc-400">
+                        {generationSettings.generateTexture !== false ? 'Color Maps' : 'Disabled'}
+                      </span>
+                    </div>
+                    <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
+                      generationSettings.generateTexture !== false ? 'bg-emerald-500' : 'bg-zinc-700'
+                    }`}>
+                      <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                        generationSettings.generateTexture !== false ? 'left-4' : 'left-0.5 bg-zinc-300'
+                      }`} />
+                    </div>
+                  </button>
+                )}
 
                 {/* FlashVDM Toggle - only visible for FlashVDM-compatible models */}
                 {isFlashVDMModel && (
@@ -1021,6 +1527,7 @@ export const GeneratePanel: React.FC = () => {
                 )}
 
                 {/* Low VRAM Toggle */}
+                {activeModelObj?.low_vram_supported && (
                 <button
                   type="button"
                   onClick={() => setGenerationSettings(prev => ({
@@ -1047,10 +1554,126 @@ export const GeneratePanel: React.FC = () => {
                     }`} />
                   </div>
                 </button>
+                )}
               </div>
             </div>
 
 
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white">Smart Intent</div>
+                  <div className="text-[9px] text-zinc-400">Backend-owned deterministic production recipe</div>
+                </div>
+                <span className="text-[9px] font-mono text-primary">{generationSettings.intent || 'Manual'}</span>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {[
+                  ['game_ready', 'Game'],
+                  ['cinematic', 'Cinematic'],
+                  ['animation', 'Animation'],
+                  ['3d_print', 'Print'],
+                  ['mobile', 'Mobile'],
+                ].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={!smartPresets[id]}
+                    onClick={() => void applyIntentPreset(id)}
+                    className={generationSettings.intent === id
+                      ? 'min-h-10 rounded-lg border border-primary bg-primary text-black font-bold text-[8px]'
+                      : 'min-h-10 rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] text-zinc-300 hover:border-primary/30 disabled:opacity-40 text-[8px]'}
+                  >
+                    <span className="block font-black">{label}</span>
+                    <span className="block mt-0.5 text-[7px] opacity-70">
+                      {Number(smartPresets[id]?.target_polycount) > 0
+                        ? Math.round(Number(smartPresets[id].target_polycount) / 1000) + 'K'
+                        : id === '3d_print' ? 'QA' : 'Preset'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {generationSettings.intent && smartResolution && (
+                <div className="rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-[8px] text-zinc-400 space-y-0.5">
+                  <div className="flex justify-between gap-2"><span>Selected model</span><span className="font-mono text-white truncate">{smartResolution.model_id}</span></div>
+                  <div className="flex justify-between gap-2"><span>Preset</span><span className="font-mono text-white truncate">{smartPresets[generationSettings.intent]?.label || generationSettings.intent}</span></div>
+                  <div className="flex justify-between gap-2"><span>Applied</span><span className="font-mono text-zinc-300">{Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount || 0) / 1000)}K · {generationSettings.generateLOD ? String(generationSettings.lodCount || 4) + ' LOD' : 'No LOD'} · {generationSettings.generateCollision ? 'Collision' : 'No collision'}</span></div>
+                  <div className="flex justify-between gap-2"><span>Eligibility</span><span className="text-emerald-300">Image → 3D · ready · VRAM-fit</span></div>
+                  <div className="flex justify-between gap-2"><span>Safety</span><span className="font-mono text-zinc-300">No preflight clamp · scheduler authoritative</span></div>
+                </div>
+              )}
+              {generationSettings.intent && (
+                <button type="button"
+                  onClick={() => { setSmartResolution(null); setGenerationSettings(prev => ({ ...prev, intent: undefined, aiModel: '' })); }}
+                  className="w-full text-[9px] text-zinc-500 hover:text-white">
+                  Clear intent and keep manual settings
+                </button>
+              )}
+            </div>
+
+            {/* Unified Production Target & Polycount Budget */}
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white">Target & Polycount Budget</div>
+                  <div className="text-[9px] text-zinc-400">Presets budget, LOD, and collision together; raw AI details stay intact</div>
+                </div>
+                <span className="font-mono text-xs font-black text-primary">
+                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) <= 0
+                    ? 'Native / Raw'
+                    : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000).toLocaleString()} tris`}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  ['mobile', 'Mobile', '15K · LOD'],
+                  ['game', 'Game Ready', '35K · LOD · FX'],
+                  ['cinematic', 'Cinematic', '100K · Ultra'],
+                  ['native', 'Native', 'Raw geometry'],
+                ].map(([id, label, detail]) => {
+                  const targetP = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                  const isMatch = (
+                    (id === 'mobile' && targetP === 15000) ||
+                    (id === 'game' && targetP === 35000) ||
+                    (id === 'cinematic' && targetP === 100000) ||
+                    (id === 'native' && targetP <= 0)
+                  );
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => applyWorkflowRecipe(id as 'mobile' | 'game' | 'cinematic' | 'native')}
+                      className={"min-h-11 rounded-lg border text-left px-2 py-1.5 transition-all " + (
+                        isMatch
+                          ? 'bg-primary text-black border-primary font-bold shadow-sm'
+                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:border-primary/30 hover:text-white'
+                      )}
+                    >
+                      <span className="block text-[9px] font-black leading-tight">{label}</span>
+                      <span className={"block text-[7px] mt-0.5 " + (isMatch ? 'text-black/75' : 'text-zinc-500')}>{detail}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                  <span>Fine-tune triangle budget</span>
+                  <span>5K - 200K</span>
+                </div>
+                <input
+                  aria-label="Production polycount"
+                  type="range"
+                  min={5000}
+                  max={200000}
+                  step={5000}
+                  value={(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) > 0 ? generationSettings.autoOptimizeSettings!.targetPolycount : 50000}
+                  onChange={(e) => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(e.target.value) } }))}
+                  className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
+                />
+              </div>
+            </div>
             {/* Advanced generation controls are opt-in so the main workflow stays compact. */}
             <button
               type="button"
@@ -1108,6 +1731,46 @@ export const GeneratePanel: React.FC = () => {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div>
+                <div className="text-[11px] font-bold text-white">Production QA</div>
+                <div className="text-[9px] text-zinc-500">Uses the shared post-processing path; no duplicate pipeline.</div>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button type="button"
+                  onClick={() => setGenerationSettings(prev => ({
+                    ...prev,
+                    enablePrintabilityCheck: !Boolean(prev.enablePrintabilityCheck),
+                    enableAutoRepair: !Boolean(prev.enablePrintabilityCheck) ? prev.enableAutoRepair : false,
+                  }))}
+                  className={generationSettings.enablePrintabilityCheck ? 'rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-left text-primary' : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                  <span className="block text-[10px] font-bold">Printability</span>
+                  <span className="block text-[8px]">{generationSettings.enablePrintabilityCheck ? 'Checking topology' : 'Off'}</span>
+                </button>
+                <button type="button" disabled={!generationSettings.enablePrintabilityCheck}
+                  onClick={() => setGenerationSettings(prev => ({ ...prev, enableAutoRepair: !Boolean(prev.enableAutoRepair) }))}
+                  className={generationSettings.enableAutoRepair ? 'rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-left text-emerald-300' : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                  <span className="block text-[10px] font-bold">Auto-Repair</span>
+                  <span className="block text-[8px]">{generationSettings.enableAutoRepair ? 'Repair + recheck' : 'No mutation'}</span>
+                </button>
+              </div>
+              <button type="button"
+                onClick={() => setGenerationSettings(prev => ({ ...prev, enableAutoRig: !Boolean(prev.enableAutoRig) }))}
+                className={generationSettings.enableAutoRig ? 'w-full rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 text-left text-violet-200' : 'w-full rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                <span className="text-[10px] font-bold">Auto-Rig Game-Ready Mesh</span>
+                <span className="block text-[8px] opacity-75">{generationSettings.enableAutoRig ? 'Runs UniRig after production processing' : 'Disabled'}</span>
+              </button>
+              {generationSettings.enableAutoRig && (
+                <select value={generationSettings.autoRigMode || 'full'}
+                  onChange={e => setGenerationSettings(prev => ({ ...prev, autoRigMode: e.target.value as GenerationSettings['autoRigMode'] }))}
+                  className="w-full rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-200">
+                  <option value="full">Full — skeleton + skin</option>
+                  <option value="skeleton">Skeleton only</option>
+                  <option value="skin">Skinning</option>
+                </select>
+              )}
+            </div>
+
             {/* Physics Preparation */}
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between">
@@ -1221,14 +1884,17 @@ export const GeneratePanel: React.FC = () => {
                 </span>
               </div>
 
-              {/* 0. Model Quality Preset (Inference resolution & fidelity) */}
+              {/* 0. Output Quality Preset (source geometry is always max fidelity) */}
               <div className="space-y-1.5 pb-1 border-b border-white/[0.04]">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Model Quality</span>
+                  <span className="text-zinc-200 font-medium">Texture / Output Quality</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25 capitalize">
                     {generationSettings.meshQuality || 'high'}
                   </span>
                 </div>
+                <p className="text-[10px] leading-4 text-zinc-500">
+                  Source geometry is always generated at the selected model's maximum fidelity. This control changes texture/output quality only; polycount is applied downstream.
+                </p>
                 <div className="grid grid-cols-4 gap-1">
                   {(['low', 'medium', 'high', 'ultra'] as const).map((q) => {
                     const isSelected = (generationSettings.meshQuality || 'high') === q;
@@ -1268,7 +1934,7 @@ export const GeneratePanel: React.FC = () => {
                     { label: '35K', val: 35000, desc: 'Game' },
                     { label: '50K', val: 50000, desc: 'Studio' },
                     { label: '100K', val: 100000, desc: 'Cinema' },
-                    { label: 'Native', val: -1, desc: 'Raw' },
+                    { label: 'Native', val: 0, desc: 'Raw' },
                   ].map((preset) => {
                     const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
                     const isSelected = currentTarget === preset.val;
@@ -1395,6 +2061,34 @@ export const GeneratePanel: React.FC = () => {
                     </button>
                   </div>
                 )}
+
+                {/* 4. High-to-Low Micro-Detail Normal Map Baking */}
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between mt-2">
+                  <div className="flex flex-col pr-2">
+                    <span className="text-zinc-300 flex items-center gap-1.5 text-xs font-semibold">
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                      <span>Bake Normal Maps (Micro-Details)</span>
+                    </span>
+                    <span className="text-[8.5px] text-zinc-500 leading-tight">
+                      Projects high-poly sculpt creases & micro-surface details onto game-ready mesh
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={generationSettings.bakeNormalMaps !== false}
+                    onClick={() => setGenerationSettings(prev => ({ ...prev, bakeNormalMaps: prev.bakeNormalMaps === false ? true : false }))}
+                    className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer shrink-0 ${
+                      generationSettings.bakeNormalMaps !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                    }`}
+                  >
+                    <div
+                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                        generationSettings.bakeNormalMaps !== false ? 'translate-x-3.5' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
               </div>
               </div>
@@ -1436,37 +2130,75 @@ export const GeneratePanel: React.FC = () => {
         </div>
 
         {/* Bottom Sticky Action Button */}
-        <ShimmerButton
-          id="btn-generate-model-action"
-          onClick={handleGenerate}
-          disabled={false}
-          shimmerColor="hsl(var(--neon-amber))"
-          shimmerSize="0.1em"
-          shimmerDuration="2.5s"
-          borderRadius="12px"
-          background={
-            isExecuting
-              ? "hsl(var(--surface-2))"
-              : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
-          }
-          className={`w-full h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed btn-lighting-shine ${
-            isExecuting 
-              ? 'text-primary border border-primary/30 is-executing' 
-              : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
-          }`}
-        >
-          {isExecuting ? (
-            <>
-              <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
-              <span className="tracking-wide">{executionStep || 'Generating 3D Model...'}</span>
-            </>
-          ) : (
-            <>
-              <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span className="tracking-wider">{isExecuting ? 'GENERATE ANOTHER' : 'GENERATE 3D MODEL'}</span>
-            </>
+        <div className="flex items-center gap-1.5 w-full">
+          <ShimmerButton
+            id="btn-generate-model-action"
+            onClick={handleGenerate}
+            disabled={isExecuting || (subAction === 'crop' && !isModelMultiviewCapable)}
+            title={subAction === 'crop' && !isModelMultiviewCapable ? 'Selected 3D model does not support multi-view reconstruction' : undefined}
+            shimmerColor="hsl(var(--neon-amber))"
+            shimmerSize="0.1em"
+            shimmerDuration="2.5s"
+            borderRadius="12px"
+            background={
+              isExecuting
+                ? "hsl(var(--surface-2))"
+                : "linear-gradient(135deg, #FFE066 0%, #FFCC00 50%, #E09800 100%)"
+            }
+            className={`flex-1 h-10 font-black text-xs flex items-center justify-center gap-2 shadow-lg transition-all duration-150 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed btn-lighting-shine ${
+              isExecuting 
+                ? 'text-primary border border-primary/30 is-executing' 
+                : 'text-[#080808] shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] active:scale-[0.98]'
+            }`}
+          >
+            {isExecuting ? (
+              <>
+                <HugeiconsIcon icon={LoaderCircle} size={16} className="w-3.5 h-3.5 animate-spin text-primary" />
+                <span className="tracking-wide truncate max-w-[170px]">{executionStep || 'Generating 3D Model...'}</span>
+              </>
+            ) : (
+              <>
+                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
+                <span className="tracking-wider">GENERATE 3D MODEL</span>
+              </>
+            )}
+          </ShimmerButton>
+
+          {isExecuting && (
+            <SimpleTooltip label="Queue next model in background or execute on secondary GPU" side="top">
+              <button
+                type="button"
+                onClick={async () => {
+                  const hasImage = Boolean(
+                    generationSettings.image ||
+                    generationSettings.imageFileId ||
+                    generationSettings.multiviewImages?.front ||
+                    (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
+                  );
+                  if (!hasImage) {
+                    setNoticeMessage('Upload or select an image to queue.');
+                    setTimeout(() => setNoticeMessage(null), 4000);
+                    return;
+                  }
+                  setNoticeMessage('Submitting next generation job to background queue...');
+                  try {
+                    const qId = await queueGenerationJob();
+                    if (qId) {
+                      setNoticeMessage('Job queued successfully! Monitoring progress in viewport.');
+                    }
+                  } catch (err) {
+                    setNoticeMessage('Failed to queue job.');
+                  }
+                  setTimeout(() => setNoticeMessage(null), 5000);
+                }}
+                className="h-10 px-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-primary/20 border border-primary/40 hover:border-primary text-primary font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap"
+              >
+                <HugeiconsIcon icon={Plus} size={14} className="w-3.5 h-3.5" />
+                <span>Queue Next</span>
+              </button>
+            </SimpleTooltip>
           )}
-        </ShimmerButton>
+        </div>
         {isExecuting && (
           <div className="relative mt-1 p-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] overflow-hidden space-y-1">
             <div className="flex items-center justify-between text-[9px] font-mono text-zinc-400 px-0.5">

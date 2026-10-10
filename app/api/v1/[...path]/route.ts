@@ -17,7 +17,6 @@ export const runtime = 'nodejs';
  * allowing proper Docker networking to work.
  * 
 * Endpoint patterns:
-   * - /api/v1/mesh-generation/text-to-raw-mesh -> backend:7842/api/v1/mesh-generation/text-to-raw-mesh
    * - /api/v1/mesh-generation/image-to-raw-mesh -> backend:7842/api/v1/mesh-generation/image-to-raw-mesh
    * - /api/v1/file-upload/image -> backend:7842/api/v1/file-upload/image
    * - /api/v1/system/jobs/{job_id} -> backend:7842/api/v1/system/jobs/{job_id}
@@ -369,10 +368,23 @@ async function createProxyResponse(response: Response, request?: NextRequest): P
 
 // Helper: Handle SSE streaming
 async function streamResponse(targetUrl: string, request: NextRequest): Promise<NextResponse> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 min safety timeout; jobs can run longer than 5 min
+  
+  // Track if client has disconnected
+  let clientDisconnected = false;
+  
+  // Listen for client disconnect
+  const onDisconnect = () => {
+    clientDisconnected = true;
+    controller.abort();
+  };
+  
+  // NextRequest doesn't have a direct abort signal, but we can detect disconnect
+  // by wrapping the response body
+  request.signal?.addEventListener('abort', onDisconnect);
+  
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1800000); // 30 min safety timeout; jobs can run longer than 5 min
-    
     const response = await fetchWithBackendFallback(targetUrl, {
       method: 'GET',
       headers: {
@@ -384,6 +396,7 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
     });
     
     clearTimeout(timeoutId);
+    request.signal?.removeEventListener('abort', onDisconnect);
     
     if (!response.ok) {
       return corsJson(
@@ -404,11 +417,47 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
       headers.set('access-control-allow-credentials', 'true');
     }
     
-    return new NextResponse(response.body, {
+    // Wrap the response body with a transform that handles client disconnect gracefully
+    // and ensures the upstream response is properly cancelled
+    if (response.body) {
+      // Create a readable stream that wraps the upstream response
+      // and handles client disconnect gracefully
+      const reader = response.body.getReader();
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) {
+                controller.close();
+                break;
+              }
+              controller.enqueue(value);
+            }
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+        cancel() {
+          // Client disconnected - cancel the upstream reader
+          reader.cancel().catch(() => {});
+        }
+      });
+      
+      return new NextResponse(stream, {
+        status: 200,
+        headers,
+      });
+    }
+    
+    return new NextResponse(null, {
       status: 200,
       headers,
     });
   } catch (error) {
+    clearTimeout(timeoutId);
+    request.signal?.removeEventListener('abort', onDisconnect);
+    controller.abort();
     console.error('[API Proxy] SSE stream failed:', error);
     return corsJson(
       { success: false, message: `SSE connection failed: ${error instanceof Error ? error.message : 'Unknown error'}` },

@@ -1,5 +1,4 @@
 import type { SystemStats } from '@/features/workspace/types';
-import { getApiClient as baseApiClient } from '@/services/apiClient';
 import { dedupedGet } from '@/lib/requestDedup';
 
 export interface HistoryItem {
@@ -48,6 +47,8 @@ class ApiClient {
   }
 
   public getBaseUrl(): string { return this._host; }
+
+  public setBaseUrl(host: string) { this._host = host; }
 
   public on(event: string, callback: (data: unknown) => void) {
     if (!this.listeners.has(event)) this.listeners.set(event, new Set());
@@ -183,24 +184,37 @@ class ApiClient {
       const result: Record<string, HistoryItem> = {};
       (data.jobs ?? []).forEach((j, i) => {
         const jobId = (j.job_id ?? j.id ?? `job-${i}`) as string;
+        const jobBase = `/api/v1/system/jobs/${jobId}`;
+        const jobResult = (j.result ?? {}) as Record<string, any>;
+        // Canonical production artifacts: game_ready GLB by default,
+        // master/source.glb for the source view, thumbnail endpoint always
+        // resolves (file → input image → placeholder) even after a restart.
+        const gameReadyUrl =
+          jobResult.model_url || jobResult.game_ready_url || `${jobBase}/download?artifact_format=glb`;
+        const sourceUrl =
+          jobResult.source_model_url || jobResult.high_fidelity_url || `${jobBase}/download?artifact_format=master`;
+        const thumbnailUrl = jobResult.thumbnail_url || `${jobBase}/thumbnail`;
         result[jobId] = {
           prompt: [0, (j.prompt ?? j.feature ?? '') as string, {}, {}, []] as unknown as HistoryItem['prompt'],
           outputs: {
-            ...((j.result_urls ?? j.result ?? {}) as Record<string, unknown>),
-            glb: j.model_url || (j.result as any)?.model_url,
-            model_url: j.model_url || (j.result as any)?.model_url,
-            thumbnail: j.thumbnail_url || (j.result as any)?.thumbnail_url,
-            thumbnail_url: j.thumbnail_url || (j.result as any)?.thumbnail_url,
-            polygon_count: j.polygon_count ?? (j.result as any)?.polygon_count,
-            vertex_count: j.vertex_count ?? (j.result as any)?.vertex_count,
-            dimensions: j.dimensions ?? (j.result as any)?.dimensions,
-            bounding_box: j.bounding_box ?? (j.result as any)?.bounding_box,
-            object_count: j.object_count ?? (j.result as any)?.object_count,
-            component_count: j.component_count ?? (j.result as any)?.component_count,
-            material_count: j.material_count ?? (j.result as any)?.material_count,
-            topology: j.topology ?? (j.result as any)?.topology,
-            mesh_details: j.mesh_details ?? (j.result as any)?.mesh_details,
-            postprocess_status: j.postprocess_status ?? (j.result as any)?.postprocess_status,
+            ...jobResult,
+            glb: gameReadyUrl,
+            model_url: gameReadyUrl,
+            game_ready_url: gameReadyUrl,
+            source: sourceUrl,
+            source_model_url: sourceUrl,
+            thumbnail: thumbnailUrl,
+            thumbnail_url: thumbnailUrl,
+            polygon_count: j.polygon_count ?? jobResult.polygon_count,
+            vertex_count: j.vertex_count ?? jobResult.vertex_count,
+            dimensions: j.dimensions ?? jobResult.dimensions,
+            bounding_box: j.bounding_box ?? jobResult.bounding_box,
+            object_count: j.object_count ?? jobResult.object_count,
+            component_count: j.component_count ?? jobResult.component_count,
+            material_count: j.material_count ?? jobResult.material_count,
+            topology: j.topology ?? jobResult.topology,
+            mesh_details: j.mesh_details ?? jobResult.mesh_details,
+            postprocess_status: j.postprocess_status ?? jobResult.postprocess_status,
           },
           status: { status_str: (j.status ?? 'unknown') as string, completed: j.status === 'completed' || j.status === 'succeeded' || j.status === 'completed_degraded' },
         };
@@ -242,47 +256,11 @@ class ApiClient {
   }
 }
 
-// Workspace-specific apiClient: wraps services/apiClient via prototype
-// inheritance. ApiClient extends the shared client class at runtime, so
-// workspace helpers (on/off, getSystemStats, …) are available here while
-// the shared singleton remains untouched.
-const wsApiClient = new ApiClient();
-
-export interface WorkspaceApiClient {
-  on(event: string, cb: (...args: unknown[]) => void): () => void;
-  off(event: string, cb: (...args: unknown[]) => void): void;
-  getSystemStats(): Promise<Record<string, unknown>>;
-  getQueue(): Promise<{ running: unknown[]; pending: unknown[] }>;
-  getHistory(maxItems?: number): Promise<Record<string, HistoryItem>>;
-  deleteHistory(jobId: string): Promise<void>;
-  cancelExecution(): void;
-  emitProgress(progress: unknown): void;
-  executing(node: string | null): void;
-  executed(node: string, data: unknown): void;
-  executionError(error: unknown): void;
-  connectWebSocket(): void;
-  disconnectWebSocket(): void;
-  getBaseUrl(): string;
-  setBaseUrl(url: string): void;
-}
-
-export const apiClient = Object.create(baseApiClient, {
-  on: { value: wsApiClient.on.bind(wsApiClient) },
-  off: { value: wsApiClient.off.bind(wsApiClient) },
-  getSystemStats: { value: wsApiClient.getSystemStats.bind(wsApiClient) },
-  getQueue: { value: wsApiClient.getQueue.bind(wsApiClient) },
-  getHistory: { value: wsApiClient.getHistory.bind(wsApiClient) },
-  deleteHistory: { value: wsApiClient.deleteHistory.bind(wsApiClient) },
-  cancelExecution: { value: wsApiClient.cancelExecution.bind(wsApiClient) },
-  emitProgress: { value: wsApiClient.emitProgress.bind(wsApiClient) },
-  emitExecuting: { value: wsApiClient.emitExecuting.bind(wsApiClient) },
-  emitExecuted: { value: wsApiClient.emitExecuted.bind(wsApiClient) },
-  emitError: { value: wsApiClient.emitError.bind(wsApiClient) },
-  connectWebSocket: { value: wsApiClient.connectWebSocket.bind(wsApiClient) },
-  disconnectWebSocket: { value: wsApiClient.disconnectWebSocket.bind(wsApiClient) },
-  getBaseUrl: { value: wsApiClient.getBaseUrl.bind(wsApiClient) },
-  setBaseUrl: { value: (baseApiClient as any).setBaseUrl },
-}) as unknown as WorkspaceApiClient;
+// Workspace-specific apiClient: standalone instance of the workspace ApiClient
+// defined above. It already carries the workspace helpers (on/off,
+// getSystemStats, getQueue, getHistory, …), so no shared-singleton binding
+// is required.
+export const apiClient = new ApiClient() as any;
 
 export async function fetchSystemStats(): Promise<SystemStats> {
   const stats = await apiClient.getSystemStats();

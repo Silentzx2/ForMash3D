@@ -7,21 +7,24 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { CameraViewPreset, ModelAsset } from '../types';
+import { CameraViewPreset, ModelAsset, normalizeModelAsset } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
 import { useAnimationStore, BoneItem } from '@/stores/useAnimationStore';
-import { useViewerStore } from '@/stores/useViewerStore';
+import { loadModelInViewer, useViewerStore } from '@/stores/useViewerStore';
+import { useAppStore } from '@/stores/useAppStore';
 
 import { validate3DFile } from '../lib/fileValidation';
-import { createPointCloudFromImage, createFallbackPointCloud, disposePointCloud } from './ImagePointCloud';
+import { createPointCloudFromImage, disposePointCloud } from './ImagePointCloud';
+import { GenerationLoadingPreview } from './GenerationLoadingPreview';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CameraIcon, Cancel, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, FlipHorizontalIcon, GridIcon, Hand, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
+import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
 import {
   StandardBrushIcon,
   ClayBrushIcon,
@@ -486,11 +489,11 @@ export const LIGHT_TONES: Record<LightTone, { label: string; key: number; fill: 
 };
 
 export const BACKGROUND_OPTIONS = [
-  { id: 'transparent', label: 'Studio Vignette', value: 'transparent', preview: 'radial-gradient(circle, #252525 0%, #080808 100%)' },
-  { id: 'void', label: 'Deep Void', value: '#060606', preview: '#060606' },
-  { id: 'charcoal', label: 'Charcoal', value: '#131418', preview: '#131418' },
-  { id: 'slate', label: 'Slate', value: '#1e2025', preview: '#1e2025' },
-  { id: 'clay', label: 'Clay Gray', value: '#32353f', preview: '#32353f' },
+  { id: 'transparent', label: 'Studio Dark Gray', value: 'transparent', preview: 'radial-gradient(circle, #16181d 0%, #08090a 100%)' },
+  { id: 'dark-gray', label: 'Dark Charcoal', value: '#131519', preview: '#131519' },
+  { id: 'slate', label: 'Dark Slate', value: '#181b22', preview: '#181b22' },
+  { id: 'clay', label: 'Clay Gray', value: '#242730', preview: '#242730' },
+  { id: 'charcoal', label: 'Deep Void', value: '#08080a', preview: '#08080a' },
   { id: 'light', label: 'Studio Light', value: '#e8e9ed', preview: '#e8e9ed' },
 ];
 
@@ -499,11 +502,11 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
     id: 'studio',
     label: 'Studio Gold',
     settings: {
-      ambientIntensity: 0.8,
-      keyLightIntensity: 3.0,
-      fillLightIntensity: 1.3,
-      rimLightIntensity: 2.0,
-      exposure: 1.25,
+      ambientIntensity: 0.85,
+      keyLightIntensity: 1.8,
+      fillLightIntensity: 1.1,
+      rimLightIntensity: 1.5,
+      exposure: 1.05,
       lightTone: 'studio',
       backgroundColor: 'transparent',
       gridVisible: false,
@@ -515,15 +518,15 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
     id: 'dramatic',
     label: 'Dramatic Rim',
     settings: {
-      ambientIntensity: 0.35,
-      keyLightIntensity: 4.2,
-      fillLightIntensity: 0.6,
-      rimLightIntensity: 3.2,
-      exposure: 1.15,
+      ambientIntensity: 0.45,
+      keyLightIntensity: 2.2,
+      fillLightIntensity: 0.7,
+      rimLightIntensity: 2.2,
+      exposure: 1.1,
       lightTone: 'cool',
-      backgroundColor: '#060606',
+      backgroundColor: '#14151a',
       gridVisible: false,
-      floorShadowOpacity: 0.3,
+      floorShadowOpacity: 0.25,
       autoRotate: false,
     },
   },
@@ -531,15 +534,15 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
     id: 'clay',
     label: 'Clay Sculpt',
     settings: {
-      ambientIntensity: 1.1,
-      keyLightIntensity: 2.4,
-      fillLightIntensity: 1.5,
+      ambientIntensity: 1.0,
+      keyLightIntensity: 1.6,
+      fillLightIntensity: 1.2,
       rimLightIntensity: 1.2,
-      exposure: 1.3,
+      exposure: 1.2,
       lightTone: 'neutral',
       backgroundColor: '#32353f',
-      gridVisible: true,
-      floorShadowOpacity: 0.25,
+      gridVisible: false,
+      floorShadowOpacity: 0.2,
       autoRotate: false,
     },
   },
@@ -547,11 +550,11 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
     id: 'golden',
     label: 'Golden Hour',
     settings: {
-      ambientIntensity: 0.9,
-      keyLightIntensity: 3.2,
-      fillLightIntensity: 1.4,
-      rimLightIntensity: 2.5,
-      exposure: 1.2,
+      ambientIntensity: 0.85,
+      keyLightIntensity: 2.0,
+      fillLightIntensity: 1.2,
+      rimLightIntensity: 1.8,
+      exposure: 1.15,
       lightTone: 'warm',
       backgroundColor: 'transparent',
       gridVisible: false,
@@ -563,14 +566,14 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
     id: 'light',
     label: 'Pure Light',
     settings: {
-      ambientIntensity: 1.4,
-      keyLightIntensity: 2.6,
-      fillLightIntensity: 1.8,
-      rimLightIntensity: 1.4,
-      exposure: 1.35,
+      ambientIntensity: 1.2,
+      keyLightIntensity: 1.6,
+      fillLightIntensity: 1.3,
+      rimLightIntensity: 1.2,
+      exposure: 1.2,
       lightTone: 'neutral',
       backgroundColor: '#e8e9ed',
-      gridVisible: true,
+      gridVisible: false,
       floorShadowOpacity: 0.15,
       autoRotate: false,
     },
@@ -602,9 +605,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     cancelExecution,
     activeTask,
     generationSettings,
+    setGenerationSettings,
     textureSettings,
     activeTool,
     setActiveTool,
+    navigateToTool,
     setIsExportModalOpen,
     generate3DModel,
     viewportResetTrigger,
@@ -615,9 +620,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     rightPanelWidth,
     sculptSettings,
     paintBrushSettings,
+    jobsById = {},
+    dismissJob,
+    selectJobToView,
   } = useWorkspace();
 
+  const { batchQueue, updateBatchItem } = useAppStore();
+
   const [isDesktopScreen, setIsDesktopScreen] = useState(true);
+  const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState(true);
 
   const brushCursorRef = useRef<THREE.Mesh | null>(null);
   const isBrushingRef = useRef(false);
@@ -701,16 +712,16 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [loadProgress, setLoadProgress] = useState<{ loaded: number; total: number; percent: number } | null>(null);
   const [showEnvironmentPanel, setShowEnvironmentPanel] = useState(false);
   const [environmentSettings, setEnvironmentSettings] = useState({
-    ambientIntensity: 0.8,
-    keyLightIntensity: 3.0,
-    fillLightIntensity: 1.3,
-    rimLightIntensity: 2.0,
-    exposure: 1.25,
+    ambientIntensity: 0.85,
+    keyLightIntensity: 1.8,
+    fillLightIntensity: 1.1,
+    rimLightIntensity: 1.5,
+    exposure: 1.05,
     lightTone: 'studio' as LightTone,
     backgroundColor: 'transparent',
     gridVisible: false,
     gridColor: '#222222',
-    floorShadowOpacity: 0.2,
+    floorShadowOpacity: 0.25,
     autoRotate: false,
     showAxes: false,
     showStats: true,
@@ -735,6 +746,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [reflectionPeekEnabled, setReflectionPeekEnabled] = useState(false);
   const [reflectionPreviewUrl, setReflectionPreviewUrl] = useState<string | null>(null);
   const [reflectionPeekFocused, setReflectionPeekFocused] = useState(false);
+  const [performanceMode, setPerformanceMode] = useState<'auto' | 'smooth' | 'quality'>('auto');
+  const [artifactView, setArtifactView] = useState<'active' | 'source' | 'game-ready' | 'lod0' | 'lod1' | 'lod2' | 'lod3'>('active');
   const reflectionPreviewUrlRef = useRef<string | null>(null);
   const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const reflectionPeekTweenRef = useRef<number | null>(null);
@@ -780,9 +793,34 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     return () => window.removeEventListener('toggleBlueprintPreview', handleToggle);
   }, []);
 
+  const switchArtifactView = useCallback((view: 'active' | 'source' | 'game-ready' | 'lod0' | 'lod1' | 'lod2' | 'lod3') => {
+    if (!currentAsset) return;
+    const artifacts = currentAsset.artifacts;
+    const lodIndex = view.startsWith('lod') ? Number(view.slice(3)) : -1;
+    const rawLods = artifacts?.lods;
+    const lodCandidate = Array.isArray(rawLods)
+      ? rawLods[lodIndex]
+      : (rawLods && typeof rawLods === 'object')
+        ? ((rawLods as any)[lodIndex] || (rawLods as any)[String(lodIndex)])
+        : undefined;
+    const lodUrl = typeof lodCandidate === 'string' ? lodCandidate : lodCandidate?.url;
+    const url =
+      view === 'source' ? artifacts?.source :
+      view === 'game-ready' ? artifacts?.gameReady :
+      lodIndex >= 0 ? lodUrl :
+      currentAsset.source?.viewUrl || currentAsset.source?.localUrl;
+    if (typeof url !== 'string' || !url) return;
+    loadModelInViewer(url, currentAsset.name, currentAsset as any);
+    setArtifactView(view);
+  }, [currentAsset]);
+
   const patchEnv = (updates: Partial<typeof environmentSettings>) =>
     setEnvironmentSettings((p) => ({ ...p, ...updates }));
 
+  useEffect(() => {
+    setArtifactView('active');
+  }, [currentAsset?.id]);
+  
   const applyPreset = useCallback((presetId: string) => {
     const preset = ENVIRONMENT_PRESETS.find(p => p.id === presetId);
     if (!preset) return;
@@ -832,9 +870,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const renderer = rendererRef.current;
     if (renderer) {
       const isHeavyMesh = triangles >= 250_000;
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isHeavyMesh ? 1.0 : 1.5));
-      renderer.shadowMap.enabled = !isHeavyMesh;
-      if (keyLightRef.current) keyLightRef.current.castShadow = !isHeavyMesh;
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isHeavyMesh ? 1.0 : 1.25));
+      renderer.shadowMap.enabled = true;
+      if (keyLightRef.current) {
+        keyLightRef.current.castShadow = true;
+        keyLightRef.current.shadow.needsUpdate = true;
+      }
     }
 
     if (currentAsset) {
@@ -871,6 +912,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const keyLightRef = useRef<THREE.DirectionalLight | null>(null);
   const fillLightRef = useRef<THREE.DirectionalLight | null>(null);
   const rimLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const backFillLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const hemiLightRef = useRef<THREE.HemisphereLight | null>(null);
+  const cameraLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const envTextureRef = useRef<THREE.Texture | null>(null);
   const animFrameIdRef = useRef<number | null>(null);
   const isTurntableRef = useRef(isTurntable);
   const blobUrlRef = useRef<string | null>(null);
@@ -886,6 +931,25 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scale: number;
     baseY: number;
   } | null>(null);
+
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    const triangles = currentAsset?.triangles || meshStats?.triangles || 0;
+    const heavy = triangles >= 250_000;
+    const dpr = window.devicePixelRatio || 1;
+    const cappedDpr = performanceMode === 'smooth'
+      ? Math.min(dpr, 0.85)
+      : performanceMode === 'quality'
+        ? Math.min(dpr, 1.5)
+        : Math.min(dpr, heavy ? 1.0 : 1.25);
+    renderer.setPixelRatio(cappedDpr);
+    renderer.shadowMap.enabled = performanceMode !== 'smooth' && !(performanceMode === 'auto' && heavy);
+    if (keyLightRef.current) {
+      keyLightRef.current.castShadow = renderer.shadowMap.enabled;
+      keyLightRef.current.shadow.needsUpdate = true;
+    }
+  }, [performanceMode, currentAsset?.triangles, meshStats?.triangles]);
 
   const getMeshBounds = useCallback(() => {
     if (meshBoundsCacheRef.current) return meshBoundsCacheRef.current;
@@ -1443,9 +1507,16 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const tone = LIGHT_TONES[environmentSettings.lightTone] || LIGHT_TONES.studio;
     scene.traverse((obj) => {
       if (obj instanceof THREE.AmbientLight) {
-        obj.intensity = environmentSettings.ambientIntensity;
+        obj.intensity = environmentSettings.ambientIntensity * 0.45;
       }
     });
+    if (hemiLightRef.current) {
+      hemiLightRef.current.intensity = environmentSettings.ambientIntensity * 0.85;
+      hemiLightRef.current.color.setHex(tone.key);
+    }
+    if (scene.environment) {
+      scene.environmentIntensity = environmentSettings.ambientIntensity;
+    }
     if (keyLightRef.current) {
       keyLightRef.current.intensity = environmentSettings.keyLightIntensity;
       keyLightRef.current.color.setHex(tone.key);
@@ -1458,12 +1529,22 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       rimLightRef.current.intensity = environmentSettings.rimLightIntensity;
       rimLightRef.current.color.setHex(tone.rim);
     }
+    if (backFillLightRef.current) {
+      backFillLightRef.current.intensity = environmentSettings.rimLightIntensity * 0.85;
+      backFillLightRef.current.color.setHex(tone.fill);
+    }
+    if (cameraLightRef.current) {
+      cameraLightRef.current.intensity = environmentSettings.ambientIntensity * 0.35;
+    }
 
     // 6. Update controls autoRotate
     if (controlsRef.current) {
       controlsRef.current.autoRotate = environmentSettings.autoRotate;
       controlsRef.current.autoRotateSpeed = 2.0;
     }
+
+    controlsRef.current?.dispatchEvent({ type: 'change' });
+    if (cameraRef.current) renderer.render(scene, cameraRef.current);
   }, [environmentSettings]);
 
   // Initialize Three.js Scene once
@@ -1490,13 +1571,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       powerPreference: 'high-performance'
     });
     renderer.setSize(width, height);
-    // ponytail: cap pixel ratio at 1.5 for smooth rendering FPS
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // ponytail: cap pixel ratio at 1.25 for buttery smooth rendering FPS without GPU fill-rate throttling
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     renderer.info.autoReset = false;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.5;
+    renderer.toneMappingExposure = environmentSettings.exposure;
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
@@ -1508,8 +1589,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     };
     const handleContextRestored = () => {
       console.info('[MeshViewer] WebGL context restored - recovering renderer state.');
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
       renderer.setSize(container.clientWidth || width, container.clientHeight || height);
+      if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
       idleFrames = 0;
     };
     renderer.domElement.addEventListener('webglcontextlost', handleContextLost, false);
@@ -1518,14 +1600,30 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     // 4. OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
+    controls.dampingFactor = 0.08;
+    controls.rotateSpeed = 0.85;
     controls.maxDistance = 100;    // Increased from 25 — allow much further zoom out
     controls.minDistance = 0.05;   // Decreased from 0.8 — allow much closer zoom in
-    controls.zoomSpeed = 1.5;     // Increased scroll-wheel zoom speed
+    controls.zoomSpeed = 1.4;     // Increased scroll-wheel zoom speed
     controls.target.set(0, 0.4, 0);
     controlsRef.current = controls;
 
-    // 4b. TransformControls for translating 3D model
+    // 4b. Studio IBL Environment Map (360° PBR specular sheen and balanced indirect illumination)
+    try {
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      pmremGenerator.compileEquirectangularShader();
+      const roomEnv = new RoomEnvironment();
+      const envTex = pmremGenerator.fromScene(roomEnv, 0.04).texture;
+      scene.environment = envTex;
+      scene.environmentIntensity = environmentSettings.ambientIntensity;
+      envTextureRef.current = envTex;
+      pmremGenerator.dispose();
+      roomEnv.dispose();
+    } catch (e) {
+      console.warn('[MeshViewer] Could not generate RoomEnvironment IBL:', e);
+    }
+
+    // 4c. TransformControls for translating 3D model
     const transformControls = new TransformControls(camera, renderer.domElement);
     transformControls.size = 0.8;
     transformControls.setMode('translate');
@@ -1555,35 +1653,64 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scene.add(transformControls.getHelper() as unknown as THREE.Object3D);
     transformControlsRef.current = transformControls;
 
-    // 5. Lighting Setup (Studio 3-Point Setup) - Calibrated for high-relief feature contrast
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    // 5. Lighting Setup (Professional 360° Studio Rig)
+    // 5a. Ambient and Hemisphere Light (irradiance & ground bounce prevents pitch-black cavities)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
 
-    const mainKeyLight = new THREE.DirectionalLight(0xfff5ea, 2.8);
-    mainKeyLight.position.set(4, 6, 5);
+    const hemiLight = new THREE.HemisphereLight(0xfff8f0, 0x22242a, 0.75);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+    hemiLightRef.current = hemiLight;
+
+    // 5b. Key Light (Front-Right, high angle - crisp and soft contact shadow)
+    const mainKeyLight = new THREE.DirectionalLight(0xfff5ea, 1.8);
+    mainKeyLight.position.set(3.5, 5.0, 3.5);
     mainKeyLight.castShadow = true;
     mainKeyLight.shadow.mapSize.width = 2048;
     mainKeyLight.shadow.mapSize.height = 2048;
-    mainKeyLight.shadow.camera.near = 0.1;
-    mainKeyLight.shadow.camera.far = 20;
-    mainKeyLight.shadow.bias = -0.0001;
-    mainKeyLight.shadow.normalBias = 0.02;
+    mainKeyLight.shadow.camera.near = 0.5;
+    mainKeyLight.shadow.camera.far = 30;
+    mainKeyLight.shadow.camera.left = -4.5;
+    mainKeyLight.shadow.camera.right = 4.5;
+    mainKeyLight.shadow.camera.top = 4.5;
+    mainKeyLight.shadow.camera.bottom = -4.5;
+    mainKeyLight.shadow.bias = -0.0005;
+    mainKeyLight.shadow.normalBias = 0.03;
+    mainKeyLight.shadow.radius = 2.0;
+    mainKeyLight.shadow.autoUpdate = true;
     scene.add(mainKeyLight);
     keyLightRef.current = mainKeyLight;
 
-    const fillLight = new THREE.DirectionalLight(0xf5f5f7, 1.2);
-    fillLight.position.set(-5, 3, -2);
+    // 5c. Fill Light (Front-Left - balances key light, softens harsh front shadows)
+    const fillLight = new THREE.DirectionalLight(0xf5f5f7, 1.1);
+    fillLight.position.set(-3.5, 2.5, 3.0);
     scene.add(fillLight);
     fillLightRef.current = fillLight;
 
-    const rimLight = new THREE.DirectionalLight(0xfff0d0, 1.8);
-    rimLight.position.set(0, 5, -5);
+    // 5d. Back / Rim Light (Back-Left - illuminates rear geometry and highlights edge silhouettes)
+    const rimLight = new THREE.DirectionalLight(0xffeed0, 1.4);
+    rimLight.position.set(-3.0, 3.5, -3.5);
     scene.add(rimLight);
     rimLightRef.current = rimLight;
 
+    // 5e. Back Fill Light (Back-Right - ensures the rear is completely visible from all angles)
+    const backFillLight = new THREE.DirectionalLight(0xf0f3fa, 1.1);
+    backFillLight.position.set(3.0, 2.5, -3.0);
+    scene.add(backFillLight);
+    backFillLightRef.current = backFillLight;
+
+    // 5f. Camera-Attached Viewport Fill Light (gentle headlight to illuminate whatever user faces)
+    const cameraLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    cameraLight.position.set(0, 0, 1);
+    camera.add(cameraLight);
+    scene.add(camera);
+    cameraLightRef.current = cameraLight;
+
     // 6. Floor with soft contact shadow receiver
-    const floorGeo = new THREE.PlaneGeometry(30, 30);
-    const floorMat = new THREE.ShadowMaterial({ opacity: 0.18 });
+    const floorGeo = new THREE.PlaneGeometry(60, 60);
+    const floorMat = new THREE.ShadowMaterial({ opacity: environmentSettings.floorShadowOpacity });
+    floorMat.depthWrite = false;
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.001;
@@ -1591,12 +1718,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     scene.add(floor);
     floorRef.current = floor;
 
-    // 7. GridIcon Helper
-    const grid = new THREE.GridHelper(20, 40, 0xFFCC00, 0x222222);
-    grid.position.y = 0;
-    (grid.material as THREE.Material).opacity = 0.25;
-    (grid.material as THREE.Material).transparent = true;
-    grid.visible = animDisplayOptions.showGrid;
+    // 7. Optimized Studio Grid Helper (off by default per studio standards)
+    const grid = new THREE.GridHelper(20, 40, 0x484d59, 0x2b2e37);
+    grid.position.y = -0.0005;
+    const gridMat = grid.material as THREE.LineBasicMaterial;
+    gridMat.opacity = 0.35;
+    gridMat.transparent = true;
+    gridMat.depthWrite = false;
+    grid.visible = environmentSettings.gridVisible;
     scene.add(grid);
     gridHelperRef.current = grid;
 
@@ -2074,30 +2203,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const turntableActive = Boolean(isTurntableRef.current && meshGroup && meshGroup.children.length > 0);
       if (turntableActive) {
         meshGroup.rotation.y += delta * 0.45;
+        if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
       }
 
       const pointCloudActive = Boolean(pointCloudGroup && pointCloudGroup.visible && pointCloudGroup.children.length > 0);
       if (pointCloudActive) {
-        const t = timer.getElapsed();
         pointCloudGroup.rotation.y += delta * 0.35;
-        const ring1 = pointCloudGroup.getObjectByName('orbitalRing1');
-        if (ring1) ring1.rotation.z += delta * 0.75;
-        const ring2 = pointCloudGroup.getObjectByName('orbitalRing2');
-        if (ring2) ring2.rotation.y += delta * 0.55;
-        const ico = pointCloudGroup.getObjectByName('coreIcoMesh');
-        if (ico) {
-          ico.rotation.x += delta * 0.45;
-          ico.rotation.y += delta * 0.35;
-        }
-        const oct = pointCloudGroup.getObjectByName('coreOctMesh');
-        if (oct) {
-          oct.rotation.y -= delta * 0.7;
-          oct.rotation.z += delta * 0.4;
-        }
-        const scanRing = pointCloudGroup.getObjectByName('blueprintScanRing');
-        if (scanRing) {
-          scanRing.position.y = Math.sin(t * 1.6) * 0.75;
-        }
       }
 
       const animState = useAnimationStore.getState();
@@ -2105,16 +2216,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const physicsActive = physicsRuntimeRef.current?.isRunning() ?? false;
       if (physicsActive) {
         physicsRuntimeRef.current?.tick(delta);
+        if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
       }
       const animationActive = Boolean(mixerRef.current) || isAnimPlaying || physicsActive;
 
       if (animationActive && mixerRef.current) {
         mixerRef.current.update(delta);
+        if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
       }
       if (isAnimPlaying || animState.activeMode === 'rigging' || animState.inspectorTab === 'rigging') {
         updateArmatureFrame(animState.currentTime);
       }
-      if (skeletonHelperRef.current) {
+      if (skeletonHelperRef.current && (isAnimPlaying || animState.activeMode === 'rigging')) {
         skeletonHelperRef.current.updateMatrixWorld();
       }
       if (rigArmatureGroupRef.current && rigArmatureGroupRef.current.visible) {
@@ -2157,7 +2270,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         } else {
           idleFrames++;
         }
-        renderer.info.reset();
         renderer.render(scene, camera);
       }
     };
@@ -2226,6 +2338,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           }
         }
       });
+      if (envTextureRef.current) {
+        envTextureRef.current.dispose();
+        envTextureRef.current = null;
+      }
+      scene.environment = null;
     };
   }, []);
 
@@ -2317,22 +2434,22 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   }, [physicsDebug]);
 
 
-  // Interactive 3D Point Cloud silhouette generation during AI 3D model synthesis (progressive silhouette preview)
+  // Manage mesh visibility during generation without intrusive 3D placeholder wireframes
   useEffect(() => {
     const isGenerating = Boolean(isExecuting || debugBlueprint);
     const pointCloudGroup = pointCloudGroupRef.current;
     const meshGroup = currentMeshGroupRef.current;
 
-    if (!pointCloudGroup) return;
-
-    if (!isGenerating) {
-      // Hide & dispose point cloud when generation completes or aborts
+    if (pointCloudGroup) {
       pointCloudGroup.visible = false;
       if (pointCloudRef.current) {
         pointCloudGroup.remove(pointCloudRef.current);
         disposePointCloud(pointCloudRef.current);
         pointCloudRef.current = null;
       }
+    }
+
+    if (!isGenerating) {
       if (meshGroup) {
         meshGroup.visible = true;
       }
@@ -2346,35 +2463,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     if (skeletonHelperRef.current) {
       skeletonHelperRef.current.visible = false;
     }
-
-    let isMounted = true;
-
-    const buildPoints = async () => {
-      if (pointCloudRef.current) {
-        pointCloudGroup.remove(pointCloudRef.current);
-        disposePointCloud(pointCloudRef.current);
-        pointCloudRef.current = null;
-      }
-
-      // Sleek AI Neural Holographic Core
-      const points = createFallbackPointCloud();
-
-      if (!isMounted) {
-        disposePointCloud(points);
-        return;
-      }
-
-      pointCloudRef.current = points;
-      pointCloudGroup.add(points);
-      pointCloudGroup.visible = true;
-    };
-
-    buildPoints();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isExecuting, debugBlueprint, generationSettings?.image, textureSettings?.referenceImage]);
+  }, [isExecuting, debugBlueprint]);
 
   // Load the real selected asset into the persistent viewport.
   useEffect(() => {
@@ -2949,32 +3038,49 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     setCameraMenuOpen(false);
     const cam = cameraRef.current;
     const ctrl = controlsRef.current;
-    ctrl.target.set(0, 0.4, 0);
+    const group = currentMeshGroupRef.current;
+    const targetCenter = new THREE.Vector3(0, 0.4, 0);
+    let viewDist = 3.8;
+
+    if (group && group.children.length > 0) {
+      const box = new THREE.Box3().setFromObject(group);
+      if (!box.isEmpty()) {
+        box.getCenter(targetCenter);
+        const sphere = box.getBoundingSphere(new THREE.Sphere());
+        if (sphere.radius > 0 && isFinite(sphere.radius)) {
+          const fov = cam.fov * (Math.PI / 180);
+          viewDist = (sphere.radius / Math.sin(fov / 2)) * 1.15;
+          viewDist = Math.max(ctrl.minDistance * 1.5, Math.min(ctrl.maxDistance * 0.8, viewDist));
+        }
+      }
+    }
+
+    ctrl.target.copy(targetCenter);
 
     switch (effectivePreset) {
       case 'perspective':
-        cam.position.set(0, 1.2, 3.8);
+        cam.position.set(targetCenter.x, targetCenter.y + viewDist * 0.28, targetCenter.z + viewDist);
         break;
       case 'front':
-        cam.position.set(0, 0.4, 4.0);
+        cam.position.set(targetCenter.x, targetCenter.y, targetCenter.z + viewDist);
         break;
       case 'back':
-        cam.position.set(0, 0.4, -4.0);
+        cam.position.set(targetCenter.x, targetCenter.y, targetCenter.z - viewDist);
         break;
       case 'top':
-        cam.position.set(0, 4.2, 0.01);
+        cam.position.set(targetCenter.x, targetCenter.y + viewDist, targetCenter.z + 0.001);
         break;
       case 'bottom':
-        cam.position.set(0, -3.8, 0.01);
+        cam.position.set(targetCenter.x, targetCenter.y - viewDist, targetCenter.z + 0.001);
         break;
       case 'left':
-        cam.position.set(-4.0, 0.4, 0);
+        cam.position.set(targetCenter.x - viewDist, targetCenter.y, targetCenter.z);
         break;
       case 'right':
-        cam.position.set(4.0, 0.4, 0);
+        cam.position.set(targetCenter.x + viewDist, targetCenter.y, targetCenter.z);
         break;
       case 'ortho':
-        cam.position.set(2.8, 2.0, 2.8);
+        cam.position.set(targetCenter.x + viewDist * 0.7, targetCenter.y + viewDist * 0.5, targetCenter.z + viewDist * 0.7);
         break;
     }
     ctrl.update();
@@ -3059,6 +3165,38 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
     controls.target.copy(center);
     controls.update();
+
+    // Align shadow floor and grid directly beneath the model's feet
+    if (floorRef.current) {
+      floorRef.current.position.set(center.x, box.min.y - 0.001, center.z);
+    }
+    if (gridHelperRef.current) {
+      gridHelperRef.current.position.set(center.x, box.min.y - 0.0005, center.z);
+    }
+
+    // Dynamically focus directional shadow light to cast crisp contact shadows on the floor
+    if (keyLightRef.current && sceneRef.current) {
+      const light = keyLightRef.current;
+      light.position.set(
+        center.x + Math.max(2.5, radius * 1.5),
+        box.max.y + Math.max(3.0, radius * 2.0),
+        center.z + Math.max(2.5, radius * 1.5)
+      );
+      light.target.position.copy(center);
+      if (!light.target.parent) sceneRef.current.add(light.target);
+      light.target.updateMatrixWorld();
+
+      const shadowCam = light.shadow.camera;
+      const sSize = Math.max(3.5, radius * 1.6);
+      shadowCam.left = -sSize;
+      shadowCam.right = sSize;
+      shadowCam.top = sSize;
+      shadowCam.bottom = -sSize;
+      shadowCam.near = 0.5;
+      shadowCam.far = Math.max(30, radius * 6.0);
+      shadowCam.updateProjectionMatrix();
+      light.shadow.needsUpdate = true;
+    }
 
     // Auto-generate asset thumbnail if missing
     if (rendererRef.current && sceneRef.current && currentAsset && (!currentAsset.thumbnail || currentAsset.thumbnail.length === 0)) {
@@ -3169,13 +3307,56 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
     }
 
-    // 2. CheckIcon if local 3D files were dropped from desktop (OBJ, GLB, STL, FBX)
+    // 2. Check if local files were dropped from desktop (3D meshes or 2D reference images)
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       const ext = file.name.split('.').pop()?.toUpperCase() || '';
       const ALLOWED_EXTENSIONS = ['GLB', 'GLTF', 'OBJ', 'PLY', 'STL'];
+      const IMAGE_EXTENSIONS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'BMP', 'TIFF', 'AVIF'];
+
+      if (IMAGE_EXTENSIONS.includes(ext) || file.type.startsWith('image/')) {
+        const previewUrl = URL.createObjectURL(file);
+        const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+
+        setDropToastMessage(`Uploading "${file.name}" as 3D reference image...`);
+
+        const formData = new FormData();
+        formData.append('file', file);
+        getApiClient().post<{ file_id: string; filename?: string }>(
+          '/api/v1/file-upload/image',
+          formData,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        ).then(res => {
+          const serverUrl = res?.file_id ? `/api/v1/file-upload/download/${res.file_id}` : previewUrl;
+          setGenerationSettings(prev => ({
+            ...prev,
+            mode: 'image-to-3d',
+            image: serverUrl,
+            imageFileId: res?.file_id || '',
+            prompt: cleanPrompt,
+            imageName: cleanPrompt,
+          }));
+          navigateToTool('model');
+          setDropToastMessage(`Reference image "${file.name}" ready for 3D generation`);
+          setTimeout(() => setDropToastMessage(null), 3000);
+        }).catch(err => {
+          console.warn('Backend image upload fallback to local preview:', err);
+          setGenerationSettings(prev => ({
+            ...prev,
+            mode: 'image-to-3d',
+            image: previewUrl,
+            prompt: cleanPrompt,
+            imageName: cleanPrompt,
+          }));
+          navigateToTool('model');
+          setDropToastMessage(`Set "${file.name}" as reference image`);
+          setTimeout(() => setDropToastMessage(null), 3000);
+        });
+        return;
+      }
+
       if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        setDropToastMessage(`Unsupported file format "${ext}". Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`);
+        setDropToastMessage(`Unsupported file format "${ext}". Allowed: ${ALLOWED_EXTENSIONS.join(', ')} or images (${IMAGE_EXTENSIONS.join(', ')})`);
         setTimeout(() => setDropToastMessage(null), 3500);
         return;
       }
@@ -3244,6 +3425,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             subfolder: 'models',
             type: 'upload',
             viewUrl: serverUrl,
+            fileId: uploadRes?.file_id,
           },
         };
         // Update temp asset in place to avoid duplicate cards in the workspace
@@ -3264,7 +3446,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       className={`relative w-full h-full overflow-hidden select-none ${className}`}
       style={{
         background: environmentSettings.backgroundColor === 'transparent'
-          ? 'radial-gradient(ellipse 75% 65% at 50% 50%, #161616 0%, #0d0d0d 55%, #060606 100%)'
+          ? 'radial-gradient(ellipse 80% 70% at 50% 45%, #16181d 0%, #0f1013 55%, #08090a 100%)'
           : environmentSettings.backgroundColor
       }}
       onDragOver={handleDragOver}
@@ -3428,55 +3610,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         </div>
       )}
 
-      {/* Futuristic Glassmorphic 3D Generation & GPU Loading Progress Overlay */}
+      {/* Sleek Minimalist Studio 3D Generation & Loading Progress Overlay */}
       {(isExecuting || debugBlueprint || activeTask?.status === 'running' || activeTask?.status === 'queued') && (
-        <div className="absolute bottom-14 sm:bottom-18 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center pointer-events-auto max-w-md w-full px-4 text-center select-none animate-in fade-in zoom-in-95 duration-300">
-          <div className="w-full bg-[hsl(var(--surface-1))]/90 backdrop-blur-xl border border-white/[0.12] rounded-2xl p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.65)] space-y-2">
-            <div className="flex items-center justify-between text-xs border-b border-white/[0.06] pb-2">
-              <span className="flex items-center gap-2 font-bold text-white text-[11px] tracking-wide uppercase">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
-                </span>
-                <span>AI Neural Synthesis</span>
-              </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-zinc-300 font-mono">
-                {activeTask?.provider || generationSettings.aiModel || '3D Engine'}
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between text-xs px-0.5">
-              <span className="text-zinc-200 truncate pr-2 text-left text-[11px] font-medium flex items-center gap-1.5">
-                <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary flex-shrink-0 animate-pulse" />
-                <span className="truncate">{executionStep || activeTask?.currentStep || 'Synthesizing 3D mesh representation...'}</span>
-              </span>
-              <span className="font-mono font-black text-xs text-primary flex-shrink-0">
-                {Math.round(executionProgress || activeTask?.progress || 15)}%
-              </span>
-            </div>
-
-            {/* Glowing Gradient Progress Bar */}
-            <div className="w-full h-2 rounded-full bg-black/60 border border-white/[0.08] overflow-hidden shadow-inner">
-              <div 
-                className="h-full bg-gradient-to-r from-amber-400 via-primary to-emerald-400 rounded-full transition-all duration-300 ease-out shadow-[0_0_12px_rgba(255,204,0,0.5)]"
-                style={{ width: `${Math.max(6, Math.min(100, executionProgress || activeTask?.progress || 15))}%` }}
-              />
-            </div>
-
-            <div className="flex items-center justify-between text-[10px] text-zinc-400 px-0.5 pt-0.5">
-              <span className="flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span>GPU Acceleration Active</span>
-              </span>
-              <button
-                onClick={isExecuting ? cancelExecution : () => setDebugBlueprint(false)}
-                className="text-zinc-500 hover:text-rose-400 font-medium transition-colors cursor-pointer"
-              >
-                {isExecuting ? 'Cancel Generation' : 'Dismiss'}
-              </button>
-            </div>
-          </div>
-        </div>
+        <GenerationLoadingPreview
+          isExecuting={Boolean(isExecuting || debugBlueprint || activeTask?.status === 'running' || activeTask?.status === 'queued')}
+          progress={executionProgress || activeTask?.progress || 10}
+          stepMessage={executionStep || activeTask?.currentStep || 'Synthesizing 3D mesh...'}
+          stage={activeTask?.stage}
+          referenceImage={generationSettings?.image || activeTask?.inputImage || null}
+          prompt={generationSettings?.prompt || activeTask?.title || null}
+          modelId={activeTask?.provider || generationSettings?.aiModel || null}
+          onCancel={isExecuting ? cancelExecution : () => setDebugBlueprint(false)}
+        />
       )}
 
       {/* Smooth Non-Intrusive Loading Overlay (Asset file parsing) */}
@@ -3650,6 +3795,61 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             style={{ right: `${rightOffset}px` }} 
             className="absolute top-3 z-10 flex items-center gap-1.5 sm:gap-2 max-w-[calc(100vw-1.5rem)] transition-all duration-200 pointer-events-auto"
           >
+            {currentAsset?.artifacts && (() => {
+              const rawLods = currentAsset.artifacts.lods;
+              const lodList: any[] = Array.isArray(rawLods)
+                ? rawLods
+                : (rawLods && typeof rawLods === 'object')
+                  ? Object.values(rawLods)
+                  : [];
+              return (
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+                  <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">Artifact</span>
+                  {[
+                    { id: 'game-ready' as const, label: 'Game' },
+                    { id: 'source' as const, label: 'Source' },
+                    ...lodList.slice(0, 4).map((_, i) => ({ id: ('lod' + i) as 'lod0' | 'lod1' | 'lod2' | 'lod3', label: 'L' + i })),
+                  ].map(item => {
+                    const disabled =
+                      item.id === 'source' ? !currentAsset.artifacts?.source :
+                      item.id === 'game-ready' ? !currentAsset.artifacts?.gameReady :
+                      !lodList[Number(item.id.slice(3))];
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => switchArtifactView(item.id)}
+                        className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all disabled:opacity-30 disabled:cursor-not-allowed " + (
+                          artifactView === item.id
+                            ? "bg-primary text-black"
+                            : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
+                        )}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
+            <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl">
+              <span className="px-1.5 text-[8px] font-bold uppercase tracking-wider text-zinc-500 hidden lg:inline">FPS</span>
+              {(['auto', 'smooth', 'quality'] as const).map(mode => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setPerformanceMode(mode)}
+                  className={"px-2 py-1 rounded-lg text-[9px] font-bold transition-all " + (
+                    performanceMode === mode ? "bg-primary text-black" : "text-zinc-300 hover:text-white hover:bg-white/[0.05]"
+                  )}
+                >
+                  {mode === 'smooth' ? 'Fast' : mode === 'quality' ? 'Detail' : 'Auto'}
+                </button>
+              ))}
+            </div>
+
             {/* Unobtrusive Corner Zoom / Orbit Controller Set */}
             <div className="flex items-center gap-0.5 p-1 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.12] shadow-2xl text-zinc-300">
               {/* Orbit/Pan Mode Toggle with Active Visual Indicator */}
@@ -3982,7 +4182,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
                 <div className="space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[9px] text-zinc-300">Rim Accent</span>
+                    <span className="text-[9px] text-zinc-300">Back / Rim Light</span>
                     <span className="text-[9px] font-mono text-primary font-bold">{environmentSettings.rimLightIntensity.toFixed(1)}</span>
                   </div>
                   <input
@@ -4084,16 +4284,16 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 onClick={() => {
                   setSelectedPreset('studio');
                   setEnvironmentSettings({
-                    ambientIntensity: 0.8,
-                    keyLightIntensity: 3.0,
-                    fillLightIntensity: 1.3,
-                    rimLightIntensity: 2.0,
-                    exposure: 1.25,
+                    ambientIntensity: 0.85,
+                    keyLightIntensity: 1.8,
+                    fillLightIntensity: 1.1,
+                    rimLightIntensity: 1.5,
+                    exposure: 1.05,
                     lightTone: 'studio',
                     backgroundColor: 'transparent',
                     gridVisible: false,
                     gridColor: '#222222',
-                    floorShadowOpacity: 0.2,
+                    floorShadowOpacity: 0.25,
                     autoRotate: false,
                     showAxes: true,
                     showStats: true,
@@ -4106,9 +4306,204 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             </div>
           )}
 
+          {/* Top-Right Horizontal Job & Queue Tracker (Line-by-line & Drawer for >4 jobs) */}
+          {(() => {
+            const jobList = Object.values(jobsById || {}).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+            const hasJobs = jobList.length > 0;
+            const showHUD = hasJobs || isExecuting || (batchQueue && batchQueue.length > 0);
+
+            if (!showHUD) return null;
+
+            const renderCard = (job: any) => {
+              const isRunning = job.status === 'running';
+              const isCompleted = job.status === 'completed';
+              const isFailed = job.status === 'failed';
+              const isQueued = job.status === 'queued';
+              const thumbUrl = job.inputImage || (isCompleted && job.result?.thumbnail_url) || '';
+
+              return (
+                <div
+                  key={job.id}
+                  className="flex items-center gap-2.5 p-2 pl-2.5 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none min-w-[240px] max-w-[270px]"
+                >
+                  {/* Reference Thumbnail or Active Icon */}
+                  <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                    {thumbUrl ? (
+                      <img
+                        src={thumbUrl}
+                        alt={job.modelName || 'Job'}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className={`w-4 h-4 ${isRunning ? 'text-primary animate-pulse' : 'text-zinc-400'}`} />
+                    )}
+                    {isRunning && (
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                        <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Job Info and Stage Progress */}
+                  <div className="flex flex-col min-w-[110px] max-w-[160px] flex-1">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-bold text-white truncate">
+                        {job.modelName || job.title || '3D Generating'}
+                      </span>
+                      <span className="font-mono text-[9px] font-bold">
+                        {isCompleted && <span className="text-emerald-400">Ready</span>}
+                        {isFailed && <span className="text-red-400">Failed</span>}
+                        {isQueued && <span className="text-amber-300">Queued</span>}
+                        {isRunning && <span className="text-primary">{Math.round(job.progress || 0)}%</span>}
+                      </span>
+                    </div>
+
+                    {/* Horizontal Progress bar */}
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          isCompleted
+                            ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                            : isFailed
+                            ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'
+                            : isQueued
+                            ? 'bg-amber-400/50'
+                            : 'bg-gradient-to-r from-amber-400 to-primary shadow-[0_0_8px_rgba(255,204,0,0.6)]'
+                        }`}
+                        style={{
+                          width: `${isCompleted || isFailed ? 100 : isQueued ? 15 : Math.max(job.progress || 0, 5)}%`,
+                        }}
+                      />
+                    </div>
+
+                    <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
+                      {job.stage || (isQueued ? 'In queue (waiting for GPU)' : isRunning ? 'Processing...' : isCompleted ? 'Completed' : 'Error')}
+                    </span>
+                  </div>
+
+                  {/* Actions: View when completed & Dismiss */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {isCompleted && (
+                      <button
+                        type="button"
+                        onClick={() => selectJobToView(job.id)}
+                        className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[9px] font-bold transition-all cursor-pointer flex items-center gap-0.5"
+                        title="Load into 3D Viewport"
+                      >
+                        <HugeiconsIcon icon={EyeIcon} size={11} />
+                        View
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => dismissJob(job.id)}
+                      title="Dismiss"
+                      className="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white transition-colors"
+                    >
+                      <HugeiconsIcon icon={Cancel01Icon} size={11} />
+                    </button>
+                  </div>
+                </div>
+              );
+            };
+
+            if (hasJobs) {
+              const isMultiJob = jobList.length > 4;
+              const activeRunningCount = jobList.filter(j => j.status === 'running' || j.status === 'queued').length;
+
+              return (
+                <div
+                  style={{ right: `${rightOffset}px` }}
+                  className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200 flex flex-col gap-2"
+                >
+                  {isMultiJob && (
+                    <div
+                      onClick={() => setIsQueueDrawerOpen(!isQueueDrawerOpen)}
+                      className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-black/90 backdrop-blur-xl border border-white/[0.16] shadow-xl text-xs font-semibold text-white cursor-pointer hover:border-primary/50 transition-all select-none min-w-[240px] max-w-[270px]"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <HugeiconsIcon icon={Layers01Icon} size={14} className="text-primary animate-pulse" />
+                        <span>Queue ({jobList.length})</span>
+                        {activeRunningCount > 0 && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-primary/20 text-primary font-bold">
+                            {activeRunningCount} active
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white">
+                        <span>{isQueueDrawerOpen ? 'Collapse' : 'Expand'}</span>
+                        <HugeiconsIcon
+                          icon={ChevronDown}
+                          size={12}
+                          className={`transition-transform duration-200 ${isQueueDrawerOpen ? 'rotate-180' : ''}`}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* If <= 4 jobs: stack line by line. If > 4 jobs: show inside scrollable drawer when open */}
+                  {(!isMultiJob || isQueueDrawerOpen) && (
+                    <div className={`flex flex-col gap-2 ${isMultiJob ? 'max-h-[60vh] overflow-y-auto pr-1' : ''}`}>
+                      {jobList.map(job => renderCard(job))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div
+                style={{ right: `${rightOffset}px` }}
+                className="absolute top-14 z-20 pointer-events-auto transition-[right] duration-200"
+              >
+                <div className="flex items-center gap-2 p-1.5 pl-2 rounded-2xl bg-black/85 backdrop-blur-xl border border-white/[0.14] shadow-2xl hover:border-primary/50 transition-all select-none">
+                  <div className="relative w-9 h-9 rounded-xl overflow-hidden bg-zinc-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+                    {generationSettings.image ? (
+                      <img
+                        src={generationSettings.image}
+                        alt="Active generation reference"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary animate-pulse" />
+                    )}
+                    {isExecuting && (
+                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                        <div className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col min-w-[120px] max-w-[180px]">
+                    <div className="flex items-center justify-between gap-1 text-[10px]">
+                      <span className="font-bold text-white truncate">
+                        {isExecuting ? (activeTask?.title || '3D Generating...') : 'Queue Ready'}
+                      </span>
+                      <span className="font-mono text-primary font-bold text-[9px]">
+                        {isExecuting ? `${Math.round(executionProgress || 0)}%` : `${batchQueue.length} queued`}
+                      </span>
+                    </div>
+
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mt-1 p-[0.5px]">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-400 to-primary rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(255,204,0,0.6)]"
+                        style={{ width: `${isExecuting ? Math.max(executionProgress || 0, 5) : 100}%` }}
+                      />
+                    </div>
+
+                    <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
+                      {executionStep || (batchQueue.length > 0 ? `${batchQueue.length} jobs in background` : 'Idle')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {reflectionPeekEnabled && (
             <div
-              className="absolute top-14 z-10 pointer-events-auto transition-[right] duration-200"
+              className="absolute top-28 z-10 pointer-events-auto transition-[right] duration-200"
               style={{ right: `${rightOffset}px` }}
               onMouseEnter={handleReflectionPeekEnter}
               onMouseLeave={handleReflectionPeekLeave}

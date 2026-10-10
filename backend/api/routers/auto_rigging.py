@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
-from api.routers.file_upload import resolve_file_id_async
+from api.routers.file_upload import resolve_file_id_async, resolve_input_reference_async
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
@@ -144,12 +144,23 @@ async def generate_rig(
                     status_code=404, detail="Mesh file not found or expired"
                 )
         else:
-            mesh_file_path = request.mesh_path
+            # mesh_path may be a download URL or bare /{file_id} path from an upstream job
+            mesh_file_path = await resolve_input_reference_async(
+                request.mesh_path, file_store
+            ) or request.mesh_path
 
         # Resolve server path if URL or relative path was provided
         if mesh_file_path:
             from core.utils.file_utils import resolve_server_file_path
-            mesh_file_path = resolve_server_file_path(mesh_file_path)
+            from core.utils.exceptions import FileUploadError
+            try:
+                mesh_file_path = resolve_server_file_path(mesh_file_path)
+            except FileUploadError:
+                # Unresolvable URL/path (asset deleted or never registered on disk)
+                raise HTTPException(
+                    status_code=404,
+                    detail="Mesh file not found on the server. Re-import or regenerate the model, then retry.",
+                )
 
         # Validate mesh file exists
         if not mesh_file_path:

@@ -18,15 +18,22 @@
 
 ## 1. Executive System Overview
 
-ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization platform that converts 2D images or text prompts into game-ready 3D assets (`.glb`, `.obj`, `.fbx`, `.stl`, PBR textures, LOD cascades, collision hulls).
+ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization platform that converts reference images into game-ready 3D assets. Text prompts remain supported for mesh painting, localized mesh editing, and motion generation.
 
 ### Core Stack
 - **Frontend**: Next.js 16 (React 19, TypeScript, Three.js, React Three Fiber, Tailwind CSS)
 - **API Gateway**: FastAPI (Python 3.10, Conda env `3daigc-api`, Pydantic V2, AsyncIO)
-- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartPacker, UltraShape, PartField, P3-SAM, UniRig, FastMesh, VoxHammer
+- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartPacker, UltraShape, PartField, P3-SAM, UniRig, FastMesh, VoxHammer, Zero123++ (Multi-View)
 - **Scheduler**: VRAM-aware multiprocess scheduler with GPU monitoring
 - **Queue/Broker**: Redis 7 (optional, multi-worker mode only)
 - **File Storage**: Local filesystem + Redis FileStore (multi-worker mode)
+
+### Model-Native Source Fidelity Contract
+1. Frontend sends model-specific inference schedules rather than a global step count.
+2. Scheduler removes post-process-only target, extraction/decimation/remesh, LOD, physics, and paint controls before model inference.
+3. Adapter extraction uses the highest supported source density, with only hardware safety guards allowed to reduce it.
+4. Source texture profiles are fixed at TRELLIS 2048 and TRELLIS.2 4096 for maximum source fidelity.
+5. master/source.glb is immutable; derived retopo, UV, LOD, collision, and bake artifacts cannot rewrite it.
 
 ```mermaid
 graph TD
@@ -46,7 +53,7 @@ graph TD
 
     subgraph Gateway["⚡ FastAPI Gateway :7842"]
         direction TB
-        API["Routers: system, generation,<br/>editing, rigging, segmentation"]:::cyan
+        API["Routers: system, generation,<br/>multiview, editing, rigging, segmentation"]:::cyan
         SCHED["VRAM-Aware Scheduler"]:::cyan
     end
 
@@ -58,7 +65,7 @@ graph TD
         AUTO_UNLOAD["Auto-Unload After Job"]:::orange
     end
 
-    subgraph Adapters["🧠 Model Adapters (23 Models)"]
+    subgraph Adapters["🧠 Model Adapters (23 registered / 22 selectable; Zero123++ hidden)"]
         direction TB
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes PBR"]:::purple
         HUNY["Hunyuan3D-2.1<br/>Shape + Paint 2B"]:::purple
@@ -66,17 +73,18 @@ graph TD
         PP["PartPacker & UltraShape"]:::purple
         FM["FastMesh Quad Retopo"]:::purple
         UR["UniRig & ARDY Motion"]:::purple
+        Z123["Zero123++ v1.2<br/>Multi-View 6-Cam Grid"]:::purple
     end
 
     subgraph PostProcess["⚙️ Production Post-Processing"]
         direction TB
         CHECK["master/source.glb<br/>Immutable Master Checkpoint"]:::green
-        FINISH["Repair • Retopo • UV • Bake<br/>LOD0-LOD3 • CoACD Colliders"]:::green
+        FINISH["Repair • Retopo • UV<br/>Optional high-to-low Bake • LOD0-LOD3 • CoACD"]:::green
     end
 
     subgraph Storage["📦 Persistent Storage & Export"]
         direction TB
-        LOCAL["Asset Workspace<br/>backend/storage/models/<asset>_<hash>/"]:::slate
+        LOCAL["Asset Workspace<br/>backend/storage/models/meshes/<asset>_<job_id>/"]:::slate
         ZIP["Structured Game-Ready ZIP<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end
 
@@ -108,8 +116,8 @@ sequenceDiagram
     participant Adapter as Model Adapter
     participant Storage as backend/storage/
 
-    User->>Frontend: Select prompt / image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/text-to-textured-mesh
+    User->>Frontend: Select image + Platform budget
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
@@ -279,6 +287,9 @@ The backend exposes a health endpoint for runtime verification:
 curl -s http://localhost:7842/health | jq .
 # {"status": "healthy", "timestamp": ..., "version": "0.1.0"}
 ```
+`/health` is a liveness check and does not load or validate inference models. Use
+`/api/v1/system/models` for non-loading per-model readiness, which checks the
+manifest path and local weight/config files, and reports CUDA availability.
 
 The frontend can be type-checked and built with:
 ```bash
@@ -291,10 +302,8 @@ bun run build
 ## Production Asset Lifecycle & Two-Way PostProcess Pipeline
 
 ForMash3D executes post-processing via two complementary pathways:
-1. **Automatic Chaining:** Generation -> master/source.glb -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> quad retopo -> Auto UV -> LOD cascade -> collision hulls -> game-ready formats) -> background progress streaming to `WorkspaceContext.tsx` -> artifacts loaded into 3D viewer.
-2. **Manual On-Demand PostProcess:** Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
-3. **Standalone Microservice (Port 8200):** High-throughput deployments can run `scripts/start_postprocess_service.sh` (`backend/postprocess/main.py`) on dedicated port 8200 for isolated GPU-accelerated mesh processing.
-
+1. **Automatic Chaining:** Generation -> maximum-fidelity model output -> immutable `master/source.glb` -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> conditional retopo -> downstream target polycount -> Auto UV -> LOD cascade -> collision hulls -> game-ready formats) -> production completion -> `WorkspaceContext.tsx` artifacts.
+2. **Manual On-Demand PostProcess: Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
 The post-processing stage runs in `asyncio.to_thread` so CPU/GPU mesh operations do not block FastAPI's event loop.
 
 ## Physics path
@@ -302,7 +311,7 @@ Generation requests may carry a physics intent and provider-neutral controller v
 
 ## Review Audit — Current Job Lifecycle
 
-Browser JobStore / Workspace jobs → FastAPI submit → scheduler → GPU worker → **raw result ready** → completed job becomes user-visible → background postprocess → canonical master/game-ready artifacts.
+Browser JobStore / Workspace jobs → FastAPI submit → scheduler → GPU worker → **raw model result** → immutable master → production postprocess → game-ready/LOD/physics/QA artifacts → terminal completion.
 
 Batch submissions use a scheduler-owned batch identifier and `max_parallel`; blocked batch items remain queued without consuming another worker slot.
 
@@ -318,7 +327,7 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - Container dependency paths resolve against the repository's backend layout and the maintained Wheels release.
 - SQLite status/progress persistence is offloaded and bounded; status reads do not mutate or synchronously persist jobs.
 - Successful raw inference is terminal for GPU execution; background production post-processing carries independent status/progress/error metadata and preserves input lineage until completion.
-- Model readiness is based on canonical manifest paths, real local checkpoint payloads, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract.
+- Model readiness is based on canonical manifest paths, local checkpoint payloads plus model descriptors for directory paths, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract. Health routes remain liveness-only and never load models.
 - The workspace uses backend capability metadata for route selection, keeps unsupported multiview gated, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
 - Artifact naming is UUID-based across generation/segmentation/rig outputs, and stale request temp directories are removed during scheduler recovery.
 
@@ -327,3 +336,17 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - Interactive mesh tools run in-process through `/api/v1/mesh-tools/*`; the default runtime does not launch a browser-facing port 8200 sidecar.
 - Durable job polling owns generation progress; mesh-tool operations may use SSE for operation-level progress.
 - Failed production post-processing keeps the canonical asset root and immutable master so the job can retry without model inference.
+
+## High-Fidelity Generation Control Plane — 2026-10-08
+
+The production path is now conceptually:
+
+`Input -> capability detection -> model-aware preprocessing -> resource-aware routing -> retained model -> immutable master -> conservative repair/remesh/retopo -> UV -> bake -> optimized derivative -> LOD/game-ready -> quality gates`
+
+Resource placement is handled centrally. Single-GPU loading is preferred when safe; multi-GPU loading is attempted only for adapters that explicitly declare a supported strategy. Current supported generic multi-GPU integration uses Accelerate component dispatch for compatible diffusers-style pipelines, including the TRELLIS.2 adapter path.
+
+The production result distinguishes the immutable high-fidelity master from the optimized game-ready mesh and exposes quality diagnostics without turning non-ground-truth metrics into false absolute scores.
+
+## Normalized Capability Contract — 2026-10-08
+
+Model configuration is normalized once at load time into a shared capability contract. The same contract drives smart intent admission, scheduler routing, optional preprocessing profiles, runtime model details, multi-GPU eligibility and UI capability state. Production QA reports finite-geometry checks, UV/material checks, LOD lineage and master-to-derivative drift without modifying master/source.glb.

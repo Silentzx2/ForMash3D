@@ -15,6 +15,43 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set +a
 fi
 
+# Parse command line flags
+AUTO_MODE=0
+ENV_MANAGER="${FORMASH3D_ENV_MANAGER:-${AI_STUDIO_ENV_MANAGER:-conda}}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --auto|-auto|-y|--yes|--non-interactive)
+      AUTO_MODE=1
+      export NONINTERACTIVE=1
+      shift
+      ;;
+    --conda)
+      ENV_MANAGER="conda"
+      export FORMASH3D_ENV_MANAGER="conda"
+      shift
+      ;;
+    --venv)
+      ENV_MANAGER="venv"
+      export FORMASH3D_ENV_MANAGER="venv"
+      shift
+      ;;
+    --env-manager=*)
+      ENV_MANAGER="${1#*=}"
+      export FORMASH3D_ENV_MANAGER="$ENV_MANAGER"
+      shift
+      ;;
+    --env-manager)
+      ENV_MANAGER="$2"
+      export FORMASH3D_ENV_MANAGER="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
 # Test whether a wheel file exists and is a valid non-corrupted zip/wheel
 _wheel_is_valid() {
     local whl="$1"
@@ -134,11 +171,13 @@ echo "The installation may take a while, please wait..."
 echo ""
 
 choose_env_manager() {
-  local default="conda"
+  local default="${ENV_MANAGER:-conda}"
   local choice=""
 
-  # Prompt user directly
-  if [ -e /dev/tty ]; then
+  if [[ "${AUTO_MODE:-0}" == "1" || "${NONINTERACTIVE:-0}" == "1" || "${CI:-}" == "true" || -n "${FORMASH3D_ENV_MANAGER:-}" || ! -t 0 ]]; then
+    choice="${default}"
+    echo "[INFO] Non-interactive / Auto mode: selected environment manager '${choice}'"
+  elif [ -e /dev/tty ]; then
     read -r -p "Select environment manager [conda|venv] (default: ${default}): " choice < /dev/tty || choice=""
   else
     read -r -p "Select environment manager [conda|venv] (default: ${default}): " choice || choice=""
@@ -666,6 +705,79 @@ else
 fi
 ### FastMesh end ###
 
+### Unique3D ###
+echo ""
+echo "========================================"
+echo "Installing Unique3D Dependencies"
+echo "========================================"
+cd "$THIRDPARTY_DIR/Unique3D"
+echo "[INFO] Installing Unique3D requirements..."
+
+# Use shared PyTorch 2.6+CUDA 12.4 environment - do NOT install torch/torchvision/torchaudio
+# Use local wheels first, then fall back to source builds
+
+# nvdiffrast
+if ! install_local_wheel "nvdiffrast-*.whl" "nvdiffrast"; then
+    _retry 3 5 $UV_PIP install git+https://github.com/NVlabs/nvdiffrast.git
+fi
+
+# PyTorch3D
+if ! install_local_wheel "pytorch3d-*.whl" "pytorch3d"; then
+    # Build from official source and save wheel for future use
+    echo "[INFO] Building pytorch3d from source (this may take 2-5 minutes)..."
+    if _retry 3 5 $UV_PIP install --no-build-isolation git+https://github.com/facebookresearch/pytorch3d.git@stable; then
+        echo "[INFO] Building wheel for pytorch3d..."
+        $UV_PIP wheel --no-deps -w "$WHEEL_DIR" git+https://github.com/facebookresearch/pytorch3d.git@stable || true
+    else
+        exit 1
+    fi
+fi
+
+# torch_scatter (CUDA 12.4)
+if ! install_local_wheel "torch_scatter-*.whl" "torch_scatter"; then
+    _retry 3 5 $UV_PIP install torch_scatter -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
+fi
+
+# xformers
+if ! install_local_wheel "xformers-*.whl" "xformers"; then
+    _retry 3 5 $UV_PIP install xformers --index-url https://download.pytorch.org/whl/cu124
+fi
+
+# Remaining Unique3D requirements (excluding torch/torchvision/torchaudio which use shared env)
+echo "[INFO] Installing remaining Unique3D requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" \
+    accelerate \
+    datasets \
+    "diffusers>=0.26.3" \
+    fire \
+    gradio \
+    jaxtyping \
+    numba \
+    numpy \
+    omegaconf \
+    onnxruntime_gpu \
+    opencv_python \
+    opencv_python_headless \
+    ort_nightly_gpu \
+    peft \
+    Pillow \
+    pygltflib \
+    "pymeshlab>=2023.12" \
+    "rembg[gpu]" \
+    tqdm \
+    transformers \
+    trimesh \
+    typeguard \
+    wandb
+
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Unique3D requirements installed"
+else
+    echo "[ERROR] Failed to install Unique3D requirements"
+    exit 1
+fi
+### Unique3D end ###
+
 ### UltraShape ###
 echo ""
 echo "========================================"
@@ -718,13 +830,6 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSF" ]; then
         exit 1
     fi
 fi
-if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
-    echo "[INFO] Installing TripoSG requirements..."
-    if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSG/requirements.txt"; then
-        echo "[ERROR] Failed to install TripoSG requirements."
-        exit 1
-    fi
-fi
 if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSR" ]; then
     echo "[INFO] Installing TripoSR requirements..."
     if ! install_local_wheel "torchmcubes-*.whl" "torchmcubes"; then
@@ -742,6 +847,22 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then
         exit 1
     fi
 fi
+
+### Zero123++ v1.2 Multi-View Dependencies ###
+echo ""
+echo "========================================"
+echo "Installing Zero123++ v1.2 Dependencies"
+echo "========================================"
+if [ -d "$PROJECT_ROOT/backend/thirdparty/zero123plus" ]; then
+    echo "[INFO] Found vendored Zero123++ repository at $PROJECT_ROOT/backend/thirdparty/zero123plus"
+fi
+
+if [ -f "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" ]; then
+    echo "[INFO] Installing Zero123++ runtime dependencies..."
+    $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" || true
+    echo "[SUCCESS] Zero123++ runtime dependencies processed"
+fi
+### Zero123++ end ###
 
 cd "$PROJECT_ROOT/backend"
 
@@ -761,8 +882,8 @@ fi
 
 python "$PROJECT_ROOT/backend/scripts/verify_postprocess_runtime.py"
 
-# TripoSG declares a newer diffusers/transformers pair than the global project baseline.
-# Re-apply its model-specific requirements after the baseline install so compatibility is not silently overwritten.
+# Keep TripoSG's declared requirements installed after the shared backend baseline.
+# The shared pins satisfy its diffusers, transformers, and huggingface_hub ranges.
 if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
     echo "[INFO] Re-applying TripoSG model-specific requirements after project baseline..."
     if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSG/requirements.txt"; then
@@ -783,8 +904,8 @@ else
 fi
 
 echo "[INFO] Installing huggingface_hub for model downloading..."
-# for downloading models (pinned <0.26.0 for diffusers compatibility)
-$UV_PIP install --find-links="$WHEEL_DIR" "huggingface_hub>=0.20.0,<0.26.0"
+# Keep the final hub version inside both the backend and TripoSG ranges.
+$UV_PIP install --find-links="$WHEEL_DIR" "huggingface_hub>=0.25.0,<0.26.0"
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] huggingface_hub installed"
 else
@@ -849,12 +970,20 @@ try:
 except Exception as e:
     print(f'PyTorch/CUDA check error: {e}')
 
-for pkg in ['numpy', 'diffusers', 'transformers', 'pymeshlab', 'open3d', 'trimesh']:
+for pkg in ['numpy', 'diffusers', 'transformers', 'pymeshlab', 'open3d', 'trimesh', 'rembg']:
     try:
         mod = __import__(pkg)
         print(f'{pkg}: {getattr(mod, \"__version__\", \"installed\")}')
     except Exception as e:
         print(f'{pkg}: NOT FOUND ({e})')
+
+try:
+    import sys
+    sys.path.insert(0, '$PROJECT_ROOT/backend')
+    from adapters.zero123plus_adapter import Zero123PlusAdapter
+    print('[SUCCESS] Zero123PlusAdapter import verified')
+except Exception as e:
+    print(f'[WARN] Zero123PlusAdapter import check: {e}')
 "
 
 persist_env_config 2>/dev/null || true
@@ -864,6 +993,5 @@ echo "========================================"
 echo "Installation Complete!"
 echo "========================================"
 echo "All installation done successfully!"
-
 
 

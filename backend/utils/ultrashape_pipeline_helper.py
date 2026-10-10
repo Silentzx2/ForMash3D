@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import torch
 import trimesh
 from PIL import Image
@@ -281,10 +282,14 @@ class UltraShapeInferenceHelper:
             # Step 1: Generate coarse mesh using Hunyuan3D-2.1
             logger.info("Step 1: Generating coarse mesh with Hunyuan3D-2.1...")
             image = Image.open(image_path)
-            if image.mode == "RGB":
-                image = hunyuan_bg_remover(image)
-            else:
+            has_useful_alpha = (
+                image.mode in ("RGBA", "LA", "PA")
+                and np.array(image.getchannel("A")).min() < 255
+            )
+            if has_useful_alpha:
                 image = image.convert("RGBA")
+            else:
+                image = hunyuan_bg_remover(image.convert("RGB"))
             
             coarse_mesh = hunyuan_pipeline(image=image)[0]
             

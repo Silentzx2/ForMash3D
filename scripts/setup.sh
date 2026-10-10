@@ -19,6 +19,47 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set +a
 fi
 
+# Parse command line flags
+AUTO_MODE=0
+SKIP_CUDA=0
+ENV_MANAGER="${FORMASH3D_ENV_MANAGER:-conda}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --auto|-auto|-y|--yes|--non-interactive)
+      AUTO_MODE=1
+      export NONINTERACTIVE=1
+      shift
+      ;;
+    --skip-cuda)
+      SKIP_CUDA=1
+      shift
+      ;;
+    --conda)
+      ENV_MANAGER="conda"
+      export FORMASH3D_ENV_MANAGER="conda"
+      shift
+      ;;
+    --venv)
+      ENV_MANAGER="venv"
+      export FORMASH3D_ENV_MANAGER="venv"
+      shift
+      ;;
+    --env-manager=*)
+      ENV_MANAGER="${1#*=}"
+      export FORMASH3D_ENV_MANAGER="$ENV_MANAGER"
+      shift
+      ;;
+    --env-manager)
+      ENV_MANAGER="$2"
+      export FORMASH3D_ENV_MANAGER="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
 
 section(){ printf "\n${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n${WHITE}${BOLD}  %s${NC}\n${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n" "$*"; }
 
@@ -122,13 +163,13 @@ detect_gpu() {
     warn "No NVIDIA GPU detected — AI inference requires CUDA-capable hardware."
     warn "The stack will start, but generation jobs will fail without a GPU."
     if [[ "${REQUIRE_GPU:-}" == "1" ]]; then
-      err "REQUIRE_GPU=1 is set — aborting without GPU."
+      fail "REQUIRE_GPU=1 is set — aborting without GPU."
       exit 1
     fi
-    if [[ -t 0 ]] && [[ "${CI:-}" != "true" ]] && [[ "${NONINTERACTIVE:-}" != "1" ]]; then
+    if [[ -t 0 ]] && [[ "${CI:-}" != "true" ]] && [[ "${NONINTERACTIVE:-}" != "1" ]] && [[ "${AUTO_MODE:-0}" != "1" ]]; then
       read -rp "  Continue without GPU? [y/N] " choice
       if [[ "${choice,,}" != "y" ]]; then
-        err "Aborting. Install an NVIDIA GPU + driver and re-run."
+        fail "Aborting. Install an NVIDIA GPU + driver and re-run."
         exit 1
       fi
     else
@@ -140,6 +181,9 @@ detect_gpu() {
 
 # ── Clean up conflicting CUDA APT sources ──────────────────────────────────
 _sanitize_apt_cuda_sources() {
+  if [[ "${SKIP_CUDA:-0}" == "1" ]]; then
+    return 0
+  fi
   # Remove duplicate/conflicting NVIDIA repository lists that cause APT "Conflicting values set for option Signed-By"
   rm -f /etc/apt/sources.list.d/*cuda*.list \
         /etc/apt/sources.list.d/*nvidia*.list \
@@ -163,6 +207,12 @@ _sanitize_apt_cuda_sources() {
 
 setup_cuda_124() {
   echo "CUDA Toolkit 12.4 — Detection & Installation"
+
+  if [[ "${SKIP_CUDA:-0}" == "1" ]]; then
+    log "Skipping CUDA installation (--skip-cuda specified; using system/container CUDA)."
+    setup_cuda_env
+    return 0
+  fi
 
   # ── Detect NVIDIA driver ──────────────────────────────────────────────────
   local DRIVER_VER=""
@@ -299,29 +349,126 @@ ensure_redis(){
   fi
 }
 
-ensure_bun_or_npm(){
-  section "Frontend Toolchain"
-  BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
-  [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
+# ── Frontend runtime version lock ─────────────────────────────────
+# Locked runtime versions. Must stay in sync with package.json
+# "engines" and the "_runtime" metadata field.
+REQUIRED_NODE_VERSION="24.21.0"
+REQUIRED_NPM_VERSION="11.19.0"
+REQUIRED_BUN_VERSION="1.4.2"
+NODE_RUNTIME_DIR="${FORMASH3D_NODE_RUNTIME_DIR:-$HOME/.formash3d/node}"
 
-  if command -v bun >/dev/null 2>&1; then
-    command -v sudo >/dev/null 2>&1 && sudo ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || true
-    log "Bun: $(bun --version)"
+_ensure_node_version() {
+  local current=""
+  if command -v node >/dev/null 2>&1; then
+    current=$(node --version 2>/dev/null | sed 's/^v//' || true)
+  fi
+  if [[ "$current" == "$REQUIRED_NODE_VERSION" ]]; then
+    log "Node: v${current} (locked version active)"
     return 0
   fi
-
-  info "Bun not found. Installing Bun..."
-  if curl -fsSL https://bun.sh/install | bash >/dev/null 2>&1; then
-    [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
-  fi
-
-  if command -v bun >/dev/null 2>&1; then
-    command -v sudo >/dev/null 2>&1 && sudo ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || true
-    log "Bun installed: $(bun --version)"
-  elif command -v npm >/dev/null 2>&1; then
-    warn "Bun unavailable; using npm fallback: $(npm --version)"
+  if [[ -n "$current" ]]; then
+    warn "Node v${current} found — locked version is v${REQUIRED_NODE_VERSION}. Installing locked version..."
   else
-    fail "Neither Bun nor npm is available. Install Node.js 20+ or Bun and rerun setup."
+    info "Node not found — installing locked version v${REQUIRED_NODE_VERSION}..."
+  fi
+  local arch os tarball url staging
+  os="linux"
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64) arch="x64" ;;
+    aarch64|arm64) arch="arm64" ;;
+    *) fail "Unsupported architecture for locked Node install: $arch" ;;
+  esac
+  tarball="node-v${REQUIRED_NODE_VERSION}-${os}-${arch}.tar.xz"
+  url="https://nodejs.org/dist/v${REQUIRED_NODE_VERSION}/${tarball}"
+  mkdir -p "$NODE_RUNTIME_DIR"
+  staging="$(mktemp -d)"
+  if ! curl -fsSL --retry 3 -o "$staging/$tarball" "$url"; then
+    tarball="node-v${REQUIRED_NODE_VERSION}-${os}-${arch}.tar.gz"
+    url="https://nodejs.org/dist/v${REQUIRED_NODE_VERSION}/${tarball}"
+    curl -fsSL --retry 3 -o "$staging/$tarball" "$url" || {
+      rm -rf "$staging"
+      fail "Failed to download Node v${REQUIRED_NODE_VERSION} from ${url}"
+    }
+  fi
+  if [[ "$tarball" == *.xz ]]; then
+    tar -xJf "$staging/$tarball" -C "$staging"
+  else
+    tar -xzf "$staging/$tarball" -C "$staging"
+  fi
+  rm -rf "${NODE_RUNTIME_DIR}/current"
+  mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
+  rm -rf "$staging"
+  export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+  hash -r
+  local verify
+  verify=$(node --version 2>/dev/null | sed 's/^v//' || true)
+  if [[ "$verify" == "$REQUIRED_NODE_VERSION" ]]; then
+    log "Node v${REQUIRED_NODE_VERSION} installed at ${NODE_RUNTIME_DIR}/current and forced on PATH."
+    return 0
+  fi
+  fail "Node v${REQUIRED_NODE_VERSION} installation failed verification (found: ${verify:-none}). Aborting."
+}
+
+_ensure_npm_version() {
+  local current=""
+  if command -v npm >/dev/null 2>&1; then
+    current=$(npm --version 2>/dev/null || true)
+  fi
+  if [[ "$current" == "$REQUIRED_NPM_VERSION" ]]; then
+    log "npm: v${current} (locked version active)"
+    return 0
+  fi
+  warn "npm ${current:-none} found — locked version is v${REQUIRED_NPM_VERSION}. Installing locked version..."
+  local sudo_cmd=""
+  command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
+  $sudo_cmd npm install -g "npm@${REQUIRED_NPM_VERSION}" >/dev/null 2>&1 \
+    || warn "npm self-upgrade to v${REQUIRED_NPM_VERSION} failed (permission issue; try running with sudo). Continuing..."
+  hash -r
+  local verify
+  verify=$(npm --version 2>/dev/null || echo 'unknown')
+  if [[ "$verify" == "$REQUIRED_NPM_VERSION" ]]; then
+    log "npm: v${verify} (locked version active)"
+    return 0
+  fi
+  fail "npm v${REQUIRED_NPM_VERSION} could not be enforced (found: ${verify:-none}). Aborting."
+}
+
+_ensure_bun_version() {
+  local current=""
+  if command -v bun >/dev/null 2>&1; then
+    current=$(bun --version 2>/dev/null || true)
+  fi
+  if [[ "$current" == "$REQUIRED_BUN_VERSION" ]]; then
+    log "Bun: v${current} (locked version active)"
+    return 0
+  fi
+  if [[ -n "$current" ]]; then
+    warn "Bun v${current} found — locked version is v${REQUIRED_BUN_VERSION}. Installing locked version..."
+  else
+    info "Bun not found — installing locked version v${REQUIRED_BUN_VERSION}..."
+  fi
+  if curl -fsSL https://bun.sh/install | bash -s "bun-v${REQUIRED_BUN_VERSION}" >/dev/null 2>&1; then
+    BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
+    [[ -d "$BUN_INSTALL_DIR/bin" ]] && export PATH="$BUN_INSTALL_DIR/bin:$PATH"
+    hash -r
+  fi
+  current=$(bun --version 2>/dev/null || true)
+  if [[ "$current" == "$REQUIRED_BUN_VERSION" ]]; then
+    command -v sudo >/dev/null 2>&1 && sudo ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || ln -sf "$(command -v bun)" /usr/local/bin/bun 2>/dev/null || true
+    log "Bun v${REQUIRED_BUN_VERSION} installed and forced."
+    return 0
+  fi
+  fail "Bun v${REQUIRED_BUN_VERSION} could not be enforced (found: ${current:-none}). Aborting."
+}
+
+ensure_bun_or_npm(){
+  section "Frontend Toolchain (locked: Node v${REQUIRED_NODE_VERSION} / npm v${REQUIRED_NPM_VERSION} / Bun v${REQUIRED_BUN_VERSION})"
+  _ensure_node_version
+  _ensure_npm_version
+  _ensure_bun_version
+  if ! command -v bun >/dev/null 2>&1 && ! command -v npm >/dev/null 2>&1; then
+    fail "Neither Bun nor npm is available after runtime lock enforcement. Install Node v${REQUIRED_NODE_VERSION} or Bun v${REQUIRED_BUN_VERSION} and rerun setup."
   fi
 }
 
@@ -368,11 +515,18 @@ download_release_wheels() {
 
     echo "→ Downloading wheels to: $WHEELS_DIR"
 
-    curl -fsSL "$API" |
-        jq -r '.assets[] | select(.name | endswith(".whl")) |
-               [.name, .browser_download_url] | @tsv' |
-        while IFS=$'\t' read -r NAME URL; do
+    local release_json
+    release_json=$(curl -fsSL -H "User-Agent: ForMash3D-Installer" "$API" 2>/dev/null || echo "")
+    if [[ -z "$release_json" ]]; then
+        echo "[WARN] Could not fetch release wheels list from GitHub API; continuing..."
+        return 0
+    fi
 
+    echo "$release_json" |
+        jq -r '.assets[]? | select(.name | endswith(".whl")) |
+               [.name, .browser_download_url] | @tsv' 2>/dev/null |
+        while IFS=$'\t' read -r NAME URL; do
+            [[ -z "$NAME" || -z "$URL" ]] && continue
             local FILE="$WHEELS_DIR/$NAME"
 
             if [[ -f "$FILE" && -s "$FILE" ]]; then
@@ -381,14 +535,14 @@ download_release_wheels() {
             fi
 
             echo "↓ Downloading: $NAME"
-            curl -fL --retry 3 -o "$FILE" "$URL" || {
+            curl -fL --retry 3 -o "$FILE" "$URL" 2>/dev/null || {
                 echo "✗ Failed: $NAME"
                 rm -f "$FILE"
-                return 1
+                continue
             }
-        done
+        done || true
 
-    echo "✓ All wheels downloaded to $WHEELS_DIR"
+    echo "✓ Release wheels check completed in $WHEELS_DIR"
 }
 
 # Compatibility alias
@@ -443,7 +597,14 @@ install_backend(){
   section "Backend Installation"
   log "Delegating Python env creation + backend install to backend/scripts/install.sh..."
   cd "$PROJECT_ROOT/backend"
-  bash scripts/install.sh
+  local install_flags=()
+  if [[ "${AUTO_MODE:-0}" == "1" || "${NONINTERACTIVE:-0}" == "1" ]]; then
+    install_flags+=("--auto")
+  fi
+  if [[ -n "${ENV_MANAGER:-}" ]]; then
+    install_flags+=("--env-manager" "$ENV_MANAGER")
+  fi
+  bash scripts/install.sh "${install_flags[@]}"
   log "Backend dependency installation completed."
 }
 

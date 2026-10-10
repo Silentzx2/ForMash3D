@@ -2,22 +2,6 @@
 # Available models for each feature
 # Use the actual adapter model IDs as defined in the adapter classes
 
-# text-conditioned geometry/geometry+texture generation
-text_to_textured_mesh:
-  trellis_text_to_textured_mesh:
-    capabilities:
-      text_to_3d: true
-      image_to_3d: false
-      multiview: false
-      texture_generation: true
-      raw_mesh: false
-    vram_requirement: 11776  # MB
-    supported_inputs: ["text"]
-    supported_outputs: ["glb", "obj"]
-    model_path: "backend/pretrained/TRELLIS"
-    enabled: true
-    max_workers: 1
-
 # text-conditioned mesh painting
 text_mesh_painting:
   trellis_text_mesh_painting:
@@ -37,6 +21,17 @@ image_to_raw_mesh:
       multiview: false
       texture_generation: false
       raw_mesh: true
+      high_fidelity_geometry: true
+      mesh_quality_characteristics: [high_detail, thin_feature_sensitive]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: hierarchical_marching_cubes
+      preferred_resolution: 512
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: balanced
+      quality_priority: 85
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
       paint_autochain: true
     vram_requirement: 10240  # MB (3.3B shape model)
     supported_inputs: ["image"]
@@ -52,6 +47,16 @@ image_to_raw_mesh:
       multiview: false
       texture_generation: false
       raw_mesh: true
+      high_fidelity_geometry: true
+      mesh_quality_characteristics: [fast, compact]
+      preferred_preprocessing: default
+      preferred_extraction: hierarchical_marching_cubes
+      preferred_resolution: 512
+      preferred_face_budget: medium
+      recommended_postprocess_profile: default
+      latency_class: fast
+      quality_priority: 60
+      multi_gpu: false
       paint_autochain: true
     vram_requirement: 6144  # MB (0.6B mini turbo model)
     supported_inputs: ["image"]
@@ -111,6 +116,17 @@ image_to_raw_mesh:
       multiview: false
       texture_generation: false
       raw_mesh: true
+      high_fidelity_geometry: true
+      mesh_quality_characteristics: [hierarchical_geometry, sharp_detail]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: hierarchical_octree
+      preferred_resolution: 512
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: balanced
+      quality_priority: 90
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
       max_images: 1
     vram_requirement: 8192  # MB
     supported_inputs: ["image"]
@@ -133,6 +149,38 @@ image_to_raw_mesh:
     model_path: "backend/pretrained/TripoSF"
     enabled: true
     max_workers: 1
+
+  unique3d_image_to_raw_mesh:
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      multiview_input: false
+      generated_multiview: true
+      texture_generation: true
+      raw_mesh: true
+      high_fidelity_geometry: true
+      vertex_color: true
+      mesh_quality_characteristics: [normal_bridged, multi_view_conditioned]
+      preferred_preprocessing: high_fidelity
+      preferred_extraction: normal_bridged_reconstruction
+      preferred_resolution: 1024
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: balanced
+      super_resolution: true
+    vram_requirement: 10240  # MB (estimated from measurement)
+    supported_inputs: ["image"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/Unique3D"
+    enabled: true
+    max_workers: 1
+    init_params:
+      seed: 1145
+      input_processing: true
+      do_refine: true
+      expansion_weight: 0.1
+      init_type: "std"
 
 # image-conditioned geometry+texture generation
 image_to_textured_mesh:
@@ -158,6 +206,19 @@ image_to_textured_mesh:
       multiview: false
       texture_generation: true
       raw_mesh: false
+      native_pbr: true
+      high_fidelity_geometry: true
+      vertex_color: true
+      mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
+      preferred_preprocessing: native_detail
+      preferred_extraction: o_voxel
+      preferred_resolution: 1536
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: quality
+      quality_priority: 100
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
       max_images: 1
     vram_requirement: 23552  # MB (23GB, TRELLIS.2)
     supported_inputs: ["image"]
@@ -197,7 +258,7 @@ image_mesh_painting:
       texture_generation: true
       texture_refine: true
       multiview: false
-    vram_requirement: 21504  # MB (2B PBR texture checkpoint)
+    vram_requirement: 12000  # MB — lowered from 21504; CPU offload keeps peak below 15GB
     supported_inputs: ["mesh", "text", "image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
@@ -326,3 +387,22 @@ motion_generation:
       supports_postprocess: true
       fps: 20
       skeleton: "core"
+
+# Multi-view generation (Zero123++ v1.2)
+# Generates 6 novel viewpoints from a single image (3x2 grid, 30° azimuth intervals)
+image_to_multiview:
+  zero123plus_v12_image_to_multiview:
+    capabilities:
+      image_to_multiview: true
+      multiview: true
+      fixed_view_count: 6
+      view_normals: true
+      masks: true
+      image_export: true
+      hidden_from_model_selector: true
+    vram_requirement: 5120  # MB
+    supported_inputs: ["image"]
+    supported_outputs: ["png", "zip"]
+    model_path: "backend/pretrained/zero123plus-v1.2"
+    enabled: true
+    max_workers: 1

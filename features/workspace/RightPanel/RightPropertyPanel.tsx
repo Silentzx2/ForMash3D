@@ -3,10 +3,13 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { ShadingMode } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { toast } from 'sonner';
-
-
+import { MeshDiffViewer } from '../Viewport/MeshDiffViewer';
+import { ModelComparisonViewer } from '../Viewport/ModelComparisonViewer';
+import { ModelAsset } from '../types';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CheckIcon, DownloadIcon, EyeIcon, HexagonIcon, Lock, MoveIcon, PaletteIcon, RefreshCw, ShieldCheckIcon, SlidersHorizontalIcon, SparklesIcon, Unlock } from '@hugeicons/core-free-icons';
+import { Box, Cancel, CheckIcon, DownloadIcon, EyeIcon, HexagonIcon, Lock, MoveIcon, PaletteIcon, Plus, RefreshCw, ShieldCheckIcon, SlidersHorizontalIcon, SparklesIcon, Unlock, ZapIcon } from '@hugeicons/core-free-icons';
+
+
 export const RightPropertyPanel: React.FC = () => {
   const { 
     currentAsset, 
@@ -19,7 +22,8 @@ export const RightPropertyPanel: React.FC = () => {
     textureSettings,
     generationSettings,
     systemStats,
-    updateMaterialConfig
+    updateMaterialConfig,
+    assets
   } = useWorkspace();
 
   const [exportFormat, setExportFormat] = useState<'glb' | 'gltf' | 'fbx' | 'obj' | 'stl' | 'ply'>('glb');
@@ -53,6 +57,8 @@ export const RightPropertyPanel: React.FC = () => {
     normalFormat: 'OpenGL' as 'OpenGL' | 'DirectX',
     uvProjection: 'Smart UV (xatlas)'
   });
+
+  const [selectedCompareAssetId, setSelectedCompareAssetId] = useState<string | null>(null);
 
   const handleScaleChange = (val: number) => {
     if (transform.lockScale) {
@@ -125,7 +131,6 @@ export const RightPropertyPanel: React.FC = () => {
       </div>
     );
   }
-
 
   return (
     <div 
@@ -288,7 +293,6 @@ export const RightPropertyPanel: React.FC = () => {
                 />
               </div>
             </div>
-          </div>
         </div>
 
         {/* 2. Geometry Statistics & Topology Health */}
@@ -344,17 +348,16 @@ export const RightPropertyPanel: React.FC = () => {
                     ? (currentAsset.meshDetails as any).semantic_parts.join(', ')
                     : 'Not analyzed / monolithic')
                   : typeof (currentAsset.meshDetails as any)?.semantic_parts === 'string'
-                  ? (currentAsset.meshDetails as any).semantic_parts
-                  : 'Unsupported'}
+                    ? (currentAsset.meshDetails as any).semantic_parts
+                    : 'Unsupported'}
               </span>
             </div>
           )}
         </div>
 
         {/* 3. Dynamic Context-Aware Inspector Sections based on activeTool */}
-        
         {/* 3. Dynamic Context-Aware Inspector Sections based on activeTool */}
-        
+
         {/* CASE A: Tool is Texture or PBR */}
         {(activeTool === 'texture' || activeTool === 'pbr') && (
           <div className="space-y-3 p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))]">
@@ -538,8 +541,8 @@ export const RightPropertyPanel: React.FC = () => {
               </div>
             </div>
           </div>
-         )}
-        
+        )}
+         
         {/* 4. Shading & Render Viewport Overrides */}
         <div className="space-y-2 pt-1">
           <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
@@ -616,7 +619,62 @@ export const RightPropertyPanel: React.FC = () => {
           </div>
         </div>
 
-        {/* 5. Production Export Section */}
+        {/* 5. Mesh Difference Viewer (UX-05) */}
+        {currentAsset && (
+          <div className="space-y-3 p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))]">
+            <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
+              <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+              Mesh Difference Viewer
+            </span>
+            <MeshDiffViewer className="w-full h-full" showControls={true} />
+          </div>
+        )}
+
+        {/* 6. Model Comparison Viewer (UX-02) */}
+        {currentAsset && (
+          <div className="space-y-3 p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))]">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
+                <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                Model Comparison Viewer
+              </span>
+              {/* Model Comparison Selector */}
+              {selectedCompareAssetId ? (
+                <button
+                  onClick={() => setSelectedCompareAssetId(null)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.1] text-zinc-300 hover:bg-[hsl(var(--surface-3))] hover:text-white transition-all"
+                >
+                  <span className="text-xs font-mono">Clear Comparison</span>
+                  <HugeiconsIcon icon={Cancel} size={12} className="text-zinc-400" />
+                </button>
+              ) : (
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      // In a real implementation, this would open a model picker modal
+                      // For now, we'll just select the first other asset if available
+                      const otherAsset = assets.find(a => a.id !== currentAsset.id);
+                      if (otherAsset) {
+                        setSelectedCompareAssetId(otherAsset.id);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.1] text-zinc-300 hover:bg-[hsl(var(--surface-3))] hover:text-white transition-all"
+                  >
+                    <span className="text-xs font-mono">Select Model to Compare</span>
+                    <HugeiconsIcon icon={Plus} size={12} className="text-zinc-400" />
+                  </button>
+                </div>
+              )}
+            </div>
+            <ModelComparisonViewer 
+              className="w-full h-full" 
+              showControls={true} 
+              modelIds={selectedCompareAssetId ? [currentAsset.id, selectedCompareAssetId] : []} 
+            />
+          </div>
+        )}
+
+        {/* 7. Production Export Section */}
         <div className="pt-3 border-t border-[hsl(var(--border))] space-y-3">
           <span className="font-bold text-xs text-[hsl(var(--muted-foreground))] uppercase tracking-wider flex items-center gap-1.5">
             <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
@@ -672,16 +730,17 @@ export const RightPropertyPanel: React.FC = () => {
             {isExporting ? (
               <HugeiconsIcon icon={RefreshCw} size={16} className="w-4 h-4 animate-spin text-primary" />
             ) : exportSuccess ? (
-              <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 text-[hsl(var(--neon-green))]" />
+              <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 text-[hsl(var(--neon-green))]"/>
             ) : (
               <HugeiconsIcon icon={DownloadIcon} size={16} className="w-4 h-4 text-primary" />
             )}
             <span>
-              {isExporting ? 'Packing 3D Bundle...' : exportSuccess ? 'Export Saved!' : `DownloadIcon ${exportFormat.toUpperCase()} Asset`}
+              {isExporting ? 'Packing 3D Bundle...' : exportSuccess ? 'Export Saved!' : `Download ${exportFormat.toUpperCase()}`}
             </span>
           </button>
         </div>
       </div>
+    </div>
     </div>
   );
 };

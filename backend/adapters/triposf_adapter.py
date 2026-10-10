@@ -39,8 +39,8 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         model_path: Optional[str] = None,
         vram_requirement: Optional[int] = None,
         triposf_root: Optional[str] = None,
-        resolution: int = 256,
-        sample_points_num: int = 819200,
+        resolution: int = 1024,
+        sample_points_num: int = 1638400,
         pruning: bool = False,
         use_normals: bool = True,
     ):
@@ -48,8 +48,22 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             raise ValueError(
                 f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
             )
+        backend_dir = Path(__file__).resolve().parents[1]
         if model_path is None:
-            model_path = "backend/pretrained/TripoSF"
+            model_path = str((backend_dir / "pretrained" / "TripoSF").resolve())
+        else:
+            p = Path(model_path)
+            if not p.is_absolute():
+                parts = list(p.parts)
+                if parts and parts[0] == "backend":
+                    p = Path(*parts[1:])
+                for candidate in [backend_dir / p, backend_dir.parent / p, Path.cwd() / p]:
+                    if candidate.exists():
+                        p = candidate
+                        break
+                else:
+                    p = backend_dir / p
+                model_path = str(p.resolve())
 
         if triposf_root is None:
             triposf_root = str(Path(__file__).resolve().parent.parent / "thirdparty" / "TripoSF")
@@ -79,9 +93,12 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
 
     def _resolve_checkpoint(self) -> Path:
         """Resolve pretrained checkpoint locally or from Hugging Face."""
+        backend_dir = Path(__file__).resolve().parents[1]
         candidate_paths = [
             Path(self.model_path) / "pretrained_TripoSFVAE_256i1024o.safetensors",
             Path(self.model_path) / "vae" / "pretrained_TripoSFVAE_256i1024o.safetensors",
+            backend_dir / "pretrained" / "TripoSF" / "pretrained_TripoSFVAE_256i1024o.safetensors",
+            backend_dir / "pretrained" / "TripoSF" / "vae" / "pretrained_TripoSFVAE_256i1024o.safetensors",
             self.triposf_root / "ckpts" / "pretrained_TripoSFVAE_256i1024o.safetensors",
             Path(self.model_path),
         ]
@@ -106,7 +123,9 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
     def _load_model(self):
         """Load TripoSF VAE model from repository code."""
         try:
-            os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             self._ensure_triposf_in_path()
             if torch.cuda.is_available():
                 major, _ = torch.cuda.get_device_capability()
@@ -127,7 +146,9 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             config.weight = str(ckpt_path) if ckpt_path.exists() else None
             cfg = OmegaConf.merge(OmegaConf.structured(TripoSFVAEInference.Config), config)
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSF requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             self.triposf_model = TripoSFVAEInference(cfg)
             self.triposf_model.to(device)
             self.triposf_model.eval()
@@ -153,19 +174,12 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         """Generate a coarse 3D mesh from an input image to seed TripoSF VAE reconstruction."""
         try:
             from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
-            tsr = TripoSRImageToRawMeshAdapter()
-            tsr.load()
-            result = tsr.generate_mesh({"image_path": str(image_path), "output_format": "obj"})
+            tsr = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
+            tsr.load(gpu_id=self.gpu_id or 0)
+            result = tsr.process({"image_path": str(image_path), "output_format": "obj"})
             return result["output_mesh_path"]
         except Exception as e:
-            logger.warning(f"Coarse mesh generation via TripoSR failed ({e}), creating geometric proxy")
-            proxy = trimesh.creation.icosphere(subdivisions=3, radius=0.5)
-            proxy_path = self.path_generator.generate_mesh_path(
-                self.model_id, f"{image_path.stem}_proxy", "obj"
-            )
-            Path(proxy_path).parent.mkdir(parents=True, exist_ok=True)
-            proxy.export(proxy_path)
-            return proxy_path
+            raise RuntimeError(f"Coarse mesh generation via TripoSR failed: {e}") from e
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -210,21 +224,42 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            resolution = int(inputs.get("resolution", self.resolution))
-            sample_points_num = int(inputs.get("sample_points_num", self.sample_points_num))
+            # Start raw extraction at the highest configured density. The existing
+            # VRAM safety guard may downshift these values on constrained hardware.
+            resolution = 1024
+            sample_points_num = 1_638_400
             pruning = bool(inputs.get("pruning", self.pruning))
             use_normals = bool(inputs.get("use_normals", self.use_normals))
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSF requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
-            if device == "cuda":
+            # VRAM safety check - only downshift if user explicitly requests low_vram_mode
+            # This prevents silent geometry fidelity loss. Users on constrained GPUs must opt-in.
+            if device.startswith("cuda"):
+                torch.cuda.empty_cache()
                 total_vram_mb = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)
-                if total_vram_mb < 16384 and "pruning" not in inputs:
+                allocated_mb = torch.cuda.memory_allocated(0) // (1024 ** 2)
+                free_vram_mb = total_vram_mb - allocated_mb
+                
+                # Check if user requested low VRAM mode
+                low_vram_mode = bool(inputs.get("low_vram_mode", False))
+                
+                if low_vram_mode:
                     pruning = True
-                    sample_points_num = min(sample_points_num, 655_360)
+                    resolution = min(resolution, 256)
+                    sample_points_num = min(sample_points_num, 409_600)
                     logger.info(
-                        "TripoSF low-VRAM profile enabled: pruning=True, sample_points_num=%s",
-                        sample_points_num,
+                        "TripoSF low_vram_mode enabled: resolution=%d, pruning=True, sample_points=%d (total_vram=%dMB, free_vram=%dMB)",
+                        resolution, sample_points_num, total_vram_mb, free_vram_mb,
+                    )
+                elif total_vram_mb <= 16384 or free_vram_mb < 12288:
+                    # Warn but don't silently downshift - let user decide
+                    logger.warning(
+                        "TripoSF: GPU has limited VRAM (total=%dMB, free=%dMB). Consider enabling low_vram_mode to avoid OOM. "
+                        "Proceeding with full resolution (1024) and sample_points (1,638,400).",
+                        total_vram_mb, free_vram_mb,
                     )
 
             from inference import normalize_mesh, load_quantized_mesh_original
@@ -276,15 +311,19 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             self.triposf_model.cfg.resolution = resolution
             self.triposf_model.cfg.sample_points_num = sample_points_num
 
-            if device == "cuda":
+            if device.startswith("cuda"):
                 torch.cuda.empty_cache()
 
             with torch.no_grad():
-                if device == "cuda":
+                if device.startswith("cuda"):
                     with torch.cuda.amp.autocast(dtype=torch.float16):
                         mesh_recon = self.triposf_model(points_sample[None], sparse_voxels_sp)[0]
                 else:
                     mesh_recon = self.triposf_model(points_sample[None], sparse_voxels_sp)[0]
+
+            if device.startswith("cuda"):
+                del sparse_voxels, points_sample, sparse_voxels_sp
+                torch.cuda.empty_cache()
 
             # 5. Export mesh to requested format
             output_path = self.path_generator.generate_mesh_path(
@@ -308,6 +347,8 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                 vertices=recon_verts,
                 faces=recon_faces,
             )
+            # Revert the -90 deg X rotation from normalize_mesh so output is upright Y-up
+            final_trimesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
             final_trimesh.export(str(output_path))
 
             final_mesh = self.mesh_processor.load_mesh(output_path)
@@ -345,18 +386,20 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "resolution": {
                     "type": "integer",
-                    "description": "Voxel volume resolution (256, 512, 1024)",
-                    "default": 256,
-                    "minimum": 128,
+                    "description": "Fixed at the official 1024 raw-extraction ceiling; constrained GPUs may be downshifted by the runtime guard.",
+                    "default": 1024,
+                    "minimum": 1024,
                     "maximum": 1024,
+                    "readOnly": True,
                     "required": False,
                 },
                 "sample_points_num": {
                     "type": "integer",
-                    "description": "Number of point cloud samples",
-                    "default": 819200,
-                    "minimum": 100000,
-                    "maximum": 4096000,
+                    "description": "Fixed at the high-density 1,638,400 raw-extraction path.",
+                    "default": 1638400,
+                    "minimum": 1638400,
+                    "maximum": 1638400,
+                    "readOnly": True,
                     "required": False,
                 },
                 "pruning": {
@@ -375,6 +418,12 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "integer",
                     "description": "Random seed for generation reproducibility",
                     "default": 0,
+                    "required": False,
+                },
+                "low_vram_mode": {
+                    "type": "boolean",
+                    "description": "Enable low VRAM mode (downshifts resolution to 256, sample_points to 409,600). Required for GPUs with <12GB free VRAM to avoid OOM.",
+                    "default": False,
                     "required": False,
                 },
             }

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class GPUMonitor:
     """Monitor GPU resources and usage"""
 
-    def __init__(self, memory_buffer: int = 300, tracking_mode: bool = True):
+    def __init__(self, memory_buffer: int = 1024, tracking_mode: bool = True):
         self.memory_buffer = memory_buffer  # MB to keep free
         self.tracking_mode = (
             tracking_mode  # Use allocation tracking instead of real-time queries

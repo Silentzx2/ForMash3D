@@ -1,25 +1,29 @@
 """
 Mesh generation API endpoints.
 
-Provides endpoints for generating 3D meshes from various inputs including text, images,
-and combinations of both. Enhanced to support file uploads, base64 encoding, and proper
+Provides endpoints for Image → 3D generation plus text-guided mesh painting. Enhanced to support file uploads, base64 encoding, and proper
 result downloading.
 """
 
+import asyncio
 import logging
+import shutil
 import tempfile
 from pathlib import Path
 from uuid import uuid4
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
+from api.dependencies import get_current_settings, get_current_user_or_none, get_file_store, get_scheduler
 from api.routers.file_upload import resolve_file_id_async
+from api.utils.asset_name import resolve_asset_name
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
+from core.preprocess.image_enhancement import load_preprocessed_artifact, preprocess_image
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
+from core.smart_presets import resolve_intent
 from core.utils.file_utils import save_base64_file, save_upload_file
 
 logger = logging.getLogger(__name__)
@@ -59,74 +63,6 @@ def validate_model_preference(
 
 
 # Enhanced Request models with file upload support
-class TextToRawMeshRequest(BaseModel):
-    """Request for text-to-mesh generation"""
-
-    text_prompt: str = Field(..., description="Text description for mesh generation")
-    output_format: str = Field("glb", description="Output mesh format")
-    model_preference: str = Field(
-        ..., description="Model name for mesh generation"
-    )
-    model_parameters: Optional[dict] = Field(
-        None,
-        description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
-    )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
-    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
-    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
-    quad_topology: bool = Field(False, description="Request quad-dominant topology")
-
-    model_config = ConfigDict(protected_namespaces=("settings_",))
-
-    @field_validator("output_format")
-    @classmethod
-    def validate_output_format(cls, v):
-        allowed_formats = ["glb"]
-        if v not in allowed_formats:
-            raise ValueError(f"Output format must be one of: {allowed_formats}")
-        return v
-
-
-class TextToTexturedMeshRequest(TextToRawMeshRequest):
-    """Request for text-to-textured-mesh generation"""
-
-    model_preference: str = Field(
-        "trellis_text_to_textured_mesh", description="Model name for mesh generation"
-    )
-    texture_prompt: str = Field(
-        "", description="Text description for texture generation"
-    )
-    texture_resolution: int = Field(
-        1024, description="Texture resolution", ge=256, le=4096
-    )
-    model_parameters: Optional[dict] = Field(
-        None,
-        description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
-    )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
-    physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
-    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
-    quad_topology: bool = Field(False, description="Request quad-dominant topology")
-
-
-class BatchTextToTexturedMeshItem(BaseModel):
-    """One independent text-generation item inside a batch."""
-    text_prompt: str = Field(..., min_length=1, max_length=4000)
-    negative_prompt: Optional[str] = Field(None, max_length=4000)
-    model_preference: str = Field("trellis_text_to_textured_mesh")
-    texture_prompt: Optional[str] = Field(None, max_length=4000)
-    texture_resolution: int = Field(1024, ge=256, le=4096)
-    model_parameters: Optional[dict] = None
-    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
-    quad_topology: bool = Field(False, description="Request quad-dominant topology")
-
-
-class BatchTextToTexturedMeshRequest(BaseModel):
-    """Submit independent text jobs under one scheduler-owned batch."""
-    items: List[BatchTextToTexturedMeshItem] = Field(..., min_length=1, max_length=100)
-    max_parallel: int = Field(2, ge=1, le=32)
-
-
 class TextMeshPaintingRequest(BaseModel):
     """Request for text-based mesh painting"""
 
@@ -142,6 +78,8 @@ class TextMeshPaintingRequest(BaseModel):
         1024, description="Texture resolution", ge=256, le=4096
     )
     output_format: str = Field("glb", description="Output mesh format")
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
     model_preference: str = Field(
         "trellis_text_mesh_painting", description="Model name for mesh generation"
     )
@@ -194,9 +132,18 @@ class ImageToRawMeshRequest(BaseModel):
         None, description="File ID from upload endpoint"
     )
     output_format: str = Field("glb", description="Output mesh format")
-    model_preference: str = Field(
-        "hunyuan3d_shape_v21_image_to_raw_mesh", description="Model name for mesh generation"
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
+    model_preference: Optional[str] = Field(
+        None, description="Explicit model override; intent presets choose a model when omitted"
     )
+    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
+    preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
+    enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
+    enable_printability_check: bool = Field(False, description="Run final printability QA")
+    enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
+    enable_auto_rig: bool = Field(False, description="Run UniRig after production processing")
+    auto_rig_mode: str = Field("full", description="UniRig mode: full, skeleton, or skin")
     model_parameters: Optional[dict] = Field(
         None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
@@ -205,6 +152,8 @@ class ImageToRawMeshRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    asset_name: Optional[str] = Field(None, description="Asset base stem name")
+    image_name: Optional[str] = Field(None, description="Original image filename")
 
     @field_validator("output_format")
     @classmethod
@@ -214,13 +163,13 @@ class ImageToRawMeshRequest(BaseModel):
             raise ValueError(f"Output format must be one of: {allowed_formats}")
         return v
 
-    @field_validator("image_file_id")
-    @classmethod
-    def validate_inputs(cls, v, info):
-        image_path = info.data.get("image_path")
-        image_base64 = info.data.get("image_base64")
+    @model_validator(mode="after")
+    def validate_inputs(self):
+        image_path = self.image_path
+        image_base64 = self.image_base64
+        image_file_id = self.image_file_id
 
-        inputs_provided = sum(bool(x) for x in [image_path, image_base64, v])
+        inputs_provided = sum(bool(x) for x in [image_path, image_base64, image_file_id])
 
         if inputs_provided == 0:
             raise ValueError(
@@ -230,7 +179,7 @@ class ImageToRawMeshRequest(BaseModel):
             raise ValueError(
                 "Only one of image_path, image_base64, or image_file_id should be provided"
             )
-        return v
+        return self
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 
@@ -256,9 +205,18 @@ class ImageToTexturedMeshRequest(BaseModel):
         1024, description="Texture resolution", ge=256, le=4096
     )
     output_format: str = Field("glb", description="Output mesh format")
-    model_preference: str = Field(
-        "trellis_image_to_textured_mesh", description="Model name for mesh generation"
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
+    model_preference: Optional[str] = Field(
+        None, description="Explicit model override; intent presets choose a model when omitted"
     )
+    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
+    preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
+    enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
+    enable_printability_check: bool = Field(False, description="Run final printability QA")
+    enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
+    enable_auto_rig: bool = Field(False, description="Run UniRig after production processing")
+    auto_rig_mode: str = Field("full", description="UniRig mode: full, skeleton, or skin")
     model_parameters: Optional[dict] = Field(
         None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
@@ -267,6 +225,8 @@ class ImageToTexturedMeshRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    asset_name: Optional[str] = Field(None, description="Asset base stem name")
+    image_name: Optional[str] = Field(None, description="Original image filename")
 
     @field_validator("output_format")
     @classmethod
@@ -314,6 +274,8 @@ class ImageMeshPaintingRequest(BaseModel):
         1024, description="Texture resolution", ge=256, le=4096
     )
     output_format: str = Field("glb", description="Output mesh format")
+    quality_mode: Optional[str] = Field("high", description="Target quality budget")
+    target_polycount: Optional[int] = Field(None, description="Target triangle budget")
     model_preference: str = Field(
         "trellis_image_mesh_painting", description="Model name for mesh generation"
     )
@@ -404,7 +366,19 @@ async def process_file_input(
     temp_dir: Optional[str] = None
 
     try:
+        # A data URL (e.g. "data:image/webp;base64,...") is an inline base64 payload,
+        # not a server path, so route it through the base64 branch below.
+        if file_path and file_path.strip().startswith("data:"):
+            base64_data = file_path.strip()
+            file_path = None
+
         if file_path:
+            from api.routers.file_upload import resolve_input_reference_async
+
+            # file_path may be a download URL or bare /{file_id} path from an upstream job
+            file_path = (
+                await resolve_input_reference_async(file_path, file_store) or file_path
+            )
             from core.utils.file_utils import resolve_server_file_path
             file_path = resolve_server_file_path(file_path)
             # Validate existing file path
@@ -416,7 +390,7 @@ async def process_file_input(
 
         elif base64_data:
             temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
-            # Process base64 data
+            # Process base64 data (also accepts a full "data:...;base64," data URL)
             file_info = await save_base64_file(
                 base64_data, f"input_{input_type}", temp_dir
             )
@@ -441,14 +415,14 @@ async def process_file_input(
             raise HTTPException(status_code=400, detail="No input provided")
     except HTTPException as he:
         if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, temp_dir, True)
         import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(he)} {trace}")
         raise he
     except Exception as e:
         if temp_dir:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            await asyncio.to_thread(shutil.rmtree, temp_dir, True)
         import traceback
         trace = traceback.format_exc()
         logger.error(f"Error processing {input_type} input: {str(e)} {trace}")
@@ -457,188 +431,10 @@ async def process_file_input(
         )
 
 
-# Text-to-mesh endpoints
-@router.post("/text-to-raw-mesh", response_model=MeshGenerationResponse)
-async def text_to_raw_mesh(
-    mesh_request: TextToRawMeshRequest,
-    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
-):
-    """
-    Generate a 3D mesh from text description.
+# Text-to-3D generation is intentionally image-only. Text prompts remain supported for mesh painting and motion.
 
-    Args:
-        mesh_request: Text-to-mesh generation parameters
-        scheduler: Model scheduler dependency
-        current_user: Current authenticated user (required if auth enabled)
-
-    Returns:
-        Job information for the mesh generation task
-    """
-    try:
-        # Extract user_id if user is authenticated
-        user_id = current_user.user_id if current_user else None
-        
-        # Validate model preference
-        validate_model_preference(
-            mesh_request.model_preference, "text_to_raw_mesh", scheduler
-        )
-
-        job_request = JobRequest(
-            feature="text_to_raw_mesh",
-            inputs={
-                "text_prompt": mesh_request.text_prompt,
-                "output_format": mesh_request.output_format,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-                **(mesh_request.model_parameters or {}),
-            },
-            model_preference=mesh_request.model_preference,
-            priority=1,
-            metadata={
-                "postprocess_mode": "production_mesh",
-                "feature_type": "text_to_raw_mesh",
-                "physics_enabled": mesh_request.physics_enabled,
-                "physics_config": mesh_request.physics_config,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-            },
-            user_id=user_id,
-        )
-        job_id = await scheduler.schedule_job(job_request)
-
-        return MeshGenerationResponse(
-            job_id=job_id,
-            status="queued",
-            message="Text-to-raw-mesh generation job queued successfully",
-        )
-
-    except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
-        raise
-    except Exception as e:
-        logger.error(f"Error scheduling text-to-raw-mesh job: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
-
-
-@router.post("/text-to-textured-mesh", response_model=MeshGenerationResponse)
-async def text_to_textured_mesh(
-    mesh_request: TextToTexturedMeshRequest,
-    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
-):
-    """
-    Generate a 3D textured mesh from text description.
-
-    Args:
-        mesh_request: Text-to-textured-mesh generation parameters
-        scheduler: Model scheduler dependency
-        current_user: Current authenticated user (required if auth enabled)
-
-    Returns:
-        Job information for the mesh generation task
-    """
-    try:
-        user_id = current_user.user_id if current_user else None
-        
-        # Validate model preference
-        validate_model_preference(
-            mesh_request.model_preference, "text_to_textured_mesh", scheduler
-        )
-
-        job_request = JobRequest(
-            feature="text_to_textured_mesh",
-            inputs={
-                "text_prompt": mesh_request.text_prompt,
-                "texture_prompt": mesh_request.texture_prompt,
-                "texture_text_prompt": mesh_request.texture_prompt,
-                "output_format": mesh_request.output_format,
-                "texture_resolution": mesh_request.texture_resolution,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-                **(mesh_request.model_parameters or {}),
-            },
-            model_preference=mesh_request.model_preference,
-            priority=1,
-            metadata={
-                "postprocess_mode": "production_mesh",
-                "feature_type": "text_to_textured_mesh",
-                "physics_enabled": mesh_request.physics_enabled,
-                "physics_config": mesh_request.physics_config,
-                "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
-                "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-            },
-            user_id=user_id,
-        )
-        # logger.info("JobRequest: {}".format(job_request.to_dict()))
-
-        job_id = await scheduler.schedule_job(job_request)
-
-        return MeshGenerationResponse(
-            job_id=job_id,
-            status="queued",
-            message="Text-to-textured-mesh generation job queued successfully",
-        )
-
-    except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
-        raise
-    except Exception as e:
-        logger.error(f"Error scheduling text-to-textured-mesh job: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
-
-
-@router.post("/text-to-textured-mesh/batch")
-async def batch_text_to_textured_mesh(
-    batch_request: BatchTextToTexturedMeshRequest,
-    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
-    current_user = Depends(get_current_user_or_none),
-):
-    """Queue multiple text-to-3D jobs; the scheduler enforces max_parallel."""
-    batch_id = uuid4().hex
-    user_id = current_user.user_id if current_user else None
-    jobs = []
-    for item in batch_request.items:
-        validate_model_preference(
-            item.model_preference, "text_to_textured_mesh", scheduler
-        )
-        job_request = JobRequest(
-            feature="text_to_textured_mesh",
-            inputs={
-                "text_prompt": item.text_prompt,
-                "negative_prompt": item.negative_prompt or "",
-                "texture_prompt": item.texture_prompt or item.text_prompt,
-                "texture_text_prompt": item.texture_prompt or item.text_prompt,
-                "output_format": "glb",
-                "texture_resolution": item.texture_resolution,
-                "topology_mode": item.topology_mode or ("quad" if item.quad_topology else "triangle"),
-                "quad_topology": bool(item.quad_topology or item.topology_mode == "quad"),
-                **(item.model_parameters or {}),
-            },
-            model_preference=item.model_preference,
-            priority=1,
-            metadata={
-                "postprocess_mode": "production_mesh",
-                "feature_type": "text_to_textured_mesh",
-                "batch_id": batch_id,
-                "batch_max_parallel": batch_request.max_parallel,
-                "batch_size": len(batch_request.items),
-                "batch_item_index": len(jobs),
-                "topology_mode": item.topology_mode or ("quad" if item.quad_topology else "triangle"),
-                "quad_topology": bool(item.quad_topology or item.topology_mode == "quad"),
-            },
-            user_id=user_id,
-        )
-        jobs.append(await scheduler.schedule_job(job_request))
-
-    return {
-        "api_version": "1",
-        "batch_id": batch_id,
-        "status": "queued",
-        "max_parallel": batch_request.max_parallel,
-        "job_ids": jobs,
-    }
-
+# Removed text-to-textured-mesh endpoints - project is Image-to-3D only
+# Text-to-Motion is kept in ardy_adapter.py
 
 # Text-based mesh painting endpoint (supports both file path and base64)
 @router.post("/text-mesh-painting", response_model=MeshGenerationResponse)
@@ -683,7 +479,7 @@ async def text_mesh_painting(
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
-                **(mesh_request.model_parameters or {}),
+                **{k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None},
             },
             model_preference=mesh_request.model_preference,
             priority=1,
@@ -707,6 +503,35 @@ async def text_mesh_painting(
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
 
 
+async def _resolve_generation_plan(request, *, default_model: str, default_feature: str, scheduler):
+    model_id = request.model_preference or default_model
+    feature = default_feature
+    preset = {}
+    preset_metadata = {}
+
+    if request.intent:
+        settings = await get_current_settings()
+        resolved = resolve_intent(
+            request.intent,
+            settings,
+            explicit_model=request.model_preference,
+        )
+        model_id = resolved["model_id"]
+        feature = resolved["feature"]
+        preset = resolved["preset"]
+        preset_metadata = {
+            "intent": request.intent,
+            "smart_preset_version": resolved["version"],
+            "applied_preset": preset,
+            "chosen_model": model_id,
+            "candidate_order": resolved["candidate_order"],
+            "vram_budget_mb": resolved["vram_budget_mb"],
+        }
+
+    validate_model_preference(model_id, feature, scheduler)
+    return model_id, feature, preset, preset_metadata
+
+
 # Image-to-mesh endpoints (supports both file path and base64)
 @router.post("/image-to-raw-mesh", response_model=MeshGenerationResponse)
 async def image_to_raw_mesh(
@@ -728,13 +553,19 @@ async def image_to_raw_mesh(
     """
     try:
         user_id = current_user.user_id if current_user else None
-        
-        # Validate model preference
-        validate_model_preference(
-            mesh_request.model_preference, "image_to_raw_mesh", scheduler
+        model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
+            mesh_request,
+            default_model="hunyuan3d_shape_v21_image_to_raw_mesh",
+            default_feature="image_to_raw_mesh",
+            scheduler=scheduler,
         )
 
-        # Process image input
+        if mesh_request.enhancement_enabled and not mesh_request.preprocessing_artifact_id:
+            raise HTTPException(
+                status_code=400,
+                detail="enhancement_enabled requires an approved preprocessing_artifact_id",
+            )
+
         image_file_path = await process_file_input(
             file_path=mesh_request.image_path,
             base64_data=mesh_request.image_base64,
@@ -743,22 +574,100 @@ async def image_to_raw_mesh(
             file_store=file_store,
         )
 
+        preprocessing_metadata = {}
+        if mesh_request.preprocessing_artifact_id:
+            image_file_path, preprocessing_metadata = load_preprocessed_artifact(
+                mesh_request.preprocessing_artifact_id,
+                "approved",
+            )
+        elif mesh_request.enhancement_enabled:
+            model_config = getattr(scheduler, "model_registry", {}).get(model_id, {})
+            capabilities = (
+                model_config.get("capabilities", {})
+                if isinstance(model_config, dict)
+                else getattr(model_config, "capabilities", {}) or {}
+            )
+            preprocessing_profile = str(capabilities.get("preferred_preprocessing", "default"))
+            enhanced = preprocess_image(
+                str(image_file_path),
+                profile=preprocessing_profile,
+            )
+            image_file_path = enhanced["approved_path"]
+            preprocessing_metadata = enhanced["metadata"]
+
+        chosen_stem = await resolve_asset_name(
+            mesh_request,
+            file_store,
+            image_file_path,
+            mesh_request.image_file_id,
+        )
+        # Filter out None values from model_parameters so pop() fallbacks work correctly
+        params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
+        lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
+        lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
+        lod_count = params.pop("lodCount", preset.get("lod_count", 4))
+        enable_printability = bool(
+            params.pop(
+                "enable_printability_check",
+                mesh_request.enable_printability_check or preset.get("enable_printability_check", False),
+            )
+        )
+        enable_auto_repair = bool(
+            params.pop(
+                "enable_auto_repair",
+                mesh_request.enable_auto_repair or preset.get("enable_auto_repair", False),
+            )
+        )
+        enable_auto_rig = bool(
+            params.pop(
+                "enable_auto_rig",
+                mesh_request.enable_auto_rig or preset.get("enable_auto_rig", False),
+            )
+        )
+
         job_request = JobRequest(
-            feature="image_to_raw_mesh",
+            feature=feature,
             inputs={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "image_path": image_file_path,
                 "output_format": mesh_request.output_format,
+                "intent": mesh_request.intent,
+                "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
+                "enhancement_enabled": mesh_request.enhancement_enabled,
+                "preprocessing_metadata": preprocessing_metadata,
+                "target_polycount": target_polycount,
+                "generateLOD": lod_enabled,
+                "lodPreset": lod_preset,
+                "lodCount": lod_count,
+                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_config": mesh_request.physics_config,
+                "enable_printability_check": enable_printability,
+                "enable_auto_repair": enable_auto_repair,
+                "enable_auto_rig": enable_auto_rig,
+                "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-                **(mesh_request.model_parameters or {}),
+                **params,
             },
-            model_preference=mesh_request.model_preference,
+            model_preference=model_id,
             priority=1,
             metadata={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "postprocess_mode": "production_mesh",
-                "feature_type": "image_to_raw_mesh",
-                "physics_enabled": mesh_request.physics_enabled,
+                "feature_type": feature,
+                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
+                "intent": mesh_request.intent,
+                **preset_metadata,
+                "preprocessing": preprocessing_metadata,
+                "enhancement_enabled": mesh_request.enhancement_enabled,
+                "enable_printability_check": enable_printability,
+                "enable_auto_repair": enable_auto_repair,
+                "enable_auto_rig": enable_auto_rig,
+                "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
             },
@@ -774,12 +683,10 @@ async def image_to_raw_mesh(
         )
 
     except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
         raise
     except Exception as e:
-        logger.error(f"Error scheduling image-to-raw-mesh job: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
-
+        logger.error(f"Error scheduling image-to-raw-mesh job: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {e}")
 
 @router.post("/image-to-textured-mesh", response_model=MeshGenerationResponse)
 async def image_to_textured_mesh(
@@ -801,13 +708,19 @@ async def image_to_textured_mesh(
     """
     try:
         user_id = current_user.user_id if current_user else None
-        
-        # Validate model preference
-        validate_model_preference(
-            mesh_request.model_preference, "image_to_textured_mesh", scheduler
+        model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
+            mesh_request,
+            default_model="trellis_image_to_textured_mesh",
+            default_feature="image_to_textured_mesh",
+            scheduler=scheduler,
         )
 
-        # Process main image input
+        if mesh_request.enhancement_enabled and not mesh_request.preprocessing_artifact_id:
+            raise HTTPException(
+                status_code=400,
+                detail="enhancement_enabled requires an approved preprocessing_artifact_id",
+            )
+
         image_file_path = await process_file_input(
             file_path=mesh_request.image_path,
             base64_data=mesh_request.image_base64,
@@ -815,10 +728,29 @@ async def image_to_textured_mesh(
             input_type="image",
             file_store=file_store,
         )
+        preprocessing_metadata = {}
+        if mesh_request.preprocessing_artifact_id:
+            image_file_path, preprocessing_metadata = load_preprocessed_artifact(
+                mesh_request.preprocessing_artifact_id,
+                "approved",
+            )
+        elif mesh_request.enhancement_enabled:
+            model_config = getattr(scheduler, "model_registry", {}).get(model_id, {})
+            capabilities = (
+                model_config.get("capabilities", {})
+                if isinstance(model_config, dict)
+                else getattr(model_config, "capabilities", {}) or {}
+            )
+            preprocessing_profile = str(capabilities.get("preferred_preprocessing", "default"))
+            enhanced = preprocess_image(
+                str(image_file_path),
+                profile=preprocessing_profile,
+            )
+            image_file_path = enhanced["approved_path"]
+            preprocessing_metadata = enhanced["metadata"]
 
-        # Process texture image if provided
         texture_image_path = None
-        if mesh_request.texture_image_path or mesh_request.texture_image_base64:
+        if mesh_request.texture_image_path or mesh_request.texture_image_base64 or mesh_request.texture_image_file_id:
             texture_image_path = await process_file_input(
                 file_path=mesh_request.texture_image_path,
                 base64_data=mesh_request.texture_image_base64,
@@ -827,24 +759,87 @@ async def image_to_textured_mesh(
                 file_store=file_store,
             )
 
+        chosen_stem = await resolve_asset_name(
+            mesh_request,
+            file_store,
+            image_file_path,
+            mesh_request.image_file_id,
+        )
+        # Filter out None values from model_parameters so pop() fallbacks work correctly
+        params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
+        lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
+        lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
+        lod_count = params.pop("lodCount", preset.get("lod_count", 4))
+        source_texture_resolution = params.pop("texture_resolution", None)
+        texture_resolution = int(
+            mesh_request.texture_resolution
+            or preset.get("texture_resolution", 1024)
+        )
+        enable_printability = bool(
+            params.pop(
+                "enable_printability_check",
+                mesh_request.enable_printability_check or preset.get("enable_printability_check", False),
+            )
+        )
+        enable_auto_repair = bool(
+            params.pop(
+                "enable_auto_repair",
+                mesh_request.enable_auto_repair or preset.get("enable_auto_repair", False),
+            )
+        )
+        enable_auto_rig = bool(
+            params.pop(
+                "enable_auto_rig",
+                mesh_request.enable_auto_rig or preset.get("enable_auto_rig", False),
+            )
+        )
+
         job_request = JobRequest(
-            feature="image_to_textured_mesh",
+            feature=feature,
             inputs={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "image_path": image_file_path,
                 "texture_image_path": texture_image_path,
                 "output_format": mesh_request.output_format,
-                "texture_resolution": mesh_request.texture_resolution,
+                "texture_resolution": int(source_texture_resolution or 2048),
+                "production_texture_resolution": texture_resolution,
+                "intent": mesh_request.intent,
+                "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
+                "enhancement_enabled": mesh_request.enhancement_enabled,
+                "preprocessing_metadata": preprocessing_metadata,
+                "target_polycount": target_polycount,
+                "generateLOD": lod_enabled,
+                "lodPreset": lod_preset,
+                "lodCount": lod_count,
+                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_config": mesh_request.physics_config,
+                "enable_printability_check": enable_printability,
+                "enable_auto_repair": enable_auto_repair,
+                "enable_auto_rig": enable_auto_rig,
+                "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
-                **(mesh_request.model_parameters or {}),
+                **params,
             },
-            model_preference=mesh_request.model_preference,
+            model_preference=model_id,
             priority=1,
             metadata={
+                "asset_name": chosen_stem,
+                "image_name": chosen_stem,
                 "postprocess_mode": "production_mesh",
-                "feature_type": "image_to_textured_mesh",
-                "physics_enabled": mesh_request.physics_enabled,
+                "feature_type": feature,
+                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
+                "intent": mesh_request.intent,
+                **preset_metadata,
+                "preprocessing": preprocessing_metadata,
+                "enhancement_enabled": mesh_request.enhancement_enabled,
+                "enable_printability_check": enable_printability,
+                "enable_auto_repair": enable_auto_repair,
+                "enable_auto_rig": enable_auto_rig,
+                "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
             },
@@ -860,12 +855,10 @@ async def image_to_textured_mesh(
         )
 
     except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
         raise
     except Exception as e:
-        logger.error(f"Error scheduling image-to-textured-mesh job: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
-
+        logger.error(f"Error scheduling image-to-textured-mesh job: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to schedule job: {e}")
 
 @router.post("/image-mesh-painting", response_model=MeshGenerationResponse)
 async def image_mesh_painting(
@@ -919,7 +912,7 @@ async def image_mesh_painting(
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
                 "resolution": mesh_request.texture_resolution,
-                **(mesh_request.model_parameters or {}),
+                **{k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None},
             },
             model_preference=mesh_request.model_preference,
             priority=1,
@@ -996,10 +989,7 @@ async def cancel_mesh_generation(
 
         cancelled = await scheduler.cancel_job(job_id)
         if not cancelled:
-            raise HTTPException(
-                status_code=409,
-                detail="Job is already running in the worker and cannot be cancelled safely.",
-            )
+            await scheduler.job_queue.cancel_job(job_id, force=True)
 
         return {
             "job_id": job_id,

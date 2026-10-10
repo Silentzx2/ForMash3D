@@ -1,4 +1,5 @@
 import type { JobDiagnostic } from '@/lib/jobDiagnostics';
+import { getApiClient } from '@/services/apiClient';
 
 export type ToolType =
   | 'model'
@@ -15,7 +16,8 @@ export type ToolType =
 
 export interface ActiveTask {
   id: string;
-  type: 'image-to-3d' | 'text-to-3d' | 'segment' | 'remesh' | 'texture' | 'animation' | 'rigging' | 'uv' | 'edit';
+  isLocal?: boolean;
+  type: 'image-to-3d' | 'segment' | 'remesh' | 'texture' | 'animation' | 'rigging' | 'uv' | 'edit';
   title: string;
   inputImage?: string;
   inputImageName?: string;
@@ -34,6 +36,7 @@ export interface ActiveTask {
   diagnostic?: JobDiagnostic | null;
   result?: Record<string, unknown>;
   logs?: { stage: string; progress: number; message: string; level: string; timestamp: string }[];
+  comparisonGroupId?: string;
 }
 
 export type MainNavRoute = 'workspace' | 'dashboard' | 'assets' | 'system' | 'settings' | 'models' | 'jobs';
@@ -83,6 +86,7 @@ export interface ModelAsset {
   materialConfig?: MaterialConfig;
   materials?: string[];
   createdAt?: string;
+  sourceType?: 'local' | 'upload' | 'history';
   artifacts?: {
     source?: string;
     gameReady?: string;
@@ -95,6 +99,7 @@ export interface ModelAsset {
     physicsUrl?: string;
     physicsReady?: boolean;
     physics?: Record<string, unknown>;
+    rigged?: string;
   };
   qaScore?: number;
   qaStatus?: 'pass' | 'warn' | 'fail';
@@ -109,6 +114,77 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     (typeof polyCount === 'number' && polyCount > 0) ||
     (typeof vertCount === 'number' && vertCount > 0)
   );
+
+  const rawArtifacts = (raw.artifacts || {}) as Record<string, any>;
+  const collisionUrl =
+    typeof rawArtifacts.collision === 'string'
+      ? rawArtifacts.collision
+      : (rawArtifacts.collision?.url || raw.collision_url || raw.collision || undefined);
+
+  const physics = rawArtifacts.physics || raw.physics || undefined;
+  const physicsUrl =
+    typeof rawArtifacts.physicsUrl === 'string'
+      ? rawArtifacts.physicsUrl
+      : (raw.physics_url || undefined);
+
+  const physicsReady = Boolean(
+    rawArtifacts.physicsReady ??
+    raw.physics_ready ??
+    (collisionUrl && physics)
+  );
+
+  const qaReport = rawArtifacts.qaReport || raw.qa_report || raw.quality_trace?.game_ready?.qa || undefined;
+  // Generation assets are always addressable through the job download API:
+  // game_ready GLB by default, master/source.glb for the source view. These
+  // endpoints resolve artifacts from disk, so they survive restarts.
+  const jobArtifactBase =
+    raw.category === 'generation' && raw.id
+      ? `/api/v1/system/jobs/${raw.id}/download`
+      : undefined;
+  const sourceUrl =
+    rawArtifacts.source ||
+    raw.source_model_url ||
+    rawArtifacts.master?.url ||
+    (jobArtifactBase ? `${jobArtifactBase}?artifact_format=master` : undefined);
+  const gameReadyUrl =
+    rawArtifacts.gameReady ||
+    raw.game_ready_url ||
+    raw.model_url ||
+    rawArtifacts.game_ready?.glb?.url ||
+    (jobArtifactBase ? `${jobArtifactBase}?artifact_format=glb` : undefined);
+  const rawLods = rawArtifacts.lods ?? raw.lod_urls ?? (raw.artifacts as any)?.lods;
+  const lods: string[] | undefined = Array.isArray(rawLods)
+    ? rawLods.map((l: any) => (typeof l === 'string' ? l : l?.url || '')).filter(Boolean)
+    : (rawLods && typeof rawLods === 'object')
+      ? Object.values(rawLods).map((l: any) => (typeof l === 'string' ? l : l?.url || '')).filter(Boolean)
+      : undefined;
+  const pbrMaps = rawArtifacts.pbrMaps || raw.pbr_maps || undefined;
+  const gameReadyFormats = rawArtifacts.gameReadyFormats || raw.game_ready_formats || (rawArtifacts.game_ready && typeof rawArtifacts.game_ready === 'object' ? Object.fromEntries(Object.entries(rawArtifacts.game_ready).map(([k, v]: [string, any]) => [k, v?.url || v]).filter(([, u]) => Boolean(u))) : undefined);
+  const zipUrl = rawArtifacts.zipUrl || raw.zip_url || undefined;
+  const riggedUrl =
+    typeof rawArtifacts.rigged === 'string'
+      ? rawArtifacts.rigged
+      : (rawArtifacts.rigged?.url || raw.rigged_model_url || undefined);
+
+  const hasArtifacts = Boolean(
+    raw.artifacts || collisionUrl || physicsReady || physics || qaReport || sourceUrl || gameReadyUrl || lods || pbrMaps || gameReadyFormats || zipUrl || riggedUrl
+  );
+
+  const artifacts = hasArtifacts ? {
+    ...(typeof raw.artifacts === 'object' ? raw.artifacts : {}),
+    source: sourceUrl,
+    gameReady: gameReadyUrl,
+    lods,
+    collision: collisionUrl,
+    qaReport,
+    pbrMaps,
+    gameReadyFormats,
+    zipUrl,
+    physicsUrl,
+    physicsReady,
+    rigged: riggedUrl,
+    physics,
+  } : undefined;
 
   return {
     id: String(raw.id || `asset-${Date.now()}`),
@@ -136,11 +212,14 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     materialConfig: raw.materialConfig,
     materials: Array.isArray(raw.materials) ? raw.materials : [],
     createdAt: raw.createdAt || raw.created_at,
-    source: raw.source,
-    artifacts: raw.artifacts,
-    qaScore: raw.qaScore,
-    qaStatus: raw.qaStatus,
-    qaWarnings: raw.qaWarnings,
+    fileId: raw.fileId,
+    source: raw.source
+      ? { ...raw.source, fileId: raw.source.fileId ?? raw.fileId }
+      : raw.source,
+    artifacts,
+    qaScore: raw.qaScore ?? qaReport?.game_ready_score ?? qaReport?.score,
+    qaStatus: raw.qaStatus ?? qaReport?.status,
+    qaWarnings: raw.qaWarnings ?? qaReport?.warnings,
   };
 }
 
@@ -158,6 +237,47 @@ export function createUploadedMeshAsset(file: File): ModelAsset {
     faces: 0,
     statsAvailable: false,
   });
+}
+
+/**
+ * Upload a mesh through the same backend endpoint as the Assets panel and
+ * return an asset that carries a resolvable backend `fileId` (top-level and in
+ * `source`) so mesh tools (remesh, texture, segment, UV, edit) can run on it.
+ * Falls back to a local blob asset when the upload fails.
+ */
+export async function uploadMeshAsset(file: File): Promise<ModelAsset> {
+  try {
+    const result = await getApiClient().uploadMeshFile(file);
+    const fileId = result?.file_id || (result as any)?.id;
+    const serverUrl = result?.url || (fileId ? `/api/v1/file-upload/download/${encodeURIComponent(fileId)}` : '');
+    const meshStats = (result as any)?.mesh_stats as { polygon_count: number; vertex_count: number } | undefined;
+    return normalizeModelAsset({
+      id: fileId || (result as any)?.stored_filename || `user-upload-${Date.now()}`,
+      fileId,
+      name: file.name.replace(/\.[^/.]+$/, ''),
+      category: 'mesh',
+      meshType: 'custom',
+      thumbnail: (result as any)?.thumbnail_url || '',
+      faces: meshStats?.polygon_count || 0,
+      vertices: meshStats?.vertex_count || 0,
+      triangles: meshStats?.polygon_count || 0,
+      statsAvailable: Boolean((meshStats?.polygon_count ?? 0) > 0 || (meshStats?.vertex_count ?? 0) > 0),
+      format: (file.name.split('.').pop()?.toUpperCase() || 'GLB') as any,
+      fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
+      source: {
+        filename: result?.filename || file.name,
+        subfolder: 'models',
+        type: 'upload',
+        viewUrl: serverUrl,
+        fileId,
+      },
+      topology: 'Triangle',
+      dateCreated: '',
+      tags: ['Custom', 'UserIcon-UploadIcon', 'Mesh'],
+    });
+  } catch {
+    return createUploadedMeshAsset(file);
+  }
 }
 
 export type Asset3D = ModelAsset;
@@ -207,6 +327,19 @@ export interface SystemStats {
   activePromptId: string | null;
   activeNode: string | null;
   lastPingMs: number;
+  // New fields for multiple GPU support
+  gpus?: Array<{
+    id: number;
+    name: string;
+    memory_total_mb: number;
+    memory_used_mb: number;
+    memory_util: number; // 0-1
+    load: number; // 0-1
+    temperature?: number;
+  }>;
+  total_vram_used_gb?: number;
+  total_vram_total_gb?: number;
+  avg_vram_percent?: number;
 }
 
 export interface SegmentationSettings {
@@ -221,6 +354,7 @@ export interface RemeshSettings {
   tab: 'auto' | 'manual';
   variant: 'V1K' | 'V4K';
   polyType: 'tri' | 'quad';
+  targetPolycount: number;
 }
 
 export interface TextureSettings {
@@ -230,6 +364,7 @@ export interface TextureSettings {
   resolution: '1K' | '2K' | '4K' | '8K';
   paintResolution?: 512 | 768;
   referenceImage: string | null;
+  referenceImageFileId?: string | null;
   prompt: string;
   modelId: string;
   maps: {
@@ -266,7 +401,7 @@ export interface PhysicsSettings {
 }
 
 export interface GenerationSettings {
-  mode: 'image-to-3d' | 'text-to-3d';
+  mode: 'image-to-3d';
   image: string | null;
   imageFileId?: string | null;
   aiModel: string;
@@ -289,6 +424,8 @@ export interface GenerationSettings {
   generateCollision?: boolean;
   physics?: PhysicsSettings;
   generatePBR?: boolean;
+  bakeNormalMaps?: boolean;
+  bakeHighToLow?: boolean;
 
   prompt?: string;
   imageName?: string;
@@ -300,12 +437,47 @@ export interface GenerationSettings {
     back?: string | null;
     left?: string | null;
   };
+  multiviewSourceFileId?: string | null;
+  multiviewJobId?: string | null;
+  multiviewAssetId?: string | null;
+  multiviewStatus?: 'idle' | 'generating' | 'ready' | 'error';
+  multiviewViews?: Array<{
+    file: string;
+    label: string;
+    azimuth_deg?: number;
+    elevation_deg?: number;
+    url?: string;
+    mask_url?: string;
+    normal_url?: string;
+  }>;
+  multiviewManifest?: any;
+  multiviewZipUrl?: string | null;
+  multiviewError?: string | null;
+  multiviewInputMode?: 'generate' | 'upload';
+  multiviewAdvanced?: {
+    inferenceSteps: number;
+    seed: number;
+    saveContactSheet: boolean;
+    transparentBackground: boolean;
+    generateMasks: boolean;
+    generateNormals: boolean;
+    includeManifest: boolean;
+  };
   enableFlashVDM?: boolean;
   lowVramMode?: 'auto' | 'normal' | 'low';
   maxNumView?: number;
   resolution?: number;
   paintResolution?: 512 | 768;
   enableRealESRGAN?: boolean;
+  intent?: string;
+  preprocessingArtifactId?: string | null;
+  preprocessingPreviewUrl?: string | null;
+  preprocessingMetadata?: any;
+  enhancementEnabled?: boolean;
+  enablePrintabilityCheck?: boolean;
+  enableAutoRepair?: boolean;
+  enableAutoRig?: boolean;
+  autoRigMode?: string;
 }
 
 

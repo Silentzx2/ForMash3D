@@ -37,7 +37,18 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
   [[ -z "${GH_TOKEN:-}" || -z "${GH_TOKEN// /}" ]] && unset GH_TOKEN
   [[ -z "${HF_TOKEN:-}" || -z "${HF_TOKEN// /}" ]] && unset HF_TOKEN
   [[ -z "${HUGGINGFACE_TOKEN:-}" || -z "${HUGGINGFACE_TOKEN// /}" ]] && unset HUGGINGFACE_TOKEN
+  if [[ -n "${HF_TOKEN:-}" && -z "${HUGGINGFACE_TOKEN:-}" ]]; then
+    export HUGGINGFACE_TOKEN="$HF_TOKEN"
+  elif [[ -n "${HUGGINGFACE_TOKEN:-}" && -z "${HF_TOKEN:-}" ]]; then
+    export HF_TOKEN="$HUGGINGFACE_TOKEN"
+  fi
 fi
+
+# Export runtime environment defaults for workers and scheduler
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+[[ -n "${HF_TOKEN:-}" ]] && export HF_TOKEN
+[[ -n "${HUGGINGFACE_TOKEN:-}" ]] && export HUGGINGFACE_TOKEN
 
 # Ensure bun is on PATH if installed
 BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
@@ -46,6 +57,8 @@ BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"
 PID_DIR="$PROJECT_ROOT/.pids"
 LOG_DIR="$PROJECT_ROOT/logs"
 mkdir -p "$PID_DIR" "$LOG_DIR"
+# Keep startup/build status visible and persisted in the master log.
+exec > >(tee -a "$LOG_DIR/master.log") 2>&1
 
 BACKEND_URL="${BACKEND_URL:-http://127.0.0.1:7842}"
 FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1:3000}"
@@ -57,48 +70,49 @@ is_alive(){ [[ -n "${1:-}" ]] && kill -0 "$1" 2>/dev/null; }
 
 start_redis(){
   section "1/2 Redis"
-  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
+  local redis_url="${REDIS_URL:-redis://localhost:6379/0}"
+
+  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "$redis_url" ping >/dev/null 2>&1; then
     log "Redis is already running."
+    # Only redirect a local Redis process; a remote server has its own filesystem/log sink.
+    case "$redis_url" in
+      redis://localhost*|redis://127.0.0.1*|redis://\[::1\]*)
+        if redis-cli -u "$redis_url" CONFIG SET logfile "$LOG_DIR/master.log" >/dev/null 2>&1; then
+          redis-cli -u "$redis_url" CONFIG SET syslog-enabled no >/dev/null 2>&1 || true
+          log "Local Redis logs routed to $LOG_DIR/master.log"
+        else
+          warn "Redis rejected runtime log redirection; its external logging configuration is unchanged."
+        fi
+        ;;
+    esac
     return 0
   fi
 
-  # Auto-install Redis if missing (Colab / generic VPS)
   if ! command -v redis-server >/dev/null 2>&1 || ! command -v redis-cli >/dev/null 2>&1; then
-    info "Redis not found. Auto-installing via apt..."
+    info "Redis not found. Installing Redis tools..."
     local sudo_cmd=""
     command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
     if command -v apt-get >/dev/null 2>&1; then
       $sudo_cmd apt-get update -qq 2>/dev/null || true
-      $sudo_cmd apt-get install -y --no-install-recommends redis-server redis-tools 2>/dev/null || true
+      $sudo_cmd apt-get install -y --no-install-recommends redis-server redis-tools 2>>"$LOG_DIR/master.log" || true
     fi
   fi
 
-  # Try SysV init / Colab service first, then systemctl (systemd VPS), then direct daemon
-  if command -v service >/dev/null 2>&1; then
-    service redis-server start >/dev/null 2>&1 || true
-  elif command -v systemctl >/dev/null 2>&1; then
-    sudo systemctl start redis-server >/dev/null 2>&1 || true
+  if ! command -v redis-server >/dev/null 2>&1 || ! command -v redis-cli >/dev/null 2>&1; then
+    fail "Redis is unavailable. Install Redis and rerun setup."
   fi
 
-  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
+  info "Starting project-managed Redis with logs in $LOG_DIR/master.log..."
+  redis-server --daemonize yes --bind 127.0.0.1 --port 6379 --save '' --appendonly no \
+    --logfile "$LOG_DIR/master.log" >> "$LOG_DIR/master.log" 2>&1 || true
+  sleep 1
+
+  if redis-cli -u "$redis_url" ping >/dev/null 2>&1; then
     log "Redis is ready."
-    return 0
+  else
+    fail "Redis is unavailable. Inspect $LOG_DIR/master.log."
   fi
-
-  if command -v redis-server >/dev/null 2>&1; then
-    info "Starting local Redis daemon..."
-    redis-server --daemonize yes --bind 127.0.0.1 --port 6379 --save '' --appendonly no >/dev/null 2>&1 || true
-    sleep 1
-  fi
-
-  if command -v redis-cli >/dev/null 2>&1 && redis-cli -u "${REDIS_URL:-redis://localhost:6379/0}" ping >/dev/null 2>&1; then
-    log "Redis is ready."
-    return 0
-  fi
-
-  fail "Redis is unavailable. Install Redis and rerun setup."
 }
-
 
 start_backend() {
   section "2/2 Backend API"
@@ -118,9 +132,9 @@ start_backend() {
 
     # Run backend detached with setsid + nohup so terminal interrupts / manager exit do not kill it
     if command -v setsid >/dev/null 2>&1; then
-      setsid nohup bash "$script" >> "$PROJECT_ROOT/logs/backend.log" 2>&1 &
+      setsid nohup bash "$script" >> "$PROJECT_ROOT/logs/master.log" 2>&1 &
     else
-      nohup bash "$script" >> "$PROJECT_ROOT/logs/backend.log" 2>&1 &
+      nohup bash "$script" >> "$PROJECT_ROOT/logs/master.log" 2>&1 &
     fi
     local b_pid=$!
     disown "$b_pid" 2>/dev/null || true
@@ -143,7 +157,7 @@ start_backend() {
 
     [[ "$attempt" -eq 1 ]] && {
       warn "Backend did not respond yet. Checking logs..."
-      tail -n 15 "$PROJECT_ROOT/logs/backend.log" 2>/dev/null || true
+      tail -n 15 "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
       warn "Retrying backend start..."
       kill "$(cat "$PID_DIR/backend.pid" 2>/dev/null || true)" 2>/dev/null || true
       fuser -k 7842/tcp 2>/dev/null || true
@@ -155,7 +169,7 @@ start_backend() {
 
 
   warn "━━━━━━━━━━━━━━━━ Backend Startup Failure Log ━━━━━━━━━━━━━━━━"
-  tail -n 35 "$PROJECT_ROOT/logs/backend.log" 2>/dev/null || true
+  tail -n 35 "$PROJECT_ROOT/logs/master.log" 2>/dev/null || true
   if [[ -f "$PROJECT_ROOT/backend/logs/scheduler.log" ]]; then
     warn "━━━━━━━━━━━━━━━━ Scheduler Log ━━━━━━━━━━━━━━━━"
     tail -n 25 "$PROJECT_ROOT/backend/logs/scheduler.log" 2>/dev/null || true
@@ -183,9 +197,9 @@ start_frontend(){
   if [[ ! -f "$PROJECT_ROOT/.next/BUILD_ID" ]]; then
     info "Production build not found. Building Next.js..."
     if command -v bun >/dev/null 2>&1; then
-      bun run build > "$LOG_DIR/frontend-build.log" 2>&1
+      bun run build >> "$LOG_DIR/master.log" 2>&1
     else
-      npm run build > "$LOG_DIR/frontend-build.log" 2>&1
+      npm run build >> "$LOG_DIR/master.log" 2>&1
     fi
     log "Frontend build completed."
   fi
@@ -199,12 +213,12 @@ start_frontend(){
 
   info "Launching frontend on http://localhost:3000"
   setsid env BACKEND_URL="$BACKEND_URL" AI_PROVIDER=3d_aigc_api RUNTIME_MODE=3d_aigc_api \
-    "${cmd[@]}" > "$LOG_DIR/frontend.log" 2>&1 &
+    "${cmd[@]}" >> "$LOG_DIR/master.log" 2>&1 &
   write_pid "$PID_DIR/frontend.pid" "$!"
   sleep 2
 
   if ! is_alive "$(cat "$PID_DIR/frontend.pid" 2>/dev/null || true)"; then
-    fail "Frontend failed to start. Inspect logs/frontend.log."
+    fail "Frontend failed to start. Inspect logs/master.log."
   fi
   log "Frontend started: $FRONTEND_URL"
 }

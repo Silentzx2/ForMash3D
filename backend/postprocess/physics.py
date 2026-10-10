@@ -118,8 +118,9 @@ def collision_options_for_quality(quality: str) -> dict[str, Any]:
     quality = quality if quality in _ALLOWED_COLLISION_QUALITY else "balanced"
     if quality == "fast":
         return {
-            "method": "convex_hull",
-            "max_hulls": 1,
+            "method": "decomposition",
+            "max_hulls": 4,
+            "threshold": 0.35,
             "input_faces": 750,
             "max_hull_vertices": 32,
             "resolution": 600,

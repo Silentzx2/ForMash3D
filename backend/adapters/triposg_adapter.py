@@ -47,14 +47,41 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             raise ValueError(
                 f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
             )
+        backend_dir = Path(__file__).resolve().parents[1]
         if model_path is None:
-            model_path = "backend/pretrained/TripoSG"
+            model_path = str((backend_dir / "pretrained" / "TripoSG").resolve())
+        else:
+            p = Path(model_path)
+            if not p.is_absolute():
+                parts = list(p.parts)
+                if parts and parts[0] == "backend":
+                    p = Path(*parts[1:])
+                for candidate in [backend_dir / p, backend_dir.parent / p, Path.cwd() / p]:
+                    if candidate.exists():
+                        p = candidate
+                        break
+                else:
+                    p = backend_dir / p
+                model_path = str(p.resolve())
 
         if triposg_root is None:
             triposg_root = str(Path(__file__).resolve().parent.parent / "thirdparty" / "TripoSG")
 
         if rmbg_path is None:
-            rmbg_path = "backend/pretrained/RMBG-1.4"
+            rmbg_path = str((backend_dir / "pretrained" / "RMBG-1.4").resolve())
+        else:
+            p = Path(rmbg_path)
+            if not p.is_absolute():
+                parts = list(p.parts)
+                if parts and parts[0] == "backend":
+                    p = Path(*parts[1:])
+                for candidate in [backend_dir / p, backend_dir.parent / p, Path.cwd() / p]:
+                    if candidate.exists():
+                        p = candidate
+                        break
+                else:
+                    p = backend_dir / p
+                rmbg_path = str(p.resolve())
 
         super().__init__(
             model_id=model_id,
@@ -127,8 +154,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             triposg_source = self._resolve_model_source()
             logger.info(f"Loading TripoSG from source '{triposg_source}' (root: {self.triposg_root})")
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            dtype = torch.float16
 
             # 1. Background remover
             rmbg_source = self._resolve_rmbg_source()
@@ -150,7 +179,26 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 raise RuntimeError(err_msg) from e
 
             try:
-                self.pipe = TripoSGPipeline.from_pretrained(triposg_source).to(device, dtype)
+                self.pipe = TripoSGPipeline.from_pretrained(triposg_source)
+                if len(getattr(self, "gpu_ids", [])) > 1:
+                    from core.scheduler.resource_planner import dispatch_pipeline_across_gpus, ResourcePlan
+                    rp = self.resource_plan or {}
+                    dispatch_pipeline_across_gpus(
+                        self.pipe,
+                        ResourcePlan(
+                            kind="multi_gpu",
+                            gpu_ids=tuple(self.gpu_ids),
+                            primary_gpu=self.gpu_ids[0],
+                            reservation_mb={int(k): int(v) for k, v in rp.get("reservation_mb", {}).items()},
+                            max_memory_mb={str(k): int(v) for k, v in rp.get("max_memory_mb", {}).items()},
+                            cpu_threads=int(rp.get("cpu_threads", 1)),
+                            strategy=str(rp.get("strategy", "accelerate_component_dispatch")),
+                            reason=str(rp.get("reason", "scheduler resource plan")),
+                        ),
+                    )
+                    logger.info("TripoSG dispatched across GPUs %s", self.gpu_ids)
+                else:
+                    self.pipe = self.pipe.to(device, dtype)
             except Exception as pipe_err:
                 err_msg = f"TripoSG model load failed for source '{triposg_source}': {pipe_err}"
                 logger.error(err_msg)
@@ -220,8 +268,13 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            use_flash_decoder = device == "cuda" and torch.cuda.get_device_capability()[0] >= 8
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            use_flash_decoder = torch.cuda.get_device_capability()[0] >= 8
+            quality = str(inputs.get("quality") or inputs.get("meshQuality") or "").lower()
+            if quality in {"high", "ultra"} and inputs.get("force_fast_decoder") is not True:
+                use_flash_decoder = False
 
             if is_scribble and prompt:
                 # Run scribble pipeline
@@ -231,7 +284,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     if Path(str(self.model_path) + "-scribble").exists()
                     else "VAST-AI/TripoSG-scribble"
                 )
-                dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+                dtype = torch.float16
                 scribble_pipe = TripoSGScribblePipeline.from_pretrained(scribble_source).to(device, dtype)
 
                 img_pil = Image.open(image_path).convert("RGB")
@@ -270,6 +323,8 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(
                 f"TripoSG raw extraction completed: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
             )
+
+            # TripoSG extraction is natively upright Y-up; preserve standard orientation
 
             # Save output
             output_path = self.path_generator.generate_mesh_path(

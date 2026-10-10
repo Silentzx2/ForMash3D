@@ -243,6 +243,11 @@ def _repair_preserving_uv(mesh: trimesh.Trimesh, options: RepairOptions,
     if uv is not None and len(uv) != len(vertices):
         uv = None  # per-face or malformed UVs — cannot be carried by index
 
+    vc = getattr(getattr(mesh, "visual", None), "vertex_colors", None)
+    vc = np.asarray(vc) if vc is not None else None
+    if vc is not None and len(vc) != len(vertices):
+        vc = None
+
     canon = list(_canonical_ids(vertices))
     alive = [True] * len(faces)
     removed_degenerate = removed_duplicate = removed_nonmanifold = 0
@@ -266,16 +271,11 @@ def _repair_preserving_uv(mesh: trimesh.Trimesh, options: RepairOptions,
     emit("repair", 0.5, "Resolving non-manifold edges…")
     if options.method == "split":
         # Detach the surplus faces instead of deleting them: duplicate just the
-        # two vertices that lie on the offending edge (copying their UVs), so the
-        # face keeps its other two edges attached and nothing disappears. For a
-        # textured mesh this is the gentlest fix available — no geometry lost, no
-        # texel moved.
-        #
-        # The edge map is rebuilt every pass. Detaching rewrites face indices, so
-        # a map captured once goes stale the moment the first face is changed and
-        # later detachments silently miss.
+        # two vertices that lie on the offending edge (copying their UVs and vertex colors), so the
+        # face keeps its other two edges attached and nothing disappears.
         extra_vertices = []
         extra_uv = []
+        extra_vc = []
         next_canon = (max(canon) + 1) if canon else 0
         for _ in range(1000):  # guard: each pass detaches at least one face
             edges = _edge_to_faces(faces, canon, alive)
@@ -291,6 +291,8 @@ def _repair_preserving_uv(mesh: trimesh.Trimesh, options: RepairOptions,
                         extra_vertices.append(vertices[vertex])
                         if uv is not None:
                             extra_uv.append(uv[vertex])
+                        if vc is not None:
+                            extra_vc.append(vc[vertex])
                         canon.append(next_canon)
                         next_canon += 1
                         face[corner] = len(vertices) + len(extra_vertices) - 1
@@ -299,6 +301,8 @@ def _repair_preserving_uv(mesh: trimesh.Trimesh, options: RepairOptions,
             vertices = np.vstack([vertices, np.asarray(extra_vertices, dtype=float)])
             if uv is not None:
                 uv = np.vstack([uv, np.asarray(extra_uv, dtype=float)])
+            if vc is not None:
+                vc = np.vstack([vc, np.asarray(extra_vc)])
     else:
         # Remove the fewest faces that make every edge manifold. Greedy on the
         # face involved in the most over-subscribed edges, breaking ties by
@@ -340,6 +344,8 @@ def _repair_preserving_uv(mesh: trimesh.Trimesh, options: RepairOptions,
         source_material = getattr(getattr(mesh, "visual", None), "material", None)
         if source_material is not None:
             out.visual.material = source_material
+    if vc is not None:
+        out.visual.vertex_colors = vc[used]
 
     stats = {
         "removed_degenerate": removed_degenerate,
@@ -360,6 +366,10 @@ def run_repair(mesh: trimesh.Trimesh, options: RepairOptions,
 
     emit("analyze", 0.05, "Analyzing topology…")
     before = topology_counts(mesh.vertices, mesh.faces)
+
+    # ponytail: Phase 3 requirements - conservative repair for fragments, normals
+    trimesh.repair.fix_normals(mesh)
+    # skipped: extreme spikes (handled by Taubin smooth in retopo), invalid transforms (trimesh applies them at load, NaNs caught by inspect)
 
     # Default path: surgical, UV-preserving. Only the faces that form the defect
     # are touched, so a textured mesh keeps its texture. The pymeshlab rebuild

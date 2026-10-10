@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { getApiClient } from '@/services/apiClient';
+import { getApiClient, normalizeBackendAssetUrl } from '@/services/apiClient';
 import { useAppStore } from '@/stores/useAppStore';
 import type { JobStatus, JobInfo } from '@/types/api';
 
@@ -8,12 +8,12 @@ export interface UseTaskPollingOptions {
   enabled?: boolean;
 }
 
-const BACKEND_STATUS: Record<JobStatus, 'queued' | 'running' | 'completed' | 'failed'> = {
+const BACKEND_STATUS: Record<JobStatus, 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'> = {
   queued: 'queued',
   processing: 'running',
   completed: 'completed',
   failed: 'failed',
-  cancelled: 'completed',
+  cancelled: 'cancelled',
 };
 
 export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
@@ -28,7 +28,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
   const isPollingRef = useRef(false);
 
   const pollTaskStatus = useCallback(async (task: (typeof tasks)[string]) => {
-    if (!task.id || task.status === 'completed' || task.status === 'failed') {
+    if (!task.id || task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
       return;
     }
 
@@ -36,11 +36,18 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
       const apiClient = getApiClient();
       const jobInfo: JobInfo = await apiClient.getJobStatus(task.id);
       const status = BACKEND_STATUS[jobInfo.status];
+      const rawProgress = Number(jobInfo.progress ?? 0);
+      const normalizedProgress = Math.max(
+        0,
+        Math.min(100, Math.round(rawProgress <= 1 ? rawProgress * 100 : rawProgress)),
+      );
 
       const needsUpdate =
         status !== task.status ||
+        normalizedProgress !== task.progress ||
         (jobInfo.input_image_url && !task.metadata?.inputImageUrl) ||
-        (jobInfo.model_preference && !task.metadata?.modelPreference);
+        (jobInfo.model_preference && !task.metadata?.modelPreference) ||
+        Boolean(jobInfo.result?.production_status && task.metadata?.productionStatus !== jobInfo.result.production_status);
 
       if (!needsUpdate) {
         return;
@@ -55,7 +62,7 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
       const updatedTask = {
         ...task,
         status,
-        progress: status === 'completed' ? 100 : status === 'failed' ? 0 : task.progress,
+        progress: status === 'completed' ? 100 : status === 'failed' || status === 'cancelled' ? 0 : normalizedProgress,
         updatedAt: Date.now(),
         metadata,
       };
@@ -68,17 +75,26 @@ export const useTaskPolling = (options: UseTaskPollingOptions = {}) => {
         if (jobInfo.result) {
           updatedTask.metadata = {
             ...updatedTask.metadata,
-            ...(jobInfo.result.mesh_url ? { outputPath: jobInfo.result.mesh_url } : {}),
-            ...(jobInfo.result.thumbnail_url ? { previewImageUrl: jobInfo.result.thumbnail_url } : {}),
+            ...(jobInfo.result.mesh_url ? { outputPath: normalizeBackendAssetUrl(jobInfo.result.mesh_url) } : {}),
+            ...(jobInfo.result.thumbnail_url ? { previewImageUrl: normalizeBackendAssetUrl(jobInfo.result.thumbnail_url) } : {}),
+            ...(jobInfo.result.production_status ? { productionStatus: jobInfo.result.production_status } : {}),
+            ...(jobInfo.result.degraded_reasons ? { degradedReasons: jobInfo.result.degraded_reasons } : {}),
+            ...(jobInfo.result.source_model_url ? { sourceModelUrl: jobInfo.result.source_model_url } : {}),
+            ...(jobInfo.result.high_fidelity_url ? { highFidelityUrl: jobInfo.result.high_fidelity_url } : {}),
+            ...(jobInfo.result.game_ready_url ? { gameReadyUrl: jobInfo.result.game_ready_url } : {}),
+            ...(jobInfo.result.quality_mode ? { qualityMode: jobInfo.result.quality_mode } : {}),
+            ...(jobInfo.result.target_polycount !== undefined ? { targetPolycount: jobInfo.result.target_polycount } : {}),
+            ...(jobInfo.result.texture_resolution !== undefined ? { textureResolution: jobInfo.result.texture_resolution } : {}),
           };
           try {
             const resultInfo = await apiClient.getJobResultInfo(task.id);
             if (resultInfo.mesh_download_urls?.direct_download) {
+              const fileInfo = resultInfo.file_info;
               updatedTask.metadata = {
                 ...updatedTask.metadata,
                 downloadUrl: resultInfo.mesh_download_urls.direct_download,
-                fileSize: resultInfo.file_info.file_size_mb,
-                format: resultInfo.file_info.file_extension,
+                ...(fileInfo?.file_size_mb !== undefined ? { fileSize: fileInfo.file_size_mb } : {}),
+                ...(fileInfo?.file_extension ? { format: fileInfo.file_extension } : {}),
               };
             }
           } catch (err) {

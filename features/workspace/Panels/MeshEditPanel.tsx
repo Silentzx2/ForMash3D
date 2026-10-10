@@ -14,7 +14,7 @@ import {
   GrabBrushIcon,
 } from '@/components/icons/BrushIcons';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { createUploadedMeshAsset } from '../types';
+import { uploadMeshAsset } from '../types';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { toast } from 'sonner';
 
@@ -144,9 +144,9 @@ export const MeshEditPanel: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleUploadNewMesh = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadNewMesh = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setCurrentAsset(createUploadedMeshAsset(file));
+    if (file) setCurrentAsset(await uploadMeshAsset(file));
   };
 
   const canExecute = inputTab === 'text'

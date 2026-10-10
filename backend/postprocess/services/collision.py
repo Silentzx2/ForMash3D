@@ -89,11 +89,14 @@ def _simplify_hull(hull: trimesh.Trimesh, max_vertices: int) -> trimesh.Trimesh:
         return hull
 
 
-def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions,
+def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
                   progress=None) -> tuple[trimesh.Scene, dict]:
     def emit(stage, frac, msg=""):
         if progress:
             progress(stage, frac, msg)
+
+    if isinstance(options, dict):
+        options = CollisionOptions(**options)
 
     method = options.method
     hulls: list[trimesh.Trimesh] = []
@@ -110,39 +113,37 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions,
         hulls = [mesh.convex_hull.copy()]
     else:
         if coacd is None:
-            # Degrade rather than fail: a single hull is still a usable collider,
-            # and the caller is told why it only got one.
-            fallback_reason = ("CoACD is not installed on the Mesh Tools service — "
-                               "fell back to a single convex hull.")
-            emit("hull", 0.5, "CoACD unavailable — using a convex hull…")
-            hulls = [mesh.convex_hull.copy()]
-        else:
-            emit("decimate", 0.1, "Preparing the mesh…")
-            source = _decimate(mesh, int(options.input_faces))
-
-            emit("decompose", 0.2, f"Decomposing {len(source.faces):,} faces into convex parts…")
-            try:
-                coacd.set_log_level("error")
-            except Exception:  # noqa: BLE001 — older builds have no log control
-                pass
-            parts = coacd.run_coacd(
-                coacd.Mesh(np.asarray(source.vertices, dtype=np.float64),
-                           np.asarray(source.faces, dtype=np.int32)),
-                threshold=float(options.threshold),
-                max_convex_hull=int(options.max_hulls),
-                resolution=int(options.resolution),
-                mcts_nodes=int(options.mcts_nodes),
-                mcts_iterations=int(options.mcts_iterations),
-                mcts_max_depth=int(options.mcts_max_depth),
-                preprocess_resolution=int(options.preprocess_resolution),
-                seed=int(options.seed),
+            raise RuntimeError(
+                "CoACD is required for collision decomposition but is not installed or unavailable."
             )
-            emit("hulls", 0.7, f"Making {len(parts)} hulls…")
-            for vertices, faces in parts:
-                part = trimesh.Trimesh(np.asarray(vertices, dtype=np.float64),
-                                       np.asarray(faces, dtype=np.int64), process=False)
-                if len(part.faces) >= 4:
-                    hulls.append(part.convex_hull)
+        emit("decimate", 0.1, "Preparing the mesh…")
+        source = _decimate(mesh, int(options.input_faces))
+
+        emit("decompose", 0.2, f"Decomposing {len(source.faces):,} faces into convex parts…")
+        try:
+            coacd.set_log_level("error")
+        except Exception:  # noqa: BLE001 — older builds have no log control
+            pass
+        parts = coacd.run_coacd(
+            coacd.Mesh(np.asarray(source.vertices, dtype=np.float64),
+                       np.asarray(source.faces, dtype=np.int32)),
+            threshold=float(options.threshold),
+            max_convex_hull=int(options.max_hulls),
+            resolution=int(options.resolution),
+            mcts_nodes=int(options.mcts_nodes),
+            mcts_iterations=int(options.mcts_iterations),
+            mcts_max_depth=int(options.mcts_max_depth),
+            preprocess_resolution=int(options.preprocess_resolution),
+            seed=int(options.seed),
+        )
+        if not parts:
+            raise RuntimeError("CoACD decomposition produced no parts.")
+        emit("hulls", 0.7, f"Making {len(parts)} hulls…")
+        for vertices, faces in parts:
+            part = trimesh.Trimesh(np.asarray(vertices, dtype=np.float64),
+                                   np.asarray(faces, dtype=np.int64), process=False)
+            if len(part.faces) >= 4:
+                hulls.append(part.convex_hull)
 
     if not hulls:
         raise RuntimeError("Collision generation produced no hulls.")

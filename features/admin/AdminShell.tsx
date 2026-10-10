@@ -10,7 +10,7 @@ import {
   LayoutDashboardIcon, BoxesIcon, Activity01Icon, ScrollTextIcon, Briefcase01Icon,
   ListOrderedIcon, HeartPulseIcon, Settings01Icon, HardDriveIcon,
   ChevronLeft, ChevronRight, BoxIcon, SparklesIcon, CpuIcon,
-  ZapIcon, Wifi01Icon, Search01Icon, BellIcon, Menu01Icon
+  Wifi01Icon, Search01Icon, BellIcon, Menu01Icon
 } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 import { APP_NAME, ADMIN_NAV_ITEMS } from '@/constants';
@@ -200,18 +200,18 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
               <HugeiconsIcon icon={CpuIcon} size={16} className="w-3.5 h-3.5 text-primary" />
               <span className="text-xs font-medium text-muted-foreground">GPU</span>
               <StatusDot status={gpuOnline ? 'online' : 'offline'} size="sm" />
+              {gpuOnline && (
+                <>
+                  <span className="text-xs font-mono text-muted-foreground">VRAM</span>
+                  <span className="text-xs font-mono text-foreground">{vramUsed}/{vramTotal} GB</span>
+                </>
+              )}
             </div>
 
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-[hsl(var(--border))]">
               <HugeiconsIcon icon={Wifi01Icon} size={16} className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-xs font-medium text-muted-foreground">Backend</span>
               <StatusDot status={backendOnline ? 'online' : 'offline'} size="sm" />
-            </div>
-
-            <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-xl glass border border-[hsl(var(--border))]">
-              <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-              <span className="text-xs font-mono text-muted-foreground">VRAM</span>
-              <span className="text-xs font-mono text-foreground">{vramUsed}/{vramTotal} GB</span>
             </div>
 
             <button className="relative p-2 rounded-xl glass border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground transition-colors">

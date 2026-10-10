@@ -102,6 +102,9 @@ GET /api/v1/system/health
   "uptime": 12345.67
 }
 ```
+This endpoint reports service liveness only; it does not imply inference models
+are available. Use `GET /api/v1/system/models` for non-loading model readiness
+and CUDA availability.
 
 ### System Information
 
@@ -204,6 +207,36 @@ GET /api/v1/file-upload/download/{file_id}
 
 **Response (200):** Direct binary stream of the uploaded file or registered output mesh asset.
 
+### Get Thumbnail
+
+```http
+GET /api/v1/file-upload/thumbnail/{file_id}
+```
+
+**Response (200):** Direct binary stream of the persistent 256x256 thumbnail preview for the uploaded image or asset. If a dedicated thumbnail does not yet exist, generates or falls back to the original source image stream.
+
+### List Uploaded Files
+
+```http
+GET /api/v1/file-upload/list
+```
+
+**Response (200):** List of metadata objects for all registered uploaded assets, including `url` and `thumbnail_url`.
+
+```json
+[
+  {
+    "file_id": "img_abc123",
+    "filename": "reference.png",
+    "file_type": "image",
+    "file_size_mb": 2.5,
+    "upload_time": "2026-10-09T00:00:00Z",
+    "url": "/api/v1/file-upload/download/img_abc123",
+    "thumbnail_url": "/api/v1/file-upload/thumbnail/img_abc123"
+  }
+]
+```
+
 ### Get File Metadata
 
 ```http
@@ -230,18 +263,23 @@ DELETE /api/v1/file-upload/{file_id}
 
 ---
 
+## Smart Generation APIs
+
+### Smart Generation
+`POST /api/v1/smart-generation/generation` accepts an image input, one of the five built-in intent IDs, an optional explicit model override, preprocessing/auto-rig/printability controls, and safe preset overrides. It resolves a ready image-capable model deterministically, submits through the existing image raw/textured generation scheduler path, and returns `job_id`, selected model, applied preset, candidate order, and effective configuration.
+
+`GET /api/v1/smart-generation/presets` returns the versioned YAML preset definitions. `POST /api/v1/smart-generation/resolve` returns the deterministic model-selection decision without submitting a job.
+
 ## Mesh Generation APIs
 
-> **Note on Text-to-Raw Mesh**: `POST /api/v1/mesh-generation/text-to-raw-mesh` is exposed as an API route, but currently has no model registered in `models.yaml`. Use `text-to-textured-mesh` with `trellis_text_to_textured_mesh` for text prompts.
-
 ```http
-POST /api/v1/mesh-generation/text-to-raw-mesh
+POST /api/v1/mesh-generation/image-to-raw-mesh
 Content-Type: application/json
 
 {
-  "text_prompt": "A cute cartoon robot holding a flower",
+  "image_file_id": "img_abc123",
   "output_format": "glb",
-  "model_preference": "trellis_text_to_raw_mesh",
+  "model_preference": "hunyuan3d_shape_v21_image_to_raw_mesh",
   "model_parameters": {}
 }
 ```
@@ -252,22 +290,6 @@ Content-Type: application/json
   "job_id": "gen_abc123",
   "status": "queued",
   "message": "Generation job queued"
-}
-```
-
-### Text-to-Textured Mesh
-
-Generate a textured 3D mesh from a text prompt.
-
-```http
-POST /api/v1/mesh-generation/text-to-textured-mesh
-Content-Type: application/json
-
-{
-  "text_prompt": "A red sports car",
-  "output_format": "glb",
-  "model_preference": "trellis_text_to_textured_mesh",
-  "model_parameters": {}
 }
 ```
 
@@ -366,27 +388,6 @@ GET /api/v1/mesh-generation/status/{job_id}
 POST /api/v1/mesh-generation/cancel/{job_id}
 ```
 
-### Cost Estimate
-
-```http
-POST /api/v1/mesh-generation/cost-estimate
-Content-Type: application/json
-
-{
-  "model_preference": "trellis_text_to_textured_mesh",
-  "text_prompt": "A dragon"
-}
-```
-
-**Response:**
-```json
-{
-  "estimated_vram_mb": 11776,
-  "estimated_time_seconds": 60,
-  "model_name": "TRELLIS"
-}
-```
-
 ### Available Models
 
 ```http
@@ -396,10 +397,8 @@ GET /api/v1/mesh-generation/models
 **Response:**
 ```json
 {
-  "text_to_raw_mesh": ["trellis_text_to_raw_mesh"],
-  "text_to_textured_mesh": ["trellis_text_to_textured_mesh"],
-  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh"],
-  "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh", "hunyuan3d_shape_v21_image_to_textured_mesh"],
+  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
+  "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
   "text_mesh_painting": ["trellis_text_mesh_painting"],
   "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],
   "mesh_segmentation": ["partfield_mesh_segmentation", "p3sam_mesh_segmentation"],
@@ -408,7 +407,62 @@ GET /api/v1/mesh-generation/models
   "mesh_retopology": ["fastmesh_v1k_retopology", "fastmesh_v4k_retopology"],
   "uv_unwrapping": ["partuv_uv_unwrapping"],
   "text_mesh_editing": ["voxhammer_text_mesh_editing"],
-  "image_mesh_editing": ["voxhammer_image_mesh_editing"]
+  "image_mesh_editing": ["voxhammer_image_mesh_editing"],
+  "image_to_multiview": ["zero123plus_v12_image_to_multiview"]
+}
+```
+
+### Production generation controls
+
+The image-to-raw and image-to-textured generation contracts accept the same production controls used by the workspace:
+
+- `quality`: `low`, `medium`, `high`, or `ultra`.
+- `target_polycount`: a downstream derivative budget; the immutable high-fidelity master is never reduced to satisfy it.
+- `texture_resolution`: production atlas/bake resolution. Model-native source texture settings remain separate from this downstream target.
+- `generateLOD`, `lodPreset`, `lodCount`: derivative LOD controls.
+- `preprocessing_artifact_id` and `enhancement_enabled`: model-aware preprocessing provenance. Enhancement requires an approved artifact.
+- `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `auto_rig_mode`, and provider-neutral `physics_config`.
+
+Completed jobs expose production metadata through `GET /api/v1/system/jobs/{job_id}`, including `source_model_url`, `high_fidelity_url`, `game_ready_url`, `production_status`, `degraded_reasons`, `quality_mode`, `target_polycount`, `texture_resolution`, `master_to_derivative`, `quality_trace`, `lod_validation`, and artifact status.
+
+### Delete Job
+
+```http
+DELETE /api/v1/system/jobs/{job_id}
+```
+
+Purges the job from both the active Redis queue/hot keys and the persistent SQLite database store. Guarantees safe atomic removal without throwing 500 internal errors for previously completed, cancelled, or failed jobs.
+
+### Job History
+
+```http
+GET /api/v1/system/jobs/history?limit=100&offset=0&status=completed&feature=image_to_raw_mesh
+```
+
+Returns durable job history (SQLite page, falling back to the Redis job listing when the SQLite page is empty). Every completed job carries canonical production artifact URLs regardless of what was persisted, so the workspace can resolve models and thumbnails from the backend after a page refresh or backend restart:
+
+- `model_url`, `game_ready_url`, `download_url` — `/api/v1/system/jobs/{job_id}/download?artifact_format=glb` (game-ready GLB; the default viewer artifact)
+- `source_model_url`, `high_fidelity_url` — `/api/v1/system/jobs/{job_id}/download?artifact_format=master` (immutable `master/source.glb`)
+- `thumbnail_url` — `/api/v1/system/jobs/{job_id}/thumbnail` (rendered preview, input-image, or placeholder fallback)
+
+Values populated by production post-processing are never overwritten; only missing URLs are backfilled.
+
+### Multi-view generation and reconstruction
+
+Zero123++ generation is exposed separately as `POST /api/v1/multiview/generate`. Its readiness is controlled by the runtime `image_to_multiview` model metadata; missing weights or unavailable CUDA are surfaced to the workspace before generation.
+
+Multi-view -> 3D reconstruction is exposed as `POST /api/v1/multiview/reconstruct-3d`. A target reconstruction model must explicitly advertise `capabilities.multiview_input=true`; a model that merely generates multiview conditioning images is not sufficient. The request can use an existing `asset_id` or explicit `images` and carries the same quality/polycount/LOD/physics controls as the single-image path.
+
+```json
+{
+  "asset_id": "asset_abc123",
+  "model_preference": "model-id-that-supports-multiview-input",
+  "quality": "high",
+  "target_polycount": 50000,
+  "generateLOD": true,
+  "lodPreset": "high",
+  "lodCount": 4,
+  "texture_resolution": 2048
 }
 ```
 
@@ -592,11 +646,14 @@ Content-Type: application/json
   "model_preference": "fastmesh_v4k_retopology",
   "poly_type": "quad",
   "target_vertex_count": 4000,
+  "target_polycount": 35000,
   "output_format": "glb"
 }
 ```
 
-FastMesh does not support arbitrary vertex targets. V1K is the ~1K-vertex variant and V4K is the ~4K-vertex variant. When target_vertex_count is supplied, it must match the selected variant; poly_type controls triangle vs quad output.
+FastMesh does not support arbitrary model vertex targets. V1K is the ~1K-vertex variant and V4K is the ~4K-vertex variant; when target_vertex_count is supplied, it must match the selected variant. `target_polycount` is the final production triangle budget applied by the canonical post-processing stage after FastMesh; it accepts 5,000–200,000 triangles. `poly_type` controls triangle vs quad output.
+
+For generation jobs, `target_polycount` is **never an inference-quality control**. The scheduler removes this production-only field (along with `auto_optimize` and LOD/physics controls) before neural model adapters run. The raw model output is requested at the registered model's maximum supported geometry fidelity, persisted unchanged as `master/source.glb`, and only then reduced to the requested production budget.
 
 ---
 
@@ -722,3 +779,40 @@ Event types:
 - `completed`: Job finished successfully with output path
 - `failed`: Job failed with error message
 - `cancelled`: Job was cancelled by the user
+
+## Phase 1 Generation Workflow APIs
+
+- POST /api/v1/image-enhancement/preview creates a deterministic Generation Preview artifact and returns preview/approved URLs plus provenance metadata.
+- GET /api/v1/image-enhancement/artifacts/{artifact_id}?variant=preview|approved serves the exact preview/approved artifact.
+- GET /api/v1/smart-generation/presets returns the versioned intent definitions.
+- POST /api/v1/smart-generation/resolve resolves an intent to a ready, compatible Image → 3D model and applied preset; an explicit model is validated as an override.
+- Image→raw and image→textured requests accept intent, preprocessing_artifact_id, enhancement_enabled, enable_printability_check, enable_auto_repair, enable_auto_rig, and auto_rig_mode.
+- Completed auto-rig workflows expose rigged_model_url and the standard download endpoint accepts artifact_format=rigged.
+
+## High-Fidelity Result and Resource Metadata — 2026-10-08
+
+Production mesh-generation results may additionally expose:
+- `high_fidelity_url`: immutable master download URL
+- `quality_mode`: selected quality profile
+- `texture_resolution`: resolved bake/UV resolution
+- `master_to_derivative`: diagnostic fidelity report
+- `quality_trace`: per-stage quality metadata
+
+System/status responses now expose resource planning metadata including CPU count, per-worker CPU-thread policy and GPU capacity snapshots. Multi-GPU placement is only reported when the selected adapter declares a supported strategy.
+
+## Capability-Aware Generation and Quality Metadata — 2026-10-08
+
+The runtime model-details response exposes a normalized capability contract. Relevant fields include modality, multiview input/output behavior, texture/PBR/vertex-color support, preprocessing/extraction preferences, preferred resolution/face budget, minimum VRAM, CPU policy, multi-GPU strategy, latency class and supported output formats.
+
+Production generation results can include production_status, degraded_reasons, master_to_derivative, quality_trace, lod_validation, quality_mode, texture_resolution, cpu_threads, and high_fidelity_url.
+
+### Offline A/B benchmark
+
+The repository includes backend/scripts/run_model_ab_benchmark.py. It compares two completed asset directories only when input hashes and target production protocol match.
+
+Command:
+
+    cd backend
+    python -m scripts.run_model_ab_benchmark --baseline-asset <baseline_asset_dir> --candidate-asset <candidate_asset_dir> --output <report.json>
+
+Add --reference <reference_mesh.glb> only when a real ground-truth mesh exists. Without a reference, generated-vs-generated geometry metrics are explicitly diagnostic rather than absolute quality measurements.

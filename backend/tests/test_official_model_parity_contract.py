@@ -40,7 +40,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["mc_resolution"]["default"], 256)
+        self.assertEqual(schema["mc_resolution"]["default"], 320)
         self.assertEqual(schema["foreground_ratio"]["default"], 0.85)
         self.assertFalse(schema["bake_texture"]["default"])
 
@@ -50,10 +50,32 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TripoSFImageToRawMeshAdapter(vram_requirement=12288)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["resolution"]["default"], 256)
-        self.assertEqual(schema["sample_points_num"]["default"], 819200)
+        self.assertEqual(schema["resolution"]["default"], 1024)
+        self.assertEqual(schema["sample_points_num"]["default"], 1638400)
         self.assertFalse(schema["pruning"]["default"])
         self.assertTrue(schema["use_normals"]["default"])
+
+    def test_common_postprocess_quality_guard_is_wired(self):
+        pipeline_path = backend_root / "postprocess/pipeline.py"
+        source = pipeline_path.read_text(encoding="utf-8")
+        self.assertIn("def _quality_guard(", source)
+        self.assertIn("quality_guard_reverted", source)
+        self.assertIn("skipped_healthy", source)
+
+
+    def test_hunyuan3d_legacy_v21_contract(self):
+        from adapters.hunyuan3d_adapter_v21 import Hunyuan3DV21ImageToRawMeshAdapter
+        adapter = Hunyuan3DV21ImageToRawMeshAdapter(vram_requirement=8192)
+        schema = adapter.get_parameter_schema()["parameters"]
+        self.assertEqual(schema["octree_resolution"]["default"], 512)
+        self.assertTrue(schema["octree_resolution"]["readOnly"])
+        self.assertEqual(schema["num_inference_steps"]["default"], 50)
+        self.assertEqual(schema["guidance_scale"]["default"], 5.0)
+        self.assertEqual(schema["seed"]["default"], 1234)
+        legacy_source = (backend_root / "adapters/hunyuan3d_adapter_v21.py").read_text(encoding="utf-8")
+        self.assertIn("guidance_scale=guidance_scale", legacy_source)
+        self.assertIn("generator=generator", legacy_source)
+        self.assertNotIn('35 if inputs.get("low_vram")', legacy_source)
 
     def test_hunyuan3d_shape_v21_contract(self):
         from adapters.hunyuan3d_shape_v21 import Hunyuan3DShapeV21ImageToRawMeshAdapter
@@ -61,9 +83,10 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Official Hunyuan3D pipeline defaults to octree_resolution=384
-        self.assertEqual(schema["octree_resolution"]["default"], 384)
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
+        # Shape v2.1 uses octree_resolution=256 by default (up to 384 for high detail)
+        self.assertEqual(schema["octree_resolution"]["default"], 256)
+        self.assertFalse(schema["octree_resolution"].get("readOnly", False))
+        self.assertEqual(schema["num_inference_steps"]["default"], 30)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
     def test_hunyuan3d_dit_mini_turbo_contract(self):
@@ -72,9 +95,10 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Official Hunyuan3D pipeline defaults to octree_resolution=384
-        self.assertEqual(schema["octree_resolution"]["default"], 384)
-        self.assertEqual(schema["num_inference_steps"]["default"], 20)
+        # Tencent turbo preset recommends octree_resolution=380 (or 256 for fast)
+        self.assertEqual(schema["octree_resolution"]["default"], 380)
+        self.assertFalse(schema["octree_resolution"].get("readOnly", False))
+        self.assertEqual(schema["num_inference_steps"]["default"], 5)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
     def test_ultrashape_adapter_contract(self):
@@ -107,8 +131,17 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
 
         self.assertEqual(schema["ss_sampling_steps"]["default"], 12)
         self.assertEqual(schema["slat_sampling_steps"]["default"], 12)
-        self.assertEqual(schema["texture_resolution"]["default"], 1024)
+        self.assertEqual(schema["texture_resolution"]["default"], 2048)
         self.assertEqual(schema["simplify"]["default"], 0.0)
+
+    def test_trellis_text_adapter_contract(self):
+        from adapters.trellis_adapter import TrellisTextToTexturedMeshAdapter
+
+        adapter = TrellisTextToTexturedMeshAdapter(vram_requirement=11776)
+        schema = adapter.get_parameter_schema()["parameters"]
+
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 25)
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 25)
 
     def test_trellis2_adapter_contract(self):
         from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
@@ -119,6 +152,117 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["decimation_target"]["default"], -1)
         self.assertFalse(schema["remesh"]["default"])
         self.assertEqual(schema["texture_size"]["default"], 4096)
+
+    def test_unique3d_adapter_contract(self):
+        from adapters.unique3d_adapter import Unique3DImageToRawMeshAdapter
+
+        adapter = Unique3DImageToRawMeshAdapter(vram_requirement=10240)
+        schema = adapter.get_parameter_schema()["parameters"]
+
+        # Official Unique3D defaults from gradio_3dgen.py
+        self.assertEqual(schema["seed"]["default"], 1145)
+        self.assertEqual(schema["input_processing"]["default"], True)
+        self.assertEqual(schema["do_refine"]["default"], True)
+        self.assertEqual(schema["expansion_weight"]["default"], 0.1)
+        self.assertEqual(schema["init_type"]["default"], "std")
+        self.assertEqual(schema["expansion_weight"]["minimum"], -1.0)
+        self.assertEqual(schema["expansion_weight"]["maximum"], 1.0)
+        self.assertEqual(schema["init_type"]["enum"], ["std", "thin"])
+
+
+class TestGenerationProductionContract(unittest.TestCase):
+    def test_postprocess_only_controls_are_not_sent_to_model_adapters(self):
+        from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
+        filtered = _build_model_inference_inputs({
+            "target_polycount": 5000,
+            "auto_optimize": True,
+            "generateLOD": True,
+            "lodPreset": "mobile",
+            "lodCount": 4,
+            "physics_enabled": True,
+            "physics_config": {"collision_quality": "fast"},
+            "auto_paint": True,
+            "paint_model_preference": "hunyuan3d_paint_v21_image_mesh_painting",
+            "paint_resolution": 2048,
+            "faces": -1,
+            "num_faces": -1,
+            "simplify": 0.0,
+            "decimation_target": -1,
+            "remesh": False,
+            "remesh_band": 1,
+            "remesh_project": 0,
+            "octree_resolution": 512,
+            "source_quality": "max",
+            "seed": 42,
+        })
+        self.assertEqual(filtered["octree_resolution"], 512)
+        self.assertEqual(filtered["source_quality"], "max")
+        self.assertEqual(filtered["seed"], 42)
+        for key in ("target_polycount","auto_optimize","generateLOD","lodPreset","lodCount",
+                    "physics_enabled","physics_config","auto_paint","paint_model_preference","paint_resolution",
+                    "faces","num_faces","simplify","decimation_target","remesh","remesh_band","remesh_project",
+                    "bake_normal_maps","bake_high_to_low","bake_textures"):
+            self.assertNotIn(key, filtered)
+
+    def test_frontend_source_contract_is_max_fidelity_and_budgeted_later(self):
+        # Check the new pure function utility file for model-specific parameters
+        build_params_path = backend_root.parent / "features/workspace/utils/buildGenerationParameters.ts"
+        build_params_content = build_params_path.read_text(encoding="utf-8")
+        
+        # Check that the utility file has the model-specific inference steps
+        # Image-to-3D only: 5 (hunyuan mini turbo), 12 (trellis image), 50 (triposg, hunyuan, ultrashape)
+        self.assertIn("infSteps = 5", build_params_content)
+        self.assertIn("infSteps = 12", build_params_content)
+        self.assertIn("infSteps = 50", build_params_content)
+        self.assertIn("octree_resolution: 512", build_params_content)
+        self.assertIn("mc_resolution = 320", build_params_content)
+        self.assertIn("resolution = 1024", build_params_content)
+        self.assertIn("ss_sampling_steps", build_params_content)
+        self.assertIn("texture_resolution = 2048", build_params_content)
+        self.assertIn("texture_size = 4096", build_params_content)
+        self.assertIn("source_quality: 'max'", build_params_content)
+        self.assertIn("target_polycount:", build_params_content)
+        
+        # Check WorkspaceContext still references the utility
+        workspace_context = (backend_root.parent / "features/workspace/store/WorkspaceContext.tsx").read_text(encoding="utf-8")
+        self.assertIn("buildGenerationParameters", workspace_context)
+        self.assertIn("source_quality: 'max'", workspace_context)
+        self.assertIn("target_polycount: targetPoly", workspace_context)
+
+
+class TestRetopologyProductionBudget(unittest.TestCase):
+    """Verify FastMesh variant targets stay fixed while final triangle budget is independent."""
+
+    def test_target_polycount_is_wired_as_postprocess_budget(self):
+        from api.routers.mesh_retopology import MeshRetopologyRequest
+
+        request = MeshRetopologyRequest(
+            mesh_file_id="mesh_test",
+            model_preference="fastmesh_v4k_retopology",
+            target_vertex_count=4000,
+            target_polycount=35000,
+            poly_type="quad",
+            output_format="glb",
+        )
+        self.assertEqual(request.target_vertex_count, 4000)
+        self.assertEqual(request.target_polycount, 35000)
+
+    def test_target_polycount_bounds_are_enforced(self):
+        from api.routers.mesh_retopology import MeshRetopologyRequest
+
+        with self.assertRaises(ValueError):
+            MeshRetopologyRequest(
+                mesh_file_id="mesh_test",
+                model_preference="fastmesh_v1k_retopology",
+                target_polycount=4000,
+            )
+
+        with self.assertRaises(ValueError):
+            MeshRetopologyRequest(
+                mesh_file_id="mesh_test",
+                model_preference="fastmesh_v1k_retopology",
+                target_polycount=250000,
+            )
 
 
 class TestPostprocessPipelineParity(unittest.TestCase):
@@ -131,6 +275,7 @@ class TestPostprocessPipelineParity(unittest.TestCase):
 
     def test_postprocess_preserves_native_resolution_when_auto_optimize_false(self):
         import os
+        import numpy as np
         import trimesh
         from postprocess.pipeline import run_postprocess_job
 
@@ -140,6 +285,9 @@ class TestPostprocessPipelineParity(unittest.TestCase):
         icosphere = trimesh.creation.icosphere(subdivisions=6, radius=1.0)
         face_count = len(icosphere.faces)
         self.assertGreater(face_count, 50000)
+        # Give mesh vertex colors to verify vertex color preservation and avoid redundant auto-uv on huge sphere
+        icosphere.visual.vertex_colors = np.ones((len(icosphere.vertices), 4), dtype=np.uint8) * 128
+        icosphere.visual.vertex_colors[:, 0] = np.linspace(0, 255, len(icosphere.vertices), dtype=np.uint8)
 
         test_dir = backend_root / "outputs" / "test_parity"
         test_dir.mkdir(parents=True, exist_ok=True)
@@ -152,7 +300,7 @@ class TestPostprocessPipelineParity(unittest.TestCase):
             result = run_postprocess_job(
                 job_id=job_id,
                 generation_result={"output_mesh_path": str(temp_mesh)},
-                job_inputs={"auto_optimize": False, "generateLOD": False},
+                job_inputs={"auto_optimize": False, "generateLOD": False, "physics_enabled": False},
                 job_metadata={"feature": "image_to_raw_mesh"},
             )
 

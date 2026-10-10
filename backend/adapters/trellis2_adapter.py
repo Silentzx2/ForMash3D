@@ -15,6 +15,7 @@ import torch
 
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
+from core.utils.file_utils import OutputPathGenerator
 from core.utils.thumbnail_utils import generate_mesh_thumbnail
 from core.utils.mesh_utils import MeshProcessor
 
@@ -39,18 +40,13 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
         trellis2_root: Optional[str] = None,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            vram_requirement = 16000
         # Set default paths
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS.2")
         
         if trellis2_root is None:
             trellis2_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS.2")
-        
-        if vram_requirement is None:
-            raise ValueError("TRELLIS.2 VRAM requirement must come from the model manifest")
 
         super().__init__(
             model_id=self.MODEL_ID,
@@ -64,6 +60,7 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
         self.model_path = Path(model_path)
         self.runner: Optional[Any] = None
         self.mesh_processor = MeshProcessor()
+        self.path_generator = OutputPathGenerator(base_output_dir="outputs")
     
     def _load_model(self):
         """Load the TRELLIS.2 model pipeline."""
@@ -75,12 +72,17 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                 if k in os.environ and not os.environ[k].strip():
                     os.environ.pop(k, None)
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+
             # Initialize TRELLIS.2 runner
             from utils.trellis2_utils import Trellis2Runner
             self.runner = Trellis2Runner(
                 trellis2_root=str(self.trellis2_root),
                 model_cache_dir=str(self.model_path),
-                device="cuda"
+                device=device,
+                resource_plan=self.resource_plan,
             )
 
             # Pre-load the image-to-3D pipeline
@@ -133,8 +135,14 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             Dictionary with generated mesh information
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
             if self.runner is None:
                 raise ValueError("TRELLIS.2 model is not loaded")
+            if getattr(self.runner, "o_voxel", None) is None:
+                raise RuntimeError(
+                    "TRELLIS.2 textured generation requires o_voxel for textured GLB export"
+                )
             
             # Validate inputs using parent class
             output_format = self._validate_common_inputs(inputs)
@@ -202,38 +210,36 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             logger.error(f"TRELLIS.2 mesh generation failed: {str(e)}")
             raise Exception(f"TRELLIS.2 mesh generation failed: {str(e)}")
     
+    def _get_output_mesh_path(self, safe_name: str, output_format: str) -> Path:
+        return Path(
+            self.path_generator.generate_mesh_path(
+                self.model_id, safe_name, output_format
+            )
+        )
+
     def _generate_output_path(
         self, prompt: str, output_format: str, is_prompt: bool = True
     ) -> Path:
         """Generate output file path based on prompt and format."""
-        # Create safe filename from prompt
         if is_prompt:
             safe_name = "".join(
                 c for c in prompt[:50] if c.isalnum() or c in (" ", "_")
-            ).strip()
-            safe_name = safe_name.replace(" ", "_")
+            ).strip().replace(" ", "_")
         else:
-            safe_name = Path(prompt).stem[:50]  # Use filename stem for non-prompt inputs
-        
-        # Create output directory if it doesn't exist
-        output_dir = Path(os.getcwd()) / "outputs" / "meshes"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate unique filename
-        unique_id = uuid.uuid4().hex
-        filename = f"trellis2_{safe_name}_{unique_id}.{output_format}"
-        
-        return output_dir / filename
-    
+            safe_name = Path(prompt).stem[:50]
+
+        return self._get_output_mesh_path(safe_name or "mesh", output_format)
+
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
+
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
     
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for TRELLIS.2."""
@@ -313,9 +319,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         trellis2_root: Optional[str] = None,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            vram_requirement = 16000
         # Set default paths
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS.2")
@@ -335,6 +339,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         self.model_path = Path(model_path)
         self.runner: Optional[Any] = None
         self.mesh_processor = MeshProcessor()
+        self.path_generator = OutputPathGenerator(base_output_dir="outputs")
     
     def _load_model(self):
         """Load the TRELLIS.2 texturing pipeline."""
@@ -451,6 +456,13 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
             logger.error(f"TRELLIS.2 mesh texturing failed: {str(e)}")
             raise Exception(f"TRELLIS.2 mesh texturing failed: {str(e)}")
     
+    def _get_output_mesh_path(self, safe_name: str, output_format: str) -> Path:
+        return Path(
+            self.path_generator.generate_mesh_path(
+                self.model_id, safe_name, output_format
+            )
+        )
+
     def _generate_output_path(
         self, prompt: str, output_format: str, is_prompt: bool = True
     ) -> Path:
@@ -458,28 +470,22 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         if is_prompt:
             safe_name = "".join(
                 c for c in prompt[:50] if c.isalnum() or c in (" ", "_")
-            ).strip()
-            safe_name = safe_name.replace(" ", "_")
+            ).strip().replace(" ", "_")
         else:
             safe_name = Path(prompt).stem[:50]
-        
-        # Create output directory
-        output_dir = Path(os.getcwd()) / "outputs" / "meshes"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Generate unique filename
-        timestamp = int(time.time())
-        filename = f"trellis2_textured_{safe_name}_{timestamp}.{output_format}"
-        
-        return output_dir / filename
-    
+
+        return self._get_output_mesh_path(safe_name or "mesh", output_format)
+
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
-        
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
+
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
     
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for TRELLIS.2 texturing."""
@@ -502,4 +508,9 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
                 }
             }
         }
+
+
+# Aliases
+TRELLIS2ImageToTexturedMeshAdapter = Trellis2ImageToTexturedMeshAdapter
+TRELLIS2ImageMeshPaintingAdapter = Trellis2ImageMeshPaintingAdapter
 

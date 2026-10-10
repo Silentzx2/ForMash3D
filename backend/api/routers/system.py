@@ -1,6 +1,7 @@
 """System management and health check endpoints"""
 
 import asyncio
+import json
 import logging
 import mimetypes
 import os
@@ -10,18 +11,28 @@ import tempfile
 import time
 import torch
 import zipfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
 from core.utils.file_utils import encode_file_to_base64, get_file_size_mb
+
+DEFAULT_MESH_THUMBNAIL_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">'
+    '<rect width="256" height="256" fill="#181a20"/>'
+    '<polygon points="128,48 208,94 128,140 48,94" fill="#2d3340" stroke="#f9cf00" stroke-width="3"/>'
+    '<polygon points="48,94 128,140 128,212 48,166" fill="#232832" stroke="#f9cf00" stroke-width="3"/>'
+    '<polygon points="208,94 128,140 128,212 208,166" fill="#1b1f27" stroke="#f9cf00" stroke-width="3"/>'
+    '<text x="128" y="238" text-anchor="middle" fill="#94a3b8" font-family="monospace" font-size="12" font-weight="bold">3D ASSET</text>'
+    '</svg>'
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -32,7 +43,7 @@ async def health_check():
     """Basic health check endpoint"""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime": time.time(),
     }
 
@@ -64,7 +75,7 @@ async def get_auth_status(settings=Depends(get_current_settings)):
             "user_management": settings.user_auth_enabled,
             "role_based_access": settings.user_auth_enabled,
         },
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
@@ -95,8 +106,8 @@ async def system_status(
 ):
     """Get detailed system status including GPU information"""
 
-    # Basic system metrics (non-blocking delta calculation)
-    cpu_percent = psutil.cpu_percent(interval=None)
+    # Basic system metrics (non-blocking delta calculation with interval for accurate reading)
+    cpu_percent = psutil.cpu_percent(interval=0.1)
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage("/")
 
@@ -110,7 +121,7 @@ async def system_status(
         mesh_tools_status = {"status": "unavailable", "mode": "in_process", "routes_prefix": "/api/v1/mesh-tools", "error": str(exc)}
 
     status = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "system": {
             "cpu_usage": cpu_percent,
             "memory": {
@@ -158,6 +169,67 @@ async def system_status(
     return status
 
 
+@router.get("/stats", summary="Lightweight system stats for resource monitor")
+async def system_stats(
+    settings=Depends(get_current_settings), _: bool = Depends(verify_api_key)
+):
+    """Get lightweight system stats optimized for header resource monitor (5s refresh)"""
+    
+    cpu_percent = psutil.cpu_percent(interval=0.1)
+    memory = psutil.virtual_memory()
+    
+    # Get GPU info for all GPUs
+    gpus_info = []
+    try:
+        import GPUtil
+        gpus = GPUtil.getGPUs()
+        for gpu in gpus:
+            gpus_info.append({
+                "id": gpu.id,
+                "name": gpu.name,
+                "memory_total_mb": gpu.memoryTotal,
+                "memory_used_mb": gpu.memoryUsed,
+                "memory_util": gpu.memoryUtil,  # 0-1
+                "load": gpu.load,  # 0-1
+                "temperature": gpu.temperature,
+            })
+    except Exception:
+        pass  # GPU monitoring not available
+    
+    # Calculate totals for collapsed view
+    total_vram_used_gb = sum(gpu["memory_used_mb"] for gpu in gpus_info) / 1024
+    total_vram_total_gb = sum(gpu["memory_total_mb"] for gpu in gpus_info) / 1024
+    avg_vram_percent = (total_vram_used_gb / total_vram_total_gb * 100) if total_vram_total_gb > 0 else 0.0
+    
+    # For backward compatibility, keep single GPU fields (first GPU or defaults)
+    primary_gpu = gpus_info[0] if gpus_info else None
+    gpu_percent = primary_gpu["load"] * 100 if primary_gpu else 0.0
+    vram_used_gb = primary_gpu["memory_used_mb"] / 1024 if primary_gpu else 0.0
+    vram_total_gb = primary_gpu["memory_total_mb"] / 1024 if primary_gpu else 0.0
+    vram_percent = primary_gpu["memory_util"] * 100 if primary_gpu else 0.0
+    gpu_name = primary_gpu["name"] if primary_gpu else "Unknown"
+    gpu_temp_c = primary_gpu["temperature"] if primary_gpu else None
+    
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "cpu_percent": cpu_percent,
+        "ram_used_gb": memory.used / (1024**3),
+        "ram_total_gb": memory.total / (1024**3),
+        "ram_percent": memory.percent,
+        "gpu_percent": gpu_percent,
+        "vram_used_gb": vram_used_gb,
+        "vram_total_gb": vram_total_gb,
+        "vram_percent": vram_percent,
+        "gpu_name": gpu_name,
+        "gpu_temp_c": gpu_temp_c,
+        # New fields for multiple GPUs
+        "gpus": gpus_info,
+        "total_vram_used_gb": total_vram_used_gb,
+        "total_vram_total_gb": total_vram_total_gb,
+        "avg_vram_percent": avg_vram_percent,
+    }
+
+
 @router.get("/models/{model_id}/parameters", summary="Get model parameters")
 async def get_model_parameters(
     model_id: str,
@@ -201,8 +273,14 @@ async def get_model_parameters(
                 "feature_type": model_config.get("feature_type"),
                 "vram_requirement": model_config.get("vram_requirement"),
                 "schema": schema,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
+        except ImportError as e:
+            logger.error(f"Model adapter not found for {model_id}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Model adapter not found: {str(e)}"
+            )
         except Exception as e:
             logger.error(f"Failed to get parameters for model {model_id}: {e}")
             raise HTTPException(
@@ -211,6 +289,13 @@ async def get_model_parameters(
             )
     except HTTPException:
         raise
+    except KeyError as e:
+        # Handle missing model config specifically
+        logger.error(f"Model config key error for {model_id}: {e}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Model '{model_id}' configuration not found"
+        )
     except Exception as e:
         logger.error(f"Error getting model parameters: {e}")
         raise HTTPException(
@@ -224,32 +309,64 @@ def _resolve_manifest_path(model_path: Optional[str]) -> Optional[Path]:
         return None
     path = Path(model_path).expanduser()
     if path.is_absolute():
-        return path
+        return path if path.exists() else None
+
     repo_root = Path(__file__).resolve().parents[3]
-    candidates = (
+    
+    candidates = [
         repo_root / path,
         repo_root / "backend" / path,
-        Path.cwd() / path,
-    )
-    return next((candidate.resolve() for candidate in candidates if candidate.exists()), None)
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return None
 
 
 def _is_model_weights_available(model_config: Any) -> bool:
-    """Check for actual local checkpoint payloads; manifest paths remain canonical."""
+    """Check manifest files or a minimally complete local model directory."""
     path = _resolve_manifest_path(getattr(model_config, "model_path", None))
     if path is None:
         return False
-    if path.is_file():
-        return path.stat().st_size > 0
-
-    checkpoint_suffixes = {
-        ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
-    }
     try:
-        return any(
-            item.is_file() and item.stat().st_size > 0 and item.suffix.lower() in checkpoint_suffixes
-            for item in path.rglob("*")
+        if path.is_file():
+            return path.stat().st_size > 0
+        if not path.is_dir():
+            return False
+
+        checkpoint_suffixes = {
+            ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
+        }
+        model_descriptors = {"config.json", "config.yaml", "model_index.json", "pipeline.json"}
+
+        # Known model weight file signatures for models without a config.json/yaml
+        known_signatures = (
+            "triposf", "mp_rank", "hunyuan", "partpacker", "ultrashape",
+            "fastmesh", "objaverse", "p3sam", "model.ckpt", "trellis"
         )
+
+        has_checkpoint = False
+        has_descriptor = False
+        has_known_model_file = False
+
+        for item in path.rglob("*"):
+            if not item.is_file() or item.stat().st_size == 0:
+                continue
+            if item.name.endswith(".incomplete"):
+                continue
+            item_lower = item.name.lower()
+            if item.suffix.lower() in checkpoint_suffixes:
+                has_checkpoint = True
+                if any(sig in item_lower for sig in known_signatures):
+                    has_known_model_file = True
+            if item_lower in model_descriptors:
+                has_descriptor = True
+
+        if has_known_model_file and has_checkpoint:
+            return True
+        if has_checkpoint and has_descriptor:
+            return True
+        return False
     except OSError:
         return False
 
@@ -257,7 +374,10 @@ def _is_model_weights_available(model_config: Any) -> bool:
 def _model_supports_download(model_id: str) -> bool:
     return any(
         token in model_id
-        for token in ("trellis", "triposr", "triposg", "triposf")
+        for token in (
+            "trellis", "triposr", "triposg", "triposf", "zero123plus",
+            "hunyuan", "partpacker", "ultrashape", "partfield", "fastmesh", "unique3d"
+        )
     )
 
 
@@ -378,80 +498,100 @@ async def get_logs(
     ),
     _: bool = Depends(verify_api_key),
 ):
-    """Get recent log entries from log files"""
+    """Get recent log entries from the canonical master.log."""
 
     try:
-        logs_dir = Path("logs")
-        if not logs_dir.exists():
-            return {
-                "error": "Logs directory not found",
-                "message": "Logging may not be properly configured",
-                "logs": [],
-            }
+        repo_root = Path(__file__).resolve().parents[3]
+        logs_dir = repo_root / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        master_log = logs_dir / "master.log"
+        master_log.touch(exist_ok=True)
+        existing_log_dirs = [logs_dir]
+        log_files = [master_log]
 
-        # Find log files
-        log_files = list(logs_dir.glob("*.log"))
-        if not log_files:
-            return {"message": "No log files found", "logs": [], "available_files": []}
+        # Read extra lines before applying timestamp/level/logger filters.
+        per_file_lines = max(lines * 2, 100)
 
-        # Get the most recent log file (app.log by default)
-        main_log_file = logs_dir / "app.log"
-        if not main_log_file.exists() and log_files:
-            main_log_file = log_files[0]
-
-        if not main_log_file.exists():
-            return {
-                "error": "Main log file not found",
-                "available_files": [f.name for f in log_files],
-                "logs": [],
-            }
-
-        # Read log file with fast reverse block seeking
-        log_entries = []
-        try:
-            recent_lines = _tail_file_lines(main_log_file, lines)
-            for line in recent_lines:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # Parse log entry
-                log_entry = _parse_log_line(line)
-
-                # Apply filters
-                if level and log_entry.get("level") != level.upper():
-                    continue
-
-                if logger_name and logger_name not in log_entry.get("logger", ""):
-                    continue
-
-                if since:
+        # Collect log entries from all files
+        all_entries = []
+        for log_file in log_files:
+            try:
+                recent_lines = _tail_file_lines(log_file, per_file_lines)
+                for line in recent_lines:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    # Parse log entry
+                    log_entry = _parse_log_line(line)
+                    # Add a parsed timestamp for sorting (if parsing fails, use far past)
+                    ts_str = log_entry.get("timestamp", "")
                     try:
-                        from datetime import datetime
+                        # Try to parse ISO format with optional timezone
+                        if ts_str:
+                            # Remove trailing Z and convert to offset-aware if needed
+                            if ts_str.endswith('Z'):
+                                ts_str = ts_str[:-1] + '+00:00'
+                            parsed_ts = datetime.fromisoformat(ts_str)
+                        else:
+                            parsed_ts = datetime.min
+                    except Exception:
+                        parsed_ts = datetime.min
+                    log_entry["_parsed_timestamp"] = parsed_ts
+                    all_entries.append(log_entry)
+            except Exception as e:
+                # If reading a particular file fails, we skip it but continue with others
+                logger.warning(f"Failed to read log file {log_file}: {str(e)}")
+                continue
 
-                        entry_time = datetime.fromisoformat(
-                            log_entry.get("timestamp", "")
-                        )
-                        since_time = datetime.fromisoformat(since)
-                        if entry_time < since_time:
-                            continue
-                    except (ValueError, TypeError):
-                        pass  # Skip time filtering if parsing fails
-
-                log_entries.append(log_entry)
-
-        except Exception as e:
+        if not all_entries:
             return {
-                "error": f"Failed to read log file: {str(e)}",
+                "message": "No log entries found in log files",
                 "logs": [],
-                "file": str(main_log_file),
+                "available_files": [f.name for f in log_files],
+                "directories_searched": [str(d) for d in existing_log_dirs],
             }
+
+        # Apply filters: level, logger_name, since
+        filtered_entries = []
+        since_dt = None
+        if since:
+            try:
+                if since.endswith('Z'):
+                    since = since[:-1] + '+00:00'
+                since_dt = datetime.fromisoformat(since)
+            except Exception:
+                # If since cannot be parsed, ignore the filter
+                pass
+
+        for entry in all_entries:
+            # Level filter
+            if level and entry.get("level") != level.upper():
+                continue
+            # Logger name filter
+            if logger_name and logger_name not in entry.get("logger", ""):
+                continue
+            # Since filter
+            if since_dt:
+                entry_ts = entry.get("_parsed_timestamp")
+                if entry_ts and entry_ts < since_dt:
+                    continue
+            filtered_entries.append(entry)
+
+        # Sort by parsed timestamp descending (newest first)
+        filtered_entries.sort(key=lambda x: x.get("_parsed_timestamp", datetime.min), reverse=True)
+
+        # Take the most recent 'lines' entries
+        final_entries = filtered_entries[:lines]
+
+        # Remove the temporary _parsed_timestamp field from the output
+        for entry in final_entries:
+            entry.pop("_parsed_timestamp", None)
 
         return {
-            "logs": log_entries,
-            "total_entries": len(log_entries),
-            "file": str(main_log_file),
+            "logs": final_entries,
+            "total_entries": len(filtered_entries),
             "available_files": [f.name for f in log_files],
+            "directories_searched": [str(d) for d in existing_log_dirs],
             "filters_applied": {
                 "lines": lines,
                 "level": level,
@@ -463,6 +603,55 @@ async def get_logs(
     except Exception as e:
         logger.error(f"Error retrieving logs: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
+
+
+@router.get("/logs/stream", summary="Stream logs via SSE")
+async def stream_logs(
+    last_n: int = Query(200, description="Number of recent lines to include initially"),
+    _: bool = Depends(verify_api_key),
+):
+    """Stream the canonical master.log over SSE with 15-second heartbeats."""
+    import asyncio
+    from fastapi.responses import StreamingResponse
+
+    project_root = Path(__file__).resolve().parents[3]
+    log_path = project_root / "logs" / "master.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.touch(exist_ok=True)
+
+    async def event_generator():
+        process = await asyncio.create_subprocess_exec(
+            "tail", "-n", str(last_n), "-f", str(log_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            while True:
+                try:
+                    line = await asyncio.wait_for(process.stdout.readline(), timeout=15.0)
+                    if not line:
+                        break
+                    text = line.decode("utf-8", errors="replace").rstrip("\n\r")
+                    if text:
+                        yield f"data: {text}\n\n"
+                except asyncio.TimeoutError:
+                    # Heartbeat to keep SSE connection alive
+                    yield ": heartbeat\n\n"
+        finally:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def _tail_file_lines(file_path: Path, max_lines: int) -> list:
@@ -529,152 +718,71 @@ def _parse_log_line(line: str) -> dict:
         }
 
 
-@router.get("/logs/files", summary="List available log files")
+@router.get("/logs/files", summary="List the master log")
 async def list_log_files(_: bool = Depends(verify_api_key)):
-    """List all available log files"""
-    try:
-        logs_dir = Path("logs")
-        if not logs_dir.exists():
-            return {"files": [], "message": "Logs directory not found"}
-
-        log_files = []
-        for log_file in logs_dir.glob("*.log"):
-            try:
-                stat = log_file.stat()
-                log_files.append(
-                    {
-                        "name": log_file.name,
-                        "path": str(log_file),
-                        "size_bytes": stat.st_size,
-                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                        "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
-                    }
-                )
-            except Exception as e:
-                log_files.append(
-                    {
-                        "name": log_file.name,
-                        "path": str(log_file),
-                        "error": f"Could not read file stats: {str(e)}",
-                    }
-                )
-
-        return {
-            "files": sorted(
-                log_files, key=lambda x: x.get("modified", ""), reverse=True
-            ),
-            "total_files": len(log_files),
-        }
-
-    except Exception as e:
-        logger.error(f"Error listing log files: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error listing log files: {str(e)}"
-        )
+    """Return the single canonical runtime log file."""
+    logs_dir = Path(__file__).resolve().parents[3] / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    master_log = logs_dir / "master.log"
+    master_log.touch(exist_ok=True)
+    stat = master_log.stat()
+    return {
+        "files": [{
+            "name": master_log.name,
+            "path": str(master_log),
+            "size_bytes": stat.st_size,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "created": datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        }],
+        "total_files": 1,
+    }
 
 
-@router.get("/logs/files/{filename}", summary="Get specific log file")
+@router.get("/logs/files/{filename}", summary="Get master log contents")
 async def get_log_file(
     filename: str,
     lines: int = Query(100, description="Number of recent lines to return"),
     _: bool = Depends(verify_api_key),
 ):
-    """Get contents of a specific log file"""
-    try:
-        logs_dir = Path("logs")
-        log_file = logs_dir / filename
+    """Read recent entries from the canonical master log."""
+    if filename != "master.log":
+        raise HTTPException(status_code=404, detail="Only master.log is retained")
 
-        # Security check - ensure the file is within logs directory
-        if not str(log_file.resolve()).startswith(str(logs_dir.resolve())):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-
-        if not log_file.exists():
-            raise HTTPException(
-                status_code=404, detail=f"Log file '{filename}' not found"
-            )
-
-        if not log_file.suffix == ".log":
-            raise HTTPException(status_code=400, detail="Only .log files are allowed")
-
-        log_entries = []
-        try:
-            recent_lines = _tail_file_lines(log_file, lines)
-            for line in recent_lines:
-                line = line.strip()
-                if line:
-                    log_entries.append(_parse_log_line(line))
-
-        except Exception as e:
-            raise HTTPException(
-                status_code=500, detail=f"Failed to read log file: {str(e)}"
-            )
-
-        # Get file stats
-        stat = log_file.stat()
-
-        return {
-            "filename": filename,
-            "logs": log_entries,
-            "total_entries": len(log_entries),
-            "file_info": {
-                "size_bytes": stat.st_size,
-                "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "lines_requested": lines,
-                "total_lines_returned": len(log_entries),
-            },
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error reading log file {filename}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error reading log file: {str(e)}")
+    log_file = Path(__file__).resolve().parents[3] / "logs" / "master.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.touch(exist_ok=True)
+    entries = [
+        _parse_log_line(line.strip())
+        for line in _tail_file_lines(log_file, lines)
+        if line.strip()
+    ]
+    stat = log_file.stat()
+    return {
+        "filename": log_file.name,
+        "logs": entries,
+        "total_entries": len(entries),
+        "file_info": {
+            "size_bytes": stat.st_size,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            "lines_requested": lines,
+            "total_lines_returned": len(entries),
+        },
+    }
 
 
-@router.delete("/logs/files/{filename}", summary="Delete log file")
+@router.delete("/logs/files/{filename}", summary="Clear master log")
 async def delete_log_file(filename: str, _: bool = Depends(verify_api_key)):
-    """Delete a specific log file (admin only)"""
-    try:
-        logs_dir = Path("logs")
-        log_file = logs_dir / filename
+    """Clear master.log in place so active process file handles remain valid."""
+    if filename != "master.log":
+        raise HTTPException(status_code=404, detail="Only master.log is retained")
 
-        # Security check
-        if not str(log_file.resolve()).startswith(str(logs_dir.resolve())):
-            raise HTTPException(status_code=400, detail="Invalid file path")
-
-        if not log_file.exists():
-            raise HTTPException(
-                status_code=404, detail=f"Log file '{filename}' not found"
-            )
-
-        if not log_file.suffix == ".log":
-            raise HTTPException(
-                status_code=400, detail="Only .log files can be deleted"
-            )
-
-        # Don't allow deletion of the main app.log while the server is running
-        if filename == "app.log":
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot delete main application log file while server is running",
-            )
-
-        log_file.unlink()
-
-        return {
-            "message": f"Log file '{filename}' deleted successfully",
-            "deleted_file": filename,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting log file {filename}: {str(e)}")
-        raise HTTPException(
-            status_code=500, detail=f"Error deleting log file: {str(e)}"
-        )
+    log_file = Path(__file__).resolve().parents[3] / "logs" / "master.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    with log_file.open("w", encoding="utf-8"):
+        pass
+    return {"message": "Master log cleared", "cleared_file": log_file.name}
 
 
 @router.get("/scheduler-status", summary="Get scheduler status")
@@ -738,6 +846,27 @@ async def get_queue_stats(
         )
 
 
+def _ensure_production_result_urls(job_id: str, result: dict) -> dict:
+    """Guarantee canonical production artifact URLs on a completed job result.
+
+    Jobs persist in SQLite across restarts, but persisted results can lack
+    production URLs (raw-shape workflow stages, results written before a
+    backfill). These URLs only reference the job endpoints, which resolve
+    artifacts from the on-disk canonical workspace, so they stay valid after
+    a backend restart. Values populated by post-processing always win.
+    """
+    if not isinstance(result, dict) or not job_id:
+        return result
+    base = f"/api/v1/system/jobs/{job_id}"
+    result.setdefault("model_url", f"{base}/download?artifact_format=glb")
+    result.setdefault("game_ready_url", f"{base}/download?artifact_format=glb")
+    result.setdefault("download_url", f"{base}/download?artifact_format=glb")
+    result.setdefault("source_model_url", f"{base}/download?artifact_format=master")
+    result.setdefault("high_fidelity_url", f"{base}/download?artifact_format=master")
+    result.setdefault("thumbnail_url", f"{base}/thumbnail")
+    return result
+
+
 @router.get("/jobs/history")
 async def get_jobs_history(
     limit: int = 100,
@@ -758,7 +887,7 @@ async def get_jobs_history(
         limit: Maximum number of jobs to return (max 500)
         offset: Number of jobs to skip for pagination
         status: Filter by job status (queued, processing, completed, failed, cancelled)
-        feature: Filter by feature type (e.g., text_to_textured_mesh)
+        feature: Filter by feature type (e.g., image_to_textured_mesh)
         start_date: Filter jobs after this date (ISO format: 2024-01-01T00:00:00Z)
         end_date: Filter jobs before this date (ISO format: 2024-01-01T23:59:59Z)
         scheduler: Model scheduler dependency
@@ -818,23 +947,27 @@ async def get_jobs_history(
                 limit=limit,
                 offset=offset,
             )
-            jobs = [job.to_dict() for job in page_jobs]
-            return {
-                "jobs": jobs,
-                "pagination": {
-                    "limit": limit,
-                    "offset": offset,
-                    "total": total_jobs,
-                    "has_more": offset + len(jobs) < total_jobs,
-                },
-                "filters": {
-                    "status": status,
-                    "feature": feature,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                },
-                "timestamp": time.time(),
-            }
+            if page_jobs or total_jobs:
+                jobs = [job.to_dict() for job in page_jobs]
+                for job_dict in jobs:
+                    if job_dict.get("status") == "completed" and job_dict.get("result"):
+                        _ensure_production_result_urls(job_dict.get("job_id") or job_dict.get("id"), job_dict["result"])
+                return {
+                    "jobs": jobs,
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "total": total_jobs,
+                        "has_more": offset + len(jobs) < total_jobs,
+                    },
+                    "filters": {
+                        "status": status,
+                        "feature": feature,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                    },
+                    "timestamp": time.time(),
+                }
 
         # Redis queue fallback: retain its current status-based API until a
         # dedicated history sorted-set index is introduced.
@@ -875,6 +1008,8 @@ async def get_jobs_history(
             jobs = await scheduler.job_queue.get_jobs_by_status(job_status)
             for job in jobs:
                 job_dict = job.to_dict()
+                if job_dict.get("status") == "completed" and job_dict.get("result"):
+                    _ensure_production_result_urls(job_dict.get("job_id") or job_dict.get("id"), job_dict["result"])
                 
                 # User filtering: non-admin users can only see their own jobs
                 if current_user and current_user.role != UserRole.ADMIN:
@@ -1027,6 +1162,10 @@ async def get_job_status(job_id: str, request: Request):
                     root / "previews" / "thumbnail.png",
                     root / "previews" / "preview.jpg",
                     root / "previews" / "thumbnail.jpg",
+                    root / "previews" / "preview.png",
+                    root / "previews" / "reference.png",
+                    root / "reference.png",
+                    root / "input.png",
                 ]:
                     if candidate.exists():
                         thumbnail_path = str(candidate)
@@ -1034,18 +1173,37 @@ async def get_job_status(job_id: str, request: Request):
                         break
             if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
                 m_path = Path(result.get("mesh_path") or result.get("output_path"))
-                candidate = m_path.parent / f"{m_path.stem}_thumb.png"
-                if candidate.exists():
-                    thumbnail_path = str(candidate)
+                for candidate in [
+                    m_path.parent / f"{m_path.stem}_thumb.png",
+                    m_path.parent / f"{m_path.stem}_preview.png",
+                    m_path.parent / "previews" / "thumbnail.png",
+                    m_path.parent / "input.png",
+                ]:
+                    if candidate.exists():
+                        thumbnail_path = str(candidate)
+                        result["thumbnail_path"] = thumbnail_path
+                        break
+
+            # Fallback to reference input image if thumbnail is absent
+            if not thumbnail_path or not os.path.exists(thumbnail_path):
+                inputs_dict = job_status.get("inputs", {})
+                cand_input = inputs_dict.get("image_path") or inputs_dict.get("image") or inputs_dict.get("texture_image_path")
+                if cand_input and os.path.exists(cand_input):
+                    thumbnail_path = str(cand_input)
                     result["thumbnail_path"] = thumbnail_path
 
-            if thumbnail_path and os.path.exists(thumbnail_path):
-                # Create URL for thumbnail
-                thumbnail_url = (
-                    f"{request.base_url}api/v1/system/jobs/{job_id}/thumbnail"
-                )
-                result["thumbnail_url"] = thumbnail_url
+            # Always populate thumbnail_url for completed jobs
+            thumbnail_url = (
+                f"{request.base_url}api/v1/system/jobs/{job_id}/thumbnail"
+            )
+            result["thumbnail_url"] = thumbnail_url
 
+            # Canonical production artifact URLs (game-ready GLB by default,
+            # master/source.glb for the source view). Stable across restarts
+            # because they only reference this job's download endpoints.
+            _ensure_production_result_urls(job_id, result)
+
+            if thumbnail_path and os.path.exists(thumbnail_path):
                 # Add thumbnail file info
                 thumb_stats = os.stat(thumbnail_path)
                 result["thumbnail_file_info"] = {
@@ -1233,9 +1391,32 @@ async def download_job_result(
                     matches = list((asset_root_path / "game_ready").glob(f"*.{canonical_format}"))
                     if matches:
                         candidate = matches[0]
+                if not candidate.exists():
+                    # On-demand conversion from game-ready GLB
+                    glb_matches = list((asset_root_path / "game_ready").glob("*.glb"))
+                    if glb_matches:
+                        src_glb = glb_matches[0]
+                        target_file = asset_root_path / "game_ready" / f"{src_glb.stem}.{canonical_format}"
+                        try:
+                            if canonical_format == "gltf":
+                                from postprocess.pipeline import _export_gltf_embedded
+                                _export_gltf_embedded(src_glb.read_bytes(), target_file)
+                            else:
+                                import trimesh
+                                from postprocess.pipeline import _export_bytes
+                                mesh = trimesh.load(src_glb, file_type="glb", process=False)
+                                if isinstance(mesh, trimesh.Scene):
+                                    mesh = trimesh.util.concatenate([g for g in mesh.geometry.values() if isinstance(g, trimesh.Trimesh)])
+                                target_file.write_bytes(_export_bytes(mesh, canonical_format))
+                            if target_file.exists():
+                                candidate = target_file
+                        except Exception as conv_err:
+                            logger.warning(f"On-demand conversion to {canonical_format} failed: {conv_err}")
                 output_path = candidate
             elif canonical_format in {"lod0", "lod1", "lod2", "lod3"}:
                 output_path = asset_root_path / "lods" / f"{canonical_format}.glb"
+            elif canonical_format == "rigged":
+                output_path = asset_root_path / "rigging" / "game_ready_rigged.glb"
             elif canonical_format == "collision":
                 output_path = asset_root_path / "collision" / "collision.glb"
             elif canonical_format == "thumbnail":
@@ -1312,7 +1493,7 @@ async def download_job_result(
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.utcnow().isoformat(),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             except Exception as e:
@@ -1355,6 +1536,7 @@ async def download_job_thumbnail(
         None, description="Response format: 'file' (default) or 'base64'"
     ),
     filename: Optional[str] = Query(None, description="Custom filename for download"),
+    scheduler=Depends(get_scheduler),
 ):
     """
     Download the thumbnail image of a completed job.
@@ -1371,8 +1553,11 @@ async def download_job_thumbnail(
         from api.dependencies import get_current_user_optional
         from core.auth.models import UserRole
         
-        scheduler = await get_scheduler(request)
-        job_status = await scheduler.get_job_status(job_id)
+        raw_status = scheduler.get_job_status(job_id)
+        if asyncio.iscoroutine(raw_status):
+            job_status = await raw_status
+        else:
+            job_status = raw_status
 
         if job_status is None:
             raise HTTPException(status_code=404, detail="Job not found")
@@ -1408,24 +1593,62 @@ async def download_job_thumbnail(
                 root / "previews" / "thumbnail.png",
                 root / "previews" / "preview.jpg",
                 root / "previews" / "thumbnail.jpg",
+                root / "previews" / "preview.png",
+                root / "previews" / "reference.png",
+                root / "reference.png",
+                root / "input.png",
+                root / "input_image.png",
             ]:
                 if candidate.exists():
                     thumbnail_path = str(candidate)
                     break
         if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
             m_path = Path(result.get("mesh_path") or result.get("output_path"))
-            candidate = m_path.parent / f"{m_path.stem}_thumb.png"
-            if candidate.exists():
-                thumbnail_path = str(candidate)
+            for candidate in [
+                m_path.parent / f"{m_path.stem}_thumb.png",
+                m_path.parent / f"{m_path.stem}_preview.png",
+                m_path.parent / "previews" / "thumbnail.png",
+                m_path.parent / "input.png",
+            ]:
+                if candidate.exists():
+                    thumbnail_path = str(candidate)
+                    break
 
+        # Fallback to reference input image if present
         if not thumbnail_path or not os.path.exists(thumbnail_path):
-            raise HTTPException(
-                status_code=404,
-                detail=f"Thumbnail file not found for job: {job_id}",
-            )
+            inputs_dict = job_status.get("inputs", {})
+            cand_input = inputs_dict.get("image_path") or inputs_dict.get("image") or inputs_dict.get("texture_image_path")
+            if cand_input and os.path.exists(cand_input):
+                thumbnail_path = str(cand_input)
 
         # Determine the response format
         response_format = format or "file"
+
+        if not thumbnail_path or not os.path.exists(thumbnail_path):
+            import base64
+            svg_bytes = DEFAULT_MESH_THUMBNAIL_SVG.encode("utf-8")
+            if response_format == "base64":
+                b64_str = base64.b64encode(svg_bytes).decode("utf-8")
+                return JSONResponse(
+                    {
+                        "job_id": job_id,
+                        "filename": filename or f"thumbnail_{job_id}.svg",
+                        "content_type": "image/svg+xml",
+                        "file_size_mb": round(len(svg_bytes) / (1024 * 1024), 4),
+                        "base64_data": f"data:image/svg+xml;base64,{b64_str}",
+                        "generation_info": result.get("generation_info", {}),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+            return Response(
+                content=svg_bytes,
+                media_type="image/svg+xml",
+                headers={
+                    "X-Job-ID": job_id,
+                    "X-Thumbnail-Generated": "placeholder",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
 
         if response_format == "base64":
             # Return base64 encoded data
@@ -1441,7 +1664,7 @@ async def download_job_thumbnail(
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
                         "generation_info": result.get("generation_info", {}),
-                        "download_time": datetime.utcnow().isoformat(),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             except Exception as e:
@@ -1556,7 +1779,7 @@ async def download_job_input(
                         "content_type": get_content_type_for_file(input_image_path),
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
-                        "download_time": datetime.utcnow().isoformat(),
+                        "download_time": datetime.now(timezone.utc).isoformat(),
                     }
                 )
             except Exception as e:
@@ -2133,8 +2356,9 @@ async def get_logging_config(_: bool = Depends(verify_api_key)):
             "loggers": loggers_info,
             "available_levels": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
             "logs_directory": "logs",
+            "logs_file": str(Path(__file__).resolve().parents[3] / "logs" / "master.log"),
             "config_source": "YAML configuration"
-            if Path("config/logging.yaml").exists()
+            if (Path(__file__).resolve().parents[2] / "config" / "logging.yaml").exists()
             else "Simple configuration",
         }
 

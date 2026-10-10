@@ -67,11 +67,15 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
 
             from utils.partpacker_utils import PartPackerRunner
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartPacker requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+
             # Initialize PartPacker runner
             self.partpacker_runner = PartPackerRunner(
                 config_name="default",
                 flow_ckpt_path=self.flow_ckpt_path,
-                device="cuda" if torch.cuda.is_available() else "cpu",
+                device=device,
                 precision="bfloat16",
                 # TODO: move all remove background to some common utilities
                 enable_background_removal=True,
@@ -103,15 +107,14 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        import os
-
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -121,10 +124,10 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
             inputs: Dictionary containing:
                 - image_path: Path to input image (required)
                 - output_format: Output format (default: "glb")
-                - num_steps: Number of diffusion steps (default: 30)
+                - num_steps: Number of diffusion steps (default: 50)
                 - cfg_scale: Classifier-free guidance scale (default: 7.0)
                 - grid_resolution: Grid resolution for mesh extraction (default: 384)
-                - num_faces: Target number of faces (default: 50000)
+                - num_faces: Target number of faces (-1 keeps native source resolution)
                 - seed: Random seed for reproducibility (optional)
                 - return_parts: Whether to save individual parts (default: True)
                 - return_volumes: Whether to save dual volumes (default: False)
@@ -133,6 +136,8 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
             Dictionary with generation results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartPacker requires CUDA; CPU inference is not supported.")
             # Validate inputs
             if "image_path" not in inputs:
                 raise ValueError("image_path is required for image-to-mesh generation")
@@ -143,8 +148,12 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
 
             # Extract parameters
             output_format = inputs.get("output_format", "glb")
-            num_steps = int(inputs.get("num_steps", 50))
+            num_steps = inputs.get("num_steps", 50)
+            if num_steps is None:
+                num_steps = 50
             cfg_scale = inputs.get("cfg_scale", 7.0)
+            if cfg_scale is None:
+                cfg_scale = 7.0
             grid_resolution = inputs.get("grid_resolution", 384)
             auto_optimize = bool(inputs.get("auto_optimize", False))
             num_faces = int(inputs.get("num_faces", -1))

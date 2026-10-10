@@ -75,11 +75,15 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
                     f"PartUV checkpoint not found at {ckpt_path}; refusing an implicit PartField fallback."
                 )
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartUV requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+
             # Initialize PartUV runner
             self.partuv_runner = PartUVRunner(
                 config_path=self.config_path,
                 partfield_checkpoint=str(self.model_path),
-                device="cuda" if torch.cuda.is_available() else "cpu",
+                device=device,
                 partuv_root=str(self.partuv_root),
                 distortion_threshold=self.distortion_threshold,
             )
@@ -125,6 +129,8 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
             Dictionary with UV unwrapping results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartUV requires CUDA; CPU inference is not supported.")
             # Validate inputs
             if "mesh_path" not in inputs:
                 raise ValueError("mesh_path is required for UV unwrapping")

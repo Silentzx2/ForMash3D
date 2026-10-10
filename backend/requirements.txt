@@ -6,10 +6,11 @@ torch==2.6.0+cu124
 torchvision==0.21.0+cu124
 torchaudio==2.6.0+cu124
 
-# transformers/diffusers version pinning compatible with diffusers 0.24.0
-transformers==4.43.2
-diffusers==0.24.0
-huggingface_hub>=0.20.0,<0.26.0
+# Shared backend/TripoSG runtime versions (TripoSG requires diffusers 0.30.3
+# and transformers >=4.44,<4.48; keep the hub pin compatible with datasets).
+transformers==4.47.0
+diffusers==0.30.3
+huggingface_hub==0.25.0
 
 # Core FastAPI and web server dependencies
 fastapi==0.104.1

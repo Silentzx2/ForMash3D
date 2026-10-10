@@ -43,7 +43,6 @@ def check_backend_routes():
         "/api/v1/file-upload/mesh",
         "/api/v1/file-upload/download/{file_id}",
         "/api/v1/file-upload/metadata/{file_id}",
-        "/api/v1/mesh-generation/text-to-textured-mesh",
         "/api/v1/mesh-generation/image-to-textured-mesh",
         "/api/v1/mesh-generation/image-to-raw-mesh",
         "/api/v1/mesh-generation/text-mesh-painting",
@@ -70,7 +69,6 @@ def check_model_config():
         config = yaml.safe_load(f)
 
     expected_features = [
-        "text_to_textured_mesh",
         "image_to_raw_mesh",
         "image_to_textured_mesh",
         "text_mesh_painting",
@@ -89,7 +87,6 @@ def check_model_config():
             assert "supported_inputs" in m_cfg, f"Model {m_id} missing supported_inputs"
             assert "supported_outputs" in m_cfg, f"Model {m_id} missing supported_outputs"
 
-    assert "text_to_raw_mesh" not in config, "text_to_raw_mesh unexpectedly present in config"
     print(f"  ✓ models.yaml validated with {len(expected_features)} features.")
 
 def check_frontend_drift(openapi_paths):
@@ -105,6 +102,8 @@ def check_frontend_drift(openapi_paths):
     ]
 
     forbidden_patterns = [
+        "/api/v1/mesh-generation/text-to-raw-mesh",
+        "/api/v1/mesh-generation/text-to-textured-mesh",
         "/api/v1/jobs?",
         "/api/v1/settings/workspace",
         "/api/v1/runtime/",

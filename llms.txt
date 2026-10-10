@@ -3,7 +3,7 @@
 ForMash3D is an open-source, self-hosted AI 3D generation and asset creation platform. It combines multiple 3D model integrations with GPU-aware execution and production-oriented asset processing.
 
 ## Core capabilities
-- Image-to-3D and text-to-3D generation.
+- Image-to-3D generation, plus text-guided mesh painting/editing and text-to-motion.
 - PBR texture generation and painting with Hunyuan3D-Paint-v2-1.
 - Mesh repair, decimation, UV processing, adaptive AutoRetopo and LOD generation.
 - Physics collision artifacts and browser-side Rapier preview.

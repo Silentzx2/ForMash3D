@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from .database_manager import DatabaseManager
 from .database_models import JobModel
+from core.utils.file_utils import get_storage_base_dir
 from .database_models import JobStatus as DBJobStatus
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ def cleanup_canonical_asset_workspace(result: Optional[Dict[str, Any]]) -> Optio
     asset_root = (result or {}).get("asset_root")
     if not asset_root:
         return None
-    models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+    models_root = (get_storage_base_dir() / "models").resolve()
     candidate = Path(asset_root).resolve()
     if candidate == models_root or models_root not in candidate.parents:
         logger.warning("Skipping retention cleanup for invalid asset workspace: %s", candidate)
@@ -130,7 +131,7 @@ class JobRequest:
 
         # Restore retry tracking
         job.retry_count = data.get("retry_count", 0)
-        job.max_retries = data.get("max_retries", 5)
+        job.max_retries = data.get("max_retries", 4)
         if data.get("last_retry_at"):
             job.last_retry_at = datetime.fromisoformat(data["last_retry_at"])
         job.retry_reason = data.get("retry_reason")

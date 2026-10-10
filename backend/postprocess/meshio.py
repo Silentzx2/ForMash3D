@@ -18,12 +18,17 @@ from .schemas import MeshStats
 SUPPORTED_INPUT_EXTS = {".glb", ".gltf", ".obj", ".ply", ".stl"}
 
 
-def load_mesh(data: bytes, filename: str) -> trimesh.Trimesh:
-    """Load a single mesh from raw bytes.
+def load_mesh(data: bytes | str | Path, filename: str | None = None) -> trimesh.Trimesh:
+    """Load a single mesh from raw bytes or a file path.
 
-    Scenes (multi-mesh GLBs) are concatenated into one mesh so downstream tools
-    receive a single Trimesh. Adjust if your scripts need the scene graph.
+    Scene geometry is flattened in world space so node transforms are applied
+    before downstream tools receive a single Trimesh.
     """
+    if isinstance(data, (str, Path)):
+        path = Path(data)
+        filename = filename or path.name
+        data = path.read_bytes()
+
     ext = Path(filename or "mesh.glb").suffix.lower() or ".glb"
     if ext not in SUPPORTED_INPUT_EXTS:
         raise ValueError(f"Unsupported input format '{ext}'. Supported: {sorted(SUPPORTED_INPUT_EXTS)}")
@@ -32,9 +37,7 @@ def load_mesh(data: bytes, filename: str) -> trimesh.Trimesh:
     loaded = trimesh.load(io.BytesIO(data), file_type=file_type, process=False)
 
     if isinstance(loaded, trimesh.Scene):
-        if len(loaded.geometry) == 0:
-            raise ValueError("The uploaded file contains no geometry.")
-        loaded = trimesh.util.concatenate(tuple(loaded.geometry.values()))
+        loaded = scene_to_mesh(loaded)
 
     if not isinstance(loaded, trimesh.Trimesh):
         raise ValueError("The uploaded file did not resolve to a triangle mesh.")
@@ -42,20 +45,16 @@ def load_mesh(data: bytes, filename: str) -> trimesh.Trimesh:
     return loaded
 
 
-def load_mesh_vertex_normals(data: bytes, filename: str):
+def load_mesh_vertex_normals(data: bytes, filename: str) -> np.ndarray | None:
     """The vertex normals the FILE carried, aligned to `load_mesh`'s vertex order.
 
     None when the file shipped no normals (or any geometry in a multi-mesh file
     lacks them, since a partial channel cannot be aligned).
 
-    Why this is separate from `load_mesh`: trimesh only keeps file normals in its
-    cache, and `trimesh.util.concatenate` drops the cache -- so `load_mesh`
-    silently loses them even for a single-geometry file. Setting them back onto
-    the concatenated mesh is not an option either: a populated `vertex_normals`
-    cache is exactly what makes trimesh emit a glTF NORMAL accessor on export, so
-    every tool that *changes* topology (repair, retopo) would start shipping
-    stale normals. Auto UV asks for them explicitly instead, because it is the
-    one tool that preserves the shape and so must preserve the shading.
+    Why this is separate from `load_mesh`: flattening a multi-node scene creates
+    new geometry and cannot preserve the source's cached normals. Setting source
+    normals onto that mesh globally is unsafe for tools that change topology;
+    Auto UV asks for them explicitly because it preserves shape and shading.
     """
     ext = Path(filename or "mesh.glb").suffix.lower() or ".glb"
     if ext not in SUPPORTED_INPUT_EXTS:
@@ -65,31 +64,43 @@ def load_mesh_vertex_normals(data: bytes, filename: str):
     except Exception:  # noqa: BLE001 — load_mesh already reports real load errors
         return None
 
-    geoms = (list(loaded.geometry.values()) if isinstance(loaded, trimesh.Scene)
-             else [loaded])
-    parts = []
-    for geom in geoms:
-        if not isinstance(geom, trimesh.Trimesh):
-            return None
-        # Read the cache directly: touching `.vertex_normals` would *compute*
-        # them, which is the opposite of what we are asking.
-        cached = geom._cache.cache.get("vertex_normals")
-        if cached is None or len(cached) != len(geom.vertices):
-            return None
-        parts.append(np.asarray(cached, dtype=np.float64))
+    if isinstance(loaded, trimesh.Scene):
+        parts = []
+        for node in loaded.graph.nodes_geometry:
+            transform, geometry_name = loaded.graph[node]
+            geom = loaded.geometry[geometry_name]
+            if not isinstance(geom, trimesh.Trimesh):
+                return None
+            cached = geom._cache.cache.get("vertex_normals")
+            if cached is None or len(cached) != len(geom.vertices):
+                return None
+            linear = np.asarray(transform[:3, :3], dtype=np.float64)
+            try:
+                normals = np.asarray(cached, dtype=np.float64) @ np.linalg.inv(linear)
+            except np.linalg.LinAlgError:
+                return None
+            lengths = np.linalg.norm(normals, axis=1)
+            if np.any(lengths == 0) or not np.all(np.isfinite(lengths)):
+                return None
+            parts.append(normals / lengths[:, None])
+        return np.concatenate(parts, axis=0) if parts else None
 
-    return np.concatenate(parts, axis=0) if parts else None
+    if not isinstance(loaded, trimesh.Trimesh):
+        return None
+    # Read the cache directly: touching `.vertex_normals` would compute them.
+    cached = loaded._cache.cache.get("vertex_normals")
+    if cached is None or len(cached) != len(loaded.vertices):
+        return None
+    return np.asarray(cached, dtype=np.float64)
 
 
 def load_scene(data: bytes, filename: str) -> trimesh.Scene:
     """Load raw bytes as a Scene, preserving the material/node structure.
 
-    `load_mesh` concatenates multi-mesh files into a single Trimesh, which throws
-    away exactly the information the Game-Ready check needs to report (how many
-    draw calls and textures the asset costs). Use this when that structure
-    matters; use `load_mesh` for tools that only care about geometry. A file that
-    resolves to a lone mesh is wrapped in a one-geometry Scene so callers always
-    get the same type back.
+    `load_mesh` flattens mesh scenes into one Trimesh, which loses the structure
+    the Game-Ready check needs to report (draw calls and texture count). Use this
+    when that structure matters; use `load_mesh` for tools that only need geometry.
+    A file that resolves to a lone mesh is wrapped in a one-geometry Scene.
     """
     ext = Path(filename or "mesh.glb").suffix.lower() or ".glb"
     if ext not in SUPPORTED_INPUT_EXTS:
@@ -111,21 +122,20 @@ def load_scene(data: bytes, filename: str) -> trimesh.Scene:
 def scene_to_mesh(scene: trimesh.Scene) -> trimesh.Trimesh:
     """Flatten a Scene into one Trimesh in **world space**.
 
-    Unlike `load_mesh` (which concatenates the raw geometries and so ignores node
-    transforms), this applies the scene graph. Inspection reports on the asset as
-    an engine would import it, so a mesh parented under a scaled/offset node must
-    be measured where it actually lands — otherwise the scale and pivot checks
-    read the wrong numbers.
+    Applying the scene graph before flattening keeps node transforms and geometry
+    aligned for processing and inspection, as they are when imported by an engine.
     """
     if len(scene.geometry) == 0:
         raise ValueError("The scene contains no geometry.")
+    if not all(isinstance(geometry, trimesh.Trimesh) for geometry in scene.geometry.values()):
+        raise ValueError("The scene contains non-mesh geometry that cannot be flattened.")
     try:
-        dumped = scene.dump(concatenate=True)
-        if isinstance(dumped, trimesh.Trimesh):
-            return dumped
-    except Exception:  # noqa: BLE001 — fall back to the transform-free concatenation
-        pass
-    return trimesh.util.concatenate(tuple(scene.geometry.values()))
+        dumped = scene.to_geometry()
+    except Exception as exc:
+        raise ValueError("Unable to flatten scene geometry with node transforms.") from exc
+    if not isinstance(dumped, trimesh.Trimesh):
+        raise ValueError("The scene did not resolve to triangle mesh geometry.")
+    return dumped
 
 
 def export_mesh(mesh: trimesh.Trimesh, fmt: str = "glb") -> bytes:

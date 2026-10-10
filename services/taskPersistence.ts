@@ -155,8 +155,6 @@ export class TaskPersistenceService {
   private convertHistoricalJobToTask(job: HistoricalJob): Task {
     // Map backend feature types to frontend task types
     const featureToTaskType: Record<string, TaskType> = {
-      'text_to_raw_mesh': 'text-to-mesh',
-      'text_to_textured_mesh': 'text-to-mesh',
       'image_to_raw_mesh': 'image-to-mesh',
       'image_to_textured_mesh': 'image-to-mesh',
       'text_mesh_painting': 'text-mesh-painting',
@@ -166,7 +164,7 @@ export class TaskPersistenceService {
       'auto_rig': 'auto-rigging'
     };
 
-    const taskType = featureToTaskType[job.feature] || 'text-to-mesh' as TaskType;
+    const taskType = featureToTaskType[job.feature] || 'image-to-mesh' as TaskType;
 
     console.log("job", job);
     
@@ -204,8 +202,6 @@ export class TaskPersistenceService {
    */
   private generateTaskName(feature: string, jobId: string): string {
     const featureNames: Record<string, string> = {
-      'text_to_raw_mesh': 'Text to 3D',
-      'text_to_textured_mesh': 'Text to Textured 3D',
       'image_to_raw_mesh': 'Image to 3D',
       'image_to_textured_mesh': 'Image to Textured 3D',
       'text_mesh_painting': 'Text Mesh Painting',

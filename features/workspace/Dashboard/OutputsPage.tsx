@@ -45,6 +45,16 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
     opacity: isDragging ? 0.7 : 1,
   };
 
+  // Determine if asset is rigged
+  const isRigged = Boolean(asset.artifacts?.rigged);
+
+  // Determine printability status if available
+  const printabilityStatus = asset.qaStatus ?? undefined;
+
+  // Determine if asset is production ready (simplified check)
+  const isProductionReady = asset.postprocessStatus === 'completed' && 
+                            (asset.qaStatus === 'pass' || asset.qaStatus === undefined);
+
   return (
     <div
       ref={setNodeRef}
@@ -54,7 +64,7 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
       <div 
         {...attributes} 
         {...listeners} 
-        className="absolute top-2 left-2 z-10 p-1 rounded-md bg-black/60 hover:bg-black/80 backdrop-blur-md text-zinc-400 hover:text-white cursor-grab active:cursor-grabbing border border-white/[0.1] opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute top-2 left-2 z-10 p-1 rounded-md bg-black/60 backdrop-blur-md text-zinc-400 hover:text-white cursor-grab active:cursor-grabbing border border-white/[0.1] opacity-0 group-hover:opacity-100 transition-opacity"
         title="Drag to reorder"
       >
         <HugeiconsIcon icon={GripVerticalIcon} size={16} className="w-3.5 h-3.5" />
@@ -81,13 +91,66 @@ const SortableAssetCard: React.FC<SortableAssetCardProps> = ({ asset, onSelect }
             {asset.format}
           </span>
         </div>
-        <div className="p-3 space-y-1 w-full">
+        <div className="p-3 space-y-2 w-full">
           <div className="truncate text-xs font-bold text-white group-hover:text-primary transition-colors">
             {asset.name}
           </div>
-          <div className="flex items-center justify-between text-[10px] text-zinc-400 font-mono">
-            <span>{asset.topology || 'Triangle'}</span>
-            <span>{asset.dateCreated || 'Recent'}</span>
+          {/* Model/Intent Info */}
+          {asset.artifacts?.source || asset.source?.promptId ? (
+            <div className="text-[9px] text-zinc-400 truncate">
+              {asset.artifacts?.source ?? 
+               asset.source?.promptId ?? 
+               'Unknown Source'}
+            </div>
+          ) : null}
+          {/* Vertex/Face Counts */}
+          {asset.statsAvailable ? (
+            <div className="flex items-center justify-between text-[9px] text-zinc-400">
+              <span>{asset.vertices.toLocaleString()} vertices</span>
+              <span>{asset.faces.toLocaleString()} faces</span>
+            </div>
+          ) : (
+            <div className="text-[9px] text-zinc-400">
+              Vertices: —, Faces: —
+            </div>
+          )}
+          {/* Status Indicators */}
+          <div className="flex items-center justify-between text-[8px]">
+            <div className="flex items-center gap-1">
+              {/* Post-process Status */}
+              <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded 
+                ${asset.postprocessStatus === 'completed' 
+                  ? 'bg-emerald-500/20 text-emerald-300' 
+                  : asset.postprocessStatus === 'failed' 
+                    ? 'bg-rose-500/20 text-rose-300' 
+                    : 'bg-gray-500/20 text-gray-400'}`}>
+                {asset.postprocessStatus ?? 'processing'}
+              </div>
+              {/* Rigged Status */}
+              {isRigged && (
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">
+                  Rigged
+                </div>
+              )}
+              {/* Printability Status */}
+              {printabilityStatus !== undefined && (
+                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded 
+                  ${printabilityStatus === 'pass' 
+                    ? 'bg-emerald-500/20 text-emerald-300' 
+                    : printabilityStatus === 'warn' 
+                      ? 'bg-yellow-500/20 text-yellow-300' 
+                      : 'bg-rose-500/20 text-rose-300'}`}>
+                  {printabilityStatus ?? 'unknown'}
+                </div>
+              )}
+            </div>
+            {/* Production Ready Indicator */}
+            <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded 
+              ${isProductionReady 
+                ? 'bg-emerald-500/20 text-emerald-300' 
+                : 'bg-gray-500/20 text-gray-400'}`}>
+                {isProductionReady ? 'Ready' : 'Not Ready'}
+              </div>
           </div>
         </div>
       </button>
@@ -168,19 +231,6 @@ export const OutputsPage: React.FC = () => {
             <div className="w-12 h-12 rounded-2xl bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center mx-auto text-zinc-400">
               <HugeiconsIcon icon={FolderOpenIcon} size={16} className="h-6 w-6" />
             </div>
-            <div className="text-sm font-bold text-white">No outputs available yet</div>
-            <div className="text-xs text-zinc-400 max-w-sm mx-auto">
-              Run a 3D generation, retopology remesh, or PBR texture bake to populate your library.
-            </div>
-            <button 
-              onClick={() => {
-                setActiveTool('model');
-                setMainNav('workspace');
-              }} 
-              className="mt-2 rounded-xl bg-primary hover:bg-primary/90 px-5 py-2.5 text-xs font-bold text-primary-foreground transition-all cursor-pointer"
-            >
-              Open 3D Workspace
-            </button>
           </div>
         ) : (
           <DndContext

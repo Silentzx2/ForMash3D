@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { createUploadedMeshAsset } from '../types';
+import { uploadMeshAsset } from '../types';
 import { toast } from 'sonner';
 
 
@@ -77,9 +77,9 @@ export const MeshSegmentPanel: React.FC = () => {
     toast.info('SettingsIcon restored to defaults');
   };
 
-  const handleUploadNew = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadNew = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setCurrentAsset(createUploadedMeshAsset(file));
+    if (file) setCurrentAsset(await uploadMeshAsset(file));
   };
 
   return (

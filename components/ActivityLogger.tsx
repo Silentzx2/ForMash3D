@@ -150,20 +150,20 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
       error?: string;
     }> = [];
 
-    // Add active batch queue items
-    batchQueue.forEach((bq) => {
-      items.push({
-        id: bq.id,
-        title: bq.prompt.slice(0, 32) || 'Queued Prompt',
-        prompt: bq.prompt,
-        status: bq.status === 'running' ? 'generating' : (bq.status === 'cancelled' ? 'failed' : bq.status),
-        timestamp: bq.startedAt ? new Date(bq.startedAt).toLocaleTimeString() : 'In Queue',
-        rawDate: bq.startedAt ? new Date(bq.startedAt) : new Date(),
-        format: 'GLB',
-        model: 'TRELLIS',
-        error: bq.error,
-      });
-    });
+     // Add active batch queue items
+     batchQueue.forEach((bq) => {
+       items.push({
+         id: bq.id,
+         title: `Image Job ${bq.id.slice(-6)}`,
+         prompt: 'Image-based generation',
+         status: bq.status === 'running' ? 'generating' : (bq.status === 'cancelled' ? 'failed' : bq.status),
+         timestamp: bq.startedAt ? new Date(bq.startedAt).toLocaleTimeString() : 'In Queue',
+         rawDate: bq.startedAt ? new Date(bq.startedAt) : new Date(),
+         format: 'GLB',
+         model: bq.aiModel?.split('/').pop() || bq.aiModel || 'Unknown',
+         error: bq.error,
+       });
+     });
 
     // Add backend history jobs
     (jobHistory || []).forEach((job: any) => {

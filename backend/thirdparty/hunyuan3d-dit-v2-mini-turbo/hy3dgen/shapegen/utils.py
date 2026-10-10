@@ -95,10 +95,21 @@ def smart_load_model(
     original_model_path = model_path
     # try local path
     base_dir = os.environ.get('HY3DGEN_MODELS', '~/.cache/hy3dgen')
-    model_path = os.path.expanduser(os.path.join(base_dir, model_path, subfolder))
+    if os.path.isabs(model_path):
+        # absolute local path given (e.g. backend/pretrained/tencent/Hunyuan3D-2mini):
+        # use it directly instead of prepending the HF cache dir.
+        model_path = os.path.expanduser(os.path.join(model_path, subfolder))
+    else:
+        model_path = os.path.expanduser(os.path.join(base_dir, model_path, subfolder))
     logger.info(f'Try to load model from local path: {model_path}')
     if not os.path.exists(model_path):
         logger.info('Model path not exists, try to download from huggingface')
+        if os.path.isabs(original_model_path):
+            raise FileNotFoundError(
+                f"Model not found at local path: {original_model_path}/{subfolder}. "
+                f"Run `bash backend/scripts/download_models.sh -m hunyuan2mini` to download "
+                f"the Hunyuan3D-2mini weights to backend/pretrained/tencent/Hunyuan3D-2mini."
+            )
         try:
             from huggingface_hub import snapshot_download
             # 只下载指定子目录

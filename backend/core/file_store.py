@@ -13,6 +13,34 @@ from redis.asyncio import Redis
 logger = logging.getLogger(__name__)
 
 
+class FileInfo:
+    """Wrapper around file metadata dict supporting both attribute and dict access."""
+
+    def __init__(self, data: Dict):
+        self._data = dict(data) if data else {}
+        for k, v in self._data.items():
+            setattr(self, k, v)
+        self.file_path = self._data.get("file_path", "")
+        self.file_name = self._data.get("file_name", "")
+        self.file_id = self._data.get("file_id", "")
+        self.file_type = self._data.get("file_type", "unknown")
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def __contains__(self, key):
+        return key in self._data
+
+    def to_dict(self) -> Dict:
+        return dict(self._data)
+
+    def __repr__(self) -> str:
+        return f"<FileInfo file_id={self.file_id} file_path={self.file_path}>"
+
+
 class FileStore:
     """
     Redis-based storage for file metadata.
@@ -89,6 +117,21 @@ class FileStore:
         except Exception as e:
             logger.error(f"Failed to get metadata for file {file_id}: {e}")
             return None
+
+    async def get_file(self, file_id: str) -> Optional[FileInfo]:
+        """
+        Get file information by ID from Redis.
+
+        Args:
+            file_id: Unique identifier for the file.
+
+        Returns:
+            A FileInfo object with attribute and dict access, or None if not found.
+        """
+        metadata = await self.get_file_metadata(file_id)
+        if not metadata:
+            return None
+        return FileInfo(metadata)
 
     async def delete_file_metadata(self, file_id: str) -> bool:
         """

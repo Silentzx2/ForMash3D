@@ -1,18 +1,34 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
+export function normalizeBackendAssetUrl(url: unknown): string | undefined {
+  if (typeof url !== 'string' || !url.trim()) return undefined;
+  let path = url.trim();
+  if (/^https?:\/\//i.test(path) || path.startsWith('//')) {
+    try {
+      const parsed = new URL(path, typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
+      path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      return undefined;
+    }
+  }
+  if (path.startsWith('/api/v1/') || path.startsWith('/static/')) return path;
+  if (path.startsWith('/')) return `/api/v1${path}`;
+  return `/api/v1/${path}`;
+}
+
 import { 
   ApiConfig, 
   BaseApiResponse, 
   HealthStatus,
   SystemStatus,
+  SystemStats,
   SchedulerStatus,
   AvailableModels,
+  ModelRuntimeDetails,
   FeaturesResponse,
   JobInfo,
   JobResultInfo,
   JobsHistoryResponse,
   JobsHistoryParams,
-  TextToMeshRequest,
-  TextToTexturedMeshRequest,
   ImageToMeshRequest,
   ImageToTexturedMeshRequest,
   MeshPaintingRequest,
@@ -68,12 +84,19 @@ class ApiClient {
     this.client.interceptors.request.use(
       (config) => {
         // If uploading FormData, ensure Content-Type is not forced to application/json
-        // or raw multipart/form-data without boundary, allowing the browser/axios to set
-        // the correct multipart/form-data; boundary=----... header automatically.
+        // Only delete Content-Type if explicitly set by the caller.
+        // Axios auto-sets 'multipart/form-data; boundary=...' when Content-Type is absent.
+        // Some proxies require explicit header, so we only delete if it's 'application/json'
+        // or explicitly set to 'multipart/form-data' without boundary.
         if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
           if (config.headers) {
-            delete config.headers['Content-Type'];
-            delete (config.headers as any)['content-type'];
+            const contentType = config.headers['Content-Type'] || (config.headers as any)['content-type'];
+            // Only remove if it's application/json (default axios default) or malformed multipart
+            if (contentType && (contentType === 'application/json' || 
+                (contentType.startsWith('multipart/form-data') && !contentType.includes('boundary=')))) {
+              delete config.headers['Content-Type'];
+              delete (config.headers as any)['content-type'];
+            }
           }
           if (!config.timeout || config.timeout < 600000) {
             config.timeout = 600000;
@@ -234,13 +257,18 @@ class ApiClient {
   }
 
   async getSystemStatus(): Promise<SystemStatus> {
-    const response = await this.retry(() => 
-      this.client.get<SystemStatus>('/api/v1/system/status')
-    );
-    return response.data;
-  }
+      const response = await this.retry(() =>
+        this.client.get<SystemStatus>('/api/v1/system/status')
+      );
+      return response.data;
+    }
 
-  async getSchedulerStatus(): Promise<SchedulerStatus> {
+    async getSystemStats(): Promise<SystemStats> {
+      const response = await this.client.get<SystemStats>('/api/v1/system/stats');
+      return response.data;
+    }
+
+    async getSchedulerStatus(): Promise<SchedulerStatus> {
     const response = await this.retry(() => 
       this.client.get<SchedulerStatus>('/api/v1/system/scheduler-status')
     );
@@ -258,6 +286,13 @@ class ApiClient {
   async getAvailableFeatures(): Promise<FeaturesResponse> {
     const response = await this.retry(() => 
       this.client.get<FeaturesResponse>('/api/v1/system/features')
+    );
+    return response.data;
+  }
+
+  async getModelParameters(modelId: string): Promise<ModelParametersResponse> {
+    const response = await this.retry(() =>
+      this.client.get<ModelParametersResponse>(`/api/v1/system/models/${encodeURIComponent(modelId)}/parameters`)
     );
     return response.data;
   }
@@ -378,23 +413,35 @@ class ApiClient {
     return response.data;
   }
 
+  async previewImageEnhancement(request: {
+    image_path?: string;
+    image_base64?: string;
+    image_file_id?: string;
+    remove_background?: boolean;
+    auto_crop?: boolean;
+    upscale?: boolean;
+    sharpen?: boolean;
+  }): Promise<any> {
+    const response = await this.client.post('/api/v1/image-enhancement/preview', request);
+    return response.data;
+  }
+
+  async getSmartPresets(): Promise<any> {
+    const response = await this.retry(() => this.client.get('/api/v1/smart-generation/presets'));
+    return response.data;
+  }
+
+  async resolveSmartIntent(intent: string, model?: string): Promise<any> {
+    const response = await this.client.post('/api/v1/smart-generation/resolve', { intent, model });
+    return response.data;
+  }
+
+  async generateSmartGeneration(request: Record<string, any>): Promise<any> {
+    const response = await this.retry(() => this.client.post('/api/v1/smart-generation/generation', request));
+    return response.data;
+  }
+
   // Mesh Generation Endpoints
-  async textToRawMesh(request: TextToMeshRequest): Promise<BaseApiResponse> {
-    const response = await this.client.post<BaseApiResponse>(
-      '/api/v1/mesh-generation/text-to-raw-mesh',
-      request
-    );
-    return response.data;
-  }
-
-  async textToTexturedMesh(request: TextToTexturedMeshRequest): Promise<BaseApiResponse> {
-    const response = await this.client.post<BaseApiResponse>(
-      '/api/v1/mesh-generation/text-to-textured-mesh',
-      request
-    );
-    return response.data;
-  }
-
   async imageToRawMesh(request: ImageToMeshRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(
       '/api/v1/mesh-generation/image-to-raw-mesh',
@@ -531,14 +578,6 @@ class ApiClient {
     return response.data;
   }
 
-  // Model Parameters Endpoints
-  async getModelParameters(modelId: string): Promise<ModelParametersResponse> {
-    const response = await this.retry(() => 
-      this.client.get<ModelParametersResponse>(`/api/v1/system/models/${modelId}/parameters`)
-    );
-    return response.data;
-  }
-
   // Mesh Editing Endpoints
   async textMeshEditing(request: TextMeshEditingRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(
@@ -593,25 +632,21 @@ class ApiClient {
   // limitation honestly (throws) instead of silently hitting 404s.
 
   async getLogs(limit: number = 100, level?: string): Promise<any[]> {
-    try {
-      const params: any = { lines: String(limit) };
-      if (level) params.level = level.toUpperCase();
-      const response = await this.client.get('/api/v1/system/logs', { params });
-      const rawLogs = response?.data?.logs || (response as any)?.logs || [];
-      return rawLogs.map((log: any, index: number) => ({
-        id: log.id || `log-${index}-${Date.now()}`,
-        timestamp: log.timestamp || log.ts || new Date().toISOString(),
-        level: (log.level || 'info').toLowerCase(),
-        source: log.source || log.logger || 'system',
-        message: log.message || '',
-      }));
-    } catch {
-      return [];
-    }
+    const params: any = { lines: String(limit) };
+    if (level) params.level = level.toUpperCase();
+    const response = await this.client.get('/api/v1/system/logs', { params });
+    const rawLogs = response?.data?.logs || (response as any)?.logs || [];
+    return rawLogs.map((log: any, index: number) => ({
+      id: log.id || `log-${index}-${Date.now()}`,
+      timestamp: log.timestamp || log.ts || new Date().toISOString(),
+      level: (log.level || 'info').toLowerCase(),
+      source: log.source || log.logger || 'system',
+      message: log.message || '',
+    }));
   }
 
   async clearLogs(): Promise<void> {
-    await this.client.delete('/api/v1/system/logs/files/app.log');
+    await this.client.delete('/api/v1/system/logs/files/master.log');
   }
 
   streamLogs(onEntry: (log: any) => void, lastN: number = 100): () => void {
@@ -632,14 +667,12 @@ class ApiClient {
     );
   }
 
-  async listModels(): Promise<any[]> {
+  async listModels(): Promise<ModelRuntimeDetails[]> {
     try {
-      const response: any = await this.client.get('/api/v1/system/models', { params: { feature: undefined } });
-      if (Array.isArray(response)) return response;
-      if (Array.isArray(response?.data?.models)) return response.data.models;
-      if (Array.isArray(response?.models)) return response.models;
-      if (Array.isArray(response?.data)) return response.data;
-      return [];
+      const response = await this.client.get<AvailableModels>('/api/v1/system/models');
+      const details = response.data?.model_details;
+      if (!details || typeof details !== 'object') return [];
+      return Object.values(details);
     } catch {
       return [];
     }

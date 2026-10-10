@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
-import { getModelDefinition, isTexturePaintingModel } from '@/constants/models';
+import { getModelDefinition, isTexturePaintingModel, supportsTextInput, supportsImageInput } from '@/constants/models';
 import { toast } from 'sonner';
 
 interface DiscoveredTextureModel {
@@ -695,68 +695,177 @@ export const TexturePanel: React.FC = () => {
               </div>
             </div>
 
-            {/* Prompt Guidance Input */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-white text-[10px] uppercase tracking-wider">Prompt Guidance</span>
-                {textureSettings.referenceImage && (
-                  <span className="text-[9px] text-emerald-400 flex items-center gap-1">
-                    <HugeiconsIcon icon={ImageIcon} size={16} className="w-2.5 h-2.5" />
-                    <span>Image Attached</span>
-                  </span>
-                )}
-              </div>
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="e.g., weathered copper armor, cinematic..."
-                  value={textureSettings.prompt}
-                  onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
-                  className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors"
-                />
-                {textureSettings.prompt && (
-                  <button
-                    type="button"
-                    onClick={() => setTextureSettings(prev => ({ ...prev, prompt: '' }))}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5 cursor-pointer"
-                  >
-                    <HugeiconsIcon icon={Cancel} size={16} className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Reference Image Quick Status or UploadIcon Row */}
-            {textureSettings.referenceImage ? (
-              <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <img
-                    src={textureSettings.referenceImage}
-                    alt="Ref"
-                    className="w-7 h-7 object-cover rounded border border-white/[0.1]"
-                  />
-                  <span className="text-[9px] text-zinc-300 font-medium truncate">Reference Image Active</span>
+            {/* Input Mode Selection (based on model capabilities) */}
+            {(() => {
+              const supportsText = supportsTextInput(textureSettings.modelId);
+              const supportsImage = supportsImageInput(textureSettings.modelId);
+              
+              // If only one input type supported, skip selection and show that one
+              if (supportsText && !supportsImage) {
+                return (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-[10px] uppercase tracking-wider">Text Prompt</span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="e.g., weathered copper armor, cinematic..."
+                        value={textureSettings.prompt}
+                        onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
+                        className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors"
+                      />
+                      {textureSettings.prompt && (
+                        <button
+                          type="button"
+                          onClick={() => setTextureSettings(prev => ({ ...prev, prompt: '' }))}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5 cursor-pointer"
+                        >
+                          <HugeiconsIcon icon={Cancel} size={16} className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              
+              if (supportsImage && !supportsText) {
+                return (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white text-[10px] uppercase tracking-wider">Reference Image</span>
+                      {textureSettings.referenceImage && (
+                        <span className="text-[9px] text-emerald-400 flex items-center gap-1">
+                          <HugeiconsIcon icon={ImageIcon} size={16} className="w-2.5 h-2.5" />
+                          <span>Image Attached</span>
+                        </span>
+                      )}
+                    </div>
+                    {textureSettings.referenceImage ? (
+                      <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <img
+                            src={textureSettings.referenceImage}
+                            alt="Ref"
+                            className="w-7 h-7 object-cover rounded border border-white/[0.1]"
+                          />
+                          <span className="text-[9px] text-zinc-300 font-medium truncate">Reference Image Active</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearReference}
+                          className="text-[9px] text-zinc-400 hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-white/[0.04] transition-colors cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="flex-1 py-1 px-2 rounded-lg bg-[hsl(var(--surface-0))] border border-dashed border-white/[0.12] hover:border-primary/50 text-zinc-400 hover:text-zinc-200 text-[9px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
+                          <span>UploadIcon Reference Image (Required)</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              
+              // Both supported - show tabs to switch
+              return (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-white text-[10px] uppercase tracking-wider">Input Mode</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setTextureSettings(prev => ({ ...prev, referenceImage: null }))}
+                      className={`py-1.5 px-1.5 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                        !textureSettings.referenceImage && textureSettings.prompt
+                          ? 'bg-primary text-black shadow-sm'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">Text Prompt</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTextureSettings(prev => ({ ...prev, prompt: '' }))}
+                      className={`py-1.5 px-1.5 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                        textureSettings.referenceImage
+                          ? 'bg-primary text-black shadow-sm'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <HugeiconsIcon icon={ImageIcon} size={16} className="w-3 h-3 flex-shrink-0" />
+                      <span className="truncate">Reference Image</span>
+                    </button>
+                  </div>
+                  
+                  {!textureSettings.referenceImage && textureSettings.prompt && (
+                    <div className="space-y-1">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="e.g., weathered copper armor, cinematic..."
+                          value={textureSettings.prompt}
+                          onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
+                          className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors"
+                        />
+                        {textureSettings.prompt && (
+                          <button
+                            type="button"
+                            onClick={() => setTextureSettings(prev => ({ ...prev, prompt: '' }))}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5 cursor-pointer"
+                          >
+                            <HugeiconsIcon icon={Cancel} size={16} className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {textureSettings.referenceImage && (
+                    <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <img
+                          src={textureSettings.referenceImage}
+                          alt="Ref"
+                          className="w-7 h-7 object-cover rounded border border-white/[0.1]"
+                        />
+                        <span className="text-[9px] text-zinc-300 font-medium truncate">Reference Image Active</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={clearReference}
+                        className="text-[9px] text-zinc-400 hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-white/[0.04] transition-colors cursor-pointer"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  )}
+                  
+                  {!textureSettings.referenceImage && !textureSettings.prompt && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 py-1 px-2 rounded-lg bg-[hsl(var(--surface-0))] border border-dashed border-white/[0.12] hover:border-primary/50 text-zinc-400 hover:text-zinc-200 text-[9px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
+                        <span>UploadIcon Reference Image (Optional)</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={clearReference}
-                  className="text-[9px] text-zinc-400 hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-white/[0.04] transition-colors cursor-pointer"
-                >
-                  Clear
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 py-1 px-2 rounded-lg bg-[hsl(var(--surface-0))] border border-dashed border-white/[0.12] hover:border-primary/50 text-zinc-400 hover:text-zinc-200 text-[9px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
-                  <span>UploadIcon Reference Image (Optional)</span>
-                </button>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Quick jump links to other sections */}
             <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-[9px] text-zinc-400 font-medium">

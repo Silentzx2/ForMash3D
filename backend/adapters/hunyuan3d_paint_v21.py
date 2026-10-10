@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import torch
-from PIL import Image
+from PIL import Image, ImageOps
 
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
@@ -71,10 +71,11 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
+        # insert(0) not append: backend/utils (CWD) must not shadow hy3dpaint's utils package
         if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root))
+            sys.path.insert(0, str(self.hunyuan3d_root))
         if str(self.hunyuan3d_root / "hy3dpaint") not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root / "hy3dpaint"))
+            sys.path.insert(0, str(self.hunyuan3d_root / "hy3dpaint"))
 
     def _resolve_realesrgan_path(self) -> str:
         """Resolve RealESRGAN checkpoint path, checking both thirdparty and pretrained locations."""
@@ -93,6 +94,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
     def _load_model(self):
         """Load Hunyuan3D-Paint-v2-1 pipeline."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
             logger.info("Loading Hunyuan3D-Paint-v2-1 pipeline")
 
             try:
@@ -187,6 +190,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process mesh painting using Hunyuan3D-Paint-v2-1."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
             if self.bg_remover is None:
                 raise ValueError("Background remover is not loaded")
             if self.paint_pipeline is None:
@@ -227,8 +232,10 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             )
 
             use_remesh = bool(inputs.get("use_remesh", False))
+            with Image.open(image_path) as reference_image:
+                reference_image = self._prepare_reference_image(reference_image)
             final_mesh_path = self.paint_pipeline(
-                str(mesh_path), str(image_path), str(output_path), use_remesh=use_remesh
+                str(mesh_path), reference_image, str(output_path), use_remesh=use_remesh
             )
 
             if final_mesh_path != str(output_path):
@@ -251,6 +258,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     "face_count": mesh_stats["face_count"],
                     "max_num_view": max_num_view,
                     "resolution": resolution,
+                    "reference_aspect_ratio_preserved": True,
                 },
                 "pbr_verification": pbr_verification,
             }
@@ -263,6 +271,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             self.status = ModelStatus.ERROR
             logger.error(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {str(e)}")
             raise Exception(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {str(e)}")
+
+    @staticmethod
+    def _prepare_reference_image(image):
+        image = image.convert("RGBA")
+        white_background = Image.new("RGBA", image.size, "white")
+        white_background.alpha_composite(image)
+        image = ImageOps.contain(white_background.convert("RGB"), (512, 512))
+        canvas = Image.new("RGB", (512, 512), "white")
+        canvas.paste(image, ((512 - image.width) // 2, (512 - image.height) // 2))
+        return canvas
 
     def get_parameter_schema(self) -> Dict[str, Any]:
         return {

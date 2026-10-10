@@ -65,6 +65,10 @@ class UniRigAdapter(AutoRigModel):
     def _load_model(self):
         """Load UniRig inference engine."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("UniRig requires CUDA; CPU inference is not supported.")
+            if not self.device or self.device.startswith("cpu"):
+                self.device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             logger.info(f"Loading UniRig model from {self.unirig_root}")
 
             # Verify UniRig installation
@@ -135,6 +139,10 @@ class UniRigAdapter(AutoRigModel):
             Dictionary with rigging results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("UniRig requires CUDA; CPU inference is not supported.")
+            if not self.device or self.device.startswith("cpu"):
+                self.device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             if self.inference_engine is None:
                 raise ValueError("UniRig inference engine is not loaded")
 
@@ -265,13 +273,14 @@ class UniRigAdapter(AutoRigModel):
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def _estimate_bone_count(self, rigged_file: Path) -> int:
         """

@@ -1,0 +1,45 @@
+services:
+  # Single All-in-One Studio Container
+  # Contains Redis, Scheduler, FastAPI (7842), and Next.js Frontend (3000) under Supervisor
+  formash3d:
+    image: formash3d:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - http_proxy=${HTTP_PROXY:-}
+        - https_proxy=${HTTPS_PROXY:-}
+        - no_proxy=${NO_PROXY:-localhost,127.0.0.1}
+    container_name: formash3d
+    ports:
+      - "3000:3000"
+      - "7842:7842"
+    volumes:
+      - ./backend/storage:/app/backend/storage
+      - ./backend/pretrained:/app/backend/pretrained
+      - ./backend/models:/app/backend/models
+      - ./logs:/app/logs
+      - ./backend/data:/app/backend/data
+      - ./backend/uploads:/app/backend/uploads
+      - ./backend/config:/app/backend/config
+    environment:
+      - CUDA_VISIBLE_DEVICES=all
+      - TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6 8.9 9.0+PTX"
+      - STORAGE_LOCAL_PATH=/app/backend/storage
+      - ENVIRONMENT=production
+      - P3D_DEBUG=${P3D_DEBUG:-false}
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:7842/health && curl -f http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

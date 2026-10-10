@@ -9,16 +9,15 @@
 </h1>
 
 <p align="center">
-  <strong>Open-Source Generative 3D Mesh Studio & Production Pipeline</strong><br>
-  <em>A unified, self-hosted 3D creation suite inspired by modern neural platforms like Tripo AI and Meshy</em><br>
-  Text-to-3D • Image-to-3D • Quad Retopology • PBR Material Painting • Auto-Rigging • Automated LODs • Game Engine Ready
+    <strong>Open-Source Generative 3D Mesh Studio & Production Pipeline</strong><br>
+    <em>A unified, self-hosted 3D creation suite for neural 3D generation, asset finishing, and engine-ready delivery</em><br>
+    Text-to-Motion • Image-to-3D • Quad Retopology • PBR Material Painting • Auto-Rigging • Automated LODs • Game Engine Ready
 </p>
 
 <p align="center">
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Inspired_By-Tripo_AI_%7C_Meshy-FFCC00?style=for-the-badge&logo=codepen&logoColor=black" alt="Inspired by Tripo AI and Meshy"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-23_Neural_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="23 Models"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="23 user-facing models / 24 registered adapters"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -34,9 +33,9 @@
 
 **ForMash3D** is an open-source, self-hosted generative 3D asset creation and mesh-finishing platform. It bridges modern state-of-the-art open research models into a single, cohesive studio running entirely on your local workstation or private GPU cluster.
 
-Inspired by the intuitive user workflows of modern commercial platforms such as **Tripo AI** and **Meshy**, ForMash3D gives 3D technical artists, indie game developers, and researchers complete freedom:
+ForMash3D unifies neural 3D generation, asset finishing, validation, and export into one self-hosted workflow for 3D technical artists, game developers, and researchers:
 - **100% Private & Self-Hosted**: Run generation locally on NVIDIA GPUs without subscriptions, cloud queues, or uploading proprietary concept art to external servers.
-- **Zero Loss Quality Guarantee**: Model-native generation is preserved immutably at `master/source.glb` before any optimization or decimation.
+- **Immutable Source Preservation**: Model-native generation is snapshotted at `master/source.glb` before production optimization or decimation.
 - **Production Asset Finishing**: Features a complete post-processing pipeline forked and customized from **[3DGenStudio](https://github.com/visualbruno/3DGenStudio)**, delivering watertight repair, conformal UV unwrapping, PBR material baking, quad retopology, multi-tier LOD cascades, and CoACD convex physics collision hulls.
 
 ---
@@ -62,37 +61,31 @@ Inspired by the intuitive user workflows of modern commercial platforms such as 
 
 ---
 
-## 📊 Workflow & Capability Comparison
+## 📊 Core Capability Map
 
-A technical comparison of ForMash3D versus commercial cloud platforms:
-
-| Capability | **ForMash3D (This Studio)** | **Tripo AI (Cloud)** | **Meshy AI (Cloud)** | **CSM (Cloud)** |
-|---|:---:|:---:|:---:|:---:|
-| **Pricing** | **100% Free & Open-Source (Apache 2.0)** | $20 – $100+/mo | $20 – $80/mo | $30 – $120/mo |
-| **Hosting & Privacy** | **100% Private (Local NVIDIA GPU)** | Proprietary Cloud | Proprietary Cloud | Proprietary Cloud |
-| **Model Diversity** | **23 Pluggable Open-Source Adapters** | 1 Proprietary Model | 1 Proprietary Model | 1 Proprietary Model |
-| **Raw Geometry Preservation** | **Yes (`master/source.glb` preserved)** | ❌ Aggressive cloud decimation | ❌ Cloud compressed | ❌ Cloud compressed |
-| **Quad Retopology** | **FastMesh (V1K/V4K) & AutoRetopo** | Basic remesh | Basic remesh | Paid add-on |
-| **Progressive LODs** | **LOD0 to LOD3 with UV preservation** | ❌ Single level | Paid add-on | ❌ Single level |
-| **PBR Texture Painting** | **Hunyuan3D-Paint-v2.1 (2B) + SuperRes** | Cloud standard | Cloud standard | Cloud standard |
-| **Physics Colliders** | **CoACD Convex Hulls + Rapier3D Wasm** | ❌ None | ❌ None | ❌ None |
-| **Rigging & Motion** | **UniRig (Bipedal) + ARDY (Motion AI)** | Basic auto-rig | Extra credit cost | ❌ None |
-| **Engine Ready Export** | **Unreal Engine 5, Unity, Godot 4, Blender** | Basic GLB | Basic GLB | Basic GLB |
-
----
+| Capability | ForMash3D Implementation |
+|---|---|
+| Neural 3D Generation | Image-to-3D adapters with model-specific inference contracts |
+| Source Preservation | Immutable master/source.glb checkpoint before production processing |
+| Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
+| PBR Materials | Hunyuan3D Paint-v2.1 and model-specific textured generation |
+| Multi-View | Zero123++ v1.2 plus capability-gated 3D reconstruction |
+| Smart Generation | One-click image-only intents with deterministic model selection and scheduler-backed execution |
+| QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
+| Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |
 
 ## 🔄 End-to-End Asset Generation Pipeline
 
 ForMash3D enforces an **immutable master preservation architecture**. The raw neural model output is immediately snapshotted at `master/source.glb` before any downstream finishing operations, guaranteeing zero accidental loss of fine surface detail:
 
 ```text
-  INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
+   INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
 ┌─────────────────────┐    ┌───────────────────────────┐    ┌──────────────────────────┐
-│  • Text Prompt      │───►│  23 Neural Adapters:      │───►│ master/source.glb        │
-│  • Single Image     │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
-│  • Multi-View Image │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
+│  • Single Image     │───►│  Neural Model Adapters:   │───►│ master/source.glb        │
+│  • Multi-View Image │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
+│                     │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
 └─────────────────────┘    └───────────────────────────┘    └────────────┬─────────────┘
-                                                                         │
+                                                                          │
  ┌───────────────────────────────────────────────────────────────────────┘
  │  PRODUCTION POST-PROCESSING & ENGINE FINISHING (Ported & Enhanced from 3DGenStudio)
  ▼
@@ -102,16 +95,16 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
 │ Non-Manifold Fix│    │ AutoRetopo Def. │    │ PBR Material Map│    │ LOD1: 50%       │
 │ Boundary Guard  │    │ Feature Angle   │    │ RealESRGAN x4+  │    │ LOD2: 25% / 12% │
 └─────────────────┘    └─────────────────┘    └─────────────────┘    └────────┬────────┘
-                                                                              │
+                                                                               │
  ┌────────────────────────────────────────────────────────────────────────────┘
  ▼
-┌─────────────────┐    ┌─────────────────┐    ┌────────────────────────────────────────┐
+┌─────────────────┐    ┌─────────────────┐    ┌────────────────────────────────────────┘
 │ 5. Physics      │───►│ 6. QA Engine    │───►│ GAME-READY EXPORT PACKAGE              │
 │ CoACD Convex    │    │ 0-100 Score     │    │ • game_ready.glb (Unreal / Unity/Godot)│
 │ Decomposition   │    │ Stage Snapshots │    │ • lods/ (lod0.glb - lod3.glb)          │
 │ Rapier3D WebSim │    │ Quality Trace   │    │ • collision.glb & physics.json         │
 └─────────────────┘    └─────────────────┘    │ • Structured Engine-Ready ZIP Archive  │
-                                              └────────────────────────────────────────┘
+                                               └────────────────────────────────────────┘
 ```
 
 ---
@@ -130,32 +123,34 @@ flowchart TD
     classDef amber fill:#2d1b0d,stroke:#f59e0b,stroke-width:2px,color:#fde68a;
     classDef slate fill:#181c24,stroke:#64748b,stroke-width:2px,color:#f1f5f9;
 
-    subgraph Client["Studio Frontend — Next.js 16 (:3000)"]
+    subgraph Client [Studio Frontend — Next.js 16 (:3000)]
         UI["Studio Workspace UI<br/>React 19 + Radix UI"]:::gold
         VIEWER["3D WebGL Viewport<br/>Three.js / React Three Fiber"]:::gold
         STORES["Reactive State Stores<br/>Zustand + TanStack Query"]:::gold
     end
 
-    subgraph Gateway["API Gateway & Control Plane — FastAPI (:7842)"]
+    subgraph Gateway [API Gateway & Control Plane — FastAPI (:7842)]
         ROUTERS["API Routers<br/>Generation / Retopo / UV / Rigging"]:::cyan
         QUEUE["Distributed Job Queue<br/>Redis 7 + Single-Worker Memory"]:::cyan
     end
 
-    subgraph Scheduler["VRAM-Aware Multi-Process Scheduler"]
+    subgraph Scheduler [VRAM-Aware Multi-Process Scheduler]
         GPU_LOCK["GPU Mutual Exclusion<br/>Single Job Concurrency"]:::amber
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines["Neural 3D Synthesis Engines (23 Model Adapters)"]
+    subgraph Engines [Neural 3D Synthesis Engines (23 selectable / 24 registered adapters)]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
         TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
         RETOPO["FastMesh V1K / V4K<br/>Neural Quad Retopology"]:::purple
         EXTRAS["UltraShape / PartPacker<br/>Dense Poly / Part Decomp"]:::purple
         RIGGING["UniRig & ARDY<br/>Auto-Rigging & Motion AI"]:::purple
+        ZERO123["Zero123++ v1.2<br/>Multi-View 6-Cam Synthesis"]:::purple
+        UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
 
-    subgraph PostProcess["Production Post-Processing Core (Ported from 3DGenStudio)"]
+    subgraph PostProcess [Production Post-Processing Core (Ported from 3DGenStudio)]
         CHECKPOINT["source.glb<br/>Immutable Master Raw Mesh"]:::green
         REPAIR["Watertight Repair<br/>Boundary Component Guard"]:::green
         SIMPLIFY["PyMeshLab Decimator<br/>Texture-Preserving Fallback"]:::green
@@ -166,8 +161,8 @@ flowchart TD
         QA["QA Diagnostic Engine<br/>0-100 Quality Trace"]:::green
     end
 
-    subgraph Delivery["Game Engine Ready Delivery"]
-        ASSET_STORE["backend/storage/models/<br/>Canonical Asset Hierarchy"]:::slate
+    subgraph Delivery [Game Engine Ready Delivery]
+        ASSET_STORE["backend/storage/models/meshes/<br/>Canonical Asset Hierarchy"]:::slate
         ZIP["Structured ZIP Export<br/>Unreal Engine 5 • Unity • Godot 4"]:::slate
     end
 
@@ -183,6 +178,8 @@ flowchart TD
     MONITOR --> RETOPO
     MONITOR --> EXTRAS
     MONITOR --> RIGGING
+    MONITOR --> ZERO123
+    MONITOR --> UNIQUE3D
 
     HUNYUAN -->|"Model Native GLB"| CHECKPOINT
     TRELLIS -->|"Model Native GLB"| CHECKPOINT
@@ -206,7 +203,7 @@ flowchart TD
 
 ---
 
-## 🤖 Supported Model Catalog (23 Models)
+## 🤖 Supported Model Catalog (22 User-Facing Models / 23 Registered Adapters)
 
 The model registry is dynamically configured via `backend/config/models.yaml` and loaded lazily:
 
@@ -215,7 +212,7 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **Hunyuan3D-Shape-v2.1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline, octree resolution up to 512 |
 | **Hunyuan3D-Paint-v2.1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB | 2B PBR texture checkpoint, RealESRGAN x4+, DifferentiableRenderer |
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM step-distilled shape model with Turbo path |
-| **TRELLIS** | `trellis_image_to_textured_mesh`<br>`trellis_text_to_textured_mesh` | Text/Image to Mesh | 11.5 GB | FlexiCubes PBR meshes with 2048x2048 texture maps |
+| **TRELLIS** | `trellis_image_to_textured_mesh` | Image to Mesh | 11.5 GB | FlexiCubes PBR meshes with 2048x2048 texture maps |
 | **TRELLIS.2** | `trellis2_image_to_textured_mesh`<br>`trellis2_image_mesh_painting` | Structured 3D & Paint | 23.5 GB | High-fidelity FlexiCubes with multi-view PBR texture baking |
 | **TripoSR** | `triposr_image_to_raw_mesh` | Single-Image to 3D | 6 GB | Ultra-fast feedforward 3D reconstruction with texture baking |
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
@@ -228,7 +225,10 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB | Automated bipedal skeletal armature generation |
 | **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB | Interactive autoregressive text-to-motion generation |
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
-| **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
+|| **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
+|| **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
+
+Zero123++ v1.2 is a separate, hidden Multi-View image-generation adapter (not a mesh generator). Its base checkpoint is available from the model download manager; the View-Space Normals ControlNet is optional.
 
 ---
 
@@ -237,12 +237,12 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 Raw AI generative meshes typically suffer from non-manifold triangles, missing UV layouts, dense topological noise, and absence of physics colliders. ForMash3D's post-processing engine (ported and enhanced from [3DGenStudio](https://github.com/visualbruno/3DGenStudio)) automates asset finishing:
 
 ```text
-backend/storage/models/<asset_name>_<job_hash>/
+backend/storage/models/meshes/<asset_name>_<job_id>/
 ├── master/
 │   └── source.glb              # Immutable master raw mesh
 ├── game_ready/
-│   └── <asset_name>.glb        # Production engine-ready model
-├── lods/
+│   └── <asset_name>_<job_id>.glb # Production engine-ready model
+├── lords/
 │   ├── lod0.glb                # LOD0 (100% detail)
 │   ├── lod1.glb                # LOD1 (50% reduction)
 │   ├── lod2.glb                # LOD2 (25% reduction)
@@ -312,8 +312,11 @@ bash scripts/setup.sh
 Download pre-trained weights for the models you wish to use:
 
 ```bash
-# Download model checkpoints (Hunyuan3D, TRELLIS, TripoSR, etc.)
+# Download all core model checkpoints (includes VoxHammer)
 bash backend/scripts/download_models.sh
+
+# Or download only the VoxHammer checkpoints
+bash backend/scripts/download_models.sh -m voxhammer
 ```
 
 ### 4. Running the Studio
@@ -331,13 +334,25 @@ Services:
 - Interactive Swagger Docs: `http://localhost:7842/docs`
 - Health Endpoint: `http://localhost:7842/health`
 
+### Docker Compose (NVIDIA GPU)
+
+From the repository root, build and start the backend stack with:
+
+```bash
+docker compose -f backend/docker-compose.yml up --build -d
+```
+
+Compose builds from the repository root. The image keeps backend code under `/app/backend`, adds it to `PYTHONPATH`, and launches the scheduler from that path. Put model weights in `backend/pretrained/`; generated assets are persisted in `backend/storage/`, shared by the API and scheduler.
+
+The single-container RunPod image uses the same repository-root build context: `docker build -f backend/Dockerfile.runpod -t formash3d-runpod .`. Its supervisor runs the API and scheduler from `/app/backend` and keeps Redis on localhost port 6380.
+
 ---
 
 ## 🎮 Studio Workspace Modules
 
 The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
 
-- **Generate Studio (`/workspace`)**: Text-to-3D and Image-to-3D generation with model selector, VRAM estimator, and step configuration.
+- **Generate Studio (`/workspace`)**: Image-to-3D generation with model selector, VRAM estimator, and step configuration.
 - **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting, Real-ESRGAN upscaling, and map baking (Albedo, Normal, Roughness, Metallic, AO).
 - **Retopology & Remesh (`/workspace/remesh`)**: FastMesh quad-dominant retopology with V1K and V4K target presets.
 - **UV Unwrapping (`/workspace/uv`)**: Automated conformal seam placement and atlas chart packing.
@@ -356,8 +371,7 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 | Endpoint | Method | Description |
 |---|:---:|---|
 | `/api/v1/system/info` | `GET` | System health, GPU specs, VRAM utilization, active worker mode |
-| `/api/v1/system/models` | `GET` | List all discovered 23 model adapters, readiness, and VRAM requirements |
-| `/api/v1/mesh-generation/text-to-textured-mesh` | `POST` | Generate textured 3D mesh from descriptive text prompt |
+| `/api/v1/system/models` | `GET` | List 23 registered adapters (22 user-facing models + hidden Zero123++ multi-view adapter), readiness, and VRAM requirements |
 | `/api/v1/mesh-generation/image-to-raw-mesh` | `POST` | Generate high-fidelity raw geometry from single reference image |
 | `/api/v1/mesh-generation/image-to-textured-mesh` | `POST` | Generate textured geometry directly from image |
 | `/api/v1/mesh-generation/image-mesh-painting` | `POST` | Paint PBR textures onto existing 3D geometry |
@@ -389,7 +403,7 @@ npx tsc --noEmit
 bun run lint
 
 # Verify shell script syntax
-bash -n backend/scripts/*.sh scripts/*.sh
+bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
 **Verification status**: Runtime verification must be run on the supported Python 3.10/GPU environment; this checkout's static audit does not claim a live test result.
@@ -399,9 +413,9 @@ bash -n backend/scripts/*.sh scripts/*.sh
 ## 🔍 Frequently Asked Questions (FAQ)
 
 <details>
-<summary><strong>How is ForMash3D inspired by platforms like Tripo AI and Meshy?</strong></summary>
+<summary><strong>How does ForMash3D protect source quality?</strong></summary>
 
-ForMash3D draws workflow ergonomics inspiration from modern AI 3D platforms like **Tripo AI** and **Meshy**. It enables creators and game developers to go seamlessly from a single text prompt or reference photo to a fully textured, quad-retopologized, game-ready 3D model. However, unlike cloud platforms that charge recurring subscriptions and process meshes on remote servers, ForMash3D runs entirely on your local GPU, preserving complete data privacy, raw geometric fidelity, and open customization.
+Source generation uses model-specific inference schedules and source-density settings. The scheduler strips production-only face, decimation, remesh, LOD, physics, and paint orchestration controls before adapter inference. The resulting master/source.glb is immutable; downstream production budgets operate on derived artifacts only.
 </details>
 
 <details>
@@ -450,8 +464,16 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 ## 🏷️ Recommended GitHub Repository Topics
 
 ```text
-3d, 3d-generation, 3d-mesh-generation, tripo-ai, text-to-3d, image-to-3d, mesh-generation, ai-3d, generative-ai, generative-3d, neural-3d, self-hosted, self-hosted-ai, gpu-accelerated, pbr-textures, retopology, quad-mesh, fastmesh, trellis, hunyuan3d, unreal-engine, unity, godot, game-ready, physics-colliders, open-source-3d
+3d, 3d-generation, 3d-mesh-generation, tripo-ai, image-to-3d, mesh-generation, ai-3d, generative-ai, generative-3d, neural-3d, self-hosted, self-hosted-ai, gpu-accelerated, pbr-textures, retopology, quad-mesh, fastmesh, trellis, hunyuan3d, unreal-engine, unity, godot, game-ready, physics-colliders, open-source-3d
 ```
+
+---
+
+## Centralized Runtime Logging
+
+All project-managed runtime output is consolidated in `logs/master.log`: Python/API logging, scheduler and worker events, jobs, Next.js server/build output, startup scripts, and Redis when ForMash3D manages or can reconfigure the local Redis instance. The file is append-only while the app runs and does not rotate into numbered sibling logs.
+
+Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/api/v1/system/logs/stream` read this same file. Docker and Docker Compose persist it through the repository-root `logs/` mount. A separately managed remote Redis service keeps its own logs on its host.
 
 ---
 
@@ -463,11 +485,11 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 | 📋 **[Product Requirements (PRD)](Docs/PRD.md)** | Core features, target users, and product roadmaps |
 | 🎨 **[Design System](Docs/DESIGN.md)** | Studio Gold color tokens, UI component specifications, and layouts |
 | 🛡️ **[Agent & Engineering Rules](RULES.md)** | Authoritative coding standards, minimalist practices, and change policies |
-| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (ADR-001 through ADR-037) |
+| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (ADR-001 through ADR-050) |
 | 🧠 **[Project Memory & Status](Docs/MEMORY.md)** | Active state, hardware prerequisites, and verified milestones |
 | 📜 **[Change Log](Docs/CHANGELOG.md)** | Chronological history of releases, fixes, and optimizations |
 | 🎯 **[Task Tracker](Docs/TASKS.md)** | Completed features, active development items, and future roadmap |
-| ⚡ **[Physics Runtime Specification](Docs/PHYSICS.md)** | Rigid-body simulation, mass properties, and Rapier3D integration |
+| ⚡ **[Physics Runtime Specification](Docs/SYSTEM-BLUEPRINT.md#physics-path)** | Rigid-body simulation, mass properties, and Rapier3D integration |
 | 🔌 **[API Documentation](Docs/api-documentation.md)** | Complete endpoint schemas, request payloads, and status codes |
 | ⚖️ **[Third-Party Model Licenses](backend/thirdparty/LICENSE)** | Upstream terms and attributions for all integrated model weights |
 | 🔒 **[Security Policy](Docs/SECURITY.md)** | Vulnerability reporting and isolated environment safety guidelines |
@@ -481,6 +503,36 @@ ForMash3D exports standard **GLB / glTF 2.0**, **OBJ**, **STL**, and **FBX** (vi
 - **Backend API Gateway Base**: Forked and modernized from **[FishWoWater/3DAIGC-API](https://github.com/FishWoWater/3DAIGC-API)**.
 - **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSR/SG/SF, PartPacker, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
 
+---
+
+## Recent Fixes (2026-10-05)
+
+- Fixed Minified React error #130 on settings page by adding error handling for missing workspace context.
+- Resolved Zero123Plus worker job spam issue by adding detailed logging and disabling background removal by default.
+- Made "smash mash gen" feature visible in UI by adding fallback to hardcoded smart presets when API fails.
 
 ### Runtime note
 Mesh tools are part of the main FastAPI runtime at `/api/v1/mesh-tools/*`. The default startup no longer launches a separate port 8200 mesh-tools service. Job progress is read from durable job state; mesh-tool operations may stream operation-level SSE progress.
+
+## Phase 1 Production Automation
+
+ForMash3D's normal Image → 3D workflow now includes optional production automation without a second pipeline:
+
+- Generation Preview with reusable preprocessing artifacts, adaptive low-resolution enhancement, and provenance.
+- Smart Intent presets for Game Ready, Cinematic, Animation, 3D Print, and Mobile with deterministic backend model selection.
+- Printability QA with optional auto-repair inside the existing post-processing path.
+- Auto-Rig through the existing UniRig adapter after final production processing, with explicit success/degraded state.
+
+These capabilities reuse the existing scheduler, image editor, post-processing, history, and artifact-delivery infrastructure.
+
+## High-Fidelity Generation Architecture
+
+ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler can use explicit multi-GPU placement for compatible pipelines and scales CPU-side work from the available core count while preventing worker oversubscription.
+
+Quality diagnostics can compare derivatives to the master and can use reference-mesh metrics when ground truth is available. Final GPU/OOM validation remains hardware-specific.
+
+## High-Fidelity Runtime Hardening — 2026-10-08
+
+ForMash3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
+
+Production results keep the immutable source master separate from optimized derivatives and now include final QA/LOD/fidelity diagnostics. A lightweight offline A/B benchmark is available for controlled same-input comparisons; without a real reference mesh, generated-vs-generated geometry metrics remain diagnostic.

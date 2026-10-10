@@ -96,7 +96,9 @@ class ArdyMotionGenerationAdapter(BaseModel):
             self._ensure_ardy_in_path()
             logger.info(f"Loading ARDY model from {self.ardy_root} (checkpoint: {self.current_checkpoint})")
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             from ardy.model import load_model as ardy_load
             from ardy.model.registry import resolve_model_name
@@ -159,7 +161,9 @@ class ArdyMotionGenerationAdapter(BaseModel):
             post_process = bool(inputs.get("post_process", True))
             target_bones = inputs.get("target_bones")
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             # Determine skeleton type from checkpoint
             is_g1 = "g1" in resolved_cp.lower()
@@ -228,7 +232,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             unique_id = uuid.uuid4().hex
             safe_name = f"motion_{skeleton_id}_{unique_id}"
             
-            output_dir = Path("outputs") / "motions" / safe_name
+            output_dir = Path(self.path_generator.base_output_dir) / "motions" / safe_name
             output_dir.mkdir(parents=True, exist_ok=True)
 
             npz_path = output_dir / f"{safe_name}.npz"
@@ -250,14 +254,11 @@ class ArdyMotionGenerationAdapter(BaseModel):
             )
             save_motion_json(motion_doc, json_path)
 
-            rel_motion_url = f"/outputs/motions/{safe_name}/motion.json"
-            rel_source_url = f"/outputs/motions/{safe_name}/{safe_name}.npz"
-
             response = {
                 "success": True,
-                "motion_url": rel_motion_url,
-                "source_motion_url": rel_source_url,
-                "output_mesh_path": rel_motion_url,  # Bridge for generic job result consumers
+                "motion_url": str(json_path),
+                "source_motion_url": str(npz_path),
+                "output_mesh_path": str(json_path),  # Bridge for generic job result consumers
                 "fps": motion_doc["fps"],
                 "duration": motion_doc["duration"],
                 "num_frames": motion_doc["num_frames"],

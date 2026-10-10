@@ -18,6 +18,7 @@ from PIL import Image
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
 from core.utils.file_utils import OutputPathGenerator
+from core.utils.log_formatters import format_box, format_bytes
 from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
@@ -39,12 +40,19 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
         vram_requirement: Optional[int] = None,
         triposr_root: Optional[str] = None,
         chunk_size: int = 8192,
-        mc_resolution: int = 256,
+        mc_resolution: int = 320,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            try:
+                from core.models.model_manifest import ModelManifest
+                manifest = ModelManifest()
+                meta = manifest.get_model_metadata(model_id) or manifest.get_model_metadata(self.MODEL_ID)
+                if meta and meta.vram_requirement:
+                    vram_requirement = meta.vram_requirement
+            except Exception:
+                pass
+            if vram_requirement is None:
+                vram_requirement = 6144
         if model_path is None:
             model_path = "backend/pretrained/TripoSR"
 
@@ -99,7 +107,9 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 logger.error(err_msg)
                 raise RuntimeError(err_msg) from e
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSR requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             try:
                 self.tsr_model = TSR.from_pretrained(
@@ -143,7 +153,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
         Inputs:
             - image_path: Path to input image (or image_paths)
             - output_format: 'glb' or 'obj' (default: 'glb')
-            - mc_resolution: Marching cubes resolution (default: 256)
+            - mc_resolution: Marching cubes resolution (fixed at 320, the official UI ceiling)
             - bake_texture: bool (default: False)
             - no_remove_bg: bool (default: False)
             - foreground_ratio: float (default: 0.85)
@@ -169,20 +179,29 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            mc_resolution = int(inputs.get("mc_resolution", self.mc_resolution))
+            # Immutable raw source uses the highest supported official extraction resolution.
+            mc_resolution = 320
             bake_texture = bool(inputs.get("bake_texture", False))
             no_remove_bg = bool(inputs.get("no_remove_bg", False))
             foreground_ratio = float(inputs.get("foreground_ratio", 0.85))
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSR requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             # Preprocess image
             from tsr.utils import remove_background, resize_foreground, to_gradio_3d_orientation
 
             # Preserve an existing alpha channel so pre-matted uploads are not background-removed twice.
-            raw_image = Image.open(image_path).convert("RGBA")
-            if no_remove_bg:
-                proc_image = np.array(raw_image.convert("RGB"))
+            img = Image.open(image_path)
+            has_useful_alpha = img.mode in ("RGBA", "LA", "PA") and np.array(img.getchannel("A")).min() < 255
+            raw_image = img.convert("RGBA")
+            if no_remove_bg or has_useful_alpha:
+                resized = resize_foreground(raw_image, foreground_ratio)
+                arr = np.array(resized).astype(np.float32) / 255.0
+                if arr.shape[-1] == 4:
+                    arr = arr[:, :, :3] * arr[:, :, 3:4] + (1 - arr[:, :, 3:4]) * 0.5
+                proc_image = Image.fromarray((arr * 255.0).astype(np.uint8))
             else:
                 try:
                     import rembg
@@ -197,6 +216,20 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 except Exception as bg_err:
                     logger.warning(f"Background removal failed ({bg_err}), continuing with raw image")
                     proc_image = raw_image.convert("RGB")
+
+            logger.info(
+                "\n" + format_box(
+                    "TRIPOSR: INPUT PREPROCESSING",
+                    [
+                        ("Source Image", f"{image_path.name} ({format_bytes(image_path.stat().st_size)})"),
+                        ("Dimensions", f"{raw_image.width}x{raw_image.height}"),
+                        ("Alpha Channel", f"{has_useful_alpha} (preserved)"),
+                        ("Background Removal", "Skipped" if (no_remove_bg or has_useful_alpha) else "Executed via rembg"),
+                        ("Foreground Ratio", foreground_ratio),
+                        ("Marching Cubes Res", mc_resolution),
+                    ],
+                )
+            )
 
             # Run inference
             with torch.no_grad():
@@ -221,27 +254,38 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
 
+            logger.info(
+                "\n" + format_box(
+                    "TRIPOSR: MESH EXTRACTED",
+                    [
+                        ("Raw Triangles", f"{len(mesh.faces):,} faces"),
+                        ("Raw Vertices", f"{len(mesh.vertices):,} vertices"),
+                        ("Texture Baking", f"Enabled ({inputs.get('texture_resolution', 2048)}px)" if bake_texture else "Disabled (vertex color)"),
+                        ("Output Target", str(output_path)),
+                    ],
+                )
+            )
+
             texture_requested = bake_texture
             texture_bake_succeeded = False
+            texture_bake_error = None
+            untextured_mesh = mesh
 
             if texture_requested:
                 try:
-                    import xatlas
                     from tsr.bake_texture import bake_texture as do_bake
 
                     tex_res = int(inputs.get("texture_resolution", 2048))
                     bake_output = do_bake(mesh, self.tsr_model, scene_codes[0], tex_res)
-                    xatlas.export(
-                        str(output_path),
-                        mesh.vertices[bake_output["vmapping"]],
-                        bake_output["indices"],
-                        bake_output["uvs"],
-                        mesh.vertex_normals[bake_output["vmapping"]],
-                    )
+                    mesh = self._create_baked_mesh(mesh, bake_output)
+                    mesh.export(str(output_path))
                     texture_bake_succeeded = True
                 except Exception as bake_err:
-                    logger.warning(f"Texture baking failed ({bake_err}), exporting unbaked mesh")
-                    mesh.export(str(output_path))
+                    texture_bake_error = str(bake_err)
+                    logger.warning(
+                        f"Texture baking/export failed ({bake_err}), exporting unbaked mesh"
+                    )
+                    untextured_mesh.export(str(output_path))
             else:
                 mesh.export(str(output_path))
 
@@ -252,6 +296,11 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             final_mesh = self.mesh_processor.load_mesh(output_path)
             if final_mesh is None:
                 raise RuntimeError(f"TripoSR generated output mesh could not be parsed: {output_path}")
+
+            if texture_bake_succeeded and not self._has_exported_texture(final_mesh):
+                texture_bake_succeeded = False
+                texture_bake_error = "Exported mesh contains no texture image/material"
+                logger.warning(f"Texture baking/export failed: {texture_bake_error}")
 
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)
             vertex_count = mesh_stats.get("vertex_count", 0)
@@ -273,6 +322,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                     "texture_requested": texture_requested,
                     "texture_bake_succeeded": texture_bake_succeeded,
                     "has_texture": has_texture,
+                    "texture_bake_error": texture_bake_error,
                     "mc_resolution": mc_resolution,
                 },
             }
@@ -286,6 +336,38 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             logger.error(f"TripoSR generation failed: {e}")
             raise RuntimeError(f"TripoSR generation failed: {e}") from e
 
+    @staticmethod
+    def _create_baked_mesh(mesh, bake_output):
+        colors = np.asarray(bake_output["colors"])
+        if colors.dtype != np.uint8:
+            if np.issubdtype(colors.dtype, np.floating):
+                colors = np.clip(colors, 0.0, 1.0) * 255
+            colors = np.clip(colors, 0, 255).astype(np.uint8)
+
+        textured_mesh = trimesh.Trimesh(
+            vertices=mesh.vertices[bake_output["vmapping"]],
+            faces=bake_output["indices"],
+            vertex_normals=mesh.vertex_normals[bake_output["vmapping"]],
+            process=False,
+        )
+        textured_mesh.visual = trimesh.visual.texture.TextureVisuals(
+            uv=bake_output["uvs"],
+            material=trimesh.visual.material.PBRMaterial(
+                baseColorTexture=Image.fromarray(colors),
+                metallicFactor=0.0,
+                roughnessFactor=1.0,
+            ),
+        )
+        return textured_mesh
+
+    @staticmethod
+    def _has_exported_texture(mesh):
+        material = getattr(getattr(mesh, "visual", None), "material", None)
+        return any(
+            getattr(material, attribute, None) is not None
+            for attribute in ("baseColorTexture", "image")
+        )
+
     def get_supported_formats(self) -> Dict[str, List[str]]:
         return {"input": self.supported_input_formats, "output": self.supported_output_formats}
 
@@ -294,10 +376,11 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "mc_resolution": {
                     "type": "integer",
-                    "description": "Marching cubes resolution",
-                    "default": 256,
-                    "minimum": 64,
-                    "maximum": 512,
+                    "description": "Fixed at the official TripoSR raw-extraction maximum.",
+                    "default": 320,
+                    "minimum": 320,
+                    "maximum": 320,
+                    "readOnly": True,
                     "required": False,
                 },
                 "bake_texture": {

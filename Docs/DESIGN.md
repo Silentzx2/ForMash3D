@@ -1,7 +1,7 @@
 # UI Design System & Component Reference
 
 > **Design Version**: 0.1.0
-> **Last Updated**: September 2026
+> **Last Updated**: October 3, 2026
 > **Design System**: Studio Gold (`#FFCC00`, `48 100% 50%`) on Matte Black (`#080808`)
 
 ---
@@ -201,6 +201,7 @@ Universal motion specifications compatible with `motion/react`:
 ### Paint-v2-1 Texture Panel Components
 - `TexturePanel.tsx`: PBR texture controls, systemStats display, VRAM status
 - `GeneratePanel.tsx`: Model selector, FlashVDM toggle, VRAM stats
+- Source-generation controls preserve maximum model-native geometry and source texture fidelity; polycount and quality budgets are production-stage controls.
 - `systemStats`: Real-time GPU/VRAM telemetry in texture panel
 
 ---
@@ -349,7 +350,23 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 12. Component Interaction Flow
+## 12. Multi-View Workspace UX
+
+- **Single-Image Automatic Reuse**: When switching between Single Image and Multi-View modes in the Generate Panel, any reference image uploaded in Single Image mode is automatically inherited by Multi-View without requiring re-upload.
+- **Sub-Mode Switcher**: Clean dual-segment control switching between `Generate Views (Zero123++)` and `Upload View Set` (manual collections).
+- **6-View Inspection Gallery**: Responsive 3x2 grid displaying the canonical viewpoints (`front_right_30`, `right_90`, `back_right_150`, `back_left_210`, `left_270`, `front_left_330`) with azimuth degrees and badges for available masks (`MASK`) and View-Space Normals (`NORM`).
+- **Interactive Pan & Zoom Viewer Modal**:
+  - Fullscreen overlay with dark backdrop blur (`backdrop-blur-md`).
+  - Drag-to-pan with real-time translation offset.
+  - Granular zoom controls (0.5x to 4.0x) with keyboard accelerators: `+`/`=` (Zoom in), `-` (Zoom out), `0`/`1` (Reset), `ArrowLeft`/`ArrowRight` (Cycle views), and `Esc` (Close).
+- **Advanced Generation Drawer**: Compact accordion housing controls for diffusion inference steps (15-100), CFG guidance scale (1.0-10.0), seed mode (Auto vs Custom integer), optional rembg background removal, optional alpha masks, and optional View-Space Normals.
+- **Model Capability Gating Badges**: Real-time visual feedback indicating whether the currently selected 3D generation engine supports multi-view input:
+  - Multi-View Ready (`emerald-400`, `capabilities.multiview: true`)
+  - Single-Image 3D Only (`amber-400`, tooltip warning and disabled 3D generation action)
+
+---
+
+## 13. Component Interaction Flow
 
 ```mermaid
 sequenceDiagram
@@ -399,3 +416,92 @@ Jobs & Execution follows the same rule: active jobs refresh frequently, idle his
 
 ## Workspace Data Integrity
 Mesh statistics, segmentation part counts, and result metadata are rendered only when supplied by the backend. Client-side sample numbers are not treated as factual asset statistics.
+
+## Resource/Status Header UI — 2026-10-04
+
+The top-level resource status strip shows live system telemetry with negligible performance impact:
+
+| Metric | Backend Source | Refresh |
+|--------|---------------|---------|
+| CPU usage % | `/api/v1/system/stats` `cpu_percent` | 5s |
+| RAM used / total GB | `/api/v1/system/stats` `ram_used_gb`, `ram_total_gb` | 5s |
+| GPU usage % | `/api/v1/system/stats` `gpu_percent` | 5s |
+| GPU VRAM used / total GB | `/api/v1/system/stats` `vram_used_gb`, `vram_total_gb` | 5s |
+| GPU temperature C | `/api/v1/system/stats` `gpu_temp_c` | 5s |
+| GPU name | `/api/v1/system/stats` `gpu_name` | On load |
+
+The backend uses `psutil.cpu_percent(interval=0.1)` for an accurate delta reading without blocking the event loop. GPU telemetry is best-effort via `GPUtil`; absence does not fail the request.
+
+Frontend pattern:
+- Poll `/api/v1/system/stats` every 5 seconds from the workspace header.
+- Hide or degrade gracefully when `gpu_name` is `"Unknown"` or GPU fields are `0.0`.
+- Do not run heavy polling while the workspace tab is hidden.
+
+## Model Parameter Contract — 2026-10-04
+
+The frontend never hardcodes model inference schedules. Each model exposes its parameter schema through:
+
+```
+GET /api/v1/system/models/{model_id}/parameters
+```
+
+Response shape:
+```json
+{
+  "model_id": "trellis_image_to_textured_mesh",
+  "feature_type": "image_to_textured_mesh",
+  "vram_requirement": 11776,
+  "schema": {
+    "parameters": {
+      "texture_resolution": {
+        "type": "integer",
+        "default": 2048,
+        "minimum": 512,
+        "maximum": 4096,
+        "description": "Output texture resolution"
+      }
+    }
+  },
+  "timestamp": "2026-10-04T00:00:00Z"
+}
+```
+
+Frontend rules:
+- Use the returned `schema.parameters` for defaults, constraints, and validation.
+- Treat the backend schema as the source of truth; do not duplicate parameter definitions in TypeScript.
+- When the schema is unavailable, disable dependent controls rather than guessing defaults.
+
+## Generation Quality Presets — 2026-10-04
+
+Quality presets in the Generate panel are UI convenience shortcuts. The actual inference schedule remains model-specific and is resolved at submission time from the model parameter contract or the backend `/system/models/{model_id}/parameters` endpoint.
+
+Current model-specific inference defaults:
+- Hunyuan3D-Shape-v2-1: 50 steps, guidance 5.0
+- Hunyuan3D-DiT-v2-mini-Turbo: 5 steps, guidance 5.0
+- TripoSR: official fixed schedule
+- TripoSG: 50 steps, guidance 7.0
+- TRELLIS image: 12 steps, guidance 7.5
+- TRELLIS text: 25 steps, guidance 7.5
+
+The visible quality selector (`Mobile / Game / Studio / Cinematic / Native`) maps to production post-processing budgets, not inference schedules. `Native / Raw` preserves the model-native source density and skips downstream polycount reduction.
+
+## Resource-Aware Generation UX — 2026-10-08
+
+The workspace receives the normalized runtime capability contract. Model-specific controls are shown only when supported; quality/polycount choices are routed through the scheduler and production post-process rather than silently changing model-native source density. High-fidelity source and game-ready derivatives remain separately inspectable.
+
+## Phase 1 Generation UX Contract
+
+### Generation Preview
+The Generate panel exposes Original versus Generation Preview, approval/reuse, regeneration, manual editor navigation, and a disable path. Changing the source invalidates the previous preprocessing artifact.
+
+### Smart Intent
+Compact controls expose Game Ready, Cinematic, Animation, 3D Print, and Mobile. With a ready uploaded image, selecting an intent applies the backend preset, resolves the actual chosen model, shows the selection rationale, and triggers the normal generation lifecycle. The UI does not reimplement resource admission.
+
+### Production QA
+Printability, Auto-Repair, and Auto-Rig are explicit controls. All execute through the existing scheduler/post-process lifecycle and expose degraded failure state rather than false success.
+
+## High-Fidelity Generation UX Contract — 2026-10-08
+
+The generation experience exposes model capability state, quality mode, polycount, texture quality, progress/fallback state and high-fidelity vs optimized output variants without exposing controls unsupported by the selected model.
+
+Quality mode must never silently downgrade the immutable master. A requested polycount applies to derivative generation, not to the master.

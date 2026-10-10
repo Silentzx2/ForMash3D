@@ -293,7 +293,7 @@
 - `Docs/PRD.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, etc.
 - `Docs/CHANGELOG.md` keeps only last 3 changes
 - `Docs/TASKS.md` with clear completed/future format
-- `Docs/RULES.md` with mandatory doc update policy
+- `RULES.md` at repository root with mandatory doc update policy
 - After every code change, all relevant .md files must be updated
 
 ---
@@ -346,7 +346,7 @@
 
 ---
 
-## ADR-021: Canonical Hunyuan Shape→Paint Workflow
+## ADR-040: Canonical Hunyuan Shape→Paint Workflow
 
 **Decision**: Treat Hunyuan3D-Shape-v2-1 as the raw-mesh stage and Hunyuan3D-Paint-v2-1 as the optional texture stage. Do not register a separate direct Shape textured model ID.
 
@@ -358,7 +358,7 @@
 - Workspace texture generation uses the generated job file ID plus the original image input for Shape-v2-1 or Mini Turbo → Paint handoff.
 - The removed direct Shape textured ID is not exposed through the model registry or GeneratePanel.
 
-## ADR-014: Explicit SDPA Fallback for Pre-Ampere Sparse Attention
+## ADR-041: Explicit SDPA Fallback for Pre-Ampere Sparse Attention
 
 **Decision**: When an adapter selects SDPA for a pre-Ampere GPU, bundled TRELLIS and TripoSF sparse attention execute PyTorch scaled-dot-product attention directly.
 
@@ -369,15 +369,15 @@
 - No new runtime dependency is introduced.
 - FlashAttention remains the explicit path on supported GPUs.
 
-## ADR-015: Model-Specific Dependency Overrides After the Global Baseline
+## ADR-042: Model-Specific Dependency Overrides After the Global Baseline
 
-**Decision**: Re-apply model-specific requirements after the global backend baseline when a model pins different compatible versions.
+**Decision**: Use shared backend dependency pins that satisfy TripoSG, then install TripoSG's requirements after the backend baseline in the shell installer and both Docker builds.
 
-**Reason**: TripoSG requires diffusers 0.30.3 while the global baseline pins 0.24.0; installation order previously overwrote the model requirement.
+**Reason**: The prior backend pins (`diffusers==0.24.0`, `transformers==4.43.2`) contradicted TripoSG's `diffusers==0.30.3` and `transformers>=4.44.0`. The selected pins (`diffusers==0.30.3`, `transformers==4.44.2`, `huggingface_hub>=0.25.0,<0.26.0`) satisfy both requirement sets.
 
 **Consequences**:
-- The global dependency baseline remains unchanged.
-- TripoSG's declared compatibility is restored deterministically by the installer.
+- Python 3.10 and PyTorch 2.6.0+cu124 remain unchanged.
+- The shell installer and both Docker images apply TripoSG's requirement set after the shared backend baseline.
 
 ## ADR-028: TripoSR Output Axis for ForMash3D
 
@@ -454,7 +454,7 @@
 
 Decision: successful raw mesh-generation jobs run the production post-processing pipeline before the job is marked completed.
 
-Storage: backend/storage/models/<asset_name>_<job_hash>/ is the canonical workspace. There is no persistent export/ directory. ZIP delivery is generated on demand.
+Storage: `backend/storage/models/meshes/<asset_name>_<job_id>/` is the canonical mesh workspace. There is no persistent export/ directory. ZIP delivery is generated on demand.
 
 Runtime: post-processing runs outside the FastAPI event loop; Blender-only operations use BLENDER_EXECUTABLE subprocesses while the main environment remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4.
 
@@ -467,53 +467,53 @@ Security: artifact downloads reuse existing job authorization and accept only fi
 
 **Constraints:** Keep the canonical physics representation provider-neutral; do not treat draft glTF physics extensions as the sole source of truth; do not fake soft-body/jiggle; do not add native physics engines until a tested product requirement exists.
 
-## ADR-014: Truthful Execution Telemetry and Artifact-Driven Inspectors
+## ADR-043: Truthful Execution Telemetry and Artifact-Driven Inspectors
 **Date:** 2026-09-29
 
 **Decision:** The UI must render generation status, progress, cancellation, and asset statistics from real backend contracts only. Missing backend facts remain explicitly unknown instead of being replaced by sample numbers.
 
 **Consequences:** Pipeline status uses real stage logs and adaptive polling; queued cancellation calls the scheduler-backed cancel endpoint; Jobs removes fabricated progress; segmentation inspectors consume `segmentation_info`; uploaded assets no longer pretend to have fixed mesh counts. The current single-image generation backend is surfaced honestly rather than presenting the existing multiview collection UI as a supported multi-view request.
 
-## ADR-019 — Redis Control State Must Not Be Evicted
+## ADR-044: Redis Control State Must Not Be Evicted
 
 Decision: Redis used for job/worker control state uses noeviction; result payloads use dedicated expiring keys.
 
 Reason: Evicting live queue state can strand GPU work. Redis EXPIRE applies to keys, not individual hash fields.
 
-## ADR-020 — Resource-Blocked Jobs Rotate
+## ADR-045: Resource-Blocked Jobs Rotate
 
 Decision: A job that currently cannot acquire compatible worker/VRAM resources is requeued at the back rather than blocking the global queue head.
 
 Reason: A large or unavailable model must not block smaller jobs whose resource requirements are currently satisfiable.
 
-## ADR-021 — Manifest-Driven Model Readiness and VRAM
+## ADR-046: Manifest-Driven Model Readiness and VRAM
 
 The backend model manifest is authoritative for capabilities, VRAM reservation, max workers, IO, and model paths. Adapters reject missing manifest VRAM for models whose historical defaults were inconsistent.
 
-## ADR-022 — Unsupported Multiview Is Explicitly Gated
+## ADR-047: Unsupported Multiview Is Explicitly Gated
 
 Until a model-specific multi-view request contract exists, the UI must not collect or silently collapse multi-view inputs into a single-view generation request.
 
-## ADR-023 — Raw Result Is Independent from Production Post-Processing
+## ADR-048: Raw Result Is Independent from Production Post-Processing
 
 GPU generation publishes the raw artifact first. Production post-processing runs asynchronously and records its own status/error fields on the completed job.
 
 
 ---
 
-## ADR-014: Raw Completion Before Production Post-Processing
+## ADR-049: Production Post-Processing Before Terminal Completion
 
-**Decision**: Mark GPU inference complete as soon as the native model result is durable, then execute canonical production post-processing as a background task with explicit result-level status.
+**Decision**: Persist the native model result as the immutable master checkpoint, then run canonical production post-processing before publishing terminal job success.
 
-**Reason**: Raw-model availability and game-ready artifact production have different resource/lifecycle characteristics. Keeping them coupled made a successful model inference appear incomplete and encouraged premature input cleanup.
+**Reason**: For a self-hosted personal production workflow, a completed generation must mean the requested production artifact is ready for inspection/export. This keeps job status truthful and avoids showing a raw mesh as finished while LOD, collision, preview, or QA artifacts are still pending.
 
 **Consequences**:
-- The job status can be completed while `postprocess_status` is pending/running/completed/failed.
-- Request inputs remain owned by the post-processing task until lineage metadata is written.
-- The frontend can load the raw result immediately and rehydrate the same asset when production artifacts finish.
-- Post-processing failure no longer erases or falsely invalidates a successful raw generation.
+- `master/source.glb` is durable before any destructive downstream stage.
+- `postprocess_status` remains explicit for telemetry and retry operations.
+- The live execution panel can show the real production stages through terminal completion.
+- A post-processing error is a generation failure for that job rather than a misleading success.
 
-## ADR-015: Manifest-Only Runtime Resource Contracts
+## ADR-050: Manifest-Only Runtime Resource Contracts
 
 **Decision**: Adapter runtime constructors do not invent VRAM defaults; model manifests provide the resource requirement and capability contract.
 
@@ -572,3 +572,186 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - Hunyuan shape, paint, and mini-turbo adapters safely operate within supported octree bounds.
 - TRELLIS.2 exporter never triggers unhandled cumesh exceptions on non-decimated requests.
 - Textured assets never lose their materials or crash the post-processing queue on decimation errors.
+
+## ADR-038: Zero123++ v1.2 Multi-View Isolation and Capability Gating
+
+**Decision**: Vendor Zero123++ v1.2 in `backend/thirdparty/zero123plus` without `.git` metadata, isolate behind `Zero123PlusAdapter` under `image_to_multiview` feature type, hide from general 3D model selectors (`hidden_from_model_selector: true`), and enforce a hard capability gate (`capabilities.multiview: true`) on downstream 3D reconstruction.
+
+**Reason**: Zero123++ generates 6 novel viewpoints at 30° azimuth intervals without producing 3D meshes directly. Its weights carry a CC-BY-NC 4.0 license constraint. Isolating it behind a dedicated feature type and adapter ensures it does not pollute 3D mesh selectors, preserves legal boundaries, enables on-demand ZIP export without mesh generation, and guarantees that 3D reconstruction only occurs when a multi-view enabled 3D engine is selected.
+
+**Consequences**:
+- Upstream repo is vendored directly in the project and `install.sh` verifies it without performing external git clones.
+- Single-image uploads are automatically shared with Multi-View mode without re-upload.
+- The UI action button and backend router (`/reconstruct-3d`) enforce strict rejection when attempting multi-view 3D reconstruction with incompatible engines.
+- Views, optional masks, and optional View-Space Normals are stored in `storage/models/meshes/<safe_stem>_<job_hash>/multiview/` with deterministic hashes (`source_sha256`, `request_sha256`). New assets honor `STORAGE_LOCAL_PATH`; existing assets under the prior `storage/models/` path remain readable.
+- ZIP export delivers `<safe_stem>.zip` without extra random hashes.
+
+
+## ADR-039: Model-Native Source Fidelity Firewall
+**Decision**: Neural source generation is distinct from production optimization. The scheduler enforces the separation centrally by stripping downstream face, decimation, remesh, and other post-process controls before adapter inference.
+**Reason**: Frontend-only invariants are insufficient because direct or future callers could pass adapter-level reduction controls.
+**Consequences**:
+- faces, num_faces, simplify, decimation_target, and remesh controls are downstream-only.
+- Legacy Hunyuan3D-2.1 raw and Shape→Paint paths use seeded 50-step / 5.0-guidance source generation.
+- TRELLIS source texture is fixed to 2048 and TRELLIS.2 to 4096.
+- Production polycount, LOD, UV, collision, and baking remain downstream responsibilities.
+- CUDA/NVIDIA visual A/B remains a runtime verification gate.
+
+## ADR-051 — Phase 1 Shared Image Preprocessing Artifact
+
+Use a content-hashed preprocessing artifact for optional Image → 3D enhancement. It records source/approved hashes, exact recipe, dimensions, crop, and fallback state so preview and generation cannot silently diverge.
+
+## ADR-052 — Phase 1 Deterministic Intent Presets
+
+Use a versioned YAML source of truth with ordered model priorities as the deterministic candidate/tie-break order. Candidate admission and ranking also use the shared capability/resource contract, including readiness, VRAM, quality, texture, polycount, latency, and multi-GPU compatibility. Explicit model choices remain authoritative.
+
+## ADR-054 — Deterministic Smart Generation Submission
+
+**Decision**: Smart Generation resolves image-only intent presets against the existing model manifest, then delegates the actual job to the existing raw/textured image-generation endpoints and scheduler. The Generate panel may auto-submit after an intent is selected when a valid uploaded/approved image is available.
+
+**Reason**: This satisfies one-click smart generation without creating a second scheduler, inference path, or persistence layer.
+
+**Consequences**:
+- Five YAML-backed intent presets remain the single source of truth.
+- Explicit model overrides remain supported through the smart API.
+- Scheduler VRAM admission and existing production post-processing remain authoritative.
+- Text → 3D remains out of scope.
+
+## ADR-053 — Phase 1 UniRig Child Workflow
+
+Run UniRig as a scheduler-managed child job after the canonical production mesh exists. Finalize the parent only after a durable rigged artifact is present; report failure explicitly as degraded.
+
+---
+
+## ADR-055: Unique3D Third-Party Integration
+
+**Decision**: Vendor Unique3D (AiuniAI/Unique3D) at `backend/thirdparty/Unique3D/` with upstream commit `6311af200ee197544e82e0f2557cd890edd60416`, without `.git` metadata. Install via `install.sh` after FastMesh, using the project's shared PyTorch 2.6.0+CUDA 12.4 environment. Remove torch/torchvision/torchaudio from Unique3D's requirements to avoid conflicts with the canonical baseline. Preserve the MIT LICENSE from upstream.
+
+**Reason**: Unique3D provides high-quality image-to-3D generation. The upstream repo targets Python 3.10 + CUDA 12.2, but the ForMash3D baseline uses PyTorch 2.6.0 + CUDA 12.4 which is compatible. Removing the pinned torch dependencies prevents version conflicts with the shared environment. The install order after FastMesh ensures nvdiffrast and other shared build dependencies are already available.
+
+**Consequences**:
+- `backend/thirdparty/Unique3D/requirements.txt` audited: torch/torchvision/torchaudio references removed (were already commented or absent).
+- `backend/scripts/install.sh` updated with Unique3D installation block after FastMesh.
+- Upstream commit `6311af200ee197544e82e0f2557cd890edd60416` recorded for traceability.
+- MIT LICENSE preserved in the vendored directory.
+- No changes to `backend/requirements.txt` needed — Unique3D dependencies install into the shared environment.
+
+## ADR — Preserve Every Model; Route by Capability
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+ForMash3D will not remove or replace existing open-weight models merely because a newer generator benchmarks better. Model selection is now capability- and resource-aware, with deterministic fallback behavior. TRELLIS.2, TripoSG and Hi3DGen-derived conditioning are additive capabilities.
+
+## ADR — Multi-GPU Loading Must Be Explicitly Supported
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Aggregate VRAM is not treated as automatic model parallelism. A model must declare a supported strategy. The generic implementation uses Accelerate device-map dispatch for compatible torch-module pipelines. The scheduler reserves memory on every participating GPU and fails closed when the adapter cannot actually be dispatched.
+
+## ADR — Master Mesh Is Immutable
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+The first valid generated mesh remains the fidelity source. Retopology, decimation, UV, baking and LOD are derivative operations and may never overwrite the master.
+
+## ADR-056 — Shared Model Capability Contract
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Normalize every model manifest into one machine-readable capability contract at configuration load time. Explicit model metadata wins; only facts derivable from the existing manifest are defaulted. This keeps routing, readiness, preprocessing profiles, resource planning and UI capability state on one source of truth.
+
+## ADR-057 — Quality Gates Are Part of Production Status
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Final QA, LOD lineage validation, and master-to-derivative fidelity drift are production signals. They cannot overwrite or invalidate the immutable master, but failed mandatory quality checks must mark the production result degraded/failed rather than silently reporting success.
+
+## ADR-058 — Controlled A/B Benchmark Without False Ground Truth
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+ForMash3D provides a lightweight offline A/B harness that requires identical input hashes and production protocol. Without a real reference mesh, generated-vs-generated geometry comparisons remain diagnostic only. Ground-truth metrics are enabled only when an actual reference mesh is supplied.
+
+## ADR-059 — Hi3DGen Remains Evaluation-Gated
+
+**Date:** 2026-10-08  
+**Status:** Accepted
+
+Hi3DGen-style normal bridging is not hard-wired into production without controlled evidence. The current integration preserves the model-aware preprocessing/capability contract and leaves normal-bridging adoption behind an explicit benchmark gate until a compatible runtime, dependency set, and measurable quality improvement are verified.
+
+## ADR-060 — Persistent Asset Previews and Thumbnails Over Blob URLs
+
+**Date:** 2026-10-09  
+**Status:** Accepted
+
+**Decision**: Replace browser-local blob URLs (`URL.createObjectURL(file)`) with persistent backend storage endpoints (`/api/v1/file-upload/download/{file_id}` and `/api/v1/file-upload/thumbnail/{file_id}`).
+
+**Reason**: Ephemeral object URLs are lost on component unmount or route changes, causing image previews and model thumbnails to vanish when users switch between single-view, multiview, and assets panels.
+
+**Consequences**:
+- Uploaded assets immediately obtain durable server-side IDs and persistent thumbnail endpoints.
+- Previews and reference thumbnails remain stable across all workspace views and page reloads.
+- Shared asset store allows multiview and single-view workspaces to seamlessly cross-reference uploaded media.
+
+## ADR-061 — Dual-Action Generation Queueing and Viewport HUD Capsule
+
+**Date:** 2026-10-09  
+**Status:** Accepted
+
+**Decision**: Support continuous workflow by displaying in-progress feedback on the active generation button alongside a secondary "Queue Next" button when a job is active. Provide a top-right viewport HUD capsule in the 3D viewport for monitoring background jobs.
+
+**Reason**: Long neural inferences should not lock the artist workspace or prevent enqueuing subsequent tasks.
+
+**Consequences**:
+- When GPU/VRAM is busy, new submissions are safely queued in the background scheduler without crashing or risking OOM.
+- If multiple GPUs have available VRAM, concurrent batch generation executes automatically.
+- Artists can monitor queue progress and load newly completed models directly into the MeshViewer viewport via a single click.
+
+## ADR-062 — Dual-Store Synchronization for Job Deletion
+
+**Date:** 2026-10-09  
+**Status:** Accepted
+
+**Decision**: Ensure `delete_job` cleanly purges job entries from both Redis hot keys and the persistent SQLite database (`db_manager`).
+
+**Reason**: Inconsistent key deletion between Redis and SQLite previously caused `500 Failed to delete job from database` errors when attempting to delete completed or failed jobs.
+
+**Consequences**:
+- Deletions are coordinated across both storage tiers without throwing 500 errors.
+- Prevents orphaned job records in the scheduler database.
+
+## ADR-063 — Full CPU Core Concurrency for Mesh Processing & Scheduler Workers
+
+**Date:** 2026-10-10  
+**Status:** Accepted
+
+**Decision**: Allocate all available physical/logical CPU cores (`os.cpu_count()`, default 8) across the scheduler workers and postprocessing pipelines (`OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `torch.set_num_threads`).
+
+**Reason**: Workers were previously defaulting to `cpu_threads=1`, bottlenecking CPU-bound isosurface extraction (marching cubes), mesh decimation, and smoothing on a single core.
+
+**Consequences**:
+- Marching cubes, Taubin smoothing, quadric decimation, and multi-LOD processing execute in parallel across all CPU cores.
+- `cpu_threads_for_workers` prevents dividing cores into 1 thread per worker.
+- Launcher scripts (`manager.sh`, `scripts/start.sh`, `run_server.sh`) export `OMP_NUM_THREADS=8` by default.
+
+## ADR-064 — Hunyuan3D Turbo Optimization and Strict GPU Inference Enforcement
+
+**Date:** 2026-10-10  
+**Status:** Accepted
+
+**Decision**: Optimize Hunyuan3D-DiT-v2-mini-Turbo to use `octree_resolution=380` (or 256), `num_chunks=20000`, and `topk_mode='merge'` for FlashVDM. Enforce strict CUDA device execution (`cuda:0`) across all model adapters, rejecting silent fallback to CPU.
+
+**Reason**: Hardcoded `octree_res=512` generated a 505³ volume (128 million voxels), taking 4+ minutes on CPU marching cubes. In addition, silent CPU fallback caused models to hang on low-spec environments.
+
+**Consequences**:
+- Hunyuan3D Turbo generation time drops from >5 minutes to <35 seconds.
+- FlashVDM uses optimized merge attention pooling.
+- All model adapters explicitly verify `torch.cuda.is_available()` and target CUDA devices.
+
+

@@ -21,14 +21,17 @@ Existing open-source AI 3D tools produce raw outputs that lack the post-processi
 
 ## Goal
 
-Create a centralized, local AI 3D asset factory that takes an image or text prompt and automatically produces the highest-quality practical 3D asset possible, preserves model-native geometry at an immutable `master/source.glb` checkpoint, processes it intelligently, validates it, optimizes it, and gives the user a usable game-ready result.
+Create a centralized, local AI 3D asset factory that takes a reference image and automatically produces the highest-quality practical 3D asset possible. Text prompts remain supported for mesh painting, localized mesh editing, and motion generation; direct Text → 3D mesh generation is out of scope.
 
 ## Core Features
 
 ### 1. Neural Shape Generation
-- **Image-to-3D**: Generate raw meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
-- **Text-to-3D**: Generate meshes from text prompts using TRELLIS
+- **Image-to-3D**: Generate raw and textured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
+- **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
+- **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
+- **Central Source-Fidelity Firewall**: The scheduler removes production-only target, decimation, remesh, LOD, physics, and paint orchestration controls before model inference.
+- **Model-Native Texture Fidelity**: Textured source generation keeps explicit maximum source texture settings; downstream quality and polycount controls do not lower the immutable source.
 
 ### 2. PBR Texture Painting
 - **Image Mesh Painting**: Paint textures onto existing meshes using Hunyuan3D-Paint-v2-1
@@ -40,7 +43,7 @@ Create a centralized, local AI 3D asset factory that takes an image or text prom
 ### 3. Post-Processing Pipeline
 - **Mesh Decimation**: meshoptimizer SIMD decimation to target polycounts
 - **UV Unwrapping**: xatlas conformal UV unwrapping
-- **Texture Projection Baking**: Bake textures onto simplified meshes
+- **High-to-Low Detail Baking**: Available as an explicit transfer step for projecting source detail onto simplified meshes; automatic generation never mutates the immutable source checkpoint
 - **Safe Component Guard**: Preserve anatomical features (≥0.5% vertices or ≥15 verts)
 
 ### 4. Multi-Tier LOD Generation
@@ -84,6 +87,13 @@ Create a centralized, local AI 3D asset factory that takes an image or text prom
 ### 12. UV Unwrapping
 - **PartUV**: Automated seam placement and UV chart packing
 - Part-based UV unwrapping with LSCM
+
+### 13. Multi-View Generation
+- **Zero123++ v1.2**: 6 novel camera viewpoints generated at fixed 30° azimuth intervals (30°, 90°, 150°, 210°, 270°, 330°)
+- Seamless reference image reuse from Single Image mode without re-upload
+- Optional alpha masks and View-Space Normals (Normal ControlNet)
+- Multi-View Workspace with 6-view inspection gallery, pan/zoom viewer modal, and on-demand ZIP export (`<stem>.zip`)
+- Capability gating: strict restriction ensuring Multi-View 3D reconstruction only targets engines declared with `capabilities.multiview: true`
 
 ## MVP
 
@@ -202,8 +212,8 @@ sequenceDiagram
     participant Adapter as Model Adapter
     participant Storage as backend/storage/
 
-    User->>Frontend: Select prompt / image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/text-to-textured-mesh
+    User->>Frontend: Select image + Platform budget
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
@@ -264,12 +274,11 @@ flowchart TD
 
 ## QA Scoring Methodology
 
-```mermaid
-pie title QA Score Weighting Distribution (100 Points Total)
-    "Topology & Geometry Integrity" : 35
-    "UV Mapping & Material Retention" : 35
-    "Platform Polycount Budget" : 30
-```
+| Category | Weight (Points) |
+|---|---|
+| Topology & Geometry Integrity | 35 |
+| UV Mapping & Material Retention | 35 |
+| Platform Polycount Budget | 30 |
 
 - **Topology & Geometry Integrity** (35 pts): Non-zero geometry, consistent normals, watertight manifoldness, connected component cleanliness
 - **UV Mapping & Material Retention** (35 pts): Valid UVs, texture retention, UV overlap detection
@@ -294,6 +303,8 @@ CUDA_DEVICE=auto
 MAX_VRAM_MB=0
 VRAM_SAFETY_MARGIN_MB=1024
 AUTO_UNLOAD_AFTER_JOB=true
+FORMSH3D_CPU_THREADS=auto
+FORMSH3D_CPU_WORKERS=auto
 STORAGE_LOCAL_PATH=./backend/storage
 API_V1_PREFIX=/api/v1
 CORS_ORIGINS=["http://localhost:3000"]
@@ -327,7 +338,7 @@ ForMash3D/
 │   ├── scripts/                       # install.sh, download_models.sh
 │   ├── thirdparty/                    # Third-party source code
 ├── scripts/                           # Setup and lifecycle scripts
-├── docs/                              # Technical documentation
+├── Docs/                              # Technical documentation
 ├── backend/storage/                   # Generated assets
 ├── backend/thirdparty/wheels/         # Prebuilt wheels
 ├── .env.example                       # Environment template
@@ -367,7 +378,7 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 ## Current Production Post-Processing Contract — 2026-09-29
 
-Every successful mesh-generation job automatically enters post-processing. The raw generation output is preserved byte-for-byte in backend/storage/models/<asset_name>_<job_hash>/master/source.glb before any destructive operation.
+Every successful mesh-generation job automatically enters post-processing. The raw generation output is preserved byte-for-byte in `backend/storage/models/meshes/<asset_name>_<job_id>/master/source.glb` before any destructive operation.
 
 The canonical workspace contains master/, game_ready/, lods/, collision/, textures/, previews/, and metadata/. Only artifacts that actually succeed are written.
 
@@ -375,3 +386,17 @@ Normal downloads target game_ready/. ZIP export is an on-demand snapshot of the 
 
 ## Physics capability
 The product now supports an optional Physics Ready generation intent. Users can enable physics preparation before generation and adjust body behaviour, mass mode, collision quality, friction, restitution, damping, and gravity. Physics-ready assets expose collision and physics metadata and can be interactively tested in the existing model viewer. The first production scope is rigid-body simulation; deformable/jiggle behaviour remains capability-gated rather than being faked. Physics preparation reuses the existing collision pipeline and does not add an AI model.
+
+## Phase 1 Product Contract
+
+### Image Enhancement
+Generation Preview is optional. The approved artifact is content-addressed and reused exactly by the generation job. High-resolution images are not blindly upscaled; enhancement failures carry explicit fallback metadata.
+
+### Printability
+Printability QA is deterministic topology inspection in the shared production post-process path. Auto-repair is explicit. A failed final check is surfaced as a degraded result.
+
+### Auto-Rigging
+One canonical enable_auto_rig flag runs UniRig after the final production mesh. The immutable source/master is never replaced by the rigged derivative. A rigged artifact is not reported ready until the child job has produced a durable output.
+
+### Smart Intent
+Five built-in intent presets are backend-owned and deterministic. Explicit model selection remains an override; the scheduler remains the final concurrency and VRAM authority.

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { GenerationConfig, GenerationJob, GenerationMode, QualityPreset, ViewerState, ViewerMode, LogEntry, RecentPrompt, UploadedImage, InstallProgress, AdminJob, ProjectAsset, ProjectLayer, BatchQueueItem, GenerationResult } from '@/types';
+import type { GenerationSettings } from '@/features/workspace/types';
 import { getApiClient } from '@/services/apiClient';
 
 export interface AppState {
@@ -22,6 +23,7 @@ export interface AppState {
   isLoadingHistory: boolean;
   loadingError: string | null;
   retryCount: number;
+  generationSettings: GenerationSettings;
   loadHistory: () => Promise<void>;
 
   // ── Multi-View & References ──
@@ -129,13 +131,13 @@ export interface AppState {
   setMultiViewImage: (view: 'front' | 'left' | 'right' | 'back', img: UploadedImage | null) => void;
   setReferenceModel: (model: AppState['referenceModel']) => void;
 
-  // ── Batch Generation Actions ──
-  setBatchGenerationEnabled: (v: boolean) => void;
-  setBatchQueue: (queue: BatchQueueItem[]) => void;
-  addToBatchQueue: (prompts: string[]) => void;
-  removeFromBatchQueue: (id: string) => void;
-  clearBatchQueue: () => void;
-  updateBatchItem: (id: string, updates: Partial<BatchQueueItem>) => void;
+    // ── Batch Generation Actions ──
+    setBatchGenerationEnabled: (batchGenerationEnabled) => void;
+    setBatchQueue: (batchBatchQueue) => void;
+    addToBatchQueue: (imageFileIds: string[]) => void;
+    removeFromBatchQueue: (id: string) => void;
+    clearBatchQueue: () => void;
+    updateBatchItem: (id: string, updates: Partial<BatchQueueItem>) => void;
 
   setLeftSidebarCollapsed: (v: boolean) => void;
   setRightSidebarCollapsed: (v: boolean) => void;
@@ -194,6 +196,88 @@ const DEFAULT_STATE: AppStateData = {
   isLoadingHistory: false,
   loadingError: null,
   retryCount: 0,
+  generationSettings: {
+    mode: 'image-to-3d' as const,
+    image: null,
+    imageFileId: null,
+    aiModel: '',
+    meshQuality: 'high',
+    textureQuality: 'high',
+    quadTopology: false,
+    topologyMode: 'triangle',
+    seed: 42891,
+    guidanceScale: 7.5,
+    removeBackground: true,
+    lowVram: false,
+    vramMode: 'auto',
+    autoOptimizeSettings: { targetPolycount: 50000 },
+    generateTexture: true,
+    gameReady: false,
+    targetPlatform: 'generic',
+    generateLOD: false,
+    lodPreset: 'high',
+    lodCount: 4,
+    generateCollision: false,
+    physics: {
+      bodyType: 'auto',
+      massMode: 'auto',
+      massKg: 1,
+      densityMode: 'auto',
+      densityKgM3: 500,
+      friction: 0.5,
+      restitution: 0.1,
+      linearDamping: 0.05,
+      angularDamping: 0.05,
+      gravityEnabled: true,
+      collisionQuality: 'balanced',
+      deformation: 'off',
+    },
+    generatePBR: true,
+    bakeNormalMaps: false,
+    bakeHighToLow: false,
+    prompt: '',
+    imageName: '',
+    negativePrompt: '',
+    multiviewImages: {
+      front: null,
+      right: null,
+      back: null,
+      left: null,
+    },
+    multiviewSourceFileId: null,
+    multiviewJobId: null,
+    multiviewAssetId: null,
+    multiviewStatus: 'idle',
+    multiviewViews: [],
+    multiviewManifest: null,
+    multiviewZipUrl: null,
+    multiviewError: null,
+    multiviewInputMode: 'upload',
+    multiviewAdvanced: {
+      inferenceSteps: 12,
+      seed: 42891,
+      saveContactSheet: false,
+      transparentBackground: false,
+      generateMasks: false,
+      generateNormals: false,
+      includeManifest: false,
+    },
+    enableFlashVDM: false,
+    lowVramMode: 'auto',
+    maxNumView: 6,
+    resolution: 1024,
+    paintResolution: 512,
+    enableRealESRGAN: true,
+    intent: undefined,
+    preprocessingArtifactId: null,
+    preprocessingPreviewUrl: null,
+    preprocessingMetadata: null,
+    enhancementEnabled: false,
+    enablePrintabilityCheck: false,
+    enableAutoRepair: false,
+    enableAutoRig: false,
+    autoRigMode: 'full',
+  },
 
   hdMode: 'hd',
   multiViewImages: {
@@ -323,19 +407,46 @@ export const useAppStore = create<AppState>()(
       // ── Batch Generation Actions ──
       setBatchGenerationEnabled: (batchGenerationEnabled) => set({ batchGenerationEnabled }),
       setBatchQueue: (batchQueue) => set({ batchQueue }),
-      addToBatchQueue: (prompts) =>
-        set((s) => {
-          const newItems: BatchQueueItem[] = prompts
-            .filter((p) => p.trim().length > 0)
-            .map((p) => ({
-              id: 'batch-' + Math.random().toString(36).slice(2, 9),
-              prompt: p.trim(),
-              status: 'queued',
-              progress: 0,
-              createdAt: new Date(),
-            }));
-          return { batchQueue: [...s.batchQueue, ...newItems] };
-        }),
+       addToBatchQueue: (imageFileIds) =>
+         set((s) => {
+           const newItems: BatchQueueItem[] = imageFileIds
+             .filter((id) => id !== undefined && id !== null && id !== '')
+             .map((imageFileId) => ({
+               id: 'batch-' + Math.random().toString(36).slice(2, 9),
+               imageFileId: imageFileId,
+               preprocessingArtifactId: s.generationSettings.preprocessingArtifactId,
+               preprocessingMetadata: s.generationSettings.preprocessingMetadata,
+               aiModel: s.generationSettings.aiModel,
+               intent: s.generationSettings.intent,
+               status: 'queued',
+               progress: 0,
+               jobId: undefined,
+               // Store the current generation settings
+               meshQuality: s.generationSettings.meshQuality,
+               textureQuality: s.generationSettings.textureQuality,
+               quadTopology: s.generationSettings.quadTopology,
+               topologyMode: s.generationSettings.topologyMode,
+               seed: s.generationSettings.seed,
+               guidanceScale: s.generationSettings.guidanceScale,
+               removeBackground: s.generationSettings.removeBackground,
+               lowVram: s.generationSettings.lowVram,
+               vramMode: s.generationSettings.vramMode,
+               autoOptimizeSettings: s.generationSettings.autoOptimizeSettings,
+               generateTexture: s.generationSettings.generateTexture,
+               enableFlashVDM: s.generationSettings.enableFlashVDM,
+               lowVramMode: s.generationSettings.lowVramMode,
+               maxNumView: s.generationSettings.maxNumView,
+               resolution: s.generationSettings.resolution,
+               generateCollision: s.generationSettings.generateCollision,
+               enableRealESRGAN: s.generationSettings.enableRealESRGAN,
+               enablePrintabilityCheck: s.generationSettings.enablePrintabilityCheck,
+               enableAutoRepair: s.generationSettings.enableAutoRepair,
+               enableAutoRig: s.generationSettings.enableAutoRig,
+               autoRigMode: s.generationSettings.autoRigMode,
+               createdAt: new Date(),
+             }));
+           return { batchQueue: [...s.batchQueue, ...newItems] };
+         }),
       removeFromBatchQueue: (id) =>
         set((s) => ({
           batchQueue: s.batchQueue.filter((item) => item.id !== id),

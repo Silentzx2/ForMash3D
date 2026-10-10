@@ -20,10 +20,7 @@ export interface UseFeatureAvailabilityReturn {
 }
 
 const FEATURE_NAME_MAPPING: Record<string, string> = {
-  'text-to-mesh': 'text_to_mesh',
   'image-to-mesh': 'image_to_mesh', 
-  'text-to-raw-mesh': 'text_to_raw_mesh',
-  'text-to-textured-mesh': 'text_to_textured_mesh',
   'image-to-raw-mesh': 'image_to_raw_mesh',
   'image-to-textured-mesh': 'image_to_textured_mesh',
   'mesh-painting': 'mesh_painting',

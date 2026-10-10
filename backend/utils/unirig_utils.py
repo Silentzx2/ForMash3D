@@ -17,10 +17,19 @@ import torch
 import yaml
 from box import Box
 
-from thirdparty.UniRig.src.data.datapath import Datapath
-from thirdparty.UniRig.src.data.dataset import DatasetConfig, UniRigDatasetModule
-from thirdparty.UniRig.src.data.extract import extract_builtin
-from thirdparty.UniRig.src.data.transform import TransformConfig
+try:
+    from thirdparty.UniRig.src.data.datapath import Datapath
+    from thirdparty.UniRig.src.data.dataset import DatasetConfig, UniRigDatasetModule
+    from thirdparty.UniRig.src.data.extract import extract_builtin
+    from thirdparty.UniRig.src.data.transform import TransformConfig
+except ImportError as e:
+    raise ImportError(
+        f"UniRig data modules under thirdparty/UniRig/src/data failed to import ({e}). "
+        "They require Blender's 'bpy' module (see backend/thirdparty/UniRig/requirements.txt: "
+        "bpy==4.0) for mesh import and FBX export, which is missing from this Python "
+        "environment. Install a bpy build compatible with this interpreter (Python 3.10 -> "
+        "bpy 4.0.x) or run the worker with a Blender-enabled Python."
+    ) from e
 from thirdparty.UniRig.src.inference.download import download
 from thirdparty.UniRig.src.model.parse import get_model
 from thirdparty.UniRig.src.system.parse import get_system, get_writer

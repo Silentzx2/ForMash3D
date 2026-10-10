@@ -8,11 +8,16 @@ ORIGINAL mesh rather than chaining simplification error from one level to the ne
 from __future__ import annotations
 
 import copy
+import os
 
 import numpy as np
-import pymeshlab
+try:
+    import pymeshlab
+except Exception:
+    pymeshlab = None
 import trimesh
 
+from core.scheduler.resource_planner import configure_cpu_runtime
 from ..schemas import LODOptions, OptimizeOptions
 
 
@@ -83,25 +88,31 @@ def _simplify_textured_fallback(mesh: trimesh.Trimesh, target_faces: int) -> tri
 
         result = trimesh.Trimesh(vertices=v_red, faces=f_red, process=False)
         source_visual = getattr(mesh, "visual", None)
-        if source_visual is not None and new_uv is not None:
-            source_material = getattr(source_visual, "material", None)
-            source_image = getattr(source_visual, "image", None)
-            if source_material is not None:
-                result.visual = trimesh.visual.TextureVisuals(
-                    uv=new_uv,
-                    material=copy.copy(source_material),
-                    image=source_image if source_image is not None else getattr(source_material, "image", None),
-                )
-            elif source_image is not None:
-                result.visual = trimesh.visual.TextureVisuals(uv=new_uv, image=source_image)
-            else:
-                result.visual = trimesh.visual.TextureVisuals(uv=new_uv)
+        if source_visual is not None:
+            vc = getattr(source_visual, "vertex_colors", None)
+            if vc is not None and len(vc) == len(mesh.vertices):
+                result.visual.vertex_colors = np.asarray(vc)[nearest_indices]
+
+            if new_uv is not None:
+                source_material = getattr(source_visual, "material", None)
+                source_image = getattr(source_visual, "image", None)
+                if source_material is not None:
+                    result.visual = trimesh.visual.TextureVisuals(
+                        uv=new_uv,
+                        material=copy.copy(source_material),
+                        image=source_image if source_image is not None else getattr(source_material, "image", None),
+                    )
+                elif source_image is not None:
+                    result.visual = trimesh.visual.TextureVisuals(uv=new_uv, image=source_image)
+                else:
+                    result.visual = trimesh.visual.TextureVisuals(uv=new_uv)
         return result
     except Exception:
         return mesh.simplify_quadric_decimation(face_count=int(target_faces))
 
 
 def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh, dict]:
+    configure_cpu_runtime()
     input_faces = int(len(mesh.faces))
     if target_faces >= input_faces or input_faces == 0:
         return mesh, {
@@ -111,17 +122,19 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
             "texture_preserved": _has_uv(mesh),
         }
     textured = _has_uv(mesh)
-    ms = pymeshlab.MeshSet()
-    mesh_kwargs = {
-        "vertex_matrix": np.asarray(mesh.vertices, dtype=np.float64),
-        "face_matrix": np.asarray(mesh.faces, dtype=np.int32),
-        "v_normals_matrix": np.asarray(mesh.vertex_normals, dtype=np.float64),
-    }
-    if textured:
-        uv = np.asarray(mesh.visual.uv, dtype=np.float64)
-        mesh_kwargs["w_tex_coords_matrix"] = uv[np.asarray(mesh.faces, dtype=np.int64)].reshape(-1, 2)
-    ms.add_mesh(pymeshlab.Mesh(**mesh_kwargs))
     try:
+        if pymeshlab is None:
+            raise RuntimeError("pymeshlab not available")
+        ms = pymeshlab.MeshSet()
+        mesh_kwargs = {
+            "vertex_matrix": np.asarray(mesh.vertices, dtype=np.float64),
+            "face_matrix": np.asarray(mesh.faces, dtype=np.int32),
+            "v_normals_matrix": np.asarray(mesh.vertex_normals, dtype=np.float64),
+        }
+        if textured:
+            uv = np.asarray(mesh.visual.uv, dtype=np.float64)
+            mesh_kwargs["w_tex_coords_matrix"] = uv[np.asarray(mesh.faces, dtype=np.int64)].reshape(-1, 2)
+        ms.add_mesh(pymeshlab.Mesh(**mesh_kwargs))
         if textured:
             ms.meshing_decimation_quadric_edge_collapse_with_texture(
                 targetfacenum=int(target_faces), qualitythr=0.3, extratcoordw=1.0,
@@ -222,24 +235,45 @@ def run_optimize(mesh: trimesh.Trimesh, options: OptimizeOptions, progress=None)
 
 
 def run_lods(mesh: trimesh.Trimesh, options: LODOptions, progress=None):
+    configure_cpu_runtime()
     input_faces = int(len(mesh.faces))
-    levels = []
-    for index, ratio in enumerate(options.ratios):
-        ratio = float(max(0.01, min(1.0, ratio)))
-        if ratio >= 1.0:
-            levels.append({
-                "level": index, "ratio": ratio, "triangles": input_faces,
+    from concurrent.futures import ThreadPoolExecutor
+
+    def _build_single_lod(index: int, ratio: float) -> dict:
+        r = float(max(0.01, min(1.0, ratio)))
+        if r >= 1.0:
+            return {
+                "level": index, "ratio": r, "triangles": input_faces,
                 "achieved_ratio": 1.0, "seam_limited": False,
                 "seams_broken": False, "passthrough": True, "mesh": mesh,
-            })
-            continue
-        target = max(1, round(input_faces * ratio))
-        if progress:
-            progress("lod", (index + 0.2) / max(1, len(options.ratios)), f"Generating LOD{index}")
+            }
+        target = max(1, round(input_faces * r))
         reduced, stats = _simplify(mesh, target)
         if options.allow_seam_breaking:
             stats["seams_broken"] = bool(not stats["passthrough"])
-        levels.append({"level": index, "ratio": ratio, "mesh": reduced, **stats})
+        return {"level": index, "ratio": r, "mesh": reduced, **stats}
+
+    ratios_list = list(enumerate(options.ratios))
+    levels = [None] * len(ratios_list)
+
+    if len(ratios_list) > 1:
+        max_workers = min(len(ratios_list), os.cpu_count() or 8)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_idx = {
+                executor.submit(_build_single_lod, idx, r): idx
+                for idx, r in ratios_list
+            }
+            for fut in future_to_idx:
+                idx = future_to_idx[fut]
+                levels[idx] = fut.result()
+                if progress:
+                    progress("lod", (idx + 0.2) / max(1, len(options.ratios)), f"Generated LOD{idx}")
+    else:
+        for idx, r in ratios_list:
+            if progress:
+                progress("lod", (idx + 0.2) / max(1, len(options.ratios)), f"Generating LOD{idx}")
+            levels[idx] = _build_single_lod(idx, r)
+
     if progress:
         progress("done", 1.0, "LOD chain complete")
-    return levels
+    return [lvl for lvl in levels if lvl is not None]

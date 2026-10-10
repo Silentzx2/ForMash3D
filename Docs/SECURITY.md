@@ -141,3 +141,11 @@ Running-job cancellation in Redis mode is a shared control-plane request; the sc
 The final non-testing audit pass tightened the security boundary around operational state as well as input data. Client-supplied server paths remain root-restricted; bounded upload/base64 handling remains enforced; request temporary directories are cleaned on successful completion, cancellation/failure, enqueue failure, and stale-process recovery.
 
 Artifact naming uses UUIDs for mesh, segmentation, and rigged outputs to reduce collision and overwrite risk. Model readiness is derived from manifest paths and actual local checkpoint payloads rather than optimistic model identifiers. The scheduler does not expose an in-progress SQLite write through status reads, and background post-processing errors are retained as job-level metadata instead of being silently converted into false success.
+
+## Resource and Model Integrity — 2026-10-08
+
+Resource planning must fail closed for unsupported multi-GPU strategies. Do not treat combined VRAM as proof that an arbitrary model can be split. Model/weight selection must remain restricted to registered open-weight assets and existing trusted model-management paths. User-provided paths remain validated before processing, and quality diagnostics must never mutate the immutable master.
+
+## Resource Admission Integrity — 2026-10-08
+
+Aggregate VRAM is considered only for model adapters that explicitly declare a supported multi-GPU strategy. Unsupported pipelines fail closed instead of receiving a fabricated device split. CPU worker/thread policies are bounded by the host logical-core count, with optional FORMSH3D_CPU_WORKERS and FORMSH3D_CPU_THREADS overrides.

@@ -311,7 +311,7 @@ def _fill_holes(
 def postprocess_mesh(
     vertices: np.array,
     faces: np.array,
-    postprocess_mode: Literal["simplify", "remesh", "subdivision"],
+    postprocess_mode: Literal["none", "simplify", "remesh", "subdivision"] = "simplify",
     simplify_ratio: float = 0.9,
     remesh_iters: int = 10,
     subdivision_times: int = 1,
@@ -329,7 +329,7 @@ def postprocess_mesh(
     Args:
         vertices (np.array): Vertices of the mesh. Shape (V, 3).
         faces (np.array): Faces of the mesh. Shape (F, 3).
-        postprocess_mode (Literal): Postprocessing mode:  simplify via QEM | remeshing | subdivision
+        postprocess_mode (Literal): Postprocessing mode:  none | simplify via QEM | remeshing | subdivision
         simplify_ratio (float): Ratio of faces to keep after simplification.
         fill_holes (bool): Whether to fill holes in the mesh.
         fill_holes_max_hole_size (float): Maximum area of a hole to fill.
@@ -342,6 +342,12 @@ def postprocess_mesh(
         tqdm.write(
             f"Before postprocess: {vertices.shape[0]} vertices, {faces.shape[0]} faces"
         )
+
+    # "none" mode: skip all post-processing to preserve raw model-native geometry
+    if postprocess_mode == "none":
+        if verbose:
+            tqdm.write("Postprocess mode: none - preserving raw model-native geometry")
+        return vertices, faces
 
     # Simplify
     if postprocess_mode == "simplify" and simplify_ratio > 0:
@@ -591,7 +597,7 @@ def bake_texture(
                 render = dr.texture(texture, uv, uv_dr)[0]
                 loss = torch.nn.functional.l1_loss(render[mask], observation[mask])
                 if lambda_tv > 0:
-                    loss += lambda_tv * tv_loss(texture)
+                    loss = loss + lambda_tv * tv_loss(texture)
                 loss.backward()
                 optimizer.step()
                 # annealing

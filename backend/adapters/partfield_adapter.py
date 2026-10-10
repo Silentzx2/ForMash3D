@@ -66,6 +66,8 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
     def _load_model(self):
         """Load PartField segmentation model."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartField requires CUDA; CPU inference is not supported.")
             logger.info(f"Loading PartField model from {self.partfield_root}")
 
             # Add PartField to Python path
@@ -131,6 +133,8 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
             Dictionary with segmentation results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartField requires CUDA; CPU inference is not supported.")
             if self.partfield_runner is None:
                 raise RuntimeError("PartField runner is not loaded")
 
@@ -348,15 +352,14 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        import os
-
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for PartField."""

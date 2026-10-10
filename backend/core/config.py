@@ -58,7 +58,7 @@ if torch.cuda.is_available():
         pass
 
 import yaml
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
@@ -90,10 +90,61 @@ class ModelConfig(BaseSettings):
     model_path: Optional[str] = None
     enabled: bool = True
     model_parameters: Optional[Dict] = None
-    init_params: Dict[str, Any] = {}
-    capabilities: Dict[str, Any] = {}
+    init_params: Dict[str, Any] = Field(default_factory=dict)
+    capabilities: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = SettingsConfigDict(protected_namespaces=("settings_",), extra="allow")
+
+
+def normalize_model_capabilities(
+    feature: str,
+    model_id: str,
+    config: "ModelConfig",
+) -> "ModelConfig":
+    """Fill the shared capability contract without inventing model behavior.
+
+    Explicit manifest values win. Defaults describe only facts derivable from the
+    existing model registration (feature, supported inputs/outputs, VRAM).
+    Model-specific quality/extraction/preprocessing fields remain explicit opt-ins.
+    """
+    caps = dict(config.capabilities or {})
+    inputs = {str(value).lower() for value in (config.supported_inputs or [])}
+    outputs = list(config.supported_outputs or [])
+
+    # Only true image/text -> 3D generation features should advertise 3D capability.
+    # Related pipelines such as Zero123++ generate conditioning views, not meshes.
+    image_to_3d_features = {"image_to_raw_mesh", "image_to_textured_mesh"}
+    text_to_3d_features = {"text_to_raw_mesh", "text_to_textured_mesh"}
+    caps.setdefault("image_to_3d", feature in image_to_3d_features and "image" in inputs)
+    caps.setdefault("text_to_3d", feature in text_to_3d_features and "text" in inputs)
+    caps.setdefault("multiview", feature == "image_to_multiview" or "multiview" in inputs)
+    caps.setdefault("multiview_input", "multiview" in inputs or "multiview_image" in inputs)
+    caps.setdefault("generated_multiview", feature == "image_to_multiview")
+    caps.setdefault(
+        "single_view",
+        feature in image_to_3d_features and "image" in inputs and not bool(caps.get("multiview_input", False)),
+    )
+    caps.setdefault(
+        "texture_generation",
+        feature in {"image_to_textured_mesh", "image_mesh_painting", "text_mesh_painting"},
+    )
+    caps.setdefault("native_pbr", False)
+    caps.setdefault("vertex_color", False)
+    caps.setdefault("mesh_quality_characteristics", [])
+    caps.setdefault("preferred_preprocessing", "default")
+    caps.setdefault("preferred_extraction", "model_native")
+    caps.setdefault("preferred_resolution", None)
+    caps.setdefault("preferred_face_budget", "auto")
+    caps.setdefault("minimum_vram_mb", int(config.vram_requirement or 0))
+    caps.setdefault("cpu_requirements", {"threads": "auto"})
+    caps.setdefault("multi_gpu", False)
+    caps.setdefault("multi_gpu_strategy", None)
+    caps.setdefault("recommended_postprocess_profile", "default")
+    caps.setdefault("latency_class", "balanced")
+    caps.setdefault("supported_output_formats", outputs)
+
+    config.capabilities = caps
+    return config
 
 
 class Settings(BaseSettings):
@@ -112,7 +163,7 @@ class Settings(BaseSettings):
     security: SecurityConfig = SecurityConfig()
 
     # Model configurations
-    models: Dict[str, Dict[str, ModelConfig]] = {}
+    models: Dict[str, Dict[str, ModelConfig]] = Field(default_factory=dict)
 
     # Environment
     environment: str = "development"
@@ -136,9 +187,14 @@ class Settings(BaseSettings):
                 parsed[feature] = {}
                 for model_id, config in models.items():
                     if isinstance(config, dict):
-                        parsed[feature][model_id] = ModelConfig(**config)
+                        parsed_config = ModelConfig(**config)
                     else:
-                        parsed[feature][model_id] = config
+                        parsed_config = config
+                    parsed[feature][model_id] = normalize_model_capabilities(
+                        feature,
+                        model_id,
+                        parsed_config,
+                    )
             return parsed
         return v
 
@@ -227,7 +283,11 @@ def load_models_config(models_config_path: str) -> Dict[str, Dict[str, ModelConf
         for feature, models in models_data.items():
             parsed_models[feature] = {}
             for model_id, config in models.items():
-                parsed_models[feature][model_id] = ModelConfig(**config)
+                parsed_models[feature][model_id] = normalize_model_capabilities(
+                    feature,
+                    model_id,
+                    ModelConfig(**config),
+                )
 
         logger.info(
             f"Successfully loaded models configuration from {models_config_path}"
@@ -251,10 +311,8 @@ def load_logging_dict_config(config_path: str) -> Optional[Dict]:
         with open(config_file, "r") as f:
             logging_config = yaml.safe_load(f)
 
-        # Ensure logs directory exists
-        logs_dir = Path("logs")
-        logs_dir.mkdir(exist_ok=True)
-
+        # Runtime logs live only in the repository-root logs/ directory.
+        (Path(__file__).resolve().parents[2] / "logs").mkdir(parents=True, exist_ok=True)
         return logging_config
     except Exception as e:
         logger.error(f"Error loading logging config from {config_path}: {str(e)}")
@@ -276,7 +334,7 @@ def get_settings() -> Settings:
 
         settings = load_config_from_file(str(system_config))
 
-        # If user authorization is turned on, force API key 
+        # If user authorization is turned on, force API key
         if settings.user_auth_enabled:
             settings.security.api_key_required = True
 
@@ -295,59 +353,39 @@ def get_settings() -> Settings:
     return settings
 
 
+def reload_settings() -> Settings:
+    """Reload settings from config files, discarding cached instance."""
+    global settings
+    settings = None
+    return get_settings()
+
+
 def setup_logging(config: LoggingConfig):
-    """Setup logging configuration with support for both simple and dictConfig formats"""
+    """Route Python application, API, scheduler and worker logs to one master file."""
+    master_log = Path(__file__).resolve().parents[2] / "logs" / "master.log"
+    master_log.parent.mkdir(parents=True, exist_ok=True)
 
-    # Try to use dictConfig first if available
-    config_dir = Path(__file__).parent.parent / "config"
-    logging_yaml_path = config_dir / "logging.yaml"
+    logging_yaml_path = Path(__file__).resolve().parent.parent / "config" / "logging.yaml"
+    dict_config = load_logging_dict_config(str(logging_yaml_path)) if logging_yaml_path.exists() else None
+    if dict_config:
+        # Resolve the configured path against the repository rather than process CWD.
+        for handler in dict_config.get("handlers", {}).values():
+            if "filename" in handler:
+                handler["filename"] = str(master_log)
+        try:
+            logging.config.dictConfig(dict_config)
+            logging.getLogger(__name__).info("Logging configured: %s", master_log)
+            return
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to load YAML logging config; using the same master log")
 
-    if logging_yaml_path.exists():
-        # Use the YAML logging configuration file
-        dict_config = load_logging_dict_config(str(logging_yaml_path))
-        if dict_config:
-            try:
-                logging.config.dictConfig(dict_config)
-                logger.info(f"Logging configured from YAML: {logging_yaml_path}")
-                return
-            except Exception as e:
-                logger.error(f"Failed to configure logging from YAML: {str(e)}")
-                logger.info("Falling back to simple logging configuration")
-
-    # Fallback to simple configuration
-    level = getattr(logging, config.level.upper())
-
-    # Ensure logs directory exists
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
-
-    handlers: List[logging.Handler] = [logging.StreamHandler()]
-
-    # Add file handler if specified
-    if config.file:
-        file_path = Path(config.file)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(config.file))
-    else:
-        # Default log file
-        default_log_file = logs_dir / "app.log"
-        handlers.append(logging.FileHandler(str(default_log_file)))
-
-    # Configure root logger
     logging.basicConfig(
-        level=level,
+        level=getattr(logging, config.level.upper(), logging.INFO),
         format=config.format,
-        handlers=handlers,
-        force=True,  # Override any existing configuration
+        handlers=[logging.FileHandler(master_log, mode="a", encoding="utf-8")],
+        force=True,
     )
-
-    # Configure uvicorn logger
-    uvicorn_logger = logging.getLogger("uvicorn")
-    uvicorn_logger.setLevel(level)
-
-    logger.info(
-        f"Logging configured: level={config.level}, file={config.file or 'logs/app.log'}"
-    )
+    logging.getLogger(__name__).info("Logging configured: %s", master_log)
 
 
 # def create_directories(storage_config: StorageConfig):

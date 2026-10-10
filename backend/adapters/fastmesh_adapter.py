@@ -78,11 +78,15 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
 
             from utils.fastmesh_utils import FastMeshRunner
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("FastMesh requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+
             # Initialize FastMesh runner
             self.fastmesh_runner = FastMeshRunner(
                 variant=self.variant,
                 model_path=self.model_path,
-                device="cuda" if torch.cuda.is_available() else "cpu",
+                device=device,
                 precision="fp16",
                 input_pc_num=self.input_pc_num,
                 fastmesh_root=str(self.fastmesh_root),

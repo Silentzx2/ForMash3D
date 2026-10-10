@@ -47,10 +47,13 @@ from .routers import (
     mesh_editing,
     mesh_tools,
     mesh_generation,
+    image_enhancement,
+    smart_generation,
     mesh_retopology,
     mesh_segmentation,
     mesh_uv_unwrapping,
     motion_generation,
+    multiview,
     system,
     users,
 )
@@ -351,6 +354,8 @@ app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])
 app.include_router(file_upload.router, prefix="/api/v1", tags=["File Upload"])
 
 app.include_router(mesh_generation.router, prefix="/api/v1", tags=["Mesh Generation"])
+app.include_router(image_enhancement.router, prefix="/api/v1", tags=["Image Enhancement"])
+app.include_router(smart_generation.router, prefix="/api/v1", tags=["Smart Generation"])
 
 app.include_router(mesh_editing.router, prefix="/api/v1", tags=["Mesh Editing"])
 app.include_router(mesh_tools.router, prefix="/api/v1", tags=["Mesh Tools"])
@@ -369,6 +374,10 @@ app.include_router(
 
 app.include_router(
     motion_generation.router, prefix="/api/v1", tags=["Motion Generation"]
+)
+
+app.include_router(
+    multiview.router, prefix="/api/v1/multiview", tags=["Multi-View Generation"]
 )
 
 # Canonical storage static files mount (models, uploads, textures, previews)

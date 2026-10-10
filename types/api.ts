@@ -29,13 +29,31 @@ export interface JobInfo {
   result?: {
     output_mesh_path?: string;
     thumbnail_path?: string;
-    mesh_url?: string; 
+    mesh_url?: string;
+    model_url?: string;
+    active_model_url?: string;
     thumbnail_url?: string;
+    source_model_url?: string;
+    high_fidelity_url?: string;
+    game_ready_url?: string;
+    zip_url?: string;
+    asset_root?: string;
+    postprocess_status?: string;
+    production_status?: 'ready' | 'degraded' | 'failed' | string;
+    degraded_reasons?: string[];
     generation_info?: {
       model_used: string;
       parameters: Record<string, any>;
       thumbnail_generated?: boolean;
     };
+    quality_mode?: string;
+    target_polycount?: number;
+    texture_resolution?: number;
+    master_to_derivative?: Record<string, any>;
+    quality_trace?: Record<string, any>;
+    lod_validation?: Record<string, any>;
+    artifacts?: Record<string, any>;
+    [key: string]: any;
   };
   input_image_url?: string;
   input_image_file_info?: {
@@ -68,6 +86,7 @@ export interface JobResultInfo {
     direct_download: string;
     base64_download: string;
   };
+  result_metadata?: Record<string, any>;
 }
 
 // Jobs History Types
@@ -83,6 +102,13 @@ export interface HistoricalJob {
   thumbnail_path?: string;
   mesh_url?: string;
   thumbnail_url?: string;
+  production_status?: 'ready' | 'degraded' | 'failed' | string;
+  degraded_reasons?: string[];
+  high_fidelity_url?: string;
+  game_ready_url?: string;
+  quality_mode?: string;
+  target_polycount?: number;
+  texture_resolution?: number;
   input_image_url?: string;
   input_image_file_info?: {
     filename: string;
@@ -211,8 +237,26 @@ export interface SchedulerStatus {
 }
 
 // Available Models Types
+export interface ModelRuntimeDetails {
+  id: string;
+  feature: string;
+  status: 'ready' | 'weights_missing' | 'gpu_unavailable' | string;
+  weights_available: boolean;
+  weights_downloadable: boolean;
+  readiness_reason: string;
+  cuda_available: boolean;
+  vram_requirement?: number | null;
+  max_workers?: number | null;
+  supported_inputs?: string[];
+  supported_outputs?: string[];
+  model_path?: string | null;
+  capabilities?: Record<string, any>;
+}
+
 export interface AvailableModels {
   available_models: Record<string, string[]>;
+  weights_status?: Record<string, boolean>;
+  model_details?: Record<string, ModelRuntimeDetails>;
   total_features: number;
   total_models: number;
 }
@@ -250,22 +294,6 @@ export interface FileMetadata {
 }
 
 // Mesh Generation Types - UPDATED
-export interface TextToMeshRequest {
-  text_prompt: string;
-  output_format: OutputFormat;
-  model_preference?: string;
-  model_parameters?: Record<string, any>;
-}
-
-export interface TextToTexturedMeshRequest {
-  text_prompt: string;
-  texture_prompt?: string;
-  texture_resolution?: number;
-  output_format: OutputFormat;
-  model_preference?: string;
-  model_parameters?: Record<string, any>;
-}
-
 export interface ImageToMeshRequest {
   image_path?: string;
   image_base64?: string;
@@ -273,6 +301,14 @@ export interface ImageToMeshRequest {
   output_format: OutputFormat;
   model_preference?: string;
   model_parameters?: Record<string, any>;
+  intent?: 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'mobile';
+  preprocessing_artifact_id?: string;
+  enhancement_enabled?: boolean;
+  enable_printability_check?: boolean;
+  enable_auto_repair?: boolean;
+  enable_auto_rig?: boolean;
+  auto_rig_mode?: 'skeleton' | 'skin' | 'full';
+
 }
 
 export interface ImageToTexturedMeshRequest {
@@ -286,6 +322,14 @@ export interface ImageToTexturedMeshRequest {
   output_format: OutputFormat;
   model_preference?: string;
   model_parameters?: Record<string, any>;
+  intent?: 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'mobile';
+  preprocessing_artifact_id?: string;
+  enhancement_enabled?: boolean;
+  enable_printability_check?: boolean;
+  enable_auto_repair?: boolean;
+  enable_auto_rig?: boolean;
+  auto_rig_mode?: 'skeleton' | 'skin' | 'full';
+
 }
 
 export interface MeshPaintingRequest {
@@ -706,6 +750,21 @@ export interface RuntimeOptions {
   colab_detected: boolean;
   colab_detected_vram_mb: number | null;
   colab_preparation_limit_mb: number | null;
+}
+
+// System Stats (for ResourceMonitor header component)
+export interface SystemStats {
+  timestamp: string;
+  cpu_percent: number;
+  ram_used_gb: number;
+  ram_total_gb: number;
+  ram_percent: number;
+  gpu_percent: number;
+  vram_used_gb: number;
+  vram_total_gb: number;
+  vram_percent: number;
+  gpu_name?: string;
+  gpu_temp_c?: number;
 }
 
 // Error Types

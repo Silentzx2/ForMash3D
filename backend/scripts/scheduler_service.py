@@ -25,9 +25,20 @@ Usage:
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 sys.path.append(".")
+
+# Ensure environment variables before initializing torch and worker processes
+if "OMP_NUM_THREADS" not in os.environ:
+    os.environ["OMP_NUM_THREADS"] = str(os.cpu_count() or 8)
+if "CUDA_VISIBLE_DEVICES" not in os.environ:
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+if os.environ.get("HF_TOKEN") and not os.environ.get("HUGGINGFACE_TOKEN"):
+    os.environ["HUGGINGFACE_TOKEN"] = os.environ["HF_TOKEN"]
+elif os.environ.get("HUGGINGFACE_TOKEN") and not os.environ.get("HF_TOKEN"):
+    os.environ["HF_TOKEN"] = os.environ["HUGGINGFACE_TOKEN"]
 
 from core.config import get_settings, setup_logging
 from core.scheduler import GPUMonitor

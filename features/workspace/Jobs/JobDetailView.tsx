@@ -190,6 +190,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         filename: `${selectedJob.feature || 'Generated_Mesh'}_${selectedJob.id.slice(0, 6)}.glb`,
         subfolder: '',
         type: 'model',
+        fileId: `job-${selectedJob.id}`,
       },
     } as any);
     toast.success('Loaded 3D result into active viewport');

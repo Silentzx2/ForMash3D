@@ -1,7 +1,10 @@
 """File handling utilities"""
 
 import base64
-import imghdr
+try:
+    import imghdr
+except ImportError:
+    imghdr = None
 import logging
 import mimetypes
 import os
@@ -90,6 +93,7 @@ def resolve_server_file_path(path_or_url: Optional[str]) -> Optional[str]:
             (Path.cwd() / "backend" / "storage").resolve(),
             (Path.cwd().parent / "backend" / "storage").resolve(),
             (Path(__file__).resolve().parents[2] / "storage").resolve(),
+            get_storage_base_dir().resolve(),
         ]
     )
     unrestricted = os.environ.get("ALLOW_LOCAL_SERVER_PATH_INPUTS", "false").lower() in {"1","true","yes","on"}
@@ -110,9 +114,17 @@ def detect_file_type_from_content(file_path: str) -> str:
     """Detect file type from content analysis"""
     try:
         # Try to detect if it's an image
-        img_type = imghdr.what(file_path)
-        if img_type:
-            return f"image/{img_type}"
+        if imghdr is not None:
+            img_type = imghdr.what(file_path)
+            if img_type:
+                return f"image/{img_type}"
+        else:
+            try:
+                with Image.open(file_path) as img:
+                    if img.format:
+                        return f"image/{img.format.lower()}"
+            except Exception:
+                pass
 
         # Check MIME type
         mime_type, _ = mimetypes.guess_type(file_path)
@@ -136,38 +148,52 @@ def validate_image_file(
 ) -> Dict:
     """Validate and get info about an image file, auto-optimizing large camera photos if needed."""
     try:
-        with Image.open(file_path) as img:
-            width, height = img.size
-            format_name = img.format or "PNG"
-            mode = img.mode
+        try:
+            with Image.open(file_path) as img:
+                width, height = img.size
+                format_name = img.format or "PNG"
+                mode = img.mode
 
-            if width > max_resolution[0] or height > max_resolution[1]:
-                raise ValueError(
-                    f"Image resolution {width}x{height} exceeds maximum {max_resolution[0]}x{max_resolution[1]}"
-                )
+                if width > max_resolution[0] or height > max_resolution[1]:
+                    raise ValueError(
+                        f"Image resolution {width}x{height} exceeds maximum {max_resolution[0]}x{max_resolution[1]}"
+                    )
 
-            # Auto-downscale excessively large camera photos (>2048px in either dimension)
-            # using LANCZOS to prevent GPU VRAM exhaustion while preserving crisp detail
-            TARGET_MAX = 2048
-            if width > TARGET_MAX or height > TARGET_MAX:
-                img_copy = img.copy()
-                img_copy.thumbnail((TARGET_MAX, TARGET_MAX), Image.Resampling.LANCZOS)
-                save_kwargs = {}
-                if format_name in ("JPEG", "JPG"):
-                    save_kwargs["quality"] = 95
-                elif format_name == "PNG":
-                    save_kwargs["optimize"] = True
-                img_copy.save(file_path, format=format_name, **save_kwargs)
-                width, height = img_copy.size
+                TARGET_MAX = 2048
+                if width > TARGET_MAX or height > TARGET_MAX:
+                    img_copy = img.copy()
+                    img_copy.thumbnail((TARGET_MAX, TARGET_MAX), Image.Resampling.LANCZOS)
+                    save_kwargs = {}
+                    if format_name in ("JPEG", "JPG"):
+                        save_kwargs["quality"] = 95
+                    elif format_name == "PNG":
+                        save_kwargs["optimize"] = True
+                    img_copy.save(file_path, format=format_name, **save_kwargs)
+                    width, height = img_copy.size
 
-            return {
-                "valid": True,
-                "width": width,
-                "height": height,
-                "format": format_name,
-                "mode": mode,
-                "file_size_mb": get_file_size_mb(file_path),
-            }
+                return {
+                    "valid": True,
+                    "width": width,
+                    "height": height,
+                    "format": format_name,
+                    "mode": mode,
+                    "file_size_mb": get_file_size_mb(file_path),
+                }
+        except Exception as pil_err:
+            # Fallback to OpenCV if PIL WebP decoder fails on specific WebP payloads
+            import cv2
+            cv_img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+            if cv_img is not None:
+                h, w = cv_img.shape[:2]
+                return {
+                    "valid": True,
+                    "width": w,
+                    "height": h,
+                    "format": "WEBP",
+                    "mode": "RGB",
+                    "file_size_mb": get_file_size_mb(file_path),
+                }
+            return {"valid": False, "error": str(pil_err)}
     except Exception as e:
         return {"valid": False, "error": str(e)}
 

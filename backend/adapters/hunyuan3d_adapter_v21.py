@@ -12,6 +12,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import torch
 from PIL import Image
 
@@ -109,6 +110,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                     f"Please download Hunyuan3D-2.1 weights via manager.sh option [8] or use TRELLIS instead."
                 )
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-2.1 requires CUDA; CPU inference is not supported.")
+
             # Load shape generation pipeline if needed
             if self.load_shapegen:
                 from hy3dshape.pipelines import (
@@ -117,9 +121,15 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 from hy3dshape.rembg import BackgroundRemover
 
                 logger.info(f"Loading shape generation pipeline from {self.model_path}...")
-                self.pipeline_shapegen = (
-                    Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path))
+                shape_dev = getattr(self, 'device', None)
+                if shape_dev is None or shape_dev.startswith("cpu"):
+                    shape_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+                self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
+                    str(self.model_path),
+                    device=shape_dev,
                 )
+                if hasattr(self.pipeline_shapegen, "to"):
+                    self.pipeline_shapegen.to(shape_dev)
                 try:
                     if hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
                         self.pipeline_shapegen.enable_model_cpu_offload()
@@ -130,7 +140,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
 
                 # Load background remover
                 logger.info("Loading background remover...")
+                import rembg
                 self.bg_remover = BackgroundRemover()
+                self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
                 loaded_models["bg_remover"] = self.bg_remover
 
             # Load paint pipeline if needed
@@ -161,7 +173,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 )
 
                 if "bg_remover" not in loaded_models:
+                    import rembg
                     self.bg_remover = BackgroundRemover()
+                    self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
                     loaded_models["bg_remover"] = self.bg_remover
 
                 self.paint_pipeline = Hunyuan3DPaintPipeline(conf)
@@ -215,13 +229,14 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for Hunyuan3D 2.1."""
@@ -270,19 +285,39 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
 
             # Load and preprocess image
             image = Image.open(image_path)
-            if image.mode == "RGB":
-                image = self.bg_remover(image)
-            else:
+            has_useful_alpha = (
+                image.mode in ("RGBA", "LA", "PA")
+                and np.array(image.getchannel("A")).min() < 255
+            )
+            if has_useful_alpha:
                 image = image.convert("RGBA")
+            else:
+                image = self.bg_remover(image.convert("RGB"))
 
             # Shape generation only
             logger.info("Generating 3D shape...")
-            octree_res = inputs.get("octree_resolution", 256)
-            num_steps = inputs.get("num_inference_steps", 35 if inputs.get("low_vram") else 50)
+            octree_res = 512
+            num_steps = inputs.get("num_inference_steps", 50)
+            if num_steps is None:
+                num_steps = 50
+            else:
+                num_steps = int(num_steps)
+            guidance_scale = inputs.get("guidance_scale", 5.0)
+            if guidance_scale is None:
+                guidance_scale = 5.0
+            else:
+                guidance_scale = float(guidance_scale)
+            seed = int(inputs.get("seed", 1234))
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-2.1 requires CUDA; CPU inference is not supported.")
+            device = getattr(self.pipeline_shapegen, "device", None) or (f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0")
+            generator = torch.Generator(device=device).manual_seed(seed)
             mesh_result = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
             )[0]
 
             # Generate output path
@@ -307,6 +342,9 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
                     "vertex_count": mesh_stats["vertex_count"],
                     "face_count": mesh_stats["face_count"],
                     "has_texture": False,
+                    "num_inference_steps": num_steps,
+                    "guidance_scale": guidance_scale,
+                    "seed": seed,
                 },
             }
 
@@ -327,7 +365,12 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             Parameter schema dictionary
         """
         return {
-            "parameters": {}
+            "parameters": {
+                "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
+                "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
+                "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
+            }
         }
 
 
@@ -381,13 +424,40 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             )
 
             # Load and preprocess image
-            image = Image.open(image_path).convert("RGBA")
-            if image.mode == "RGB":
-                image = self.bg_remover(image)
+            image = Image.open(image_path)
+            has_useful_alpha = (
+                image.mode in ("RGBA", "LA", "PA")
+                and np.array(image.getchannel("A")).min() < 255
+            )
+            if has_useful_alpha:
+                image = image.convert("RGBA")
+            else:
+                image = self.bg_remover(image.convert("RGB"))
 
-            # Step 1: Shape generation
+            # Step 1: Shape generation follows the same model-specific source contract.
             logger.info("Generating 3D shape...")
-            mesh_result = self.pipeline_shapegen(image=image)[0]
+            num_steps = inputs.get("num_inference_steps", 50)
+            if num_steps is None:
+                num_steps = 50
+            else:
+                num_steps = int(num_steps)
+            guidance_scale = inputs.get("guidance_scale", 5.0)
+            if guidance_scale is None:
+                guidance_scale = 5.0
+            else:
+                guidance_scale = float(guidance_scale)
+            seed = int(inputs.get("seed", 1234))
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-2.1 requires CUDA; CPU inference is not supported.")
+            device = getattr(self.pipeline_shapegen, "device", None) or (f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0")
+            generator = torch.Generator(device=device).manual_seed(seed)
+            mesh_result = self.pipeline_shapegen(
+                image=image,
+                octree_resolution=512,
+                num_inference_steps=num_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+            )[0]
 
             # Step 2: Texture painting
             logger.info("Generating texture...")
@@ -440,6 +510,9 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
                     "has_texture": True,
                     "max_num_view": max_num_view,
                     "resolution": resolution,
+                    "num_inference_steps": num_steps,
+                    "guidance_scale": guidance_scale,
+                    "seed": seed,
                 },
             }
 
@@ -463,6 +536,10 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
         """
         return {
             "parameters": {
+                "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
+                "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
+                "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
+                "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
                 "max_num_view": {
                     "type": "integer",
                     "description": "Maximum number of views for texture generation",

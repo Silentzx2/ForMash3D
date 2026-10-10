@@ -203,8 +203,56 @@ def run_inspect(scene: trimesh.Scene, mesh: trimesh.Trimesh,
     stats["faces"] = face_count
     stats["vertices"] = vertex_count
 
+    finite_vertices = bool(vertex_count and np.isfinite(vertices).all())
+    valid_face_indices = bool(
+        face_count
+        and vertex_count
+        and np.all(faces >= 0)
+        and np.all(faces < vertex_count)
+    )
+    stats["finite_vertices"] = finite_vertices
+    stats["valid_face_indices"] = valid_face_indices
+
+    # Invalid faces cannot be passed to topology/UV analyzers safely. Keep the
+    # original counts for QA, but analyze only valid faces after recording failure.
+    analysis_faces = faces
+    if not valid_face_indices:
+        mask = (
+            (faces >= 0).all(axis=1)
+            & (faces < max(1, vertex_count)).all(axis=1)
+        ) if face_count else np.zeros(0, dtype=bool)
+        analysis_faces = faces[mask]
+
     # ── Geometry ────────────────────────────────────────────────────────────
     emit("geometry", 0.1, "Measuring geometry…")
+
+    _check(
+        checks,
+        id="geometry_present",
+        group="Geometry",
+        label="Geometry present",
+        status="pass" if face_count and vertex_count else "fail",
+        value=f"{face_count:,} faces / {vertex_count:,} vertices",
+        detail="Mesh must contain non-empty geometry." if not (face_count and vertex_count) else "",
+    )
+    _check(
+        checks,
+        id="finite_vertices",
+        group="Geometry",
+        label="Finite coordinates",
+        status="pass" if finite_vertices else "fail",
+        value="Finite" if finite_vertices else "NaN/Inf detected",
+        detail="Non-finite vertex coordinates make the asset invalid." if not finite_vertices else "",
+    )
+    _check(
+        checks,
+        id="valid_face_indices",
+        group="Geometry",
+        label="Face indices",
+        status="pass" if valid_face_indices else "fail",
+        value="Valid" if valid_face_indices else "Out of range",
+        detail="One or more faces reference vertices outside the mesh." if not valid_face_indices else "",
+    )
 
     budget = int(options.tri_budget)
     if face_count > budget * 2:
@@ -222,7 +270,7 @@ def run_inspect(scene: trimesh.Scene, mesh: trimesh.Trimesh,
 
     # ── Topology ────────────────────────────────────────────────────────────
     emit("topology", 0.25, "Checking topology…")
-    topo = topology_counts(vertices, faces)
+    topo = topology_counts(vertices, analysis_faces)
     stats["topology"] = topo
 
     if topo["non_manifold_edges"] > 0:
@@ -266,8 +314,8 @@ def run_inspect(scene: trimesh.Scene, mesh: trimesh.Trimesh,
            fix="repair" if degenerate else None)
 
     if face_count:
-        unique_faces = len(np.unique(np.sort(faces, axis=1), axis=0))
-        duplicate = int(face_count - unique_faces)
+        unique_faces = len(np.unique(np.sort(analysis_faces, axis=1), axis=0))
+        duplicate = int(len(analysis_faces) - unique_faces)
     else:
         duplicate = 0
     _check(checks, id="duplicate_faces", group="Topology", label="Duplicate faces",
@@ -293,7 +341,7 @@ def run_inspect(scene: trimesh.Scene, mesh: trimesh.Trimesh,
 
         emit("uvs", 0.5, "Rasterising UV islands…")
         overlap, approximate = _uv_overlap_fraction(
-            uv, faces, int(options.uv_overlap_grid), int(options.uv_scan_max_faces))
+            uv, analysis_faces, int(options.uv_overlap_grid), int(options.uv_scan_max_faces))
         stats["uv_overlap"] = overlap
         overlap_pct = overlap * 100
         suffix = " (sampled)" if approximate else ""
@@ -402,10 +450,13 @@ def run_inspect(scene: trimesh.Scene, mesh: trimesh.Trimesh,
                           "about a point outside itself.",
                    fix=None if centred else "centre_pivot")
 
-    has_normals = bool(getattr(mesh, "vertex_normals", None) is not None and len(mesh.vertex_normals))
+    normals = np.asarray(getattr(mesh, "vertex_normals", np.empty((0, 3))), dtype=float)
+    has_normals = bool(len(normals) == vertex_count and vertex_count)
+    finite_normals = bool(has_normals and np.isfinite(normals).all())
     _check(checks, id="normals", group="Geometry", label="Vertex normals",
-           status="pass" if has_normals else "warn",
-           value="Present" if has_normals else "Missing")
+           status="pass" if finite_normals else "fail" if has_normals else "warn",
+           value="Present" if finite_normals else "Invalid" if has_normals else "Missing",
+           detail="Normals contain NaN/Inf values." if has_normals and not finite_normals else "")
 
     emit("done", 1.0, "Check complete.")
 

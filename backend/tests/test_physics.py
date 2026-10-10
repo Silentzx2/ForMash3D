@@ -22,7 +22,7 @@ def test_normalize_physics_config_bounds_and_defaults():
 
 
 def test_collision_quality_maps_to_existing_collision_contract():
-    assert collision_options_for_quality("fast")["method"] == "convex_hull"
+    assert collision_options_for_quality("fast")["method"] == "decomposition"
     assert collision_options_for_quality("balanced")["method"] == "decomposition"
     assert collision_options_for_quality("precise")["method"] == "decomposition"
 
@@ -63,3 +63,27 @@ def test_normalize_physics_config_accepts_frontend_camel_case():
     assert config["density_kg_m3"] == 900
     assert config["gravity_enabled"] is False
     assert config["collision_quality"] == "precise"
+
+
+def test_collision_decomposition_invokes_coacd_and_rejects_silent_fallback(monkeypatch):
+    import pytest
+    from postprocess.schemas import CollisionOptions
+    from postprocess.services import collision as collision_service
+
+    # When coacd is None, it must raise RuntimeError and never silently return a single convex hull placeholder
+    monkeypatch.setattr(collision_service, "coacd", None)
+    mesh = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    with pytest.raises(RuntimeError, match="CoACD is required for collision decomposition"):
+        collision_service.run_collision(mesh, CollisionOptions(method="decomposition"))
+
+
+def test_collision_options_accepts_dict_or_schema():
+    from postprocess.schemas import CollisionOptions
+    from postprocess.services.collision import run_collision
+
+    mesh = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    _, stats1 = run_collision(mesh, {"method": "convex_hull"})
+    assert stats1["method"] == "convex_hull"
+
+    _, stats2 = run_collision(mesh, CollisionOptions(method="convex_hull"))
+    assert stats2["method"] == "convex_hull"

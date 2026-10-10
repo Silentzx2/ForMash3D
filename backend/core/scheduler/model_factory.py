@@ -17,24 +17,22 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_configured_path(value: Optional[str]) -> Optional[str]:
-    """Resolve manifest paths consistently from repo-root or backend workdirs."""
+    """Resolve manifest paths consistently from repo-root."""
     if not value:
         return value
     path = Path(value).expanduser()
     if path.is_absolute():
-        return str(path)
+        return str(path) if path.exists() else None
 
     repo_root = Path(__file__).resolve().parents[3]
     candidates = [
-        Path.cwd() / path,
-        Path.cwd() / "backend" / path,
         repo_root / path,
         repo_root / "backend" / path,
     ]
     for candidate in candidates:
         if candidate.exists():
             return str(candidate.resolve())
-    return value
+    return None
 
 
 class ModelFactory:
@@ -43,11 +41,7 @@ class ModelFactory:
     # Registry of known adapter modules and classes
     ADAPTER_REGISTRY = {
         # TRELLIS adapters
-        "trellis_text_to_textured_mesh": {
-            "module": "adapters.trellis_adapter",
-            "class": "TrellisTextToTexturedMeshAdapter",
-        },
-        "trellis_text_mesh_painting": {
+                "trellis_text_mesh_painting": {
             "module": "adapters.trellis_adapter",
             "class": "TrellisTextMeshPaintingAdapter",
         },
@@ -166,6 +160,16 @@ class ModelFactory:
             "module": "adapters.ardy_adapter",
             "class": "ArdyMotionGenerationAdapter",
         },
+        # Zero123++ Multi-View adapter
+        "zero123plus_v12_image_to_multiview": {
+            "module": "adapters.zero123plus_adapter",
+            "class": "Zero123PlusAdapter",
+        },
+        # Unique3D adapter
+        "unique3d_image_to_raw_mesh": {
+            "module": "adapters.unique3d_adapter",
+            "class": "Unique3DImageToRawMeshAdapter",
+        },
     }
 
     @classmethod
@@ -247,6 +251,12 @@ class ModelFactory:
             raise Exception(
                 f"Failed to create model {config.get('model_id', 'unknown')}: {e}"
             )
+
+    @classmethod
+    def create_model(cls, model_id: str, **kwargs) -> BaseModel:
+        """Convenience method to create a model instance by model_id."""
+        config = {"model_id": model_id, **kwargs}
+        return cls.create_model_from_config(config)
 
     @classmethod
     def create_model_config(
@@ -444,6 +454,7 @@ def get_default_model_configs() -> Dict[str, Dict[str, Any]]:
     init parameters, paths, outputs, and resource requirements.
     """
     manifest_path = Path(__file__).resolve().parents[2] / "config" / "models.yaml"
+    from ..config import load_models_config
     parsed = load_models_config(str(manifest_path))
     configs: Dict[str, Dict[str, Any]] = {}
 

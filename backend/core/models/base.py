@@ -34,6 +34,8 @@ class BaseModel(ABC):
         self.feature_type = feature_type
         self.status = ModelStatus.UNLOADED
         self.gpu_id: Optional[int] = None
+        self.gpu_ids: List[int] = []
+        self.resource_plan: Optional[Dict[str, Any]] = None
         self.model = None
 
     @abstractmethod
@@ -51,7 +53,7 @@ class BaseModel(ABC):
         """Process a single request. Override in subclasses."""
         pass
 
-    def load(self, gpu_id: int) -> bool:
+    def load(self, gpu_id: int, resource_plan: Optional[Dict[str, Any]] = None) -> bool:
         """Load model on specified GPU"""
         if self.status == ModelStatus.LOADED:
             return True
@@ -61,6 +63,8 @@ class BaseModel(ABC):
         try:
             self.status = ModelStatus.LOADING
             self.gpu_id = gpu_id
+            self.resource_plan = dict(resource_plan or {})
+            self.gpu_ids = [int(x) for x in self.resource_plan.get("gpu_ids", [gpu_id])]
 
             # Set CUDA device
             if torch.cuda.is_available():
@@ -96,25 +100,32 @@ class BaseModel(ABC):
 
         start_time = time.time()
         logger.info(f"[GPU UNLOAD START] model={self.model_id}")
+        previous_gpu_ids = list(self.gpu_ids)
         try:
             self._unload_model()
             self.model = None
             self.status = ModelStatus.UNLOADED
-            self.gpu_id = None
 
-            # Clear GPU cache
+            # Clear GPU cache before capturing final memory state.
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
             elapsed = time.time() - start_time
             memory = ""
-            if torch.cuda.is_available() and self.gpu_id is not None:
+            if torch.cuda.is_available() and previous_gpu_ids:
                 try:
-                    allocated = torch.cuda.memory_allocated(self.gpu_id) / (1024 ** 2)
-                    reserved = torch.cuda.memory_reserved(self.gpu_id) / (1024 ** 2)
-                    memory = f" allocated_mb={allocated:.0f} reserved_mb={reserved:.0f}"
+                    samples = []
+                    for gpu_id in previous_gpu_ids:
+                        allocated = torch.cuda.memory_allocated(gpu_id) / (1024 ** 2)
+                        reserved = torch.cuda.memory_reserved(gpu_id) / (1024 ** 2)
+                        samples.append(f"gpu{gpu_id}:allocated_mb={allocated:.0f} reserved_mb={reserved:.0f}")
+                    memory = " " + " ".join(samples)
                 except Exception:
                     pass
+
+            self.gpu_id = None
+            self.gpu_ids = []
+            self.resource_plan = None
             logger.info(
                 f"[GPU UNLOAD SUCCESS] model={self.model_id} "
                 f"elapsed={elapsed:.2f}s{memory}"
@@ -205,6 +216,8 @@ class BaseModel(ABC):
             "feature_type": self.feature_type,
             "status": self.status.value,
             "gpu_id": self.gpu_id,
+            "gpu_ids": list(self.gpu_ids),
+            "resource_plan": dict(self.resource_plan or {}),
             "vram_requirement": self.vram_requirement,
             "supported_formats": self.get_supported_formats(),
         }

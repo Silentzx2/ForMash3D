@@ -1,7 +1,11 @@
 /**
- * Canonical Model Registry & Feature Routing
- * Sourced directly from backend/config/models.yaml (19 registered models)
+ * Canonical user-selectable model registry and feature routing.
+ * Primary 3D/processing models mirror backend/config/models.yaml.
+ * Zero123++ remains hidden from the main 3D selector and is exposed through the
+ * dedicated multi-view workspace via the runtime image-to-multiview capability.
  */
+
+export const MULTIVIEW_MODEL_ID = 'zero123plus_v12_image_to_multiview' as const;
 
 export type ModelCategory =
   | 'mesh_generation'
@@ -33,25 +37,6 @@ export interface ModelDefinition {
 }
 
 export const CANONICAL_MODELS: ModelDefinition[] = [
-  // ── MESH GENERATION (Text to 3D) ──────────────────────────────────────────
-  {
-    id: 'trellis_text_to_textured_mesh',
-    name: 'TRELLIS (Text → Textured 3D)',
-    category: 'mesh_generation',
-    feature: 'text_to_textured_mesh',
-    featureLabel: 'Text to Textured 3D',
-    vramMb: 11776,
-    lowVramSupported: true,
-    lowVramMb: 6144,
-    supportsTexture: true,
-    supportedInputs: ['text'],
-    supportedOutputs: ['glb', 'obj'],
-    modelPath: 'backend/pretrained/TRELLIS',
-    enabled: true,
-    status: 'available',
-    description: 'Generates high-fidelity 3D meshes with PBR textures from natural language prompts.',
-  },
-
   // ── MESH GENERATION (Image to 3D Textured) ────────────────────────────────
   {
     id: 'trellis_image_to_textured_mesh',
@@ -112,7 +97,7 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     vramMb: 6144,
     lowVramSupported: true,
     lowVramMb: 4096,
-    supportsTexture: true,
+    supportsTexture: false,
     supportsFlashVDM: true,
     supportedInputs: ['image'],
     supportedOutputs: ['glb', 'obj'],
@@ -203,6 +188,22 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     enabled: true,
     status: 'available',
     description: 'High-resolution arbitrary-topology 3D mesh modeling and reconstruction up to 1024³ with SparseFlex VAE.',
+  },
+  {
+    id: 'unique3d_image_to_raw_mesh',
+    name: 'Unique3D (High-Fidelity Single Image → 3D)',
+    category: 'mesh_generation',
+    feature: 'image_to_raw_mesh',
+    featureLabel: 'Image to Geometry',
+    vramMb: 10240,
+    lowVramSupported: false,
+    supportsTexture: true,
+    supportedInputs: ['image'],
+    supportedOutputs: ['glb', 'obj'],
+    modelPath: 'backend/pretrained/Unique3D',
+    enabled: true,
+    status: 'available',
+    description: 'High-fidelity single-image to 3D mesh with multi-view diffusion, normal prediction, and textured reconstruction.',
   },
 
   // ── TEXTURE STUDIO / MESH PAINTING ───────────────────────────────────────
@@ -463,4 +464,17 @@ export function isRawMeshModel(id: string): boolean {
 export function isMotionGenerationModel(id: string): boolean {
   const model = MODEL_MAP.get(id);
   return model?.category === 'motion_generation';
+}
+
+export function getSupportedInputs(id: string): string[] {
+  const model = MODEL_MAP.get(id);
+  return model?.supportedInputs ?? [];
+}
+
+export function supportsTextInput(id: string): boolean {
+  return getSupportedInputs(id).includes('text');
+}
+
+export function supportsImageInput(id: string): boolean {
+  return getSupportedInputs(id).includes('image');
 }

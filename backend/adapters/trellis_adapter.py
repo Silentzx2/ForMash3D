@@ -17,6 +17,8 @@ from PIL import Image
 
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel, TextToMeshModel
+from core.utils.file_utils import OutputPathGenerator
+from core.utils.log_formatters import format_box, format_bytes
 from core.utils.thumbnail_utils import generate_mesh_thumbnail
 from core.utils.mesh_utils import MeshProcessor
 
@@ -27,7 +29,7 @@ NOTE: Mesh Painting in TRELLIS expects the mesh in Z-Up conventions
 """
 
 
-class TrellisTextToMeshAdapterCommon(TextToMeshModel):
+class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
     """
     Adapter for TRELLIS text-to-mesh model.
 
@@ -35,8 +37,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
     into our standardized mesh generation framework.
     """
 
-    FEATURE_TYPE = "text_to_textured_mesh"  # Feature type for this adapter
-    MODEL_ID = "trellis_text_to_textured_mesh"
+    FEATURE_TYPE = "text_mesh_painting"  # Default for the text-conditioned painting adapter.
+    MODEL_ID = "trellis_text_mesh_painting"
 
     def __init__(
         self,
@@ -45,9 +47,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
         trellis_root: Optional[str] = None,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            vram_requirement = 12000
         # Set default paths
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS")
@@ -70,6 +70,7 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
         ]  # Skip some models conditionally to save VRAM
         self.pipeline = None
         self.mesh_processor = MeshProcessor()
+        self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
         # Add TRELLIS to Python path if not already there
         if str(self.trellis_root) not in sys.path:
@@ -78,6 +79,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
     def _load_model(self):
         """Load the TRELLIS model pipeline."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             logger.info(f"Loading TRELLIS model from {self.trellis_root}")
 
             # Sanitize token env vars: empty/whitespace tokens cause HTTP 401 in torch.hub and huggingface_hub
@@ -107,7 +110,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                     cache_dir=str(self.model_path / "TRELLIS-text-xlarge"),
                 )
             )
-            self.pipeline.cuda()
+            cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.pipeline.to(cuda_dev)
             self.postprocessing_utils = postprocessing_utils
 
             logger.info("TRELLIS model loaded successfully")
@@ -158,6 +162,8 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             Dictionary with generated mesh information
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             # Validate inputs using parent class
             output_format = self._validate_common_inputs(inputs)
 
@@ -168,14 +174,18 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             seed = inputs.get("seed", 42)
             texture_resolution = inputs.get("texture_resolution", 2048)
             num_steps = inputs.get("num_inference_steps", 25)
+            if num_steps is None:
+                num_steps = 25
             target_polycount = inputs.get("target_polycount", None)
             simplify = inputs.get("simplify", None)
             auto_optimize = bool(inputs.get("auto_optimize", False))
             texture_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
+            if guidance is None:
+                guidance = 7.5
 
-            ss_steps = max(20, min(50, int(num_steps)))
-            slat_steps = max(20, min(50, int(num_steps)))
+            ss_steps = max(1, min(50, int(num_steps)))
+            slat_steps = max(1, min(50, int(num_steps)))
 
             logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, res={texture_resolution})")
 
@@ -207,6 +217,20 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 # get ready for later texturing
                 mesh = input_mesh
             else:
+                logger.info(
+                    "\n" + format_box(
+                        "TRELLIS: PIPELINE SAMPLING",
+                        [
+                            ("Text Prompt", text_prompt or str(mesh_path)),
+                            ("Texture Prompt", texture_text_prompt or "None"),
+                            ("Sparse Structure Steps", ss_steps),
+                            ("SLAT Steps", slat_steps),
+                            ("Guidance Scale (CFG)", guidance),
+                            ("Seed", seed),
+                            ("Texture Resolution", f"{texture_resolution}x{texture_resolution}"),
+                        ],
+                    )
+                )
                 # Generate 3D representation
                 outputs = self.pipeline.run(
                     text_prompt,
@@ -224,19 +248,37 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 simplify = 0.0
 
             # Extract mesh from Gaussian representation
-            mesh = self.postprocessing_utils.to_trimesh(
-                outputs["gaussian"][0],
-                candidate_mesh,
-                simplify=simplify,
-                fill_holes=bool(auto_optimize or simplify > 0),
-                texture_size=texture_resolution,
-                texture_bake_mode=texture_bake_mode,
-                forward_rot=False,
-            )
+            # For raw extraction, disable post-processing (hole filling + mincut) to preserve micro-details
+            postprocess_mode = "none" if simplify == 0.0 else "simplify"
+            fill_holes = simplify != 0.0
+            
+            with torch.enable_grad():
+                mesh = self.postprocessing_utils.to_trimesh(
+                    outputs["gaussian"][0],
+                    candidate_mesh,
+                    simplify=simplify,
+                    fill_holes=fill_holes,
+                    texture_size=texture_resolution,
+                    texture_bake_mode=texture_bake_mode,
+                    forward_rot=True,
+                    postprocess_mode=postprocess_mode,
+                )
 
             # Save mesh in requested format
             output_path = self._generate_output_path(text_prompt, output_format)
             self.mesh_processor.save_mesh(mesh, output_path, do_normalise=False)
+
+            logger.info(
+                "\n" + format_box(
+                    "TRELLIS: MESH CONVERTED",
+                    [
+                        ("Output Faces", f"{len(mesh.faces):,} faces"),
+                        ("Output Vertices", f"{len(mesh.vertices):,} vertices"),
+                        ("Output Path", str(output_path)),
+                        ("Output Size", format_bytes(os.path.getsize(output_path)) if os.path.exists(output_path) else "N/A"),
+                    ],
+                )
+            )
 
             # Generate thumbnail
             thumbnail_path = self._generate_thumbnail_path(output_path)
@@ -257,14 +299,19 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                         "text_prompt": text_prompt,
                         "texture_prompt": texture_text_prompt,
                         "seed": seed,
-                        "num_inference_steps": 12,
-                        "guidance_scale": 7.5,
+                        "num_inference_steps": ss_steps,
+                        "ss_sampling_steps": ss_steps,
+                        "slat_sampling_steps": slat_steps,
+                        "guidance_scale": guidance,
                         "vertex_count": len(mesh.vertices),
                         "face_count": len(mesh.faces),
                         "texture_resolution": texture_resolution,
                         "texture_bake_mode": texture_bake_mode,
                         "simplify_ratio": simplify,
                         "thumbnail_generated": thumbnail_generated,
+                        "slat_cfg_strength": 3.0,
+                        "texture_size": texture_resolution,
+                        "bake_mode": texture_bake_mode,
                     },
                 }
             )
@@ -278,35 +325,30 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
             logger.error(f"TRELLIS mesh generation failed: {str(e)}")
             raise Exception(f"TRELLIS mesh generation failed: {str(e)}")
 
+    def _get_output_mesh_path(self, safe_name: str, output_format: str) -> Path:
+        return Path(
+            self.path_generator.generate_mesh_path(
+                self.model_id, safe_name, output_format
+            )
+        )
+
     def _generate_output_path(self, prompt: str, output_format: str) -> Path:
         """Generate output file path based on prompt and format."""
-        # Create safe filename from prompt
         safe_name = "".join(
             c for c in prompt[:50] if c.isalnum() or c in (" ", "_")
-        ).strip()
-        safe_name = safe_name.replace(" ", "_")
-
-        # Create output directory if it doesn't exist
-        output_dir = Path(__file__).resolve().parents[1] / "outputs" / "meshes"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate unique filename
-        import uuid
-
-        unique_id = uuid.uuid4().hex
-        filename = f"trellis_{safe_name}_{unique_id}.{output_format}"
-
-        return output_dir / filename
+        ).strip().replace(" ", "_")
+        return self._get_output_mesh_path(safe_name or "mesh", output_format)
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for TRELLIS."""
@@ -330,24 +372,24 @@ class TrellisTextToMeshAdapterCommon(TextToMeshModel):
                 },
                 "ss_sampling_steps": {
                     "type": "integer",
-                    "description": "Sparse structure sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Sparse structure sampling steps (official text demo default: 25)",
+                    "default": 25,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
-                    "description": "Structured latent sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Structured latent sampling steps (official text demo default: 25)",
+                    "default": 25,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False
                 },
                 "texture_resolution": {
                     "type": "integer",
-                    "description": "Output texture resolution",
-                    "default": 1024,
+                    "description": "Output texture resolution for source generation",
+                    "default": 2048,
                     "enum": [512, 1024, 2048, 4096],
                     "required": False
                 },
@@ -388,9 +430,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         trellis_root: Optional[str] = None,
     ):
         if vram_requirement is None:
-            raise ValueError(
-                f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
-            )
+            vram_requirement = 12000
         # Set default paths
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS")
@@ -412,6 +452,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         self.skip_models = ["slat_decoder_rf"]
         self.pipeline = None
         self.mesh_processor = MeshProcessor()
+        self.path_generator = OutputPathGenerator(base_output_dir="outputs")
         # Add TRELLIS to Python path if not already there
         if str(self.trellis_root) not in sys.path:
             sys.path.insert(0, str(self.trellis_root))
@@ -419,6 +460,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
     def _load_model(self):
         """Load the TRELLIS model pipeline."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             logger.info(f"Loading TRELLIS model from {self.trellis_root}")
 
             # Sanitize token env vars: empty/whitespace tokens cause HTTP 401 in torch.hub and huggingface_hub
@@ -463,7 +506,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     pretrained_id,
                     skip_models=self.skip_models,
                 )
-            self.pipeline.cuda()
+            cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.pipeline.to(cuda_dev)
 
             # Store utility modules for later use
             self.postprocessing_utils = postprocessing_utils
@@ -513,6 +557,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             Dictionary with generated mesh information
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             if self.pipeline is None:
                 raise ValueError("TRELLIS model is not loaded")
 
@@ -584,15 +630,21 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 simplify = 0.0
 
             # Extract mesh from Gaussian representation
-            mesh = self.postprocessing_utils.to_trimesh(
-                outputs["gaussian"][0],
-                candidate_mesh,
-                simplify=simplify,
-                fill_holes=bool(auto_optimize or simplify > 0),
-                texture_size=texture_resolution,
-                texture_bake_mode=tex_bake_mode,
-                forward_rot=False,
-            )
+            # For raw extraction, disable post-processing (hole filling + mincut) to preserve micro-details
+            postprocess_mode = "none" if simplify == 0.0 else "simplify"
+            fill_holes = simplify != 0.0
+            
+            with torch.enable_grad():
+                mesh = self.postprocessing_utils.to_trimesh(
+                    outputs["gaussian"][0],
+                    candidate_mesh,
+                    simplify=simplify,
+                    fill_holes=fill_holes,
+                    texture_size=texture_resolution,
+                    texture_bake_mode=tex_bake_mode,
+                    forward_rot=True,
+                    postprocess_mode=postprocess_mode,
+                )
 
             # Save mesh in requested format
             output_path = self._generate_output_path(
@@ -618,9 +670,19 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         "model": "TRELLIS",
                         "image_path": image_path,
                         "seed": seed,
+                        "num_inference_steps": ss_steps,
+                        "ss_sampling_steps": ss_steps,
+                        "slat_sampling_steps": slat_steps,
+                        "guidance_scale": guidance,
                         "vertex_count": len(mesh.vertices),
                         "face_count": len(mesh.faces),
+                        "texture_resolution": texture_resolution,
+                        "texture_bake_mode": tex_bake_mode,
+                        "simplify_ratio": simplify,
                         "thumbnail_generated": thumbnail_generated,
+                        "slat_cfg_strength": 3.0,
+                        "texture_size": texture_resolution,
+                        "bake_mode": tex_bake_mode,
                     },
                 }
             )
@@ -637,42 +699,36 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             logger.error(f"TRELLIS mesh generation failed: {str(e)}")
             raise Exception(f"TRELLIS mesh generation failed: {str(e)}")
 
+    def _get_output_mesh_path(self, safe_name: str, output_format: str) -> Path:
+        return Path(
+            self.path_generator.generate_mesh_path(
+                self.model_id, safe_name, output_format
+            )
+        )
+
     def _generate_output_path(
         self, prompt: str, output_format: str, is_prompt: bool = True
     ) -> Path:
         """Generate output file path based on prompt and format."""
-        # Create safe filename from prompt
         if is_prompt:
             safe_name = "".join(
                 c for c in prompt[:50] if c.isalnum() or c in (" ", "_")
-            ).strip()
-            safe_name = safe_name.replace(" ", "_")
+            ).strip().replace(" ", "_")
         else:
-            safe_name = Path(prompt).stem[
-                :50
-            ]  # Use filename stem for non-prompt inputs
+            safe_name = Path(prompt).stem[:50]
 
-        # Create output directory if it doesn't exist
-        output_dir = Path(os.getcwd()) / "outputs" / "meshes"
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        # Generate unique filename
-        import time
-
-        timestamp = int(time.time())
-        filename = f"trellis_{safe_name}_{timestamp}.{output_format}"
-
-        return output_dir / filename
+        return self._get_output_mesh_path(safe_name or "mesh", output_format)
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""
-        # Create thumbnails directory
-        thumbnail_dir = Path(os.getcwd()) / "outputs" / "thumbnails"
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
         thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / (mesh_path.stem + "_thumb.png")
 
-        # Generate thumbnail filename
-        thumbnail_name = mesh_path.stem + "_thumb.png"
-        return thumbnail_dir / thumbnail_name
+    def _get_thumbnail_path(self, filename: str) -> Path:
+        thumbnail_dir = Path(self.path_generator.base_output_dir) / "thumbnails"
+        thumbnail_dir.mkdir(parents=True, exist_ok=True)
+        return thumbnail_dir / filename
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         """Return supported input/output formats for TRELLIS."""
@@ -712,8 +768,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 },
                 "texture_resolution": {
                     "type": "integer",
-                    "description": "Output texture resolution",
-                    "default": 1024,
+                    "description": "Output texture resolution for source generation",
+                    "default": 2048,
                     "enum": [512, 1024, 2048, 4096],
                     "required": False
                 },
@@ -736,25 +792,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         }
 
 
-class TrellisTextToTexturedMeshAdapter(TrellisTextToMeshAdapterCommon):
-    """
-    Adapter for TRELLIS text-to-raw-mesh model.
-
-    This adapter uses the TRELLIS model to generate raw meshes from text prompts.
-    """
-
-    FEATURE_TYPE = "text_to_textured_mesh"  # Feature type for this adapter
-    MODEL_ID = "trellis_text_to_textured_mesh"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.supported_output_formats = ["obj", "glb"]
-        self.skip_models = [
-            "slat_decoder_rf"
-        ]  # Skip some models conditionally to save VRAM
-
-
-class TrellisTextMeshPaintingAdapter(TrellisTextToMeshAdapterCommon):
+class TrellisTextMeshPaintingAdapter(TrellisTextConditionedMeshAdapterCommon):
     """
     Adapter for TRELLIS text-conditioned mesh painting model.
 
@@ -783,12 +821,14 @@ class TrellisTextMeshPaintingAdapter(TrellisTextToMeshAdapterCommon):
             return super()._process_request(inputs)
         except Exception as e:
             logger.error(f"TRELLIS text-to-mesh generation failed: {str(e)}")
-            raise Exception(f"TRELLIS text-to-mesh generation failed: {str(e)}")
+
+# Backward-compatibility alias for test and API contracts
+TrellisTextToTexturedMeshAdapter = TrellisTextMeshPaintingAdapter
 
 
 class TrellisImageToTexturedMeshAdapter(TrellisImageToMeshAdapterCommon):
     """
-    Adapter for TRELLIS text-to-textured-mesh model.
+    Adapter for TRELLIS image-to-textured-mesh model.
 
     This adapter uses the TRELLIS model to generate textured meshes from input images
     """
@@ -845,3 +885,13 @@ class TrellisImageMeshPaintingAdapter(TrellisImageToMeshAdapterCommon):
         except Exception as e:
             logger.error(f"TRELLIS image-conditioned texture generation failed: {str(e)}")
             raise Exception(f"TRELLIS image-conditioned texture generation failed: {str(e)}")
+
+
+# Aliases matching various naming conventions
+TRELLISImageToTexturedMeshAdapter = TrellisImageToTexturedMeshAdapter
+TRELLISImageToRawMeshAdapter = TrellisImageToRawMeshAdapter
+TRELLISTextConditionedMeshAdapterCommon = TrellisTextConditionedMeshAdapterCommon
+TRELLISImageToMeshAdapterCommon = TrellisImageToMeshAdapterCommon
+TRELLISImageMeshPaintingAdapter = TrellisImageMeshPaintingAdapter
+TRELLISTextMeshPaintingAdapter = TrellisTextMeshPaintingAdapter
+

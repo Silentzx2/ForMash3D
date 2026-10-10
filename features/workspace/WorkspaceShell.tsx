@@ -123,7 +123,7 @@ export const WorkspaceShell: React.FC = () => {
   // Mobile menu state: left navigation drawer
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Global Workspace Navigation KeyboardIcon Shortcuts (⌘1, ⌘2, ⌘3, ⌘4, G, R, T, A, S, ⌘,)
+  // Global Workspace Navigation KeyboardIcon Shortcuts (⌘1, ⌘2, ⌘3, ⌘4→Logs, G, R, T, A, S, ⌘,)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting keystrokes in inputs, textareas, or content-editable elements
@@ -153,7 +153,7 @@ export const WorkspaceShell: React.FC = () => {
           navigateToMainNav('jobs');
         } else if (e.key === '4') {
           e.preventDefault();
-          navigateToMainNav('system');
+          router.push('/admin?tab=logs');
         } else if (e.key === ',') {
           e.preventDefault();
           router.push('/admin?tab=settings');
@@ -373,18 +373,18 @@ export const WorkspaceShell: React.FC = () => {
         {/* Center Workspace & 3D Stage */}
         <div className="flex-1 h-full relative overflow-hidden min-w-0">
           {mainNav === 'workspace' && activeTool === 'animation' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
+            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[#111317]">
               <AnimationStudio />
             </main>
           ) : mainNav === 'workspace' && activeTool === 'rigging' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[hsl(var(--surface-0))]">
+            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[#111317]">
               <RiggingStudio />
             </main>
           ) : (
             <>
               {/* Continuous Full-Bleed 3D Viewport in Background */}
               {mainNav === 'workspace' && (
-                <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden bg-[hsl(var(--surface-0))]">
+                <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden bg-[#111317]">
                   <MeshViewer />
                   <ViewportToolOverlay />
                 </main>
