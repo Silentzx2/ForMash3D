@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
-from api.routers.file_upload import resolve_file_id_async
+from api.routers.file_upload import resolve_file_id_async, resolve_input_reference_async
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
@@ -161,7 +161,10 @@ async def unwrap_mesh(
                     status_code=404, detail="Mesh file not found or expired"
                 )
         else:
-            mesh_file_path = request.mesh_path
+            # mesh_path may be a download URL or bare /{file_id} path from an upstream job
+            mesh_file_path = await resolve_input_reference_async(
+                request.mesh_path, file_store
+            ) or request.mesh_path
 
         # Resolve server path if URL or relative path was provided
         if mesh_file_path:

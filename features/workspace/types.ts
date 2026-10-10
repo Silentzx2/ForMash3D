@@ -211,7 +211,10 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     materialConfig: raw.materialConfig,
     materials: Array.isArray(raw.materials) ? raw.materials : [],
     createdAt: raw.createdAt || raw.created_at,
-    source: raw.source,
+    fileId: raw.fileId,
+    source: raw.source
+      ? { ...raw.source, fileId: raw.source.fileId ?? raw.fileId }
+      : raw.source,
     artifacts,
     qaScore: raw.qaScore ?? qaReport?.game_ready_score ?? qaReport?.score,
     qaStatus: raw.qaStatus ?? qaReport?.status,

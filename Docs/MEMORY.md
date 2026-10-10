@@ -1,3 +1,11 @@
+## 2026-10-10 Mesh-Tool File References (remesh/texture/UV/segment/edit)
+- **Symptom**: mesh tools returned 500 "File upload failed for 'https://<origin>/<uuid>': Server file path is outside configured input roots. Use file_id input instead."
+- **Root causes (frontend + backend)**:
+  1. Frontend: mesh-tool call sites read `currentAsset?.source?.fileId`, which was never populated — `normalizeModelAsset` dropped it and job-derived assets only carried job-download URLs. The supported `mesh_file_id` request branch was dead code, so `mesh_path` received a browser URL that `resolve_server_file_path` (file_utils.py:68-110) rejects by design.
+  2. Backend: routers accepted `mesh_path` as a raw local path only; URL inputs (download URLs, bare `/{uuid}` paths from upstream jobs) had no translation to the file store.
+- **Fixes**: `normalizeModelAsset` preserves `fileId` on asset + `source`; job-derived assets (history, polling completion, selectJobToView, JobDetailView) expose `job-{jobId}` (registered in the file store at `system.py:1140-1155`); all five mesh-tool call sites send `mesh_file_id` and never send http/blob URLs in `mesh_path`. Backend: `resolve_input_reference_async` (file_upload.py) resolves file-upload/job-download URLs and bare uuid paths via the file store (`{id}` then `job-{id}`, disk-glob fallback), wired into mesh_retopology, mesh_uv_unwrapping, mesh_segmentation, auto_rigging, mesh_generation.
+- Validation: `compileall` OK, `tsc --noEmit` clean (via bun), user-verified in the running app.
+
 ## 2026-10-10 Paint Adapter Import, Unconditional Postprocessing & VRAM Backoff
 - **Hunyuan3D-Paint-v2.1 `ModuleNotFoundError: No module named 'utils.simplify_mesh_utils'`**:
   - Root cause: `hunyuan3d_paint_v21.py` appended `hunyuan3d_root` and `hunyuan3d_root/hy3dpaint` via `sys.path.append`; appended entries sit behind the process CWD (`backend/`), so `backend/utils` shadowed `hy3dpaint/utils` and `from utils.simplify_mesh_utils import remesh_mesh` (textureGenPipeline.py:23) failed.

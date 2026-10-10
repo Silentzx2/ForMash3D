@@ -287,7 +287,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           name,
           category: 'generation',
           thumbnail: (outputs.thumbnail as string) || (outputs.thumbnail_url as string) || '',
-          source: { filename: `${id}.glb`, subfolder: 'generated', type: 'output', viewUrl: outputUrl },
+          source: { filename: `${id}.glb`, subfolder: 'generated', type: 'output', viewUrl: outputUrl, fileId: `job-${id}` },
           meshType: 'custom',
           polygon_count: outputs.polygon_count,
           vertex_count: outputs.vertex_count,
@@ -1049,7 +1049,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                     name: cleanName,
                     category: 'generation',
                     thumbnail: result.thumbnail_url || task.inputImage || '',
-                    source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
+                    source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl, fileId: `job-${jobId}` },
                     polygon_count: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
                     vertex_count: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
                     faces: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
@@ -1148,7 +1148,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         name: cleanName,
         category: 'generation',
         thumbnail: result.thumbnail_url || job.inputImage || '',
-        source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl },
+        source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl, fileId: `job-${jobId}` },
         polygon_count: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
         vertex_count: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
         faces: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
@@ -1921,7 +1921,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     const runRemeshGeneration = useCallback(async () => {
       const localTaskId = startTask('remesh', 'Remesh / topology optimization', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId;
+      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
       if (!sourceMeshUrl && !meshFileId) {
         throw new Error('No source mesh available for remeshing. Generate or import a model first.');
@@ -1937,8 +1937,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
       };
       if (meshFileId) {
         body.mesh_file_id = meshFileId;
-      } else {
+      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
         body.mesh_path = sourceMeshUrl;
+      } else {
+        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       const res = await fetch('/api/v1/mesh-retopology/retopologize-mesh', {
@@ -1964,7 +1966,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     const runTextureGeneration = useCallback(async () => {
       const localTaskId = startTask('texture', 'Texture generation', undefined, textureSettings.modelId, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId;
+      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
       if (!sourceMeshUrl && !meshFileId) {
         throw new Error('No source mesh available for texturing. Generate or import a model first.');
@@ -2005,8 +2007,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
       if (meshFileId) {
         body.mesh_file_id = meshFileId;
-      } else {
+      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
         body.mesh_path = sourceMeshUrl;
+      } else {
+        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       if (hasTexturePrompt) {
@@ -2055,7 +2059,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
    }) => {
       const localTaskId = startTask('uv', 'UV Unwrapping (PartUV)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId;
+      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
       if (!sourceMeshUrl && !meshFileId) {
         throw new Error('No source mesh available for UV unwrapping. Generate or import a model first.');
@@ -2075,8 +2079,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
       if (meshFileId) {
         body.mesh_file_id = meshFileId;
-      } else {
+      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
         body.mesh_path = sourceMeshUrl;
+      } else {
+        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       const res = await fetch('/api/v1/mesh-uv-unwrapping/unwrap-mesh', {
@@ -2110,7 +2116,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     const pref = (typeof customSettings === 'object' && customSettings?.modelPreference) || 'partfield_mesh_segmentation';
      const localTaskId = startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`, undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId;
+      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
       if (!sourceMeshUrl && !meshFileId) {
         throw new Error('No source mesh available for segmentation. Generate or import a model first.');
@@ -2130,8 +2136,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
       if (meshFileId) {
         body.mesh_file_id = meshFileId;
-      } else {
+      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
         body.mesh_path = sourceMeshUrl;
+      } else {
+        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       const res = await fetch('/api/v1/mesh-segmentation/segment-mesh', {
@@ -2167,7 +2175,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
   }) => {
      const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
-      const meshFileId = currentAsset?.source?.fileId;
+      const meshFileId = currentAsset?.source?.fileId || currentAsset?.fileId;
       const sourceMeshUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || undefined;
       if (!sourceMeshUrl && !meshFileId) {
         throw new Error('No source mesh available for mesh editing. Generate or import a model first.');
@@ -2206,8 +2214,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
       if (meshFileId) {
         body.mesh_file_id = meshFileId;
-      } else {
+      } else if (sourceMeshUrl && !/^(https?:|blob:)/i.test(sourceMeshUrl)) {
         body.mesh_path = sourceMeshUrl;
+      } else {
+        throw new Error('This model has no backend file reference. Re-import it via Assets to run this tool.');
       }
 
       const res = await fetch(endpoint, {

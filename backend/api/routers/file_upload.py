@@ -638,6 +638,60 @@ async def resolve_file_id_async(
     return await get_file_path_impl(file_store, file_id)
 
 
+async def resolve_input_reference_async(
+    input_ref: Optional[str],
+    file_store: Optional[FileStore] = None,
+) -> Optional[str]:
+    """
+    Resolve an input reference (URL or bare id path) to its actual file path.
+
+    Accepts an input that may be an /api/v1/file-upload/download/{file_id} URL
+    (absolute or relative, with optional query string), an
+    /api/v1/system/jobs/{job_id}/download... URL, or a bare /{uuid} path.
+    Lookup is performed via the file store using the identifier, then
+    "job-{identifier}".
+
+    This function can be imported and used by other modules that accept a
+    URL-or-path reference pointing at an uploaded or job-produced file.
+
+    Args:
+        input_ref: The URL, path, or identifier to resolve
+        file_store: Optional FileStore instance (for multi-worker mode)
+
+    Returns:
+        The file path if resolvable via the file store, None otherwise
+    """
+    if not input_ref:
+        return None
+
+    path_str = str(input_ref).strip()
+    if "://" in path_str:
+        from urllib.parse import urlparse
+
+        path_str = urlparse(path_str).path
+    path_str = path_str.split("?", 1)[0].strip().strip("/")
+
+    if not path_str:
+        return None
+
+    identifier: Optional[str] = None
+    if path_str.startswith("api/v1/system/jobs/"):
+        identifier = path_str[len("api/v1/system/jobs/"):].split("/", 1)[0]
+    elif path_str.startswith("api/v1/file-upload/download/"):
+        identifier = path_str[len("api/v1/file-upload/download/"):].strip("/")
+    elif "/" not in path_str:
+        identifier = path_str
+
+    if not identifier or "." in identifier:
+        return None
+
+    for candidate in (identifier, f"job-{identifier}"):
+        resolved = await get_file_path_impl(file_store, candidate)
+        if resolved:
+            return resolved
+    return None
+
+
 def resolve_file_id(file_id: str) -> Optional[str]:
     """
     Resolve a file ID to its actual file path (sync version, single-worker only).

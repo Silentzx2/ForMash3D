@@ -367,6 +367,12 @@ async def process_file_input(
 
     try:
         if file_path:
+            from api.routers.file_upload import resolve_input_reference_async
+
+            # file_path may be a download URL or bare /{file_id} path from an upstream job
+            file_path = (
+                await resolve_input_reference_async(file_path, file_store) or file_path
+            )
             from core.utils.file_utils import resolve_server_file_path
             file_path = resolve_server_file_path(file_path)
             # Validate existing file path
