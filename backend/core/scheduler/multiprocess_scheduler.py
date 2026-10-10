@@ -1482,7 +1482,13 @@ class MultiprocessModelScheduler:
             if result.get("success"):
                 final_result = result.get("result") or {}
                 postprocess_mode = str(job_request.metadata.get("postprocess_mode") or "none").lower()
-                auto_paint = bool(job_request.metadata.get("auto_paint") or job_request.inputs.get("auto_paint"))
+                # Only auto-chain paint when the user explicitly requested production_mesh
+                # (i.e. texture is ON). If postprocess_mode is "none" or the request
+                # didn't include it, skip the paint child entirely.
+                auto_paint = (
+                    bool(job_request.metadata.get("auto_paint") or job_request.inputs.get("auto_paint"))
+                    and postprocess_mode == "production_mesh"
+                )
                 if auto_paint and final_result.get("output_mesh_path"):
                     workflow_id = str(job_request.metadata.get("workflow_id") or job_id)
                     child_request = JobRequest(
@@ -1537,7 +1543,9 @@ class MultiprocessModelScheduler:
                     await self.job_queue.update_job_progress(
                         job_id, 0.9, "workflow", f"Paint child job queued: {child_id}"
                     )
-                elif final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
+                # Postprocessing must ALWAYS run for raw-mesh jobs with production_mesh mode,
+                # regardless of whether a paint child was also queued.
+                if not auto_paint and final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
                     await self.job_queue.update_job_progress(
                         job_id, 0.75, "postprocess", "Running production post-processing"
                     )
