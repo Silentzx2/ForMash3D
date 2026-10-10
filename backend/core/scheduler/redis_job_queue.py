@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import redis.asyncio as aioredis
 
@@ -110,14 +110,57 @@ class RedisJobQueue:
         orphaned_job_ids = await self.redis.smembers(self.processing_set_key)
         if not orphaned_job_ids:
             logger.info("No orphaned jobs found in 'processing' set.")
-            return
+        else:
+            logger.warning(f"Found {len(orphaned_job_ids)} orphaned jobs. Requeuing them...")
+            for job_id in orphaned_job_ids:
+                logger.info(f"Requeuing orphaned job {job_id}")
+                await self.requeue_job(job_id)
 
-        logger.warning(f"Found {len(orphaned_job_ids)} orphaned jobs. Requeuing them...")
-        for job_id in orphaned_job_ids:
-            logger.info(f"Requeuing orphaned job {job_id}")
-            await self.requeue_job(job_id)
+        await self._reconcile_stale_job_rows()
 
         logger.info("Finished requeuing all orphaned jobs.")
+
+    async def _reconcile_stale_job_rows(self):
+        """Fail SQLite transient rows that have no Redis presence.
+
+        A restart (or a delete that only reached Redis) leaves queued/processing
+        rows in the durable store that no worker will ever touch, so the UI shows
+        them as stuck forever. Transient rows only: terminal rows are history.
+        """
+        try:
+            from core.scheduler.job_queue import JobStatus
+
+            def _collect_transient_ids() -> List[str]:
+                ids: List[str] = []
+                for status in (JobStatus.QUEUED, JobStatus.PROCESSING):
+                    for job in self.db_manager.get_jobs_by_status(status):
+                        ids.append(job.job_id)
+                return ids
+
+            transient_ids = await asyncio.to_thread(_collect_transient_ids)
+            if not transient_ids:
+                return
+
+            live_ids = set(await self.redis.hkeys(self.jobs_hash_key)) | set(
+                await self.redis.zrange(self.pending_queue_key, 0, -1)
+            )
+            stale_ids = [jid for jid in transient_ids if jid not in live_ids]
+            if not stale_ids:
+                return
+
+            logger.warning(
+                f"Failing {len(stale_ids)} SQLite job rows with no queue presence "
+                "(orphaned by restart or deleted from the live queue)"
+            )
+            failed = await asyncio.to_thread(
+                self.db_manager.mark_jobs_failed,
+                stale_ids,
+                "Job orphaned: no queue presence at scheduler startup",
+            )
+            logger.info(f"Reconciled {failed} stale transient job rows")
+        except Exception as e:
+            # Reconciliation is best-effort; never block scheduler startup
+            logger.error(f"Stale job row reconciliation failed: {e}")
 
     async def enqueue(self, job_request: JobRequest) -> str:
         """Add a job to the queue"""

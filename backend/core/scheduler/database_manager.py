@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import and_, asc, create_engine, desc, func, text
+from sqlalchemy import and_, asc, create_engine, desc, event, func, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -86,6 +86,19 @@ class DatabaseManager:
                         "timeout": 30,
                     },
                 )
+
+                # API, scheduler and worker processes all write this file.
+                # WAL keeps readers unblocked during writes and survives restarts.
+                @event.listens_for(self.engine, "connect")
+                def _sqlite_pragmas(dbapi_conn, _rec):  # pragma: no cover - driver hook
+                    cursor = dbapi_conn.cursor()
+                    try:
+                        cursor.execute("PRAGMA journal_mode=WAL")
+                        cursor.execute("PRAGMA busy_timeout=30000")
+                        cursor.execute("PRAGMA synchronous=NORMAL")
+                    finally:
+                        cursor.close()
+
             else:
                 # PostgreSQL/MySQL configuration
                 self.engine = create_engine(
@@ -307,6 +320,39 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Unexpected error deleting job {job_id}: {e}")
             return False
+
+    def mark_jobs_failed(self, job_ids: List[str], error_message: str) -> int:
+        """Mark transient (queued/processing) jobs as failed in one transaction.
+
+        Used at scheduler startup to reconcile rows orphaned by a restart or
+        by deletion from the live Redis queue.
+        """
+        if not job_ids:
+            return 0
+        try:
+            with self.get_session() as session:
+                jobs = (
+                    session.query(JobModel)
+                    .filter(JobModel.job_id.in_(job_ids))
+                    .filter(JobModel.status.in_(["queued", "processing"]))
+                    .all()
+                )
+                for job in jobs:
+                    job.status = "failed"
+                    job.error = error_message
+                    job.completed_at = datetime.utcnow()
+                session.commit()
+                if jobs:
+                    logger.info(
+                        f"Marked {len(jobs)} orphaned transient jobs as failed"
+                    )
+                return len(jobs)
+        except SQLAlchemyError as e:
+            logger.error(f"Database error marking jobs failed: {e}")
+            return 0
+        except Exception as e:
+            logger.error(f"Unexpected error marking jobs failed: {e}")
+            return 0
 
     def cleanup_old_jobs(self, max_completed_jobs: int = 1000) -> int:
         """

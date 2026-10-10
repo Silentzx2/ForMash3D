@@ -1728,12 +1728,31 @@ class MultiprocessModelScheduler:
             shutil.rmtree(directory, ignore_errors=True)
 
     def _cleanup_stale_input_dirs(self) -> None:
-        """Remove orphaned mesh_gen_* input directories from previous crashed sessions."""
+        """Remove orphaned mesh_gen_* input directories from previous crashed sessions.
+
+        Only dirs untouched for several hours qualify: the API process may be
+        holding dirs for jobs still queued when this scheduler starts, and
+        deleting those breaks the job with a missing-file error.
+        """
+        stale_after_seconds = 6 * 60 * 60
+        now = time.time()
         temp_base = Path(tempfile.gettempdir())
         for entry in temp_base.iterdir():
-            if entry.is_dir() and entry.name.startswith("mesh_gen_"):
-                shutil.rmtree(entry, ignore_errors=True)
-                logger.debug("Cleaned stale input dir: %s", entry)
+            if not entry.is_dir() or not entry.name.startswith("mesh_gen_"):
+                continue
+            try:
+                age = now - entry.stat().st_mtime
+            except OSError:
+                continue
+            if age < stale_after_seconds:
+                logger.debug(
+                    "Skipping recent input dir (in flight): %s (%.0fs old)",
+                    entry,
+                    age,
+                )
+                continue
+            shutil.rmtree(entry, ignore_errors=True)
+            logger.debug("Cleaned stale input dir: %s", entry)
 
     async def _stop_worker_for_job(self, job_id: str, reason: str) -> bool:
         """Terminate the worker owning a job and release its resources."""
