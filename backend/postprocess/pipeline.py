@@ -627,16 +627,13 @@ def run_postprocess_job(
         parsed_target_polycount = None
 
     # <= 0 is the explicit Native/Raw sentinel. Positive values are downstream-only budgets.
-    if parsed_target_polycount is not None and parsed_target_polycount <= 0:
-        resolved_target_polycount = 0
+    if parsed_target_polycount is not None:
+        if parsed_target_polycount <= 0:
+            resolved_target_polycount = 0
+        else:
+            resolved_target_polycount = min(MAX_PRODUCTION_FACES, max(50, parsed_target_polycount))
     else:
-        try:
-            resolved_target_polycount = min(
-                MAX_PRODUCTION_FACES,
-                max(5_000, int(parsed_target_polycount or MAX_PRODUCTION_FACES)),
-            )
-        except (TypeError, ValueError):
-            resolved_target_polycount = MAX_PRODUCTION_FACES
+        resolved_target_polycount = MAX_PRODUCTION_FACES
 
     raw_candidate = (
         generation_result.get("output_mesh_path")
@@ -679,26 +676,32 @@ def run_postprocess_job(
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
     master_path = master_dir / "source.glb"
-    if not master_path.exists():
-        shutil.copy2(raw_path, master_path)
+    raw_size = Path(raw_path).stat().st_size if Path(raw_path).exists() else 0
+    if not master_path.exists() or master_path.stat().st_size != raw_size:
+        tmp_path = master_path.with_suffix('.tmp')
+        shutil.copy2(raw_path, tmp_path)
+        tmp_path.rename(master_path)
 
     asset_manifest = metadata_dir / "asset.json"
     if asset_manifest.exists() and (game_ready_dir / f"{base_name}.glb").exists():
-        saved = json.loads(asset_manifest.read_text(encoding="utf-8"))
-        if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
-            try:
-                Path(raw_path).unlink()
-                logger.info(
-                    "[POSTPROCESS STORAGE] Removed legacy generation output after canonical asset recovery: %s",
-                    raw_path,
-                )
-            except OSError:
-                logger.warning(
-                    "[POSTPROCESS STORAGE] Could not remove legacy generation output: %s",
-                    raw_path,
-                )
-        saved["zip_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=zip"
-        return saved
+        try:
+            saved = json.loads(asset_manifest.read_text(encoding="utf-8"))
+            if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
+                try:
+                    Path(raw_path).unlink()
+                    logger.info(
+                        "[POSTPROCESS STORAGE] Removed legacy generation output after canonical asset recovery: %s",
+                        raw_path,
+                    )
+                except OSError:
+                    logger.warning(
+                        "[POSTPROCESS STORAGE] Could not remove legacy generation output: %s",
+                        raw_path,
+                    )
+            saved["zip_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=zip"
+            return saved
+        except Exception:
+            logger.warning("Corrupt asset.json for %s, discarding and rebuilding.", job_id)
 
     pipeline_start_time = time.time()
     feature_type = str(job_metadata.get("feature") or job_inputs.get("feature") or "")
@@ -752,7 +755,7 @@ def run_postprocess_job(
     _emit(progress, 0.05, "postprocess", "Master asset secured.")
 
     raw_bytes = master_path.read_bytes()
-    source_sha256 = _sha256_file(master_path)
+    source_sha256 = _sha256_file(raw_path) if Path(raw_path).exists() else _sha256_file(master_path)
     native_textures = _has_native_textures_scene(raw_bytes, master_path.name)
     mesh = load_mesh(raw_bytes, master_path.name)
     quality_trace = {
@@ -897,7 +900,7 @@ def run_postprocess_job(
     retopo_t0 = time.time()
     if is_quad_requested and not native_textures:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
-        retopo_target = min(max(4_000, int(job_inputs.get("target_polycount") or 10_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
+        retopo_target = min(resolved_target_polycount or 10_000, max(50, int(len(repaired.faces))))
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
@@ -925,7 +928,7 @@ def run_postprocess_job(
         retopo_stats = {"status": "skipped", "reason": "Native textures are preserved; quad retopology would strip UV and material mapping."}
     elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
-        retopo_target = min(max(6_000, int(job_inputs.get("target_polycount") or 6_000)), MAX_PRODUCTION_FACES, max(50, int(len(repaired.faces))))
+        retopo_target = min(resolved_target_polycount or 6_000, max(50, int(len(repaired.faces))))
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
@@ -988,10 +991,7 @@ def run_postprocess_job(
         )
     ):
         try:
-            remesh_target = min(
-                MAX_PRODUCTION_FACES,
-                max(5_000, int(raw_target_polycount or MAX_PRODUCTION_FACES)),
-            )
+            remesh_target = resolved_target_polycount or MAX_PRODUCTION_FACES
             repaired, remesh_tool_stats, _ = run_auto_retopo(
                 repaired,
                 AutoRetopoOptions(
@@ -1031,8 +1031,7 @@ def run_postprocess_job(
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
     optimize_t0 = time.time()
     auto_optimize = bool(job_inputs.get("auto_optimize", False))
-    raw_target_polycount = job_inputs.get("target_polycount")
-    has_explicit_target = raw_target_polycount is not None and int(raw_target_polycount) > 0
+    has_explicit_target = resolved_target_polycount > 0
     repaired_face_count = len(repaired.faces)
 
     if is_quad_requested and retopo_stats.get("status") == "completed":
@@ -1043,7 +1042,7 @@ def run_postprocess_job(
         optimized = repaired
         optimize_stats = {"passthrough": True, "reason": "Native resolution preserved (auto_optimize is false and no target_polycount specified)"}
     else:
-        target_faces = min(MAX_PRODUCTION_FACES, max(5_000, int(raw_target_polycount or MAX_PRODUCTION_FACES)))
+        target_faces = resolved_target_polycount or MAX_PRODUCTION_FACES
         if repaired_face_count <= target_faces and not auto_optimize:
             optimized = repaired
             optimize_stats = {"passthrough": True, "reason": f"Repaired mesh face count ({repaired_face_count}) already within target ({target_faces})"}
@@ -1298,7 +1297,7 @@ def run_postprocess_job(
         _emit(progress, 0.72, "lod", "Generating LOD chain.")
         lod_dir.mkdir(parents=True, exist_ok=True)
         source_faces = max(1, len(uv_mesh.faces))
-        target_faces = int(job_inputs.get("target_polycount") or MAX_PRODUCTION_FACES)
+        target_faces = resolved_target_polycount or source_faces
         target_ratio = min(1.0, max(0.05, target_faces / source_faces))
         preset = str(job_inputs.get("lodPreset") or "high").lower()
         preset_ratios = {
@@ -1386,8 +1385,20 @@ def run_postprocess_job(
             )
             _write_json(metadata_dir / "physics.json", physics_metadata)
         except Exception as exc:
-            logger.error("Collision generation failed for %s: %s", job_id, exc, exc_info=True)
-            raise RuntimeError(f"Collision generation failed: {exc}") from exc
+            logger.warning("Collision generation failed for %s, falling back to simple convex hull: %s", job_id, exc)
+            try:
+                hull = game_ready_mesh.convex_hull
+                collision_scene = trimesh.Scene(hull)
+                collision_payload = collision_scene.export(file_type="glb")
+                if isinstance(collision_payload, str):
+                    collision_payload = collision_payload.encode("utf-8")
+                collision_path = collision_dir / "collision.glb"
+                collision_path.write_bytes(collision_payload)
+                collision_stats = {"hull_count": 1, "fallback": True, "total_triangles": len(getattr(hull, "faces", []))}
+                physics_metadata = build_physics_metadata(game_ready_mesh, physics_config, collision_stats)
+                _write_json(metadata_dir / "physics.json", physics_metadata)
+            except Exception as inner_exc:
+                logger.error("Collision fallback failed: %s", inner_exc)
     collision_duration = time.time() - collision_t0
 
     if physics_enabled and collision_path and collision_path.exists():

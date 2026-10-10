@@ -391,6 +391,48 @@ class RedisJobQueue:
                 _append_log(job_data, stage or "processing", value, message or "Processing")
                 await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
+
+    async def prepare_postprocess_retry(self, job_id: str) -> Optional[JobRequest]:
+        """Move a failed/completed job back to processing for deterministic postprocess retry."""
+        if not self.redis:
+            raise RuntimeError("Redis not connected")
+        
+        job_data = await self.get_job(job_id)
+        if not job_data or not job_data.get("result", {}).get("asset_root"):
+            return None
+            
+        # Reconstruct JobRequest
+        job = JobRequest(
+            feature=job_data["feature"],
+            inputs=job_data.get("inputs", {}),
+            preferences=job_data.get("preferences", {}),
+            priority=job_data.get("priority", 0)
+        )
+        job.id = job_data["id"]
+        job.created_at = datetime.fromisoformat(job_data["created_at"]) if isinstance(job_data.get("created_at"), str) else job_data.get("created_at")
+        job.status = JobStatus.PROCESSING
+        job.progress = 0.0
+        job.error = None
+        job.metadata = job_data.get("metadata", {})
+        job.metadata["stage"] = "postprocess"
+        job.metadata["message"] = "Retrying production post-processing."
+        job.result = job_data.get("result", {})
+        
+        # Update Redis
+        pipe = self.redis.pipeline()
+        pipe.hset(self.jobs_hash_key, job_id, json.dumps(job.to_dict()))
+        pipe.hset(self.progress_hash_key, job_id, "0.0")
+        pipe.hset(self.stage_hash_key, job_id, "postprocess")
+        pipe.hset(self.message_hash_key, job_id, "Retrying production post-processing.")
+        pipe.srem(f"{self.queue_prefix}:queue:failed", job_id)
+        pipe.srem(f"{self.queue_prefix}:queue:completed", job_id)
+        pipe.sadd(self.processing_set_key, job_id)
+        await pipe.execute()
+        
+        # Save to DB
+        await asyncio.to_thread(self.db_manager.save_job, job)
+        return job
+
     async def get_job(self, job_id: str) -> Optional[Dict]:
         """Get job status and result"""
         if not self.redis:

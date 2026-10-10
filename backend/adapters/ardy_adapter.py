@@ -254,14 +254,11 @@ class ArdyMotionGenerationAdapter(BaseModel):
             )
             save_motion_json(motion_doc, json_path)
 
-            rel_motion_url = f"/outputs/motions/{safe_name}/motion.json"
-            rel_source_url = f"/outputs/motions/{safe_name}/{safe_name}.npz"
-
             response = {
                 "success": True,
-                "motion_url": rel_motion_url,
-                "source_motion_url": rel_source_url,
-                "output_mesh_path": rel_motion_url,  # Bridge for generic job result consumers
+                "motion_url": str(json_path),
+                "source_motion_url": str(npz_path),
+                "output_mesh_path": str(json_path),  # Bridge for generic job result consumers
                 "fps": motion_doc["fps"],
                 "duration": motion_doc["duration"],
                 "num_frames": motion_doc["num_frames"],

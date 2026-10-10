@@ -1970,7 +1970,7 @@ class MultiprocessModelScheduler:
                     worker_process.join(timeout=1.0)
                     break
                 try:
-                    init_resp = control_response_queue.get(timeout=0.2)
+                    init_resp = control_response_queue.get(block=False)
                     if isinstance(init_resp, WorkerResponse) and init_resp.msg_id == "init":
                         if init_resp.success:
                             init_success = True
@@ -1978,6 +1978,7 @@ class MultiprocessModelScheduler:
                             error_reason = init_resp.error or error_reason
                         break
                 except queue.Empty:
+                    await asyncio.sleep(0.2)
                     continue
 
             if not init_success:

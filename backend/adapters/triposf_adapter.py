@@ -175,8 +175,8 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         try:
             from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
             tsr = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
-            tsr.load()
-            result = tsr.generate_mesh({"image_path": str(image_path), "output_format": "obj"})
+            tsr.load(gpu_id=self.gpu_id or 0)
+            result = tsr.process({"image_path": str(image_path), "output_format": "obj"})
             return result["output_mesh_path"]
         except Exception as e:
             raise RuntimeError(f"Coarse mesh generation via TripoSR failed: {e}") from e

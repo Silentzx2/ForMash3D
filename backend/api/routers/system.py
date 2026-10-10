@@ -312,24 +312,15 @@ def _resolve_manifest_path(model_path: Optional[str]) -> Optional[Path]:
         return path if path.exists() else None
 
     repo_root = Path(__file__).resolve().parents[3]
-    backend_root = Path(__file__).resolve().parents[2]
-
-    # Handle paths prefixed with "backend/" or without
-    sub_path = path
-    if len(path.parts) > 1 and path.parts[0] == "backend":
-        sub_path = Path(*path.parts[1:])
-
+    
     candidates = [
         repo_root / path,
-        repo_root / sub_path,
-        backend_root / path,
-        backend_root / sub_path,
-        Path.cwd() / path,
-        Path.cwd() / sub_path,
-        Path.home() / path,
-        Path.home() / sub_path,
+        repo_root / "backend" / path,
     ]
-    return next((candidate.resolve() for candidate in candidates if candidate.exists()), None)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+    return None
 
 
 def _is_model_weights_available(model_config: Any) -> bool:
@@ -346,7 +337,7 @@ def _is_model_weights_available(model_config: Any) -> bool:
         checkpoint_suffixes = {
             ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
         }
-        model_descriptors = {"config.json", "config.yaml", "model_index.json"}
+        model_descriptors = {"config.json", "config.yaml", "model_index.json", "pipeline.json"}
 
         # Known model weight file signatures for models without a config.json/yaml
         known_signatures = (

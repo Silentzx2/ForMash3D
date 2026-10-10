@@ -17,24 +17,22 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_configured_path(value: Optional[str]) -> Optional[str]:
-    """Resolve manifest paths consistently from repo-root or backend workdirs."""
+    """Resolve manifest paths consistently from repo-root."""
     if not value:
         return value
     path = Path(value).expanduser()
     if path.is_absolute():
-        return str(path)
+        return str(path) if path.exists() else None
 
     repo_root = Path(__file__).resolve().parents[3]
     candidates = [
-        Path.cwd() / path,
-        Path.cwd() / "backend" / path,
         repo_root / path,
         repo_root / "backend" / path,
     ]
     for candidate in candidates:
         if candidate.exists():
             return str(candidate.resolve())
-    return value
+    return None
 
 
 class ModelFactory:
@@ -456,6 +454,7 @@ def get_default_model_configs() -> Dict[str, Dict[str, Any]]:
     init parameters, paths, outputs, and resource requirements.
     """
     manifest_path = Path(__file__).resolve().parents[2] / "config" / "models.yaml"
+    from ..config import load_models_config
     parsed = load_models_config(str(manifest_path))
     configs: Dict[str, Dict[str, Any]] = {}
 
