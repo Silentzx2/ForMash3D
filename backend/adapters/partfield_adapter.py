@@ -66,6 +66,8 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
     def _load_model(self):
         """Load PartField segmentation model."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartField requires CUDA; CPU inference is not supported.")
             logger.info(f"Loading PartField model from {self.partfield_root}")
 
             # Add PartField to Python path
@@ -131,6 +133,8 @@ class PartFieldSegmentationAdapter(MeshSegmentationModel):
             Dictionary with segmentation results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartField requires CUDA; CPU inference is not supported.")
             if self.partfield_runner is None:
                 raise RuntimeError("PartField runner is not loaded")
 

@@ -107,7 +107,9 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 logger.error(err_msg)
                 raise RuntimeError(err_msg) from e
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSR requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             try:
                 self.tsr_model = TSR.from_pretrained(
@@ -183,7 +185,9 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             no_remove_bg = bool(inputs.get("no_remove_bg", False))
             foreground_ratio = float(inputs.get("foreground_ratio", 0.85))
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSR requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             # Preprocess image
             from tsr.utils import remove_background, resize_foreground, to_gradio_3d_orientation

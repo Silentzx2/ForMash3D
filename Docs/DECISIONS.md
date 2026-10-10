@@ -726,3 +726,32 @@ Hi3DGen-style normal bridging is not hard-wired into production without controll
 - Deletions are coordinated across both storage tiers without throwing 500 errors.
 - Prevents orphaned job records in the scheduler database.
 
+## ADR-063 — Full CPU Core Concurrency for Mesh Processing & Scheduler Workers
+
+**Date:** 2026-10-10  
+**Status:** Accepted
+
+**Decision**: Allocate all available physical/logical CPU cores (`os.cpu_count()`, default 8) across the scheduler workers and postprocessing pipelines (`OMP_NUM_THREADS`, `MKL_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `torch.set_num_threads`).
+
+**Reason**: Workers were previously defaulting to `cpu_threads=1`, bottlenecking CPU-bound isosurface extraction (marching cubes), mesh decimation, and smoothing on a single core.
+
+**Consequences**:
+- Marching cubes, Taubin smoothing, quadric decimation, and multi-LOD processing execute in parallel across all CPU cores.
+- `cpu_threads_for_workers` prevents dividing cores into 1 thread per worker.
+- Launcher scripts (`manager.sh`, `scripts/start.sh`, `run_server.sh`) export `OMP_NUM_THREADS=8` by default.
+
+## ADR-064 — Hunyuan3D Turbo Optimization and Strict GPU Inference Enforcement
+
+**Date:** 2026-10-10  
+**Status:** Accepted
+
+**Decision**: Optimize Hunyuan3D-DiT-v2-mini-Turbo to use `octree_resolution=380` (or 256), `num_chunks=20000`, and `topk_mode='merge'` for FlashVDM. Enforce strict CUDA device execution (`cuda:0`) across all model adapters, rejecting silent fallback to CPU.
+
+**Reason**: Hardcoded `octree_res=512` generated a 505³ volume (128 million voxels), taking 4+ minutes on CPU marching cubes. In addition, silent CPU fallback caused models to hang on low-spec environments.
+
+**Consequences**:
+- Hunyuan3D Turbo generation time drops from >5 minutes to <35 seconds.
+- FlashVDM uses optimized merge attention pooling.
+- All model adapters explicitly verify `torch.cuda.is_available()` and target CUDA devices.
+
+

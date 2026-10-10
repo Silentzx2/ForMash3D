@@ -93,6 +93,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
     def _load_model(self):
         """Load Hunyuan3D-Paint-v2-1 pipeline."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
             logger.info("Loading Hunyuan3D-Paint-v2-1 pipeline")
 
             try:
@@ -187,6 +189,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process mesh painting using Hunyuan3D-Paint-v2-1."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
             if self.bg_remover is None:
                 raise ValueError("Background remover is not loaded")
             if self.paint_pipeline is None:

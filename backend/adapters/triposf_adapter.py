@@ -146,7 +146,9 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             config.weight = str(ckpt_path) if ckpt_path.exists() else None
             cfg = OmegaConf.merge(OmegaConf.structured(TripoSFVAEInference.Config), config)
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSF requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             self.triposf_model = TripoSFVAEInference(cfg)
             self.triposf_model.to(device)
             self.triposf_model.eval()
@@ -229,11 +231,13 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             pruning = bool(inputs.get("pruning", self.pruning))
             use_normals = bool(inputs.get("use_normals", self.use_normals))
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSF requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             # VRAM safety check - only downshift if user explicitly requests low_vram_mode
             # This prevents silent geometry fidelity loss. Users on constrained GPUs must opt-in.
-            if device == "cuda":
+            if device.startswith("cuda"):
                 torch.cuda.empty_cache()
                 total_vram_mb = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)
                 allocated_mb = torch.cuda.memory_allocated(0) // (1024 ** 2)
@@ -307,17 +311,17 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             self.triposf_model.cfg.resolution = resolution
             self.triposf_model.cfg.sample_points_num = sample_points_num
 
-            if device == "cuda":
+            if device.startswith("cuda"):
                 torch.cuda.empty_cache()
 
             with torch.no_grad():
-                if device == "cuda":
+                if device.startswith("cuda"):
                     with torch.cuda.amp.autocast(dtype=torch.float16):
                         mesh_recon = self.triposf_model(points_sample[None], sparse_voxels_sp)[0]
                 else:
                     mesh_recon = self.triposf_model(points_sample[None], sparse_voxels_sp)[0]
 
-            if device == "cuda":
+            if device.startswith("cuda"):
                 del sparse_voxels, points_sample, sparse_voxels_sp
                 torch.cuda.empty_cache()
 

@@ -154,8 +154,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             triposg_source = self._resolve_model_source()
             logger.info(f"Loading TripoSG from source '{triposg_source}' (root: {self.triposg_root})")
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            dtype = torch.float16
 
             # 1. Background remover
             rmbg_source = self._resolve_rmbg_source()
@@ -266,8 +268,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            use_flash_decoder = device == "cuda" and torch.cuda.get_device_capability()[0] >= 8
+            if not torch.cuda.is_available():
+                raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            use_flash_decoder = torch.cuda.get_device_capability()[0] >= 8
             quality = str(inputs.get("quality") or inputs.get("meshQuality") or "").lower()
             if quality in {"high", "ultra"} and inputs.get("force_fast_decoder") is not True:
                 use_flash_decoder = False
@@ -280,7 +284,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     if Path(str(self.model_path) + "-scribble").exists()
                     else "VAST-AI/TripoSG-scribble"
                 )
-                dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+                dtype = torch.float16
                 scribble_pipe = TripoSGScribblePipeline.from_pretrained(scribble_source).to(device, dtype)
 
                 img_pil = Image.open(image_path).convert("RGB")

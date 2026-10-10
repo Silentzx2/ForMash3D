@@ -295,8 +295,9 @@ class Zero123PlusAdapter(BaseModel):
         logger.info(f"Loading Zero123++ pipeline from {model_source}")
         from diffusers import EulerAncestralDiscreteScheduler
 
-        use_cuda = torch.cuda.is_available()
-        dtype = torch.float16 if use_cuda else torch.float32
+        if not torch.cuda.is_available():
+            raise RuntimeError("Zero123++ requires CUDA; CPU inference is not supported.")
+        dtype = torch.float16
         is_local = os.path.exists(model_source)
 
         pipeline_cls = None
@@ -331,7 +332,7 @@ class Zero123PlusAdapter(BaseModel):
             timestep_spacing="trailing",
         )
 
-        device = f"cuda:{self.gpu_id}" if use_cuda and self.gpu_id is not None else ("cuda" if use_cuda else "cpu")
+        device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
         pipeline.to(device, dtype=dtype)
         self.pipeline = pipeline
         return pipeline
@@ -387,6 +388,8 @@ class Zero123PlusAdapter(BaseModel):
                 - output_format: 'png' or 'zip' (default: 'png')
                 - job_id: (Optional) Job ID string
         """
+        if not torch.cuda.is_available():
+            raise RuntimeError("Zero123++ requires CUDA; CPU inference is not supported.")
         logger.info("[ZERO123++ ADAPTER] _process_request started")
         raw_image_input = (
             inputs.get("image_path")

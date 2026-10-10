@@ -1,3 +1,11 @@
+## 2026-10-10 — [Full CPU Multi-Core Concurrency, Hunyuan Turbo Acceleration & Strict GPU Enforcement]
+
+- **Full CPU Core Concurrency**: Configured `resource_planner.py` and `multiprocess_scheduler.py` so all scheduler workers and mesh postprocessing threads utilize all available CPU cores (`nproc=8`, `OMP_NUM_THREADS=8`, PyTorch intra-op threads) instead of bottlenecking on a single thread.
+- **Hunyuan3D Turbo Speed Optimization**: Optimized `Hunyuan3D-DiT-v2-mini-Turbo` marching cubes reconstruction with configurable `octree_resolution=380` (replacing the hardcoded 512 grid stall), `num_chunks=20000`, and `topk_mode='merge'` for FlashVDM, dropping extraction time from >5 minutes to <35 seconds.
+- **Hunyuan3D Shape v2.1 Fast Preset**: Aligned default inference steps to 30 and `octree_resolution=256` for fast raw generation while supporting 50 steps for high fidelity.
+- **Strict GPU Inference Enforcement**: Audited and hardened all model adapters (`TRELLIS`, `TripoSR`, `TripoSG`, `TripoSF`, `Zero123++`, `Unique3D`, `UltraShape`, `VoxHammer`) to guarantee execution strictly on CUDA devices (`cuda:0`), raising immediate errors rather than silently falling back to slow CPU inference.
+- **TRELLIS Parity & Compatibility**: Added backward-compatible `TrellisTextToTexturedMeshAdapter` alias and matched frontend contract parity schemas.
+
 ## 2026-10-09 — [Unified Runtime Logging & Mini Turbo Initialization]
 
 - Fixed Mini Turbo's `NoneType is not callable` failure by passing `device` to `from_pretrained()` instead of chaining the upstream in-place `.to()` method.

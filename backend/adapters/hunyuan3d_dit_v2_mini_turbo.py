@@ -94,22 +94,37 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     f"Please download weights via download_models.sh."
                 )
 
+            thirdparty_turbo = Path(__file__).resolve().parents[1] / "thirdparty" / "hunyuan3d-dit-v2-mini-turbo"
+            if thirdparty_turbo.exists() and str(thirdparty_turbo) not in sys.path:
+                sys.path.insert(0, str(thirdparty_turbo))
+
             from hy3dgen.shapegen.pipelines import (
                 Hunyuan3DDiTFlowMatchingPipeline,
             )
             from hy3dgen.rembg import BackgroundRemover
 
-            logger.info("Loading Mini Turbo pipeline...")
-            device = getattr(self, "device", "cuda" if torch.cuda.is_available() else "cpu")
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
+            device = getattr(self, "device", None)
+            if device is None or device.startswith("cpu"):
+                device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.device = device
+            logger.info(f"Loading Mini Turbo pipeline on {device}...")
             self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                 str(self.model_path),
                 subfolder="hunyuan3d-dit-v2-mini-turbo",
                 device=device,
             )
+            if hasattr(self.pipeline, "to"):
+                self.pipeline.to(device)
+
+            if hasattr(self.pipeline, "enable_flashvdm"):
+                self.pipeline.enable_flashvdm(enabled=True, topk_mode="merge")
+                logger.info("Enabled FlashVDM with topk_mode='merge' for Mini Turbo pipeline")
 
             try:
                 if hasattr(self.pipeline, "enable_model_cpu_offload"):
-                    self.pipeline.enable_model_cpu_offload()
+                    self.pipeline.enable_model_cpu_offload(device=device)
                     logger.info("Enabled model CPU offload for Mini Turbo pipeline")
             except Exception as offload_err:
                 logger.warning(f"Could not enable CPU offload: {offload_err}")
@@ -166,30 +181,61 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 image = self.bg_remover(image.convert("RGB"))
 
-            logger.info("Generating 3D shape with Mini Turbo...")
-            octree_res = 512
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
+
+            device = getattr(self, "device", None)
+            if not device or device.startswith("cpu"):
+                device = getattr(self.pipeline, "device", None) or (f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0")
+            if str(device).startswith("cpu"):
+                device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.device = str(device)
+
+            if hasattr(self.pipeline, "device") and str(self.pipeline.device).startswith("cpu"):
+                if hasattr(self.pipeline, "to"):
+                    self.pipeline.to(self.device)
+
+            logger.info(f"Generating 3D shape with Mini Turbo on {self.device}...")
+            octree_res = inputs.get("octree_resolution", 380)
+            if octree_res is None:
+                octree_res = 380
+            else:
+                octree_res = int(octree_res)
+
+            num_chunks = inputs.get("num_chunks", 20000)
+            if num_chunks is None:
+                num_chunks = 20000
+            else:
+                num_chunks = int(num_chunks)
+
             num_steps = inputs.get("num_inference_steps", 5)
             if num_steps is None:
                 num_steps = 5
+            else:
+                num_steps = int(num_steps)
+
             guidance_scale = inputs.get("guidance_scale", 5.0)
             if guidance_scale is None:
                 guidance_scale = 5.0
+            else:
+                guidance_scale = float(guidance_scale)
+
             low_vram_mode = bool(inputs.get("low_vram_mode", True))
             enable_flashvdm = bool(inputs.get("enable_flashvdm", True))
             seed = int(inputs.get("seed", 42))
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            generator = torch.Generator(device=device).manual_seed(seed)
+            generator = torch.Generator(device=self.device).manual_seed(seed)
 
             # Tencent exposes FlashVDM as a pipeline configuration method, not an
-            # inference keyword. Match the official Turbo launch contract.
+            # inference keyword. Match the official Turbo launch contract with topk_mode='merge'.
             if hasattr(self.pipeline, "enable_flashvdm"):
-                self.pipeline.enable_flashvdm(enabled=enable_flashvdm)
+                self.pipeline.enable_flashvdm(enabled=enable_flashvdm, topk_mode="merge")
 
             mesh_result = self.pipeline(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
+                num_chunks=num_chunks,
                 generator=generator,
             )[0]
 
@@ -211,6 +257,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "face_count": mesh_stats["face_count"],
                     "has_texture": False,
                     "octree_resolution": octree_res,
+                    "num_chunks": num_chunks,
                     "num_inference_steps": num_steps,
                     "guidance_scale": guidance_scale,
                     "low_vram_mode": low_vram_mode,
@@ -246,10 +293,17 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Fixed at 512 for maximum raw geometry detail; output polycount is a post-processing setting.",
-                    "default": 512,
+                    "description": "Octree resolution for marching cubes reconstruction (official recommended: 380, fast: 256).",
+                    "default": 380,
+                    "minimum": 64,
+                    "maximum": 512,
                     "required": False,
-                    "readOnly": True,
+                },
+                "num_chunks": {
+                    "type": "integer",
+                    "description": "Chunk size for point evaluation during marching cubes",
+                    "default": 20000,
+                    "required": False,
                 },
                 "num_inference_steps": {
                     "type": "integer",

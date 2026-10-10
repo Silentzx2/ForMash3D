@@ -96,7 +96,9 @@ class ArdyMotionGenerationAdapter(BaseModel):
             self._ensure_ardy_in_path()
             logger.info(f"Loading ARDY model from {self.ardy_root} (checkpoint: {self.current_checkpoint})")
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             from ardy.model import load_model as ardy_load
             from ardy.model.registry import resolve_model_name
@@ -159,7 +161,9 @@ class ArdyMotionGenerationAdapter(BaseModel):
             post_process = bool(inputs.get("post_process", True))
             target_bones = inputs.get("target_bones")
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             # Determine skeleton type from checkpoint
             is_g1 = "g1" in resolved_cp.lower()

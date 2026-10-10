@@ -83,10 +83,10 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Raw extraction is intentionally fixed at maximum 512; polycount is post-processing.
-        self.assertEqual(schema["octree_resolution"]["default"], 512)
-        self.assertTrue(schema["octree_resolution"]["readOnly"])
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
+        # Shape v2.1 uses octree_resolution=256 by default (up to 384 for high detail)
+        self.assertEqual(schema["octree_resolution"]["default"], 256)
+        self.assertFalse(schema["octree_resolution"].get("readOnly", False))
+        self.assertEqual(schema["num_inference_steps"]["default"], 30)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
     def test_hunyuan3d_dit_mini_turbo_contract(self):
@@ -95,9 +95,9 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Raw extraction is intentionally fixed at maximum 512; polycount is post-processing.
-        self.assertEqual(schema["octree_resolution"]["default"], 512)
-        self.assertTrue(schema["octree_resolution"]["readOnly"])
+        # Tencent turbo preset recommends octree_resolution=380 (or 256 for fast)
+        self.assertEqual(schema["octree_resolution"]["default"], 380)
+        self.assertFalse(schema["octree_resolution"].get("readOnly", False))
         self.assertEqual(schema["num_inference_steps"]["default"], 5)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 

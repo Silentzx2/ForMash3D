@@ -196,7 +196,7 @@ def model_worker_process(
         import os
         from huggingface_hub import InferenceClient, login
 
-        hf_token = os.getenv("HUGGINGFACE_TOKEN", None)
+        hf_token = os.getenv("HUGGINGFACE_TOKEN") or os.getenv("HF_TOKEN")
         if hf_token is not None:
             try:
                 login(token=hf_token, add_to_git_credential=False)
@@ -207,7 +207,10 @@ def model_worker_process(
         # Set primary CUDA device; multi-GPU adapters dispatch modules across worker_config.gpu_ids.
         if torch.cuda.is_available():
             torch.cuda.set_device(gpu_id)
-        configure_cpu_runtime(int((worker_config.resource_plan or {}).get("cpu_threads", 1)))
+        worker_threads = int((worker_config.resource_plan or {}).get("cpu_threads", 0))
+        if worker_threads <= 1:
+            worker_threads = os.cpu_count() or 8
+        configure_cpu_runtime(worker_threads)
         # Enable TF32 and benchmark for Tensor Core acceleration
         try:
             torch.backends.cuda.matmul.allow_tf32 = True
@@ -341,6 +344,9 @@ def model_worker_process(
         except Exception:
             pass
         logger.info(f"Worker {worker_id} shutdown complete")
+
+
+_worker_loop = model_worker_process
 
 
 def _handle_control_message(
@@ -486,6 +492,11 @@ def _process_job_in_worker(
         processing_job = job_id
         start_time = time.time()
         logger.info(f"[GENERATION START] job_id={job_id} model={model_id} feature={job_request.feature}")
+
+        # Configure CPU runtime if job request specifies threads override
+        req_threads = int((job_request.inputs or {}).get("cpu_threads") or 0)
+        if req_threads > 0:
+            configure_cpu_runtime(req_threads)
 
         # Section 26: Exact runtime parameter logging
         request_inputs = job_request.inputs or {}

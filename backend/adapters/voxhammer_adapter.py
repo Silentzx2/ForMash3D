@@ -99,6 +99,8 @@ class VoxHammerTextMeshEditingAdapter(TextMeshEditingModel):
     def _load_model(self):
         """Load TRELLIS pipeline for text-guided editing."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("VoxHammer requires CUDA; CPU inference is not supported.")
             logger.info("Loading TRELLIS text-to-3D pipeline for VoxHammer...")
             
             from trellis.pipelines import TrellisTextTo3DPipeline
@@ -108,7 +110,8 @@ class VoxHammerTextMeshEditingAdapter(TextMeshEditingModel):
                 "fishwowater/TRELLIS-text-large-voxhammer", 
                 cache_dir=str(self.model_path / "TRELLIS-text-large-voxhammer")
             )
-            self.trellis_pipeline.cuda()
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.trellis_pipeline.to(device)
             
             # Create VoxHammer helper
             self.voxhammer_helper = VoxHammerInferenceHelper(
@@ -156,6 +159,8 @@ class VoxHammerTextMeshEditingAdapter(TextMeshEditingModel):
             Dictionary with editing results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("VoxHammer requires CUDA; CPU inference is not supported.")
             # Validate inputs
             if "mesh_path" not in inputs:
                 raise ValueError("mesh_path is required")
@@ -366,6 +371,8 @@ class VoxHammerImageMeshEditingAdapter(ImageMeshEditingModel):
     def _load_model(self):
         """Load TRELLIS pipeline for image-guided editing."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("VoxHammer requires CUDA; CPU inference is not supported.")
             logger.info("Loading TRELLIS image-to-3D pipeline for VoxHammer...")
             
             from trellis.pipelines import TrellisImageTo3DPipeline
@@ -375,7 +382,8 @@ class VoxHammerImageMeshEditingAdapter(ImageMeshEditingModel):
                 "fishwowater/TRELLIS-image-large-voxhammer", 
                 cache_dir=str(self.model_path / "TRELLIS-image-large-voxhammer")
             )
-            self.trellis_pipeline.cuda()
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.trellis_pipeline.to(device)
             
             # Create VoxHammer helper
             self.voxhammer_helper = VoxHammerInferenceHelper(
@@ -423,6 +431,8 @@ class VoxHammerImageMeshEditingAdapter(ImageMeshEditingModel):
             Dictionary with editing results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("VoxHammer requires CUDA; CPU inference is not supported.")
             # Validate inputs
             if "mesh_path" not in inputs:
                 raise ValueError("mesh_path is required")

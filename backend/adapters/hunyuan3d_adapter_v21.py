@@ -110,6 +110,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                     f"Please download Hunyuan3D-2.1 weights via manager.sh option [8] or use TRELLIS instead."
                 )
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-2.1 requires CUDA; CPU inference is not supported.")
+
             # Load shape generation pipeline if needed
             if self.load_shapegen:
                 from hy3dshape.pipelines import (
@@ -118,7 +121,9 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 from hy3dshape.rembg import BackgroundRemover
 
                 logger.info(f"Loading shape generation pipeline from {self.model_path}...")
-                shape_dev = getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu')
+                shape_dev = getattr(self, 'device', None)
+                if shape_dev is None or shape_dev.startswith("cpu"):
+                    shape_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
                 self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                     str(self.model_path),
                     device=shape_dev,
@@ -303,7 +308,9 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             else:
                 guidance_scale = float(guidance_scale)
             seed = int(inputs.get("seed", 1234))
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-2.1 requires CUDA; CPU inference is not supported.")
+            device = getattr(self.pipeline_shapegen, "device", None) or (f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0")
             generator = torch.Generator(device=device).manual_seed(seed)
             mesh_result = self.pipeline_shapegen(
                 image=image,
@@ -440,7 +447,9 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
             else:
                 guidance_scale = float(guidance_scale)
             seed = int(inputs.get("seed", 1234))
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-2.1 requires CUDA; CPU inference is not supported.")
+            device = getattr(self.pipeline_shapegen, "device", None) or (f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0")
             generator = torch.Generator(device=device).manual_seed(seed)
             mesh_result = self.pipeline_shapegen(
                 image=image,

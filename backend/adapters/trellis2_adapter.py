@@ -72,12 +72,16 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                 if k in os.environ and not os.environ[k].strip():
                     os.environ.pop(k, None)
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+
             # Initialize TRELLIS.2 runner
             from utils.trellis2_utils import Trellis2Runner
             self.runner = Trellis2Runner(
                 trellis2_root=str(self.trellis2_root),
                 model_cache_dir=str(self.model_path),
-                device="cuda",
+                device=device,
                 resource_plan=self.resource_plan,
             )
 
@@ -131,6 +135,8 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             Dictionary with generated mesh information
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
             if self.runner is None:
                 raise ValueError("TRELLIS.2 model is not loaded")
             if getattr(self.runner, "o_voxel", None) is None:

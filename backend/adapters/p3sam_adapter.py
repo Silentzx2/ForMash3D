@@ -76,11 +76,11 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
             if not torch.cuda.is_available():
                 raise RuntimeError("P3-SAM requires CUDA; CPU fallback is not supported")
 
-            # Initialize P3-SAM runner
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             self.p3sam_runner = P3SAMRunner(
                 checkpoint_path=self.checkpoint_path,
                 p3sam_root=str(self.p3sam_root),
-                device="cuda"
+                device=device
             )
             
             # Pre-load the model
@@ -129,6 +129,8 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
             Dictionary with segmentation results including AABB
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("P3-SAM requires CUDA; CPU fallback is not supported")
             if self.p3sam_runner is None:
                 raise RuntimeError("P3-SAM runner is not loaded")
             

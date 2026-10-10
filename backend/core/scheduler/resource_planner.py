@@ -27,15 +27,22 @@ def cpu_threads_for_workers(active_workers: int = 1) -> int:
     explicit = _env_int("FORMSH3D_CPU_THREADS", 0)
     if explicit:
         return explicit
-    return max(1, cpu_count() // max(1, int(active_workers or 1)))
+    cores = cpu_count()
+    # Allocate all available cores (or min(8, cpu_count)) to the worker rather than dividing into 1 thread
+    return max(1, min(8, cores) if cores >= 8 else cores)
 
 
-def configure_cpu_runtime(threads: int) -> int:
+def configure_cpu_runtime(threads: Optional[int] = None, optimize_for_throughput: bool = False) -> int:
+    explicit = _env_int("FORMSH3D_CPU_THREADS", 0)
+    if optimize_for_throughput or threads is None or int(threads) <= 0:
+        threads = explicit if explicit > 0 else (os.cpu_count() or 8)
     threads = max(1, int(threads))
-    os.environ.setdefault("OMP_NUM_THREADS", str(threads))
-    os.environ.setdefault("MKL_NUM_THREADS", str(threads))
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", str(threads))
-    os.environ.setdefault("NUMEXPR_NUM_THREADS", str(threads))
+    threads_str = str(threads)
+    os.environ["OMP_NUM_THREADS"] = threads_str
+    os.environ["MKL_NUM_THREADS"] = threads_str
+    os.environ["OPENBLAS_NUM_THREADS"] = threads_str
+    os.environ["NUMEXPR_NUM_THREADS"] = threads_str
+    os.environ["VECLIB_MAXIMUM_THREADS"] = threads_str
     try:
         torch.set_num_threads(threads)
     except Exception:
@@ -190,6 +197,46 @@ class ResourcePlanner:
         if requested:
             return max(1, min(cpu_count(), int(requested)))
         return cpu_count()
+
+    @staticmethod
+    def choose_model(
+        model_registry: Dict[str, Dict[str, Any]],
+        feature_models: Sequence[str],
+        inputs: Optional[Dict[str, Any]] = None,
+        explicit_model: Optional[str] = None,
+    ) -> Optional[str]:
+        inputs = inputs or {}
+        if explicit_model and explicit_model in feature_models:
+            return explicit_model
+
+        quality = str(inputs.get("quality") or inputs.get("meshQuality") or "").lower()
+        multiview = (
+            bool(inputs.get("multiview_input") or inputs.get("multiview"))
+            or len(inputs.get("image_paths") or []) > 1
+            or len(inputs.get("images") or []) > 1
+        )
+        texture = bool(inputs.get("texture") or inputs.get("texture_generation") or inputs.get("texture_image_path"))
+        target_polycount = int(inputs.get("target_polycount", 0) or 0)
+
+        def score(model_id: str):
+            config = model_registry.get(model_id, {})
+            caps = config.get("capabilities") or {}
+            points = int(caps.get("quality_priority", 0) or 0)
+            if multiview:
+                points += 100 if caps.get("multiview_input") else -200
+            if texture:
+                points += 60 if caps.get("texture_generation") else -20
+                points += 20 if caps.get("native_pbr") else 0
+            if quality in {"high", "ultra"}:
+                points += 20 if caps.get("raw_mesh") else 0
+                points += 15 if caps.get("high_fidelity_geometry") else 0
+                if caps.get("latency_class") == "quality":
+                    points += 25
+            if target_polycount > 100000 and caps.get("high_fidelity_geometry"):
+                points += 30
+            return (points, -int(config.get("vram_requirement", 0) or 0))
+
+        return sorted(feature_models, key=score, reverse=True)[0] if feature_models else None
 
 
 def dispatch_pipeline_across_gpus(pipeline: Any, resource_plan: ResourcePlan, offload_dir: Optional[str] = None) -> Dict[str, Any]:

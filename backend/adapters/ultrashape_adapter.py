@@ -121,7 +121,10 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
             from hy3dshape.rembg import BackgroundRemover
             
-            hy_dev = getattr(self, 'device', 'cuda' if torch.cuda.is_available() else 'cpu')
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            hy_dev = getattr(self, 'device', None)
+            if hy_dev is None or hy_dev.startswith("cpu"):
+                hy_dev = device
             self.hunyuan_pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                 str(self.hunyuan_model_path),
                 device=hy_dev,
@@ -140,7 +143,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 ultrashape_root=str(self.ultrashape_root),
                 config_path=self.ultrashape_config,
                 checkpoint_path=self.ultrashape_checkpoint,
-                device="cuda" if torch.cuda.is_available() else "cpu",
+                device=device,
                 dtype=torch.bfloat16,
             )
             self.ultrashape_helper.load_models()
@@ -197,6 +200,8 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             Dictionary with generation results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("UltraShape requires CUDA/BF16; CPU fallback is not supported")
             # Validate inputs
             if "image_path" not in inputs:
                 raise ValueError("image_path is required for image-to-mesh generation")

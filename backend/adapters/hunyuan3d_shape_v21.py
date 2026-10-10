@@ -133,8 +133,13 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     hy3dshape.__path__.append(str(inner_pkg))
             sys.modules["hy3dshape.hy3dshape"] = hy3dshape
 
-            logger.info("Loading shape generation pipeline...")
-            device = getattr(self, "device", "cuda" if torch.cuda.is_available() else "cpu")
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-Shape-v2-1 requires CUDA; CPU inference is not supported.")
+            device = getattr(self, "device", None)
+            if device is None or device.startswith("cpu"):
+                device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.device = device
+            logger.info(f"Loading shape generation pipeline on {device}...")
             self.pipeline_shapegen = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                 str(self.model_path),
                 device=device,
@@ -163,7 +168,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 logger.info("Hunyuan3D-Shape-v2-1 dispatched across GPUs %s", self.gpu_ids)
             try:
                 if not multi_gpu_applied and hasattr(self.pipeline_shapegen, "enable_model_cpu_offload"):
-                    self.pipeline_shapegen.enable_model_cpu_offload()
+                    self.pipeline_shapegen.enable_model_cpu_offload(device=device)
                     logger.info("Enabled model CPU offload for shape pipeline")
             except Exception as offload_err:
                 logger.warning(f"Could not enable CPU offload: {offload_err}")
@@ -220,28 +225,58 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 image = self.bg_remover(image.convert("RGB"))
 
-            logger.info("Generating 3D shape...")
-            octree_res = 512
-            num_steps = inputs.get("num_inference_steps", 50)
-            guidance_scale = inputs.get("guidance_scale", 5.0)
-            seed = int(inputs.get("seed", 42))
-            # Use same device as pipeline to avoid tensor device mismatch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            # If pipeline has device attribute, use it; otherwise fallback
-            if hasattr(self.pipeline_shapegen, 'device'):
-                device = self.pipeline_shapegen.device
-            logger.info(f"Using device '{device}' for generator")
-            generator = torch.Generator(device=device).manual_seed(seed)
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-Shape-v2-1 requires CUDA; CPU inference is not supported.")
 
-            # Ensure pipeline is loaded
+            device = getattr(self, "device", None)
+            if not device or device.startswith("cpu"):
+                device = getattr(self.pipeline_shapegen, 'device', None) or (f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0")
+            if str(device).startswith("cpu"):
+                device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.device = str(device)
+
+            # Ensure pipeline is loaded and on GPU
             if self.pipeline_shapegen is None:
                 raise RuntimeError("Hunyuan3D-Shape-v2-1 pipeline not loaded. Call _load_model() first or check model weights.")
+
+            if hasattr(self.pipeline_shapegen, "device") and str(self.pipeline_shapegen.device).startswith("cpu"):
+                if hasattr(self.pipeline_shapegen, "to"):
+                    self.pipeline_shapegen.to(self.device)
+
+            logger.info(f"Generating 3D shape with Hunyuan3D-Shape-v2-1 on {self.device}...")
+            octree_res = inputs.get("octree_resolution", inputs.get("octree_res", inputs.get("grid_resolution", 256)))
+            if octree_res is None:
+                octree_res = 256
+            else:
+                octree_res = int(octree_res)
+
+            num_chunks = inputs.get("num_chunks", 20000)
+            if num_chunks is None:
+                num_chunks = 20000
+            else:
+                num_chunks = int(num_chunks)
+
+            num_steps = inputs.get("num_inference_steps", inputs.get("num_steps", 30))
+            if num_steps is None:
+                num_steps = 30
+            else:
+                num_steps = int(num_steps)
+
+            guidance_scale = inputs.get("guidance_scale", 5.0)
+            if guidance_scale is None:
+                guidance_scale = 5.0
+            else:
+                guidance_scale = float(guidance_scale)
+
+            seed = int(inputs.get("seed", 42))
+            generator = torch.Generator(device=self.device).manual_seed(seed)
 
             mesh_result = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
+                num_chunks=num_chunks,
                 generator=generator,
             )[0]
 
@@ -263,6 +298,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "face_count": mesh_stats["face_count"],
                     "has_texture": False,
                     "octree_resolution": octree_res,
+                    "num_chunks": num_chunks,
                     "num_inference_steps": num_steps,
                     "guidance_scale": guidance_scale,
                     "seed": seed,
@@ -296,15 +332,24 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Fixed at 512 for maximum raw geometry detail; output polycount is a post-processing setting.",
-                    "default": 512,
+                    "description": "Octree resolution for marching cubes reconstruction (recommended: 256 for fast, 384 for high detail).",
+                    "default": 256,
+                    "minimum": 64,
+                    "maximum": 512,
                     "required": False,
-                    "readOnly": True,
+                },
+                "num_chunks": {
+                    "type": "integer",
+                    "description": "Chunk size for point evaluation during marching cubes",
+                    "default": 20000,
+                    "required": False,
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Number of inference steps",
-                    "default": 50,
+                    "description": "Number of inference steps (recommended: 30 for fast, 50 for max detail)",
+                    "default": 30,
+                    "minimum": 1,
+                    "maximum": 100,
                     "required": False,
                 },
                 "guidance_scale": {

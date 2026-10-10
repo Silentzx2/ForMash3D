@@ -67,11 +67,15 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
 
             from utils.partpacker_utils import PartPackerRunner
 
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartPacker requires CUDA; CPU inference is not supported.")
+            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+
             # Initialize PartPacker runner
             self.partpacker_runner = PartPackerRunner(
                 config_name="default",
                 flow_ckpt_path=self.flow_ckpt_path,
-                device="cuda" if torch.cuda.is_available() else "cpu",
+                device=device,
                 precision="bfloat16",
                 # TODO: move all remove background to some common utilities
                 enable_background_removal=True,
@@ -132,6 +136,8 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
             Dictionary with generation results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("PartPacker requires CUDA; CPU inference is not supported.")
             # Validate inputs
             if "image_path" not in inputs:
                 raise ValueError("image_path is required for image-to-mesh generation")

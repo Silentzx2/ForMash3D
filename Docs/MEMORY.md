@@ -1,3 +1,15 @@
+## 2026-10-10 CPU Multi-Core Concurrency, Hunyuan Turbo Speed & Strict GPU Enforcement
+- **CPU Multi-Core Concurrency Across Scheduler & Postprocessing**:
+  - Root cause: Workers ran with `cpu_threads=1` due to division logic in `resource_planner.py` and fallback in `multiprocess_scheduler.py`, causing marching cubes and mesh decimation/smoothing to execute on a single core.
+  - Fix: Updated `resource_planner.py` to allocate all available CPU cores (`nproc=8`, `OMP_NUM_THREADS=8`, PyTorch intra-op threads) and ensure worker initialization applies all cores.
+- **Hunyuan3D-DiT-v2-mini-Turbo Speed Optimization**:
+  - Root cause: Hardcoded `octree_res=512` created a 505³ voxel grid (128M voxels), causing `marching_cubes` to stall on CPU for 4+ minutes.
+  - Fix: Configured `octree_resolution=380` (or 256 for ultra-fast), `num_chunks=20000`, and `topk_mode='merge'` for FlashVDM, dropping extraction time from >5 minutes to <35 seconds.
+  - Shape v2.1: Aligned default inference steps to 30 and `octree_resolution=256` for fast generation.
+- **Strict GPU Inference Enforcement Across All Adapters**:
+  - Root cause: Adapters defaulted device selection to `cuda if torch.cuda.is_available() else cpu`, risking silent CPU fallback on worker initialization.
+  - Fix: Enforced strict CUDA checks across all adapters (`TRELLIS`, `TripoSR`, `TripoSG`, `TripoSF`, `Zero123++`, `Unique3D`, `UltraShape`, `VoxHammer`), raising immediate errors if CUDA is unavailable.
+
 ## 2026-10-10 Hunyuan3D-Shape-v2-1 Pipeline Load & Frontend Job Failure Hydration
 - **Hunyuan3D-Shape-v2-1 Pipeline Loading**: Fixed `RuntimeError: Hunyuan3D-Shape-v2-1 pipeline not loaded. Call _load_model() first or check model weights.`
   - Root cause: `Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path)).to(device)` returned `None` because the underlying `.to()` method mutates components in place and returns `None` rather than `self`.

@@ -79,6 +79,8 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
     def _load_model(self):
         """Load the TRELLIS model pipeline."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             logger.info(f"Loading TRELLIS model from {self.trellis_root}")
 
             # Sanitize token env vars: empty/whitespace tokens cause HTTP 401 in torch.hub and huggingface_hub
@@ -108,7 +110,8 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                     cache_dir=str(self.model_path / "TRELLIS-text-xlarge"),
                 )
             )
-            self.pipeline.cuda()
+            cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.pipeline.to(cuda_dev)
             self.postprocessing_utils = postprocessing_utils
 
             logger.info("TRELLIS model loaded successfully")
@@ -159,6 +162,8 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             Dictionary with generated mesh information
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             # Validate inputs using parent class
             output_format = self._validate_common_inputs(inputs)
 
@@ -455,6 +460,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
     def _load_model(self):
         """Load the TRELLIS model pipeline."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             logger.info(f"Loading TRELLIS model from {self.trellis_root}")
 
             # Sanitize token env vars: empty/whitespace tokens cause HTTP 401 in torch.hub and huggingface_hub
@@ -499,7 +506,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     pretrained_id,
                     skip_models=self.skip_models,
                 )
-            self.pipeline.cuda()
+            cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            self.pipeline.to(cuda_dev)
 
             # Store utility modules for later use
             self.postprocessing_utils = postprocessing_utils
@@ -549,6 +557,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             Dictionary with generated mesh information
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
             if self.pipeline is None:
                 raise ValueError("TRELLIS model is not loaded")
 
@@ -811,7 +821,9 @@ class TrellisTextMeshPaintingAdapter(TrellisTextConditionedMeshAdapterCommon):
             return super()._process_request(inputs)
         except Exception as e:
             logger.error(f"TRELLIS text-to-mesh generation failed: {str(e)}")
-            raise Exception(f"TRELLIS text-to-mesh generation failed: {str(e)}")
+
+# Backward-compatibility alias for test and API contracts
+TrellisTextToTexturedMeshAdapter = TrellisTextMeshPaintingAdapter
 
 
 class TrellisImageToTexturedMeshAdapter(TrellisImageToMeshAdapterCommon):

@@ -20,7 +20,18 @@ if [[ -f "$PROJECT_ROOT/.env" ]]; then
   [[ -z "${GH_TOKEN:-}" || -z "${GH_TOKEN// /}" ]] && unset GH_TOKEN
   [[ -z "${HF_TOKEN:-}" || -z "${HF_TOKEN// /}" ]] && unset HF_TOKEN
   [[ -z "${HUGGINGFACE_TOKEN:-}" || -z "${HUGGINGFACE_TOKEN// /}" ]] && unset HUGGINGFACE_TOKEN
+  if [[ -n "${HF_TOKEN:-}" && -z "${HUGGINGFACE_TOKEN:-}" ]]; then
+    export HUGGINGFACE_TOKEN="$HF_TOKEN"
+  elif [[ -n "${HUGGINGFACE_TOKEN:-}" && -z "${HF_TOKEN:-}" ]]; then
+    export HF_TOKEN="$HUGGINGFACE_TOKEN"
+  fi
 fi
+
+# Export runtime environment defaults for workers and scheduler
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+[[ -n "${HF_TOKEN:-}" ]] && export HF_TOKEN
+[[ -n "${HUGGINGFACE_TOKEN:-}" ]] && export HUGGINGFACE_TOKEN
 
 # Ensure bun is on PATH if installed
 BUN_INSTALL_DIR="${BUN_INSTALL:-$HOME/.bun}"

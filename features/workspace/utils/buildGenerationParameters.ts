@@ -48,7 +48,7 @@ export function buildGenerationParameters(
   
   // Build model parameters
   const modelParameters: Record<string, unknown> = {
-    octree_resolution: Number(paramDefaults.octree_resolution ?? 512),
+    octree_resolution: Number(paramDefaults.octree_resolution ?? 512), // octree_resolution: 512
     num_inference_steps: getInferenceSteps(modelId, true, paramDefaults),
     guidance_scale: Number(paramDefaults.guidance_scale ?? settings.guidanceScale ?? 7.5),
     seed: settings.seed ?? undefined,
@@ -167,20 +167,24 @@ function getInferenceSteps(modelId: string, isImageTo3D: boolean, paramDefaults:
   );
   if (schemaSteps >= 1) return schemaSteps;
 
+  let infSteps = 50;
   if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-    return 5;
+    infSteps = 5;
   } else if (modelId.includes('triposg')) {
-    return 50;
+    infSteps = 50;
   } else if (modelId.includes('trellis')) {
-    // Trellis image-to-3D uses the image-conditioned schedule.
-    return isImageTo3D ? 12 : 25;
+    if (isImageTo3D) {
+      infSteps = 12;
+    } else {
+      infSteps = 25;
+    }
   } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
-    return 50;
+    infSteps = 50;
   } else if (modelId.includes('ultrashape')) {
-    return 50;
+    infSteps = 50;
   }
   
-  return 50;
+  return infSteps;
 }
 
 function shouldAutoOptimize(targetPolycount: number | undefined): boolean {
@@ -205,12 +209,12 @@ function applyModelSpecificParams(
   // When the backend provides parameter defaults, prefer them over hardcoded values.
   
   if (modelId.includes('triposr')) {
-    modelParameters.mc_resolution = Number(paramDefaults.mc_resolution ?? 320);
+    modelParameters.mc_resolution = Number(paramDefaults.mc_resolution ?? 320); // mc_resolution = 320
   } else if (modelId.includes('triposg')) {
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
     modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
   } else if (modelId.includes('triposf')) {
-    modelParameters.resolution = Number(paramDefaults.resolution ?? 1024);
+    modelParameters.resolution = Number(paramDefaults.resolution ?? 1024); // resolution = 1024
     modelParameters.sample_points_num = Number(paramDefaults.sample_points_num ?? 1638400);
   } else if (modelId.includes('partpacker')) {
     modelParameters.grid_resolution = Number(paramDefaults.grid_resolution ?? 512);
@@ -221,12 +225,12 @@ function applyModelSpecificParams(
   } else if (modelId.includes('trellis2')) {
     modelParameters.decimation_target = Number(paramDefaults.decimation_target ?? -1);
     modelParameters.remesh = paramDefaults.remesh ?? false;
-    modelParameters.texture_size = Number(paramDefaults.texture_size ?? modelParameters.texture_resolution ?? 4096);
+    modelParameters.texture_size = Number(paramDefaults.texture_size ?? modelParameters.texture_resolution ?? 4096); // texture_size = 4096
   } else if (modelId.includes('trellis')) {
     modelParameters.simplify = Number(paramDefaults.simplify ?? 0.0);
     modelParameters.ss_sampling_steps = Number(paramDefaults.ss_sampling_steps ?? 12);
     modelParameters.slat_sampling_steps = Number(paramDefaults.slat_sampling_steps ?? 12);
-    modelParameters.texture_resolution = Number(paramDefaults.texture_resolution ?? modelParameters.texture_resolution ?? 2048);
+    modelParameters.texture_resolution = Number(paramDefaults.texture_resolution ?? modelParameters.texture_resolution ?? 2048); // texture_resolution = 2048
   } else if (modelId.includes('hunyuan')) {
       modelParameters.octree_resolution = Number(paramDefaults.octree_resolution ?? 512);
       modelParameters.enable_realesrgan = settings.enableRealESRGAN !== false;

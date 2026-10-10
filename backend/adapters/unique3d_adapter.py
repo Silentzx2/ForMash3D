@@ -254,7 +254,8 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         # Import and use the existing run_mvprediction function
         from app.custom_models.mvimg_prediction import run_mvprediction
         
-        generator = torch.Generator(device="cuda").manual_seed(int(seed)) if seed >= 0 else None
+        cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+        generator = torch.Generator(device=cuda_dev).manual_seed(int(seed)) if seed >= 0 else None
         
         # Simple preprocessing
         from app.utils import simple_preprocess, change_rgba_bg
@@ -335,6 +336,8 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             Dictionary with generation results
         """
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Unique3D requires CUDA; CPU fallback is not supported")
             self.status = ModelStatus.PROCESSING
             self._ensure_unique3d_in_path()
 
