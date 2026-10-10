@@ -430,7 +430,18 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return true;
       });
 
-      if ((!selectedAssetIdRef.current || !filtered.some(a => a.id === selectedAssetIdRef.current)) && filtered.length > 0) {
+      let currentSelected = selectedAssetIdRef.current;
+      
+      // If the selected ID is raw but the asset now has a prefix, update the selected ID to the prefixed one.
+      if (currentSelected && !filtered.some(a => a.id === currentSelected)) {
+        const matchingPrefixed = filtered.find(a => a.id.replace(/^(hist_|local_|upload_)/, '') === currentSelected);
+        if (matchingPrefixed) {
+          currentSelected = matchingPrefixed.id;
+          setSelectedAssetId(currentSelected);
+        }
+      }
+
+      if ((!currentSelected || !filtered.some(a => a.id === currentSelected)) && filtered.length > 0) {
         setSelectedAssetId(filtered[0].id);
       } else if (filtered.length === 0) {
         setSelectedAssetId(null);

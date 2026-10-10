@@ -185,19 +185,19 @@ class ApiClient {
       (data.jobs ?? []).forEach((j, i) => {
         const jobId = (j.job_id ?? j.id ?? `job-${i}`) as string;
         const jobBase = `/api/v1/system/jobs/${jobId}`;
-        const result = (j.result ?? {}) as Record<string, any>;
+        const jobResult = (j.result ?? {}) as Record<string, any>;
         // Canonical production artifacts: game_ready GLB by default,
         // master/source.glb for the source view, thumbnail endpoint always
         // resolves (file → input image → placeholder) even after a restart.
         const gameReadyUrl =
-          result.model_url || result.game_ready_url || `${jobBase}/download?artifact_format=glb`;
+          jobResult.model_url || jobResult.game_ready_url || `${jobBase}/download?artifact_format=glb`;
         const sourceUrl =
-          result.source_model_url || result.high_fidelity_url || `${jobBase}/download?artifact_format=master`;
-        const thumbnailUrl = result.thumbnail_url || `${jobBase}/thumbnail`;
+          jobResult.source_model_url || jobResult.high_fidelity_url || `${jobBase}/download?artifact_format=master`;
+        const thumbnailUrl = jobResult.thumbnail_url || `${jobBase}/thumbnail`;
         result[jobId] = {
           prompt: [0, (j.prompt ?? j.feature ?? '') as string, {}, {}, []] as unknown as HistoryItem['prompt'],
           outputs: {
-            ...result,
+            ...jobResult,
             glb: gameReadyUrl,
             model_url: gameReadyUrl,
             game_ready_url: gameReadyUrl,
@@ -205,16 +205,16 @@ class ApiClient {
             source_model_url: sourceUrl,
             thumbnail: thumbnailUrl,
             thumbnail_url: thumbnailUrl,
-            polygon_count: j.polygon_count ?? result.polygon_count,
-            vertex_count: j.vertex_count ?? result.vertex_count,
-            dimensions: j.dimensions ?? result.dimensions,
-            bounding_box: j.bounding_box ?? result.bounding_box,
-            object_count: j.object_count ?? result.object_count,
-            component_count: j.component_count ?? result.component_count,
-            material_count: j.material_count ?? result.material_count,
-            topology: j.topology ?? result.topology,
-            mesh_details: j.mesh_details ?? result.mesh_details,
-            postprocess_status: j.postprocess_status ?? result.postprocess_status,
+            polygon_count: j.polygon_count ?? jobResult.polygon_count,
+            vertex_count: j.vertex_count ?? jobResult.vertex_count,
+            dimensions: j.dimensions ?? jobResult.dimensions,
+            bounding_box: j.bounding_box ?? jobResult.bounding_box,
+            object_count: j.object_count ?? jobResult.object_count,
+            component_count: j.component_count ?? jobResult.component_count,
+            material_count: j.material_count ?? jobResult.material_count,
+            topology: j.topology ?? jobResult.topology,
+            mesh_details: j.mesh_details ?? jobResult.mesh_details,
+            postprocess_status: j.postprocess_status ?? jobResult.postprocess_status,
           },
           status: { status_str: (j.status ?? 'unknown') as string, completed: j.status === 'completed' || j.status === 'succeeded' || j.status === 'completed_degraded' },
         };
