@@ -31,8 +31,6 @@ export interface MeshQualityPreset {
   label: string;
   subLabel: string;
   tagline: string;
-  grid: string;
-  steps: number;
   polyEstimate: string;
   badge: string;
   tooltip: string;
@@ -42,46 +40,38 @@ export const MESH_QUALITY_OPTIONS: MeshQualityPreset[] = [
   {
     id: 'low',
     label: 'Low',
-    subLabel: '256³ / 20s',
+    subLabel: 'Draft / ~15k',
     tagline: 'Fast preview',
-    grid: '256',
-    steps: 20,
     polyEstimate: '~15k tris',
-    badge: '256³ • 20 steps (Fast)',
-    tooltip: 'Low: Fast preview (256³ grid • 20 steps • ~15k tris)',
+    badge: 'Draft (Fast)',
+    tooltip: 'Low: Fast preview and draft generation with lightweight downstream polycount (~15k tris)',
   },
   {
     id: 'medium',
     label: 'Medium',
-    subLabel: '384³ / 35s',
+    subLabel: 'Balanced / ~30k',
     tagline: 'Balanced workflow',
-    grid: '384',
-    steps: 35,
     polyEstimate: '~30k tris',
-    badge: '384³ • 35 steps (Balanced)',
-    tooltip: 'Medium: Balanced workflow (384³ grid • 35 steps • ~30k tris)',
+    badge: 'Standard (Balanced)',
+    tooltip: 'Medium: Balanced workflow for interactive real-time assets (~30k tris)',
   },
   {
     id: 'high',
     label: 'High',
-    subLabel: '512³ / 50s',
+    subLabel: 'Production / ~60k',
     tagline: 'Detailed production',
-    grid: '512',
-    steps: 50,
     polyEstimate: '~60k tris',
-    badge: '512³ • 50 steps (Detailed)',
-    tooltip: 'High: Detailed production (512³ grid • 50 steps • ~60k tris)',
+    badge: 'Detailed (Production)',
+    tooltip: 'High: Detailed production mesh with high texture fidelity (~60k tris)',
   },
   {
     id: 'ultra',
     label: 'Ultra',
-    subLabel: '640³ / 75s',
+    subLabel: 'Studio / ~100k',
     tagline: 'Maximum fidelity',
-    grid: '640',
-    steps: 75,
     polyEstimate: '~100k tris',
-    badge: '640³ • 75 steps (Maximum)',
-    tooltip: 'Ultra: Maximum fidelity (640³ grid • 75 steps • ~100k tris)',
+    badge: 'Maximum (Studio)',
+    tooltip: 'Ultra: Maximum output fidelity preserving fine source geometric detail (~100k tris)',
   },
 ];
 
@@ -1948,20 +1938,21 @@ export const GeneratePanel: React.FC = () => {
                   Source geometry is always generated at the selected model's maximum fidelity. This control changes texture/output quality only; polycount is applied downstream.
                 </p>
                 <div className="grid grid-cols-4 gap-1">
-                  {(['low', 'medium', 'high', 'ultra'] as const).map((q) => {
-                    const isSelected = (generationSettings.meshQuality || 'high') === q;
+                  {MESH_QUALITY_OPTIONS.map((opt) => {
+                    const isSelected = (generationSettings.meshQuality || 'high') === opt.id;
                     return (
                       <button
-                        key={q}
+                        key={opt.id}
                         type="button"
-                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshQuality: q }))}
+                        title={opt.tooltip}
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshQuality: opt.id }))}
                         className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer capitalize font-bold text-[10px] ${
                           isSelected
                             ? 'bg-primary text-black shadow-sm font-black'
                             : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
                         }`}
                       >
-                        {q}
+                        {opt.label}
                       </button>
                     );
                   })}

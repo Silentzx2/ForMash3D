@@ -160,19 +160,67 @@ class Paint3DAdapter(ImageToMeshModel):
         self.status = ModelStatus.UNLOADED
         logger.info("Paint3D unloaded")
 
-    def get_vram_status(self) -> Dict[str, Any]:
+    def get_vram_status(self, gpu_id: Optional[int] = None) -> Dict[str, Any]:
         """Return VRAM eligibility status for Paint3D."""
         vram_mb = self.vram_requirement
-        torch_vram = 0
-        if torch.cuda.is_available():
-            torch_vram = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
-        return {
-            "model_id": self.model_id,
-            "vram_required_mb": vram_mb,
-            "vram_available_mb": torch_vram if torch_vram > 0 else None,
-            "eligible": torch_vram >= vram_mb if torch_vram > 0 else True,
-            "status": "eligible" if (torch_vram >= vram_mb or torch_vram == 0) else "insufficient_vram",
-        }
+
+        target_gpu_id = gpu_id
+        if target_gpu_id is None:
+            target_gpu_id = getattr(self, "gpu_id", None)
+        if target_gpu_id is None:
+            device_str = getattr(self, "device", None)
+            if isinstance(device_str, str) and device_str.startswith("cuda:"):
+                try:
+                    target_gpu_id = int(device_str.split(":")[1])
+                except (ValueError, IndexError):
+                    target_gpu_id = 0
+            else:
+                target_gpu_id = 0
+
+        if not torch.cuda.is_available():
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": None,
+                "eligible": False,
+                "status": "ineligible",
+                "gpu_id": target_gpu_id,
+                "error": "CUDA is unavailable",
+            }
+
+        try:
+            device_count = torch.cuda.device_count()
+            if target_gpu_id < 0 or target_gpu_id >= device_count:
+                return {
+                    "model_id": self.model_id,
+                    "vram_required_mb": vram_mb,
+                    "vram_available_mb": None,
+                    "eligible": False,
+                    "status": "ineligible",
+                    "gpu_id": target_gpu_id,
+                    "error": f"GPU {target_gpu_id} out of range (device count: {device_count})",
+                }
+
+            torch_vram = torch.cuda.get_device_properties(target_gpu_id).total_memory / (1024 * 1024)
+            is_eligible = torch_vram >= vram_mb
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": torch_vram,
+                "eligible": is_eligible,
+                "status": "eligible" if is_eligible else "insufficient_vram",
+                "gpu_id": target_gpu_id,
+            }
+        except Exception as e:
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": None,
+                "eligible": False,
+                "status": "ineligible",
+                "gpu_id": target_gpu_id,
+                "error": str(e),
+            }
 
     def get_parameter_schema(self) -> Dict[str, Any]:
         """Return parameter schema for Paint3D."""
@@ -214,10 +262,8 @@ class Paint3DAdapter(ImageToMeshModel):
 
         mesh = trimesh.load(str(mesh_path), process=False)
         if isinstance(mesh, trimesh.Scene):
-            geometries = list(mesh.geometry.values())
-            if not geometries:
-                raise ValueError(f"No geometry found in input mesh scene: {mesh_path}")
-            mesh = trimesh.util.concatenate(geometries)
+            from postprocess.meshio import scene_to_mesh
+            mesh = scene_to_mesh(mesh)
 
         # Check for UV coordinates, unwrap if missing
         has_uv = hasattr(mesh.visual, "uv") and mesh.visual.uv is not None and len(mesh.visual.uv) > 0

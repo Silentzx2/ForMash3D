@@ -196,10 +196,23 @@ class FileStore:
                     stale_ids.append(file_id)
 
             if stale_ids:
+                type_keys = set()
+                if file_type:
+                    type_keys.add(self._key("files", file_type))
+                else:
+                    try:
+                        async for k in self.redis.scan_iter(match=self._key("files", "*")):
+                            type_keys.add(k.decode("utf-8") if isinstance(k, bytes) else k)
+                    except Exception as e:
+                        logger.warning(f"Failed to scan file type keys for stale cleanup: {e}")
+                    for ft in ("image", "mesh", "model", "texture", "unknown"):
+                        type_keys.add(self._key("files", ft))
+
                 async with self.redis.pipeline() as pipe:
                     for file_id in stale_ids:
                         pipe.zrem(self._key("files", "all"), file_id)
-                        pipe.zrem(self._key("files", file_type), file_id) if file_type else None
+                        for tk in type_keys:
+                            pipe.zrem(tk, file_id)
                     await pipe.execute()
             return files
         except Exception as e:

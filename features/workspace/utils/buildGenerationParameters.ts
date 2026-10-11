@@ -162,7 +162,7 @@ export function buildGenerationParameters(
       texture_enabled: textureEnabled,
       generate_texture: textureEnabled,
       ...(textureEnabled ? {
-        texture_resolution: textureResolutionPreset,
+        texture_resolution: numericTextureResolution,
         texture_resolution_preset: textureResolutionPreset,
       } : {}),
     };

@@ -35,43 +35,23 @@ function formatTextureModel(id: string, modelData: AvailableModels | null): Disc
    const isTrellis = id.includes('trellis');
    const isHunyuan = id.includes('hunyuan');
 
-   // Get model details from the fetched data
+   // Authoritative model runtime details from backend /system/models
    const modelDetails = modelData?.model_details?.[id];
+   const isRegistered = Boolean(modelDetails);
+   const weightsAvailable = Boolean(modelDetails?.weights_available);
+   const isReady = modelDetails?.status === 'ready';
+   const status = modelDetails?.status || (isRegistered ? (weightsAvailable ? 'ready' : 'weights_missing') : 'unavailable');
 
-   // Determine availability and status based on model details
-   const available = modelDetails?.weights_available ?? false;
-   const installed = modelDetails?.weights_downloadable ?? false; // Assuming weights_downloadable means installed?
-   // Actually, we have weights_available and weights_downloadable. We'll use:
-   // available: weights_available (whether weights are available to be used)
-   // installed: weights_downloadable (whether weights have been downloaded)
-   // But note: the DiscoveredTextureModel expects:
-   //   available: boolean;
-   //   installed: boolean;
-   //   status: string;
-   // We'll set status based on modelDetails.status if available, else derive.
-   let status = 'unknown';
-   if (modelDetails) {
-     status = modelDetails.status;
-   } else {
-     // Fallback to old logic if no details
-     status = available ? 'ready' : 'weights_missing';
-   }
-
-   // VRAM requirement: use modelDetails.vram_requirement if available, else default
    const vramRequiredMb = modelDetails?.vram_requirement ?? (def?.vramMb || 11776);
-
-   // Low VRAM supported: we don't have this in modelDetails, so we keep the old logic
    const lowVramSupported = def?.lowVramSupported ?? (isTrellis || isHunyuan);
-
-   // Supports flashvdm: we don't have this in modelDetails, so we keep the old logic
    const supportsFlashVdm = def?.supportsFlashVDM ?? id.includes('dit_v2_mini_turbo');
 
    return {
      id,
      label: def?.name || (id === 'paint3d' ? 'Paint3D (1K/2K PBR Texture)' : id),
-     available: !!available,
-     installed: !!installed,
-     status: status,
+     available: isReady,
+     installed: weightsAvailable,
+     status,
      vram_required_mb: vramRequiredMb,
      low_vram_supported: lowVramSupported,
      supports_flashvdm: supportsFlashVdm,
@@ -136,14 +116,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
      const imageModels = (modelData.available_models['image_mesh_painting'] || []).filter(isTexturePaintingModel);
      // Exclude legacy TRELLIS geometry-generation textured variants from standard texture flow
      const combined = Array.from(new Set([...textModels, ...imageModels])).filter(id => !id.includes('trellis'));
-     const defaults = [
-       'paint3d',
-       'hunyuan3d_paint_v21_image_mesh_painting',
-     ];
-     const finalIds = combined.length > 0 ? combined : defaults;
-     if (!finalIds.includes('paint3d')) finalIds.unshift('paint3d');
-     if (!finalIds.includes('hunyuan3d_paint_v21_image_mesh_painting')) finalIds.push('hunyuan3d_paint_v21_image_mesh_painting');
-     return finalIds.map(id => formatTextureModel(id, modelData));
+     return combined.map(id => formatTextureModel(id, modelData));
    }, [modelData]);
 
   const [meshDropdownOpen, setMeshDropdownOpen] = useState(false);
@@ -224,6 +197,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
     }
     if (selected.available) return null;
     if (selected.status === 'weights_missing') return { label: 'Weights missing', tone: 'warn' as const };
+    if (selected.status === 'gpu_unavailable') return { label: 'CUDA/GPU unavailable', tone: 'warn' as const };
     if (!selected.installed) return { label: 'Model not installed', tone: 'warn' as const };
     if (selected.status) return { label: selected.status, tone: 'warn' as const };
     return { label: 'Not ready', tone: 'warn' as const };
@@ -393,7 +367,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
             }`}
           >
             <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-3 h-3 flex-shrink-0" />
-            <span className="truncate">SettingsIcon</span>
+            <span className="truncate">Settings</span>
           </button>
         </div>
       </div>
@@ -406,7 +380,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
         {/* ========================================================================= */}
         {panelTab === 'texture' && (
           <div className="space-y-2.5">
-            {/* TargetIcon 3D Mesh Compact Selector */}
+            {/* 3D Mesh Compact Selector */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
                <div className="flex items-center justify-between">
                  <span className="text-[10px] font-bold text-zinc-300 flex items-center gap-1.5">
@@ -813,7 +787,8 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
             <div className="pt-2 border-t border-white/[0.08]">
               {(() => {
                 const hasValidReferenceImage = Boolean(textureSettings.referenceImage || meshOriginalImage);
-                const canGenerate = Boolean(currentAsset && hasValidReferenceImage && !isExecuting);
+                const isModelReady = activeTextureModel ? activeTextureModel.available : false;
+                const canGenerate = Boolean(currentAsset && hasValidReferenceImage && !isExecuting && isModelReady);
 
                 return (
                   <>
@@ -833,6 +808,10 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
                         <span>SELECT A TARGET MESH</span>
                       ) : !hasValidReferenceImage ? (
                         <span>UPLOAD REFERENCE IMAGE</span>
+                      ) : !activeTextureModel || textureCapableModels.length === 0 ? (
+                        <span>NO TEXTURE MODEL AVAILABLE</span>
+                      ) : !isModelReady ? (
+                        <span>MODEL NOT READY ({activeTextureModel.status.toUpperCase()})</span>
                       ) : (
                         <>
                           <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 stroke-[2.5]" />
@@ -847,6 +826,14 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
                     ) : !hasValidReferenceImage ? (
                       <p className="text-[8px] text-amber-400/80 text-center mt-1">
                         Reference image required for texturing.
+                      </p>
+                    ) : !activeTextureModel || textureCapableModels.length === 0 ? (
+                      <p className="text-[8px] text-amber-400/80 text-center mt-1">
+                        No texture painting models registered on the server.
+                      </p>
+                    ) : !isModelReady ? (
+                      <p className="text-[8px] text-amber-400/80 text-center mt-1">
+                        {activeTextureModel.label} is unavailable ({activeTextureModel.status}). Check server weights and runtime.
                       </p>
                     ) : null}
                   </>
@@ -975,7 +962,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
         {/* ========================================================================= */}
         {panelTab === 'paint' && (
           <div className="space-y-3">
-            {/* TargetIcon 3D Mesh & Canvas Status */}
+            {/* 3D Mesh & Canvas Status */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
                <div className="flex items-center justify-between">
                  <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider flex items-center gap-1.5">
@@ -1017,7 +1004,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
                   }`}
                 >
                   <PaintBrushToolIcon className="w-4 h-4" />
-                  <span>BrushIcon</span>
+                  <span>Brush</span>
                 </button>
                 <button
                   type="button"
@@ -1050,11 +1037,11 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
               </div>
             </div>
 
-            {/* Color PaletteIcon & Preset Swatches */}
+            {/* Color Palette & Preset Swatches */}
             {paintMode === 'draw' && (
               <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Color PaletteIcon</span>
+                  <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Color Palette</span>
                   <div className="flex items-center gap-1.5">
                     <span className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: paintColor }} />
                     <span className="text-[9px] font-mono text-zinc-300 font-bold uppercase">{paintColor}</span>
@@ -1115,13 +1102,13 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
               </div>
             )}
 
-            {/* BrushIcon Dynamics */}
+            {/* Brush Dynamics */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
-              <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">BrushIcon Dynamics</span>
+              <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Brush Dynamics</span>
 
               <div className="space-y-1">
                 <div className="flex justify-between text-[10px]">
-                  <span className="text-zinc-400">BrushIcon Size (Radius)</span>
+                  <span className="text-zinc-400">Brush Size (Radius)</span>
                   <span className="font-mono text-primary font-bold">{paintBrushSize}px</span>
                 </div>
                 <input
@@ -1189,7 +1176,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
               <span className="text-zinc-200 font-bold uppercase text-[10px] tracking-wider">Tip &amp; Blending</span>
 
               <div className="space-y-1">
-                <span className="text-[10px] text-zinc-400">BrushIcon Tip Profile</span>
+                <span className="text-[10px] text-zinc-400">Brush Tip Profile</span>
                 <div className="grid grid-cols-2 gap-1">
                   {[
                     { id: 'round-soft', label: 'Soft Round' },
@@ -1377,7 +1364,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
 
       </div>
 
-      {/* Hidden File Input for Reference UploadIcon */}
+      {/* Hidden File Input for Reference Upload */}
       <input
         ref={fileInputRef}
         type="file"

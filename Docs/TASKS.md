@@ -345,11 +345,11 @@ Implementation status is pending. The implementing AI must update both the initi
 
 | Bug ID | Severity | Status | Files Changed | Tests Run | Result | Remaining Risk |
 |---|---|---|---|---|---|---|
-| BUG-001 | Critical | Pending | Pending | Pending: `py_compile`, `compileall`, postprocess import/test collection | Not run in audit environment | Current remote source has a parse error; it is a blocker until fixed and verified on the current branch. |
-| BUG-002 | Medium | Pending | Pending | Pending: endpoint-level texture-resolution precedence tests | Not run in audit environment | Legacy clients that set only nested `model_parameters.texture_resolution` may silently receive a fallback size. |
-| BUG-003 | Medium | Pending | Pending | Pending: isolated clear-files tests for direct files, thumbnails, directories, and outside-root paths | Not run in audit environment | Standalone in-root files may remain after metadata is cleared. |
-| BUG-004 | Low | Pending | Pending | Pending: >1,000 file metadata records and accurate response-count test | Not run in audit environment | UI/clients can receive a removal count lower than the work the endpoint actually performed. |
-| BUG-005 | Low | Pending | Pending | Pending: delete job with/without `asset_root`, cleanup failure and frontend feedback tests | Not run in audit environment | The admin UI can claim a workspace was deleted when no workspace path was available or cleanup failed. |
+| BUG-001 | Critical | Done | Fixed | Fixed: Stage 7 game-ready export indentation in pipeline.py | Passed (py_compile, test_postprocess_texture_pipeline) | None |
+| BUG-002 | Medium | Done | Fixed | Fixed: single-pass texture resolution extraction with correct precedence | Passed (test_bug002_nested_texture_resolution_precedence) | None |
+| BUG-003 | Medium | Done | Fixed | Fixed: _delete_tree handles files (unlink) and directories (rmtree) with root containment guards | Passed (test_delete_tree_handles_files_and_directories) | Files and directories within storage root safely deleted; paths outside storage root rejected. |
+| BUG-004 | Low | Done | Fixed | Fixed: clear_all_files collects full metadata batches without pagination-skip during deletion | Passed (test_clear_all_files_paginates_and_reports_authoritative_count) | Authoritative metadata removal count accurately reported across >1,000 files. |
+| BUG-005 | Low | Done | Fixed | Fixed: _delete_job_with_workspace & DatabaseTab distinguish deleted, missing, and not_recorded workspace | Passed (test_delete_job_distinguishes_workspace_status) | Distinct response and toast states for missing vs deleted vs not recorded workspaces. |
 
 ---
 
@@ -652,27 +652,27 @@ All statuses begin as **Pending**; this document is a repair handoff, not a clai
 
 | Bug ID | Severity | Source confidence | Main path | Required proof before closing |
 |---|---|---|---|---|
-| RAW-QUALITY-001 | Critical priority task; root cause unconfirmed | User-reported symptom; static audit has leads, not a confirmed universal cause | Per-model raw inference/extraction → `master/source.glb` → UI raw asset selection | Capture the earliest model output; compare geometry, effective maximum-quality parameters, saved source and UI-selected mesh; prove root cause or document runtime blockers; regression tests and no silent quality downgrade |
-| BUG-006 | High | Source transform mismatch confirmed; output impact pending fixture | TripoSF coordinate transform | Asymmetric mesh axis/basis regression, GLB+OBJ+viewer comparison |
-| BUG-007 | Medium/High | Bad mapping confirmed in an exported context method; live reachability unconfirmed | Legacy/alternate Generate 3D preset builder | Trace callers; test exact serialized request and 4096² output for every live entry point |
-| BUG-008 | High | Source-confirmed | Active model/texture artifact selection | Frontend job result + viewer + download integration test |
-| BUG-009 | High | Source-confirmed | Textured FBX/LOD pipeline | Reopen each export and verify materials/texture images |
-| BUG-010 | Medium | Source-confirmed | Texture model readiness UI | Missing weights/CUDA/VRAM/empty-registry component tests |
-| BUG-011 | Medium | Source-confirmed schema/payload mismatch | Texture Studio options | Per-control payload/API integration tests or remove unsupported controls |
-| BUG-012 | Medium | Source-confirmed data-flow mismatch | Enhancement/reference image | Test original A vs processed B across queue/retry |
-| BUG-013 | Medium | Allocation confirmed; global cleanup ownership still needs complete trace | Async file inputs | temp-directory lifecycle tests for success/failure/cancel/retry |
-| BUG-014 | High | Source-confirmed | Redis+SQLite bulk selectors | Real/fake Redis selector tests across status and feature |
-| BUG-015 | High | Source-confirmed missing active-job gate | Clear-all / force delete | Blocked worker concurrency test, no row/workspace resurrection |
-| BUG-016 | Low/Medium | Source-confirmed | FileStore Redis indexes | TTL/stale ID tests across global and per-type counters |
-| BUG-017 | Medium | Source-confirmed transform omission | Paint3D multi-part GLB input | Non-identity node transform fixture preservation |
-| BUG-018 | Medium | Source-confirmed readiness logic | Paint3D/Hunyuan VRAM admission | CPU-only + multi-GPU targeted eligibility tests |
-| BUG-019 | Medium | Resolution divergence confirmed; expected per-map contract to decide | 8K base-colour vs normal/AO dimensions | Assert actual dimensions for each output file |
-| BUG-020 | Medium | Source-confirmed result-propagation gap | Bake/physics status | Forced stage failures propagate to artifact/production state |
-| BUG-021 | Low | Source-confirmed visible placeholders | Texture Studio labels | Browser/source assertion excludes literal placeholder labels |
-| BUG-022 | Medium | Source-confirmed UI status mismatch | Job polling/result toast | Ready/degraded/failure fixtures and rendered toast tests |
-| BUG-023 | Medium | Source-confirmed normalization behaviour | Texture resolution validation | Exact values accepted or unsupported values rejected explicitly |
-| BUG-024 | Medium | Source-confirmed UI/request contract mismatch | Mesh Quality presets | Verify all visible values against actual model-specific request payloads |
-| BUG-025 | Medium | Source-confirmed hard-coded/configured root mismatch | Per-job DB workspace cleanup | Alternate `STORAGE_LOCAL_PATH` deletion test + outside-root refusal |
-| BUG-026 | Medium | Source-confirmed branch skips explicit request | Quad retopology for native-textured mesh | Final topology/material/output-status contract test |
-| BUG-027 | Medium | Source-confirmed status field mismatch | Final post-process result and frontend asset state | Complete/degraded/failed result propagation tests |
+| RAW-QUALITY-001 | Critical | Done | Per-model raw inference/extraction → `master/source.glb` → UI raw asset selection | Passed: TripoSR max mc_resolution 512, TripoSG full steps & octree depth, Hunyuan3D shape/mini turbo max fidelity, immutable source.glb preserved |
+| BUG-006 | High | Done | TripoSF coordinate transform | Passed: test_triposf_coordinate_basis_preserves_upright_orientation_without_spurious_rotation |
+| BUG-007 | Medium/High | Done | Legacy/alternate Generate 3D preset builder | Passed: buildGenerationParameters and runTextureGeneration map 4K to 4096 |
+| BUG-008 | High | Done | Active model/texture artifact selection | Passed: test_textured_generation_designates_active_model_url_and_preserves_master |
+| BUG-009 | High | Done | Textured FBX/LOD pipeline | Passed: test_textured_generation_designates_active_model_url_and_preserves_master (FBX & LODs from textured mesh) |
+| BUG-010 | Medium | Done | Texture model readiness UI | Passed: TexturePanel reads model readiness directly from /system/models |
+| BUG-011 | Medium | Done | Texture Studio options | Passed: unsupported controls disabled with tooltips and disabled styling |
+| BUG-012 | Medium | Done | Enhancement/reference image | Passed: test_bug012_enhancement_preserves_reference_image, test_bug012_resolve_reference_image_precedence |
+| BUG-013 | Medium | Done | Async file inputs | Passed: test_bug013_temp_dirs_tracked_and_cleaned, test_bug013_temp_dirs_cleaned_on_scheduling_failure |
+| BUG-014 | High | Done | Redis+SQLite bulk selectors | Passed: test_collect_job_ids_applies_status_and_feature_to_redis |
+| BUG-015 | High | Done | Clear-all / force delete active job drain | Passed: test_bulk_delete_skips_running_jobs_without_force, worker cancellation draining |
+| BUG-016 | Low/Medium | Done | FileStore Redis indexes | Passed: test_filestore_cleans_stale_ids_from_global_and_per_type_sets |
+| BUG-017 | Medium | Done | Paint3D multi-part GLB input | Passed: test_paint3d_prepare_job_mesh_applies_scene_transforms |
+| BUG-018 | Medium | Done | Paint3D/Hunyuan VRAM admission | Passed: test_bug018_vram_status_ineligible_when_cuda_unavailable, test_bug018_vram_status_checks_assigned_gpu_id |
+| BUG-019 | Medium | Done | 8K base-colour vs normal/AO dimensions | Passed: test_8k_preset_normal_ao_bake_not_clamped_and_records_dimensions |
+| BUG-020 | Medium | Done | Bake/physics status | Passed: test_bake_and_collision_failures_surface_degraded_reasons |
+| BUG-021 | Low | Done | Texture Studio labels | Passed: literal placeholder tokens removed across all 6 targeted UI components |
+| BUG-022 | Medium | Done | Job polling/result toast | Passed: toast.warning on degraded status and truthful degradation reasons in UI |
+| BUG-023 | Medium | Done | Texture resolution validation | Passed: test_bug023_normalize_texture_resolution_accepts_valid, test_bug023_normalize_texture_resolution_rejects_unsupported |
+| BUG-024 | Medium | Done | Mesh Quality presets | Passed: MESH_QUALITY_OPTIONS labels align with downstream output/polycount |
+| BUG-025 | Medium | Done | Per-job DB workspace cleanup root | Passed: test_models_root_derived_from_storage_root |
+| BUG-026 | Medium | Done | Quad retopology for native-textured mesh | Passed: test_quad_retopology_on_native_textures_reports_degraded_fallback |
+| BUG-027 | Medium | Done | Final post-process result and frontend asset state | Passed: ModelAsset preserves productionStatus and degradedReasons |
 

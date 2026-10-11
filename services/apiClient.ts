@@ -347,8 +347,8 @@ class ApiClient {
     return response.data;
   }
 
-  async deleteJob(jobId: string): Promise<BaseApiResponse> {
-    const response = await this.client.delete<BaseApiResponse>(
+  async deleteJob(jobId: string): Promise<BaseApiResponse & { asset_workspace_deleted?: boolean; asset_workspace_status?: 'deleted' | 'missing' | 'not_recorded' | 'failed' | string; cleanup_error?: string | null }> {
+    const response = await this.client.delete<BaseApiResponse & { asset_workspace_deleted?: boolean; asset_workspace_status?: 'deleted' | 'missing' | 'not_recorded' | 'failed' | string; cleanup_error?: string | null }>(
       `/api/v1/system/jobs/${jobId}`
     );
     return response.data;
@@ -404,6 +404,8 @@ class ApiClient {
   async clearDatabaseJobs(): Promise<{
     jobs_deleted: number;
     jobs_failed: number;
+    jobs_cancelled?: number;
+    active_unresponsive?: string[];
     redis_keys_swept: number;
     sqlite_rows_deleted: number;
     workspaces_removed: number;

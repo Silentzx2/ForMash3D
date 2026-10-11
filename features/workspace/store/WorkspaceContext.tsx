@@ -199,6 +199,12 @@ function normalizeBackendJob(raw: BackendJobPayload) {
   const normalizedProgress = rawProgress <= 1 ? rawProgress * 100 : rawProgress;
   // Prefer the canonical game-ready GLB URL; mesh_url is the legacy raw path
   const modelUrl = toProxyUrl(raw.result?.model_url ?? raw.result?.mesh_url);
+  const activeModelUrl = toProxyUrl(
+    raw.result?.active_model_url ?? raw.result?.textured_model_url ?? raw.result?.model_url ?? raw.result?.mesh_url
+  );
+  const texturedModelUrl = raw.result?.textured_model_url
+    ? toProxyUrl(raw.result.textured_model_url)
+    : undefined;
   return {
     status: raw.status,
     progress: Math.max(0, Math.min(100, Math.round(normalizedProgress))),
@@ -213,7 +219,9 @@ function normalizeBackendJob(raw: BackendJobPayload) {
         : undefined,
     result: raw.result ? {
       ...raw.result,
-       ...(modelUrl ? { model_url: modelUrl } : {}),
+      ...(modelUrl ? { model_url: modelUrl } : {}),
+      ...(activeModelUrl ? { active_model_url: activeModelUrl } : {}),
+      ...(texturedModelUrl ? { textured_model_url: texturedModelUrl } : {}),
       ...(raw.result.thumbnail_url ? { thumbnail_url: toProxyUrl(raw.result.thumbnail_url) } : {}),
     } : undefined,
   } as {
@@ -226,6 +234,7 @@ function normalizeBackendJob(raw: BackendJobPayload) {
     result?: (Record<string, any> & {
       model_url?: string;
       active_model_url?: string;
+      textured_model_url?: string;
       thumbnail_url?: string;
     }) | undefined;
   };
@@ -1034,13 +1043,13 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
                if (data.status === 'completed' && task.status !== 'completed') {
                  const result = data.result || {};
-                 const productionStatus = result.production_status || 'ready';
-                 const degradedReasons = result.degraded_reasons || [];
+                 const productionStatus = result.production_status || (result.postprocess_status === 'degraded' ? 'degraded' : 'ready');
+                 const degradedReasons = result.degraded_reasons || (result.texture_stage?.status === 'failed' ? ['texture_generation_failed'] : []);
                  let description = task.title || '3D Asset ready';
                  if (productionStatus === 'ready') {
                    toast.success('Generation complete', { description });
                  } else if (productionStatus === 'degraded') {
-                   const reasons = degradedReasons.length > 0 ? degradedReasons.join(', ') : 'unknown';
+                   const reasons = degradedReasons.length > 0 ? degradedReasons.join(', ') : 'quality or texture issue';
                    toast.warning('Generation completed with issues', {
                      description: `${description} (${reasons})`,
                    });
@@ -1050,9 +1059,8 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                    });
                  }
 
-                const result = data.result;
-                if (result?.model_url || result?.active_model_url) {
-                  const modelUrl = (result.active_model_url || result.model_url) as string;
+                if (result?.model_url || result?.active_model_url || result?.textured_model_url) {
+                  const modelUrl = (result.active_model_url || result.textured_model_url || result.model_url) as string;
                   const promptTitle = task.title;
                   const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
                   void prefetchGLB(modelUrl);
@@ -1070,7 +1078,9 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                     statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
                     topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
                     format: 'GLB',
-                     postprocessStatus: result.production_status || result.postprocess_status || 'completed',
+                    postprocessStatus: productionStatus === 'degraded' ? 'degraded' : (result.production_status || result.postprocess_status || 'completed'),
+                    productionStatus,
+                    degradedReasons,
                     game_ready_url: (result.game_ready_url as string) || modelUrl,
                     source_model_url: (result.source_model_url as string) || (result.high_fidelity_url as string) || undefined,
                     tags: ['AI Generated'],
@@ -1150,7 +1160,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     }
 
     const result = (job.result || {}) as Record<string, any>;
-    const modelUrl = (result?.active_model_url || result?.model_url || result?.url) as string | undefined;
+    const modelUrl = (result?.active_model_url || result?.textured_model_url || result?.model_url || result?.url) as string | undefined;
     if (modelUrl) {
       const promptTitle = job.title;
       const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
@@ -1169,7 +1179,9 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
         topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
         format: 'GLB',
-         postprocessStatus: result.production_status || result.postprocess_status || 'completed',
+        postprocessStatus: result.production_status === 'degraded' ? 'degraded' : (result.production_status || result.postprocess_status || 'completed'),
+        productionStatus: result.production_status || (result.postprocess_status === 'degraded' ? 'degraded' : 'ready'),
+        degradedReasons: result.degraded_reasons,
         game_ready_url: (result.game_ready_url as string) || modelUrl,
         source_model_url: (result.source_model_url as string) || (result.high_fidelity_url as string) || undefined,
         tags: ['AI Generated'],
@@ -1793,8 +1805,17 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
         ? '/api/v1/mesh-generation/text-mesh-painting'
         : '/api/v1/mesh-generation/image-mesh-painting';
 
+      const numericResolution =
+        resolution === '1K' ? 1024 :
+        resolution === '2K' ? 2048 :
+        resolution === '4K' ? 4096 :
+        resolution === '8K' ? 8192 :
+        resolution === '512' ? 512 :
+        2048;
+
       const body: Record<string, unknown> = {
-        texture_resolution: resolution,
+        texture_resolution: numericResolution,
+        texture_resolution_preset: resolution,
         output_format: 'glb',
         model_preference: modelPreference,
         ...meshRef,
@@ -2061,13 +2082,19 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          }
 
          // Create a temporary GenerationSettings object from the batch item
+         const batchTexQuality = batchItem.textureQuality as string | undefined;
+         const batchTexRes: '1K' | '2K' | '4K' | '8K' =
+           (batchItem as any).texture_resolution ??
+           (batchTexQuality === '8k' ? '8K' : batchTexQuality === 'ultra' ? '4K' : batchTexQuality === 'high' ? '2K' : '1K');
          const batchSettings: GenerationSettings = {
            mode: 'image-to-3d',
            image: null, // We'll use imageFileId instead
            imageFileId: batchItem.imageFileId,
            aiModel: batchItem.aiModel,
            meshQuality: batchItem.meshQuality ?? 'high',
-           textureQuality: batchItem.textureQuality ?? 'high',
+           textureQuality: (batchItem.textureQuality as any) ?? 'high',
+           texture_resolution: batchTexRes,
+           textureResolution: batchTexRes,
            quadTopology: batchItem.quadTopology ?? false,
            topologyMode: batchItem.topologyMode ?? 'triangle',
            seed: batchItem.seed ?? 42891,

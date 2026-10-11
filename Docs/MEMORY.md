@@ -1,3 +1,53 @@
+## 2026-10-11 Complete Audit Remediation Pass (All 5 Specialists: Raw Geometry, Texture Pipeline, API Lifecycle, Database Admin, UI Contracts)
+- **RAW-QUALITY-001, BUG-006, BUG-024 (Specialist 1)**:
+  - TripoSR mc_resolution parameter unlocked up to 512 max fidelity instead of hardcoded 320.
+  - TripoSG num_inference_steps clamp removed and full hierarchical octree depth forwarded.
+  - Hunyuan3D-Shape-v2.1 and Hunyuan3D-DiT-v2-mini-Turbo default to 512 octree resolution when source_quality == 'max'.
+  - TripoSF upright Y-up orientation verified and spurious +90° X rotation removed; coordinate basis tested with asymmetric 3D fixture.
+  - GeneratePanel mesh quality options copy updated to describe downstream polycount budgets (~15k, ~30k, ~60k, ~100k tris) rather than inaccurate universal grid estimates.
+- **BUG-001, BUG-008, BUG-009, BUG-017, BUG-019, BUG-020, BUG-026 (Specialist 2)**:
+  - Fixed pipeline.py Stage 7 indentation ensuring game-ready GLB, FBX, and LODs execute cleanly without UnboundLocalError when texturing is disabled.
+  - Set active_model_url to textured_model_url on texturing success while strictly preserving immutable master/source.glb.
+  - Built downstream FBX and LOD chain from the textured mesh derivative.
+  - Applied Paint3D scene node transforms via scene_to_mesh() before OBJ extraction.
+  - Unclamped 8K bake maps and recorded width/height dimensions per map in generated and result metadata.
+  - Propagated bake and collision failures into artifact_errors, degraded_reasons, and production_status: "degraded".
+  - Reported truthful degraded fallback for quad retopology on native-textured models without silent triangles.
+- **BUG-002, BUG-012, BUG-013, BUG-018, BUG-023 (Specialist 3)**:
+  - Single-pass pop of nested texture_resolution from model_parameters with strict precedence.
+  - Preserved original reference image path when preprocessing enhancement artifact is provided.
+  - Tracked and cleaned temporary mesh_gen_* directories on job completion, failure, cancellation, and scheduling errors.
+  - Fixed adapter get_vram_status to report ineligible when CUDA is unavailable and validate assigned gpu_id.
+  - Validated supported texture resolutions (1024, 2048, 4096, 8192 / 1K, 2K, 4K, 8K) returning 422 HTTP error for arbitrary sizes.
+- **BUG-003, BUG-004, BUG-005, BUG-014, BUG-015, BUG-016, BUG-025 (Specialist 4)**:
+  - _delete_tree handles files (unlink) and directories (rmtree) with root containment guards.
+  - clear_all_files collects full metadata batches without pagination skips, reporting authoritative removal count.
+  - _delete_job_with_workspace and DatabaseTab distinguish deleted, missing, and not_recorded workspace states.
+  - _collect_job_ids applies status and feature selectors to Redis keys.
+  - Active jobs cancelled and workers drained before deletion.
+  - FileStore list_file_metadata cleans stale IDs from global and per-type sorted sets.
+  - _models_root dynamically derived from _storage_root() / "models".
+- **BUG-007, BUG-010, BUG-011, BUG-021, BUG-022, BUG-027 (Specialist 5)**:
+  - 4K texture preset resolves to 4096 across all generation and batch builders.
+  - TexturePanel consumes authoritative backend model readiness directly from /system/models.
+  - Disabled unsupported TexturePanel controls (Low VRAM, style presets, PBR toggles) with clear tooltips.
+  - Removed all literal icon token placeholder strings across 6 UI components.
+  - Emitted warning toast with degradation reasons on degraded production status; persisted productionStatus and degradedReasons on ModelAsset.
+- **Full Verification**: All regression suites passing 100%: 11/11 in test_api_contracts_lifecycle.py, 13/13 in test_database_admin.py, 15/15 in test_generation_adapter_regressions.py, 14/14 in test_postprocess_texture_pipeline.py, 16/16 in test_paint3d_adapter.py / test_postprocess_e2e.py, 6/6 in test_cancellation_and_quad.py; TypeScript typecheck (`bun run test`) clean with 0 errors.
+
+---
+## 2026-10-11 Database Admin & FileStore Consistency Pass (Specialist 4)
+- Fixed `test_clear_all_jobs_requires_typed_confirmation`: `_cancel_job_if_active` safely handles schedulers/job queues without a direct `cancel_job` method, distinguishes active jobs from idle SQLite rows, and cancels/drains active workers before deletion.
+- BUG-003: `_delete_tree()` safely unlinks files/symlinks and rmtree's directories with root-containment checks before deletion, preventing escape outside storage root.
+- BUG-004: `clear_all_files()` gathers metadata in stable un-shifted batches and counts only authoritative deleted metadata records across >1,000 files without skipping items.
+- BUG-005: `_delete_job_with_workspace()` in `database.py` and `delete_job()` in `system.py` report `asset_workspace_status` (`"deleted"`, `"missing"`, `"not_recorded"`, `"failed"`). `DatabaseTab.tsx` toast accurately reflects missing vs deleted vs not recorded workspaces.
+- BUG-014: `_collect_job_ids()` applies requested status and feature selectors to Redis jobs (`3daigc:jobs`) as well as SQLite, preventing cross-status or cross-feature bulk deletion.
+- BUG-015: `_delete_job_with_workspace()` and `clear_all_jobs()` cancel and drain active jobs, refusing to delete active jobs that cannot be stopped.
+- BUG-016: `FileStore.list_file_metadata()` cleans stale IDs from both global (`3daigc:files:all`) and per-type (`3daigc:files:{file_type}`) sorted sets.
+- BUG-025: `_models_root()` dynamically derives from `_storage_root() / "models"`, honoring configured `STORAGE_LOCAL_PATH`.
+- Verification: 13 passed in `backend/tests/test_database_admin.py` (including 6 new regression tests); `py_compile` clean.
+
+---
 ## 2026-10-11 Consolidated Generation, Texture, Detail-Preservation, and UI Reliability Pass
 
 - Normal image-to-3D requests use raw geometry; texture_enabled/generate_texture are post-processing controls and are filtered from geometry-model inference. Central routing sends 1K/2K to Paint3D and 4K/8K to Hunyuan3D-Paint v2.1.

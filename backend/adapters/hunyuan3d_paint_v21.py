@@ -138,19 +138,67 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             logger.error(f"Failed to load Hunyuan3D-Paint-v2-1: {str(e)}")
             raise Exception(f"Failed to load Hunyuan3D-Paint-v2-1: {str(e)}")
 
-    def get_vram_status(self) -> Dict[str, Any]:
+    def get_vram_status(self, gpu_id: Optional[int] = None) -> Dict[str, Any]:
         """Return VRAM eligibility status for this model."""
         vram_mb = self.vram_requirement
-        torch_vram = 0
-        if torch.cuda.is_available():
-            torch_vram = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
-        return {
-            "model_id": self.model_id,
-            "vram_required_mb": vram_mb,
-            "vram_available_mb": torch_vram if torch_vram > 0 else None,
-            "eligible": torch_vram >= vram_mb if torch_vram > 0 else True,
-            "status": "eligible" if (torch_vram >= vram_mb or torch_vram == 0) else "insufficient_vram",
-        }
+
+        target_gpu_id = gpu_id
+        if target_gpu_id is None:
+            target_gpu_id = getattr(self, "gpu_id", None)
+        if target_gpu_id is None:
+            device_str = getattr(self, "device", None)
+            if isinstance(device_str, str) and device_str.startswith("cuda:"):
+                try:
+                    target_gpu_id = int(device_str.split(":")[1])
+                except (ValueError, IndexError):
+                    target_gpu_id = 0
+            else:
+                target_gpu_id = 0
+
+        if not torch.cuda.is_available():
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": None,
+                "eligible": False,
+                "status": "ineligible",
+                "gpu_id": target_gpu_id,
+                "error": "CUDA is unavailable",
+            }
+
+        try:
+            device_count = torch.cuda.device_count()
+            if target_gpu_id < 0 or target_gpu_id >= device_count:
+                return {
+                    "model_id": self.model_id,
+                    "vram_required_mb": vram_mb,
+                    "vram_available_mb": None,
+                    "eligible": False,
+                    "status": "ineligible",
+                    "gpu_id": target_gpu_id,
+                    "error": f"GPU {target_gpu_id} out of range (device count: {device_count})",
+                }
+
+            torch_vram = torch.cuda.get_device_properties(target_gpu_id).total_memory / (1024 * 1024)
+            is_eligible = torch_vram >= vram_mb
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": torch_vram,
+                "eligible": is_eligible,
+                "status": "eligible" if is_eligible else "insufficient_vram",
+                "gpu_id": target_gpu_id,
+            }
+        except Exception as e:
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": None,
+                "eligible": False,
+                "status": "ineligible",
+                "gpu_id": target_gpu_id,
+                "error": str(e),
+            }
 
     def _verify_pbr_output(self, output_path: str) -> Dict[str, Any]:
         """Inspect exported GLB materials and the actual embedded base-colour atlas."""

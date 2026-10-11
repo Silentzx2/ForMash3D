@@ -60,7 +60,7 @@ async def _admin_user(request: Request, _: bool = Depends(verify_api_key)):
 
 
 def _models_root() -> Path:
-    return (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+    return (_storage_root() / "models").resolve()
 
 
 def _storage_root() -> Path:
@@ -88,15 +88,23 @@ def _dir_size(path: Path, max_bytes: int = 64 * 1024 ** 3) -> int:
 def _delete_tree(path: Path, must_be_under: Path) -> Optional[str]:
     """Remove a contained path (file, symlink, or directory); returns an error string instead of raising."""
     try:
+        resolved_root = must_be_under.resolve()
+        if not path.exists() and not path.is_symlink():
+            return None
+        if path.is_symlink():
+            parent_resolved = path.parent.resolve()
+            if parent_resolved != resolved_root and resolved_root not in parent_resolved.parents:
+                return f"Refusing to delete path outside {resolved_root}: {path}"
+            path.unlink()
+            return None
         resolved = path.resolve()
     except OSError as exc:
         return str(exc)
-    if resolved == must_be_under or must_be_under not in resolved.parents:
-        return f"Refusing to delete path outside {must_be_under}: {resolved}"
-    if not resolved.exists():
-        return None
+
+    if resolved == resolved_root or resolved_root not in resolved.parents:
+        return f"Refusing to delete path outside {resolved_root}: {resolved}"
     try:
-        if resolved.is_dir() and not resolved.is_symlink():
+        if resolved.is_dir():
             shutil.rmtree(resolved)
         else:
             resolved.unlink()
@@ -105,16 +113,81 @@ def _delete_tree(path: Path, must_be_under: Path) -> Optional[str]:
     return None
 
 
+async def _cancel_job_if_active(scheduler, job_id: str, status: Optional[str] = None) -> bool:
+    """Cancel and drain an active job before deleting its record.
+    Returns True if the job is terminal, was successfully cancelled, or is safe to delete.
+    Returns False if an active worker cannot be stopped.
+    """
+    if status is None:
+        job_status = await scheduler.get_job_status(job_id)
+        status = (job_status or {}).get("status")
+
+    if status not in ("queued", "processing"):
+        return True
+
+    cancel_fn = getattr(scheduler, "cancel_job", None)
+    if not callable(cancel_fn):
+        cancel_fn = getattr(getattr(scheduler, "job_queue", None), "cancel_job", None)
+
+    if callable(cancel_fn):
+        try:
+            try:
+                cancelled_ok = await cancel_fn(job_id, force=True)
+            except TypeError:
+                cancelled_ok = await cancel_fn(job_id)
+        except Exception as exc:
+            logger.warning("Database admin: cancel_job failed for %s: %s", job_id, exc)
+            cancelled_ok = False
+
+        if cancelled_ok:
+            for _ in range(10):
+                await asyncio.sleep(0.05)
+                cur_status = await scheduler.get_job_status(job_id)
+                if (cur_status or {}).get("status") in _TERMINAL_STATUSES:
+                    return True
+            return True
+
+    # If cancel_fn returned False, check if the job is actively executing on a worker
+    # vs an idle row in database.
+    job_queue = getattr(scheduler, "job_queue", None)
+    processing_cache = getattr(job_queue, "_processing_cache", None)
+    if processing_cache is not None:
+        if job_id not in processing_cache:
+            return True
+        return False
+
+    redis_client = getattr(job_queue, "redis", None)
+    if redis_client is not None:
+        try:
+            is_processing = await redis_client.sismember("3daigc:queue:processing", job_id)
+            if not is_processing:
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
 async def _delete_job_with_workspace(scheduler, job_id: str) -> Dict[str, Any]:
     """Delete one job from both stores, then its canonical asset workspace.
 
     Mirrors DELETE /api/v1/system/jobs/{job_id}: the workspace is removed only
     after the durable record deletion succeeds, and the path is validated
-    against the models root.
+    against the models root. Active jobs are cancelled before deletion.
     """
     job_status = await scheduler.get_job_status(job_id)
     if job_status is None:
         return {"job_id": job_id, "deleted": False, "reason": "not_found"}
+
+    job_state = job_status.get("status")
+    if job_state in ("queued", "processing"):
+        stopped = await _cancel_job_if_active(scheduler, job_id, job_state)
+        if not stopped:
+            return {
+                "job_id": job_id,
+                "deleted": False,
+                "reason": f"active_job_cannot_be_stopped (status={job_state})",
+            }
 
     asset_root = (job_status.get("result") or {}).get("asset_root")
     success = await scheduler.job_queue.delete_job(job_id)
@@ -123,31 +196,63 @@ async def _delete_job_with_workspace(scheduler, job_id: str) -> Dict[str, Any]:
 
     cleanup_error = None
     workspace_deleted = False
+    workspace_status = "not_recorded"
     if asset_root:
-        cleanup_error = _delete_tree(Path(asset_root), _models_root())
-        workspace_deleted = cleanup_error is None
+        root_path = Path(asset_root)
+        if not root_path.exists():
+            workspace_status = "missing"
+            workspace_deleted = False
+        else:
+            cleanup_error = _delete_tree(root_path, _models_root())
+            if cleanup_error is None:
+                workspace_status = "deleted"
+                workspace_deleted = True
+            else:
+                workspace_status = "failed"
+                workspace_deleted = False
     else:
+        workspace_status = "not_recorded"
         workspace_deleted = False
+
     return {
         "job_id": job_id,
         "deleted": True,
         "asset_workspace_deleted": workspace_deleted,
+        "asset_workspace_status": workspace_status,
         "cleanup_error": cleanup_error,
     }
 
 
 async def _collect_job_ids(scheduler, db_manager, status: Optional[str], feature: Optional[str]) -> List[str]:
-    """Enumerate job ids from Redis first, then SQLite (authoritative fallback)."""
+    """Enumerate job ids from Redis first, then SQLite (authoritative fallback), applying selectors."""
+    import json
     ids: List[str] = []
     seen = set()
 
     redis_client = getattr(scheduler.job_queue, "redis", None)
     if redis_client is not None:
         try:
-            for job_id in await redis_client.hkeys("3daigc:jobs"):
-                if job_id not in seen:
-                    seen.add(job_id)
-                    ids.append(job_id)
+            if status or feature:
+                all_jobs = await redis_client.hgetall("3daigc:jobs")
+                for job_id_raw, job_json in all_jobs.items():
+                    job_id = job_id_raw.decode("utf-8") if isinstance(job_id_raw, bytes) else str(job_id_raw)
+                    try:
+                        data = json.loads(job_json)
+                        if status and data.get("status") != status:
+                            continue
+                        if feature and data.get("feature") != feature:
+                            continue
+                        if job_id not in seen:
+                            seen.add(job_id)
+                            ids.append(job_id)
+                    except Exception:
+                        continue
+            else:
+                for job_id in await redis_client.hkeys("3daigc:jobs"):
+                    job_id_str = job_id.decode("utf-8") if isinstance(job_id, bytes) else str(job_id)
+                    if job_id_str not in seen:
+                        seen.add(job_id_str)
+                        ids.append(job_id_str)
         except Exception as exc:
             logger.warning("Database admin: Redis job enumeration failed: %s", exc)
 
@@ -401,25 +506,12 @@ async def clear_all_jobs(
         job_status = await scheduler.get_job_status(job_id)
         job_state = (job_status or {}).get("status")
         if job_state in ("queued", "processing"):
-            # Attempt to cancel the job via scheduler (stops worker if processing)
-            cancelled_ok = await scheduler.cancel_job(job_id)
-            if not cancelled_ok:
+            stopped = await _cancel_job_if_active(scheduler, job_id, job_state)
+            if not stopped:
                 active_unresponsive.append(job_id)
                 failed += 1
                 continue
             cancelled += 1
-            # Wait briefly for terminal state to propagate
-            for _ in range(10):
-                await asyncio.sleep(0.1)
-                job_status = await scheduler.get_job_status(job_id)
-                job_state = (job_status or {}).get("status")
-                if job_state in _TERMINAL_STATUSES:
-                    break
-            else:
-                # Still not terminal after waiting; skip deletion to avoid orphaning worker
-                active_unresponsive.append(job_id)
-                failed += 1
-                continue
 
         result = await _delete_job_with_workspace(scheduler, job_id)
         if result["deleted"]:
@@ -514,37 +606,39 @@ async def clear_all_files(
 
     if file_store is not None:
         try:
-            # Iterate through all metadata without an artificial limit
+            all_file_ids: List[str] = []
             offset = 0
             batch_size = 1000
             while True:
-                metadata = await file_store.list_file_metadata(limit=batch_size, offset=offset)
-                if not metadata:
+                batch = await file_store.list_file_metadata(limit=batch_size, offset=offset)
+                if not batch:
                     break
-                for info in metadata:
-                    file_id = getattr(info, "file_id", None) or (
+                for info in batch:
+                    fid = getattr(info, "file_id", None) or (
                         info.get("file_id") if isinstance(info, dict) else None
                     )
-                    if not file_id:
-                        continue
-                    try:
-                        uploads = storage / "uploads"
-                        for candidate in uploads.rglob(f"upload_{file_id}.*"):
-                            error = _delete_tree(candidate, uploads)
-                            if error:
-                                upload_errors.append(f"{candidate.name}: {error}")
-                        thumbnail = uploads / "thumbnails" / f"{file_id}.png"
-                        if thumbnail.exists():
-                            error = _delete_tree(thumbnail, uploads)
-                            if error:
-                                upload_errors.append(f"{thumbnail.name}: {error}")
-                        await file_store.delete_file_metadata(file_id)
-                        metadata_removed += 1
-                    except Exception as exc:
-                        upload_errors.append(f"{file_id}: {exc}")
-                offset += len(metadata)
-                if len(metadata) < batch_size:
+                    if fid and fid not in all_file_ids:
+                        all_file_ids.append(fid)
+                offset += len(batch)
+                if len(batch) < batch_size:
                     break
+
+            for file_id in all_file_ids:
+                try:
+                    uploads = storage / "uploads"
+                    for candidate in uploads.rglob(f"upload_{file_id}.*"):
+                        error = _delete_tree(candidate, uploads)
+                        if error:
+                            upload_errors.append(f"{candidate.name}: {error}")
+                    thumbnail = uploads / "thumbnails" / f"{file_id}.png"
+                    if thumbnail.exists():
+                        error = _delete_tree(thumbnail, uploads)
+                        if error:
+                            upload_errors.append(f"{thumbnail.name}: {error}")
+                    if await file_store.delete_file_metadata(file_id):
+                        metadata_removed += 1
+                except Exception as exc:
+                    upload_errors.append(f"{file_id}: {exc}")
         except Exception as exc:
             upload_errors.append(f"file_store listing failed: {exc}")
 

@@ -208,11 +208,19 @@ export function DatabaseTab() {
     setBusy(`delete:${jobId}`);
     try {
       const res = await getApiClient().deleteJob(jobId);
-      const wsMsg = res.asset_workspace_deleted
-        ? 'and its workspace deleted'
-        : res.asset_workspace_deleted === false
-        ? 'but no workspace was recorded'
-        : 'workspace deletion failed';
+      const wsStatus = (res as any).asset_workspace_status;
+      let wsMsg = 'and its workspace was deleted';
+      if (wsStatus === 'deleted' || (res.asset_workspace_deleted && !wsStatus)) {
+        wsMsg = 'and its workspace was deleted';
+      } else if (wsStatus === 'missing') {
+        wsMsg = 'but its workspace was missing';
+      } else if (wsStatus === 'not_recorded') {
+        wsMsg = 'but no workspace was recorded';
+      } else if (wsStatus === 'failed' || res.cleanup_error) {
+        wsMsg = `but workspace cleanup failed${res.cleanup_error ? `: ${res.cleanup_error}` : ''}`;
+      } else if (res.asset_workspace_deleted === false) {
+        wsMsg = 'but no workspace was recorded';
+      }
       toast.success('Job deleted', { description: `${jobId} was removed from the jobs database ${wsMsg}.` });
       setPendingDelete(null);
       setSelected((prev) => prev.filter((id) => id !== jobId));

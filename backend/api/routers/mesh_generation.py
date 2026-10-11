@@ -36,17 +36,33 @@ _LEGACY_TEXTURED_MODEL_ALIASES = {
 }
 
 _TEXTURE_RESOLUTION_PRESETS = {"1K": 1024, "2K": 2048, "4K": 4096, "8K": 8192}
+_SUPPORTED_TEXTURE_RESOLUTIONS = {1024, 2048, 4096, 8192}
 
 
 def _normalize_texture_resolution(value):
-    """Accept user presets or numeric atlas sizes at the API boundary."""
+    """Accept user presets or numeric atlas sizes at the API boundary, rejecting unsupported values."""
+    if value is None:
+        return None
     if isinstance(value, str):
         normalized = value.strip().upper()
         if normalized in _TEXTURE_RESOLUTION_PRESETS:
             return _TEXTURE_RESOLUTION_PRESETS[normalized]
         if normalized.isdecimal():
-            return int(normalized)
-    return value
+            int_val = int(normalized)
+            if int_val in _SUPPORTED_TEXTURE_RESOLUTIONS:
+                return int_val
+        raise ValueError(
+            f"Unsupported texture resolution '{value}'. Supported values: 1K (1024), 2K (2048), 4K (4096), 8K (8192)"
+        )
+    if isinstance(value, int):
+        if value in _SUPPORTED_TEXTURE_RESOLUTIONS:
+            return value
+        raise ValueError(
+            f"Unsupported texture resolution {value}. Supported values: 1024 (1K), 2048 (2K), 4096 (4K), 8192 (8K)"
+        )
+    raise ValueError(
+        f"Unsupported texture resolution type: {type(value).__name__}"
+    )
 
 
 def _clean_paint_parameters(parameters: Optional[dict]) -> Dict[str, Any]:
@@ -108,7 +124,7 @@ class TextMeshPaintingRequest(BaseModel):
         None, description="File ID from upload endpoint"
     )
     texture_resolution: int = Field(
-        1024, description="Texture resolution", ge=256, le=4096
+        1024, description="Texture resolution"
     )
     output_format: str = Field("glb", description="Output mesh format")
     quality_mode: Optional[str] = Field("high", description="Target quality budget")
@@ -170,7 +186,7 @@ class ImageToRawMeshRequest(BaseModel):
         None, description="File ID from upload endpoint"
     )
     texture_resolution: int = Field(
-        2048, description="Optional texture-atlas preset or size", ge=256, le=8192
+        2048, description="Optional texture-atlas preset or size"
     )
     bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
     texture_enabled: Optional[bool] = None
@@ -251,7 +267,7 @@ class ImageToTexturedMeshRequest(BaseModel):
         None, description="Texture image file ID from upload endpoint"
     )
     texture_resolution: Optional[int] = Field(
-        None, description="Texture atlas preset or size", ge=256, le=8192
+        None, description="Texture atlas preset or size"
     )
     bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
     texture_enabled: Optional[bool] = None
@@ -328,7 +344,7 @@ class ImageMeshPaintingRequest(BaseModel):
         None, description="File ID from upload endpoint"
     )
     texture_resolution: int = Field(
-        1024, description="Texture resolution", ge=256, le=8192
+        1024, description="Texture resolution"
     )
     output_format: str = Field("glb", description="Output mesh format")
     quality_mode: Optional[str] = Field("high", description="Target quality budget")
@@ -410,6 +426,7 @@ async def process_file_input(
     upload_file: Optional[UploadFile] = None,
     input_type: str = "image",
     file_store: Optional[FileStore] = None,
+    tracked_temp_dirs: Optional[List[str]] = None,
 ) -> str:
     """Process various file input formats and return the processed file path"""
 
@@ -453,6 +470,8 @@ async def process_file_input(
 
         elif base64_data:
             temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
+            if tracked_temp_dirs is not None:
+                tracked_temp_dirs.append(temp_dir)
             # Process base64 data (also accepts a full "data:...;base64," data URL)
             file_info = await save_base64_file(
                 base64_data, f"input_{input_type}", temp_dir
@@ -471,6 +490,8 @@ async def process_file_input(
 
         elif upload_file:
             temp_dir = tempfile.mkdtemp(prefix="mesh_gen_")
+            if tracked_temp_dirs is not None:
+                tracked_temp_dirs.append(temp_dir)
             # Process uploaded file
             file_info = await save_upload_file(upload_file, temp_dir)
             return str(file_info["file_path"])
@@ -478,6 +499,8 @@ async def process_file_input(
             raise HTTPException(status_code=400, detail="No input provided")
     except HTTPException as he:
         if temp_dir:
+            if tracked_temp_dirs is not None and temp_dir in tracked_temp_dirs:
+                tracked_temp_dirs.remove(temp_dir)
             await asyncio.to_thread(shutil.rmtree, temp_dir, True)
         import traceback
         trace = traceback.format_exc()
@@ -485,6 +508,8 @@ async def process_file_input(
         raise he
     except Exception as e:
         if temp_dir:
+            if tracked_temp_dirs is not None and temp_dir in tracked_temp_dirs:
+                tracked_temp_dirs.remove(temp_dir)
             await asyncio.to_thread(shutil.rmtree, temp_dir, True)
         import traceback
         trace = traceback.format_exc()
@@ -518,8 +543,9 @@ async def text_mesh_painting(
     Returns:
         Job information for the mesh painting task
     """
+    tracked_temp_dirs: List[str] = []
     try:
-        user_id = current_user.user_id if current_user else None
+        user_id = getattr(current_user, "user_id", None)
         
         # Validate model preference
         validate_model_preference(
@@ -533,6 +559,7 @@ async def text_mesh_painting(
             file_id=mesh_request.mesh_file_id,
             input_type="mesh",
             file_store=file_store,
+            tracked_temp_dirs=tracked_temp_dirs,
         )
 
         job_request = JobRequest(
@@ -546,7 +573,13 @@ async def text_mesh_painting(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"postprocess_mode": "production_mesh", "feature_type": "text_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={
+                "postprocess_mode": "production_mesh",
+                "feature_type": "text_mesh_painting",
+                "physics_enabled": mesh_request.physics_enabled,
+                "physics_config": mesh_request.physics_config,
+                "temp_input_dirs": list(tracked_temp_dirs),
+            },
             user_id=user_id,
         )
 
@@ -559,9 +592,12 @@ async def text_mesh_painting(
         )
 
     except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         raise
     except Exception as e:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         logger.error(f"Error scheduling text-mesh-painting job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
 
@@ -620,8 +656,9 @@ async def image_to_raw_mesh(
     Returns:
         Job information for the mesh generation task
     """
+    tracked_temp_dirs: List[str] = []
     try:
-        user_id = current_user.user_id if current_user else None
+        user_id = getattr(current_user, "user_id", None)
         model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
             mesh_request,
             default_model="hunyuan3d_shape_v21_image_to_raw_mesh",
@@ -641,6 +678,7 @@ async def image_to_raw_mesh(
             file_id=mesh_request.image_file_id,
             input_type="image",
             file_store=file_store,
+            tracked_temp_dirs=tracked_temp_dirs,
         )
 
         image_file_path = original_image_path
@@ -675,6 +713,7 @@ async def image_to_raw_mesh(
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
         # Keep texture-stage controls out of model-specific inference parameters.
         params.pop("texture_resolution", None)
+        params.pop("texture_resolution_preset", None)
         nested_texture_flags = [
             params.pop("texture_enabled", None),
             params.pop("generate_texture", None),
@@ -748,6 +787,7 @@ async def image_to_raw_mesh(
                 "texture_resolution": mesh_request.texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
+                "reference_image_path": original_image_path,
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
@@ -760,6 +800,7 @@ async def image_to_raw_mesh(
                 "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+                "temp_input_dirs": list(tracked_temp_dirs),
             },
             user_id=user_id,
         )
@@ -773,8 +814,12 @@ async def image_to_raw_mesh(
         )
 
     except HTTPException:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         raise
     except Exception as e:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         logger.error(f"Error scheduling image-to-raw-mesh job: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {e}")
 
@@ -796,8 +841,9 @@ async def image_to_textured_mesh(
     Returns:
         Job information for the mesh generation task
     """
+    tracked_temp_dirs: List[str] = []
     try:
-        user_id = current_user.user_id if current_user else None
+        user_id = getattr(current_user, "user_id", None)
         model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
             mesh_request,
             default_model="trellis_image_to_textured_mesh",
@@ -817,6 +863,7 @@ async def image_to_textured_mesh(
             file_id=mesh_request.image_file_id,
             input_type="image",
             file_store=file_store,
+            tracked_temp_dirs=tracked_temp_dirs,
         )
 
         image_file_path = original_image_path
@@ -849,6 +896,7 @@ async def image_to_textured_mesh(
                 file_id=mesh_request.texture_image_file_id,
                 input_type="texture_image",
                 file_store=file_store,
+                tracked_temp_dirs=tracked_temp_dirs,
             )
 
         chosen_stem = await resolve_asset_name(
@@ -861,7 +909,14 @@ async def image_to_textured_mesh(
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
         # Preserve nested resolution from old clients, but never pass it to geometry inference.
         source_texture_resolution = params.pop("texture_resolution", None)
-        params.pop("texture_resolution_preset", None)
+        legacy_preset = params.pop("texture_resolution_preset", None)
+        if source_texture_resolution is not None or legacy_preset is not None:
+            try:
+                source_texture_resolution = _normalize_texture_resolution(
+                    source_texture_resolution or legacy_preset
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e))
         target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
@@ -908,6 +963,7 @@ async def image_to_textured_mesh(
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
                 "image_path": image_file_path,
+                "reference_image_path": original_image_path,
                 "texture_image_path": texture_image_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": texture_resolution,
@@ -942,6 +998,7 @@ async def image_to_textured_mesh(
                 "texture_resolution": texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
+                "reference_image_path": original_image_path,
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
@@ -954,6 +1011,7 @@ async def image_to_textured_mesh(
                 "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+                "temp_input_dirs": list(tracked_temp_dirs),
             },
             user_id=user_id,
         )
@@ -967,8 +1025,12 @@ async def image_to_textured_mesh(
         )
 
     except HTTPException:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         raise
     except Exception as e:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         logger.error(f"Error scheduling image-to-textured-mesh job: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {e}")
 
@@ -990,8 +1052,9 @@ async def image_mesh_painting(
     Returns:
         Job information for the mesh painting task
     """
+    tracked_temp_dirs: List[str] = []
     try:
-        user_id = current_user.user_id if current_user else None
+        user_id = getattr(current_user, "user_id", None)
         
         # Validate model preference
         validate_model_preference(
@@ -1005,6 +1068,7 @@ async def image_mesh_painting(
             file_id=mesh_request.image_file_id,
             input_type="image",
             file_store=file_store,
+            tracked_temp_dirs=tracked_temp_dirs,
         )
 
         # Process mesh input
@@ -1014,12 +1078,14 @@ async def image_mesh_painting(
             file_id=mesh_request.mesh_file_id,
             input_type="mesh",
             file_store=file_store,
+            tracked_temp_dirs=tracked_temp_dirs,
         )
 
         job_request = JobRequest(
             feature="image_mesh_painting",
             inputs={
                 "image_path": image_file_path,
+                "reference_image_path": image_file_path,
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
@@ -1036,7 +1102,13 @@ async def image_mesh_painting(
             },
             model_preference=mesh_request.model_preference,
             priority=1,
-            metadata={"postprocess_mode": "production_mesh", "feature_type": "image_mesh_painting", "physics_enabled": mesh_request.physics_enabled, "physics_config": mesh_request.physics_config},
+            metadata={
+                "postprocess_mode": "production_mesh",
+                "feature_type": "image_mesh_painting",
+                "physics_enabled": mesh_request.physics_enabled,
+                "physics_config": mesh_request.physics_config,
+                "temp_input_dirs": list(tracked_temp_dirs),
+            },
             user_id=user_id,
         )
 
@@ -1049,9 +1121,12 @@ async def image_mesh_painting(
         )
 
     except HTTPException:
-        # Re-raise HTTP exceptions (including validation errors)
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         raise
     except Exception as e:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
         logger.error(f"Error scheduling image-mesh-painting job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
 

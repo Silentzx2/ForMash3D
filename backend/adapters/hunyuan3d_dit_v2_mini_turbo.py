@@ -199,9 +199,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     self.pipeline.to(self.device)
 
             logger.info(f"Generating 3D shape with Mini Turbo on {self.device}...")
-            octree_res = inputs.get("octree_resolution", 380)
+            octree_res = inputs.get("octree_resolution")
             if octree_res is None:
-                octree_res = 380
+                octree_res = 512 if inputs.get("source_quality") == "max" else 380
             else:
                 octree_res = int(octree_res)
 

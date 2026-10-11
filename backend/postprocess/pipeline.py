@@ -83,28 +83,20 @@ def resolve_texture_preset(preset_val: Any) -> tuple[str, int]:
         return ("4K", 4096)
     if s in {"8K", "8192"}:
         return ("8K", 8192)
-    try:
-        val = int(preset_val)
-        if val <= 1024:
-            return ("1K", 1024)
-        elif val <= 2048:
-            return ("2K", 2048)
-        elif val <= 4096:
-            return ("4K", 4096)
-        else:
-            return ("8K", 8192)
-    except (ValueError, TypeError):
-        return ("2K", 2048)
+    raise ValueError(
+        f"Unsupported texture resolution '{preset_val}'. Supported values: 1K (1024), 2K (2048), 4K (4096), 8K (8192)"
+    )
 
 
 def _resolve_reference_image(job_inputs: Dict[str, Any], job_metadata: Dict[str, Any]) -> Optional[Path]:
     """Find durable server-side path to reference image."""
     candidates = [
-        job_inputs.get("image_path"),
         job_inputs.get("texture_image_path"),
-        job_inputs.get("reference_image_path"),
-        job_metadata.get("image_path"),
         job_metadata.get("texture_image_path"),
+        job_inputs.get("reference_image_path"),
+        job_metadata.get("reference_image_path"),
+        job_inputs.get("image_path"),
+        job_metadata.get("image_path"),
         job_inputs.get("image_file_path"),
         job_inputs.get("image_file_id"),
         job_inputs.get("file_id"),
@@ -746,20 +738,52 @@ def _build_result(
         for name in sorted(generated["textures"])
     }
 
+    inputs = job_inputs or {}
+    meta = job_metadata or {}
     textured_glb_path = generated.get("textured_glb")
     texture_stage = generated.get("texture_stage", {})
     texture_completed = texture_stage.get("status") == "completed"
     texture_failed = texture_stage.get("status") == "failed"
     bake_status = generated.get("bake_stats", {}).get("status", "skipped")
-    bake_failed = bake_status == "failed"
-    collision_failed = generated.get("collision") is None and generated.get("artifact_errors", {}).get("collision")
+    bake_requested = bool(
+        inputs.get("bake_normal_maps")
+        or inputs.get("bake_high_to_low")
+        or inputs.get("bake_textures")
+        or meta.get("bake_normal_maps")
+        or meta.get("bake_textures")
+    )
+    bake_failed = bake_status == "failed" or (bake_requested and bake_status != "completed")
+    physics_enabled = bool(
+        inputs.get("enable_physics")
+        or inputs.get("physics_enabled")
+        or meta.get("enable_physics")
+        or meta.get("physics_enabled")
+        or generated.get("collision")
+    )
+    collision_failed = bool(
+        (generated.get("collision") is None and generated.get("artifact_errors", {}).get("collision"))
+        or (physics_enabled and not generated.get("collision"))
+    )
     retopo_stats = generated.get("retopo_stats", {})
-    retopo_requested = bool(job_inputs.get("quad_topology") or job_metadata.get("quad_topology") or job_inputs.get("topology_mode") == "quad" or job_metadata.get("topology_mode") == "quad")
-    retopo_skipped_native = retopo_stats.get("status") == "skipped" and "native_textures" in str(retopo_stats.get("reason", ""))
+    retopo_requested = bool(
+        inputs.get("quad_topology")
+        or meta.get("quad_topology")
+        or inputs.get("topology_mode") == "quad"
+        or meta.get("topology_mode") == "quad"
+    )
+    retopo_skipped_native = bool(
+        retopo_requested
+        and (
+            retopo_stats.get("fallback") == "triangles_retained_to_preserve_native_uvs"
+            or (retopo_stats.get("status") in {"skipped", "degraded"} and "native" in str(retopo_stats.get("reason", "")).lower())
+        )
+    )
 
     active_model_url = download_model_url
+    textured_url = None
     if texture_completed and textured_glb_path:
-        active_model_url = f"{base_url}/download?artifact_format=textured"
+        textured_url = f"{base_url}/download?artifact_format=textured"
+        active_model_url = textured_url
 
     result = {
         "success": True,
@@ -767,6 +791,7 @@ def _build_result(
         "static_url": None,
         "model_url": download_model_url,
         "active_model_url": active_model_url,
+        "textured_model_url": textured_url,
         "download_url": f"{base_url}/download?artifact_format=glb",
         "source_model_url": download_master_url,
         "high_fidelity_url": download_master_url,
@@ -789,6 +814,7 @@ def _build_result(
         "physics_ready": bool(generated.get("physics")),
         "physics": generated.get("physics_metadata"),
         "textures": generated.get("textures", {}),
+        "texture_dimensions": generated.get("texture_dimensions", {}),
         "pbr_maps": pbr_urls,
         "texture_status": generated.get("texture_status", "not_generated"),
         "thumbnail_url": f"{base_url}/thumbnail" if generated.get("thumbnail") else None,
@@ -806,6 +832,13 @@ def _build_result(
         "artifacts": {
             "master": {"status": "ready", "url": download_master_url, "required": True},
             "high_fidelity": {"status": "ready", "url": download_master_url, "required": True},
+            "textured": {
+                "status": "ready" if (texture_completed and textured_glb_path) else ("failed" if texture_failed else "skipped"),
+                "url": textured_url,
+                "path": str(textured_glb_path) if (texture_completed and textured_glb_path) else None,
+                "required": False,
+                "error": texture_stage.get("error") if texture_failed else None,
+            },
             "game_ready": {
                 fmt: {
                     "status": (
@@ -839,7 +872,7 @@ def _build_result(
                 "required": False,
             },
             "bake": {
-                "status": bake_status,
+                "status": "ready" if bake_status == "completed" else ("failed" if bake_failed else "skipped"),
                 "url": f"{base_url}/download?artifact_format=normal_map" if bake_status == "completed" else None,
                 "required": False,
                 "error": generated.get("bake_stats", {}).get("error") if bake_failed else None,
@@ -847,6 +880,7 @@ def _build_result(
             "retopology": {
                 "status": retopo_stats.get("status", "skipped"),
                 "required": retopo_requested,
+                "fallback": retopo_stats.get("fallback"),
                 "error": retopo_stats.get("error") if retopo_stats.get("status") == "failed" else (retopo_stats.get("reason") if retopo_skipped_native else None),
             },
             "texture_generation": {
@@ -895,7 +929,7 @@ def _build_result(
         "failed"
         if required_failed
         else "degraded"
-        if any_failed or quality_failed or lod_failed
+        if any_failed or quality_failed or lod_failed or retopo_skipped_native
         else "ready"
     )
     degraded_reasons = []
@@ -905,13 +939,13 @@ def _build_result(
         degraded_reasons.append("lod_validation_failed")
     if texture_failed and texture_enabled:
         degraded_reasons.append("texture_generation_failed")
-    if bake_failed and (job_inputs.get("bake_normal_maps") or job_inputs.get("bake_textures") or job_metadata.get("bake_normal_maps") or job_metadata.get("bake_textures")):
+    if bake_failed and (bake_requested or generated.get("bake_requested")):
         degraded_reasons.append("bake_failed")
-    if collision_failed:
+    if collision_failed and physics_enabled:
         degraded_reasons.append("collision_generation_failed")
     if retopo_skipped_native and retopo_requested:
         degraded_reasons.append("quad_topology_unsupported_native_textures")
-    if master_quality_report.get("quality_gate", {}).get("passed") is False:
+    if master_quality_report and master_quality_report.get("quality_gate", {}).get("passed") is False:
         degraded_reasons.append("master_to_derivative_quality_drift")
     if degraded_reasons:
         result["degraded_reasons"] = degraded_reasons
@@ -944,12 +978,25 @@ def run_postprocess_job(
         "medium": 1024,
         "high": 2048,
         "ultra": 4096,
+        "8k": 8192,
+        "cinematic": 8192,
     }.get(quality_mode, 2048)
+    preset_input = (
+        job_inputs.get("texture_resolution")
+        or job_inputs.get("paint_resolution")
+        or job_inputs.get("resolution")
+        or job_metadata.get("texture_resolution")
+        or explicit_texture_resolution
+        or default_texture_resolution
+    )
+    preset_label, target_atlas_size = resolve_texture_preset(preset_input)
     try:
         texture_resolution = int(explicit_texture_resolution or default_texture_resolution)
     except (TypeError, ValueError):
         texture_resolution = default_texture_resolution
-    uv_resolution = max(512, min(4096, texture_resolution))
+    if preset_label == "8K" or target_atlas_size >= 8192:
+        texture_resolution = max(texture_resolution, target_atlas_size)
+    uv_resolution = max(512, min(8192, texture_resolution))
     texture_resolution = uv_resolution
 
     texture_enabled = bool(
@@ -962,15 +1009,6 @@ def run_postprocess_job(
         or job_inputs.get("auto_paint")
         or job_metadata.get("auto_paint")
     )
-    preset_input = (
-        job_inputs.get("texture_resolution")
-        or job_inputs.get("paint_resolution")
-        or job_inputs.get("resolution")
-        or job_metadata.get("texture_resolution")
-        or explicit_texture_resolution
-        or default_texture_resolution
-    )
-    preset_label, target_atlas_size = resolve_texture_preset(preset_input)
 
     cpu_threads = int(job_inputs.get("cpu_threads") or cpu_count())
     configure_cpu_runtime(cpu_threads)
@@ -1292,7 +1330,11 @@ def run_postprocess_job(
             retopo_stats = {"status": "failed", "trigger": "quad_requested", "error": str(exc)}
             logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
     elif is_quad_requested and native_textures:
-        retopo_stats = {"status": "skipped", "reason": "Native textures are preserved; quad retopology would strip UV and material mapping."}
+        retopo_stats = {
+            "status": "degraded",
+            "fallback": "triangles_retained_to_preserve_native_uvs",
+            "reason": "Native textures are preserved; quad retopology was bypassed to prevent stripping UV and material mapping.",
+        }
     elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
         retopo_target = min(resolved_target_polycount or 6_000, max(50, int(len(repaired.faces))))
@@ -1517,6 +1559,7 @@ def run_postprocess_job(
     printability_status = (printability_after or printability_before or {}).get("status")
 
     texture_paths: Dict[str, Path] = {}
+    artifact_errors: Dict[str, str] = {}
     bake_stats = {
         "status": "skipped",
         "reason": (
@@ -1544,7 +1587,7 @@ def run_postprocess_job(
             from .services.bake import run_bake
             from .schemas import BakeOptions
 
-            bake_res = texture_resolution
+            bake_res = max(texture_resolution, target_atlas_size) if (preset_label == "8K" or target_atlas_size >= 8192) else texture_resolution
             maps_to_bake = ["normal", "ao"]
             if native_textures:
                 maps_to_bake.extend(["base_color", "roughness", "metallic"])
@@ -1587,8 +1630,9 @@ def run_postprocess_job(
                 except Exception as mat_err:
                     logger.warning("Could not attach baked textures to GLB material: %s", mat_err)
         except Exception as exc:
-            bake_stats = {"status": "skipped", "reason": str(exc)}
-            logger.warning("Bake step skipped or failed: %s", exc)
+            bake_stats = {"status": "failed", "error": str(exc), "reason": f"Bake failed: {exc}"}
+            artifact_errors["bake"] = str(exc)
+            logger.warning("Bake step failed: %s", exc)
     bake_duration = time.time() - bake_t0
 
     # Compare every optimized derivative against the immutable master.
@@ -1628,7 +1672,7 @@ def run_postprocess_job(
             "\n" + format_box(
                 "POSTPROCESS: STAGE 6/8 - HIGH-TO-LOW TEXTURE BAKING",
                 [
-                    ("Status", "Skipped"),
+                    ("Status", "Failed" if bake_stats.get("status") == "failed" else "Skipped"),
                     ("Reason", bake_stats.get("reason", "Bake not requested")),
                     ("Stage Elapsed", f"{bake_duration:.2f}s"),
                 ],
@@ -1636,6 +1680,11 @@ def run_postprocess_job(
         )
 
 
+
+    game_ready_dir.mkdir(parents=True, exist_ok=True)
+    base_name = f"{asset_name}_{clean_job_id}"
+    game_ready: Dict[str, str] = {}
+    glb_path = game_ready_dir / f"{base_name}.glb"
 
     # Centralized Texture Stage
     _check_cancelled(cancel_checker)
@@ -1647,6 +1696,7 @@ def run_postprocess_job(
         }
         logger.info("[POSTPROCESS TEXTURE] Stage skipped: textured generation not requested")
     else:
+        _save_file(glb_path, _export_glb(uv_mesh))
         _emit(progress, 0.65, "texture", f"Generating {preset_label} textures with {'paint3d' if preset_label in {'1K', '2K'} else 'hunyuan3d_paint_v21'}...")
         texture_stage_info = _execute_texture_stage(
             job_id=job_id,
@@ -1668,95 +1718,92 @@ def run_postprocess_job(
             texture_status = "failed"
             artifact_errors["texture"] = texture_stage_info.get("error", "Texture generation failed")
 
-        _check_cancelled(cancel_checker)
-        _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
-        game_ready_dir.mkdir(parents=True, exist_ok=True)
-        base_name = f"{asset_name}_{clean_job_id}"
-        game_ready: Dict[str, str] = {}
-        artifact_errors: Dict[str, str] = {}
-        # Determine the mesh for GLB and FBX generation
-        if texture_stage_info.get("status") == "completed" and texture_stage_info.get("textured_glb"):
-            textured_glb_path = Path(texture_stage_info["textured_glb"])
-            if textured_glb_path.exists():
-                game_ready_mesh = load_mesh(textured_glb_path.read_bytes(), textured_glb_path.name)
-            else:
-                game_ready_mesh = uv_mesh
+    # Determine game-ready mesh for downstream production exports (GLB, FBX, LOD chain)
+    if texture_stage_info.get("status") == "completed" and texture_stage_info.get("textured_glb"):
+        textured_glb_path = Path(texture_stage_info["textured_glb"])
+        if textured_glb_path.exists():
+            game_ready_mesh = load_mesh(textured_glb_path.read_bytes(), textured_glb_path.name)
         else:
             game_ready_mesh = uv_mesh
-        glb_path = game_ready_dir / f"{base_name}.glb"
-        _save_file(glb_path, _export_glb(game_ready_mesh))
-        game_ready["glb"] = str(glb_path)
-        # Pre-generate only GLB and FBX (Unity format); other formats (OBJ, STL, PLY, GLTF) convert on-demand
-        try:
-            fbx_bytes, _ = run_convert_fbx(
-                glb_path.read_bytes(),
-                ConvertOptions(preset="generic", bake_fps=30, anim_simplify=1.0),
-                progress=lambda stage, frac, msg: _emit(
-                    progress, 0.62 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
-                ),
-            )
-            fbx_path = game_ready_dir / f"{base_name}.fbx"
-            fbx_path.write_bytes(fbx_bytes)
-            game_ready["fbx"] = str(fbx_path)
-        except Exception as exc:
-            artifact_errors["fbx"] = str(exc)
-            logger.warning("FBX export failed: %s", exc)
-        lods: Dict[int, str] = {}
-        lod_quality: Dict[str, Dict[str, Any]] = {}
-        lod_enabled = bool(job_inputs.get("generateLOD", True))
-        lod_t0 = time.time()
-        if lod_enabled:
-            _emit(progress, 0.72, "lod", "Generating LOD chain.")
-            lod_dir.mkdir(parents=True, exist_ok=True)
-            source_faces = max(1, len(game_ready_mesh.faces))
-            target_faces = resolved_target_polycount or source_faces
-            target_ratio = min(1.0, max(0.05, target_faces / source_faces))
-            preset = str(job_inputs.get("lodPreset") or "high").lower()
-            preset_ratios = {
-                "mobile": [1.0, 0.35, 0.12, 0.05],
-                "low": [1.0, 0.5, 0.2, 0.08],
-                "medium": [1.0, 0.5, 0.25, 0.125],
-                "high": [1.0, 0.6, 0.3, 0.15],
-                "cinematic": [1.0, 0.75, 0.5, 0.25],
-            }.get(preset, [1.0, 0.6, 0.3, 0.15])
-            ratios = job_inputs.get("lod_ratios")
-            lod_ratios = ratios if isinstance(ratios, list) and ratios else [
-                1.0 if i == 0 else max(0.025, float(ratio))
-                for i, ratio in enumerate(preset_ratios)
-            ]
-            try:
-                lod_count = max(1, min(4, int(job_inputs.get("lodCount") or len(lod_ratios))))
-            except (TypeError, ValueError):
-                lod_count = min(4, len(lod_ratios))
-            lod_levels = run_lods(game_ready_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])))
-        else:
-            lod_levels = []
-        for level in lod_levels:
-            idx = int(level["level"])
-            level_mesh = level["mesh"]
-            lod_path = lod_dir / f"lod{idx}.glb"
-            lod_path.write_bytes(_export_glb(level_mesh))
-            lods[idx] = str(lod_path)
-            lod_quality[str(idx)] = {
-                "triangles": int(len(level_mesh.faces)),
-                "vertices": int(len(level_mesh.vertices)),
-                "has_uv": bool(getattr(getattr(level_mesh, "visual", None), "uv", None) is not None),
-                "native_textures": bool(_has_native_textures(level_mesh)),
-                "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
-            }
-        lod_validation = _validate_lod_chain(lod_levels, game_ready_mesh)
-        lod_duration = time.time() - lod_t0
+    else:
+        game_ready_mesh = uv_mesh
 
-        glb_file_size = glb_path.stat().st_size if glb_path.exists() else 0
-        fbx_file_size = (
-            Path(game_ready["fbx"]).stat().st_size
-            if "fbx" in game_ready and Path(game_ready["fbx"]).exists()
-            else 0
+    _check_cancelled(cancel_checker)
+    _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
+    _save_file(glb_path, _export_glb(game_ready_mesh))
+    game_ready["glb"] = str(glb_path)
+
+    try:
+        fbx_bytes, _ = run_convert_fbx(
+            glb_path.read_bytes(),
+            ConvertOptions(preset="generic", bake_fps=30, anim_simplify=1.0),
+            progress=lambda stage, frac, msg: _emit(
+                progress, 0.62 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
+            ),
         )
-        lod_entries = [
-            (f"  LOD {lvl}", f"{l_info['triangles']:,} tris | {l_info['vertices']:,} verts -> lod{lvl}.glb")
-            for lvl, l_info in lod_quality.items()
+        fbx_path = game_ready_dir / f"{base_name}.fbx"
+        fbx_path.write_bytes(fbx_bytes)
+        game_ready["fbx"] = str(fbx_path)
+    except Exception as exc:
+        artifact_errors["fbx"] = str(exc)
+        logger.warning("FBX export failed: %s", exc)
+
+    lods: Dict[int, str] = {}
+    lod_quality: Dict[str, Dict[str, Any]] = {}
+    lod_enabled = bool(job_inputs.get("generateLOD", True))
+    lod_t0 = time.time()
+    if lod_enabled:
+        _emit(progress, 0.72, "lod", "Generating LOD chain.")
+        lod_dir.mkdir(parents=True, exist_ok=True)
+        source_faces = max(1, len(game_ready_mesh.faces))
+        target_faces = resolved_target_polycount or source_faces
+        target_ratio = min(1.0, max(0.05, target_faces / source_faces))
+        preset = str(job_inputs.get("lodPreset") or "high").lower()
+        preset_ratios = {
+            "mobile": [1.0, 0.35, 0.12, 0.05],
+            "low": [1.0, 0.5, 0.2, 0.08],
+            "medium": [1.0, 0.5, 0.25, 0.125],
+            "high": [1.0, 0.6, 0.3, 0.15],
+            "cinematic": [1.0, 0.75, 0.5, 0.25],
+        }.get(preset, [1.0, 0.6, 0.3, 0.15])
+        ratios = job_inputs.get("lod_ratios")
+        lod_ratios = ratios if isinstance(ratios, list) and ratios else [
+            1.0 if i == 0 else max(0.025, float(ratio))
+            for i, ratio in enumerate(preset_ratios)
         ]
+        try:
+            lod_count = max(1, min(4, int(job_inputs.get("lodCount") or len(lod_ratios))))
+        except (TypeError, ValueError):
+            lod_count = min(4, len(lod_ratios))
+        lod_levels = run_lods(game_ready_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])))
+    else:
+        lod_levels = []
+    for level in lod_levels:
+        idx = int(level["level"])
+        level_mesh = level["mesh"]
+        lod_path = lod_dir / f"lod{idx}.glb"
+        lod_path.write_bytes(_export_glb(level_mesh))
+        lods[idx] = str(lod_path)
+        lod_quality[str(idx)] = {
+            "triangles": int(len(level_mesh.faces)),
+            "vertices": int(len(level_mesh.vertices)),
+            "has_uv": bool(getattr(getattr(level_mesh, "visual", None), "uv", None) is not None),
+            "native_textures": bool(_has_native_textures(level_mesh)),
+            "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
+        }
+    lod_validation = _validate_lod_chain(lod_levels, game_ready_mesh)
+    lod_duration = time.time() - lod_t0
+
+    glb_file_size = glb_path.stat().st_size if glb_path.exists() else 0
+    fbx_file_size = (
+        Path(game_ready["fbx"]).stat().st_size
+        if "fbx" in game_ready and Path(game_ready["fbx"]).exists()
+        else 0
+    )
+    lod_entries = [
+        (f"  LOD {lvl}", f"{l_info['triangles']:,} tris | {l_info['vertices']:,} verts -> lod{lvl}.glb")
+        for lvl, l_info in lod_quality.items()
+    ]
     logger.info(
         "\n" + format_box(
             "POSTPROCESS: STAGE 7/8 - PRODUCTION EXPORTS & LOD CHAIN",
@@ -1811,6 +1858,9 @@ def run_postprocess_job(
                 _write_json(metadata_dir / "physics.json", physics_metadata)
             except Exception as inner_exc:
                 logger.error("Collision fallback failed: %s", inner_exc)
+                artifact_errors["collision"] = str(inner_exc)
+        if collision_path is None or not collision_path.exists():
+            artifact_errors.setdefault("collision", "Collision proxy generation failed")
     collision_duration = time.time() - collision_t0
 
     if physics_enabled and collision_path and collision_path.exists():
@@ -1828,12 +1878,18 @@ def run_postprocess_job(
             )
         )
     else:
+        status_label = "Failed" if physics_enabled else "Skipped"
+        reason_label = (
+            artifact_errors.get("collision") or "Collision generation failed"
+            if physics_enabled
+            else "Physics disabled for this asset"
+        )
         logger.info(
             "\n" + format_box(
                 "POSTPROCESS: STAGE 8/8 - PHYSICS & COLLISION PROXY",
                 [
-                    ("Status", "Skipped"),
-                    ("Reason", "Physics disabled for this asset"),
+                    ("Status", status_label),
+                    ("Reason", reason_label),
                     ("Stage Elapsed", f"{collision_duration:.2f}s"),
                 ],
             )
@@ -1971,6 +2027,16 @@ def run_postprocess_job(
         },
     )
 
+    texture_dimensions: Dict[str, List[int]] = {}
+    for map_name, map_path_str in texture_paths.items():
+        try:
+            p = Path(map_path_str)
+            if p.is_file():
+                with Image.open(p) as img:
+                    texture_dimensions[map_name] = [int(img.width), int(img.height)]
+        except Exception:
+            pass
+
     generated = {
         "game_ready": game_ready,
         "lods": lods,
@@ -1978,6 +2044,7 @@ def run_postprocess_job(
         "physics": str(metadata_dir / "physics.json") if physics_metadata else None,
         "physics_metadata": physics_metadata,
         "textures": texture_paths,
+        "texture_dimensions": texture_dimensions,
         "texture_status": texture_status,
         "texture_stage": texture_stage_info,
         "textured_glb": texture_stage_info.get("textured_glb"),

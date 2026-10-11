@@ -1741,13 +1741,24 @@ class MultiprocessModelScheduler:
         inputs = getattr(job_request, "inputs", None)
         if inputs is None and isinstance(job_request, dict):
             inputs = job_request.get("inputs", {})
-        if isinstance(inputs, dict):
-            for value in inputs.values():
-                if not isinstance(value, str):
-                    continue
-                path = Path(value)
-                if path.parent.name.startswith("mesh_gen_"):
-                    parents.add(path.parent)
+        metadata = getattr(job_request, "metadata", None)
+        if metadata is None and isinstance(job_request, dict):
+            metadata = job_request.get("metadata", {})
+
+        for container in (inputs, metadata):
+            if not isinstance(container, dict):
+                continue
+            for value in container.values():
+                items = value if isinstance(value, (list, tuple, set)) else [value]
+                for item in items:
+                    if not isinstance(item, (str, Path)):
+                        continue
+                    path = Path(item)
+                    if path.name.startswith("mesh_gen_") and path.is_dir():
+                        parents.add(path)
+                    elif path.parent.name.startswith("mesh_gen_") and path.parent.is_dir():
+                        parents.add(path.parent)
+
         for directory in parents:
             shutil.rmtree(directory, ignore_errors=True)
 

@@ -87,5 +87,37 @@ def test_paint3d_input_validation():
         adapter._process_request({"mesh_path": "nonexistent.obj", "image_path": "nonexistent.png"})
 
 
+def test_paint3d_prepare_job_mesh_applies_scene_transforms(tmp_path):
+    """Verify _prepare_job_mesh applies GLB scene node transforms before exporting OBJ."""
+    import numpy as np
+    import trimesh
+
+    adapter = Paint3DAdapter(vram_requirement=12000)
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+
+    box1 = trimesh.creation.box(extents=[1, 1, 1])
+    box2 = trimesh.creation.box(extents=[1, 1, 1])
+
+    transform2 = np.eye(4)
+    transform2[0, 3] = 10.0  # translate 10 units along X
+
+    scene = trimesh.Scene()
+    scene.add_geometry(box1, node_name="box1")
+    scene.add_geometry(box2, node_name="box2", transform=transform2)
+
+    glb_path = tmp_path / "multi_part.glb"
+    scene.export(str(glb_path), file_type="glb")
+
+    prepared_obj = adapter._prepare_job_mesh(glb_path, job_dir)
+    assert prepared_obj.exists()
+
+    reloaded = trimesh.load(str(prepared_obj), process=False)
+    # If transforms are applied, bounds along X span from ~ -0.5 to ~ 10.5 (extent >= 10.0)
+    # If transforms were omitted, both boxes would sit at origin with extent ~ 1.0
+    x_extent = reloaded.bounds[1][0] - reloaded.bounds[0][0]
+    assert x_extent >= 10.0, f"Expected X extent >= 10.0 with transforms applied, got {x_extent}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

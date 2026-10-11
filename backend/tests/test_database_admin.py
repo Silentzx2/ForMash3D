@@ -5,9 +5,11 @@ endpoints can never touch real assets during tests.
 """
 
 import asyncio
+import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from fastapi import FastAPI, Request
@@ -34,8 +36,11 @@ class _FakeScheduler:
             if hasattr(job.status, "value")
             else str(job.status),
             "feature": job.feature,
-            "result": {},
+            "result": job.result or {},
         }
+
+    async def cancel_job(self, job_id: str, force: bool = False):
+        return await self.job_queue.cancel_job(job_id, force=force)
 
 
 class DatabaseAdminRouterTests(unittest.IsolatedAsyncioTestCase):
@@ -185,6 +190,155 @@ class DatabaseAdminRouterTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertFalse(os.path.exists(os.path.join(uploads, "image", "ab", "upload_ab12.png")))
+
+    async def test_models_root_derived_from_storage_root(self):
+        """BUG-025: _models_root must dynamically derive from _storage_root() / 'models'."""
+        self.assertEqual(
+            database_router._models_root(),
+            (Path(self.tmp.name) / "models").resolve(),
+        )
+
+    async def test_delete_tree_handles_files_and_directories(self):
+        """BUG-003: _delete_tree handles both files and directories, and guards against escaping root."""
+        root = Path(self.tmp.name)
+        test_file = root / "sample.txt"
+        test_file.write_text("hello")
+        self.assertIsNone(database_router._delete_tree(test_file, root))
+        self.assertFalse(test_file.exists())
+
+        test_dir = root / "sample_dir"
+        test_dir.mkdir()
+        (test_dir / "nested.txt").write_text("nested")
+        self.assertIsNone(database_router._delete_tree(test_dir, root))
+        self.assertFalse(test_dir.exists())
+
+        # Outside root refusal
+        outside = Path(tempfile.gettempdir())
+        res = database_router._delete_tree(outside, root)
+        self.assertIsNotNone(res)
+        self.assertIn("Refusing", res)
+
+    async def test_delete_job_distinguishes_workspace_status(self):
+        """BUG-005: _delete_job_with_workspace distinguishes deleted, missing, and not_recorded workspace."""
+        # 1. Job without asset_root
+        job_id_no_ws = await self._seed(JobStatus.COMPLETED)
+        res_no_ws = await database_router._delete_job_with_workspace(
+            _FakeScheduler(self.queue), job_id_no_ws
+        )
+        self.assertTrue(res_no_ws["deleted"])
+        self.assertEqual(res_no_ws["asset_workspace_status"], "not_recorded")
+        self.assertFalse(res_no_ws["asset_workspace_deleted"])
+
+        # 2. Job with missing asset_root
+        job_missing = JobRequest(feature="image_to_raw_mesh", inputs={})
+        await self.queue.enqueue(job_missing)
+        await self.queue.dequeue()
+        missing_path = str(Path(self.tmp.name) / "models" / "nonexistent_ws")
+        await self.queue.complete_job(job_missing.job_id, {"asset_root": missing_path})
+        res_missing = await database_router._delete_job_with_workspace(
+            _FakeScheduler(self.queue), job_missing.job_id
+        )
+        self.assertTrue(res_missing["deleted"])
+        self.assertEqual(res_missing["asset_workspace_status"], "missing")
+        self.assertFalse(res_missing["asset_workspace_deleted"])
+
+        # 3. Job with existing asset_root that gets deleted
+        job_real = JobRequest(feature="image_to_raw_mesh", inputs={})
+        await self.queue.enqueue(job_real)
+        await self.queue.dequeue()
+        real_ws = Path(self.tmp.name) / "models" / "real_ws"
+        real_ws.mkdir(parents=True, exist_ok=True)
+        (real_ws / "mesh.glb").write_text("mesh")
+        await self.queue.complete_job(job_real.job_id, {"asset_root": str(real_ws)})
+        res_real = await database_router._delete_job_with_workspace(
+            _FakeScheduler(self.queue), job_real.job_id
+        )
+        self.assertTrue(res_real["deleted"])
+        self.assertEqual(res_real["asset_workspace_status"], "deleted")
+        self.assertTrue(res_real["asset_workspace_deleted"])
+        self.assertFalse(real_ws.exists())
+
+    async def test_collect_job_ids_applies_status_and_feature_to_redis(self):
+        """BUG-014: _collect_job_ids applies status and feature selectors to Redis jobs."""
+        fake_redis = mock.AsyncMock()
+        fake_redis.hgetall.return_value = {
+            b"j1": json.dumps({"status": "completed", "feature": "image_to_raw_mesh"}).encode(),
+            b"j2": json.dumps({"status": "failed", "feature": "image_to_raw_mesh"}).encode(),
+            b"j3": json.dumps({"status": "completed", "feature": "text_to_3d"}).encode(),
+        }
+        fake_sched = mock.MagicMock()
+        fake_sched.job_queue = mock.MagicMock(redis=fake_redis)
+
+        # Filter by status and feature
+        ids = await database_router._collect_job_ids(
+            fake_sched, None, status="completed", feature="image_to_raw_mesh"
+        )
+        self.assertEqual(ids, ["j1"])
+
+        # Filter by status only
+        ids_status = await database_router._collect_job_ids(
+            fake_sched, None, status="completed", feature=None
+        )
+        self.assertEqual(set(ids_status), {"j1", "j3"})
+
+    async def test_filestore_cleans_stale_ids_from_global_and_per_type_sets(self):
+        """BUG-016: list_file_metadata cleans stale IDs from both global and per-type sorted sets."""
+        from core.file_store import FileStore
+
+        mock_redis = mock.AsyncMock()
+        # zrevrange returns one stale ID
+        mock_redis.zrevrange.return_value = [b"stale_file_1"]
+        # get returns None -> stale
+        mock_redis.get.return_value = None
+
+        # scan_iter yields per-type keys
+        async def fake_scan(match):
+            for k in [b"3daigc:files:all", b"3daigc:files:image", b"3daigc:files:mesh"]:
+                yield k
+
+        mock_redis.scan_iter = fake_scan
+
+        pipeline_mock = mock.MagicMock()
+        class FakePipelineCtx:
+            async def __aenter__(self):
+                return pipeline_mock
+            async def __aexit__(self, *args):
+                pass
+        mock_redis.pipeline = mock.MagicMock(return_value=FakePipelineCtx())
+
+        store = FileStore(redis_client=mock_redis)
+        files = await store.list_file_metadata(file_type=None)
+        self.assertEqual(files, [])
+
+        # Verify zrem was called for global and per-type keys
+        zrem_calls = [call[0] for call in pipeline_mock.zrem.call_args_list]
+        keys_cleaned = {c[0] for c in zrem_calls}
+        self.assertIn("3daigc:files:all", keys_cleaned)
+        self.assertIn("3daigc:files:image", keys_cleaned)
+        self.assertIn("3daigc:files:mesh", keys_cleaned)
+
+    async def test_clear_all_files_paginates_and_reports_authoritative_count(self):
+        """BUG-004: clear_all_files paginates and reports authoritative removed count without skipping."""
+        mock_store = mock.AsyncMock()
+        total_files = 2500
+        all_metadata = [{"file_id": f"file_{i}"} for i in range(total_files)]
+
+        async def fake_list(limit=1000, offset=0):
+            return all_metadata[offset:offset + limit]
+
+        mock_store.list_file_metadata.side_effect = fake_list
+        mock_store.delete_file_metadata.return_value = True
+
+        self.app.state.file_store = mock_store
+        res = self.client.request(
+            "DELETE",
+            "/api/v1/system/database/files/clear",
+            json={"confirm": "CLEAR_ALL_FILES"},
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual(body["file_metadata_removed"], total_files)
+        self.assertEqual(mock_store.delete_file_metadata.call_count, total_files)
 
 
 if __name__ == "__main__":

@@ -82,6 +82,8 @@ export interface ModelAsset {
   componentCount?: number;
   materialCount?: number;
   postprocessStatus?: string;
+  productionStatus?: 'ready' | 'degraded' | 'failed' | string;
+  degradedReasons?: string[];
   meshDetails?: Record<string, unknown>;
   dateCreated: string;
   tags: string[];
@@ -206,8 +208,11 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     boundingBox: raw.boundingBox || raw.bounding_box,
     objectCount: raw.objectCount ?? raw.object_count,
     componentCount: raw.componentCount ?? raw.component_count,
-    materialCount: raw.materialCount ?? raw.material_count,
-    postprocessStatus: raw.postprocessStatus ?? raw.postprocess_status,
+    postprocessStatus: (raw.production_status === 'degraded' || raw.productionStatus === 'degraded')
+      ? 'degraded'
+      : (raw.postprocessStatus ?? raw.postprocess_status),
+    productionStatus: raw.productionStatus ?? raw.production_status ?? ((raw.postprocessStatus === 'degraded' || raw.postprocess_status === 'degraded') ? 'degraded' : undefined),
+    degradedReasons: raw.degradedReasons ?? raw.degraded_reasons ?? (raw.quality_trace?.degraded_reasons || undefined),
     meshDetails: raw.meshDetails || raw.mesh_details,
     dateCreated: raw.dateCreated || raw.created_at || new Date().toISOString().split('T')[0],
     tags: Array.isArray(raw.tags) ? raw.tags : ['Model'],

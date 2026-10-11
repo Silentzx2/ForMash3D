@@ -123,7 +123,7 @@ export const UVUnwrapPanel: React.FC = () => {
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <HugeiconsIcon icon={UploadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>UploadIcon New</span>
+                  <span>Upload New</span>
                 </button>
               </div>
 
@@ -148,14 +148,14 @@ export const UVUnwrapPanel: React.FC = () => {
               )}
             </div>
 
-            {/* Step 2: Smart Auto SettingsIcon */}
+            {/* Step 2: Smart Auto Settings */}
             <div className="space-y-3 pt-2 border-t border-white/[0.06]">
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-full bg-primary text-black font-black text-[11px] flex items-center justify-center">
                   2
                 </span>
                 <div>
-                  <div className="text-xs font-bold text-white">Smart UV & Texture TargetIcon</div>
+                  <div className="text-xs font-bold text-white">Smart UV & Texture Target</div>
                   <div className="text-[10px] text-zinc-400">Automatic conformal seam cutting & packed atlas</div>
                 </div>
               </div>

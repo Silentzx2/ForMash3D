@@ -116,7 +116,7 @@ export const RiggingStudio: React.FC = () => {
   // Selected bone object
   const activeBoneData = bones.find((b) => b.name === selectedBone) || bones[0];
 
-  // FilterIcon bones for hierarchy search
+  // Filter bones for hierarchy search
   const filteredBones = bones.filter((b) =>
     !boneSearchQuery || b.name.toLowerCase().includes(boneSearchQuery.toLowerCase())
   );
@@ -125,7 +125,7 @@ export const RiggingStudio: React.FC = () => {
   const handleGenerateUniRig = async () => {
     const meshPath = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || 'models/knight.glb';
     toast.info('Starting UniRig AI Auto-Rigging...', {
-      description: `Targeting ${targetSkeleton === 'quadruped' ? 'Quadruped' : '17-BoneIcon Humanoid'} topology`,
+      description: `Targeting ${targetSkeleton === 'quadruped' ? 'Quadruped' : '17-Bone Humanoid'} topology`,
     });
     const success = await generateRig(meshPath);
     if (success) {
@@ -147,7 +147,7 @@ export const RiggingStudio: React.FC = () => {
     }
   };
 
-  // SaveIcon Rig & Transition to Animation
+  // Save Rig & Transition to Animation
   const handleApplyAndSave = async () => {
     const ok = await applyAndSaveRig();
     if (ok) {
@@ -164,7 +164,7 @@ export const RiggingStudio: React.FC = () => {
     setSymmetry(nextSym);
     setXMirrorEnabled(nextSym);
     toast.info(nextSym ? 'Bilateral Symmetry (X-Mirror) Enabled' : 'Bilateral Symmetry Disabled', {
-      description: nextSym ? 'BoneIcon placement and movements mirror across the X-axis' : 'Individual bone editing active',
+      description: nextSym ? 'Bone placement and movements mirror across the X-axis' : 'Individual bone editing active',
     });
   };
 
@@ -175,7 +175,7 @@ export const RiggingStudio: React.FC = () => {
       setIsPlacingBone(true);
       setIsWeightPainting(false);
       setWorkspaceMode('edit');
-      toast.info('BoneIcon Placement Active', { description: 'Click anywhere on the 3D model surface to insert a bone' });
+      toast.info('Bone Placement Active', { description: 'Click anywhere on the 3D model surface to insert a bone' });
     } else if (tool === 'weight') {
       setIsWeightPainting(true);
       setIsPlacingBone(false);
@@ -188,7 +188,7 @@ export const RiggingStudio: React.FC = () => {
     }
   };
 
-  // CameraIcon View Switcher
+  // Camera View Switcher
   const handleCameraChange = (preset: 'Perspective' | 'Front' | 'Top' | 'Side') => {
     setCameraMode(preset);
     setCameraDropdownOpen(false);
@@ -199,7 +199,7 @@ export const RiggingStudio: React.FC = () => {
       Side: 'side',
     };
     setCameraPreset(mapping[preset] || 'perspective');
-    toast.info(`CameraIcon View: ${preset}`);
+    toast.info(`Camera View: ${preset}`);
   };
 
   // Viewport Snapshot
@@ -288,7 +288,7 @@ export const RiggingStudio: React.FC = () => {
         <div className="w-[300px] xl:w-[330px] h-full flex-shrink-0 border-r border-white/[0.08] bg-[hsl(var(--surface-1))] p-3 flex flex-col space-y-3 overflow-y-auto custom-scrollbar z-10">
           {/* Character Card */}
           <div className="space-y-1.5">
-            <label className="text-[11px] font-bold text-zinc-300 tracking-wide">TargetIcon Character</label>
+            <label className="text-[11px] font-bold text-zinc-300 tracking-wide">Target Character</label>
             <div className="p-2.5 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5 min-w-0">
@@ -433,7 +433,7 @@ export const RiggingStudio: React.FC = () => {
                   }`}
                 >
                   <HugeiconsIcon icon={BoneIcon} size={16} className="w-3.5 h-3.5" />
-                  <span>{isPlacingBone ? 'Click Mesh to Place BoneIcon' : 'Add Bones Interactively'}</span>
+                  <span>{isPlacingBone ? 'Click Mesh to Place Bone' : 'Add Bones Interactively'}</span>
                 </button>
 
                 {/* Auto-Fit Skeleton to Mesh Bounds */}
@@ -471,7 +471,7 @@ export const RiggingStudio: React.FC = () => {
               onClick={() => setAdvancedOptionsOpen(!advancedOptionsOpen)}
               className="w-full flex items-center justify-between text-xs font-bold text-zinc-300 hover:text-white py-1 cursor-pointer"
             >
-              <span>Advanced Pipeline SettingsIcon</span>
+              <span>Advanced Pipeline Settings</span>
               <HugeiconsIcon icon={ChevronDown} size={16}
                 className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${advancedOptionsOpen ? 'rotate-180' : ''}`}
               />
@@ -479,9 +479,9 @@ export const RiggingStudio: React.FC = () => {
 
             {advancedOptionsOpen && (
               <div className="space-y-2.5 pt-1">
-                {/* Skeleton TargetIcon */}
+                {/* Skeleton Topology */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-semibold text-zinc-400">TargetIcon Skeleton Topology</label>
+                  <label className="text-[10px] font-semibold text-zinc-400">Skeleton Topology</label>
                   <select
                     value={targetSkeleton}
                     onChange={(e) => setTargetSkeleton(e.target.value as any)}
@@ -536,11 +536,11 @@ export const RiggingStudio: React.FC = () => {
 
             {/* TOP VIEWPORT OVERLAY CONTROLS */}
             <div className="absolute top-3 inset-x-3 z-10 flex items-center justify-between pointer-events-none">
-              {/* Transform Tool Mode Pills (Select, MoveIcon, Rotate, Scale) */}
+              {/* Transform Tool Mode Pills (Select, Move, Rotate, Scale) */}
               <div className="pointer-events-auto flex items-center gap-1 p-1 bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.08] rounded-xl shadow-lg">
                 {[
                   { id: 'select', label: 'Select', icon: <HugeiconsIcon icon={MousePointerIcon} size={16} className="w-3.5 h-3.5" /> },
-                  { id: 'move', label: 'MoveIcon', icon: <HugeiconsIcon icon={MoveIcon} size={16} className="w-3.5 h-3.5" /> },
+                  { id: 'move', label: 'Move', icon: <HugeiconsIcon icon={MoveIcon} size={16} className="w-3.5 h-3.5" /> },
                   { id: 'rotate', label: 'Rotate', icon: <HugeiconsIcon icon={RotateCw} size={16} className="w-3.5 h-3.5" /> },
                   { id: 'scale', label: 'Scale', icon: <HugeiconsIcon icon={MaximizeIcon} size={16} className="w-3.5 h-3.5" /> },
                 ].map((t) => {
@@ -562,7 +562,7 @@ export const RiggingStudio: React.FC = () => {
                 })}
               </div>
 
-              {/* CameraIcon preset + Snapshot + Wireframe + Fullscreen */}
+              {/* Camera preset + Snapshot + Wireframe + Fullscreen */}
               <div className="pointer-events-auto flex items-center gap-1.5 p-1 bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.08] rounded-xl shadow-lg">
                 <div className="relative">
                   <button
@@ -647,7 +647,7 @@ export const RiggingStudio: React.FC = () => {
                 </button>
               </SimpleTooltip>
 
-              <SimpleTooltip label="Translate BoneIcon (W)" side="right">
+              <SimpleTooltip label="Translate Bone (W)" side="right">
                 <button
                   onClick={() => handleSelectTool('move')}
                   className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
@@ -660,7 +660,7 @@ export const RiggingStudio: React.FC = () => {
                 </button>
               </SimpleTooltip>
 
-              <SimpleTooltip label="Rotate BoneIcon (E)" side="right">
+              <SimpleTooltip label="Rotate Bone (E)" side="right">
                 <button
                   onClick={() => handleSelectTool('rotate')}
                   className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
@@ -673,7 +673,7 @@ export const RiggingStudio: React.FC = () => {
                 </button>
               </SimpleTooltip>
 
-              <SimpleTooltip label="Edit / Place BoneIcon on Mesh Surface" side="right">
+              <SimpleTooltip label="Edit / Place Bone on Mesh Surface" side="right">
                 <button
                   onClick={() => handleSelectTool('bone')}
                   className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors ${
@@ -759,7 +759,7 @@ export const RiggingStudio: React.FC = () => {
               </button>
             </div>
 
-            {/* Right: Symmetry Toggle + Apply & SaveIcon Rig */}
+            {/* Right: Symmetry Toggle + Apply & Save Rig */}
             <div className="flex items-center gap-2">
               <button
                 onClick={handleToggleSymmetry}
@@ -778,13 +778,13 @@ export const RiggingStudio: React.FC = () => {
                 className="flex items-center gap-1.5 px-4 py-1.5 bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-bold text-xs rounded-xl shadow-[0_2px_12px_rgba(249,207,0,0.25)] transition-all active:scale-95 cursor-pointer"
               >
                 <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 stroke-[3]" />
-                <span>SaveIcon &amp; Continue to Animation</span>
+                <span>Save &amp; Continue to Animation</span>
               </button>
             </div>
           </div>
         </div>
 
-        {/* RIGHT PANEL: Real BoneIcon Hierarchy & Properties */}
+        {/* RIGHT PANEL: Real Bone Hierarchy & Properties */}
         <div className="w-[320px] xl:w-[350px] h-full flex-shrink-0 border-l border-white/[0.08] bg-[hsl(var(--surface-1))] flex flex-col z-10 overflow-hidden">
           {/* Tabs: Skeleton, Weights, Tools */}
           <div className="h-10 border-b border-white/[0.08] bg-[hsl(var(--surface-0))] px-2 flex items-center justify-between flex-shrink-0">
@@ -808,7 +808,7 @@ export const RiggingStudio: React.FC = () => {
           {/* SKELETON TAB */}
           {activeTab === 'skeleton' && (
             <div className="flex-1 flex flex-col overflow-hidden p-3 space-y-3">
-              {/* SearchIcon */}
+              {/* Search */}
               <div className="space-y-1.5 flex-shrink-0">
                 <label className="text-[11px] font-bold text-zinc-300 tracking-wide">
                   Armature Hierarchy ({bones.length} Bones)
@@ -817,7 +817,7 @@ export const RiggingStudio: React.FC = () => {
                   <HugeiconsIcon icon={SearchIcon} size={16} className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-2.5 pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="SearchIcon bone..."
+                    placeholder="Search bone..."
                     value={boneSearchQuery}
                     onChange={(e) => setBoneSearchQuery(e.target.value)}
                     className="w-full h-8 pl-8 pr-2.5 bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-lg text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-primary/50"
@@ -885,7 +885,7 @@ export const RiggingStudio: React.FC = () => {
                 })}
               </div>
 
-              {/* Selected BoneIcon Properties */}
+              {/* Selected Bone Properties */}
               {activeBoneData && (
                 <div className="p-3 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-2.5 flex-shrink-0">
                   <div className="flex items-center justify-between">
@@ -973,14 +973,14 @@ export const RiggingStudio: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <h4 className="font-bold text-white flex items-center gap-1.5">
                     <HugeiconsIcon icon={BrushIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                    <span>Weight Paint BrushIcon</span>
+                    <span>Weight Paint Brush</span>
                   </h4>
                   <span className="text-[10px] text-zinc-400 font-mono">Heatmap</span>
                 </div>
 
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-zinc-400">BrushIcon Radius</span>
+                    <span className="text-zinc-400">Brush Radius</span>
                     <span className="font-mono text-zinc-200">{brushRadius.toFixed(2)}m</span>
                   </div>
                   <input
@@ -996,7 +996,7 @@ export const RiggingStudio: React.FC = () => {
 
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px]">
-                    <span className="text-zinc-400">BrushIcon Strength</span>
+                    <span className="text-zinc-400">Brush Strength</span>
                     <span className="font-mono text-zinc-200">{(brushStrength * 100).toFixed(0)}%</span>
                   </div>
                   <input

@@ -126,7 +126,7 @@ class MultiViewReconstruct3DRequest(BaseModel):
     generateLOD: bool = True
     lodPreset: str = "high"
     lodCount: int = 4
-    texture_resolution: int = Field(2048, ge=256, le=8192)
+    texture_resolution: int = Field(2048, description="Texture atlas preset or size")
     bake_normal_maps: bool = True
     reference_image_path: Optional[str] = None
     reference_image_base64: Optional[str] = None

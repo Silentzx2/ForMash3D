@@ -73,7 +73,7 @@ export const AnimationRightInspector: React.FC = () => {
     setActiveMode,
   } = useAnimationStore();
 
-  // Collapsible section states for SettingsIcon tab (matching design.png)
+  // Collapsible section states for Settings tab (matching design.png)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     ardyControls: true,
     initialTransform: true,
@@ -165,7 +165,7 @@ export const AnimationRightInspector: React.FC = () => {
                 isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              {tab === 'settings' ? 'SettingsIcon' : tab === 'character' ? 'Character' : tab === 'visualization' ? 'Visualization' : 'Export'}
+              {tab === 'settings' ? 'Settings' : tab === 'character' ? 'Character' : tab === 'visualization' ? 'Visualization' : 'Export'}
               {isActive && (
                 <div className="absolute bottom-0 left-2 right-2 h-0.5 bg-primary rounded-full" />
               )}
@@ -410,10 +410,10 @@ export const AnimationRightInspector: React.FC = () => {
                     />
                   </div>
 
-                  {/* TargetIcon Velocity & Heading */}
+                  {/* Target Velocity & Heading */}
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
-                      <label className="text-[10px] font-medium text-zinc-400">TargetIcon Velocity</label>
+                      <label className="text-[10px] font-medium text-zinc-400">Target Velocity</label>
                       <input
                         type="number"
                         step="0.1"
@@ -423,7 +423,7 @@ export const AnimationRightInspector: React.FC = () => {
                       />
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-medium text-zinc-400">TargetIcon Heading (°)</label>
+                      <label className="text-[10px] font-medium text-zinc-400">Target Heading (°)</label>
                       <input
                         type="number"
                         step="5"
@@ -505,7 +505,7 @@ export const AnimationRightInspector: React.FC = () => {
 
                   <div className="space-y-1">
                     <div className="flex justify-between text-[11px]">
-                      <span className="text-zinc-400">HandIcon Lock Tolerance</span>
+                      <span className="text-zinc-400">Hand Lock Tolerance</span>
                       <span className="text-primary font-mono">0.05m</span>
                     </div>
                     <input type="range" min="0.01" max="0.2" step="0.01" defaultValue="0.05" className="w-full accent-primary h-1 bg-[hsl(var(--surface-3))] rounded cursor-pointer" />
@@ -748,7 +748,7 @@ export const AnimationRightInspector: React.FC = () => {
 
               <div className="space-y-2 text-xs">
                 <div className="flex items-center justify-between p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08]">
-                  <span className="text-zinc-300">Show Ground GridIcon</span>
+                  <span className="text-zinc-300">Show Ground Grid</span>
                   <button
                     onClick={() => toggleDisplayOption('showGrid')}
                     className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
@@ -784,7 +784,7 @@ export const AnimationRightInspector: React.FC = () => {
                 </div>
 
                 <div className="flex items-center justify-between p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08]">
-                  <span className="text-zinc-300">Auto CameraIcon Follow</span>
+                  <span className="text-zinc-300">Auto Camera Follow</span>
                   <button
                     onClick={() => setAutoCamera(!autoCamera)}
                     className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${

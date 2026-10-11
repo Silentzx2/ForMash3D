@@ -11,8 +11,10 @@ from PIL import Image
 
 from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter
 from adapters.hunyuan3d_paint_v21 import Hunyuan3DPaintV21ImageMeshPaintingAdapter
+from adapters.hunyuan3d_shape_v21 import Hunyuan3DShapeV21ImageToRawMeshAdapter
 from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
 from adapters.triposf_adapter import TripoSFImageToRawMeshAdapter
+from adapters.triposg_adapter import TripoSGImageToRawMeshAdapter
 from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
 from utils.fastmesh_utils import FastMeshError, FastMeshRunner
 
@@ -230,3 +232,62 @@ def test_centralized_texture_settings_do_not_reach_geometry_adapters():
         "image_path": "/tmp/reference.png",
         "octree_resolution": 512,
     }
+
+
+def test_triposf_coordinate_basis_preserves_upright_orientation_without_spurious_rotation(tmp_path):
+    # Asymmetric box with distinct dimensions: X=1.0 (width), Y=4.0 (tall height), Z=2.0 (depth)
+    # in standard Y-up coordinate system
+    mesh = trimesh.creation.box(extents=[1.0, 4.0, 2.0])
+    input_mesh_path = tmp_path / "asymmetric_input.glb"
+    mesh.export(str(input_mesh_path))
+
+    # Verify normalize_mesh preserves relative axis order (Y > Z > X)
+    triposf_root = Path(__file__).resolve().parents[1] / "thirdparty" / "TripoSF"
+    if str(triposf_root) not in sys.path:
+        sys.path.insert(0, str(triposf_root))
+    from inference import normalize_mesh
+    normalized = normalize_mesh(str(input_mesh_path))
+    extents = normalized.bounding_box.extents
+    # Largest extent must be Y (index 1), second largest Z (index 2), smallest X (index 0)
+    assert extents[1] > extents[2] > extents[0], f"Normalized extents {extents} altered axis hierarchy!"
+
+    # Export via trimesh as done in TripoSF adapter (without spurious +90° X rotation)
+    final_trimesh = trimesh.Trimesh(vertices=normalized.vertices, faces=normalized.faces)
+    output_path = tmp_path / "triposf_export.glb"
+    final_trimesh.export(str(output_path))
+
+    loaded_glb = trimesh.load(output_path, force="mesh")
+    out_extents = loaded_glb.bounding_box.extents
+
+    # If spurious +90° X rotation were applied, Y and Z would be swapped (Z would become largest),
+    # rotating the model sideways. With correct coordinate basis, Y remains dominant height.
+    assert out_extents[1] > out_extents[2] > out_extents[0], (
+        f"TripoSF export rotated sideways! Extents: X={out_extents[0]}, Y={out_extents[1]}, Z={out_extents[2]}"
+    )
+
+
+def test_triposr_mc_resolution_accepts_model_maximum_fidelity():
+    adapter = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
+    schema = adapter.get_parameter_schema()["parameters"]
+    assert schema["mc_resolution"]["maximum"] >= 512
+    assert not schema["mc_resolution"].get("readOnly", False)
+
+
+def test_triposg_preserves_full_inference_steps_and_octree_depth():
+    adapter = TripoSGImageToRawMeshAdapter(vram_requirement=8192)
+    schema = adapter.get_parameter_schema()["parameters"]
+    assert schema["num_inference_steps"]["default"] == 50
+    assert schema["faces"]["default"] == -1
+
+
+def test_hunyuan3d_shape_v21_defaults_to_max_fidelity_when_source_quality_max():
+    adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
+    schema = adapter.get_parameter_schema()["parameters"]
+    assert schema["octree_resolution"]["maximum"] >= 512
+
+
+def test_hunyuan3d_dit_v2_mini_turbo_defaults_to_max_fidelity_when_source_quality_max():
+    adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
+    schema = adapter.get_parameter_schema()["parameters"]
+    assert schema["enable_flashvdm"]["default"] is True
+

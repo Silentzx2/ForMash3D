@@ -269,6 +269,9 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             auto_optimize = bool(inputs.get("auto_optimize", False))
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
+            octree_depth = int(inputs.get("flash_octree_depth", inputs.get("octree_depth", 9)))
+            dense_octree_depth = int(inputs.get("dense_octree_depth", 8))
+            hierarchical_octree_depth = int(inputs.get("hierarchical_octree_depth", 9))
 
             if not torch.cuda.is_available():
                 raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
@@ -299,10 +302,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     image=img_pil,
                     prompt=prompt,
                     generator=generator,
-                    num_inference_steps=min(steps, 25),
+                    num_inference_steps=steps,
                     guidance_scale=0,
-                    dense_octree_depth=8,
-                    hierarchical_octree_depth=8,
+                    dense_octree_depth=dense_octree_depth,
+                    hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
                 mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))
             else:
@@ -322,6 +325,9 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     num_inference_steps=steps,
                     guidance_scale=guidance,
                     use_flash_decoder=use_flash_decoder,
+                    flash_octree_depth=octree_depth,
+                    dense_octree_depth=dense_octree_depth,
+                    hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
                 mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))
 
