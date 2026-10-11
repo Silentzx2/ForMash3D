@@ -12,7 +12,7 @@
 ## PRIORITY TASK — RAW MESH IS ALREADY TOO SMOOTH (ROOT CAUSE NOT YET CONFIRMED)
 
 - **Task ID:** `RAW-QUALITY-001`
-- **Status:** Pending
+- **Status:** Done
 - **Priority:** Critical for the reported raw-geometry quality issue
 - **User-reported symptom:** The mesh is already overly smooth / missing fine geometry at the raw-generation stage. This is not merely a request to improve the game-ready mesh. Treat the raw inference output itself as suspect until it has been measured and compared.
 - **Root-cause status:** **Not conclusively established by the existing static source audit.** Do not claim that post-processing is the root cause unless runtime evidence proves the mesh being called “raw” is actually a processed/downstream artifact. The previous findings remain in this document and must not be deleted or replaced by this task.
