@@ -52,9 +52,253 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 GenerationProgress = Optional[Callable[[float, str, str], None]]
+CancelChecker = Optional[Callable[[], bool]]
 
 MAX_PRODUCTION_FACES = 200_000
 _FORMATS = ("glb", "fbx")
+
+
+def _check_cancelled(cancel_checker: CancelChecker) -> None:
+    if cancel_checker is not None:
+        try:
+            if cancel_checker():
+                logger.info("[POSTPROCESS CANCELLED] Cancellation requested; stopping pipeline cooperatively.")
+                raise InterruptedError("Post-processing cancelled by user")
+        except InterruptedError:
+            raise
+        except Exception as exc:
+            logger.warning("[POSTPROCESS] Cancel checker check failed: %s", exc)
+
+
+def resolve_texture_preset(preset_val: Any) -> tuple[str, int]:
+    """Resolve user-visible resolution preset to canonical label and target atlas dimension."""
+    if preset_val is None:
+        return ("2K", 2048)
+    s = str(preset_val).strip().upper()
+    if s in {"1K", "1024"}:
+        return ("1K", 1024)
+    if s in {"2K", "2048"}:
+        return ("2K", 2048)
+    if s in {"4K", "4096"}:
+        return ("4K", 4096)
+    if s in {"8K", "8192"}:
+        return ("8K", 8192)
+    try:
+        val = int(preset_val)
+        if val <= 1024:
+            return ("1K", 1024)
+        elif val <= 2048:
+            return ("2K", 2048)
+        elif val <= 4096:
+            return ("4K", 4096)
+        else:
+            return ("8K", 8192)
+    except (ValueError, TypeError):
+        return ("2K", 2048)
+
+
+def _resolve_reference_image(job_inputs: Dict[str, Any], job_metadata: Dict[str, Any]) -> Optional[Path]:
+    """Find durable server-side path to reference image."""
+    candidates = [
+        job_inputs.get("image_path"),
+        job_inputs.get("texture_image_path"),
+        job_inputs.get("reference_image_path"),
+        job_metadata.get("image_path"),
+        job_metadata.get("texture_image_path"),
+        job_inputs.get("image_file_path"),
+        job_inputs.get("image_file_id"),
+        job_inputs.get("file_id"),
+        job_metadata.get("image_file_id"),
+    ]
+    for cand in candidates:
+        if not cand:
+            continue
+        try:
+            resolved = resolve_server_file_path(cand)
+            if resolved and Path(resolved).is_file():
+                return Path(resolved)
+        except Exception:
+            pass
+        p = Path(str(cand))
+        if p.is_file():
+            return p
+    return None
+
+
+def _execute_texture_stage(
+    job_id: str,
+    asset_dir: Path,
+    base_name: str,
+    target_mesh_path: Path,
+    job_inputs: Dict[str, Any],
+    job_metadata: Dict[str, Any],
+    preset_label: str,
+    target_atlas_size: int,
+    cancel_checker: CancelChecker = None,
+    progress: GenerationProgress = None,
+) -> Dict[str, Any]:
+    """Run centralized texture stage using Paint3D (1K/2K) or Hunyuan3D-Paint v2.1 (4K/8K)."""
+    _check_cancelled(cancel_checker)
+    model_id = "paint3d" if preset_label in {"1K", "2K"} else "hunyuan3d_paint_v21"
+
+    ref_image_path = _resolve_reference_image(job_inputs, job_metadata)
+    if not ref_image_path or not ref_image_path.is_file():
+        err_msg = f"Original reference image not found or inaccessible for texturing: {ref_image_path}"
+        logger.warning("[POSTPROCESS TEXTURE] %s", err_msg)
+        return {
+            "status": "failed",
+            "error": err_msg,
+            "model": model_id,
+            "preset": preset_label,
+            "target_resolution": target_atlas_size,
+        }
+
+    texture_dir = asset_dir / "textures"
+    texture_dir.mkdir(parents=True, exist_ok=True)
+    textured_glb_path = texture_dir / f"{base_name}_textured.glb"
+
+    try:
+        if preset_label in {"1K", "2K"}:
+            adapter = None
+            try:
+                from core.scheduler.model_factory import ModelFactory
+                for key in ("paint3d_image_mesh_painting", "paint3d"):
+                    if key in ModelFactory.ADAPTER_REGISTRY:
+                        adapter = ModelFactory.create_model_from_config({
+                            "model_id": key,
+                            "vram_requirement": 8000,
+                            "feature_type": "image_mesh_painting",
+                        })
+                        break
+            except Exception as e:
+                logger.debug("ModelFactory Paint3D lookup: %s", e)
+
+            if adapter is None:
+                for mod_name, cls_name in [
+                    ("adapters.paint3d_adapter", "Paint3DImageMeshPaintingAdapter"),
+                    ("adapters.paint3d_adapter", "Paint3DAdapter"),
+                ]:
+                    try:
+                        import importlib
+                        mod = importlib.import_module(mod_name)
+                        cls = getattr(mod, cls_name, None)
+                        if cls:
+                            adapter = cls(vram_requirement=8000)
+                            break
+                    except Exception as e:
+                        logger.debug("Paint3D direct import %s.%s: %s", mod_name, cls_name, e)
+
+            if adapter is None:
+                raise RuntimeError("Paint3D texture adapter is not yet registered or installed.")
+
+            _check_cancelled(cancel_checker)
+            res = adapter.process({
+                "mesh_path": str(target_mesh_path),
+                "image_path": str(ref_image_path),
+                "output_format": "glb",
+                "resolution": target_atlas_size,
+            })
+            out_mesh = res.get("output_mesh_path") if isinstance(res, dict) else None
+            if not out_mesh or not Path(out_mesh).is_file():
+                raise RuntimeError(f"Paint3D returned no output mesh: {res}")
+            shutil.copy2(out_mesh, textured_glb_path)
+
+        else:
+            adapter = None
+            try:
+                from core.scheduler.model_factory import ModelFactory
+                if "hunyuan3d_paint_v21_image_mesh_painting" in ModelFactory.ADAPTER_REGISTRY:
+                    adapter = ModelFactory.create_model_from_config({
+                        "model_id": "hunyuan3d_paint_v21_image_mesh_painting",
+                        "vram_requirement": 21000,
+                        "feature_type": "image_mesh_painting",
+                    })
+            except Exception as e:
+                logger.debug("ModelFactory Hunyuan3D-Paint lookup: %s", e)
+
+            if adapter is None:
+                try:
+                    from adapters.hunyuan3d_paint_v21 import Hunyuan3DPaintV21ImageMeshPaintingAdapter
+                    adapter = Hunyuan3DPaintV21ImageMeshPaintingAdapter(vram_requirement=21000)
+                except Exception as exc:
+                    raise RuntimeError(f"Hunyuan3D-Paint-v2.1 adapter could not be loaded: {exc}")
+
+            _check_cancelled(cancel_checker)
+            hy_res = 512 if preset_label == "4K" else 768
+            res = adapter.process({
+                "mesh_path": str(target_mesh_path),
+                "image_path": str(ref_image_path),
+                "output_format": "glb",
+                "resolution": hy_res,
+                "max_num_view": int(job_inputs.get("max_num_view") or 6),
+                "enable_realesrgan": True,
+            })
+            out_mesh = res.get("output_mesh_path") if isinstance(res, dict) else None
+            if not out_mesh or not Path(out_mesh).is_file():
+                raise RuntimeError(f"Hunyuan3D-Paint-v2.1 returned no output mesh: {res}")
+            shutil.copy2(out_mesh, textured_glb_path)
+
+        _check_cancelled(cancel_checker)
+
+        standard_textured = texture_dir / "textured.glb"
+        if not standard_textured.exists() or standard_textured.resolve() != textured_glb_path.resolve():
+            shutil.copy2(textured_glb_path, standard_textured)
+
+        validated_dim = None
+        for img_candidate in texture_dir.glob("*.png"):
+            try:
+                with Image.open(img_candidate) as img:
+                    validated_dim = list(img.size)
+                    break
+            except Exception:
+                pass
+
+        if not validated_dim and textured_glb_path.exists():
+            try:
+                import trimesh
+                s = trimesh.load(textured_glb_path, file_type="glb", process=False)
+                geoms = getattr(s, "geometry", {}) if isinstance(s, trimesh.Scene) else {"m": s}
+                for g in geoms.values():
+                    mat = getattr(getattr(g, "visual", None), "material", None)
+                    im = getattr(mat, "baseColorTexture", None) or getattr(mat, "image", None)
+                    if isinstance(im, Image.Image):
+                        validated_dim = list(im.size)
+                        base_png = texture_dir / "base_color.png"
+                        if not base_png.exists():
+                            im.save(base_png)
+                        break
+            except Exception as tex_extract_err:
+                logger.debug("Texture dimension inspection notice: %s", tex_extract_err)
+
+        actual_dim = validated_dim or [target_atlas_size, target_atlas_size]
+        logger.info(
+            "[POSTPROCESS TEXTURE] Stage completed for %s: model=%s preset=%s atlas=%dx%d",
+            job_id, model_id, preset_label, actual_dim[0], actual_dim[1],
+        )
+        return {
+            "status": "completed",
+            "model": model_id,
+            "preset": preset_label,
+            "target_atlas_size": target_atlas_size,
+            "validated_atlas_dimension": actual_dim,
+            "textured_glb": str(textured_glb_path),
+            "texture_maps": {p.stem: str(p) for p in texture_dir.glob("*.png")},
+        }
+
+    except InterruptedError:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Centralized texture generation failed for %s: %s; preserving raw mesh artifacts",
+            job_id, exc, exc_info=True,
+        )
+        return {
+            "status": "failed",
+            "error": str(exc),
+            "model": model_id,
+            "preset": preset_label,
+            "target_atlas_size": target_atlas_size,
+        }
 
 
 def _storage_root() -> Path:
@@ -602,8 +846,10 @@ def run_postprocess_job(
     job_inputs: Optional[Dict[str, Any]] = None,
     job_metadata: Optional[Dict[str, Any]] = None,
     progress: GenerationProgress = None,
+    cancel_checker: CancelChecker = None,
 ) -> Dict[str, Any]:
     """Create the canonical asset workspace and run production post-processing."""
+    _check_cancelled(cancel_checker)
     job_inputs = job_inputs or {}
     job_metadata = job_metadata or {}
     quality_mode = str(job_inputs.get("quality") or job_inputs.get("meshQuality") or "high").lower()
@@ -619,6 +865,27 @@ def run_postprocess_job(
     except (TypeError, ValueError):
         texture_resolution = default_texture_resolution
     texture_resolution = max(512, min(4096, texture_resolution))
+
+    texture_enabled = bool(
+        job_inputs.get("texture_enabled")
+        or job_metadata.get("texture_enabled")
+        or job_inputs.get("generateTexture")
+        or job_metadata.get("generateTexture")
+        or job_inputs.get("generate_texture")
+        or job_metadata.get("generate_texture")
+        or job_inputs.get("auto_paint")
+        or job_metadata.get("auto_paint")
+    )
+    preset_input = (
+        job_inputs.get("texture_resolution")
+        or job_inputs.get("paint_resolution")
+        or job_inputs.get("resolution")
+        or job_metadata.get("texture_resolution")
+        or explicit_texture_resolution
+        or default_texture_resolution
+    )
+    preset_label, target_atlas_size = resolve_texture_preset(preset_input)
+
     cpu_threads = int(job_inputs.get("cpu_threads") or cpu_count())
     configure_cpu_runtime(cpu_threads)
     raw_target_polycount = job_inputs.get("target_polycount")
@@ -687,20 +954,24 @@ def run_postprocess_job(
     if asset_manifest.exists() and (game_ready_dir / f"{base_name}.glb").exists():
         try:
             saved = json.loads(asset_manifest.read_text(encoding="utf-8"))
-            if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
-                try:
-                    Path(raw_path).unlink()
-                    logger.info(
-                        "[POSTPROCESS STORAGE] Removed legacy generation output after canonical asset recovery: %s",
-                        raw_path,
-                    )
-                except OSError:
-                    logger.warning(
-                        "[POSTPROCESS STORAGE] Could not remove legacy generation output: %s",
-                        raw_path,
-                    )
-            saved["zip_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=zip"
-            return saved
+            saved_texture_status = saved.get("texture_stage", {}).get("status")
+            if not texture_enabled or saved_texture_status == "completed":
+                if Path(raw_path).resolve() != master_path.resolve() and Path(raw_path).exists():
+                    try:
+                        Path(raw_path).unlink()
+                        logger.info(
+                            "[POSTPROCESS STORAGE] Removed legacy generation output after canonical asset recovery: %s",
+                            raw_path,
+                        )
+                    except OSError:
+                        logger.warning(
+                            "[POSTPROCESS STORAGE] Could not remove legacy generation output: %s",
+                            raw_path,
+                        )
+                saved["zip_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=zip"
+                return saved
+            else:
+                logger.info("[POSTPROCESS] Existing raw mesh found; proceeding with requested texture stage for %s", job_id)
         except Exception:
             logger.warning("Corrupt asset.json for %s, discarding and rebuilding.", job_id)
 
@@ -767,6 +1038,7 @@ def run_postprocess_job(
     }
 
     inspect_t0 = time.time()
+    _check_cancelled(cancel_checker)
     _emit(progress, 0.10, "inspect", "Inspecting generated mesh.")
     try:
         scene = trimesh.load(master_path, file_type="glb", process=False)
@@ -818,6 +1090,7 @@ def run_postprocess_job(
     )
     printability_before = _printability_report(mesh) if printability_enabled else None
 
+    _check_cancelled(cancel_checker)
     repair_t0 = time.time()
     _emit(progress, 0.18, "repair", "Checking and repairing topology.")
     repair_opts = RepairOptions(
@@ -898,6 +1171,7 @@ def run_postprocess_job(
         or bool(job_inputs.get("quad_topology"))
     )
 
+    _check_cancelled(cancel_checker)
     retopo_t0 = time.time()
     if is_quad_requested and not native_textures:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
@@ -981,6 +1255,7 @@ def run_postprocess_job(
     # as a conservative derivative-target builder before UV/baking. Native-textured
     # masters bypass this because their native UV/material mapping is already valuable.
     feature_remesh_stats: Dict[str, Any] = {"status": "skipped", "reason": "Quality profile does not require adaptive remesh."}
+    _check_cancelled(cancel_checker)
     if (
         quality_mode in {"high", "ultra"}
         and solid_generation_feature
@@ -1029,6 +1304,7 @@ def run_postprocess_job(
             quality_trace["feature_remesh"] = feature_remesh_stats
             logger.warning("Adaptive high-quality remesh failed for %s: %s", job_id, exc)
 
+    _check_cancelled(cancel_checker)
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
     optimize_t0 = time.time()
     auto_optimize = bool(job_inputs.get("auto_optimize", False))
@@ -1094,6 +1370,7 @@ def run_postprocess_job(
         )
     )
 
+    _check_cancelled(cancel_checker)
     uv_t0 = time.time()
     if native_textures:
         if not _has_native_textures(optimized):
@@ -1167,6 +1444,7 @@ def run_postprocess_job(
         or native_textures
     )
 
+    _check_cancelled(cancel_checker)
     bake_t0 = time.time()
     if should_bake:
         _emit(progress, 0.58, "bake", "Baking high-to-low micro-details and normal maps.")
@@ -1291,6 +1569,38 @@ def run_postprocess_job(
         artifact_errors["fbx"] = str(exc)
         logger.warning("FBX export failed: %s", exc)
 
+    # Centralized Texture Stage
+    _check_cancelled(cancel_checker)
+    texture_stage_info: Dict[str, Any] = {"status": "skipped"}
+    if not texture_enabled:
+        texture_stage_info = {
+            "status": "skipped",
+            "reason": "Textured generation not requested",
+        }
+        logger.info("[POSTPROCESS TEXTURE] Stage skipped: textured generation not requested")
+    else:
+        _emit(progress, 0.65, "texture", f"Generating {preset_label} textures with {'paint3d' if preset_label in {'1K', '2K'} else 'hunyuan3d_paint_v21'}...")
+        texture_stage_info = _execute_texture_stage(
+            job_id=job_id,
+            asset_dir=asset_dir,
+            base_name=base_name,
+            target_mesh_path=glb_path,
+            job_inputs=job_inputs,
+            job_metadata=job_metadata,
+            preset_label=preset_label,
+            target_atlas_size=target_atlas_size,
+            cancel_checker=cancel_checker,
+            progress=progress,
+        )
+        if texture_stage_info.get("status") == "completed":
+            texture_status = "completed"
+            for k, v in texture_stage_info.get("texture_maps", {}).items():
+                texture_paths[k] = v
+        elif texture_stage_info.get("status") == "failed":
+            texture_status = "failed"
+            artifact_errors["texture"] = texture_stage_info.get("error", "Texture generation failed")
+
+    _check_cancelled(cancel_checker)
     lods: Dict[int, str] = {}
     lod_quality: Dict[str, Dict[str, Any]] = {}
     lod_enabled = bool(job_inputs.get("generateLOD", True))
@@ -1451,6 +1761,7 @@ def run_postprocess_job(
     except Exception as exc:
         logger.warning("Preview generation skipped: %s", exc)
 
+    _check_cancelled(cancel_checker)
     _emit(progress, 0.95, "qa", "Running final game-ready inspection.")
     try:
         final_scene = trimesh.load(glb_path, file_type="glb", process=False)
@@ -1534,6 +1845,7 @@ def run_postprocess_job(
             "uv": uv_stats,
             "bake": bake_stats,
             "texture_status": texture_status,
+            "texture_stage": texture_stage_info,
             "quality_trace": quality_trace,
             "master_to_derivative": master_quality_report,
             "quality_mode": quality_mode,
@@ -1563,6 +1875,8 @@ def run_postprocess_job(
         "physics_metadata": physics_metadata,
         "textures": texture_paths,
         "texture_status": texture_status,
+        "texture_stage": texture_stage_info,
+        "textured_glb": texture_stage_info.get("textured_glb"),
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
         "artifact_errors": artifact_errors,
         "lod_validation": lod_validation,
@@ -1573,6 +1887,23 @@ def run_postprocess_job(
     final_result["quality_trace"] = quality_trace
     final_result["master_to_derivative"] = master_quality_report
     final_result["quality_mode"] = quality_mode
+    final_result["texture_stage"] = texture_stage_info
+    if texture_stage_info.get("textured_glb"):
+        final_result["textured_model_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=textured"
+        final_result.setdefault("artifacts", {})["textured"] = {
+            "status": "ready",
+            "url": final_result["textured_model_url"],
+            "path": texture_stage_info["textured_glb"],
+        }
+    elif texture_stage_info.get("status") == "failed":
+        final_result["production_status"] = "degraded"
+        final_result["degraded_reasons"] = list(
+            final_result.get("degraded_reasons", [])
+        ) + ["texture_generation_failed"]
+        final_result.setdefault("artifacts", {})["textured"] = {
+            "status": "failed",
+            "error": texture_stage_info.get("error"),
+        }
     if master_quality_report.get("quality_gate", {}).get("passed") is False:
         final_result["production_status"] = "degraded"
         final_result["degraded_reasons"] = list(

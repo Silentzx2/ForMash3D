@@ -22,38 +22,47 @@ from core.utils.mesh_utils import MeshProcessor
 logger = logging.getLogger(__name__)
 
 
-class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
+class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
     """
     Adapter for TRELLIS.2 image-to-mesh model.
     
-    Integrates TRELLIS.2 for generating textured 3D meshes from images.
+    Integrates TRELLIS.2 for generating untextured raw 3D meshes from images.
     Note: TRELLIS.2 does NOT support text conditioning.
     """
     
-    FEATURE_TYPE = "image_to_textured_mesh"
-    MODEL_ID = "trellis2_image_to_textured_mesh"
+    FEATURE_TYPE = "image_to_raw_mesh"
+    MODEL_ID = "trellis2_image_to_raw_mesh"
     
     def __init__(
         self,
+        model_id: Optional[str] = None,
         model_path: Optional[str] = None,
         vram_requirement: Optional[int] = None,
         trellis2_root: Optional[str] = None,
+        feature_type: Optional[str] = None,
+        supported_output_formats: Optional[List[str]] = None,
     ):
         if vram_requirement is None:
-            vram_requirement = 16000
+            vram_requirement = 23552
+        if model_id is None:
+            model_id = self.MODEL_ID
         # Set default paths
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "TRELLIS.2")
         
         if trellis2_root is None:
             trellis2_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "TRELLIS.2")
+        if feature_type is None:
+            feature_type = self.FEATURE_TYPE
+        if supported_output_formats is None:
+            supported_output_formats = ["glb", "obj"]
 
         super().__init__(
-            model_id=self.MODEL_ID,
+            model_id=model_id,
             model_path=model_path,
             vram_requirement=vram_requirement,
-            supported_output_formats=["glb", "obj"],
-            feature_type=self.FEATURE_TYPE,
+            supported_output_formats=supported_output_formats,
+            feature_type=feature_type,
         )
         
         self.trellis2_root = Path(trellis2_root)
@@ -118,7 +127,7 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
     
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Process image-to-mesh generation using TRELLIS.2.
+        Process image-to-raw-mesh generation using TRELLIS.2.
         
         Args:
             inputs: Dictionary containing:
@@ -139,10 +148,6 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                 raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
             if self.runner is None:
                 raise ValueError("TRELLIS.2 model is not loaded")
-            if getattr(self.runner, "o_voxel", None) is None:
-                raise RuntimeError(
-                    "TRELLIS.2 textured generation requires o_voxel for textured GLB export"
-                )
             
             # Validate inputs using parent class
             output_format = self._validate_common_inputs(inputs)
@@ -157,9 +162,9 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
             remesh_project = inputs.get("remesh_project", 0)
             seed = inputs.get("seed", None)
             
-            logger.info(f"Generating mesh with TRELLIS.2 for image: '{image_path}'")
+            logger.info(f"Generating untextured raw mesh with TRELLIS.2 for image: '{image_path}'")
             
-            # Generate 3D mesh
+            # Generate untextured raw 3D mesh
             mesh = self.runner.image_to_mesh(
                 image_path=image_path,
                 decimation_target=decimation_target,
@@ -168,7 +173,8 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                 remesh_band=remesh_band,
                 remesh_project=remesh_project,
                 seed=seed,
-                verbose=True
+                verbose=True,
+                raw_mesh_only=True,
             )
             
             # Save mesh in requested format
@@ -192,14 +198,15 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                     "seed": seed,
                     "vertex_count": len(mesh.vertices),
                     "face_count": len(mesh.faces),
+                    "has_texture": False,
                     "decimation_target": decimation_target,
-                    "texture_size": texture_size,
+                    "texture_size": None,
                     "remesh": remesh,
                     "thumbnail_generated": thumbnail_generated,
                 }
             })
             
-            logger.info(f"TRELLIS.2 mesh generation completed: {output_path}")
+            logger.info(f"TRELLIS.2 raw mesh generation completed: {output_path}")
             self.status = ModelStatus.LOADED
             return response
         
@@ -300,6 +307,31 @@ class Trellis2ImageToTexturedMeshAdapter(ImageToMeshModel):
                 }
             }
         }
+
+
+class Trellis2ImageToTexturedMeshAdapter(Trellis2ImageToRawMeshAdapter):
+    """
+    Deprecated adapter for TRELLIS.2 image-to-textured-mesh model.
+
+    Legacy model ID alias routing to raw geometry per Docs/TASKS.md Section 4.
+    """
+
+    FEATURE_TYPE = "image_to_raw_mesh"
+    MODEL_ID = "trellis2_image_to_textured_mesh"
+
+    def __init__(self, *args, **kwargs):
+        logger.warning(
+            "Trellis2ImageToTexturedMeshAdapter is deprecated. "
+            "Routing to raw geometry generation. Texturing is handled by the centralized texture stage."
+        )
+        super().__init__(*args, **kwargs)
+
+
+# Backward-compatible aliases for raw geometry generation
+Trellis2ImageToMeshAdapter = Trellis2ImageToRawMeshAdapter
+TRELLIS2ImageToRawMeshAdapter = Trellis2ImageToRawMeshAdapter
+TRELLIS2ImageToMeshAdapter = Trellis2ImageToRawMeshAdapter
+TRELLIS2ImageToTexturedMeshAdapter = Trellis2ImageToTexturedMeshAdapter
 
 
 class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):

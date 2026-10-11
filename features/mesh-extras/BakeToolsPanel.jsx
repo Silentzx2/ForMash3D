@@ -64,7 +64,7 @@ export default function BakeToolsPanel({
         <span className="mesh-editor-panel__section-title">Bake</span>
 
         {!hasUvs && (
-          <span className="mesh-editor-panel__hint" className="text-amber-400">
+          <span className="mesh-editor-panel__hint text-amber-400">
             This mesh has no UVs, so there is nowhere to bake to. Run Auto UV first.
           </span>
         )}
@@ -136,7 +136,7 @@ export default function BakeToolsPanel({
           )}
 
           {coverageIsLow && (
-            <span className="mesh-editor-panel__hint" className="text-orange-400">
+            <span className="mesh-editor-panel__hint text-orange-400">
               The rays only reached {(result.stats.coverage * 100).toFixed(0)}% of the UV layout — the
               remaining {(100 - result.stats.coverage * 100).toFixed(0)}% came back blank. Applying this
               leaves those texels as they are rather than blacking them out, but the mesh will still be
@@ -162,7 +162,7 @@ export default function BakeToolsPanel({
           )}
 
           {result.stats?.alignment?.mode === 'skipped-scale' && (
-            <span className="mesh-editor-panel__hint" className="text-amber-400">
+            <span className="mesh-editor-panel__hint text-amber-400">
               The source is a different size from this mesh
               {result.stats.alignment.scale_axes
                 ? ` by a different amount on each axis (${result.stats.alignment.scale_axes
@@ -175,14 +175,14 @@ export default function BakeToolsPanel({
           )}
 
           {result.stats?.low_objects_ignored > 0 && (
-            <span className="mesh-editor-panel__hint" className="text-amber-400">
+            <span className="mesh-editor-panel__hint text-amber-400">
               This mesh arrived as {result.stats.low_objects_ignored + 1} separate objects and only the
               first was baked to. Baking writes to one UV layout, so the others were skipped.
             </span>
           )}
 
           {result.stats?.flat_channels?.length > 0 && (
-            <span className="mesh-editor-panel__hint" className="text-amber-400">
+            <span className="mesh-editor-panel__hint text-amber-400">
               {result.stats.flat_channels.join(' and ')} came from a constant on the source
               material, not a texture, so {result.stats.flat_channels.length === 1 ? 'that map is' : 'those maps are'} flat.
               The material&apos;s own value is better than baking it — leave{' '}

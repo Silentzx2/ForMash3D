@@ -1281,6 +1281,12 @@ function dataURLtoFile(dataURL: string, filename: string): File {
       setExecutionProgress(0);
       setExecutionStep('Execution cancelled');
       setActiveTask(null);
+      setJobsById(prev => {
+        const next = { ...prev };
+        delete next[jobId];
+        jobsByIdRef.current = next;
+        return next;
+      });
       return;
     }
 
@@ -1295,6 +1301,19 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         currentStep: 'Execution cancelled',
         stage: 'cancelled',
       } : null);
+      setJobsById(prev => {
+        const existing = prev[jobId] || activeTaskRef.current;
+        if (!existing) return prev;
+        const updated: ActiveTask = {
+          ...existing,
+          status: 'interrupted',
+          currentStep: 'Execution cancelled',
+          stage: 'cancelled',
+        };
+        const next = { ...prev, [jobId]: updated };
+        jobsByIdRef.current = next;
+        return next;
+      });
       if (data.cancelled || data.status === 'cancelled') {
         toast.success('Generation job cancelled');
       } else {
@@ -1311,6 +1330,19 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         currentStep: 'Execution cancelled',
         stage: 'cancelled',
       } : null);
+      setJobsById(prev => {
+        const existing = prev[jobId] || activeTaskRef.current;
+        if (!existing) return prev;
+        const updated: ActiveTask = {
+          ...existing,
+          status: 'interrupted',
+          currentStep: 'Execution cancelled',
+          stage: 'cancelled',
+        };
+        const next = { ...prev, [jobId]: updated };
+        jobsByIdRef.current = next;
+        return next;
+      });
       toast.info('Cancelled locally', { description: 'Cancellation request sent to server' });
     }
   }, [activeTask?.id, activeTask?.isLocal]);
@@ -1980,37 +2012,49 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
   }, [remeshSettings, currentAsset, startTask]);
 
     const runTextureGeneration = useCallback(async () => {
-      const localTaskId = startTask('texture', 'Texture generation', undefined, textureSettings.modelId, undefined, undefined, comparisonGroupId ?? undefined);
+      const resolution = textureSettings.resolution || '2K';
+      const isHighRes = resolution === '4K' || resolution === '8K';
+      const routedModel = isHighRes
+        ? 'hunyuan3d_paint_v21_image_mesh_painting'
+        : 'paint3d_image_mesh_painting';
+      const modelPreference = textureSettings.modelId || routedModel;
+
+      const localTaskId = startTask('texture', 'Texture generation', undefined, modelPreference, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshRef = resolveMeshReference(currentAsset);
 
-      const isTextPaintingModel = textureSettings.modelId === 'trellis_text_mesh_painting';
+      const isTextPaintingModel = modelPreference === 'trellis_text_mesh_painting';
       const hasTexturePrompt = Boolean(textureSettings.prompt?.trim());
-      const endpoint = (isTextPaintingModel || (hasTexturePrompt && !textureSettings.referenceImage))
+      const endpoint = (isTextPaintingModel || (hasTexturePrompt && !textureSettings.referenceImage && !currentAsset?.referenceImage && !currentAsset?.inputImage && !currentAsset?.thumbnail))
         ? '/api/v1/mesh-generation/text-mesh-painting'
         : '/api/v1/mesh-generation/image-mesh-painting';
 
-      const fallbackModel = endpoint.includes('text')
-        ? 'trellis_text_mesh_painting'
-        : 'trellis_image_mesh_painting';
-
-      const isPaintModel = (textureSettings.modelId || fallbackModel).includes('paint_v21');
-      const paintResolution = isPaintModel
-        ? (textureSettings.paintResolution ?? 512)
-        : undefined;
-
       const body: Record<string, unknown> = {
-        texture_resolution: { '1K': 1024, '2K': 2048, '4K': 4096, '8K': 4096 }[textureSettings.resolution || '2K'],
+        texture_enabled: true,
+        texture_resolution: resolution,
         output_format: 'glb',
-        model_preference: textureSettings.modelId || fallbackModel,
+        model_preference: modelPreference,
+        generate_texture: true,
+        auto_paint: true,
         ...meshRef,
       };
 
-      if (isPaintModel) {
+      if (modelPreference.includes('paint_v21') || isHighRes) {
         body.model_parameters = {
           max_num_view: textureSettings.maxNumView ?? 6,
-          resolution: paintResolution ?? 512,
+          resolution: resolution === '8K' ? 768 : 512,
           enable_realesrgan: textureSettings.enableRealESRGAN !== false,
+          texture_resolution: resolution,
+          texture_enabled: true,
+          generate_texture: true,
+          auto_paint: true,
+        };
+      } else {
+        body.model_parameters = {
+          texture_resolution: resolution,
+          texture_enabled: true,
+          generate_texture: true,
+          auto_paint: true,
         };
       }
 
@@ -2018,20 +2062,25 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
         body.generate_pbr = true;
       }
 
-      if (hasTexturePrompt) {
+      if (hasTexturePrompt && isTextPaintingModel) {
         body.text_prompt = textureSettings.prompt;
       } else {
-        const refImageUrl = textureSettings.referenceImage || undefined;
+        const originalRefImage = currentAsset?.referenceImage || currentAsset?.inputImage || (currentAsset?.category === 'generation' ? currentAsset?.thumbnail : undefined);
+        const refImageUrl = textureSettings.referenceImage || originalRefImage;
         if (!refImageUrl) {
           throw new Error('No texture prompt or reference image provided. Please supply one.');
         }
-        if (textureSettings.referenceImageFileId) {
-          body.image_file_id = textureSettings.referenceImageFileId;
+        const refFileId = textureSettings.referenceImageFileId || currentAsset?.referenceImageFileId || (currentAsset as any)?.fileId;
+        if (refFileId) {
+          body.image_file_id = refFileId;
         } else if (refImageUrl.startsWith('data:')) {
           // Backend expects base64 WITHOUT the data-URL prefix
           body.image_base64 = refImageUrl.replace(/^data:image\/[a-z0-9.+-]+;base64,/, '');
         } else {
           body.image_path = refImageUrl;
+        }
+        if (hasTexturePrompt) {
+          body.text_prompt = textureSettings.prompt;
         }
       }
 
@@ -2421,14 +2470,17 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
      // Cancel each item's job if it has a jobId
      for (const item of itemsToCancel) {
        if (item.jobId) {
+         const bJobId = item.jobId;
          try {
-           // Try to cancel the job via the backend
-           await fetch(`/api/v1/system/jobs/${encodeURIComponent(item.jobId)}`, {
-             method: 'DELETE',
-           });
+           await getApiClient().cancelGenerationJob(bJobId);
          } catch (err) {
-           // If we can't cancel via backend, we'll still update the item locally
-           console.warn('Failed to cancel job via backend:', err);
+           try {
+             await fetch(`/api/v1/system/jobs/${encodeURIComponent(bJobId)}`, {
+               method: 'DELETE',
+             });
+           } catch (delErr) {
+             console.warn('Failed to cancel job via backend:', delErr);
+           }
          }
          
          // Update the batch queue item to cancelled
@@ -2438,7 +2490,35 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          });
          
          // Clean up the job ID map
-         delete batchJobIdMap.current[item.jobId];
+         delete batchJobIdMap.current[bJobId];
+
+         // Synchronize jobsById so the background poller does not revive cancelled batch jobs
+         setJobsById(prev => {
+           const existing = prev[bJobId];
+           if (!existing) return prev;
+           const updated: ActiveTask = {
+             ...existing,
+             status: 'interrupted',
+             currentStep: 'Batch execution cancelled',
+             stage: 'cancelled',
+           };
+           const next = { ...prev, [bJobId]: updated };
+           jobsByIdRef.current = next;
+           return next;
+         });
+
+         // If this batch item was the active foreground task, clear executing state
+         if (activeTaskRef.current?.id === bJobId) {
+           setIsExecuting(false);
+           setExecutionProgress(0);
+           setExecutionStep('Batch execution cancelled');
+           setActiveTask(prev => prev && prev.id === bJobId ? {
+             ...prev,
+             status: 'interrupted',
+             currentStep: 'Batch execution cancelled',
+             stage: 'cancelled',
+           } : null);
+         }
        } else {
          // If the item doesn't have a jobId, it's probably still queued and hasn't been processed yet
          updateBatchItem(item.id, {

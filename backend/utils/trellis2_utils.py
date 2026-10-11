@@ -191,7 +191,8 @@ class Trellis2Runner:
         remesh_band: int = 1,
         remesh_project: int = 0,
         seed: Optional[int] = None,
-        verbose: bool = True
+        verbose: bool = True,
+        raw_mesh_only: bool = True,
     ) -> trimesh.Trimesh:
         """
         Generate 3D mesh from image using TRELLIS.2.
@@ -205,6 +206,7 @@ class Trellis2Runner:
             remesh_project: Remesh project parameter
             seed: Random seed for reproducibility
             verbose: Whether to show progress
+            raw_mesh_only: If True, return untextured raw mesh without texture bake
         
         Returns:
             Generated trimesh.Trimesh object
@@ -225,7 +227,14 @@ class Trellis2Runner:
         mesh = self.image_to_3d_pipeline.run(image)[0]
         
         # Simplify mesh (nvdiffrast has a limit of 16777216 faces)
-        mesh.simplify(16777216)
+        if hasattr(mesh, "simplify"):
+            mesh.simplify(16777216)
+        
+        if raw_mesh_only:
+            logger.info("Extracting untextured raw mesh (texture baking skipped)")
+            verts = mesh.vertices.cpu().numpy() if hasattr(mesh.vertices, 'cpu') else np.array(mesh.vertices)
+            faces = mesh.faces.cpu().numpy() if hasattr(mesh.faces, 'cpu') else np.array(mesh.faces)
+            return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
         
         # Export to GLB format
         if self.o_voxel is not None:

@@ -27,6 +27,16 @@ def _status_to_str(status: JobStatus) -> str:
     return str(status)
 
 
+_TERMINAL_STATUSES = {
+    JobStatus.COMPLETED.value,
+    JobStatus.FAILED.value,
+    JobStatus.CANCELLED.value,
+    "completed",
+    "failed",
+    "cancelled",
+}
+
+
 def _priority_score(priority: int, created_at: datetime) -> float:
     # Use a valid minimum timestamp (year 1970) instead of datetime.min which causes timestamp() to fail
     if created_at <= datetime(1970, 1, 1):
@@ -409,12 +419,29 @@ class RedisJobQueue:
             job.created_at = datetime.fromisoformat(data["created_at"])
         job.result = data.get("result")
         job.error = data.get("error")
+        job.progress = float(data.get("progress", 0.0) or 0.0)
+        raw_status = data.get("status")
+        if raw_status:
+            if raw_status == "running":
+                job.status = JobStatus.PROCESSING
+            elif raw_status in {"queued", "processing", "completed", "failed", "cancelled"}:
+                job.status = JobStatus(raw_status)
         return job
 
     async def update_job_progress(self, job_id: str, progress: float, stage: Optional[str] = None, message: Optional[str] = None):
         """Update job progress and stage"""
         if not self.redis:
             return
+
+        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+        if not job_data_str:
+            return
+
+        job_data = json.loads(job_data_str)
+        status = job_data.get("status")
+        if status in _TERMINAL_STATUSES:
+            return
+
         value = min(1.0, max(0.0, float(progress)))
         logger.info(f"[JOB PROGRESS] job_id={job_id} progress={int(value * 100)}% stage={stage or 'processing'} message='{message or ''}'")
         await self.redis.hset(self.progress_hash_key, job_id, str(value))
@@ -422,17 +449,14 @@ class RedisJobQueue:
             await self.redis.hset(self.stage_hash_key, job_id, stage)
         if message:
             await self.redis.hset(self.message_hash_key, job_id, message)
-        if stage or message:
-            job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
-            if job_data_str:
-                job_data = json.loads(job_data_str)
-                job_data["progress"] = value
-                if stage:
-                    job_data["stage"] = stage
-                if message:
-                    job_data["message"] = message
-                _append_log(job_data, stage or "processing", value, message or "Processing")
-                await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+
+        job_data["progress"] = value
+        if stage:
+            job_data["stage"] = stage
+        if message:
+            job_data["message"] = message
+        _append_log(job_data, stage or "processing", value, message or "Processing")
+        await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
 
     async def prepare_postprocess_retry(self, job_id: str) -> Optional[JobRequest]:
@@ -607,9 +631,9 @@ class RedisJobQueue:
         if not job_data_str:
             return False
         status = json.loads(job_data_str).get("status")
-        if status == _status_to_str(JobStatus.QUEUED):
+        if status in {_status_to_str(JobStatus.QUEUED), "queued"}:
             return await self.cancel_job(job_id)
-        if status == _status_to_str(JobStatus.PROCESSING):
+        if status in {_status_to_str(JobStatus.PROCESSING), "processing", "running"}:
             await self.redis.sadd(self.cancel_request_key, job_id)
             return True
         return False
@@ -633,11 +657,14 @@ class RedisJobQueue:
             return False
         job_data = json.loads(job_data_str)
         status = job_data.get("status")
-        if status == _status_to_str(JobStatus.PROCESSING) and not force:
+        if status in {_status_to_str(JobStatus.PROCESSING), "processing", "running"} and not force:
             return False
         if status not in {
             _status_to_str(JobStatus.QUEUED),
+            "queued",
             _status_to_str(JobStatus.PROCESSING),
+            "processing",
+            "running",
         }:
             return False
 
@@ -654,6 +681,21 @@ class RedisJobQueue:
         await self.redis.hset(self.stage_hash_key, job_id, "cancelled")
         await self.redis.hset(self.message_hash_key, job_id, "Cancelled by user")
         await self.redis.zadd(self.completed_index_key, {job_id: completed_at.timestamp()})
+
+        # Persist cancellation to durable SQLite store mirroring complete_job() and fail_job()
+        job_request = await self._load_job_request_for_persistence(job_id)
+        if job_request is not None:
+            job_request.status = JobStatus.CANCELLED
+            job_request.progress = float(job_data.get("progress", 0.0) or 0.0)
+            job_request.error = "Cancelled by user"
+            job_request.completed_at = completed_at
+            job_request.metadata.update({
+                "stage": "cancelled",
+                "message": "Cancelled by user",
+                "error_code": "JOB_CANCELLED",
+            })
+            await asyncio.to_thread(self.db_manager.save_job, job_request)
+
         return True
 
     # Compatibility methods for original JobQueue interface
@@ -690,7 +732,8 @@ class RedisJobQueue:
         for job_id, job_data_str in all_jobs.items():
             try:
                 job_data = json.loads(job_data_str)
-                if job_data.get("status") == target_status:
+                raw_status = job_data.get("status")
+                if raw_status == target_status or (target_status == "processing" and raw_status == "running"):
                     # Hot keys hold the live progress/stage/message written by workers
                     hot_progress, hot_stage, hot_message = await asyncio.gather(
                         self.redis.hget(self.progress_hash_key, job_id),
@@ -715,7 +758,7 @@ class RedisJobQueue:
                     )
                     job_request.job_id = job_id
                     job_request.created_at = datetime.fromisoformat(job_data["created_at"])
-                    job_request.status = JobStatus(job_data["status"])
+                    job_request.status = JobStatus.PROCESSING if raw_status == "running" else JobStatus(raw_status)
                     job_request.progress = float(job_data.get("progress", 0.0) or 0.0)
                     if job_data.get("error"):
                         job_request.error = job_data["error"]

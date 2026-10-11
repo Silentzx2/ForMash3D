@@ -63,6 +63,9 @@ export interface ModelAsset {
   name: string;
   category: 'all' | 'mesh' | 'texture' | 'generation';
   thumbnail: string;
+  referenceImage?: string;
+  referenceImageFileId?: string;
+  inputImage?: string;
   source?: { filename: string; subfolder: string; type: string; viewUrl?: string; mime?: string; localUrl?: string; promptId?: string; nodeId?: string; fileId?: string };
   previewColor?: string;
   meshType: 'goblin' | 'robot' | 'statue' | 'house' | 'dog' | 'table' | 'helmet' | 'car' | 'vase' | 'plant' | 'custom';
@@ -213,6 +216,9 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     materials: Array.isArray(raw.materials) ? raw.materials : [],
     createdAt: raw.createdAt || raw.created_at,
     fileId: raw.fileId,
+    referenceImage: raw.referenceImage || raw.reference_image || raw.inputImage || raw.input_image || raw.thumbnail || undefined,
+    referenceImageFileId: raw.referenceImageFileId || raw.reference_image_file_id || raw.inputImageFileId || raw.input_image_file_id || raw.fileId || undefined,
+    inputImage: raw.inputImage || raw.input_image || raw.referenceImage || raw.thumbnail || undefined,
     source: raw.source
       ? { ...raw.source, fileId: raw.source.fileId ?? raw.fileId }
       : raw.source,
@@ -416,6 +422,10 @@ export interface GenerationSettings {
   vramMode?: 'auto' | 'normal' | 'low';
   autoOptimizeSettings: AutoOptimizeSettings;
   generateTexture?: boolean;
+  texture_enabled?: boolean;
+  textureEnabled?: boolean;
+  texture_resolution?: '1K' | '2K' | '4K' | '8K';
+  textureResolution?: '1K' | '2K' | '4K' | '8K';
   gameReady?: boolean;
   targetPlatform?: 'generic' | 'mobile' | 'low' | 'medium' | 'high' | 'cinematic';
   generateLOD?: boolean;

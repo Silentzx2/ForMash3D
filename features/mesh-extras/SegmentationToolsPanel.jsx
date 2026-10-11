@@ -105,13 +105,13 @@ export default function SegmentationToolsPanel({
               {' · '}{analysis.faceCount.toLocaleString()} faces mapped
             </div>
             {analysis.escapeRatio > 0.35 && (
-              <div className="mesh-editor-panel__hint" className="text-amber-400">
+              <div className="mesh-editor-panel__hint text-amber-400">
                 {Math.round(analysis.escapeRatio * 100)}% of the thickness rays escaped — the mesh is
                 open, so the parts are guessed from creases alone. Repair it for a better split.
               </div>
             )}
             {analysis.note && (
-              <div className="mesh-editor-panel__hint" className="text-amber-400">{analysis.note}</div>
+              <div className="mesh-editor-panel__hint text-amber-400">{analysis.note}</div>
             )}
           </>
         )}
@@ -188,7 +188,7 @@ export default function SegmentationToolsPanel({
             moving the Parts slider afterwards.
           </span>
           {explode > 0 && (
-            <span className="mesh-editor-panel__hint" className="text-amber-400">
+            <span className="mesh-editor-panel__hint text-amber-400">
               Reassemble first — while the parts are exploded the cursor no longer
               lands where the mesh is drawn.
             </span>

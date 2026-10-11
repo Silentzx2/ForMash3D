@@ -44,7 +44,30 @@ export function buildGenerationParameters(
   const useMultiviewReconstruction = isMultiviewCapable && hasMvViews;
   
   // Determine texture routing for image-to-3D.
-  const isTextured = !isRawModel && (settings.generateTexture ?? true);
+  const textureEnabled = Boolean(
+    settings.texture_enabled ??
+    settings.textureEnabled ??
+    (settings.generateTexture !== false)
+  );
+
+  const textureResolutionPreset: '1K' | '2K' | '4K' | '8K' =
+    settings.texture_resolution ||
+    settings.textureResolution ||
+    (
+      settings.textureQuality === 'low' ? '1K' :
+      settings.textureQuality === 'medium' ? '1K' :
+      settings.textureQuality === '8k' ? '8K' :
+      '2K'
+    );
+
+  const numericTextureResolution = (
+    textureResolutionPreset === '1K' ? 1024 :
+    textureResolutionPreset === '2K' ? 2048 :
+    textureResolutionPreset === '4K' ? 4096 :
+    8192
+  );
+
+  const isTextured = !isRawModel && textureEnabled;
   
   // Build model parameters
   const modelParameters: Record<string, unknown> = {
@@ -62,12 +85,12 @@ export function buildGenerationParameters(
     lodCount: settings.lodCount || 4,
     negative_prompt: settings.negativePrompt || undefined,
     source_quality: 'max',
-    texture_resolution: (
-      settings.textureQuality === 'low' ? 512 :
-      settings.textureQuality === 'medium' ? 1024 :
-      settings.textureQuality === '8k' ? 4096 :
-      2048
-    ),
+    texture_enabled: textureEnabled,
+    generate_texture: textureEnabled,
+    auto_paint: textureEnabled,
+    ...(textureEnabled ? {
+      texture_resolution: textureResolutionPreset,
+    } : {}),
   };
   
   // Model-specific parameters
@@ -131,23 +154,21 @@ export function buildGenerationParameters(
       enable_auto_rig: Boolean(settings.enableAutoRig),
       auto_rig_mode: settings.autoRigMode || 'full',
       model_parameters: modelParameters,
-      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false, isPaintModel, settings.generateTexture ?? true),
+      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false, isPaintModel, textureEnabled),
       physics_config: settings.physics,
       topology_mode: settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle'),
       quad_topology: Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
       bake_normal_maps: settings.bakeNormalMaps !== false,
+      texture_enabled: textureEnabled,
+      generate_texture: textureEnabled,
+      auto_paint: textureEnabled,
+      ...(textureEnabled ? {
+        texture_resolution: endpoint.includes('image-to-textured-mesh')
+          ? Math.min(numericTextureResolution, 4096)
+          : textureResolutionPreset,
+        texture_resolution_preset: textureResolutionPreset,
+      } : {}),
     };
-    
-    if (isTextured) {
-      const textureResolutionByQuality: Record<string, number> = {
-        low: 512,
-        medium: 1024,
-        high: 2048,
-        ultra: 4096,
-        '8k': 4096,
-      };
-      body.texture_resolution = textureResolutionByQuality[settings.textureQuality] || 2048;
-    }
   }
   
   return {
@@ -252,17 +273,14 @@ function applyModelSpecificParams(
       modelParameters.enable_flashvdm = true;
     }
   
-  // Pass Paint-v2-1 parameters for shape models to enable auto-chaining
-  if (isPaintModel) {
+  // Pass Paint-v2-1 parameters for shape models to enable auto-chaining (only when texturing is enabled)
+  if (isPaintModel && Boolean(modelParameters.texture_enabled)) {
     modelParameters.max_num_view = settings.maxNumView ?? 6;
     modelParameters.resolution = settings.resolution ?? 512;
     modelParameters.auto_paint = true;
     modelParameters.paint_model_preference = 'hunyuan3d_paint_v21_image_mesh_painting';
     modelParameters.paint_resolution = settings.paintResolution ?? (
-      settings.textureQuality === 'low' ? 512 :
-      settings.textureQuality === 'medium' ? 512 :
-      settings.textureQuality === '8k' ? 768 :
-      768
+      modelParameters.texture_resolution === '8K' ? 768 : 512
     );
   }
 }

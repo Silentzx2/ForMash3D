@@ -980,23 +980,48 @@ async def cancel_mesh_generation(
             if current_user.role != UserRole.ADMIN and job_user_id != current_user.user_id:
                 raise HTTPException(status_code=403, detail="Access denied to this job")
 
-        if job_status.get("status") not in {"queued", "processing", "running"}:
+        current_status = job_status.get("status")
+        if current_status not in {"queued", "processing", "running"}:
             return {
                 "job_id": job_id,
-                "status": job_status.get("status"),
+                "status": current_status,
                 "cancelled": False,
                 "message": "Job is no longer cancellable",
             }
 
         cancelled = await scheduler.cancel_job(job_id)
-        if not cancelled:
-            await scheduler.job_queue.cancel_job(job_id, force=True)
+        if cancelled:
+            return {
+                "job_id": job_id,
+                "status": "cancelled",
+                "cancelled": True,
+                "message": "Generation job cancelled",
+            }
+
+        updated_status = await scheduler.get_job_status(job_id)
+        latest_status = (updated_status.get("status") if updated_status else None) or current_status
+        if latest_status == "cancelled":
+            return {
+                "job_id": job_id,
+                "status": "cancelled",
+                "cancelled": True,
+                "message": "Generation job cancelled",
+            }
+
+        if latest_status in {"queued", "processing", "running"}:
+            return {
+                "job_id": job_id,
+                "status": latest_status,
+                "cancelled": False,
+                "cancel_requested": True,
+                "message": "Cancellation requested",
+            }
 
         return {
             "job_id": job_id,
-            "status": "cancelled",
-            "cancelled": True,
-            "message": "Generation job cancelled",
+            "status": latest_status,
+            "cancelled": False,
+            "message": "Job is no longer cancellable",
         }
     except HTTPException:
         raise

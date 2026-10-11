@@ -372,24 +372,25 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         return {"input": ["png", "jpg", "jpeg"], "output": ["glb", "obj"]}
 
 
-class Hunyuan3DShapeV21ImageToTexturedMeshAdapter(ImageToMeshModel):
+class Hunyuan3DShapeV21ImageToTexturedMeshAdapter(Hunyuan3DShapeV21ImageToRawMeshAdapter):
     """
-    Adapter for Hunyuan3D-Shape-v2-1 image-to-textured-mesh generation.
+    Deprecated adapter for Hunyuan3D-Shape-v2-1 image-to-textured-mesh generation.
 
-    Chains shape generation followed by Paint-v2-1 texture painting.
+    Per Docs/TASKS.md Section 4, auto-chaining wrapper is deprecated.
+    Shape generation produces raw geometry only without internally calling Hunyuan Paint.
     """
 
-    FEATURE_TYPE = "image_to_textured_mesh"
+    FEATURE_TYPE = "image_to_raw_mesh"
     MODEL_ID = "hunyuan3d_shape_v21_image_to_textured_mesh"
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.vram_requirement = 29000
-        self.supported_output_formats = ["glb", "obj"]
-
-    def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Chain shape generation + paint."""
-        raise NotImplementedError(
-            "Use shape + paint pipeline chaining via scheduler. "
-            "This adapter requires separate shape and paint stages."
+        logger.warning(
+            "Hunyuan3DShapeV21ImageToTexturedMeshAdapter is deprecated. "
+            "Normal generation produces raw geometry only. Texturing is handled by the centralized texture stage."
         )
+        super().__init__(*args, **kwargs)
+
+
+# Backward-compatible alias for raw geometry generation
+Hunyuan3DShapeV21ImageToMeshAdapter = Hunyuan3DShapeV21ImageToRawMeshAdapter
+

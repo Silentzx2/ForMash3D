@@ -457,8 +457,14 @@ export const GeneratePanel: React.FC = () => {
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
   const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview_input);
   
-  const supportsTextureGeneration = activeModelObj?.supports_texture ?? false;
-  const showTextureToggle = supportsTextureGeneration;
+  // Centralized Textured Generation toggle: visible for every supported geometry model
+  const showTextureToggle = true;
+  const textureAtlasSize: '1K' | '2K' | '4K' | '8K' =
+    generationSettings.texture_resolution ||
+    generationSettings.textureResolution ||
+    (generationSettings.textureQuality === 'low' ? '1K' :
+     generationSettings.textureQuality === 'medium' ? '1K' :
+     generationSettings.textureQuality === '8k' ? '8K' : '2K');
 
   const physics = generationSettings.physics ?? {
     bodyType: 'auto' as const,
@@ -1364,7 +1370,7 @@ export const GeneratePanel: React.FC = () => {
                   <span>AI 3D Engine</span>
                 </span>
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
-                  {activeModelObj?.supports_texture ? 'PBR Textured' : 'Geometry'}
+                  {generationSettings.generateTexture !== false ? `Textured (${textureAtlasSize})` : 'Raw Geometry'}
                 </span>
               </div>
 
@@ -1387,7 +1393,7 @@ export const GeneratePanel: React.FC = () => {
                     </span>
                     <span className="text-[10px] text-zinc-400 truncate mt-0.5">
                       {activeModelObj?.vram_required_mb ? `${Math.round(activeModelObj.vram_required_mb / 1024)}GB VRAM · ` : ''}
-                      {activeModelObj?.supports_texture ? 'Full PBR Output' : 'High-Density Mesh'}
+                      {generationSettings.generateTexture !== false ? `${textureAtlasSize} PBR Output` : 'Raw Geometry Mesh'}
                     </span>
                   </div>
                 </div>
@@ -1414,7 +1420,6 @@ export const GeneratePanel: React.FC = () => {
                           setGenerationSettings(prev => ({
                             ...prev,
                             aiModel: m.id,
-                            generateTexture: m.supports_texture ? true : false,
                           }));
                           setModelDropdownOpen(false);
                         }}
@@ -1466,14 +1471,19 @@ export const GeneratePanel: React.FC = () => {
 
               {/* Engine Feature Toggles: PBR Texture & Low VRAM */}
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
-                {/* PBR Texture Toggle - shown only when the selected model supports texture generation */}
+                {/* Textured Generation Toggle - visible for every image-to-3D geometry model */}
                 {showTextureToggle && (
                   <button
                     type="button"
-                    onClick={() => setGenerationSettings(prev => ({
-                      ...prev,
-                      generateTexture: prev.generateTexture === false,
-                    }))}
+                    onClick={() => setGenerationSettings(prev => {
+                      const nextVal = prev.generateTexture === false;
+                      return {
+                        ...prev,
+                        generateTexture: nextVal,
+                        texture_enabled: nextVal,
+                        texture_resolution: prev.texture_resolution || prev.textureResolution || '2K',
+                      };
+                    })}
                     className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
                       generationSettings.generateTexture !== false
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
@@ -1481,9 +1491,9 @@ export const GeneratePanel: React.FC = () => {
                     }`}
                   >
                     <div className="flex flex-col min-w-0 pr-1">
-                      <span className="text-[11px] font-bold text-white leading-tight">PBR Texture</span>
+                      <span className="text-[11px] font-bold text-white leading-tight">Textured Generation</span>
                       <span className="text-[9px] text-zinc-400">
-                        {generationSettings.generateTexture !== false ? 'Color Maps' : 'Disabled'}
+                        {generationSettings.generateTexture !== false ? `${textureAtlasSize} Atlas` : 'Raw Mesh'}
                       </span>
                     </div>
                     <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
@@ -1556,6 +1566,48 @@ export const GeneratePanel: React.FC = () => {
                 </button>
                 )}
               </div>
+
+              {/* Output Atlas Size Selector when Textured Generation is ON */}
+              {generationSettings.generateTexture !== false && (
+                <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-2 mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">Output Atlas Size</span>
+                    <span className="text-[10px] font-mono text-primary font-bold">{textureAtlasSize}</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(['1K', '2K', '4K', '8K'] as const).map(size => {
+                      const isSelected = textureAtlasSize === size;
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setGenerationSettings(prev => ({
+                            ...prev,
+                            texture_resolution: size,
+                            textureResolution: size,
+                            textureQuality: size === '1K' ? 'low' : size === '2K' ? 'high' : size === '4K' ? 'high' : '8k',
+                          }))}
+                          className={`py-1.5 rounded-lg text-xs font-mono font-bold transition-all text-center cursor-pointer ${
+                            isSelected
+                              ? 'bg-primary text-black font-black shadow-sm'
+                              : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(textureAtlasSize === '4K' || textureAtlasSize === '8K') && (
+                    <div className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300 text-[10px] leading-relaxed">
+                      <HugeiconsIcon icon={TriangleAlertIcon} size={14} className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                      <span>
+                        <strong>High Resource Notice:</strong> {textureAtlasSize} atlas generation takes longer and requires high GPU VRAM (&gt;16GB). The high-quality texture engine will bake an enhanced {textureAtlasSize} UV atlas.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
 
@@ -1990,9 +2042,7 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Topology Target</span>
                   <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                    {activeModelObj?.supports_texture
-                      ? 'Triangles (PBR Native)'
-                      : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
                       ? 'Quads (post-process)'
                       : 'Triangles'}
                   </span>
@@ -2017,7 +2067,6 @@ export const GeneratePanel: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(activeModelObj?.supports_texture && generationSettings.generateTexture !== false)}
                     onClick={() => {
                       setGenerationSettings(prev => ({
                         ...prev,
@@ -2025,16 +2074,14 @@ export const GeneratePanel: React.FC = () => {
                         quadTopology: true,
                       }));
                     }}
-                    title={activeModelObj?.supports_texture && generationSettings.generateTexture !== false ? 'Quads only available on untextured raw meshes' : 'Convert to quad-dominant topology in post-processing'}
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
-                      activeModelObj?.supports_texture && generationSettings.generateTexture !== false
-                        ? 'opacity-40 cursor-not-allowed bg-[hsl(var(--surface-1))] text-zinc-500 border border-white/[0.04]'
-                        : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
-                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
+                    title="Convert to quad-dominant topology in post-processing"
+                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                      (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                        ? 'bg-primary text-black font-black shadow-sm'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08]'
                     }`}
                   >
-                    <span>■ Quads (raw only)</span>
+                    <span>■ Quads</span>
                   </button>
                 </div>
                 {/* 3. Real-ESRGAN 4x Super-Resolution enhancement for Hunyuan3D */}

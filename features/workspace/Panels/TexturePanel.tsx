@@ -101,19 +101,31 @@ export const TexturePanel: React.FC = () => {
   const textureCapableModels = useMemo(() => {
     const textModels = (modelRegistry?.['text_mesh_painting'] || []).filter(isTexturePaintingModel);
     const imageModels = (modelRegistry?.['image_mesh_painting'] || []).filter(isTexturePaintingModel);
-    const combined = Array.from(new Set([...textModels, ...imageModels]));
+    // Exclude legacy TRELLIS geometry-generation textured variants from standard texture flow
+    const combined = Array.from(new Set([...textModels, ...imageModels])).filter(id => !id.includes('trellis'));
     const defaults = [
-      'trellis_image_mesh_painting',
-      'trellis2_image_mesh_painting',
+      'paint3d_image_mesh_painting',
       'hunyuan3d_paint_v21_image_mesh_painting',
-      'trellis_text_mesh_painting',
     ];
     const finalIds = combined.length > 0 ? combined : defaults;
+    if (!finalIds.includes('paint3d_image_mesh_painting')) finalIds.unshift('paint3d_image_mesh_painting');
+    if (!finalIds.includes('hunyuan3d_paint_v21_image_mesh_painting')) finalIds.push('hunyuan3d_paint_v21_image_mesh_painting');
     return finalIds.map(formatTextureModel);
   }, [modelRegistry]);
 
   const [textureModelDropdownOpen, setTextureModelDropdownOpen] = useState(false);
   const [meshDropdownOpen, setMeshDropdownOpen] = useState(false);
+
+  // Mesh original source reference image (from generation or asset metadata)
+  const meshOriginalImage = useMemo(() => {
+    if (!currentAsset) return null;
+    return (
+      currentAsset.referenceImage ||
+      currentAsset.inputImage ||
+      (currentAsset.category === 'generation' ? currentAsset.thumbnail : null) ||
+      null
+    );
+  }, [currentAsset]);
 
   // Auto-select first asset if none currently selected
   useEffect(() => {
@@ -128,6 +140,16 @@ export const TexturePanel: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const springTransition = { type: 'spring' as const, stiffness: 400, damping: 25 };
+
+  // Auto-route texture model based on requested atlas resolution (1K/2K -> Paint3D, 4K/8K -> Hunyuan3D-Paint)
+  useEffect(() => {
+    const targetModelId = (textureSettings.resolution === '4K' || textureSettings.resolution === '8K')
+      ? 'hunyuan3d_paint_v21_image_mesh_painting'
+      : 'paint3d_image_mesh_painting';
+    if (textureSettings.modelId !== targetModelId) {
+      setTextureSettings(prev => ({ ...prev, modelId: targetModelId }));
+    }
+  }, [textureSettings.resolution, textureSettings.modelId, setTextureSettings]);
 
   // Auto-select valid texture-capable model when none or invalid selected
   useEffect(() => {

@@ -755,6 +755,8 @@ class MultiprocessModelScheduler:
         self.last_worker_error: Dict[str, str] = {}
         # Backoff before the next VRAM placement attempt (monotonic deadline, 0 = none)
         self._vram_wait_until: float = 0.0
+        self._cancel_requested_jobs: set[str] = set()
+        self._active_postprocess_cancels: Dict[str, threading.Event] = {}
 
         # Per-worker locks to prevent race conditions between check-and-mark
         self.worker_locks: Dict[str, asyncio.Lock] = {}
@@ -865,7 +867,7 @@ class MultiprocessModelScheduler:
         return None
 
     async def cancel_job(self, job_id: str) -> bool:
-        """Stop the owning worker, then finalize the job as cancelled."""
+        """Stop the owning worker, or set cooperative cancel signal for active post-processing."""
         job = await self.job_queue.get_job(job_id)
         if job is None:
             return False
@@ -880,9 +882,14 @@ class MultiprocessModelScheduler:
 
         stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
         if not stopped:
-            logger.warning("No live worker found for processing job %s; forcing queue cancellation", job_id)
-            await self.job_queue.cancel_job(job_id, force=True)
-            stopped = True
+            logger.info("No live worker found for processing job %s; setting cooperative cancel request", job_id)
+            self._cancel_requested_jobs.add(job_id)
+            if job_id in self._active_postprocess_cancels:
+                self._active_postprocess_cancels[job_id].set()
+            if hasattr(self.job_queue, "request_cancel"):
+                await self.job_queue.request_cancel(job_id)
+            return False
+
         self._cleanup_temporary_inputs(job)
         return stopped
 
@@ -1139,6 +1146,9 @@ class MultiprocessModelScheduler:
 
         for job_id in await get_requests():
             try:
+                self._cancel_requested_jobs.add(job_id)
+                if job_id in self._active_postprocess_cancels:
+                    self._active_postprocess_cancels[job_id].set()
                 stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
                 if not stopped:
                     job = await self.job_queue.get_job(job_id)
@@ -1387,11 +1397,36 @@ class MultiprocessModelScheduler:
         """Wait for UniRig, persist the durable rigged artifact, then finalize the parent job."""
         try:
             while True:
+                parent_job = await self.job_queue.get_job(parent_job_id)
+                parent_status = _extract_job_status(parent_job)
+                if parent_status in {"cancelled", "failed"}:
+                    logger.info("Parent job %s is %s; cancelling auto-rig child %s", parent_job_id, parent_status, child_job_id)
+                    await self.cancel_job(child_job_id)
+                    return
+
                 child = await self.job_queue.get_job(child_job_id)
                 status = _extract_job_status(child)
                 if status in {"completed", "failed", "cancelled"}:
                     break
                 await asyncio.sleep(1.0)
+
+            # Check parent job status before processing child results
+            parent_job = await self.job_queue.get_job(parent_job_id)
+            parent_status = _extract_job_status(parent_job)
+            if parent_status in {"cancelled", "failed"}:
+                logger.info("Parent job %s is %s; cleaning up child %s and exiting", parent_job_id, parent_status, child_job_id)
+                child_result = (
+                    child.get("result")
+                    if isinstance(child, dict)
+                    else getattr(child, "result", None)
+                ) or {}
+                child_path = child_result.get("output_mesh_path")
+                if child_path and Path(child_path).is_file():
+                    try:
+                        Path(child_path).unlink()
+                    except OSError:
+                        pass
+                return
 
             result = dict(base_result)
             child_result = (
@@ -1452,6 +1487,13 @@ class MultiprocessModelScheduler:
                 result["degraded_reasons"] = list(result.get("degraded_reasons", [])) + ["auto_rig_failed"]
 
             result["workflow_rig_job_id"] = child_job_id
+
+            # Check parent job status again before calling complete_job
+            parent_job = await self.job_queue.get_job(parent_job_id)
+            if parent_job and _extract_job_status(parent_job) in {"cancelled", "failed"}:
+                logger.info("Parent job %s is %s; skipping complete_job after auto-rig", parent_job_id, _extract_job_status(parent_job))
+                return
+
             await self.job_queue.update_job_progress(
                 parent_job_id,
                 1.0,
@@ -1466,6 +1508,11 @@ class MultiprocessModelScheduler:
                 exc,
                 exc_info=True,
             )
+            parent_job = await self.job_queue.get_job(parent_job_id)
+            if parent_job and _extract_job_status(parent_job) in {"cancelled", "failed"}:
+                logger.info("Parent job %s is %s; skipping fallback complete_job", parent_job_id, _extract_job_status(parent_job))
+                return
+
             fallback = dict(base_result)
             fallback["rigging"] = {
                 "status": "failed",
