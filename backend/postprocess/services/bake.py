@@ -20,7 +20,7 @@ import threading
 from pathlib import Path
 from uuid import uuid4
 
-from postprocess.config import BAKE_TIMEOUT_S, BLENDER_EXECUTABLE, WORK_DIR
+from postprocess.config import BAKE_TIMEOUT_S, WORK_DIR
 from ..schemas import BakeOptions, FlattenOptions
 
 SENTINEL = "GENSTUDIO_EVT "  # keep in sync with app/tools/bake_worker.py

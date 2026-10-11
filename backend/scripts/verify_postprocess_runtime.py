@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -60,8 +61,25 @@ def main() -> int:
 
     blender_name = os.environ.get("BLENDER_EXECUTABLE", "blender")
     blender = resolve_executable(blender_name)
+    bpy_runtime = importlib.util.find_spec("bpy") is not None
     if blender is None:
-        failures.append(f"Blender executable not found: {blender_name}")
+        if not bpy_runtime:
+            failures.append(
+                f"Blender runtime not found: no '{blender_name}' executable and bpy is not importable"
+            )
+        else:
+            probe = subprocess.run(
+                [sys.executable, "-c", 'import bpy; print("ForMash3D Blender runtime:", bpy.app.version_string)'],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            if probe.returncode != 0:
+                detail = (probe.stderr or probe.stdout or "").strip()
+                failures.append(f"bpy runtime smoke test failed: {detail[-2000:]}")
+            else:
+                blender = f"bpy module in {sys.executable} ({probe.stdout.strip().splitlines()[-1]})"
     else:
         probe = subprocess.run(
             [

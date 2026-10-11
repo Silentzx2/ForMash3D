@@ -1,15 +1,8 @@
-transformers==4.44.0
+# UniRig model dependencies (Python 3.10 + PyTorch 2.6.0+cu124)
+# (Core torch, transformers, trimesh, open3d, timm, einops locked centrally in backend/requirements.txt)
 python-box
-einops
-omegaconf
-pytorch_lightning
 lightning
 addict
-timm
 fast-simplification
-https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl
-flash_attn
-trimesh
-open3d
 pyrender
-huggingface_hub
+flash_attn

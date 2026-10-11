@@ -14,12 +14,11 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import threading
 from pathlib import Path
 from uuid import uuid4
 
-from postprocess.config import BLENDER_EXECUTABLE, CONVERT_TIMEOUT_S, WORK_DIR
+from postprocess.config import CONVERT_TIMEOUT_S, WORK_DIR, blender_worker_argv
 from ..schemas import ConvertOptions
 
 SENTINEL = "GENSTUDIO_EVT "  # keep in sync with app/tools/fbx_worker.py
@@ -57,16 +56,10 @@ def run_convert_fbx(glb_bytes: bytes, opts: ConvertOptions, progress) -> tuple[b
 
 def _run_worker(in_path: Path, out_path: Path, opt_path: Path, progress) -> dict:
     proc = subprocess.Popen(
-        [
-            BLENDER_EXECUTABLE,
-            "--background",
-            "--python",
-            str(_WORKER),
-            "--",
-            "--input", str(in_path),
-            "--output", str(out_path),
-            "--options", str(opt_path),
-        ],
+        blender_worker_argv(
+            _WORKER,
+            ["--input", str(in_path), "--output", str(out_path), "--options", str(opt_path)],
+        ),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

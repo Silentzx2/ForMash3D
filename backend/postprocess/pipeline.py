@@ -28,7 +28,7 @@ from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path
 from core.utils.log_formatters import format_banner, format_box, format_bytes
 from core.quality.evaluation import compare_meshes, quality_gate
 from core.scheduler.resource_planner import configure_cpu_runtime, cpu_count
-from .config import BLENDER_EXECUTABLE
+from .config import blender_expr_argv, blender_runtime_available
 from .meshio import load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
 from .services.auto_retopo import run_auto_retopo
@@ -481,8 +481,12 @@ def _export_gltf_embedded(glb_bytes: bytes, target: Path) -> None:
     except Exception as exc:
         logger.debug("Pure Python GLTF embedded conversion failed: %s; trying Blender fallback", exc)
 
-    # 2. Blender fallback if installed
-    if shutil.which(BLENDER_EXECUTABLE):
+    # 2. Blender fallback (executable on PATH, or the bpy-module runtime)
+    try:
+        blender_available = blender_runtime_available()
+    except Exception:
+        blender_available = False
+    if blender_available:
         with tempfile.TemporaryDirectory(prefix="formash3d-gltf-") as temp_dir:
             temp_root = Path(temp_dir)
             input_path = temp_root / "mesh.glb"
@@ -494,7 +498,7 @@ def _export_gltf_embedded(glb_bytes: bytes, target: Path) -> None:
                 f"bpy.ops.export_scene.gltf(filepath={str(target)!r}, export_format='GLTF_EMBEDDED')"
             )
             result = subprocess.run(
-                [BLENDER_EXECUTABLE, "--background", "--python-expr", expr],
+                blender_expr_argv(expr),
                 capture_output=True,
                 text=True,
                 check=False,

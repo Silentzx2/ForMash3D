@@ -1,3 +1,10 @@
+## 2026-10-11 — [Unified Model Dependencies & Multi-Model Conflict Elimination]
+
+- **Centralized Model Baseline in backend/requirements.txt**: Locked authoritative versions for core packages shared across all neural models (`transformers==4.46.3`, `diffusers==0.30.3`, `huggingface_hub==0.25.0`, `torch==2.6.0+cu124`, `torchvision==0.21.0+cu124`, `accelerate>=1.0.0`, `trimesh==4.6.12`, `numpy==1.26.4`, `einops>=0.8.0`, `safetensors>=0.4.4`, `timm>=1.0.0`, `rembg>=2.0.60`, `kornia>=0.6.0`, `omegaconf>=2.3.0`, `xatlas>=0.0.7`, `loguru>=0.7.0`, `imageio>=2.9.0`).
+- **Eliminated Third-Party Downgrades**: Sanitized individual model requirements files (`zero123plus`, `FastMesh`, `TripoSF`, `TripoSG`, `TripoSR`, `UniRig`, `Unique3D`, `ardy`, `hunyuan-requirements.txt`, `Paint3D`) removing conflicting legacy pins (`diffusers==0.20.2`, `transformers==4.29.2/5.8.1`, `trimesh==4.5.3/4.2.3`, `einops==0.7.0`) and non-headless opencv packages.
+- **Headless Blender Runtime Fallback**: Verified postprocess runtime uses the installed official `bpy==4.0.0` module headlessly when a standalone blender binary is absent.
+- Docs updated: MEMORY, CHANGELOG, ARCHITECTURE.
+
 ## 2026-10-11 — [Paint3D 1K/2K Integration & Centralized Texture Pipeline]
 
 - **Paint3D model adapter**: Integrated OpenTexture/Paint3D for 1K (1024x1024) and 2K (2048x2048) texture synthesis (`backend/adapters/paint3d_adapter.py`) into Python 3.10 / CUDA 12.4 / PyTorch 2.6.0 runtime without downgrading base environment packages.
@@ -16,13 +23,5 @@
 - **Unique3D vertex colors preserved**: Set `texture_generation: false` and updated metadata to `has_texture: False, vertex_color: True`, preserving native PyTorch3D vertex colors without 2D texture baking.
 - **ModelFactory & alias resolution**: Added `get_model_adapter()`, registered raw adapters under `image_to_raw_mesh`, and normalized legacy `image_to_textured_mesh` requests to raw geometry via `LEGACY_IMAGE_TO_RAW_ALIASES`.
 - Docs updated: MEMORY, CHANGELOG, DECISIONS, ARCHITECTURE.
-
-## 2026-10-11 — [Backend Cancellation & Redis/SQLite Consistency]
-
-- **Redis update_job_progress terminal status guard**: `update_job_progress` now checks job status first; if already terminal (`completed`, `failed`, `cancelled`), progress, stage, message, and logs are preserved without mutation.
-- **SQLite cancellation persistence**: `cancel_job` now durably persists confirmed cancellation to SQLite via `db_manager.save_job` mirroring `complete_job` and `fail_job`.
-- **Truthful cancellation response**: `cancel_mesh_generation` propagates real scheduler outcomes instead of forcing queue cancellation (`force=True`); accurately reports `cancelled=True` or `cancelled=False` with `cancel_requested=True`.
-- **Frontend polling cancel sync**: `cancelExecution` updates `jobsById` and `jobsByIdRef.current` with `status: 'interrupted'`, preventing the polling loop from reactivating cancelled jobs.
-- Docs updated: MEMORY, CHANGELOG.
 
 

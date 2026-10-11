@@ -42,8 +42,7 @@ cupy-cuda12x==13.4.0
 # ONNX Runtime
 onnxruntime>=1.16.0
 
-# OpenCV (full package, distinct from opencv-python-headless in backend/requirements.txt)
-opencv-python>=4.8.0
+# OpenCV is locked to opencv-python-headless in backend/requirements.txt
 
 # ═══════════════════════════════════════════════════════════════
 # SHAPE v2.1 — Additional dependencies for Hunyuan3D-Shape-v2-1
