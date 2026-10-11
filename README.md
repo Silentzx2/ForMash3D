@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="23 user-facing models / 24 registered adapters"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="ForMash3D neural 3D model integrations"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -122,13 +122,13 @@ flowchart TD
     classDef amber fill:#2d1b0d,stroke:#f59e0b,stroke-width:2px,color:#fde68a;
     classDef slate fill:#181c24,stroke:#64748b,stroke-width:2px,color:#f1f5f9;
 
-    subgraph Client [Studio Frontend — Next.js 16 (:3000)]
+    subgraph Client [Studio Frontend Next.js 16 port 3000]
         UI["Studio Workspace UI<br/>React 19 + Radix UI"]:::gold
         VIEWER["3D WebGL Viewport<br/>Three.js / React Three Fiber"]:::gold
         STORES["Reactive State Stores<br/>Zustand + TanStack Query"]:::gold
     end
 
-    subgraph Gateway [API Gateway & Control Plane — FastAPI (:7842)]
+    subgraph Gateway [API Gateway and Control Plane FastAPI port 7842]
         ROUTERS["API Routers<br/>Generation / Retopo / UV / Rigging"]:::cyan
         QUEUE["Distributed Job Queue<br/>Redis 7 + Single-Worker Memory"]:::cyan
     end
@@ -148,7 +148,7 @@ flowchart TD
         UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
 
-    subgraph PostProcess [Production Post-Processing Core (Ported from 3DGenStudio)]
+    subgraph PostProcess [Production Post-Processing Core based on 3DGenStudio]
         CHECKPOINT["source.glb<br/>Immutable Master Raw Mesh"]:::green
         REPAIR["Watertight Repair<br/>Boundary Component Guard"]:::green
         SIMPLIFY["PyMeshLab Decimator<br/>Texture-Preserving Fallback"]:::green
@@ -166,7 +166,7 @@ flowchart TD
 
     %% Clean Node-to-Node Data Connections
     UI --> STORES
-    STORES -->|"REST / SSE Stream"| ROUTERS
+    STORES -->|REST / SSE Stream| ROUTERS
     ROUTERS --> QUEUE
     QUEUE --> GPU_LOCK
     GPU_LOCK --> MONITOR
@@ -178,10 +178,10 @@ flowchart TD
     MONITOR --> RIGGING
     MONITOR --> UNIQUE3D
 
-    HUNYUAN -->|"Model Native GLB"| CHECKPOINT
-    TRELLIS -->|"Model Native GLB"| CHECKPOINT
-    TRIPO -->|"Model Native GLB"| CHECKPOINT
-    EXTRAS -->|"Model Native GLB"| CHECKPOINT
+    HUNYUAN -->|Model Native GLB| CHECKPOINT
+    TRELLIS -->|Model Native GLB| CHECKPOINT
+    TRIPO -->|Model Native GLB| CHECKPOINT
+    EXTRAS -->|Model Native GLB| CHECKPOINT
 
     CHECKPOINT --> REPAIR
     REPAIR --> SIMPLIFY
@@ -193,14 +193,14 @@ flowchart TD
 
     QA --> ASSET_STORE
     ASSET_STORE --> ZIP
-    ASSET_STORE -.->|"Model Stream"| VIEWER
-    RETOPO -.->|"Quad Mesh"| ASSET_STORE
-    RIGGING -.->|"Rigged Bones"| ASSET_STORE
+    ASSET_STORE -.->|Model Stream| VIEWER
+    RETOPO -.->|Quad Mesh| ASSET_STORE
+    RIGGING -.->|Rigged Bones| ASSET_STORE
 ```
 
 ---
 
-## 🤖 Supported Model Catalog (20 User-Facing Models / 20 Registered Adapters)
+## 🤖 Supported Model Catalog
 
 The model registry is dynamically configured via `backend/config/models.yaml` and loaded lazily:
 
@@ -502,7 +502,6 @@ Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/a
 ## Recent Fixes (2026-10-05)
 
 - Fixed Minified React error #130 on settings page by adding error handling for missing workspace context.
-- Resolved Zero123Plus worker job spam issue by adding detailed logging and disabling background removal by default.
 - Made "smash mash gen" feature visible in UI by adding fallback to hardcoded smart presets when API fails.
 
 ### Runtime note
