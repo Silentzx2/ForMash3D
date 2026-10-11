@@ -201,7 +201,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Generating 3D shape with Mini Turbo on {self.device}...")
             octree_res = inputs.get("octree_resolution")
             if octree_res is None:
-                octree_res = 512 if inputs.get("source_quality") == "max" else 380
+                octree_res = 512 if inputs.get("source_quality", "max") == "max" else 380
             else:
                 octree_res = int(octree_res)
 
@@ -296,8 +296,8 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Octree resolution for marching cubes reconstruction (official recommended: 380, fast: 256).",
-                    "default": 380,
+                    "description": "Maximum supported octree resolution for high-fidelity raw extraction; Turbo sampler remains at its trained 5 steps.",
+                    "default": 512,
                     "minimum": 64,
                     "maximum": 512,
                     "required": False,
@@ -323,7 +323,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 "low_vram_mode": {
                     "type": "boolean",
                     "description": "Enable low-VRAM mode for reduced memory usage",
-                    "default": True,
+                    "default": False,
                     "required": False,
                 },
                 "seed": {

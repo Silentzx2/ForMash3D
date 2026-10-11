@@ -219,7 +219,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             if num_inference_steps is None:
                 num_inference_steps = 50
             num_latents = int(inputs.get("num_latents", 32768))
-            octree_res = int(inputs.get("octree_res", 1024))
+            octree_res = int(inputs.get("octree_res", 2048))
             chunk_size = inputs.get("chunk_size", 16000)
             scale = inputs.get("scale", 0.99)
             seed = inputs.get("seed", 42)
@@ -246,6 +246,10 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 chunk_size=chunk_size,
                 scale=scale,
                 seed=seed,
+                coarse_num_inference_steps=int(inputs.get("hunyuan_coarse_num_inference_steps", 50)),
+                coarse_octree_resolution=int(inputs.get("hunyuan_coarse_octree_resolution", 512)),
+                coarse_guidance_scale=float(inputs.get("hunyuan_coarse_guidance_scale", 5.0)),
+                coarse_num_chunks=int(inputs.get("hunyuan_coarse_num_chunks", 20000)),
             )
             
             # Generate final output path with correct format
@@ -322,23 +326,24 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "num_latents": {
                     "type": "integer",
-                    "description": "Number of latent tokens for shape representation",
+                    "description": "Token count fixed by the released UltraShape checkpoint/config.",
                     "default": 32768,
-                    "minimum": 8192,
-                    "maximum": 65536,
+                    "minimum": 32768,
+                    "maximum": 32768,
+                    "readOnly": True,
                     "required": False
                 },
                 "octree_res": {
                     "type": "integer",
-                    "description": "Octree resolution for marching cubes extraction",
-                    "default": 1024,
+                    "description": "Highest supported octree resolution for raw refinement geometry.",
+                    "default": 2048,
                     "enum": [512, 1024, 2048],
                     "required": False
                 },
                 "chunk_size": {
                     "type": "integer",
-                    "description": "Chunk size for inference to manage memory usage",
-                    "default": 8000,
+                    "description": "Chunk size for high-memory maximum-throughput inference.",
+                    "default": 16000,
                     "minimum": 1000,
                     "maximum": 16000,
                     "required": False
