@@ -159,7 +159,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             dtype = torch.float16
 
-            # 1. Background remover
+            # 1. Background remover (required: prepare_image calls it unconditionally)
             rmbg_source = self._resolve_rmbg_source()
             try:
                 from briarmbg import BriaRMBG
@@ -167,8 +167,10 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 self.rmbg_net.eval()
                 logger.info(f"✓ TripoSG RMBG network loaded from {rmbg_source}")
             except Exception as rmbg_err:
-                logger.warning(f"RMBG-1.4 model failed to load ({rmbg_err}); background removal will use fallback")
-                self.rmbg_net = None
+                raise RuntimeError(
+                    f"TripoSG RMBG-1.4 failed to load from {rmbg_source}: {rmbg_err}. "
+                    "TripoSG requires background removal; verify the RMBG-1.4 weights are installed."
+                ) from rmbg_err
 
             # 2. TripoSG Pipeline
             try:
@@ -271,10 +273,14 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             if not torch.cuda.is_available():
                 raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            # Flash VAE decoder is the official upstream extraction path
+            # (scripts/inference_triposg.py relies on the pipeline default) and
+            # runs exact SDPA attention, so it stays enabled on supported GPUs.
+            # The previous quality-keyed gate keyed on a value the generation
+            # path never sends, and the vendored hierarchical path queries a far
+            # denser grid, so silently routing there would trade quality for
+            # OOM risk on the same hardware.
             use_flash_decoder = torch.cuda.get_device_capability()[0] >= 8
-            quality = str(inputs.get("quality") or inputs.get("meshQuality") or "").lower()
-            if quality in {"high", "ultra"} and inputs.get("force_fast_decoder") is not True:
-                use_flash_decoder = False
 
             if is_scribble and prompt:
                 # Run scribble pipeline

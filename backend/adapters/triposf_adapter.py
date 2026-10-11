@@ -39,7 +39,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         model_path: Optional[str] = None,
         vram_requirement: Optional[int] = None,
         triposf_root: Optional[str] = None,
-        resolution: int = 1024,
+        resolution: int = 256,
         sample_points_num: int = 1638400,
         pruning: bool = False,
         use_normals: bool = True,
@@ -181,6 +181,19 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         except Exception as e:
             raise RuntimeError(f"Coarse mesh generation via TripoSR failed: {e}") from e
 
+    @staticmethod
+    def _resolve_low_vram_mode(raw) -> str:
+        """Parse the advisory low_vram_mode value into 'low' | 'auto' | 'off'.
+
+        The wire value is the frontend enum 'auto' | 'normal' | 'low' (always
+        'auto' unless the user opts in); a bare bool is accepted for API callers.
+        """
+        if raw is True or raw == "low":
+            return "low"
+        if raw is False or raw in (None, "normal", "off"):
+            return "off"
+        return "auto"
+
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process mesh reconstruction request using TripoSF SparseFlex VAE.
@@ -188,10 +201,11 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
         Inputs:
             - image_path / image_paths / mesh_path / mesh: Input file path
             - output_format: 'glb' or 'obj' (default: 'glb')
-            - resolution: Voxel volume resolution (default: 256)
-            - sample_points_num: Point sampling count (default: 819200)
+            - resolution: Voxel volume resolution (fixed: 256, official VAE resolution)
+            - sample_points_num: Point sampling count (default: 1,638,400; official floor 819,200)
             - pruning: bool (default: False, recommended True for open surfaces)
             - use_normals: bool (default: True)
+            - low_vram_mode: 'auto' (measured decision) | 'low' (explicit downshift) | 'normal'
         """
         try:
             self.status = ModelStatus.PROCESSING
@@ -231,8 +245,13 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             # build encoder/decoder at 256; the 1024³ grid is only the FlexiCubes
             # extraction resolution. A larger volume resolution silently drops
             # voxels outside the constructed 256³ decoder masks.
-            resolution = 256
-            sample_points_num = 1_638_400
+            resolution = self.resolution
+            sample_points_num = self.sample_points_num
+            if inputs.get("resolution") is not None and int(inputs["resolution"]) != resolution:
+                logger.info(
+                    "TripoSF: ignoring requested resolution=%s; official VAE volume resolution %d is enforced",
+                    inputs["resolution"], resolution,
+                )
             pruning = bool(inputs.get("pruning", self.pruning))
             use_normals = bool(inputs.get("use_normals", self.use_normals))
 
@@ -394,10 +413,10 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "resolution": {
                     "type": "integer",
-                    "description": "Fixed at the official 1024 raw-extraction ceiling; constrained GPUs may be downshifted by the runtime guard.",
-                    "default": 1024,
-                    "minimum": 1024,
-                    "maximum": 1024,
+                    "description": "Fixed at the official VAE volume resolution (256); the 1024³ grid is only the FlexiCubes extraction resolution.",
+                    "default": 256,
+                    "minimum": 256,
+                    "maximum": 256,
                     "readOnly": True,
                     "required": False,
                 },
@@ -429,9 +448,10 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                     "required": False,
                 },
                 "low_vram_mode": {
-                    "type": "boolean",
-                    "description": "Enable low VRAM mode (downshifts resolution to 256, sample_points to 409,600). Required for GPUs with <12GB free VRAM to avoid OOM.",
-                    "default": False,
+                    "type": "string",
+                    "enum": ["auto", "normal", "low"],
+                    "description": "VRAM mode: 'auto' downshifts sample density from measured free VRAM, 'low' forces the 409,600-point fallback, 'normal' forces the full 1,638,400-point path.",
+                    "default": "auto",
                     "required": False,
                 },
             }

@@ -196,8 +196,9 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             img = Image.open(image_path)
             has_useful_alpha = img.mode in ("RGBA", "LA", "PA") and np.array(img.getchannel("A")).min() < 255
             raw_image = img.convert("RGBA")
+            background_removal_failed = False
             if no_remove_bg or has_useful_alpha:
-                resized = resize_foreground(raw_image, foreground_ratio)
+                resized = resize_foreground(self._binarize_alpha_mask(raw_image), foreground_ratio)
                 arr = np.array(resized).astype(np.float32) / 255.0
                 if arr.shape[-1] == 4:
                     arr = arr[:, :, :3] * arr[:, :, 3:4] + (1 - arr[:, :, 3:4]) * 0.5
@@ -208,13 +209,17 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                     if self.rembg_session is None:
                         self.rembg_session = rembg.new_session()
                     bg_removed = remove_background(raw_image, self.rembg_session)
-                    resized = resize_foreground(bg_removed, foreground_ratio)
+                    resized = resize_foreground(self._binarize_alpha_mask(bg_removed), foreground_ratio)
                     arr = np.array(resized).astype(np.float32) / 255.0
                     if arr.shape[-1] == 4:
                         arr = arr[:, :, :3] * arr[:, :, 3:4] + (1 - arr[:, :, 3:4]) * 0.5
                     proc_image = Image.fromarray((arr * 255.0).astype(np.uint8))
                 except Exception as bg_err:
-                    logger.warning(f"Background removal failed ({bg_err}), continuing with raw image")
+                    logger.warning(
+                        f"Background removal failed ({bg_err}); proceeding on the un-cropped raw image. "
+                        "Geometry conditioning will be degraded for full-scene inputs."
+                    )
+                    background_removal_failed = True
                     proc_image = raw_image.convert("RGB")
 
             logger.info(
@@ -253,6 +258,8 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 logger.warning(f"to_gradio_3d_orientation failed ({orient_err}), falling back to trimesh rotation")
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(-np.pi / 2, [1, 0, 0]))
                 mesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [0, 1, 0]))
+
+            mesh = self._drop_noise_components(mesh)
 
             logger.info(
                 "\n" + format_box(
@@ -323,6 +330,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                     "texture_bake_succeeded": texture_bake_succeeded,
                     "has_texture": has_texture,
                     "texture_bake_error": texture_bake_error,
+                    "background_removal_failed": background_removal_failed,
                     "mc_resolution": mc_resolution,
                 },
             }
@@ -335,6 +343,37 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
             self.status = ModelStatus.ERROR
             logger.error(f"TripoSR generation failed: {e}")
             raise RuntimeError(f"TripoSR generation failed: {e}") from e
+
+    @staticmethod
+    def _binarize_alpha_mask(image: Image.Image, threshold: int = 128) -> Image.Image:
+        """Harden a soft RGBA mask before foreground cropping.
+
+        The vendored resize_foreground() treats any non-zero alpha as
+        foreground (tsr/utils.py), so soft rembg masks leak the entire frame
+        as foreground and the subject is never actually cropped/centered.
+        """
+        rgba = image.convert("RGBA")
+        arr = np.array(rgba)
+        if arr.shape[-1] == 4:
+            arr[..., 3] = np.where(arr[..., 3] >= threshold, 255, 0).astype(np.uint8)
+        return Image.fromarray(arr, "RGBA")
+
+    @staticmethod
+    def _drop_noise_components(mesh, min_fraction: float = 0.001, min_faces: int = 32) -> trimesh.Trimesh:
+        """Drop disconnected isosurface fragments left by marching cubes."""
+        components = mesh.split(only_watertight=False)
+        if len(components) <= 1:
+            return mesh
+        largest = max(len(c.faces) for c in components)
+        floor = max(min_faces, int(largest * min_fraction))
+        kept = [c for c in components if len(c.faces) >= floor]
+        if len(kept) == len(components):
+            return mesh
+        logger.info(
+            "TripoSR: dropped %d noise components (< %d faces); kept %d of %d",
+            len(components) - len(kept), floor, len(kept), len(components),
+        )
+        return kept[0] if len(kept) == 1 else trimesh.util.concatenate(kept)
 
     @staticmethod
     def _create_baked_mesh(mesh, bake_output):
