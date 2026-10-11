@@ -21,7 +21,7 @@ if str(backend_root) not in sys.path:
 
 
 class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
-    """Test that adapter parameter schemas and defaults match official specifications."""
+    """Test model-supported settings and the app maximum-fidelity source defaults."""
 
     def test_triposg_adapter_contract(self):
         from adapters.triposg_adapter import TripoSGImageToRawMeshAdapter
@@ -40,7 +40,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["mc_resolution"]["default"], 320)
+        self.assertEqual(schema["mc_resolution"]["default"], 512)
         self.assertEqual(schema["foreground_ratio"]["default"], 0.85)
         self.assertFalse(schema["bake_texture"]["default"])
 
@@ -78,7 +78,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(adapter.resolution, 256)
         schema = adapter.get_parameter_schema()["parameters"]
         self.assertEqual(schema["low_vram_mode"]["type"], "string")
-        self.assertEqual(schema["low_vram_mode"]["default"], "auto")
+        self.assertEqual(schema["low_vram_mode"]["default"], "normal")
 
     def test_triposr_binarizes_soft_alpha_masks_before_foreground_crop(self):
         import numpy as np
@@ -137,10 +137,10 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Shape v2.1 uses octree_resolution=256 by default (up to 384 for high detail)
-        self.assertEqual(schema["octree_resolution"]["default"], 256)
+        # Shape v2.1 raw source defaults to the highest supported extraction resolution.
+        self.assertEqual(schema["octree_resolution"]["default"], 512)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
-        self.assertEqual(schema["num_inference_steps"]["default"], 30)
+        self.assertEqual(schema["num_inference_steps"]["default"], 50)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
     def test_hunyuan3d_dit_mini_turbo_contract(self):
@@ -149,11 +149,12 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Tencent turbo preset recommends octree_resolution=380 (or 256 for fast)
-        self.assertEqual(schema["octree_resolution"]["default"], 380)
+        # Turbo keeps its trained 5-step schedule while using max supported extraction resolution.
+        self.assertEqual(schema["octree_resolution"]["default"], 512)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
         self.assertEqual(schema["num_inference_steps"]["default"], 5)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
+        self.assertFalse(schema["low_vram_mode"]["default"])
 
     def test_ultrashape_adapter_contract(self):
         from adapters.ultrashape_adapter import UltraShapeImageToRawMeshAdapter
@@ -161,9 +162,9 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = UltraShapeImageToRawMeshAdapter(vram_requirement=26640)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Official UltraShape config (infer_dit_refine.yaml) uses 32768 latents and 1024 octree resolution
+        # The released checkpoint fixes token count at 32768; max extraction resolution is 2048.
         self.assertEqual(schema["num_latents"]["default"], 32768)
-        self.assertEqual(schema["octree_res"]["default"], 1024)
+        self.assertEqual(schema["octree_res"]["default"], 2048)
         self.assertEqual(schema["num_inference_steps"]["default"], 50)
 
     def test_partpacker_adapter_contract(self):
@@ -174,7 +175,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
 
         self.assertEqual(schema["num_steps"]["default"], 50)
         self.assertEqual(schema["cfg_scale"]["default"], 7.0)
-        self.assertEqual(schema["grid_resolution"]["default"], 384)
+        self.assertEqual(schema["grid_resolution"]["default"], 512)
         self.assertEqual(schema["num_faces"]["default"], -1)
 
     def test_trellis_adapter_contract(self):
@@ -183,8 +184,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TrellisImageToTexturedMeshAdapter(vram_requirement=11776)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["ss_sampling_steps"]["default"], 12)
-        self.assertEqual(schema["slat_sampling_steps"]["default"], 12)
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 50)
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 50)
         self.assertEqual(schema["texture_resolution"]["default"], 2048)
         self.assertEqual(schema["simplify"]["default"], 0.0)
 
@@ -206,6 +207,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["decimation_target"]["default"], -1)
         self.assertFalse(schema["remesh"]["default"])
         self.assertEqual(schema["texture_size"]["default"], 4096)
+        self.assertEqual(schema["pipeline_type"]["default"], "1536_cascade")
+        self.assertEqual(schema["max_num_tokens"]["default"], 262144)
 
     def test_unique3d_adapter_contract(self):
         from adapters.unique3d_adapter import Unique3DImageToRawMeshAdapter
@@ -266,11 +269,12 @@ class TestGenerationProductionContract(unittest.TestCase):
         # Check that the utility file has the model-specific inference steps
         # Image-to-3D only: 5 (hunyuan mini turbo), 12 (trellis image), 50 (triposg, hunyuan, ultrashape)
         self.assertIn("infSteps = 5", build_params_content)
-        self.assertIn("infSteps = 12", build_params_content)
+        self.assertIn("return 50", build_params_content)
         self.assertIn("infSteps = 50", build_params_content)
         self.assertIn("octree_resolution: 512", build_params_content)
-        self.assertIn("mc_resolution = 320", build_params_content)
-        self.assertIn("resolution = 1024", build_params_content)
+        self.assertIn("mc_resolution = 512", build_params_content)
+        self.assertIn("resolution = 256", build_params_content)
+        self.assertIn("octree_res = 2048", build_params_content)
         self.assertIn("ss_sampling_steps", build_params_content)
         self.assertIn("texture_resolution = 2048", build_params_content)
         self.assertIn("texture_size = 4096", build_params_content)

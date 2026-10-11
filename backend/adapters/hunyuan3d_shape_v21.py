@@ -246,7 +246,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Generating 3D shape with Hunyuan3D-Shape-v2-1 on {self.device}...")
             octree_res = inputs.get("octree_resolution") or inputs.get("octree_res") or inputs.get("grid_resolution")
             if octree_res is None:
-                octree_res = 512 if inputs.get("source_quality") == "max" else 256
+                octree_res = 512 if inputs.get("source_quality", "max") == "max" else 256
             else:
                 octree_res = int(octree_res)
 
@@ -258,7 +258,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
 
             num_steps = inputs.get("num_inference_steps") or inputs.get("num_steps")
             if num_steps is None:
-                num_steps = 50 if inputs.get("source_quality") == "max" else 30
+                num_steps = 50 if inputs.get("source_quality", "max") == "max" else 30
             else:
                 num_steps = int(num_steps)
 
@@ -332,8 +332,8 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Octree resolution for marching cubes reconstruction (recommended: 256 for fast, 384 for high detail).",
-                    "default": 256,
+                    "description": "Octree resolution for maximum-fidelity raw source extraction.",
+                    "default": 512,
                     "minimum": 64,
                     "maximum": 512,
                     "required": False,
@@ -346,8 +346,8 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Number of inference steps (recommended: 30 for fast, 50 for max detail)",
-                    "default": 30,
+                    "description": "Number of inference steps for maximum-fidelity raw source generation.",
+                    "default": 50,
                     "minimum": 1,
                     "maximum": 100,
                     "required": False,

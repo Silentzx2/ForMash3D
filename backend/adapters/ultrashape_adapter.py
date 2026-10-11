@@ -220,7 +220,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
                 num_inference_steps = 50
             num_latents = int(inputs.get("num_latents", 32768))
             octree_res = int(inputs.get("octree_res", 1024))
-            chunk_size = inputs.get("chunk_size", 8000)
+            chunk_size = inputs.get("chunk_size", 16000)
             scale = inputs.get("scale", 0.99)
             seed = inputs.get("seed", 42)
             

@@ -291,3 +291,120 @@ def test_hunyuan3d_dit_v2_mini_turbo_defaults_to_max_fidelity_when_source_qualit
     schema = adapter.get_parameter_schema()["parameters"]
     assert schema["enable_flashvdm"]["default"] is True
 
+
+
+def test_model_specific_max_quality_profiles_override_ui_budgets():
+    triposr = _build_model_inference_inputs(
+        {
+            "source_quality": "low", "quality": "low", "meshQuality": "low",
+            "mc_resolution": 320, "target_polycount": 1000,
+            "auto_optimize": True, "low_vram": True, "seed": 17,
+        },
+        model_id="triposr_image_to_raw_mesh",
+    )
+    assert triposr["source_quality"] == "max"
+    assert "quality" not in triposr and "meshQuality" not in triposr
+    assert triposr["mc_resolution"] == 512
+    assert triposr["seed"] == 17
+    assert "target_polycount" not in triposr
+    assert "auto_optimize" not in triposr
+    assert triposr["low_vram"] is False
+
+    trellis2 = _build_model_inference_inputs(
+        {
+            "pipeline_type": "512", "max_num_tokens": 49152,
+            "sparse_structure_sampler_params": {"steps": 12},
+            "shape_slat_sampler_params": {"steps": 12},
+            "target_polycount": 2000, "decimation_target": 1000, "remesh": True,
+        },
+        model_id="trellis2_image_to_raw_mesh",
+    )
+    assert trellis2["pipeline_type"] == "1536_cascade"
+    assert trellis2["max_num_tokens"] == 262144
+    assert trellis2["sparse_structure_sampler_params"]["steps"] == 50
+    assert trellis2["shape_slat_sampler_params"]["steps"] == 50
+    assert trellis2["decimation_target"] == -1
+    assert trellis2["remesh"] is False
+    assert "target_polycount" not in trellis2
+
+
+def test_trellis2_raw_mesh_path_skips_render_only_simplification(tmp_path):
+    import numpy as np
+    import trimesh
+    from PIL import Image
+    from utils.trellis2_utils import Trellis2Runner
+
+    calls = {}
+
+    class FakeMesh:
+        vertices = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+        faces = np.array([[0, 1, 2]])
+
+        def simplify(self, target):
+            calls["simplified"] = target
+
+    class FakePipeline:
+        def run(self, image, **kwargs):
+            calls["run_kwargs"] = kwargs
+            return [FakeMesh()]
+
+    image_path = tmp_path / "source.png"
+    Image.new("RGB", (8, 8), (255, 255, 255)).save(image_path)
+    runner = Trellis2Runner.__new__(Trellis2Runner)
+    runner.image_to_3d_pipeline = FakePipeline()
+    runner._load_image_to_3d_pipeline = lambda: None
+
+    mesh = runner.image_to_mesh(
+        str(image_path), raw_mesh_only=True,
+        pipeline_type="1536_cascade", max_num_tokens=262144,
+        sparse_structure_sampler_params={"steps": 50},
+        shape_slat_sampler_params={"steps": 50},
+    )
+
+    assert isinstance(mesh, trimesh.Trimesh)
+    assert len(mesh.faces) == 1
+    assert "simplified" not in calls
+    assert calls["run_kwargs"]["pipeline_type"] == "1536_cascade"
+    assert calls["run_kwargs"]["max_num_tokens"] == 262144
+    assert calls["run_kwargs"]["sparse_structure_sampler_params"]["steps"] == 50
+    assert calls["run_kwargs"]["shape_slat_sampler_params"]["steps"] == 50
+
+
+def test_ultrashape_requests_max_quality_for_its_hunyuan_coarse_stage(tmp_path):
+    import trimesh
+    from PIL import Image
+    from utils.ultrashape_pipeline_helper import UltraShapeInferenceHelper
+
+    image_path = tmp_path / "source.png"
+    Image.new("RGB", (8, 8), (180, 180, 180)).save(image_path)
+    calls = {}
+
+    def fake_hunyuan_pipeline(**kwargs):
+        calls.update(kwargs)
+        return [trimesh.creation.box()]
+
+    helper = UltraShapeInferenceHelper.__new__(UltraShapeInferenceHelper)
+    helper.pipeline = object()
+    helper.rembg = lambda image: image
+    helper.refine_mesh = lambda **kwargs: trimesh.creation.box()
+
+    output_path, info = helper.generate_and_refine(
+        image_path=str(image_path),
+        hunyuan_pipeline=fake_hunyuan_pipeline,
+        hunyuan_bg_remover=lambda image: image,
+        output_dir=str(tmp_path / "output"),
+        coarse_num_inference_steps=50,
+        coarse_octree_resolution=512,
+        coarse_guidance_scale=5.0,
+        coarse_num_chunks=20000,
+        num_inference_steps=50,
+        num_latents=32768,
+        octree_res=2048,
+    )
+
+    assert calls["num_inference_steps"] == 50
+    assert calls["octree_resolution"] == 512
+    assert calls["guidance_scale"] == 5.0
+    assert calls["num_chunks"] == 20000
+    assert Path(output_path).exists()
+    assert info["face_count"] > 0

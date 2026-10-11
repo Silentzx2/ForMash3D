@@ -40,7 +40,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
         vram_requirement: Optional[int] = None,
         triposr_root: Optional[str] = None,
         chunk_size: int = 8192,
-        mc_resolution: int = 320,
+        mc_resolution: int = 512,
     ):
         if vram_requirement is None:
             try:
@@ -153,7 +153,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
         Inputs:
             - image_path: Path to input image (or image_paths)
             - output_format: 'glb' or 'obj' (default: 'glb')
-            - mc_resolution: Marching cubes resolution (fixed at 320, the official UI ceiling)
+            - mc_resolution: Marching cubes extraction resolution (up to 512; max-fidelity default)
             - bake_texture: bool (default: False)
             - no_remove_bg: bool (default: False)
             - foreground_ratio: float (default: 0.85)
@@ -181,7 +181,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
 
             # Canonical raw source uses maximum model-supported extraction fidelity by default,
             # respecting caller/input settings up to 512.
-            mc_resolution = int(inputs.get("mc_resolution") or self.mc_resolution or 320)
+            mc_resolution = int(inputs.get("mc_resolution") or self.mc_resolution or 512)
             mc_resolution = max(32, min(512, mc_resolution))
             bake_texture = bool(inputs.get("bake_texture", False))
             no_remove_bg = bool(inputs.get("no_remove_bg", False))
@@ -418,7 +418,7 @@ class TripoSRImageToRawMeshAdapter(ImageToMeshModel):
                 "mc_resolution": {
                     "type": "integer",
                     "description": "Marching cubes grid resolution (up to 512 for maximum geometry fidelity).",
-                    "default": 320,
+                    "default": 512,
                     "minimum": 32,
                     "maximum": 512,
                     "readOnly": False,

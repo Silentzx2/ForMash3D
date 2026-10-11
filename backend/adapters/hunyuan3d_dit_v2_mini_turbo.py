@@ -223,7 +223,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 guidance_scale = float(guidance_scale)
 
-            low_vram_mode = bool(inputs.get("low_vram_mode", True))
+            low_vram_mode = bool(inputs.get("low_vram_mode", False))
             enable_flashvdm = bool(inputs.get("enable_flashvdm", True))
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)

@@ -577,8 +577,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             tex_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
 
-            ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 12)))
-            slat_steps = int(inputs.get("slat_sampling_steps", inputs.get("num_inference_steps", 12)))
+            ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 50)))
+            slat_steps = int(inputs.get("slat_sampling_steps", inputs.get("num_inference_steps", 50)))
             ss_steps = max(1, min(50, ss_steps))
             slat_steps = max(1, min(50, slat_steps))
 
@@ -785,16 +785,16 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 },
                 "ss_sampling_steps": {
                     "type": "integer",
-                    "description": "Sparse structure sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Sparse structure sampling steps; use maximum-fidelity source sampling.",
+                    "default": 50,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
-                    "description": "Structured latent sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Structured latent sampling steps; use maximum-fidelity source sampling.",
+                    "default": 50,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False

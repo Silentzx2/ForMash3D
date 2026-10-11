@@ -254,6 +254,10 @@ class UltraShapeInferenceHelper:
         hunyuan_pipeline,
         hunyuan_bg_remover,
         output_dir: Optional[str] = None,
+        coarse_num_inference_steps: int = 50,
+        coarse_octree_resolution: int = 512,
+        coarse_guidance_scale: float = 5.0,
+        coarse_num_chunks: int = 20000,
         **refine_kwargs,
     ) -> Tuple[str, Dict[str, Any]]:
         """
@@ -264,6 +268,10 @@ class UltraShapeInferenceHelper:
             hunyuan_pipeline: Loaded Hunyuan3D-2.1 shape generation pipeline
             hunyuan_bg_remover: Hunyuan3D background remover
             output_dir: Directory to save output (temp dir if None)
+            coarse_num_inference_steps: Hunyuan coarse-stage denoising steps.
+            coarse_octree_resolution: Highest supported Hunyuan coarse mesh resolution.
+            coarse_guidance_scale: Hunyuan coarse-stage guidance.
+            coarse_num_chunks: Hunyuan surface extraction chunk size.
             **refine_kwargs: Additional arguments for refine_mesh()
         
         Returns:
@@ -291,7 +299,14 @@ class UltraShapeInferenceHelper:
             else:
                 image = hunyuan_bg_remover(image.convert("RGB"))
             
-            coarse_mesh = hunyuan_pipeline(image=image)[0]
+            # Request maximum supported coarse geometry before UltraShape refinement.
+            coarse_mesh = hunyuan_pipeline(
+                image=image,
+                num_inference_steps=int(coarse_num_inference_steps),
+                octree_resolution=int(coarse_octree_resolution),
+                guidance_scale=float(coarse_guidance_scale),
+                num_chunks=int(coarse_num_chunks),
+            )[0]
             
             # Save coarse mesh temporarily
             coarse_mesh_path = os.path.join(output_dir, "coarse_mesh.glb")

@@ -101,10 +101,53 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
 })
 
 
-def _build_model_inference_inputs(inputs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Keep post-process-only controls out of neural adapter inference."""
+# High-fidelity source mesh profiles. Production budgets remain in request_inputs and
+# are applied only to downstream copies by post-processing.
+_RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
+    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 20000},
+    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 20000},
+    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 20000},
+    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
+    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
+    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": True},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": True},
+    "partpacker_image_to_raw_mesh": {"grid_resolution": 512, "num_steps": 50, "cfg_scale": 7.0, "num_faces": -1, "low_vram": False},
+    "ultrashape_image_to_raw_mesh": {"num_inference_steps": 50, "num_latents": 32768, "octree_res": 2048, "chunk_size": 16000, "hunyuan_coarse_num_inference_steps": 50, "hunyuan_coarse_octree_resolution": 512, "hunyuan_coarse_guidance_scale": 5.0, "hunyuan_coarse_num_chunks": 20000, "low_vram": False},
+    "triposr_image_to_raw_mesh": {"mc_resolution": 512, "low_vram": False},
+    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 9, "faces": -1, "low_vram": False},
+    "triposf_image_to_raw_mesh": {"sample_points_num": 1638400, "low_vram_mode": "normal", "low_vram": False, "use_normals": True},
+    "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
+    "trellis_image_to_raw_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis_image_to_3d": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis_image_to_textured_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+}
+
+
+def _build_model_inference_inputs(
+    inputs: Optional[Dict[str, Any]],
+    model_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Keep production budgets downstream and force max supported raw mesh fidelity."""
     source = inputs or {}
-    return {key: value for key, value in source.items() if key not in _POSTPROCESS_ONLY_INPUTS}
+    model_inputs = {
+        key: value for key, value in source.items()
+        if key not in _POSTPROCESS_ONLY_INPUTS
+    }
+    profile = _RAW_MESH_MAX_QUALITY_PARAMETERS.get(str(model_id or "").lower())
+    if profile:
+        model_inputs.update({
+            key: (dict(value) if isinstance(value, dict) else value)
+            for key, value in profile.items()
+        })
+        # UI quality sliders must not lower source fidelity. The user seed remains intact.
+        model_inputs.pop("quality", None)
+        model_inputs.pop("meshQuality", None)
+        model_inputs["source_quality"] = "max"
+    return model_inputs
 
 
 class WorkerConfig:
@@ -503,7 +546,7 @@ def _process_job_in_worker(
 
         # Section 26: Exact runtime parameter logging
         request_inputs = job_request.inputs or {}
-        model_inputs = _build_model_inference_inputs(request_inputs)
+        model_inputs = _build_model_inference_inputs(request_inputs, model_id=model_id)
         runtime_log = {
             "model": model_id,
             "model_version": getattr(loaded_model, "version", "1.0"),

@@ -72,12 +72,12 @@ export function buildGenerationParameters(
   // Build model parameters
   const modelParameters: Record<string, unknown> = {
     octree_resolution: Number(paramDefaults.octree_resolution ?? 512), // octree_resolution: 512
-    num_inference_steps: getInferenceSteps(modelId, true, paramDefaults),
+    num_inference_steps: getInferenceSteps(modelId, paramDefaults),
     guidance_scale: Number(paramDefaults.guidance_scale ?? settings.guidanceScale ?? 7.5),
     seed: settings.seed ?? undefined,
-    low_vram: Boolean(settings.lowVram),
+    low_vram: false,
     enable_flashvdm: settings.enableFlashVDM ?? false,
-    low_vram_mode: settings.lowVramMode ?? 'auto',
+    low_vram_mode: 'normal',
     auto_optimize: shouldAutoOptimize(settings.autoOptimizeSettings?.targetPolycount),
     target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 50000,
     generateLOD: settings.generateLOD !== false,
@@ -180,14 +180,19 @@ export function buildGenerationParameters(
   };
 }
 
-function getInferenceSteps(modelId: string, isImageTo3D: boolean, paramDefaults: Record<string, any> = {}): number {
-  // Model-specific inference steps (must match official schedules).
+function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> = {}): number {
+  // Model-specific maximum-fidelity source settings; downstream budgets never change these.
   // Prefer backend-provided schema defaults; fall back to known official schedules.
   const schemaSteps = Number(
     paramDefaults.num_inference_steps ??
     paramDefaults.ss_sampling_steps ??
     -1
   );
+  // Ignore schema defaults for models with a fixed maximum-fidelity source profile.
+  if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) return 5;
+  if (modelId.includes('trellis')) return 50;
+  if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21') ||
+      modelId.includes('triposg') || modelId.includes('ultrashape') || modelId.includes('partpacker')) return 50;
   if (schemaSteps >= 1) return schemaSteps;
 
   let infSteps = 50;
@@ -195,12 +200,6 @@ function getInferenceSteps(modelId: string, isImageTo3D: boolean, paramDefaults:
     infSteps = 5;
   } else if (modelId.includes('triposg')) {
     infSteps = 50;
-  } else if (modelId.includes('trellis')) {
-    if (isImageTo3D) {
-      infSteps = 12;
-    } else {
-      infSteps = 25;
-    }
   } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
     infSteps = 50;
   } else if (modelId.includes('ultrashape')) {
@@ -231,29 +230,52 @@ function applyModelSpecificParams(
   // When the backend provides parameter defaults, prefer them over hardcoded values.
   
   if (modelId.includes('triposr')) {
-    modelParameters.mc_resolution = Number(paramDefaults.mc_resolution ?? 320); // mc_resolution = 320
+    modelParameters.mc_resolution = 512; // Highest extraction grid supported by the adapter.
   } else if (modelId.includes('triposg')) {
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
     modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
   } else if (modelId.includes('triposf')) {
-    modelParameters.resolution = Number(paramDefaults.resolution ?? 1024); // resolution = 1024
-    modelParameters.sample_points_num = Number(paramDefaults.sample_points_num ?? 1638400);
+    // The released TripoSF VAE checkpoint is 256i1024o: 256 is the volume resolution,
+    // while 1024 is the FlexiCubes extraction grid. Never pass 1024 as VAE volume resolution.
+    modelParameters.resolution = 256;
+    modelParameters.sample_points_num = 1638400;
+    modelParameters.low_vram_mode = 'normal';
+    modelParameters.use_normals = true;
   } else if (modelId.includes('partpacker')) {
-    modelParameters.grid_resolution = Number(paramDefaults.grid_resolution ?? 512);
-    modelParameters.num_faces = Number(paramDefaults.num_faces ?? -1);
+    modelParameters.grid_resolution = 512;
+    modelParameters.num_steps = 50;
+    modelParameters.cfg_scale = 7.0;
+    modelParameters.num_faces = -1;
   } else if (modelId.includes('ultrashape')) {
-    modelParameters.octree_res = Number(paramDefaults.octree_res ?? 1024);
-    modelParameters.num_latents = Number(paramDefaults.num_latents ?? 32768);
+    modelParameters.octree_res = 2048;
+    modelParameters.num_latents = 32768;
+    modelParameters.hunyuan_coarse_num_inference_steps = 50;
+    modelParameters.hunyuan_coarse_octree_resolution = 512;
+    modelParameters.hunyuan_coarse_guidance_scale = 5.0;
+    modelParameters.hunyuan_coarse_num_chunks = 20000;
   } else if (modelId.includes('trellis2')) {
-    modelParameters.decimation_target = Number(paramDefaults.decimation_target ?? -1);
-    modelParameters.remesh = paramDefaults.remesh ?? false;
+    modelParameters.decimation_target = -1;
+    modelParameters.remesh = false;
+    modelParameters.pipeline_type = '1536_cascade';
+    modelParameters.max_num_tokens = 262144;
+    modelParameters.sparse_structure_sampler_params = { steps: 50 };
+    modelParameters.shape_slat_sampler_params = { steps: 50 };
   } else if (modelId.includes('trellis')) {
-    modelParameters.simplify = Number(paramDefaults.simplify ?? 0.0);
-    modelParameters.ss_sampling_steps = Number(paramDefaults.ss_sampling_steps ?? 12);
-    modelParameters.slat_sampling_steps = Number(paramDefaults.slat_sampling_steps ?? 12);
+    modelParameters.simplify = 0.0;
+    modelParameters.ss_sampling_steps = 50;
+    modelParameters.slat_sampling_steps = 50;
+  } else if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
+    modelParameters.octree_resolution = 512;
+    modelParameters.num_inference_steps = 5;
+    modelParameters.low_vram_mode = false;
+    modelParameters.low_vram = false;
+    modelParameters.enable_flashvdm = true;
   } else if (modelId.includes('hunyuan')) {
-      modelParameters.octree_resolution = Number(paramDefaults.octree_resolution ?? 512);
+    modelParameters.octree_resolution = 512;
+    modelParameters.num_inference_steps = 50;
+    modelParameters.low_vram = false;
     } else if (modelId.includes('unique3d')) {
+      modelParameters.low_vram = false;
       // Unique3D model-native parameters (official defaults)
       modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 1145;
       modelParameters.input_processing = paramDefaults.input_processing ?? true;

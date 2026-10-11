@@ -165,8 +165,15 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             remesh_band = inputs.get("remesh_band", 1)
             remesh_project = inputs.get("remesh_project", 0)
             seed = inputs.get("seed", None)
+            pipeline_type = str(inputs.get("pipeline_type") or "1536_cascade")
+            max_num_tokens = int(inputs.get("max_num_tokens", 262144))
+            sparse_structure_sampler_params = inputs.get("sparse_structure_sampler_params") or {"steps": 50}
+            shape_slat_sampler_params = inputs.get("shape_slat_sampler_params") or {"steps": 50}
             
-            logger.info(f"Generating untextured raw mesh with TRELLIS.2 for image: '{image_path}'")
+            logger.info(
+                "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s)",
+                pipeline_type, max_num_tokens,
+            )
             
             # Generate untextured raw 3D mesh
             mesh = self.runner.image_to_mesh(
@@ -179,6 +186,10 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 seed=seed,
                 verbose=True,
                 raw_mesh_only=True,
+                pipeline_type=pipeline_type,
+                max_num_tokens=max_num_tokens,
+                sparse_structure_sampler_params=sparse_structure_sampler_params,
+                shape_slat_sampler_params=shape_slat_sampler_params,
             )
             
             # Save mesh in requested format
@@ -206,6 +217,10 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "decimation_target": decimation_target,
                     "texture_size": None,
                     "remesh": remesh,
+                    "pipeline_type": pipeline_type,
+                    "max_num_tokens": max_num_tokens,
+                    "sparse_structure_steps": sparse_structure_sampler_params.get("steps", "pipeline_default"),
+                    "shape_slat_steps": shape_slat_sampler_params.get("steps", "pipeline_default"),
                     "thumbnail_generated": thumbnail_generated,
                 }
             })
@@ -265,6 +280,21 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
         """
         return {
             "parameters": {
+                "pipeline_type": {
+                    "type": "string",
+                    "description": "TRELLIS.2 source geometry resolution path; max-fidelity uses the 1536 cascade.",
+                    "default": "1536_cascade",
+                    "enum": ["512", "1024", "1024_cascade", "1536_cascade"],
+                    "required": False
+                },
+                "max_num_tokens": {
+                    "type": "integer",
+                    "description": "Max cascade token budget; a higher budget prevents silent resolution reduction.",
+                    "default": 262144,
+                    "minimum": 49152,
+                    "maximum": 262144,
+                    "required": False
+                },
                 "decimation_target": {
                     "type": "integer",
                     "description": "Target number of faces after decimation (-1 for raw full resolution)",

@@ -270,7 +270,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                 allocated_mb = torch.cuda.memory_allocated(gpu_index) // (1024 ** 2)
                 free_vram_mb = total_vram_mb - allocated_mb
 
-                low_vram_mode = self._resolve_low_vram_mode(inputs.get("low_vram_mode", "auto"))
+                low_vram_mode = self._resolve_low_vram_mode(inputs.get("low_vram_mode", "normal"))
 
                 if low_vram_mode == "low":
                     pruning = True
@@ -449,7 +449,7 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "string",
                     "enum": ["auto", "normal", "low"],
                     "description": "VRAM mode: 'auto' downshifts sample density from measured free VRAM, 'low' forces the 409,600-point fallback, 'normal' forces the full 1,638,400-point path.",
-                    "default": "auto",
+                    "default": "normal",
                     "required": False,
                 },
             }

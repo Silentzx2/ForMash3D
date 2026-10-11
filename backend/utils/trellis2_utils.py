@@ -193,6 +193,10 @@ class Trellis2Runner:
         seed: Optional[int] = None,
         verbose: bool = True,
         raw_mesh_only: bool = True,
+        pipeline_type: str = "1536_cascade",
+        max_num_tokens: int = 262144,
+        sparse_structure_sampler_params: Optional[Dict[str, Any]] = None,
+        shape_slat_sampler_params: Optional[Dict[str, Any]] = None,
     ) -> trimesh.Trimesh:
         """
         Generate 3D mesh from image using TRELLIS.2.
@@ -207,6 +211,10 @@ class Trellis2Runner:
             seed: Random seed for reproducibility
             verbose: Whether to show progress
             raw_mesh_only: If True, return untextured raw mesh without texture bake
+            pipeline_type: Resolution path; 1536_cascade is the high-fidelity path.
+            max_num_tokens: Token budget that controls when the cascade falls back to lower resolution.
+            sparse_structure_sampler_params: Model sampler overrides for sparse structure.
+            shape_slat_sampler_params: Model sampler overrides for geometry latents.
         
         Returns:
             Generated trimesh.Trimesh object
@@ -223,19 +231,32 @@ class Trellis2Runner:
                 torch.cuda.manual_seed(seed)
         
         # Run generation pipeline
-        logger.info(f"Generating 3D mesh from image: {image_path}")
-        mesh = self.image_to_3d_pipeline.run(image)[0]
-        
-        # Simplify mesh (nvdiffrast has a limit of 16777216 faces)
-        if hasattr(mesh, "simplify"):
-            mesh.simplify(16777216)
-        
+        logger.info(
+            "Generating TRELLIS.2 mesh from image: %s (pipeline=%s, max_num_tokens=%s)",
+            image_path, pipeline_type, max_num_tokens,
+        )
+        # Explicitly request the configured high-resolution cascade instead of allowing
+        # the upstream default pipeline type (often 512) to silently cap raw geometry.
+        mesh = self.image_to_3d_pipeline.run(
+            image,
+            seed=42 if seed is None else int(seed),
+            pipeline_type=pipeline_type,
+            max_num_tokens=int(max_num_tokens),
+            sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {"steps": 50}),
+            shape_slat_sampler_params=dict(shape_slat_sampler_params or {"steps": 50}),
+        )
+
         if raw_mesh_only:
             logger.info("Extracting untextured raw mesh (texture baking skipped)")
             verts = mesh.vertices.cpu().numpy() if hasattr(mesh.vertices, 'cpu') else np.array(mesh.vertices)
             faces = mesh.faces.cpu().numpy() if hasattr(mesh.faces, 'cpu') else np.array(mesh.faces)
             return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
-        
+
+        # This cap only exists for the texture/render path (nvdiffrast limitation).
+        # Never apply it to raw_mesh_only: source geometry must stay model-native.
+        if hasattr(mesh, "simplify"):
+            mesh.simplify(16777216)
+
         # Export to GLB format
         if self.o_voxel is not None:
             raw_target = -1 if decimation_target is None else int(decimation_target)

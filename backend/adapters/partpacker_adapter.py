@@ -154,7 +154,7 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
             cfg_scale = inputs.get("cfg_scale", 7.0)
             if cfg_scale is None:
                 cfg_scale = 7.0
-            grid_resolution = inputs.get("grid_resolution", 384)
+            grid_resolution = inputs.get("grid_resolution", 512)
             auto_optimize = bool(inputs.get("auto_optimize", False))
             num_faces = int(inputs.get("num_faces", -1))
             seed = inputs.get("seed", None)
@@ -305,8 +305,8 @@ class PartPackerImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "grid_resolution": {
                     "type": "integer",
-                    "description": "Grid resolution for mesh extraction",
-                    "default": 384,
+                    "description": "Grid resolution for maximum-fidelity raw mesh extraction",
+                    "default": 512,
                     "enum": [256, 384, 512],
                     "required": False
                 },
