@@ -1,3 +1,7 @@
+## 2026-10-11 Setup Robustness — Node Locked Runtime Reuse
+- `scripts/setup.sh` `_ensure_node_version()` re-downloaded the locked Node v24.21.0 on every setup run even when the pinned runtime was already on disk at `$HOME/.formash3d/node/current`. A transient download/extract failure then aborted the entire setup with `Node v24.21.0 installation failed verification (found: 22.14.0)` — the verification saw nvm's v22.14.0 because the re-install had deleted/broken the pinned path.
+- Fixed: the function now reuses the existing pinned runtime when `current/bin/node --version` matches the lock, before any network access. Setup is idempotent for the Node step; verified live (`REUSE_OK -> v24.21.0`). `bash -n` clean.
+
 ## 2026-10-11 Section 3 Paint3D 1K/2K Texture Integration
 - **Paint3D Adapter Implementation (`backend/adapters/paint3d_adapter.py`)**:
   - Inherits from `ImageToMeshModel` (with `MeshToMeshModel` and `ModelAdapter` compatibility aliases).

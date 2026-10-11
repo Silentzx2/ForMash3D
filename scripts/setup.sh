@@ -366,6 +366,20 @@ _ensure_node_version() {
     log "Node: v${current} (locked version active)"
     return 0
   fi
+  # Reuse an existing pinned runtime install before hitting the network: a
+  # transient download failure must not abort setup when the locked version is
+  # already present on disk.
+  local pinned="${NODE_RUNTIME_DIR}/current/bin/node"
+  if [[ -x "$pinned" ]]; then
+    local pinned_version
+    pinned_version="$("$pinned" --version 2>/dev/null | sed 's/^v//' || true)"
+    if [[ "$pinned_version" == "$REQUIRED_NODE_VERSION" ]]; then
+      export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+      hash -r
+      log "Node: v${REQUIRED_NODE_VERSION} (pinned runtime reused at ${NODE_RUNTIME_DIR}/current)"
+      return 0
+    fi
+  fi
   if [[ -n "$current" ]]; then
     warn "Node v${current} found — locked version is v${REQUIRED_NODE_VERSION}. Installing locked version..."
   else
