@@ -433,14 +433,28 @@ _ensure_npm_version() {
     log "npm: v${current} (locked version active)"
     return 0
   fi
+  # Reuse the npm bundled with the pinned Node runtime before any install:
+  # PATH lookups can still resolve a stale npm (e.g. nvm's) ahead of the pinned
+  # bin, and a global self-install then targets a read-only system prefix.
+  local pinned_npm="${NODE_RUNTIME_DIR}/current/bin/npm"
+  if [[ -x "$pinned_npm" ]]; then
+    local pinned_npm_version
+    pinned_npm_version="$("$pinned_npm" --version 2>/dev/null || true)"
+    if [[ "$pinned_npm_version" == "$REQUIRED_NPM_VERSION" ]]; then
+      export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+      hash -r
+      log "npm: v${REQUIRED_NPM_VERSION} (bundled with pinned runtime at ${NODE_RUNTIME_DIR}/current)"
+      return 0
+    fi
+  fi
   warn "npm ${current:-none} found — locked version is v${REQUIRED_NPM_VERSION}. Installing locked version..."
-  local sudo_cmd=""
-  command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
-  $sudo_cmd npm install -g "npm@${REQUIRED_NPM_VERSION}" >/dev/null 2>&1 \
-    || warn "npm self-upgrade to v${REQUIRED_NPM_VERSION} failed (permission issue; try running with sudo). Continuing..."
+  # Install into the user-owned pinned runtime prefix, never the ambient
+  # (read-only, conda/nvm-managed) global prefix.
+  "$pinned_npm" install -g --prefix "${NODE_RUNTIME_DIR}/current" "npm@${REQUIRED_NPM_VERSION}" >/dev/null 2>&1 \
+    || warn "npm install into pinned runtime failed (network or permission issue). Continuing..."
   hash -r
   local verify
-  verify=$(npm --version 2>/dev/null || echo 'unknown')
+  verify="$("$pinned_npm" --version 2>/dev/null || echo 'unknown')"
   if [[ "$verify" == "$REQUIRED_NPM_VERSION" ]]; then
     log "npm: v${verify} (locked version active)"
     return 0
