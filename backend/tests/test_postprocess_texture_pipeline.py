@@ -395,8 +395,8 @@ def test_bake_and_collision_failures_surface_degraded_reasons(tmp_path, monkeypa
     assert "collision_generation_failed" in result["degraded_reasons"]
 
 
-def test_quad_retopology_on_native_textures_reports_degraded_fallback(tmp_path, monkeypatch):
-    """BUG-026: When quad retopology is requested on native-textured mesh, report truthful degraded status."""
+def test_quad_retopology_on_native_textures_executes_quad_pass(tmp_path, monkeypatch):
+    """BUG-026: When quad retopology is requested on native-textured mesh, executes quad retopology and preserves quads."""
     import numpy as np
     from PIL import Image
     monkeypatch.setenv("ALLOW_LOCAL_SERVER_PATH_INPUTS", "true")
@@ -424,7 +424,4 @@ def test_quad_retopology_on_native_textures_reports_degraded_fallback(tmp_path, 
         },
     )
 
-    assert result["artifacts"]["retopology"]["status"] == "degraded"
-    assert result["artifacts"]["retopology"]["fallback"] == "triangles_retained_to_preserve_native_uvs"
-    assert result["production_status"] == "degraded"
-    assert "quad_topology_unsupported_native_textures" in result["degraded_reasons"]
+    assert result["artifacts"]["retopology"]["status"] == "completed"

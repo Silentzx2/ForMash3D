@@ -260,7 +260,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                     fill_holes=fill_holes,
                     texture_size=texture_resolution,
                     texture_bake_mode=texture_bake_mode,
-                    forward_rot=True,
+                    forward_rot=False,
                     postprocess_mode=postprocess_mode,
                 )
 
@@ -636,7 +636,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         fill_holes=fill_holes,
                         texture_size=texture_resolution,
                         texture_bake_mode=tex_bake_mode,
-                        forward_rot=True,
+                        forward_rot=False,
                         postprocess_mode=postprocess_mode,
                     )
                 has_texture = True
@@ -673,8 +673,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 else:
                     vertices, faces = vertices_raw, faces_raw
 
-                # Rotate from TRELLIS z-up to standard y-up coordinates
-                vertices = vertices @ np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]])
+                # Rotate from TRELLIS z-up to standard y-up coordinates (x'=x, y'=z, z'=-y)
+                vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
                 mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
                 has_texture = False
 

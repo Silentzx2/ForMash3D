@@ -108,6 +108,8 @@ export const LiveExecutionPanel: React.FC = () => {
     simplify: 'optimize',
     optimize: 'optimize',
     uv: 'uv',
+    texture: 'texture_bake',
+    bake: 'texture_bake',
     game_ready: 'game_ready',
     fbx: 'game_ready',
     lod: 'lod',
@@ -154,6 +156,11 @@ export const LiveExecutionPanel: React.FC = () => {
           id: 'uv',
           name: 'UV Preparation',
           detail: 'Preserve native textured UVs or generate production UVs for raw meshes.',
+        },
+        {
+          id: 'texture_bake',
+          name: 'Texture & PBR Baking',
+          detail: 'Generate AI PBR textures or bake high-to-low normal/AO maps onto UVs.',
         },
         {
           id: 'game_ready',

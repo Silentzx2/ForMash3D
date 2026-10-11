@@ -229,13 +229,25 @@ def _execute_texture_stage(
                 raise RuntimeError("Paint3D texture adapter is not yet registered or installed.")
 
             _check_cancelled(cancel_checker)
-            res = adapter.process({
-                "mesh_path": str(target_mesh_path),
-                "image_path": str(ref_image_path),
-                "output_format": "glb",
-                "resolution": target_atlas_size,
-                "texture_resolution": target_atlas_size,
-            })
+            should_unload = False
+            from core.models.base import ModelStatus
+            if getattr(adapter, "status", None) in (ModelStatus.UNLOADED, ModelStatus.ERROR):
+                adapter.load()
+                should_unload = True
+            try:
+                res = adapter.process({
+                    "mesh_path": str(target_mesh_path),
+                    "image_path": str(ref_image_path),
+                    "output_format": "glb",
+                    "resolution": target_atlas_size,
+                    "texture_resolution": target_atlas_size,
+                })
+            finally:
+                if should_unload:
+                    try:
+                        adapter.unload()
+                    except Exception:
+                        pass
             out_mesh = res.get("output_mesh_path") if isinstance(res, dict) else None
             if not out_mesh or not Path(out_mesh).is_file():
                 raise RuntimeError(f"Paint3D returned no output mesh: {res}")
@@ -262,15 +274,27 @@ def _execute_texture_stage(
                     raise RuntimeError(f"Hunyuan3D-Paint-v2.1 adapter could not be loaded: {exc}")
 
             _check_cancelled(cancel_checker)
-            hy_res = 512 if preset_label == "4K" else 768
-            res = adapter.process({
-                "mesh_path": str(target_mesh_path),
-                "image_path": str(ref_image_path),
-                "output_format": "glb",
-                "resolution": hy_res,
-                "texture_resolution": target_atlas_size,
-                "max_num_view": int(job_inputs.get("max_num_view") or 6),
-            })
+            should_unload_hy = False
+            from core.models.base import ModelStatus
+            if getattr(adapter, "status", None) in (ModelStatus.UNLOADED, ModelStatus.ERROR):
+                adapter.load()
+                should_unload_hy = True
+            try:
+                hy_res = 512 if preset_label == "4K" else 768
+                res = adapter.process({
+                    "mesh_path": str(target_mesh_path),
+                    "image_path": str(ref_image_path),
+                    "output_format": "glb",
+                    "resolution": hy_res,
+                    "texture_resolution": target_atlas_size,
+                    "max_num_view": int(job_inputs.get("max_num_view") or 6),
+                })
+            finally:
+                if should_unload_hy:
+                    try:
+                        adapter.unload()
+                    except Exception:
+                        pass
             out_mesh = res.get("output_mesh_path") if isinstance(res, dict) else None
             if not out_mesh or not Path(out_mesh).is_file():
                 raise RuntimeError(f"Hunyuan3D-Paint-v2.1 returned no output mesh: {res}")
@@ -906,20 +930,26 @@ def _build_result(
             "preview": bool(generated.get("thumbnail")),
         },
     }
-    required_failed = any(
-        artifact.get("status") == "failed"
-        for group in result["artifacts"].values()
-        if isinstance(group, dict)
-        for artifact in (group.values() if isinstance(group, dict) else [])
-        if isinstance(artifact, dict) and artifact.get("required") and artifact.get("status") == "failed"
-    )
-    any_failed = any(
-        artifact.get("status") == "failed"
-        for group in result["artifacts"].values()
-        if isinstance(group, dict)
-        for artifact in (group.values() if isinstance(group, dict) else [])
-        if isinstance(artifact, dict)
-    )
+    def _is_failed_artifact(art: Any) -> bool:
+        if isinstance(art, dict):
+            if art.get("status") == "failed":
+                return True
+            for sub in art.values():
+                if isinstance(sub, dict) and sub.get("status") == "failed":
+                    return True
+        return False
+
+    def _is_required_failed(art: Any) -> bool:
+        if isinstance(art, dict):
+            if art.get("required") and art.get("status") == "failed":
+                return True
+            for sub in art.values():
+                if isinstance(sub, dict) and sub.get("required") and sub.get("status") == "failed":
+                    return True
+        return False
+
+    required_failed = any(_is_required_failed(v) for v in result["artifacts"].values())
+    any_failed = any(_is_failed_artifact(v) for v in result["artifacts"].values())
     quality_failed = (
         isinstance(qa_report.get("qa"), dict)
         and qa_report["qa"].get("status") == "fail"
@@ -1297,7 +1327,7 @@ def run_postprocess_job(
 
     _check_cancelled(cancel_checker)
     retopo_t0 = time.time()
-    if is_quad_requested and not native_textures:
+    if is_quad_requested:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
         source_face_count = min(5_000_000, max(50, int(len(repaired.faces))))
         retopo_target = min(
@@ -1329,12 +1359,6 @@ def run_postprocess_job(
         except Exception as exc:
             retopo_stats = {"status": "failed", "trigger": "quad_requested", "error": str(exc)}
             logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
-    elif is_quad_requested and native_textures:
-        retopo_stats = {
-            "status": "degraded",
-            "fallback": "triangles_retained_to_preserve_native_uvs",
-            "reason": "Native textures are preserved; quad retopology was bypassed to prevent stripping UV and material mapping.",
-        }
     elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
         retopo_target = min(resolved_target_polycount or 6_000, max(50, int(len(repaired.faces))))
