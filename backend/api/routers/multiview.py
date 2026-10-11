@@ -34,6 +34,7 @@ from core.scheduler.multiprocess_scheduler import JobRequest, MultiprocessModelS
 from core.utils.file_utils import get_storage_base_dir, resolve_server_file_path, save_base64_file
 from adapters.zero123plus_adapter import Zero123PlusAdapter, CAMERA_RIG, compute_source_sha256
 from .file_upload import resolve_file_id_async
+from .mesh_generation import _normalize_texture_resolution, process_file_input
 
 from ..dependencies import (
     get_current_user_or_none,
@@ -118,16 +119,30 @@ class MultiViewReconstruct3DRequest(BaseModel):
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing")
+    physics_config: Optional[Dict[str, Any]] = None
     model_parameters: Optional[Dict[str, Any]] = None
     target_polycount: Optional[int] = None
     quality: Optional[str] = "high"
     generateLOD: bool = True
     lodPreset: str = "high"
     lodCount: int = 4
-    texture_resolution: Optional[int] = 2048
+    texture_resolution: int = Field(2048, ge=256, le=8192)
+    bake_normal_maps: bool = True
+    reference_image_path: Optional[str] = None
+    reference_image_base64: Optional[str] = None
+    reference_image_file_id: Optional[str] = None
+    enable_printability_check: bool = False
+    enable_auto_repair: bool = False
+    enable_auto_rig: bool = False
+    auto_rig_mode: str = "full"
     intent: Optional[str] = None
     preprocessing_artifact_id: Optional[str] = None
     enhancement_enabled: bool = False
+
+    @field_validator("texture_resolution", mode="before")
+    @classmethod
+    def normalize_texture_resolution(cls, value):
+        return _normalize_texture_resolution(value)
 
 
 def _get_storage_models_root() -> Path:
@@ -471,6 +486,7 @@ async def reconstruct_3d_from_multiview(
     scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
     current_settings=Depends(get_current_settings),
     current_user=Depends(get_current_user_or_none),
+    file_store=Depends(get_file_store),
 ):
     """
     Capability gate for Multi-View -> 3D reconstruction requests.
@@ -542,8 +558,21 @@ async def reconstruct_3d_from_multiview(
     lod_enabled = bool(params.pop("generateLOD", req.generateLOD))
     lod_preset = str(params.pop("lodPreset", req.lodPreset))
     lod_count = int(params.pop("lodCount", req.lodCount))
-    source_texture_resolution = params.pop("texture_resolution", None)
+    params.pop("texture_resolution", None)
     texture_resolution = int(req.texture_resolution or 2048)
+    texture_enabled = bool(params.pop("texture_enabled", False))
+    texture_enabled = bool(params.pop("generate_texture", False)) or texture_enabled
+    texture_enabled = bool(params.pop("generateTexture", False)) or texture_enabled
+    texture_enabled = bool(params.pop("auto_paint", False)) or texture_enabled
+    reference_image_path = None
+    if req.reference_image_path or req.reference_image_base64 or req.reference_image_file_id:
+        reference_image_path = await process_file_input(
+            file_path=req.reference_image_path,
+            base64_data=req.reference_image_base64,
+            file_id=req.reference_image_file_id,
+            input_type="reference image",
+            file_store=file_store,
+        )
 
     # Queue multi-view 3D reconstruction job with validated adapter.
     user_id = current_user.user_id if current_user else None
@@ -552,6 +581,11 @@ async def reconstruct_3d_from_multiview(
         inputs={
             "multiview_asset_id": req.asset_id,
             "images": req.images,
+            "reference_image_path": reference_image_path,
+            "texture_enabled": texture_enabled,
+            "texture_resolution": texture_resolution,
+            "production_texture_resolution": texture_resolution,
+            "bake_normal_maps": req.bake_normal_maps,
             "output_format": req.output_format,
             "intent": req.intent,
             "preprocessing_artifact_id": req.preprocessing_artifact_id,
@@ -561,8 +595,7 @@ async def reconstruct_3d_from_multiview(
             "generateLOD": lod_enabled,
             "lodPreset": lod_preset,
             "lodCount": lod_count,
-            "texture_resolution": int(source_texture_resolution or 2048),
-            "production_texture_resolution": texture_resolution,
+
             "enable_printability_check": req.enable_printability_check,
             "enable_auto_repair": req.enable_auto_repair,
             "enable_auto_rig": req.enable_auto_rig,
@@ -577,11 +610,15 @@ async def reconstruct_3d_from_multiview(
         priority=1,
         metadata={
             "input_type": "multiview",
+            "postprocess_mode": "production_mesh",
+            "feature_type": matched_feature or "image_to_raw_mesh",
+            "texture_enabled": texture_enabled,
+            "texture_resolution": texture_resolution,
+            "bake_normal_maps": req.bake_normal_maps,
             "source_multiview_asset_id": req.asset_id,
             "intent": req.intent,
             "quality": quality,
             "target_polycount": target_polycount,
-            "texture_resolution": texture_resolution,
             "production_texture_resolution": texture_resolution,
             "generateLOD": lod_enabled,
             "lodPreset": lod_preset,

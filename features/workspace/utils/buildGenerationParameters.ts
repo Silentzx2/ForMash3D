@@ -67,7 +67,7 @@ export function buildGenerationParameters(
     8192
   );
 
-  const isTextured = !isRawModel && textureEnabled;
+  const isTextured = textureEnabled;
   
   // Build model parameters
   const modelParameters: Record<string, unknown> = {
@@ -87,14 +87,10 @@ export function buildGenerationParameters(
     source_quality: 'max',
     texture_enabled: textureEnabled,
     generate_texture: textureEnabled,
-    auto_paint: textureEnabled,
-    ...(textureEnabled ? {
-      texture_resolution: textureResolutionPreset,
-    } : {}),
   };
   
   // Model-specific parameters
-  applyModelSpecificParams(modelParameters, modelId, currentQuality, isPaintModel, settings, paramDefaults);
+  applyModelSpecificParams(modelParameters, modelId, currentQuality, settings, paramDefaults);
   
   // Determine endpoint and body
   let endpoint: string;
@@ -105,18 +101,23 @@ export function buildGenerationParameters(
     body = {
       asset_id: settings.multiviewAssetId || undefined,
       images: settings.multiviewViews || undefined,
+      reference_image_file_id: settings.imageFileId || undefined,
+      reference_image_base64: !settings.imageFileId && typeof settings.image === 'string' && settings.image.startsWith('data:')
+        ? settings.image
+        : undefined,
       model_preference: settings.aiModel,
       output_format: 'glb',
       topology_mode: settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle'),
       quad_topology: Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
-      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false, isPaintModel, settings.generateTexture ?? true),
+      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false),
       model_parameters: modelParameters,
       target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 50000,
       generateLOD: settings.generateLOD !== false,
       lodPreset: settings.lodPreset || 'high',
       lodCount: settings.lodCount || 4,
       quality: settings.meshQuality || 'high',
-      texture_resolution: isTextured ? ({ low: 512, medium: 1024, high: 2048, ultra: 4096, '8k': 4096 }[settings.textureQuality || 'high'] || 2048) : undefined,
+      texture_resolution: isTextured ? numericTextureResolution : undefined,
+      bake_normal_maps: true,
     };
   } else {
     const imageInput: Record<string, unknown> = {};
@@ -136,9 +137,8 @@ export function buildGenerationParameters(
       .replace(/[^A-Za-z0-9._-]+/g, '_')
       .replace(/^_+|_+$/g, '') || 'asset';
     
-    endpoint = isTextured 
-      ? '/api/v1/mesh-generation/image-to-textured-mesh'
-      : '/api/v1/mesh-generation/image-to-raw-mesh';
+    // Geometry adapters always produce raw mesh; optional texturing runs in post-processing.
+    endpoint = '/api/v1/mesh-generation/image-to-raw-mesh';
     
     body = {
       ...imageInput,
@@ -154,18 +154,15 @@ export function buildGenerationParameters(
       enable_auto_rig: Boolean(settings.enableAutoRig),
       auto_rig_mode: settings.autoRigMode || 'full',
       model_parameters: modelParameters,
-      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false, isPaintModel, textureEnabled),
+      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false),
       physics_config: settings.physics,
       topology_mode: settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle'),
       quad_topology: Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
-      bake_normal_maps: settings.bakeNormalMaps !== false,
+      bake_normal_maps: true,
       texture_enabled: textureEnabled,
       generate_texture: textureEnabled,
-      auto_paint: textureEnabled,
       ...(textureEnabled ? {
-        texture_resolution: endpoint.includes('image-to-textured-mesh')
-          ? Math.min(numericTextureResolution, 4096)
-          : textureResolutionPreset,
+        texture_resolution: textureResolutionPreset,
         texture_resolution_preset: textureResolutionPreset,
       } : {}),
     };
@@ -214,19 +211,18 @@ function getInferenceSteps(modelId: string, isImageTo3D: boolean, paramDefaults:
 }
 
 function shouldAutoOptimize(targetPolycount: number | undefined): boolean {
-  if (!targetPolycount) return true;
-  return targetPolycount === 0 || (targetPolycount > 0 && targetPolycount < 200000);
+  if (targetPolycount === undefined) return true;
+  return targetPolycount > 0 && targetPolycount < 200000;
 }
 
-function shouldEnablePhysics(generateCollision: boolean, isPaintModel: boolean, generateTexture: boolean | undefined): boolean {
-  return Boolean(generateCollision) && !(isPaintModel && (generateTexture ?? true));
+function shouldEnablePhysics(generateCollision: boolean): boolean {
+  return Boolean(generateCollision);
 }
 
 function applyModelSpecificParams(
   modelParameters: Record<string, unknown>,
   modelId: string,
   currentQuality: string,
-  isPaintModel: boolean,
   settings: GenerationSettings,
   paramDefaults: Record<string, any> = {}
 ): void {
@@ -251,15 +247,12 @@ function applyModelSpecificParams(
   } else if (modelId.includes('trellis2')) {
     modelParameters.decimation_target = Number(paramDefaults.decimation_target ?? -1);
     modelParameters.remesh = paramDefaults.remesh ?? false;
-    modelParameters.texture_size = Number(paramDefaults.texture_size ?? modelParameters.texture_resolution ?? 4096); // texture_size = 4096
   } else if (modelId.includes('trellis')) {
     modelParameters.simplify = Number(paramDefaults.simplify ?? 0.0);
     modelParameters.ss_sampling_steps = Number(paramDefaults.ss_sampling_steps ?? 12);
     modelParameters.slat_sampling_steps = Number(paramDefaults.slat_sampling_steps ?? 12);
-    modelParameters.texture_resolution = Number(paramDefaults.texture_resolution ?? modelParameters.texture_resolution ?? 2048); // texture_resolution = 2048
   } else if (modelId.includes('hunyuan')) {
       modelParameters.octree_resolution = Number(paramDefaults.octree_resolution ?? 512);
-      modelParameters.enable_realesrgan = settings.enableRealESRGAN !== false;
     } else if (modelId.includes('unique3d')) {
       // Unique3D model-native parameters (official defaults)
       modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 1145;
@@ -273,14 +266,5 @@ function applyModelSpecificParams(
       modelParameters.enable_flashvdm = true;
     }
   
-  // Pass Paint-v2-1 parameters for shape models to enable auto-chaining (only when texturing is enabled)
-  if (isPaintModel && Boolean(modelParameters.texture_enabled)) {
-    modelParameters.max_num_view = settings.maxNumView ?? 6;
-    modelParameters.resolution = settings.resolution ?? 512;
-    modelParameters.auto_paint = true;
-    modelParameters.paint_model_preference = 'hunyuan3d_paint_v21_image_mesh_painting';
-    modelParameters.paint_resolution = settings.paintResolution ?? (
-      modelParameters.texture_resolution === '8K' ? 768 : 512
-    );
-  }
+
 }

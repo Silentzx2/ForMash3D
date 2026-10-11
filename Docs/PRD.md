@@ -44,7 +44,7 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 ### 3. Post-Processing Pipeline
 - **Mesh Decimation**: meshoptimizer SIMD decimation to target polycounts
 - **UV Unwrapping**: xatlas conformal UV unwrapping
-- **High-to-Low Detail Baking**: Available as an explicit transfer step for projecting source detail onto simplified meshes; automatic generation never mutates the immutable source checkpoint
+- **High-to-Low Detail Baking**: Enabled by default where the production path supports it, projecting source detail into normal/AO maps on derived game-ready UVs; the immutable source checkpoint is never mutated.
 - **Safe Component Guard**: Preserve anatomical features (≥0.5% vertices or ≥15 verts)
 
 ### 4. Multi-Tier LOD Generation
@@ -214,11 +214,15 @@ sequenceDiagram
     participant Storage as backend/storage/
 
     User->>Frontend: Select image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
-    SCHED->>Storage: Save source.glb (Untouched Master)
+    SCHED->>Storage: Save master/source.glb (Untouched Master)
+    opt Textured Generation enabled
+        SCHED->>SCHED: Paint3D (1K/2K) or Hunyuan Paint (4K/8K)
+        SCHED->>Storage: Save textured GLB and observed texture maps
+    end
     SCHED->>Storage: Save game_ready.glb (Decimated)
     SCHED->>Storage: Save lods/lod0..3.glb (LOD Cascade)
     SCHED->>Storage: Save collision.glb (Convex Hull)

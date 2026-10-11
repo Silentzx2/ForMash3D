@@ -117,7 +117,7 @@ sequenceDiagram
     participant Storage as backend/storage/
 
     User->>Frontend: Select image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
@@ -142,17 +142,34 @@ flowchart TD
     classDef output fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
     classDef guard fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
 
-    IN["📥 Input: source.glb<br/>Untouched Master Mesh"]:::input
-    IN --> SHAPE["🔧 Stage 1: Shape Generation<br/>Hunyuan3D-Shape-v2-1"]:::process
-    SHAPE --> MESH["🧱 Raw Mesh Output"]:::output
-    MESH --> PAINT["🎨 Stage 2: Paint Pipeline<br/>hunyuan3d_paint_v21_image_mesh_painting"]:::process
-    PAINT --> RES["🔍 RealESRGAN x4+<br/>Super-Resolution"]:::process
-    RES --> PBR["📐 DifferentiableRenderer<br/>PBR Validation"]:::process
-    PBR --> VRAM{"⚡ VRAM Check<br/>~21GB Required?"}:::guard
-    VRAM -->|✅ Yes| OK["✅ PBR Texture Ready<br/>texture.glb"]:::output
-    VRAM -->|⚠️ No| LOW["⚠️ Reduce Views<br/>or Resolution"]:::guard
-    OK --> CONFIG["⚙️ Configurable Parameters<br/>Resolution: 512/768<br/>Max Views: 6-12<br/>PBR State: Tracked"]:::process
-    CONFIG --> EXPORT["📦 Export: texture.glb<br/>PBR Materials"]:::output
+    IN["Immutable master/source.glb<br/>Raw Geometry"]:::input
+    IN --> TEXTURE{"Textured Generation enabled?"}:::guard
+    TEXTURE -->|No| RAW["Keep raw master<br/>No texture stage"]:::output
+    TEXTURE -->|Yes| SIZE{"Requested atlas preset"}:::guard
+    SIZE -->|1K / 2K| PAINT3D["Paint3D<br/>Coarse generation + UV refinement"]:::process
+    SIZE -->|4K / 8K| HUNYUAN["Hunyuan3D-Paint v2.1<br/>RealESRGAN enabled internally"]:::process
+    PAINT3D --> VERIFY["Inspect embedded base-colour atlas<br/>Require exact requested square size"]:::process
+    HUNYUAN --> VERIFY
+    VERIFY -->|Verified| EXPORT["Export separate textured GLB<br/>Keep source.glb untouched"]:::output
+    VERIFY -->|Missing / mismatch / failure| RAWFAIL["Preserve raw master<br/>Record texture-stage failure"]:::output
+```mermaid
+flowchart TD
+    classDef input fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef process fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef output fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
+    classDef guard fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
+
+    IN["Immutable master/source.glb<br/>Raw Geometry"]:::input
+    IN --> TEXTURE{"Textured Generation enabled?"}:::guard
+    TEXTURE -->|No| RAW["Keep raw master<br/>No texture stage"]:::output
+    TEXTURE -->|Yes| SIZE{"Requested atlas preset"}:::guard
+    SIZE -->|1K / 2K| PAINT3D["Paint3D<br/>Coarse + UV refinement"]:::process
+    SIZE -->|4K / 8K| HUNYUAN["Hunyuan3D-Paint v2.1<br/>RealESRGAN enabled internally"]:::process
+    PAINT3D --> VERIFY["Inspect embedded base-colour atlas<br/>Require exact requested dimensions"]:::process
+    HUNYUAN --> VERIFY
+    VERIFY -->|Verified| EXPORT["Export separate textured GLB<br/>Keep source.glb untouched"]:::output
+    VERIFY -->|Failed / mismatch| RAWFAIL["Preserve raw master<br/>Record texture-stage failure"]:::output
+```
 
     style IN fill:#1e293b
     style SHAPE fill:#0f172a

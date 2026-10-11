@@ -6,6 +6,7 @@ from types import ModuleType, SimpleNamespace
 import numpy as np
 import pytest
 import trimesh
+from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
 from PIL import Image
 
 from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter
@@ -13,6 +14,7 @@ from adapters.hunyuan3d_paint_v21 import Hunyuan3DPaintV21ImageMeshPaintingAdapt
 from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
 from adapters.triposf_adapter import TripoSFImageToRawMeshAdapter
 from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
+from utils.fastmesh_utils import FastMeshError, FastMeshRunner
 
 
 def test_trellis2_fails_when_textured_exporter_is_unavailable():
@@ -188,3 +190,43 @@ def test_hunyuan_mini_turbo_keeps_pipeline_when_to_returns_none(monkeypatch, tmp
     assert callable(adapter.pipeline)
     assert adapter.pipeline.device == "cpu"
     assert adapter.pipeline() is not None
+
+
+
+def test_fastmesh_normalization_rejects_empty_mesh():
+    runner = FastMeshRunner.__new__(FastMeshRunner)
+    empty = trimesh.Trimesh(vertices=np.empty((0, 3)), faces=np.empty((0, 3), dtype=np.int64), process=False)
+    with pytest.raises(FastMeshError, match="empty mesh"):
+        runner._apply_normalize(empty)
+
+
+def test_fastmesh_normalization_rejects_zero_extent_mesh():
+    runner = FastMeshRunner.__new__(FastMeshRunner)
+    flat = trimesh.Trimesh(
+        vertices=np.zeros((3, 3)),
+        faces=np.array([[0, 1, 2]], dtype=np.int64),
+        process=False,
+    )
+    with pytest.raises(FastMeshError, match="zero or invalid extent"):
+        runner._apply_normalize(flat)
+
+
+
+def test_centralized_texture_settings_do_not_reach_geometry_adapters():
+    inputs = {
+        "image_path": "/tmp/reference.png",
+        "texture_enabled": True,
+        "generate_texture": True,
+        "generateTexture": True,
+        "auto_paint": True,
+        "texture_resolution": "8K",
+        "production_texture_resolution": 8192,
+        "enable_realesrgan": False,
+        "bake_normal_maps": True,
+        "octree_resolution": 512,
+    }
+    forwarded = _build_model_inference_inputs(inputs)
+    assert forwarded == {
+        "image_path": "/tmp/reference.png",
+        "octree_resolution": 512,
+    }

@@ -100,7 +100,6 @@ export interface BatchQueueItem {
   maxNumView?: GenerationSettings['maxNumView'];
   resolution?: GenerationSettings['resolution'];
   generateCollision?: GenerationSettings['generateCollision'];
-  enableRealESRGAN?: GenerationSettings['enableRealESRGAN'];
   enablePrintabilityCheck?: GenerationSettings['enablePrintabilityCheck'];
   enableAutoRepair?: GenerationSettings['enableAutoRepair'];
   enableAutoRig?: GenerationSettings['enableAutoRig'];

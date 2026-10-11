@@ -13,6 +13,7 @@ from postprocess.pipeline import (
     resolve_texture_preset,
     run_postprocess_job,
     _check_cancelled,
+    _validate_texture_atlas_dimension,
 )
 
 
@@ -225,3 +226,19 @@ def test_handle_job_result_routes_texture_into_postprocess():
 
     asyncio.run(_run())
 
+
+
+
+def test_texture_atlas_validation_requires_observed_exact_size():
+    assert _validate_texture_atlas_dimension([2048, 2048], 2048) == (True, [2048, 2048], None)
+    valid, actual, error = _validate_texture_atlas_dimension([2048, 1024], 2048)
+    assert valid is False
+    assert actual == [2048, 1024]
+    assert "requested 2048x2048" in error
+
+
+def test_texture_atlas_validation_rejects_missing_dimension():
+    valid, actual, error = _validate_texture_atlas_dimension(None, 8192)
+    assert valid is False
+    assert actual is None
+    assert "Could not verify" in error

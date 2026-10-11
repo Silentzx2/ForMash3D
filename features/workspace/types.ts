@@ -384,7 +384,6 @@ export interface TextureSettings {
   lowVram?: boolean;
   maxNumView?: number;
   generatePBR?: boolean;
-  enableRealESRGAN?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -434,9 +433,6 @@ export interface GenerationSettings {
   generateCollision?: boolean;
   physics?: PhysicsSettings;
   generatePBR?: boolean;
-  bakeNormalMaps?: boolean;
-  bakeHighToLow?: boolean;
-
   prompt?: string;
   imageName?: string;
 
@@ -478,7 +474,6 @@ export interface GenerationSettings {
   maxNumView?: number;
   resolution?: number;
   paintResolution?: 512 | 768;
-  enableRealESRGAN?: boolean;
   intent?: string;
   preprocessingArtifactId?: string | null;
   preprocessingPreviewUrl?: string | null;

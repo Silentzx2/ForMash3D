@@ -149,13 +149,20 @@ class FastMeshRunner:
         Returns:
             Normalized trimesh mesh
         """
-        bbox = mesh.bounds
-        center = (bbox[1] + bbox[0]) / 2
-        scale = (bbox[1] - bbox[0]).max()
+        if len(mesh.vertices) == 0 or len(mesh.faces) == 0:
+            raise FastMeshError("Cannot retopologize an empty mesh.")
+        bounds = np.asarray(mesh.bounds, dtype=np.float64)
+        if bounds.shape != (2, 3) or not np.isfinite(bounds).all():
+            raise FastMeshError("Cannot retopologize a mesh with non-finite bounds.")
+        center = (bounds[1] + bounds[0]) / 2
+        scale = float((bounds[1] - bounds[0]).max())
+        if not np.isfinite(scale) or scale <= np.finfo(np.float64).eps:
+            raise FastMeshError("Cannot retopologize a mesh with zero or invalid extent.")
 
         mesh.apply_translation(-center)
-        mesh.apply_scale(1 / scale * 2 * 0.95)
-
+        mesh.apply_scale(1.0 / scale * 2.0 * 0.95)
+        if not np.isfinite(np.asarray(mesh.vertices)).all():
+            raise FastMeshError("Mesh normalization produced non-finite vertices.")
         return mesh
 
     def _sample_pc_with_normal(

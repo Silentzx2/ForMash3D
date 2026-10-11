@@ -12,7 +12,7 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 - **Presentation Layer**: Next.js 16 frontend with interactive Three.js 3D viewport, studio workspace tooling, persistent asset thumbnailing/previews, real-time hardware telemetry HUD, viewport background job capsule, and model management.
 - **API Gateway**: FastAPI backend (Python 3.10, Conda env `3daigc-api`) with VRAM-aware multiprocess scheduler, request validation, rate limiting, dual-store job synchronization (Redis + SQLite), and authorized artifact delivery.
-- **Model Adapters**: Python adapters for each AI model (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123++). The Paint-v2-1 pipeline supports Shape→Paint automatic chaining with configurable texture resolution (512/768), max view counts (6-12), PBR state tracking, and VRAM-aware scheduling. All adapters strictly enforce CUDA/GPU execution (`cuda:0`), rejecting silent CPU fallbacks.
+- **Model Adapters**: Python adapters for each AI model (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, Paint3D, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123++). Normal image-to-3D requests produce raw geometry; the scheduler runs an optional centralized texture stage after the raw master checkpoint is secured. Paint3D is used for 1K/2K, and Hunyuan3D-Paint for 4K/8K with its internal RealESRGAN step enabled automatically.
 - **Scheduler & CPU Concurrency**: VRAM-aware scheduler with GPU monitoring, model-input sanitization, dual-store job synchronization (Redis + SQLite), and multi-core CPU concurrency allocating all available cores (`nproc=8`, `OMP_NUM_THREADS=8`) across scheduler workers, marching cubes, and postprocessing.
 
 ### Model-Native Source Fidelity Contract
@@ -20,7 +20,7 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 - Hunyuan3D-DiT-v2-mini-Turbo uses FlashVDM (`topk_mode='merge'`) with `octree_resolution=380` and `num_chunks=20000`, producing high-fidelity geometry in <35 seconds.
 - The scheduler strips downstream-only target/decimation/remesh controls before adapter inference.
 - Raw extraction ceilings remain model-specific; only explicit hardware safety guards may lower them.
-- Source texture profiles are explicit: TRELLIS 2048 and TRELLIS.2 4096. Production quality/poly budgets stay downstream.
+- Normal image-to-3D routes return raw geometry; optional texture presets are handled after master promotion (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K). Legacy textured model IDs resolve to raw-generation aliases.
 - master/source.glb is immutable; retopology, UV, LOD, collision, and bake operations act on derived artifacts.
 
 ```mermaid
@@ -58,7 +58,7 @@ flowchart TB
     subgraph CORE["🧠 Model Execution Layer (23 Adapters)"]
         direction TB
         SHAPE["Shape Generation<br/>TRELLIS · Hunyuan3D-2.1<br/>TripoSR · TripoSG · TripoSF"]:::purple
-        PAINT["Texture Synthesis<br/>Hunyuan3D-Paint 2B<br/>RealESRGAN x4+ PBR"]:::purple
+        PAINT["Optional Texture Stage<br/>Paint3D 1K/2K · Hunyuan Paint 4K/8K"]:::purple
         STRUCT["Structure & Motion<br/>FastMesh (V1K/V4K) · PartPacker<br/>UniRig · ARDY · VoxHammer"]:::purple
     end
 
@@ -319,10 +319,10 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 - `GET /api/v1/file-upload/download/{file_id}`: Stream stored file.
 
 ### Mesh Generation & Processing
-- `POST /api/v1/mesh-generation/image-to-raw-mesh`: Geometry synthesis from image.
-- `POST /api/v1/mesh-generation/image-to-textured-mesh`: Full PBR geometry + texture from models that natively implement the feature.
-- Hunyuan3D Shape→Paint: Shape-v2-1 or DiT-v2-mini-Turbo uses `image-to-raw-mesh`, then optionally chains into `hunyuan3d_paint_v21_image_mesh_painting` after geometry completion.
-- `POST /api/v1/mesh-generation/image-mesh-painting`: Paint textures onto mesh (Hunyuan3D-Paint-v2-1).
+- `POST /api/v1/mesh-generation/image-to-raw-mesh`: Primary image-to-3D route. It secures raw `master/source.glb` before optional post-processing texturing.
+- `POST /api/v1/mesh-generation/image-to-textured-mesh`: Backward-compatible endpoint; legacy textured geometry IDs map to their raw aliases, with optional centralized texturing controlled by the request.
+- Central texture routing: 1K/2K → Paint3D; 4K/8K → Hunyuan3D-Paint v2.1. Texture output is stored separately from the raw master; its exported atlas is validated against the requested square dimension.
+- `POST /api/v1/mesh-generation/image-mesh-painting`: Paint an existing mesh directly (Texture Studio/manual workflow).
 - `GET /api/v1/mesh-generation/status/{job_id}`: Real-time generation job status.
 - `POST /api/v1/mesh-generation/cancel/{job_id}`: Cancel a running job.
 - `GET /api/v1/system/jobs/{job_id}/download?artifact_format=<format>`: Deliver canonical master, game-ready, LOD, collision, texture, preview, QA, or ZIP artifacts.
@@ -350,8 +350,8 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 | Hunyuan3D-Shape-v2.1 | `hunyuan3d_shape_v21_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB |
 | Hunyuan3D-Paint-v2.1 | `hunyuan3d_paint_v21_image_mesh_painting` | Image/mesh → PBR Paint | ~21 GB |
 | Hunyuan3D-DiT-v2-mini-Turbo | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Image → Raw Mesh | ~6 GB |
-| TRELLIS | `trellis_image_to_textured_mesh`; `trellis_text_mesh_painting`; `trellis_image_mesh_painting` | Image → Textured Mesh; Mesh Painting | ~11.5 GB |
-| TRELLIS.2 | `trellis2_image_to_textured_mesh`; `trellis2_image_mesh_painting` | Image → Textured Mesh; Image Paint | ~23.5 GB |
+| TRELLIS | `trellis_image_to_3d`; `trellis_image_to_raw_mesh`; legacy `trellis_image_to_textured_mesh` alias; legacy standalone paint IDs remain API-compatible | Raw Geometry; legacy textured ID resolves to raw output | ~11.5 GB |
+| TRELLIS.2 | `trellis2_image_to_3d`; `trellis2_image_to_raw_mesh`; legacy `trellis2_image_to_textured_mesh` alias; standalone paint ID remains API-compatible | Raw Geometry; legacy textured ID resolves to raw output | ~23.5 GB |
 | TripoSR | `triposr_image_to_raw_mesh` | Image → Raw Mesh | ~6 GB |
 | TripoSG | `triposg_image_to_raw_mesh` | Image → Raw Mesh | ~8 GB |
 | TripoSF | `triposf_image_to_raw_mesh` | Image → Raw Mesh | ~12 GB |
@@ -509,7 +509,7 @@ Pipeline: MODEL INFERENCE -> immutable master/source.glb -> world-space scene fl
 The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE and is best-effort for generation completion.
 
 ## Physics layer
-Physics is an opt-in layer after the existing generation and production post-processing pipeline. The immutable master remains unchanged. When requested, the scheduler passes a provider-neutral physics intent into post-processing; the existing collision service produces the collision representation and `metadata/physics.json` records the rigid-body configuration, material response, collision statistics, provenance, and capabilities. The browser viewer uses the canonical collision artifact with pinned Rapier 0.19.3 while remaining on the existing direct Three.js renderer. Physics preparation is skipped for intermediate Shape output in Shape→Paint auto-chaining and runs only on the final output. The physics runtime is not an inference model and does not consume generation-model VRAM.
+Physics is an opt-in layer after the existing generation and production post-processing pipeline. The immutable master remains unchanged. When requested, the scheduler passes a provider-neutral physics intent into post-processing; the existing collision service produces the collision representation and `metadata/physics.json` records the rigid-body configuration, material response, collision statistics, provenance, and capabilities. The browser viewer uses the canonical collision artifact with pinned Rapier 0.19.3 while remaining on the existing direct Three.js renderer. Physics preparation runs against derived geometry in the production pipeline; the optional centralized texture stage does not create a second physics job or replace the immutable raw master. The physics runtime is not an inference model and does not consume generation-model VRAM.
 
 ### Execution telemetry and cancellation
 The workspace treats `/api/v1/system/jobs/{job_id}` as the source of truth for live job state. The frontend uses adaptive, visibility-aware polling because the current backend exposes the system job status contract as REST; it does not claim a per-job SSE stream that is not implemented. Queue cancellation uses `POST /api/v1/mesh-generation/cancel/{job_id}` and preserves the job history record.

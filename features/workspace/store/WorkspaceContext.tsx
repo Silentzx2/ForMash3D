@@ -525,7 +525,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       maxNumView: 6,
       resolution: 1024,
       generateCollision: true,
-      enableRealESRGAN: true,
       intent: undefined,
       preprocessingArtifactId: null,
       preprocessingPreviewUrl: null,
@@ -566,7 +565,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
     maxNumView: 6,
     generatePBR: true,
-    enableRealESRGAN: true,
   });
 
   const [sculptSettings, setSculptSettings] = useState<SculptSettings>({
@@ -1626,14 +1624,21 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
     const currentQuality = generationSettings.meshQuality || 'high';
     const textureResolutionByQuality: Record<string, number> = {
-      low: 512,
+      low: 1024,
       medium: 1024,
       high: 2048,
       ultra: 4096,
-      '8k': 4096,
+      '8k': 8192,
     };
+    const selectedAtlasPreset = (
+      generationSettings.texture_resolution ||
+      generationSettings.textureResolution ||
+      ''
+    );
     const requestedTextureResolution =
-      textureResolutionByQuality[generationSettings.textureQuality] || 2048;
+      textureResolutionByQuality[selectedAtlasPreset] ||
+      textureResolutionByQuality[generationSettings.textureQuality] ||
+      2048;
     // Source geometry follows the selected model's official/tuned inference schedule.
     const sourceQuality = 'ultra' as const;
     let modelId = generationSettings.aiModel || '';
@@ -1680,9 +1685,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
       // Route dynamically: raw models (Hunyuan3D Raw, PartPacker, UltraShape) must go to image-to-raw-mesh
       const selectedModel = modelDetails[generationSettings.aiModel || ''];
       const capabilities = selectedModel?.capabilities || {};
-      const isRawModel = capabilities.raw_mesh === true;
-      const isTextured = !isRawModel && generationSettings.generateTexture !== false;
-      const isPaintModel = capabilities.paint_autochain === true;
+      const isTextured = generationSettings.generateTexture !== false;
       const isMultiviewCapable = Boolean(capabilities.multiview_input);
       const hasMvViews = Boolean(
         generationSettings.multiviewAssetId ||
@@ -1692,9 +1695,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
       const endpoint = useMultiviewReconstruction
         ? '/api/v1/multiview/reconstruct-3d'
-        : (isTextured
-          ? '/api/v1/mesh-generation/image-to-textured-mesh'
-          : '/api/v1/mesh-generation/image-to-raw-mesh');
+        : '/api/v1/mesh-generation/image-to-raw-mesh';
 
       // Resolve image input: prefer file_id from upload, fall back to base64 data URL
       const imageInput: Record<string, unknown> = {};
@@ -1715,7 +1716,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         low_vram: Boolean(generationSettings.lowVram),
         enable_flashvdm: generationSettings.enableFlashVDM ?? false,
         low_vram_mode: generationSettings.lowVramMode ?? 'auto',
-        auto_optimize: targetPoly === 0 || (targetPoly > 0 && targetPoly < 200000),
+        auto_optimize: targetPoly > 0 && targetPoly < 200000,
         target_polycount: targetPoly,
         generateLOD: generationSettings.generateLOD !== false,
         lodPreset: generationSettings.lodPreset || 'high',
@@ -1723,6 +1724,8 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         negative_prompt: generationSettings.negativePrompt || undefined,
         source_quality: 'max',
         quality: currentQuality,
+        texture_enabled: isTextured,
+        generate_texture: isTextured,
       };
 
       // Source geometry and source textures always use maximum-fidelity generation settings.
@@ -1744,33 +1747,21 @@ function dataURLtoFile(dataURL: string, filename: string): File {
       } else if ((generationSettings.aiModel || '').includes('trellis2')) {
         modelParameters.decimation_target = -1;
         modelParameters.remesh = false;
-        modelParameters.texture_size = 4096;
       } else if (modelId.includes('trellis')) {
         modelParameters.simplify = 0.0;
         modelParameters.ss_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
         modelParameters.slat_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
-        modelParameters.texture_resolution = 2048;
       } else if (modelId.includes('hunyuan')) {
         modelParameters.octree_resolution = 512;
-        modelParameters.enable_realesrgan = generationSettings.enableRealESRGAN !== false;
       }
 
       if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
         modelParameters.enable_flashvdm = true;
       }
 
-      // Pass Paint-v2-1 parameters for shape models to enable auto-chaining
-      if (isPaintModel) {
-        modelParameters.max_num_view = generationSettings.maxNumView ?? 6;
-        modelParameters.resolution = generationSettings.resolution ?? 512;
-        modelParameters.auto_paint = true;
-        modelParameters.paint_model_preference = 'hunyuan3d_paint_v21_image_mesh_painting';
-        modelParameters.paint_resolution = generationSettings.resolution ?? 512;
-      }
 
-      const physicsForThisJob =
-        Boolean(generationSettings.generateCollision) &&
-        !(isPaintModel && generationSettings.generateTexture !== false);
+
+      const physicsForThisJob = Boolean(generationSettings.generateCollision);
 
       const cleanStem = (imageFileName || modelPrompt || 'asset')
         .replace(/\.[^/.]+$/, '')
@@ -1781,6 +1772,10 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         ? {
             asset_id: generationSettings.multiviewAssetId || undefined,
             images: generationSettings.multiviewViews || undefined,
+            reference_image_file_id: generationSettings.imageFileId || undefined,
+            reference_image_base64: !generationSettings.imageFileId && typeof imageToUse === 'string' && imageToUse.startsWith('data:')
+              ? imageToUse
+              : undefined,
             model_preference: modelId || undefined,
             intent: generationSettings.intent,
             output_format: 'glb',
@@ -1791,6 +1786,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
             lodPreset: generationSettings.lodPreset || 'high',
             lodCount: generationSettings.lodCount || 4,
             texture_resolution: isTextured ? requestedTextureResolution : undefined,
+            bake_normal_maps: true,
             physics_enabled: physicsForThisJob,
             physics_config: generationSettings.physics,
           }
@@ -1812,7 +1808,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
             physics_config: generationSettings.physics,
             topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
             quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
-            bake_normal_maps: generationSettings.bakeNormalMaps !== false,
+            bake_normal_maps: true,
           };
 
       if (!useMultiviewReconstruction && isTextured) {
@@ -2016,7 +2012,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       const isHighRes = resolution === '4K' || resolution === '8K';
       const routedModel = isHighRes
         ? 'hunyuan3d_paint_v21_image_mesh_painting'
-        : 'paint3d_image_mesh_painting';
+        : 'paint3d';
       const modelPreference = textureSettings.modelId || routedModel;
 
       const localTaskId = startTask('texture', 'Texture generation', undefined, modelPreference, undefined, undefined, comparisonGroupId ?? undefined);
@@ -2025,17 +2021,14 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
 
       const isTextPaintingModel = modelPreference === 'trellis_text_mesh_painting';
       const hasTexturePrompt = Boolean(textureSettings.prompt?.trim());
-      const endpoint = (isTextPaintingModel || (hasTexturePrompt && !textureSettings.referenceImage && !currentAsset?.referenceImage && !currentAsset?.inputImage && !currentAsset?.thumbnail))
+      const endpoint = isTextPaintingModel
         ? '/api/v1/mesh-generation/text-mesh-painting'
         : '/api/v1/mesh-generation/image-mesh-painting';
 
       const body: Record<string, unknown> = {
-        texture_enabled: true,
         texture_resolution: resolution,
         output_format: 'glb',
         model_preference: modelPreference,
-        generate_texture: true,
-        auto_paint: true,
         ...meshRef,
       };
 
@@ -2043,19 +2036,9 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
         body.model_parameters = {
           max_num_view: textureSettings.maxNumView ?? 6,
           resolution: resolution === '8K' ? 768 : 512,
-          enable_realesrgan: textureSettings.enableRealESRGAN !== false,
-          texture_resolution: resolution,
-          texture_enabled: true,
-          generate_texture: true,
-          auto_paint: true,
         };
       } else {
-        body.model_parameters = {
-          texture_resolution: resolution,
-          texture_enabled: true,
-          generate_texture: true,
-          auto_paint: true,
-        };
+        body.model_parameters = {};
       }
 
       if (textureSettings.generatePBR !== false) {
@@ -2331,7 +2314,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            maxNumView: batchItem.maxNumView ?? 6,
            resolution: batchItem.resolution ?? 1024,
            generateCollision: batchItem.generateCollision ?? true,
-           enableRealESRGAN: batchItem.enableRealESRGAN ?? true,
            intent: batchItem.intent,
            preprocessingArtifactId: batchItem.preprocessingArtifactId,
            preprocessingPreviewUrl: null,
@@ -2571,7 +2553,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            maxNumView: undefined,
            resolution: undefined,
            generateCollision: undefined,
-           enableRealESRGAN: undefined,
            enablePrintabilityCheck: undefined,
            enableAutoRepair: undefined,
            enableAutoRig: undefined,

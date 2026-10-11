@@ -91,6 +91,9 @@ def auto_unload_after_job_enabled() -> bool:
 _POSTPROCESS_ONLY_INPUTS = frozenset({
     "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
     "physics_enabled", "physics_config", "auto_paint", "paint_model_preference", "paint_resolution",
+    "texture_enabled", "generate_texture", "generateTexture", "texture_resolution",
+    "texture_resolution_preset", "production_texture_resolution",
+    "enable_realesrgan", "enableRealESRGAN", "realeg",
     "faces", "num_faces", "simplify", "decimation_target", "remesh", "remesh_band", "remesh_project",
     "bake_normal_maps", "bake_high_to_low", "bake_textures",
     "intent", "preprocessing_artifact_id", "enhancement_enabled", "preprocessing_metadata",

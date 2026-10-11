@@ -463,7 +463,7 @@ Content-Type: application/json
 
 ### Image Mesh Painting
 
-Paint textures onto an existing mesh using an image reference. Supports Hunyuan3D-Paint-v2-1 with configurable texture resolution (512/768), max view counts (6-12), and PBR state tracking.
+Paint textures onto an existing mesh using an image reference. The model's internal per-view settings (512/768) are independent from the requested final atlas dimension (1K/2K/4K/8K). RealESRGAN is enabled internally for Hunyuan Paint; there is no separate user-facing toggle.
 
 ```http
 POST /api/v1/mesh-generation/image-mesh-painting
@@ -483,7 +483,7 @@ Content-Type: application/json
 
 ### Image-to-Textured Mesh
 
-For Hunyuan3D, texture generation is a two-stage workflow: submit Shape-v2-1 or DiT-v2-mini-Turbo through `image-to-raw-mesh`; when texture generation is enabled in the Workspace, the client automatically chains the resulting mesh into `hunyuan3d_paint_v21_image_mesh_painting`. The generic `image-to-textured-mesh` endpoint remains available for models that natively implement that feature, such as TRELLIS.
+Normal image-to-3D generation always submits the selected geometry model to `image-to-raw-mesh`. When Textured Generation is enabled, centralized post-processing receives the raw mesh, original reference-image file reference, and requested atlas preset: 1K/2K uses Paint3D; 4K/8K uses Hunyuan3D-Paint v2.1 with its internal RealESRGAN path enabled. The API accepts named presets (`"1K"`, `"2K"`, `"4K"`, `"8K"`) or numeric dimensions (1024/2048/4096/8192). The stage inspects the embedded base-colour texture in the exported GLB and reports success only when its observed square dimensions match the requested target. If texturing fails or the atlas cannot be verified, the immutable raw master is preserved and the texture-stage result reports failure. The legacy `image-to-textured-mesh` path remains for API compatibility; legacy geometry IDs resolve to raw-only aliases rather than re-enabling model-native texture generation.
 
 ### Get Job Status
 

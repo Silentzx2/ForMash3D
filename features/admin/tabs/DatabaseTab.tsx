@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -112,21 +112,29 @@ export function DatabaseTab() {
   const [jobsToken, setJobsToken] = useState('');
   const [filesToken, setFilesToken] = useState('');
   const [clearing, setClearing] = useState(false);
+  const statsRequestSequence = useRef(0);
+  const jobsRequestSequence = useRef(0);
 
   const fetchStats = useCallback(async (quiet = false) => {
+    const requestId = ++statsRequestSequence.current;
     if (!quiet) setLoading(true);
     setError(null);
     try {
-      setStats(await getApiClient().getDatabaseStats());
+      const nextStats = await getApiClient().getDatabaseStats();
+      if (requestId !== statsRequestSequence.current) return;
+      setStats(nextStats);
       setLastSynced(new Date());
     } catch (err: any) {
-      setError(errMessage(err, 'Failed to load database statistics'));
+      if (requestId === statsRequestSequence.current) {
+        setError(errMessage(err, 'Failed to load database statistics'));
+      }
     } finally {
-      setLoading(false);
+      if (requestId === statsRequestSequence.current) setLoading(false);
     }
   }, []);
 
   const fetchJobs = useCallback(async (offset: number, append: boolean) => {
+    const requestId = ++jobsRequestSequence.current;
     if (append) setLoadingMore(true);
     else setJobsLoading(true);
     setJobsError(null);
@@ -136,6 +144,7 @@ export function DatabaseTab() {
         offset,
         status: filter === 'all' ? undefined : filter,
       });
+      if (requestId !== jobsRequestSequence.current) return;
       const page: DbJob[] = (res.jobs ?? []).map((j: any) => ({
         job_id: j.job_id ?? j.id,
         status: j.status,
@@ -150,10 +159,14 @@ export function DatabaseTab() {
       setTotalJobs(res.pagination?.total ?? 0);
       setHasMore(!!res.pagination?.has_more);
     } catch (err: any) {
-      setJobsError(errMessage(err, 'Failed to load jobs'));
+      if (requestId === jobsRequestSequence.current) {
+        setJobsError(errMessage(err, 'Failed to load jobs'));
+      }
     } finally {
-      setJobsLoading(false);
-      setLoadingMore(false);
+      if (requestId === jobsRequestSequence.current) {
+        setJobsLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [filter]);
 
@@ -326,6 +339,18 @@ export function DatabaseTab() {
           Refresh
         </Button>
       </div>
+
+      {error && stats && (
+        <div role="alert" aria-live="polite" className="p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 min-w-0">
+            <HugeiconsIcon icon={AlertCircleIcon} size={16} className="w-4 h-4 shrink-0" />
+            <span className="text-sm">{error}</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void fetchStats(true)} disabled={loading}>
+            <HugeiconsIcon icon={RefreshCwIcon} size={16} className="w-3.5 h-3.5 mr-1" /> Retry
+          </Button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <Card className="bg-[hsl(var(--surface-1))] border-[hsl(var(--border)/0.6)]">

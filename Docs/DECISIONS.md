@@ -204,7 +204,7 @@
 
 **Consequences**:
 - `backend/adapters/hunyuan3d_paint_v21.py` adapter
-- Shape→Paint automatic chaining
+- Legacy Shape→Paint automatic chaining (superseded by the centralized optional-texture decision below)
 - Configurable texture resolution (512/768), max views (6-12)
 - VRAM-aware scheduling (~21GB requirement)
 - Dockerfile includes Paint DifferentiableRenderer build
@@ -261,7 +261,7 @@
 
 **Consequences**:
 - `backend/adapters/hunyuan3d_paint_v21.py` adapter with `_resolve_realesrgan_path()`, `get_vram_status()`, `_verify_pbr_output()`
-- Shape→Paint automatic chaining support
+- Legacy Shape→Paint automatic chaining support (superseded by the centralized optional-texture decision below)
 - Configurable texture resolution (512/768), max views (6-12)
 - VRAM-aware scheduling with ~21GB requirement
 - Dockerfile needs separate Paint DifferentiableRenderer build step
@@ -350,13 +350,13 @@
 
 **Decision**: Treat Hunyuan3D-Shape-v2-1 as the raw-mesh stage and Hunyuan3D-Paint-v2-1 as the optional texture stage. Do not register a separate direct Shape textured model ID.
 
-**Reason**: Shape and Paint are separate model checkpoints with independent VRAM and lifecycle requirements. The existing scheduler and Workspace already support the two-stage flow, allowing Shape to finish and expose a generated file ID before Paint is scheduled.
+**Reason**: Shape and Paint are separate model checkpoints with independent VRAM and lifecycle requirements. A geometry model must not own a hidden texture-generation workflow. The scheduler preserves the raw master first, then invokes the common optional texture stage when requested.
 
 **Consequences**:
-- `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` are the current Hunyuan shape-generation IDs.
-- `hunyuan3d_paint_v21_image_mesh_painting` remains independently callable.
-- Workspace texture generation uses the generated job file ID plus the original image input for Shape-v2-1 or Mini Turbo → Paint handoff.
-- The removed direct Shape textured ID is not exposed through the model registry or GeneratePanel.
+- `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` remain raw geometry IDs.
+- `hunyuan3d_paint_v21_image_mesh_painting` remains independently callable for direct Texture Studio jobs and is reused by centralized 4K/8K texturing.
+- The central stage passes the original reference image and resolved atlas target, enables the model's built-in RealESRGAN path, and validates the exported base-colour atlas without replacing `master/source.glb`.
+- Legacy direct Shape textured IDs remain raw-only compatibility aliases.
 
 ## ADR-041: Explicit SDPA Fallback for Pre-Ampere Sparse Attention
 

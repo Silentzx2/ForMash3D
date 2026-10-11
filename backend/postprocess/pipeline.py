@@ -125,6 +125,51 @@ def _resolve_reference_image(job_inputs: Dict[str, Any], job_metadata: Dict[str,
     return None
 
 
+
+def _extract_base_color_texture(glb_path: Path) -> Optional[Image.Image]:
+    """Read the actual embedded base-colour atlas from a newly generated GLB."""
+    try:
+        loaded = trimesh.load(glb_path, file_type="glb", process=False)
+        geometries = (
+            loaded.geometry.values()
+            if isinstance(loaded, trimesh.Scene)
+            else [loaded]
+        )
+        for geometry in geometries:
+            material = getattr(getattr(geometry, "visual", None), "material", None)
+            if material is None:
+                continue
+            image = (
+                getattr(material, "baseColorTexture", None)
+                or getattr(material, "image", None)
+            )
+            if isinstance(image, Image.Image):
+                return image.copy()
+            if isinstance(image, np.ndarray) and image.ndim in (2, 3):
+                try:
+                    return Image.fromarray(image.copy())
+                except (TypeError, ValueError):
+                    continue
+    except Exception as exc:
+        logger.debug("Could not extract embedded base-colour atlas from %s: %s", glb_path, exc)
+    return None
+
+
+def _validate_texture_atlas_dimension(
+    actual_dimension: Optional[list[int]], target_dimension: int
+) -> tuple[bool, Optional[list[int]], Optional[str]]:
+    """Require an observed embedded atlas with exactly the requested square size."""
+    if not actual_dimension or len(actual_dimension) < 2:
+        return False, actual_dimension, "Could not verify the embedded base-colour atlas dimensions."
+    actual = [int(actual_dimension[0]), int(actual_dimension[1])]
+    if actual != [target_dimension, target_dimension]:
+        return False, actual, (
+            f"Texture atlas is {actual[0]}x{actual[1]}; "
+            f"requested {target_dimension}x{target_dimension}."
+        )
+    return True, actual, None
+
+
 def _execute_texture_stage(
     job_id: str,
     asset_dir: Path,
@@ -150,7 +195,7 @@ def _execute_texture_stage(
             "error": err_msg,
             "model": model_id,
             "preset": preset_label,
-            "target_resolution": target_atlas_size,
+            "target_atlas_size": target_atlas_size,
         }
 
     texture_dir = asset_dir / "textures"
@@ -162,11 +207,11 @@ def _execute_texture_stage(
             adapter = None
             try:
                 from core.scheduler.model_factory import ModelFactory
-                for key in ("paint3d_image_mesh_painting", "paint3d"):
+                for key in ("paint3d", "paint3d_image_mesh_painting")
                     if key in ModelFactory.ADAPTER_REGISTRY:
                         adapter = ModelFactory.create_model_from_config({
                             "model_id": key,
-                            "vram_requirement": 8000,
+                            "vram_requirement": 12000,
                             "feature_type": "image_mesh_painting",
                         })
                         break
@@ -183,7 +228,7 @@ def _execute_texture_stage(
                         mod = importlib.import_module(mod_name)
                         cls = getattr(mod, cls_name, None)
                         if cls:
-                            adapter = cls(vram_requirement=8000)
+                            adapter = cls(vram_requirement=12000)
                             break
                     except Exception as e:
                         logger.debug("Paint3D direct import %s.%s: %s", mod_name, cls_name, e)
@@ -197,6 +242,7 @@ def _execute_texture_stage(
                 "image_path": str(ref_image_path),
                 "output_format": "glb",
                 "resolution": target_atlas_size,
+                "texture_resolution": target_atlas_size,
             })
             out_mesh = res.get("output_mesh_path") if isinstance(res, dict) else None
             if not out_mesh or not Path(out_mesh).is_file():
@@ -230,8 +276,8 @@ def _execute_texture_stage(
                 "image_path": str(ref_image_path),
                 "output_format": "glb",
                 "resolution": hy_res,
+                "texture_resolution": target_atlas_size,
                 "max_num_view": int(job_inputs.get("max_num_view") or 6),
-                "enable_realesrgan": True,
             })
             out_mesh = res.get("output_mesh_path") if isinstance(res, dict) else None
             if not out_mesh or not Path(out_mesh).is_file():
@@ -244,33 +290,16 @@ def _execute_texture_stage(
         if not standard_textured.exists() or standard_textured.resolve() != textured_glb_path.resolve():
             shutil.copy2(textured_glb_path, standard_textured)
 
-        validated_dim = None
-        for img_candidate in texture_dir.glob("*.png"):
-            try:
-                with Image.open(img_candidate) as img:
-                    validated_dim = list(img.size)
-                    break
-            except Exception:
-                pass
+        base_color = _extract_base_color_texture(textured_glb_path)
+        actual_dim = list(base_color.size) if base_color is not None else None
+        valid_dim, actual_dim, dimension_error = _validate_texture_atlas_dimension(
+            actual_dim, target_atlas_size
+        )
+        if not valid_dim:
+            raise RuntimeError(dimension_error or "Texture atlas dimensions could not be verified.")
+        assert base_color is not None
+        base_color.save(texture_dir / "base_color.png")
 
-        if not validated_dim and textured_glb_path.exists():
-            try:
-                import trimesh
-                s = trimesh.load(textured_glb_path, file_type="glb", process=False)
-                geoms = getattr(s, "geometry", {}) if isinstance(s, trimesh.Scene) else {"m": s}
-                for g in geoms.values():
-                    mat = getattr(getattr(g, "visual", None), "material", None)
-                    im = getattr(mat, "baseColorTexture", None) or getattr(mat, "image", None)
-                    if isinstance(im, Image.Image):
-                        validated_dim = list(im.size)
-                        base_png = texture_dir / "base_color.png"
-                        if not base_png.exists():
-                            im.save(base_png)
-                        break
-            except Exception as tex_extract_err:
-                logger.debug("Texture dimension inspection notice: %s", tex_extract_err)
-
-        actual_dim = validated_dim or [target_atlas_size, target_atlas_size]
         logger.info(
             "[POSTPROCESS TEXTURE] Stage completed for %s: model=%s preset=%s atlas=%dx%d",
             job_id, model_id, preset_label, actual_dim[0], actual_dim[1],
@@ -1179,16 +1208,22 @@ def run_postprocess_job(
     retopo_t0 = time.time()
     if is_quad_requested and not native_textures:
         _emit(progress, 0.24, "retopo", "Running auto-retopology for quad-dominant mesh.")
-        retopo_target = min(resolved_target_polycount or 10_000, max(50, int(len(repaired.faces))))
+        source_face_count = min(5_000_000, max(50, int(len(repaired.faces))))
+        retopo_target = min(
+            source_face_count,
+            resolved_target_polycount if resolved_target_polycount > 0 else source_face_count,
+        )
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
                 AutoRetopoOptions(
                     target_faces=retopo_target,
                     quads=True,
-                    watertight=True,
-                    shell_smooth=0.6,
-                    shell_taubin=3,
+                    # Use the source surface for already-closed meshes; a low-res voxel shell
+                    # rounds genuine edges. Only open/defective inputs need shell reconstruction.
+                    watertight=not bool(repaired_topology.get("watertight", False)),
+                    shell_smooth=0.25,
+                    shell_taubin=1,
                     adaptive=True,
                     preserve_features=True,
                     feature_angle=25.0,
@@ -1211,8 +1246,8 @@ def run_postprocess_job(
         try:
             repaired, retopo_tool_stats, _ = run_auto_retopo(
                 repaired,
-                AutoRetopoOptions(target_faces=retopo_target, watertight=True, shell_smooth=0.6,
-                                  shell_taubin=3, adaptive=True, preserve_features=True,
+                AutoRetopoOptions(target_faces=retopo_target, watertight=True, shell_smooth=0.25,
+                                  shell_taubin=1, adaptive=True, preserve_features=True,
                                   feature_angle=25.0, project=True),
                 progress=lambda stage, frac, msg: (
                     _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
@@ -1853,7 +1888,10 @@ def run_postprocess_job(
             "quality_trace": quality_trace,
             "master_to_derivative": master_quality_report,
             "quality_mode": quality_mode,
-            "texture_resolution": texture_resolution,
+            "texture_resolution": (
+                int(texture_stage_info.get("target_atlas_size") or texture_resolution)
+                if texture_enabled else texture_resolution
+            ),
             "cpu_threads": cpu_threads,
             "lods": lod_quality,
             "lod_validation": lod_validation,
@@ -1918,7 +1956,12 @@ def run_postprocess_job(
         final_result["degraded_reasons"] = list(
             final_result.get("degraded_reasons", [])
         ) + ["final_quality_inspection_unavailable"]
-    final_result["texture_resolution"] = texture_resolution
+    texture_info = final_result.get("texture_stage") or {}
+    final_result["texture_resolution"] = (
+        int(texture_info["target_atlas_size"])
+        if texture_enabled and texture_info.get("target_atlas_size")
+        else texture_resolution
+    )
     final_result["cpu_threads"] = cpu_threads
     final_result["optimize"] = optimize_stats
     if printability_enabled:

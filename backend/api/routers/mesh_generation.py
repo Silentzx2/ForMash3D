@@ -11,7 +11,7 @@ import shutil
 import tempfile
 from pathlib import Path
 from uuid import uuid4
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -29,6 +29,39 @@ from core.utils.file_utils import save_base64_file, save_upload_file
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/mesh-generation", tags=["mesh_generation"])
+
+_LEGACY_TEXTURED_MODEL_ALIASES = {
+    "trellis_image_to_textured_mesh": "trellis_image_to_3d",
+    "trellis2_image_to_textured_mesh": "trellis2_image_to_3d",
+}
+
+_TEXTURE_RESOLUTION_PRESETS = {"1K": 1024, "2K": 2048, "4K": 4096, "8K": 8192}
+
+
+def _normalize_texture_resolution(value):
+    """Accept user presets or numeric atlas sizes at the API boundary."""
+    if isinstance(value, str):
+        normalized = value.strip().upper()
+        if normalized in _TEXTURE_RESOLUTION_PRESETS:
+            return _TEXTURE_RESOLUTION_PRESETS[normalized]
+        if normalized.isdecimal():
+            return int(normalized)
+    return value
+
+
+def _clean_paint_parameters(parameters: Optional[dict]) -> Dict[str, Any]:
+    """Keep direct paint jobs from re-triggering centralized texture generation."""
+    obsolete = {
+        "texture_enabled", "generate_texture", "generateTexture", "auto_paint",
+        "texture_resolution", "texture_resolution_preset",
+        "enable_realesrgan", "enableRealESRGAN", "realeg",
+    }
+    return {
+        key: value for key, value in (parameters or {}).items()
+        if value is not None and key not in obsolete
+    }
+
+
 
 
 def validate_model_preference(
@@ -92,6 +125,11 @@ class TextMeshPaintingRequest(BaseModel):
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
 
+    @field_validator("texture_resolution", mode="before")
+    @classmethod
+    def normalize_texture_resolution(cls, value):
+        return _normalize_texture_resolution(value)
+
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v):
@@ -131,6 +169,12 @@ class ImageToRawMeshRequest(BaseModel):
     image_file_id: Optional[str] = Field(
         None, description="File ID from upload endpoint"
     )
+    texture_resolution: int = Field(
+        2048, description="Optional texture-atlas preset or size", ge=256, le=8192
+    )
+    bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
+    texture_enabled: Optional[bool] = None
+    generate_texture: Optional[bool] = None
     output_format: str = Field("glb", description="Output mesh format")
     quality_mode: Optional[str] = Field("high", description="Target quality budget")
     target_polycount: Optional[int] = Field(None, description="Target triangle budget")
@@ -154,6 +198,11 @@ class ImageToRawMeshRequest(BaseModel):
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
+
+    @field_validator("texture_resolution", mode="before")
+    @classmethod
+    def normalize_texture_resolution(cls, value):
+        return _normalize_texture_resolution(value)
 
     @field_validator("output_format")
     @classmethod
@@ -201,9 +250,12 @@ class ImageToTexturedMeshRequest(BaseModel):
     texture_image_file_id: Optional[str] = Field(
         None, description="Texture image file ID from upload endpoint"
     )
-    texture_resolution: int = Field(
-        1024, description="Texture resolution", ge=256, le=4096
+    texture_resolution: Optional[int] = Field(
+        None, description="Texture atlas preset or size", ge=256, le=8192
     )
+    bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
+    texture_enabled: Optional[bool] = None
+    generate_texture: Optional[bool] = None
     output_format: str = Field("glb", description="Output mesh format")
     quality_mode: Optional[str] = Field("high", description="Target quality budget")
     target_polycount: Optional[int] = Field(None, description="Target triangle budget")
@@ -227,6 +279,11 @@ class ImageToTexturedMeshRequest(BaseModel):
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
+
+    @field_validator("texture_resolution", mode="before")
+    @classmethod
+    def normalize_texture_resolution(cls, value):
+        return _normalize_texture_resolution(value)
 
     @field_validator("output_format")
     @classmethod
@@ -271,7 +328,7 @@ class ImageMeshPaintingRequest(BaseModel):
         None, description="File ID from upload endpoint"
     )
     texture_resolution: int = Field(
-        1024, description="Texture resolution", ge=256, le=4096
+        1024, description="Texture resolution", ge=256, le=8192
     )
     output_format: str = Field("glb", description="Output mesh format")
     quality_mode: Optional[str] = Field("high", description="Target quality budget")
@@ -285,6 +342,11 @@ class ImageMeshPaintingRequest(BaseModel):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+
+    @field_validator("texture_resolution", mode="before")
+    @classmethod
+    def normalize_texture_resolution(cls, value):
+        return _normalize_texture_resolution(value)
 
     @field_validator("output_format")
     @classmethod
@@ -480,7 +542,7 @@ async def text_mesh_painting(
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
-                **{k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None},
+                **_clean_paint_parameters(mesh_request.model_parameters),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
@@ -528,6 +590,12 @@ async def _resolve_generation_plan(request, *, default_model: str, default_featu
             "candidate_order": resolved["candidate_order"],
             "vram_budget_mb": resolved["vram_budget_mb"],
         }
+
+    # Legacy textured-generation IDs remain accepted, but resolve to raw geometry.
+    # Optional texture generation is controlled by the request flags.
+    if model_id in _LEGACY_TEXTURED_MODEL_ALIASES:
+        model_id = _LEGACY_TEXTURED_MODEL_ALIASES[model_id]
+        feature = "image_to_raw_mesh"
 
     validate_model_preference(model_id, feature, scheduler)
     return model_id, feature, preset, preset_metadata
@@ -604,6 +672,19 @@ async def image_to_raw_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        # Keep texture-stage controls out of model-specific inference parameters.
+        params.pop("texture_resolution", None)
+        nested_texture_flags = [
+            params.pop("texture_enabled", None),
+            params.pop("generate_texture", None),
+            params.pop("generateTexture", None),
+            params.pop("auto_paint", None),
+        ]
+        top_level_texture_flags = [mesh_request.texture_enabled, mesh_request.generate_texture]
+        texture_enabled = next(
+            (bool(value) for value in top_level_texture_flags if value is not None),
+            next((bool(value) for value in nested_texture_flags if value is not None), False),
+        )
         target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
@@ -634,6 +715,9 @@ async def image_to_raw_mesh(
                 "image_name": chosen_stem,
                 "image_path": image_file_path,
                 "output_format": mesh_request.output_format,
+                "texture_resolution": mesh_request.texture_resolution,
+                "bake_normal_maps": mesh_request.bake_normal_maps,
+                "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -659,6 +743,9 @@ async def image_to_raw_mesh(
                 "image_name": chosen_stem,
                 "postprocess_mode": "production_mesh",
                 "feature_type": feature,
+                "texture_resolution": mesh_request.texture_resolution,
+                "bake_normal_maps": mesh_request.bake_normal_maps,
+                "texture_enabled": texture_enabled,
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
@@ -768,14 +855,32 @@ async def image_to_textured_mesh(
         )
         # Filter out None values from model_parameters so pop() fallbacks work correctly
         params = {k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None}
+        # Preserve nested resolution from old clients, but never pass it to geometry inference.
+        source_texture_resolution = params.pop("texture_resolution", None)
+        params.pop("texture_resolution_preset", None)
         target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
         lod_count = params.pop("lodCount", preset.get("lod_count", 4))
+        # Preserve nested resolution from old clients but keep it out of geometry inference.
         source_texture_resolution = params.pop("texture_resolution", None)
+        params.pop("texture_resolution_preset", None)
+        nested_texture_flags = [
+            params.pop("texture_enabled", None),
+            params.pop("generate_texture", None),
+            params.pop("generateTexture", None),
+            params.pop("auto_paint", None),
+        ]
+        top_level_texture_flags = [mesh_request.texture_enabled, mesh_request.generate_texture]
+        texture_enabled = next(
+            (bool(value) for value in top_level_texture_flags if value is not None),
+            next((bool(value) for value in nested_texture_flags if value is not None), True),
+        )
         texture_resolution = int(
             mesh_request.texture_resolution
-            or preset.get("texture_resolution", 1024)
+            or source_texture_resolution
+            or preset.get("texture_resolution")
+            or 2048
         )
         enable_printability = bool(
             params.pop(
@@ -804,8 +909,10 @@ async def image_to_textured_mesh(
                 "image_path": image_file_path,
                 "texture_image_path": texture_image_path,
                 "output_format": mesh_request.output_format,
-                "texture_resolution": int(source_texture_resolution or 2048),
+                "texture_resolution": texture_resolution,
                 "production_texture_resolution": texture_resolution,
+                "bake_normal_maps": mesh_request.bake_normal_maps,
+                "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -831,6 +938,9 @@ async def image_to_textured_mesh(
                 "image_name": chosen_stem,
                 "postprocess_mode": "production_mesh",
                 "feature_type": feature,
+                "texture_resolution": texture_resolution,
+                "bake_normal_maps": mesh_request.bake_normal_maps,
+                "texture_enabled": texture_enabled,
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
@@ -912,8 +1022,16 @@ async def image_mesh_painting(
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
-                "resolution": mesh_request.texture_resolution,
-                **{k: v for k, v in (mesh_request.model_parameters or {}).items() if v is not None},
+                "resolution": (
+                    (mesh_request.model_parameters or {}).get("resolution")
+                    or (
+                        768 if "paint_v21" in mesh_request.model_preference
+                        and mesh_request.texture_resolution >= 8192
+                        else 512 if "paint_v21" in mesh_request.model_preference
+                        else mesh_request.texture_resolution
+                    )
+                ),
+                **_clean_paint_parameters(mesh_request.model_parameters),
             },
             model_preference=mesh_request.model_preference,
             priority=1,

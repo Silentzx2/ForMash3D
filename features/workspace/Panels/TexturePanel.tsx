@@ -36,7 +36,7 @@ function formatTextureModel(id: string): DiscoveredTextureModel {
 
   return {
     id,
-    label: def?.name || id,
+    label: def?.name || (id === 'paint3d' ? 'Paint3D (1K/2K PBR Texture)' : id),
     available: true,
     installed: true,
     status: 'ready',
@@ -104,16 +104,15 @@ export const TexturePanel: React.FC = () => {
     // Exclude legacy TRELLIS geometry-generation textured variants from standard texture flow
     const combined = Array.from(new Set([...textModels, ...imageModels])).filter(id => !id.includes('trellis'));
     const defaults = [
-      'paint3d_image_mesh_painting',
+      'paint3d',
       'hunyuan3d_paint_v21_image_mesh_painting',
     ];
     const finalIds = combined.length > 0 ? combined : defaults;
-    if (!finalIds.includes('paint3d_image_mesh_painting')) finalIds.unshift('paint3d_image_mesh_painting');
+    if (!finalIds.includes('paint3d')) finalIds.unshift('paint3d');
     if (!finalIds.includes('hunyuan3d_paint_v21_image_mesh_painting')) finalIds.push('hunyuan3d_paint_v21_image_mesh_painting');
     return finalIds.map(formatTextureModel);
   }, [modelRegistry]);
 
-  const [textureModelDropdownOpen, setTextureModelDropdownOpen] = useState(false);
   const [meshDropdownOpen, setMeshDropdownOpen] = useState(false);
 
   // Mesh original source reference image (from generation or asset metadata)
@@ -145,7 +144,7 @@ export const TexturePanel: React.FC = () => {
   useEffect(() => {
     const targetModelId = (textureSettings.resolution === '4K' || textureSettings.resolution === '8K')
       ? 'hunyuan3d_paint_v21_image_mesh_painting'
-      : 'paint3d_image_mesh_painting';
+      : 'paint3d';
     if (textureSettings.modelId !== targetModelId) {
       setTextureSettings(prev => ({ ...prev, modelId: targetModelId }));
     }
@@ -504,7 +503,7 @@ export const TexturePanel: React.FC = () => {
                     onClick={() => {
                       const routed = (res === '4K' || res === '8K')
                         ? 'hunyuan3d_paint_v21_image_mesh_painting'
-                        : 'paint3d_image_mesh_painting';
+                        : 'paint3d';
                       setTextureSettings(prev => ({
                         ...prev,
                         resolution: res,
@@ -526,7 +525,7 @@ export const TexturePanel: React.FC = () => {
               {(textureSettings.resolution === '4K' || textureSettings.resolution === '8K') && (
                 <div className="flex items-start gap-1.5 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[8.5px] leading-tight">
                   <HugeiconsIcon icon={TriangleAlertIcon} size={14} className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-400" />
-                  <span>{textureSettings.resolution} atlas requires Hunyuan3D-Paint with ≥16GB VRAM and significantly increases processing time.</span>
+                  <span>{textureSettings.resolution} atlas uses Hunyuan3D-Paint and can require substantially more GPU memory and processing time.</span>
                 </div>
               )}
 
@@ -539,11 +538,9 @@ export const TexturePanel: React.FC = () => {
                   </span>
                 </div>
 
-                <button
-                  id="btn-select-texture-model"
-                  type="button"
-                  onClick={() => setTextureModelDropdownOpen(!textureModelDropdownOpen)}
-                  className="w-full flex items-center justify-between p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:border-white/[0.16] hover:bg-[hsl(var(--surface-2))] transition-all text-left cursor-pointer"
+                <div
+                  id="texture-engine-auto-route"
+                  className="w-full flex items-center justify-between p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] text-left"
                 >
                   <div className="flex flex-col min-w-0 pr-1">
                     <span className="font-bold text-[10px] text-white flex items-center gap-1.5 truncate">
@@ -555,55 +552,13 @@ export const TexturePanel: React.FC = () => {
                       <span className="truncate">{activeTextureModel?.label || 'No texture model'}</span>
                     </span>
                     <span className="text-[8px] text-zinc-400 truncate mt-0.5">
-                      {activeTextureModel?.id === 'paint3d_image_mesh_painting'
+                      {activeTextureModel?.id === 'paint3d'
                         ? 'Paint3D (Standard for 1K/2K textures)'
                         : 'Hunyuan3D-Paint v2.1 (Ultra-resolution for 4K/8K)'}
                     </span>
                   </div>
-                  <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${textureModelDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
-                </button>
+                </div>
 
-                {textureModelDropdownOpen && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-[hsl(var(--surface-1))] border border-white/[0.12] rounded-xl p-1.5 shadow-2xl z-50 space-y-1 max-h-48 overflow-y-auto">
-                    <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 px-1.5 py-0.5">
-                      Texture Engines ({textureCapableModels.length})
-                    </div>
-                    {textureCapableModels.map((m) => {
-                      const isSelected = m.id === (activeTextureModel?.id || textureSettings.modelId);
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            const newRes = (m.id === 'hunyuan3d_paint_v21_image_mesh_painting')
-                              ? (textureSettings.resolution === '1K' || textureSettings.resolution === '2K' ? '4K' : textureSettings.resolution)
-                              : (textureSettings.resolution === '4K' || textureSettings.resolution === '8K' ? '2K' : textureSettings.resolution);
-                            setTextureSettings(prev => ({
-                              ...prev,
-                              modelId: m.id,
-                              resolution: newRes,
-                              lowVram: m.low_vram_supported ? prev.lowVram : false,
-                            }));
-                            setTextureModelDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between p-1.5 rounded-lg text-left transition-all ${
-                            isSelected
-                              ? 'bg-primary text-black font-bold'
-                              : 'text-white hover:bg-[hsl(var(--surface-2))]'
-                          }`}
-                        >
-                          <div className="flex flex-col min-w-0 pr-1">
-                            <span className="text-[10px] font-bold truncate">{m.label}</span>
-                            <span className={`text-[8px] truncate ${isSelected ? 'text-black/80' : 'text-zinc-400'}`}>
-                              {m.id === 'hunyuan3d_paint_v21_image_mesh_painting' ? '4K/8K Resolution (≥16GB VRAM)' : '1K/2K Resolution (Paint3D)'}
-                            </span>
-                          </div>
-                          {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-black flex-shrink-0" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             </div>
 
@@ -655,27 +610,6 @@ export const TexturePanel: React.FC = () => {
                   <div
                     className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
                       textureSettings.generatePBR ? 'translate-x-3.5' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-              <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] flex items-center justify-between">
-                <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
-                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>Real-ESRGAN Enhancement</span>
-                </span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={textureSettings.enableRealESRGAN !== false}
-                  onClick={() => setTextureSettings(prev => ({ ...prev, enableRealESRGAN: prev.enableRealESRGAN === false ? true : false }))}
-                  className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
-                    textureSettings.enableRealESRGAN !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
-                  }`}
-                >
-                  <div
-                    className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
-                      textureSettings.enableRealESRGAN !== false ? 'translate-x-3.5' : 'translate-x-0'
                     }`}
                   />
                 </button>
@@ -926,7 +860,7 @@ export const TexturePanel: React.FC = () => {
                     onClick={() => {
                       const routed = (res === '4K' || res === '8K')
                         ? 'hunyuan3d_paint_v21_image_mesh_painting'
-                        : 'paint3d_image_mesh_painting';
+                        : 'paint3d';
                       setTextureSettings(prev => ({ ...prev, resolution: res, modelId: routed }));
                     }}
                     className={`py-1.5 rounded-lg font-mono font-bold text-[10px] transition-all cursor-pointer ${
