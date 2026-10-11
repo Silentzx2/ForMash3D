@@ -67,6 +67,8 @@ class MultiViewGenerateRequest(BaseModel):
         "zero123plus_v12_image_to_multiview",
         description="Zero123++ model preference ID",
     )
+    enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
+    preprocessing_artifact_id: Optional[str] = Field(None, description="Preprocessed image artifact ID")
 
     model_config = ConfigDict(protected_namespaces=("settings_",))
 

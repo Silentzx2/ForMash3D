@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.partuv_utils import PartUVRunner
 from core.models.base import ModelStatus
 from core.models.uv_models import UVUnwrappingModel
 from core.utils.file_utils import OutputPathGenerator
@@ -80,6 +79,7 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
             # Initialize PartUV runner
+            from utils.partuv_utils import PartUVRunner
             self.partuv_runner = PartUVRunner(
                 config_path=self.config_path,
                 partfield_checkpoint=str(self.model_path),

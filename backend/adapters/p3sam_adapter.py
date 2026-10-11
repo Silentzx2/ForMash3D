@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 import torch
 
-from utils.p3sam_utils import P3SAMRunner, create_segmented_parts_scene
 from core.models.base import ModelStatus
 from core.models.segment_models import MeshSegmentationModel
 from core.utils.file_utils import OutputPathGenerator
@@ -57,7 +56,7 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
         )
         
         self.p3sam_root = Path(p3sam_root)
-        self.p3sam_runner: Optional[P3SAMRunner] = None
+        self.p3sam_runner: Optional[Any] = None
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
         
@@ -77,6 +76,7 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
                 raise RuntimeError("P3-SAM requires CUDA; CPU fallback is not supported")
 
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            from utils.p3sam_utils import P3SAMRunner
             self.p3sam_runner = P3SAMRunner(
                 checkpoint_path=self.checkpoint_path,
                 p3sam_root=str(self.p3sam_root),
@@ -194,6 +194,7 @@ class P3SAMSegmentationAdapter(MeshSegmentationModel):
             info_path = self.path_generator.generate_info_path(output_path)
             
             # Create scene where each segmented part is a geometry
+            from utils.p3sam_utils import create_segmented_parts_scene
             scene = create_segmented_parts_scene(processed_mesh, face_ids)
             
             # Save segmented mesh scene

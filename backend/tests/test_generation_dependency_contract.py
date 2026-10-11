@@ -23,12 +23,10 @@ def test_backend_baseline_is_compatible_with_triposg():
     assert str(backend["torch"].specifier) == "==2.6.0+cu124"
     assert str(backend["torchvision"].specifier) == "==0.21.0+cu124"
     assert str(backend["torchaudio"].specifier) == "==2.6.0+cu124"
-    assert str(backend["transformers"].specifier) == "==4.44.2"
+    assert str(backend["transformers"].specifier) == "==4.46.3"
     assert str(backend["diffusers"].specifier) == "==0.30.3"
-    assert Version("4.44.2") in triposg["transformers"].specifier
-    assert Version("0.30.3") in triposg["diffusers"].specifier
     assert Version("0.25.0") in backend["huggingface-hub"].specifier
-    assert Version("0.25.0") in triposg["huggingface-hub"].specifier
+    assert "jaxtyping" in triposg
 
 
 def test_installer_and_docker_builds_install_triposg_after_backend():

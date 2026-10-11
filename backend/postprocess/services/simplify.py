@@ -256,23 +256,10 @@ def run_lods(mesh: trimesh.Trimesh, options: LODOptions, progress=None):
     ratios_list = list(enumerate(options.ratios))
     levels = [None] * len(ratios_list)
 
-    if len(ratios_list) > 1:
-        max_workers = min(len(ratios_list), os.cpu_count() or 8)
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_idx = {
-                executor.submit(_build_single_lod, idx, r): idx
-                for idx, r in ratios_list
-            }
-            for fut in future_to_idx:
-                idx = future_to_idx[fut]
-                levels[idx] = fut.result()
-                if progress:
-                    progress("lod", (idx + 0.2) / max(1, len(options.ratios)), f"Generated LOD{idx}")
-    else:
-        for idx, r in ratios_list:
-            if progress:
-                progress("lod", (idx + 0.2) / max(1, len(options.ratios)), f"Generating LOD{idx}")
-            levels[idx] = _build_single_lod(idx, r)
+    for idx, r in ratios_list:
+        if progress:
+            progress("lod", (idx + 0.2) / max(1, len(options.ratios)), f"Generating LOD{idx}")
+        levels[idx] = _build_single_lod(idx, r)
 
     if progress:
         progress("done", 1.0, "LOD chain complete")

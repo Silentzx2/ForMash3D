@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.ultrashape_pipeline_helper import UltraShapeInferenceHelper
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
 from core.utils.file_utils import OutputPathGenerator
@@ -139,6 +138,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             
             # Load UltraShape refinement pipeline
             logger.info("Loading UltraShape refinement pipeline...")
+            from utils.ultrashape_pipeline_helper import UltraShapeInferenceHelper
             self.ultrashape_helper = UltraShapeInferenceHelper(
                 ultrashape_root=str(self.ultrashape_root),
                 config_path=self.ultrashape_config,

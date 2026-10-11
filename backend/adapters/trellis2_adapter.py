@@ -148,6 +148,10 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
             if self.runner is None:
                 raise ValueError("TRELLIS.2 model is not loaded")
+            if getattr(self.runner, "o_voxel", None) is None:
+                raise RuntimeError(
+                    "TRELLIS.2 generation requires o_voxel for mesh extraction"
+                )
             
             # Validate inputs using parent class
             output_format = self._validate_common_inputs(inputs)

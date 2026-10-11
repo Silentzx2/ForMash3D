@@ -104,10 +104,11 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             from hy3dgen.rembg import BackgroundRemover
 
             if not torch.cuda.is_available():
-                raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
-            device = getattr(self, "device", None)
-            if device is None or device.startswith("cpu"):
-                device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+                device = "cpu"
+            else:
+                device = getattr(self, "device", None)
+                if device is None or device.startswith("cpu"):
+                    device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             self.device = device
             logger.info(f"Loading Mini Turbo pipeline on {device}...")
             self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
@@ -161,6 +162,8 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process image-to-raw-mesh generation using Hunyuan3D-DiT-v2-mini-Turbo."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
             if "image_path" not in inputs:
                 raise ValueError("image_path is required")
 

@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
-from utils.voxhammer_pipeline_helper import VoxHammerInferenceHelper
 from core.models.base import ModelStatus
 from core.models.mesh_editing_models import TextMeshEditingModel, ImageMeshEditingModel
 from core.utils.mask_generator import MaskGenerator
@@ -114,6 +113,7 @@ class VoxHammerTextMeshEditingAdapter(TextMeshEditingModel):
             self.trellis_pipeline.to(device)
             
             # Create VoxHammer helper
+            from utils.voxhammer_pipeline_helper import VoxHammerInferenceHelper
             self.voxhammer_helper = VoxHammerInferenceHelper(
                 voxhammer_root=str(self.voxhammer_root),
                 trellis_pipeline=self.trellis_pipeline,
@@ -386,6 +386,7 @@ class VoxHammerImageMeshEditingAdapter(ImageMeshEditingModel):
             self.trellis_pipeline.to(device)
             
             # Create VoxHammer helper
+            from utils.voxhammer_pipeline_helper import VoxHammerInferenceHelper
             self.voxhammer_helper = VoxHammerInferenceHelper(
                 voxhammer_root=str(self.voxhammer_root),
                 trellis_pipeline=self.trellis_pipeline,
