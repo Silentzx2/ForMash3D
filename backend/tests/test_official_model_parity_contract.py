@@ -266,18 +266,16 @@ class TestGenerationProductionContract(unittest.TestCase):
         build_params_path = backend_root.parent / "features/workspace/utils/buildGenerationParameters.ts"
         build_params_content = build_params_path.read_text(encoding="utf-8")
         
-        # Check that the utility file has the model-specific inference steps
-        # Image-to-3D only: 5 (hunyuan mini turbo), 12 (trellis image), 50 (triposg, hunyuan, ultrashape)
-        self.assertIn("infSteps = 5", build_params_content)
-        self.assertIn("return 50", build_params_content)
-        self.assertIn("infSteps = 50", build_params_content)
-        self.assertIn("octree_resolution: 512", build_params_content)
+        # Source sampling uses each model's max-fidelity profile; production budgets remain downstream.
+        self.assertIn("return 5", build_params_content)  # Hunyuan Mini Turbo's trained schedule
+        self.assertIn("return 50", build_params_content)  # max-fidelity profiles
+        self.assertIn("modelParameters.octree_resolution = 512", build_params_content)
         self.assertIn("mc_resolution = 512", build_params_content)
-        self.assertIn("resolution = 256", build_params_content)
+        self.assertIn("resolution = 256", build_params_content)  # TripoSF VAE checkpoint
         self.assertIn("octree_res = 2048", build_params_content)
         self.assertIn("ss_sampling_steps", build_params_content)
-        self.assertIn("texture_resolution = 2048", build_params_content)
-        self.assertIn("texture_size = 4096", build_params_content)
+        self.assertIn("numericTextureResolution", build_params_content)
+        self.assertIn("texture_resolution: isTextured ? numericTextureResolution", build_params_content)
         self.assertIn("source_quality: 'max'", build_params_content)
         self.assertIn("target_polycount:", build_params_content)
         
