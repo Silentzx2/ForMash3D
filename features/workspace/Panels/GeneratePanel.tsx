@@ -2086,6 +2086,7 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               </div>
               </div>
+              </div>
               <div className="p-2.5 border-t border-white/[0.08] shrink-0 bg-[hsl(var(--surface-1))]">
                 <button
                   type="button"

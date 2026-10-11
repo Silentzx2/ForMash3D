@@ -409,12 +409,33 @@ _ensure_node_version() {
     tar -xJf "$staging/$tarball" -C "$staging"
   else
     tar -xzf "$staging/$tarball" -C "$staging"
-  fi
-  rm -rf "${NODE_RUNTIME_DIR}/current"
-  mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
-  rm -rf "$staging"
-  export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
-  hash -r
+   fi
+   rm -rf "${NODE_RUNTIME_DIR}/current"
+   mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
+   rm -rf "$staging"
+   # Verify that the Node runtime includes npm (lib/node_modules)
+   if [[ ! -d "${NODE_RUNTIME_DIR}/current/lib/node_modules" ]]; then
+       warn "Node v${REQUIRED_NODE_VERSION} appears to be missing lib/node_modules. Reinstalling..."
+       rm -rf "${NODE_RUNTIME_DIR}/current"
+       # Retry once with fresh download
+       if ! curl -fsSL --retry 3 -o "$staging/$tarball" "$url"; then
+           rm -rf "$staging"
+           fail "Failed to download Node v${REQUIRED_NODE_VERSION} from ${url}"
+       fi
+       if [[ "$tarball" == *.xz ]]; then
+           tar -xJf "$staging/$tarball" -C "$staging"
+       else
+           tar -xzf "$staging/$tarball" -C "$staging"
+       fi
+       mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
+       rm -rf "$staging"
+       # Verify again
+       if [[ ! -d "${NODE_RUNTIME_DIR}/current/lib/node_modules" ]]; then
+           fail "Node v${REQUIRED_NODE_VERSION} installation incomplete (missing lib/node_modules) after retry. Aborting."
+       fi
+   fi
+   export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+   hash -r
   local verify
   verify=$(node --version 2>/dev/null | sed 's/^v//' || true)
   if [[ "$verify" == "$REQUIRED_NODE_VERSION" ]]; then
@@ -433,20 +454,37 @@ _ensure_npm_version() {
     log "npm: v${current} (locked version active)"
     return 0
   fi
-  # Reuse the npm bundled with the pinned Node runtime before any install:
-  # PATH lookups can still resolve a stale npm (e.g. nvm's) ahead of the pinned
-  # bin, and a global self-install then targets a read-only system prefix.
-  local pinned_npm="${NODE_RUNTIME_DIR}/current/bin/npm"
-  if [[ -x "$pinned_npm" ]]; then
-    local pinned_npm_version
-    pinned_npm_version="$("$pinned_npm" --version 2>/dev/null || true)"
-    if [[ "$pinned_npm_version" == "$REQUIRED_NPM_VERSION" ]]; then
-      export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
-      hash -r
-      log "npm: v${REQUIRED_NPM_VERSION} (bundled with pinned runtime at ${NODE_RUNTIME_DIR}/current)"
-      return 0
-    fi
-  fi
+   # Reuse the npm bundled with the pinned Node runtime before any install:
+   # PATH lookups can still resolve a stale npm (e.g. nvm's) ahead of the pinned
+   # bin, and a global self-install then targets a read-only system prefix.
+   local pinned_npm="${NODE_RUNTIME_DIR}/current/bin/npm"
+   # Check if pinned npm exists and is a valid executable (not a broken symlink)
+   if [[ -L "$pinned_npm" ]]; then
+     # It's a symlink - check if target exists
+     local npm_target
+     npm_target="$(readlink "$pinned_npm" 2>/dev/null || true)"
+     if [[ -n "$npm_target" && -x "${NODE_RUNTIME_DIR}/current/bin/${npm_target}" ]]; then
+       # Symlink points to existing executable
+       local pinned_npm_version
+       pinned_npm_version="$("$pinned_npm" --version 2>/dev/null || true)"
+       if [[ "$pinned_npm_version" == "$REQUIRED_NPM_VERSION" ]]; then
+         export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+         hash -r
+         log "npm: v${REQUIRED_NPM_VERSION} (bundled with pinned runtime at ${NODE_RUNTIME_DIR}/current)"
+         return 0
+       fi
+     fi
+   elif [[ -x "$pinned_npm" ]]; then
+     # Not a symlink, regular executable
+     local pinned_npm_version
+     pinned_npm_version="$("$pinned_npm" --version 2>/dev/null || true)"
+     if [[ "$pinned_npm_version" == "$REQUIRED_NPM_VERSION" ]]; then
+       export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+       hash -r
+       log "npm: v${REQUIRED_NPM_VERSION} (bundled with pinned runtime at ${NODE_RUNTIME_DIR}/current)"
+       return 0
+     fi
+   fi
   warn "npm ${current:-none} found — locked version is v${REQUIRED_NPM_VERSION}. Installing locked version..."
   # Install into the user-owned pinned runtime prefix, never the ambient
   # (read-only, conda/nvm-managed) global prefix.
