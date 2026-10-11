@@ -871,8 +871,10 @@ echo ""
 echo "========================================"
 echo "Installing Paint3D Dependencies"
 echo "========================================"
-$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" || true
-echo "[SUCCESS] Paint3D dependencies processed"
+if [ -f "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" ]; then
+    $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" || true
+    echo "[SUCCESS] Paint3D dependencies processed"
+fi
 ### Paint3D end ###
 
 cd "$PROJECT_ROOT/backend"

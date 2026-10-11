@@ -72,6 +72,13 @@ pydantic[email]
 realesrgan==0.3.0
 peft==0.17.1
 
+# ── Paint3D & Texture Diffusion ──
+omegaconf>=2.1.1
+loguru>=0.7.0
+xatlas>=0.0.7
+imageio>=2.9.0
+imageio-ffmpeg>=0.4.2
+
 # extra 
 pyvista 
 vtk
