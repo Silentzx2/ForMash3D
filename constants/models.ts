@@ -1,11 +1,7 @@
 /**
  * Canonical user-selectable model registry and feature routing.
  * Primary 3D/processing models mirror backend/config/models.yaml.
- * Zero123++ remains hidden from the main 3D selector and is exposed through the
- * dedicated multi-view workspace via the runtime image-to-multiview capability.
  */
-
-export const MULTIVIEW_MODEL_ID = 'zero123plus_v12_image_to_multiview' as const;
 
 export type ModelCategory =
   | 'mesh_generation'
@@ -139,23 +135,6 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     description: 'High-poly dual-stage surface reconstruction combining Hunyuan latent priors with UltraShape.',
   },
   {
-    id: 'triposr_image_to_raw_mesh',
-    name: 'TripoSR (Fast Feedforward Image → 3D)',
-    category: 'mesh_generation',
-    feature: 'image_to_raw_mesh',
-    featureLabel: 'Image to Geometry',
-    vramMb: 6144,
-    lowVramSupported: true,
-    lowVramMb: 4096,
-    supportsTexture: false,
-    supportedInputs: ['image'],
-    supportedOutputs: ['glb', 'obj'],
-    modelPath: 'backend/pretrained/TripoSR',
-    enabled: true,
-    status: 'available',
-    description: 'Ultra-fast single-image 3D reconstruction generating high-speed 3D meshes.',
-  },
-  {
     id: 'triposg_image_to_raw_mesh',
     name: 'TripoSG (High-Fidelity Image / Scribble → 3D)',
     category: 'mesh_generation',
@@ -171,23 +150,6 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     enabled: true,
     status: 'available',
     description: 'High-fidelity single-image or sketch/scribble-to-3D mesh reconstruction with RMBG-1.4 matting.',
-  },
-  {
-    id: 'triposf_image_to_raw_mesh',
-    name: 'TripoSF (SparseFlex High-Res Arbitrary Topology)',
-    category: 'mesh_generation',
-    feature: 'image_to_raw_mesh',
-    featureLabel: 'Image to Geometry',
-    vramMb: 12288,
-    lowVramSupported: true,
-    lowVramMb: 8192,
-    supportsTexture: false,
-    supportedInputs: ['image', 'mesh'],
-    supportedOutputs: ['glb', 'obj'],
-    modelPath: 'backend/pretrained/TripoSF',
-    enabled: true,
-    status: 'available',
-    description: 'High-resolution arbitrary-topology 3D mesh modeling and reconstruction up to 1024³ with SparseFlex VAE.',
   },
   {
     id: 'unique3d_image_to_raw_mesh',

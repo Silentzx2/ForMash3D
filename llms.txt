@@ -13,7 +13,9 @@ ForMash3D is an open-source, self-hosted AI 3D generation and asset creation pla
 - Structured game-ready asset delivery.
 
 ## Model integrations
-The registry is maintained in `backend/config/models.yaml`. Major integrations include TRELLIS, TRELLIS.2, Hunyuan3D, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape, PartField, P3-SAM, FastMesh, PartUV, UniRig, ARDY and VoxHammer.
+The registry is maintained in `backend/config/models.yaml`. Major integrations include TRELLIS, TRELLIS.2, Hunyuan3D, TripoSG, PartPacker, UltraShape, PartField, P3-SAM, FastMesh, PartUV, UniRig, ARDY and VoxHammer.
+
+The active Tripo integration is TripoSG only. The dedicated Zero123++ Multi-View workspace/API and TripoSR/TripoSF selectable integrations have been removed. Their vendored third-party source directories remain untouched for separate manual cleanup.
 
 ## Documentation
 - [README](README.md)

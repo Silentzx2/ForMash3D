@@ -222,15 +222,11 @@ cmd_models() {
         printf "  ${CYAN}[13]${NC} FastMesh           - Mesh upscaling V1K/V4K\n"
         printf "  ${CYAN}[14]${NC} UltraShape         - Shape generation model\n"
         printf "  ${CYAN}[15]${NC} Misc               - RealESRGAN, DINOv2\n"
-        printf "  ${CYAN}[16]${NC} TripoSR            - Fast feedforward image-to-mesh model\n"
-        printf "  ${CYAN}[17]${NC} TripoSG            - High-fidelity image-to-3D + RMBG\n"
-        printf "  ${CYAN}[18]${NC} ARDY               - Motion AI / Animation checkpoints\n"
-        printf "  ${CYAN}[19]${NC} TripoSF            - SparseFlex high-res arbitrary topology\n"
-        printf "  ${CYAN}[20]${NC} Zero123++ v1.2     - Multi-view image generation model\n"
-        printf "  ${CYAN}[21]${NC} Zero123++ Normals   - Normal generation ControlNet (optional)\n"
-         printf "  ${CYAN}[22]${NC} VoxHammer           - Local text/image mesh editing (~40GB VRAM)\n"
-        printf "  ${CYAN}[23]${NC} Unique3D            - High-fidelity single-image to 3D\n"
-        printf "  ${CYAN}[24]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
+        printf "  ${CYAN}[16]${NC} TripoSG            - High-fidelity image-to-3D + RMBG\n"
+        printf "  ${CYAN}[17]${NC} ARDY               - Motion AI / Animation checkpoints\n"
+        printf "  ${CYAN}[18]${NC} VoxHammer           - Local text/image mesh editing (~40GB VRAM)\n"
+        printf "  ${CYAN}[19]${NC} Unique3D            - High-fidelity single-image to 3D\n"
+        printf "  ${CYAN}[20]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
         printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"
@@ -280,15 +276,11 @@ cmd_models() {
                         13) models_csv="${models_csv}fastmesh," ;;
                         14) models_csv="${models_csv}ultrashape," ;;
                         15) models_csv="${models_csv}misc," ;;
-                        16) models_csv="${models_csv}triposr," ;;
-                        17) models_csv="${models_csv}triposg," ;;
-                        18) models_csv="${models_csv}ardy," ;;
-                        19) models_csv="${models_csv}triposf," ;;
-                        20) models_csv="${models_csv}zero123plus," ;;
-                        21) models_csv="${models_csv}zero123plus_normal_controlnet," ;;
-                        22) models_csv="${models_csv}voxhammer," ;;
-                        23) models_csv="${models_csv}unique3d," ;;
-                        24) models_csv="${models_csv}paint3d," ;;
+                        16) models_csv="${models_csv}triposg," ;;
+                        17) models_csv="${models_csv}ardy," ;;
+                        18) models_csv="${models_csv}voxhammer," ;;
+                        19) models_csv="${models_csv}unique3d," ;;
+                        20) models_csv="${models_csv}paint3d," ;;
                          *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1

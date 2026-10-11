@@ -8,7 +8,6 @@ import { GenerationSettings } from '../types';
 export interface ModelCapabilities {
   raw_mesh?: boolean;
   paint_autochain?: boolean;
-  multiview?: boolean;
   supports_texture?: boolean;
 }
 
@@ -19,8 +18,6 @@ export interface BuildParamsResult {
   isTextured: boolean;
   isRawModel: boolean;
   isPaintModel: boolean;
-  isMultiviewCapable: boolean;
-  useMultiviewReconstruction: boolean;
 }
 
 export function buildGenerationParameters(
@@ -34,15 +31,6 @@ export function buildGenerationParameters(
   // Determine model capabilities
   const isRawModel = modelCapabilities.raw_mesh === true;
   const isPaintModel = modelCapabilities.paint_autochain === true;
-  const isMultiviewCapable = Boolean(modelCapabilities.multiview);
-  
-  // Determine if we should use multiview reconstruction
-  const hasMvViews = Boolean(
-    settings.multiviewAssetId ||
-    (settings.multiviewViews && settings.multiviewViews.length > 0)
-  );
-  const useMultiviewReconstruction = isMultiviewCapable && hasMvViews;
-  
   // Determine texture routing for image-to-3D.
   const textureEnabled = Boolean(
     settings.texture_enabled ??
@@ -96,31 +84,7 @@ export function buildGenerationParameters(
   let endpoint: string;
   let body: Record<string, unknown>;
   
-  if (useMultiviewReconstruction) {
-    endpoint = '/api/v1/multiview/reconstruct-3d';
-    body = {
-      asset_id: settings.multiviewAssetId || undefined,
-      images: settings.multiviewViews || undefined,
-      reference_image_file_id: settings.imageFileId || undefined,
-      reference_image_base64: !settings.imageFileId && typeof settings.image === 'string' && settings.image.startsWith('data:')
-        ? settings.image
-        : undefined,
-      model_preference: settings.aiModel,
-      output_format: 'glb',
-      topology_mode: settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle'),
-      quad_topology: Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
-      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false),
-      model_parameters: modelParameters,
-      target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 50000,
-      generateLOD: settings.generateLOD !== false,
-      lodPreset: settings.lodPreset || 'high',
-      lodCount: settings.lodCount || 4,
-      quality: settings.meshQuality || 'high',
-      texture_resolution: isTextured ? numericTextureResolution : undefined,
-      bake_normal_maps: true,
-    };
-  } else {
-    const imageInput: Record<string, unknown> = {};
+  const imageInput: Record<string, unknown> = {};
     if (settings.imageFileId) {
       imageInput.image_file_id = settings.imageFileId;
     } else if (typeof settings.image === 'string' && settings.image.startsWith('data:')) {
@@ -175,8 +139,6 @@ export function buildGenerationParameters(
     isTextured,
     isRawModel,
     isPaintModel,
-    isMultiviewCapable,
-    useMultiviewReconstruction,
   };
 }
 
@@ -229,18 +191,9 @@ function applyModelSpecificParams(
   // UI poly/quality budgets apply only to downstream production artifacts.
   // When the backend provides parameter defaults, prefer them over hardcoded values.
   
-  if (modelId.includes('triposr')) {
-    modelParameters.mc_resolution = 512; // Highest extraction grid supported by the adapter.
-  } else if (modelId.includes('triposg')) {
+  if (modelId.includes('triposg')) {
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
     modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
-  } else if (modelId.includes('triposf')) {
-    // The released TripoSF VAE checkpoint is 256i1024o: 256 is the volume resolution,
-    // while 1024 is the FlexiCubes extraction grid. Never pass 1024 as VAE volume resolution.
-    modelParameters.resolution = 256;
-    modelParameters.sample_points_num = 1638400;
-    modelParameters.low_vram_mode = 'normal';
-    modelParameters.use_normals = true;
   } else if (modelId.includes('partpacker')) {
     modelParameters.grid_resolution = 512;
     modelParameters.num_steps = 50;

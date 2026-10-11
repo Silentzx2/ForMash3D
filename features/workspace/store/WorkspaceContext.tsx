@@ -1489,7 +1489,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         {
           raw_mesh: isRawModel,
           paint_autochain: selectedCapabilities.paint_autochain === true,
-          multiview: selectedCapabilities.multiview === true,
           supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
         },
         modelParameterDefaults[resolvedModelId] || {},
@@ -1684,7 +1683,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         {
           raw_mesh: isRawModel,
           paint_autochain: selectedCapabilities.paint_autochain === true,
-          multiview: selectedCapabilities.multiview === true,
           supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
         },
         modelParameterDefaults[effectiveModelId] || {},
@@ -2167,7 +2165,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          const modelCapabilities = {
            raw_mesh: false, // Default, would need to be looked up from model details
            paint_autochain: false,
-           multiview: false,
            supports_texture: true
          };
          

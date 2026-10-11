@@ -34,81 +34,6 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["seed"]["default"], 42)
         self.assertEqual(schema["faces"]["default"], -1)
 
-    def test_triposr_adapter_contract(self):
-        from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
-
-        adapter = TripoSRImageToRawMeshAdapter(vram_requirement=6144)
-        schema = adapter.get_parameter_schema()["parameters"]
-
-        self.assertEqual(schema["mc_resolution"]["default"], 512)
-        self.assertEqual(schema["foreground_ratio"]["default"], 0.85)
-        self.assertFalse(schema["bake_texture"]["default"])
-
-    def test_triposf_adapter_contract(self):
-        from adapters.triposf_adapter import TripoSFImageToRawMeshAdapter
-
-        adapter = TripoSFImageToRawMeshAdapter(vram_requirement=12288)
-        schema = adapter.get_parameter_schema()["parameters"]
-
-        self.assertEqual(schema["resolution"]["default"], 256)
-        self.assertEqual(schema["sample_points_num"]["default"], 1638400)
-        self.assertFalse(schema["pruning"]["default"])
-        self.assertTrue(schema["use_normals"]["default"])
-
-    def test_triposf_low_vram_mode_is_tri_state_not_a_bool(self):
-        # The wire value is the frontend advisory enum 'auto' | 'normal' | 'low';
-        # bool('auto') is True, which previously forced the low-VRAM downshift
-        # (256 volume resolution, 409,600 samples, pruning) on every job.
-        from adapters.triposf_adapter import TripoSFImageToRawMeshAdapter
-        resolve = TripoSFImageToRawMeshAdapter._resolve_low_vram_mode
-
-        self.assertEqual(resolve("auto"), "auto")
-        self.assertEqual(resolve("low"), "low")
-        self.assertEqual(resolve("normal"), "off")
-        self.assertEqual(resolve(None), "off")
-        self.assertEqual(resolve(True), "low")
-        self.assertEqual(resolve(False), "off")
-
-    def test_triposf_uses_official_volume_resolution(self):
-        from adapters.triposf_adapter import TripoSFImageToRawMeshAdapter
-        adapter = TripoSFImageToRawMeshAdapter(vram_requirement=12288)
-
-        # 256 matches the released checkpoint (256i1024o) and its config; the
-        # 1024^3 grid is only the FlexiCubes extraction resolution.
-        self.assertEqual(adapter.resolution, 256)
-        schema = adapter.get_parameter_schema()["parameters"]
-        self.assertEqual(schema["low_vram_mode"]["type"], "string")
-        self.assertEqual(schema["low_vram_mode"]["default"], "normal")
-
-    def test_triposr_binarizes_soft_alpha_masks_before_foreground_crop(self):
-        import numpy as np
-        from PIL import Image
-        from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
-
-        # Soft rembg-style mask: faint background leak (alpha 1..3) must not
-        # survive as foreground, or resize_foreground() never crops anything.
-        arr = np.zeros((4, 4, 4), dtype=np.uint8)
-        arr[..., 3] = 3
-        arr[0, 0, 3] = 128  # threshold pixel
-        arr[1, 1, 3] = 255
-        hardened = np.array(
-            TripoSRImageToRawMeshAdapter._binarize_alpha_mask(Image.fromarray(arr, "RGBA"))
-        )
-        self.assertEqual(hardened[0, 0, 3], 255)
-        self.assertEqual(hardened[1, 1, 3], 255)
-        self.assertEqual(int(hardened[2, 2, 3]), 0)
-
-    def test_triposr_drops_marching_cubes_noise_components(self):
-        import trimesh
-        from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
-
-        body = trimesh.creation.icosphere(subdivisions=4)
-        noise = [trimesh.creation.box(extents=[0.01, 0.01, 0.01]) for _ in range(3)]
-        combined = trimesh.util.concatenate([body] + noise)
-
-        cleaned = TripoSRImageToRawMeshAdapter._drop_noise_components(combined)
-        self.assertEqual(len(cleaned.faces), len(body.faces))
-
     def test_common_postprocess_quality_guard_is_wired(self):
         pipeline_path = backend_root / "postprocess/pipeline.py"
         source = pipeline_path.read_text(encoding="utf-8")
@@ -270,8 +195,6 @@ class TestGenerationProductionContract(unittest.TestCase):
         self.assertIn("return 5", build_params_content)  # Hunyuan Mini Turbo's trained schedule
         self.assertIn("return 50", build_params_content)  # max-fidelity profiles
         self.assertIn("modelParameters.octree_resolution = 512", build_params_content)
-        self.assertIn("mc_resolution = 512", build_params_content)
-        self.assertIn("resolution = 256", build_params_content)  # TripoSF VAE checkpoint
         self.assertIn("octree_res = 2048", build_params_content)
         self.assertIn("ss_sampling_steps", build_params_content)
         self.assertIn("numericTextureResolution", build_params_content)

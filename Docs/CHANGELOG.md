@@ -1,3 +1,10 @@
+## 2026-10-11 — [Tripo Catalog and Multi-View Retirement]
+
+- Removed the dedicated Zero123++ Multi-View workspace, API router, model registration, and associated tests.
+- Kept TripoSG as the sole selectable Tripo model because it is a self-contained high-fidelity image/scribble generator; removed TripoSR and TripoSF integrations. TripoSF's image path depended on TripoSR coarse-mesh generation, so retaining it while removing TripoSR weights would have left a hidden runtime dependency.
+- Removed retired models from scheduler profiles, model manifests, smart presets, UI fallback priorities, manager menu, download/verification script, and install dependency flow. TripoSG/RMBG weight downloads and its requirement installation remain.
+- Updated active architecture, product, design, API, and model catalog docs. All `backend/thirdparty/` vendored source directories were left untouched for separate manual cleanup.
+
 ## 2026-10-11 — [Full Audit Remediation: Geometry Fidelity, Texture Pipeline, API Lifecycle, DB Admin & UI Contracts]
 
 - **Raw Geometry & Coordinates (RAW-QUALITY-001, BUG-006, BUG-024)**: Removed resolution clamps across TripoSR (`mc_resolution` up to 512), TripoSG (full inference steps and octree depth), and Hunyuan3D shape/mini turbo models when `source_quality == 'max'`. Fixed TripoSF upright Y-up coordinate basis without spurious 90° X rotation. Updated GeneratePanel mesh quality options to reflect downstream polycount rather than unsupported grid estimates.

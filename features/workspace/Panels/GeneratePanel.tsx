@@ -8,7 +8,6 @@ import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
-import { MultiViewWorkspace } from './MultiViewWorkspace';
 import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -113,9 +112,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
       'unique3d_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
       'partpacker_image_to_raw_mesh',
       'ultrashape_image_to_raw_mesh',
     ],
@@ -139,10 +136,8 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
       'trellis_image_to_textured_mesh',
       'unique3d_image_to_raw_mesh',
       'ultrashape_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
     ],
   },
   animation: {
@@ -164,9 +159,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'trellis2_image_to_textured_mesh',
       'trellis_image_to_textured_mesh',
-      'triposf_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
     ],
   },
   '3d_print': {
@@ -186,10 +179,8 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     model_priority: [
       'unique3d_image_to_raw_mesh',
       'ultrashape_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
       'partpacker_image_to_raw_mesh',
     ],
   },
@@ -210,7 +201,6 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     model_priority: [
       'unique3d_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
       'partpacker_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
@@ -232,9 +222,7 @@ function formatGenerateModel(
 
   let cleanLabel = def?.name || id;
   if (id === 'trellis_image_to_textured_mesh') cleanLabel = 'TRELLIS (PBR Textured Mesh)';
-  else if (id === 'triposr_image_to_raw_mesh') cleanLabel = 'TripoSR (Ultra-Fast Geometry)';
   else if (id === 'triposg_image_to_raw_mesh') cleanLabel = 'TripoSG (Fast Feed-Forward Geometry)';
-  else if (id === 'triposf_image_to_raw_mesh') cleanLabel = 'TripoSF (High-Density Neural Raw Mesh)';
   else if (id === 'hunyuan3d_shape_v21_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-Shape-v2-1 (Raw Geometry)';
   else if (id === 'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-DiT-v2-mini-Turbo (Low-VRAM Geometry)';
   else if (id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
@@ -370,11 +358,9 @@ export const GeneratePanel: React.FC = () => {
     const combined = Array.from(new Set([...textured, ...raw]));
     const defaults = [
       'trellis_image_to_textured_mesh',
-      'triposr_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'trellis2_image_to_textured_mesh',
       'unique3d_image_to_raw_mesh',
       'partpacker_image_to_raw_mesh',
@@ -388,9 +374,6 @@ export const GeneratePanel: React.FC = () => {
     const otherIds = ids.filter(id => !readyIds.includes(id));
     return [...readyIds, ...otherIds];
   }, [modelRegistry, weightsStatus, memoizedModelDetails]);
-  const [subAction, setSubAction] = useState<'upload' | 'crop'>('upload');
-  const [activeMvSlot, setActiveMvSlot] = useState<'front' | 'back' | 'left' | 'right'>('front');
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -445,7 +428,6 @@ export const GeneratePanel: React.FC = () => {
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
-  const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview_input);
   
   // Centralized Textured Generation toggle: visible for every supported geometry model
   const showTextureToggle = true;
@@ -646,63 +628,6 @@ export const GeneratePanel: React.FC = () => {
     });
   };
 
-  const processImageFileForSlot = async (file: File, slot: 'front' | 'back' | 'left' | 'right') => {
-    setUploadError(null);
-    if (!isAcceptedImage(file)) {
-      setUploadError('Invalid file type. Use JPG, PNG, or WEBP.');
-      return;
-    }
-    if (file.size > MAX_IMAGE_SIZE) {
-      setUploadError('File too large. Maximum size is 20MB.');
-      return;
-    }
-    try {
-      startUpload(file.name, file.size);
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await getApiClient().post<{ file_id: string }>(
-        '/api/v1/file-upload/image',
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) }
-      );
-      finishUpload();
-      if (!res.file_id) throw new Error('Backend did not return a file ID for the uploaded image.');
-      const previewUrl = URL.createObjectURL(file);
-      const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-      setGenerationSettings(prev => ({
-        ...prev,
-        multiviewImages: {
-          ...(prev.multiviewImages || {}),
-          [slot]: previewUrl,
-        },
-        image: slot === 'front' || !prev.image ? previewUrl : prev.image,
-        imageFileId: slot === 'front' || !prev.imageFileId ? res.file_id : prev.imageFileId,
-        preprocessingArtifactId: slot === 'front' || !prev.image ? null : prev.preprocessingArtifactId,
-        preprocessingPreviewUrl: slot === 'front' || !prev.image ? null : prev.preprocessingPreviewUrl,
-        preprocessingMetadata: slot === 'front' || !prev.image ? null : prev.preprocessingMetadata,
-        enhancementEnabled: slot === 'front' || !prev.image ? false : prev.enhancementEnabled,
-        imageName: slot === 'front' || !prev.imageName ? cleanPrompt : prev.imageName,
-        mode: 'image-to-3d',
-      }));
-    } catch (err) {
-      failUpload();
-      setUploadError('Failed to upload multiview image.');
-    }
-  };
-
-  const handleMultiFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processImageFileForSlot(file, activeMvSlot);
-    if (multiFileInputRef.current) multiFileInputRef.current.value = '';
-  };
-
-  const SAMPLE_MULTIVIEW = {
-    front: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="100,30 150,70 140,160 60,160 50,70" fill="%232e3440" stroke="%23F9CF00" stroke-width="3"/><circle cx="100" cy="85" r="22" fill="%23F9CF00"/><circle cx="100" cy="85" r="10" fill="%23111"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">FRONT VIEW</text></svg>',
-    back: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="100,30 150,70 140,160 60,160 50,70" fill="%23232731" stroke="%2364748b" stroke-width="3"/><rect x="80" y="70" width="40" height="40" rx="4" fill="%23334155"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">BACK VIEW</text></svg>',
-    left: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="80,30 130,50 120,160 70,160" fill="%232a303c" stroke="%2338bdf8" stroke-width="3"/><circle cx="115" cy="85" r="8" fill="%23F9CF00"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">LEFT PROFILE</text></svg>',
-    right: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="120,30 70,50 80,160 130,160" fill="%232a303c" stroke="%2338bdf8" stroke-width="3"/><circle cx="85" cy="85" r="8" fill="%23F9CF00"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">RIGHT PROFILE</text></svg>',
-  };
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -817,7 +742,6 @@ export const GeneratePanel: React.FC = () => {
       if (isAcceptedImage(file)) {
         e.preventDefault();
         e.stopPropagation();
-        setSubAction('upload');
         processImageFile(file);
       }
     }
@@ -957,11 +881,7 @@ export const GeneratePanel: React.FC = () => {
   };
 
    const handleGenerate = () => {
-    const hasImage = Boolean(
-      generationSettings.image ||
-      generationSettings.multiviewImages?.front ||
-      (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
-    );
+    const hasImage = Boolean(generationSettings.image);
     if (!hasImage) {
       setNoticeMessage('Please upload a reference image first.');
       setTimeout(() => setNoticeMessage(null), 4000);
@@ -972,21 +892,6 @@ export const GeneratePanel: React.FC = () => {
       setTimeout(() => setNoticeMessage(null), 5000);
       return;
     }
-    if (subAction === 'crop') {
-      if (!isModelMultiviewCapable) {
-        setNoticeMessage(`The selected model "${activeModelObj?.label || activeModelId}" does not support multi-view reconstruction. Please choose a multi-view enabled 3D engine or use Single Image mode.`);
-        setTimeout(() => setNoticeMessage(null), 5000);
-        return;
-      }
-      const hasMvViews = (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0) ||
-        Boolean(generationSettings.multiviewAssetId);
-      if (!hasMvViews) {
-        setNoticeMessage('Please generate or upload multi-view images before running 3D reconstruction.');
-        setTimeout(() => setNoticeMessage(null), 5000);
-        return;
-      }
-    }
-    
     // If batch generation is enabled, add current image to batch queue instead of generating immediately
     if (batchGenerationEnabled) {
       // Upload current image if not already uploaded
@@ -1108,64 +1013,9 @@ export const GeneratePanel: React.FC = () => {
 
         {/* Unified Studio Generation Pipeline */}
         <div className="space-y-2.5">
-          {/* Input Mode Selector Bar */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
-              <div className="relative grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
-                {[
-                  {
-                    id: 'upload',
-                    domId: 'subaction-btn-upload',
-                    label: 'Single Image',
-                    tooltip: 'Single Image to 3D Mesh',
-                    icon: (props: any) => <HugeiconsIcon icon={ImageIcon} size={16} {...props} />,
-                    onClick: () => {
-                      setSubAction('upload');
-                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
-                      fileInputRef.current?.click();
-                    },
-                  },
-                  {
-                    id: 'crop',
-                    domId: 'subaction-btn-crop',
-                    label: 'Multi-View',
-                    tooltip: 'Zero123++ Multi-View generation & manual view collections',
-                    icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
-                    onClick: () => {
-                      setSubAction('crop');
-                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
-                    },
-                  },
-                ].map((tab) => {
-                  const active = subAction === tab.id;
-                  const Icon = tab.icon;
-                  return (
-                    <SimpleTooltip key={tab.id} label={tab.tooltip}>
-                      <button
-                        id={tab.domId}
-                        type="button"
-                        onClick={tab.onClick}
-                        disabled={false}
-                        className={`relative w-full py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95 z-10 ${
-                          active ? 'text-primary font-bold' : 'text-zinc-400 hover:text-zinc-200'
-                        }`}
-                      >
-                        {active && (
-                          <motion.div
-                            layoutId="subActionActiveTab"
-                            transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                            className="absolute inset-0 rounded-md bg-[hsl(var(--surface-2))] border border-primary/50 shadow-[0_0_10px_rgba(255,204,0,0.2)] -z-10"
-                          />
-                        )}
-                        <Icon className="w-3.5 h-3.5" />
-                        <span className="truncate">{tab.label}</span>
-                      </button>
-                    </SimpleTooltip>
-                  );
-                })}
-              </div>
-
+          <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               {/* Mode 1: Single Image UploadIcon */}
-              {subAction === 'upload' && (
+              {(
                 <>
                    <input 
                      ref={fileInputRef}
@@ -1342,14 +1192,6 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               )}
 
-              {/* Mode 2: Multi-View Zero123++ & Manual Collections */}
-              {subAction === 'crop' && (
-                <MultiViewWorkspace
-                  fileInputRef={fileInputRef}
-                  activeModelObj={activeModelObj}
-                  setNoticeMessage={setNoticeMessage}
-                />
-              )}
             </div>
 
             {/* AI 3D Model Engine Selector (Clean Dropdown + Low VRAM & Texture Toggles) */}
@@ -2120,8 +1962,6 @@ export const GeneratePanel: React.FC = () => {
           <ShimmerButton
             id="btn-generate-model-action"
             onClick={handleGenerate}
-            disabled={isExecuting || (subAction === 'crop' && !isModelMultiviewCapable)}
-            title={subAction === 'crop' && !isModelMultiviewCapable ? 'Selected 3D model does not support multi-view reconstruction' : undefined}
             shimmerColor="hsl(var(--neon-amber))"
             shimmerSize="0.1em"
             shimmerDuration="2.5s"
@@ -2155,12 +1995,7 @@ export const GeneratePanel: React.FC = () => {
               <button
                 type="button"
                 onClick={async () => {
-                  const hasImage = Boolean(
-                    generationSettings.image ||
-                    generationSettings.imageFileId ||
-                    generationSettings.multiviewImages?.front ||
-                    (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
-                  );
+                  const hasImage = Boolean(generationSettings.image || generationSettings.imageFileId);
                   if (!hasImage) {
                     setNoticeMessage('Upload or select an image to queue.');
                     setTimeout(() => setNoticeMessage(null), 4000);

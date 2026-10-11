@@ -818,3 +818,13 @@ Operators had no way to see the combined health of the two stores (SQLite rows v
 **Alternatives Considered**:
 - *Reuse only the per-job delete endpoint* (`DELETE /api/v1/system/jobs/{job_id}`): rejected — O(n) round-trips, no status/feature selectors, no combined statistics, no workspace sweep, and no SQLite VACUUM for storage reclamation.
 - *CLI-only maintenance tool*: rejected — operators administer the running stack through the admin dashboard; a CLI would duplicate auth/deletion logic and drift from the authenticated API surface.
+
+## ADR-068: Retire Dedicated Multi-View and Consolidate Tripo Model Catalog
+
+**Status:** Accepted — 2026-10-11
+
+**Decision:** Remove the dedicated Zero123++ Multi-View workspace, router, model registration, adapter, API documentation, tests, download-manager entries, and its installer dependency flow. Keep TripoSG as the only selectable Tripo generation model. Remove the TripoSR and TripoSF adapters and all active registry, preset, scheduling, download, verification, and install references to those models. Do not remove or modify any vendored repository code under `backend/thirdparty/`; that cleanup is explicitly deferred for separate manual work.
+
+**Rationale:** TripoSG provides a self-contained high-fidelity image/scribble-to-mesh path. TripoSF's current image path invokes TripoSR to create its coarse input mesh, so removing TripoSR weights while retaining TripoSF would leave a hidden model dependency and could break generation. Keeping TripoSG avoids that cross-model dependency while retaining one high-fidelity Tripo model. All non-Tripo model integrations and generic scheduler/capability behavior remain in place.
+
+**Consequences:** The model selector and model API expose TripoSG but no TripoSR/TripoSF/Zero123++ model IDs. The download manager installs only TripoSG and its RMBG dependencies among Tripo-specific model entries. Historical ADRs documenting the retired implementations remain as historical records; this ADR defines the current supported catalog.

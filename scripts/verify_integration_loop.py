@@ -2,7 +2,7 @@
 """
 Verification Script for ForMash 3D Model Integration & Runtime Loop
 Validates:
-1. Model configs, adapters, parameter schemas for TripoSR, TripoSG, ARDY.
+1. Model configs, adapters, parameter schemas for TripoSG and ARDY.
 2. Motion converter (ARDY rotation matrix -> Three.js quaternions + motion.json).
 3. Server file path resolver (HTTP URLs, relative paths, local paths).
 4. Live FastAPI TestClient endpoint verification.
@@ -68,42 +68,24 @@ def test_motion_converter():
     print("  ✅ convert_ardy_output_to_motion_json generates exact Three.js [x,y,z,w] quaternions and valid motion.json contract.")
 
 def test_adapters_and_factory():
-    print("[3/5] Testing ModelFactory and Adapters (TripoSR, TripoSG, ARDY)...")
+    print("[3/5] Testing ModelFactory and Adapters (TripoSG, ARDY)...")
     from backend.core.config import get_settings
     from backend.core.scheduler.model_factory import ModelFactory
     
     settings = get_settings()
     
     # Verify model configs exist via get_model_config(feature, model_id)
-    cfg_sr = settings.get_model_config("image_to_raw_mesh", "triposr_image_to_raw_mesh")
-    assert cfg_sr is not None, "triposr_image_to_raw_mesh missing from config"
-    
     cfg_sg = settings.get_model_config("image_to_raw_mesh", "triposg_image_to_raw_mesh")
     assert cfg_sg is not None, "triposg_image_to_raw_mesh missing from config"
-    
-    cfg_sf = settings.get_model_config("image_to_raw_mesh", "triposf_image_to_raw_mesh")
-    assert cfg_sf is not None, "triposf_image_to_raw_mesh missing from config"
     
     cfg_ardy = settings.get_model_config("motion_generation", "ardy_motion_generation")
     assert cfg_ardy is not None, "ardy_motion_generation missing from config"
     
-    # Instantiate models
-    triposr = ModelFactory.create_model_from_config({"model_id": "triposr_image_to_raw_mesh", **cfg_sr.model_dump()})
-    assert triposr is not None
-    schema_sr = triposr.get_parameter_schema()
-    assert "mc_resolution" in schema_sr.get("parameters", schema_sr)
-    
+    # Instantiate retained TripoSG model.
     triposg = ModelFactory.create_model_from_config({"model_id": "triposg_image_to_raw_mesh", **cfg_sg.model_dump()})
     assert triposg is not None
     schema_sg = triposg.get_parameter_schema()
     assert "guidance_scale" in schema_sg.get("parameters", schema_sg)
-    
-    triposf = ModelFactory.create_model_from_config({"model_id": "triposf_image_to_raw_mesh", **cfg_sf.model_dump()})
-    assert triposf is not None
-    schema_sf = triposf.get_parameter_schema()
-    assert "resolution" in schema_sf.get("parameters", schema_sf)
-    assert "sample_points_num" in schema_sf.get("parameters", schema_sf)
-    assert "glb" in triposf.get_supported_formats()["output"]
     
     ardy = ModelFactory.create_model_from_config({"model_id": "ardy_motion_generation", **cfg_ardy.model_dump()})
     assert ardy is not None
@@ -111,7 +93,7 @@ def test_adapters_and_factory():
     assert "checkpoint" in schema_ardy.get("parameters", schema_ardy)
     assert "json" in ardy.get_supported_formats()["output"]
     
-    print("  ✅ All 4 adapters (TripoSR, TripoSG, TripoSF, ARDY) instantiate correctly with valid parameter schemas and format support.")
+    print("  ✅ Retained TripoSG and ARDY adapters instantiate correctly with valid parameter schemas and format support.")
 
 def test_fastapi_endpoints():
     from fastapi.testclient import TestClient
@@ -131,9 +113,7 @@ def test_fastapi_endpoints():
         models_data = r.json()
         avail = models_data.get("available_models", models_data)
         raw_mesh_models = avail.get("image_to_raw_mesh", [])
-        assert "triposr_image_to_raw_mesh" in raw_mesh_models, f"TripoSR missing from image_to_raw_mesh: {raw_mesh_models}"
         assert "triposg_image_to_raw_mesh" in raw_mesh_models, f"TripoSG missing from image_to_raw_mesh: {raw_mesh_models}"
-        assert "triposf_image_to_raw_mesh" in raw_mesh_models, f"TripoSF missing from image_to_raw_mesh: {raw_mesh_models}"
         motion_models = avail.get("motion_generation", [])
         assert "ardy_motion_generation" in motion_models, f"ARDY missing from motion_generation: {motion_models}"
         
@@ -151,7 +131,7 @@ def test_fastapi_endpoints():
         assert r.status_code == 200
         assert "json" in r.json()["output_formats"]["mesh"]
         
-        print("  ✅ FastAPI endpoints successfully route and validate TripoSR, TripoSG, and ARDY motion generation.")
+        print("  ✅ FastAPI endpoints successfully route and validate TripoSG and ARDY motion generation.")
 
 def test_redis_connection_pool():
     print("[5/5] Testing Redis Connection Pool bounded limits...")

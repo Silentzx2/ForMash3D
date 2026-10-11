@@ -47,7 +47,6 @@ from .routers import (
     mesh_segmentation,
     mesh_uv_unwrapping,
     motion_generation,
-    multiview,
     system,
 )
 
@@ -346,9 +345,6 @@ app.include_router(
     motion_generation.router, prefix="/api/v1", tags=["Motion Generation"]
 )
 
-app.include_router(
-    multiview.router, prefix="/api/v1/multiview", tags=["Multi-View Generation"]
-)
 
 # Canonical storage static files mount (models, uploads, textures, previews)
 try:

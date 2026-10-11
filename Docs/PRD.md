@@ -26,7 +26,7 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 ## Core Features
 
 ### 1. Neural Shape Generation
-- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TRELLIS.2, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
+- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TRELLIS.2, TripoSG, PartPacker, UltraShape
 - **Raw Geometry Output**: Normal shape generation produces raw geometry only, preserving clean topology without model-level texture baking or auto-chaining.
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
@@ -89,12 +89,9 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 - **PartUV**: Automated seam placement and UV chart packing
 - Part-based UV unwrapping with LSCM
 
-### 13. Multi-View Generation
-- **Zero123++ v1.2**: 6 novel camera viewpoints generated at fixed 30° azimuth intervals (30°, 90°, 150°, 210°, 270°, 330°)
-- Seamless reference image reuse from Single Image mode without re-upload
-- Optional alpha masks and View-Space Normals (Normal ControlNet)
-- Multi-View Workspace with 6-view inspection gallery, pan/zoom viewer modal, and on-demand ZIP export (`<stem>.zip`)
-- Capability gating: strict restriction ensuring Multi-View 3D reconstruction only targets engines declared with `capabilities.multiview: true`
+### 13. Multi-View Generation (Removed 2026-10-11)
+- The Zero123++ model integration, dedicated workspace, reconstruction API, and download/install-manager entries have been removed from the active product.
+- Vendored third-party source directories were intentionally left untouched for separate manual cleanup.
 
 ## MVP
 
@@ -173,7 +170,7 @@ flowchart TB
     subgraph Adapters["Model Adapters"]
         TRELLIS["TRELLIS<br/>FlexiCubes PBR"]:::adapters
         HUNY["Hunyuan3D<br/>Shape + Paint"]:::adapters
-        TRIPO["TripoSR/SG/SF<br/>Feedforward & SparseFlex"]:::adapters
+        TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::adapters
         ARDY["ARDY<br/>Motion AI"]:::adapters
         PP["PartPacker<br/>Rectified Flow"]:::adapters
         US["UltraShape<br/>Arbitrary Topology"]:::adapters
@@ -265,7 +262,6 @@ flowchart TD
 | Hunyuan3D-Shape-v2-1 | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
 | Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
-| TripoSR | 6 GB | Ultra-fast raw mesh | ~2-5 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
 | ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
 | PartPacker | 10 GB | Fast | ~60 seconds |

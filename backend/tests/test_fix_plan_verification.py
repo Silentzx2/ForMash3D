@@ -1,6 +1,5 @@
 """
 Verification tests for ForMash3D Main Repo Fix Plan:
-- TripoSR adapter error handling, texture metadata, and output validation
 - TripoSG adapter error handling, provenance, and output validation
 - Multiprocess scheduler worker lifecycle, VRAM safety, and error propagation
 """
@@ -17,7 +16,6 @@ backend_dir = Path(__file__).resolve().parent.parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-from adapters.triposr_adapter import TripoSRImageToRawMeshAdapter
 from adapters.triposg_adapter import TripoSGImageToRawMeshAdapter
 from core.scheduler.multiprocess_scheduler import (
     MultiprocessModelScheduler,
@@ -27,49 +25,6 @@ from core.scheduler.multiprocess_scheduler import (
     auto_unload_after_job_enabled,
 )
 from core.scheduler.job_queue import JobRequest
-
-
-class TestTripoSRAdapter(unittest.TestCase):
-    def setUp(self):
-        self.adapter = TripoSRImageToRawMeshAdapter(vram_requirement=4096)
-
-    def test_model_path_resolution(self):
-        path = self.adapter._resolve_model_path()
-        self.assertIsInstance(path, str)
-        self.assertTrue(len(path) > 0)
-
-    def test_load_native_import_error_preserved(self):
-        """Native extension failure should be preserved in exception chain."""
-        with patch.dict(sys.modules, {"tsr.system": None}):
-            with self.assertRaises(RuntimeError) as ctx:
-                self.adapter._load_model()
-            self.assertIn("TripoSR", str(ctx.exception))
-            # Verify exception chaining
-            self.assertIsNotNone(ctx.exception.__cause__)
-
-    def test_output_validation_rejects_empty_file(self):
-        """Empty output mesh file must be rejected."""
-        fake_mesh_path = backend_dir / "tests" / "empty_test.glb"
-        fake_mesh_path.touch()
-        try:
-            self.adapter.tsr_model = MagicMock()
-            self.adapter.tsr_model.extract_mesh.return_value = [MagicMock()]
-            
-            with patch.dict(sys.modules, {"tsr.utils": MagicMock()}):
-                with patch.object(self.adapter.path_generator, "generate_mesh_path", return_value=str(fake_mesh_path)):
-                    with patch("PIL.Image.open"):
-                        with patch("core.utils.mesh_utils.MeshProcessor.load_mesh", return_value=None):
-                            with self.assertRaises(RuntimeError) as ctx:
-                                # inputs with dummy existing image
-                                self.adapter._process_request({
-                                    "image_path": str(Path(__file__)),
-                                    "bake_texture": False,
-                                    "no_remove_bg": True,
-                                })
-                            self.assertIn("output mesh", str(ctx.exception).lower())
-        finally:
-            if fake_mesh_path.exists():
-                fake_mesh_path.unlink()
 
 
 class TestTripoSGAdapter(unittest.TestCase):
@@ -159,21 +114,21 @@ class TestSchedulerResilience(unittest.IsolatedAsyncioTestCase):
     async def test_model_load_failure_fails_job_immediately(self):
         """When worker model load fails, job must immediately fail without requeuing."""
         self.scheduler.register_model({
-            "model_id": "triposr_image_to_raw_mesh",
+            "model_id": "triposg_image_to_raw_mesh",
             "feature_type": "image_to_raw_mesh",
-            "module": "adapters.triposr_adapter",
-            "class": "TripoSRImageToRawMeshAdapter",
+            "module": "adapters.triposg_adapter",
+            "class": "TripoSGImageToRawMeshAdapter",
             "vram_requirement": 0,
         })
 
         req = JobRequest(
             feature="image_to_raw_mesh",
             inputs={"image_path": "dummy.png"},
-            model_preference="triposr_image_to_raw_mesh",
+            model_preference="triposg_image_to_raw_mesh",
         )
         job_id = await self.scheduler.job_queue.enqueue(req)
         req.job_id = job_id
-        self.scheduler.last_worker_error["triposr_image_to_raw_mesh"] = "torchmcubes CUDA mismatch"
+        self.scheduler.last_worker_error["triposg_image_to_raw_mesh"] = "TripoSG CUDA initialization failed"
 
         with patch.object(self.scheduler, "_find_or_create_worker_for_job", return_value="MODEL_LOAD_FAILED"):
             await self.scheduler._process_job_with_queue_integration(req)
@@ -181,7 +136,7 @@ class TestSchedulerResilience(unittest.IsolatedAsyncioTestCase):
         job = await self.scheduler.job_queue.get_job(job_id)
         self.assertEqual(job.status.value, "failed")
         self.assertIn("Model load failed", job.error)
-        self.assertIn("torchmcubes", job.error)
+        self.assertIn("CUDA initialization failed", job.error)
 
 
 if __name__ == "__main__":

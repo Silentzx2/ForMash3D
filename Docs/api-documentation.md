@@ -518,7 +518,7 @@ GET /api/v1/mesh-generation/models
 **Response:**
 ```json
 {
-  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
+  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposg_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
   "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
   "text_mesh_painting": ["trellis_text_mesh_painting"],
   "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],
@@ -528,8 +528,7 @@ GET /api/v1/mesh-generation/models
   "mesh_retopology": ["fastmesh_v1k_retopology", "fastmesh_v4k_retopology"],
   "uv_unwrapping": ["partuv_uv_unwrapping"],
   "text_mesh_editing": ["voxhammer_text_mesh_editing"],
-  "image_mesh_editing": ["voxhammer_image_mesh_editing"],
-  "image_to_multiview": ["zero123plus_v12_image_to_multiview"]
+  "image_mesh_editing": ["voxhammer_image_mesh_editing"]
 }
 ```
 
@@ -568,24 +567,9 @@ Returns durable job history (SQLite page, falling back to the Redis job listing 
 
 Values populated by production post-processing are never overwritten; only missing URLs are backfilled.
 
-### Multi-view generation and reconstruction
+### Multi-view APIs (Removed 2026-10-11)
 
-Zero123++ generation is exposed separately as `POST /api/v1/multiview/generate`. Its readiness is controlled by the runtime `image_to_multiview` model metadata; missing weights or unavailable CUDA are surfaced to the workspace before generation.
-
-Multi-view -> 3D reconstruction is exposed as `POST /api/v1/multiview/reconstruct-3d`. A target reconstruction model must explicitly advertise `capabilities.multiview_input=true`; a model that merely generates multiview conditioning images is not sufficient. The request can use an existing `asset_id` or explicit `images` and carries the same quality/polycount/LOD/physics controls as the single-image path.
-
-```json
-{
-  "asset_id": "asset_abc123",
-  "model_preference": "model-id-that-supports-multiview-input",
-  "quality": "high",
-  "target_polycount": 50000,
-  "generateLOD": true,
-  "lodPreset": "high",
-  "lodCount": 4,
-  "texture_resolution": 2048
-}
-```
+The dedicated Zero123++ generation and multi-view reconstruction endpoints have been removed from the active API. Use the single-image `/api/v1/mesh-generation/image-to-raw-mesh` route for current image-to-3D requests.
 
 ### Model Parameters Schema
 
@@ -923,7 +907,7 @@ System/status responses now expose resource planning metadata including CPU coun
 
 ## Capability-Aware Generation and Quality Metadata — 2026-10-08
 
-The runtime model-details response exposes a normalized capability contract. Relevant fields include modality, multiview input/output behavior, texture/PBR/vertex-color support, preprocessing/extraction preferences, preferred resolution/face budget, minimum VRAM, CPU policy, multi-GPU strategy, latency class and supported output formats.
+The runtime model-details response exposes a normalized capability contract. Relevant fields include modality, texture/PBR/vertex-color support, preprocessing/extraction preferences, preferred resolution/face budget, minimum VRAM, CPU policy, multi-GPU strategy, latency class and supported output formats.
 
 Production generation results can include production_status, degraded_reasons, master_to_derivative, quality_trace, lod_validation, quality_mode, texture_resolution, cpu_threads, and high_fidelity_url.
 

@@ -820,28 +820,11 @@ fi
 echo "[NOTE] VoxHammer uses TRELLIS pipeline which is already installed"
 ### VoxHammer end ###
 
-### TripoSF, TripoSG, TripoSR, ardy Dependencies ###
+### ARDY Dependencies ###
 echo ""
 echo "========================================"
-echo "Installing TripoSF, TripoSG, TripoSR, ardy Dependencies"
+echo "Installing ARDY Dependencies"
 echo "========================================"
-if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSF" ]; then
-    echo "[INFO] Installing TripoSF requirements..."
-    if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSF/requirements.txt"; then
-        echo "[ERROR] Failed to install TripoSF requirements."
-        exit 1
-    fi
-fi
-if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSR" ]; then
-    echo "[INFO] Installing TripoSR requirements..."
-    if ! install_local_wheel "torchmcubes-*.whl" "torchmcubes"; then
-        echo "[INFO] Local torchmcubes wheel not found; installing from git..."
-        $UV_PIP install git+https://github.com/tatsy/torchmcubes.git 2>/dev/null || true
-    fi
-    if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSR/requirements.txt"; then
-        echo "[WARN] TripoSR requirements install had issues; verifying basic requirements..."
-    fi
-fi
 if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then
     echo "[INFO] Installing ardy requirements..."
     if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/ardy/requirements.txt"; then
@@ -849,22 +832,6 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then
         exit 1
     fi
 fi
-
-### Zero123++ v1.2 Multi-View Dependencies ###
-echo ""
-echo "========================================"
-echo "Installing Zero123++ v1.2 Dependencies"
-echo "========================================"
-if [ -d "$PROJECT_ROOT/backend/thirdparty/zero123plus" ]; then
-    echo "[INFO] Found vendored Zero123++ repository at $PROJECT_ROOT/backend/thirdparty/zero123plus"
-fi
-
-if [ -f "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" ]; then
-    echo "[INFO] Installing Zero123++ runtime dependencies..."
-    $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" || true
-    echo "[SUCCESS] Zero123++ runtime dependencies processed"
-fi
-### Zero123++ end ###
 
 ### Paint3D Dependencies ###
 echo ""
@@ -989,14 +956,6 @@ for pkg in ['numpy', 'diffusers', 'transformers', 'pymeshlab', 'open3d', 'trimes
         print(f'{pkg}: {getattr(mod, \"__version__\", \"installed\")}')
     except Exception as e:
         print(f'{pkg}: NOT FOUND ({e})')
-
-try:
-    import sys
-    sys.path.insert(0, '$PROJECT_ROOT/backend')
-    from adapters.zero123plus_adapter import Zero123PlusAdapter
-    print('[SUCCESS] Zero123PlusAdapter import verified')
-except Exception as e:
-    print(f'[WARN] Zero123PlusAdapter import check: {e}')
 
 try:
     import sys

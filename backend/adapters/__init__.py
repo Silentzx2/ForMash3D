@@ -67,16 +67,10 @@ _ADAPTER_MAP = {
     # VoxHammer
     "VoxHammerTextMeshEditingAdapter": ("voxhammer_adapter", "VoxHammerTextMeshEditingAdapter"),
     "VoxHammerImageMeshEditingAdapter": ("voxhammer_adapter", "VoxHammerImageMeshEditingAdapter"),
-    # TripoSR
-    "TripoSRImageToRawMeshAdapter": ("triposr_adapter", "TripoSRImageToRawMeshAdapter"),
     # TripoSG
     "TripoSGImageToRawMeshAdapter": ("triposg_adapter", "TripoSGImageToRawMeshAdapter"),
-    # TripoSF
-    "TripoSFImageToRawMeshAdapter": ("triposf_adapter", "TripoSFImageToRawMeshAdapter"),
     # ARDY
     "ArdyMotionGenerationAdapter": ("ardy_adapter", "ArdyMotionGenerationAdapter"),
-    # Zero123++
-    "Zero123PlusAdapter": ("zero123plus_adapter", "Zero123PlusAdapter"),
     # Unique3D
     "Unique3DImageToRawMeshAdapter": ("unique3d_adapter", "Unique3DImageToRawMeshAdapter"),
     # Paint3D

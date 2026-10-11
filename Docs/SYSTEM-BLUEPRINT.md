@@ -23,7 +23,7 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 ### Core Stack
 - **Frontend**: Next.js 16 (React 19, TypeScript, Three.js, React Three Fiber, Tailwind CSS)
 - **API Gateway**: FastAPI (Python 3.10, Conda env `3daigc-api`, Pydantic V2, AsyncIO)
-- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartPacker, UltraShape, PartField, P3-SAM, UniRig, FastMesh, VoxHammer, Zero123++ (Multi-View)
+- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartPacker, UltraShape, PartField, P3-SAM, UniRig, FastMesh, VoxHammer
 - **Scheduler**: VRAM-aware multiprocess scheduler with GPU monitoring
 - **Queue/Broker**: Redis 7 (optional, multi-worker mode only)
 - **File Storage**: Local filesystem + Redis FileStore (multi-worker mode)
@@ -53,7 +53,7 @@ graph TD
 
     subgraph Gateway["⚡ FastAPI Gateway :7842"]
         direction TB
-        API["Routers: system, generation,<br/>multiview, editing, rigging, segmentation"]:::cyan
+        API["Routers: system, generation,<br/>editing, rigging, segmentation"]:::cyan
         SCHED["VRAM-Aware Scheduler"]:::cyan
     end
 
@@ -65,15 +65,14 @@ graph TD
         AUTO_UNLOAD["Auto-Unload After Job"]:::orange
     end
 
-    subgraph Adapters["🧠 Model Adapters (23 registered / 22 selectable; Zero123++ hidden)"]
+    subgraph Adapters["🧠 Model Adapters"]
         direction TB
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes PBR"]:::purple
         HUNY["Hunyuan3D-2.1<br/>Shape + Paint 2B"]:::purple
-        TRIPO["TripoSR / SG / SF"]:::purple
+        TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::purple
         PP["PartPacker & UltraShape"]:::purple
         FM["FastMesh Quad Retopo"]:::purple
         UR["UniRig & ARDY Motion"]:::purple
-        Z123["Zero123++ v1.2<br/>Multi-View 6-Cam Grid"]:::purple
     end
 
     subgraph PostProcess["⚙️ Production Post-Processing"]
@@ -213,7 +212,6 @@ flowchart TD
 | Hunyuan3D-Shape-v2-1 | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
 | Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
-| TripoSR | 6 GB | Ultra-fast raw mesh | ~2-5 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
 | ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
 | PartPacker | 10 GB | Fast | ~60 seconds |
@@ -345,7 +343,7 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - SQLite status/progress persistence is offloaded and bounded; status reads do not mutate or synchronously persist jobs.
 - Successful raw inference is terminal for GPU execution; background production post-processing carries independent status/progress/error metadata and preserves input lineage until completion.
 - Model readiness is based on canonical manifest paths, local checkpoint payloads plus model descriptors for directory paths, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract. Health routes remain liveness-only and never load models.
-- The workspace uses backend capability metadata for route selection, keeps unsupported multiview gated, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
+- The workspace uses backend capability metadata for route selection, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
 - Artifact naming is UUID-based across generation/segmentation/rig outputs, and stale request temp directories are removed during scheduler recovery.
 
 

@@ -442,38 +442,6 @@ export interface GenerationSettings {
   imageName?: string;
 
   negativePrompt?: string;
-  multiviewImages?: {
-    front?: string | null;
-    right?: string | null;
-    back?: string | null;
-    left?: string | null;
-  };
-  multiviewSourceFileId?: string | null;
-  multiviewJobId?: string | null;
-  multiviewAssetId?: string | null;
-  multiviewStatus?: 'idle' | 'generating' | 'ready' | 'error';
-  multiviewViews?: Array<{
-    file: string;
-    label: string;
-    azimuth_deg?: number;
-    elevation_deg?: number;
-    url?: string;
-    mask_url?: string;
-    normal_url?: string;
-  }>;
-  multiviewManifest?: any;
-  multiviewZipUrl?: string | null;
-  multiviewError?: string | null;
-  multiviewInputMode?: 'generate' | 'upload';
-  multiviewAdvanced?: {
-    inferenceSteps: number;
-    seed: number;
-    saveContactSheet: boolean;
-    transparentBackground: boolean;
-    generateMasks: boolean;
-    generateNormals: boolean;
-    includeManifest: boolean;
-  };
   enableFlashVDM?: boolean;
   lowVramMode?: 'auto' | 'normal' | 'low';
   maxNumView?: number;

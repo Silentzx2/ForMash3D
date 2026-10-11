@@ -86,7 +86,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposr" "triposg" "triposf" "ardy" "zero123plus" "zero123plus_normal_controlnet" "voxhammer" "unique3d" "paint3d" "misc" "all")
+AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposg" "ardy" "voxhammer" "unique3d" "paint3d" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -117,12 +117,8 @@ Available models:
     partuv             - PartUV model
     fastmesh           - FastMesh model
     ultrashape         - UltraShape model
-    triposr            - TripoSR fast single-image reconstruction model
     triposg            - TripoSG and RMBG models
-    triposf            - TripoSF VAE checkpoint
     ardy               - ARDY motion generation models
-    zero123plus        - Zero123++ v1.2 multi-view image generation model
-    zero123plus_normal_controlnet - Normal generation ControlNet for Zero123++ v1.2 (optional)
     voxhammer          - VoxHammer text/image mesh-editing TRELLIS checkpoints
     unique3d           - Unique3D high-fidelity single-image to 3D model
     paint3d            - Paint3D 1K/2K coarse-to-fine UV texture diffusion model
@@ -596,28 +592,6 @@ download_ultrashape() {
     fi
 }
 
-# Function to download TripoSR model
-download_triposr() {
-    print_info "========================================"
-    print_info "Downloading TripoSR Model"
-    print_info "========================================"
-
-    local model_dir="$PRETRAINED_DIR/TripoSR"
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_file "$model_dir/model.ckpt" 50000000; then
-        print_info "TripoSR model already exists and verified"
-        return 0
-    fi
-
-    mkdir -p "$model_dir"
-    print_info "Downloading TripoSR from stabilityai/TripoSR..."
-    if hf_download stabilityai/TripoSR --local-dir "$model_dir"; then
-        print_success "TripoSR model downloaded successfully"
-    else
-        print_error "Failed to download TripoSR model"
-        return 1
-    fi
-}
-
 # Function to download TripoSG and RMBG models
 download_triposg() {
     print_info "========================================"
@@ -661,35 +635,6 @@ download_triposg() {
     print_success "TripoSG models ready"
 }
 
-# Function to download TripoSF model
-download_triposf() {
-    print_info "========================================"
-    print_info "Downloading TripoSF Model"
-    print_info "========================================"
-
-    local triposf_dir="$PRETRAINED_DIR/TripoSF"
-    mkdir -p "$triposf_dir"
-
-    local ckpt_path="$triposf_dir/pretrained_TripoSFVAE_256i1024o.safetensors"
-    local vae_path="$triposf_dir/vae/pretrained_TripoSFVAE_256i1024o.safetensors"
-
-    if [ "$FORCE_DOWNLOAD" = false ] && { verify_file "$ckpt_path" 50000000 2>/dev/null || verify_file "$vae_path" 50000000 2>/dev/null; }; then
-        print_info "TripoSF model already exists and verified"
-        return 0
-    fi
-
-    print_info "Downloading TripoSF VAE checkpoint from VAST-AI/TripoSF..."
-    if hf_download VAST-AI/TripoSF vae/pretrained_TripoSFVAE_256i1024o.safetensors --local-dir "$triposf_dir"; then
-        if [ -f "$vae_path" ] && [ ! -f "$ckpt_path" ]; then
-            cp "$vae_path" "$ckpt_path" 2>/dev/null || true
-        fi
-        print_success "TripoSF model downloaded successfully"
-    else
-        print_error "Failed to download TripoSF model"
-        return 1
-    fi
-}
-
 # Function to download ARDY checkpoints
 download_ardy() {
     print_info "========================================"
@@ -710,50 +655,6 @@ download_ardy() {
         print_error "Failed to download ARDY checkpoints"
         print_warning "The nv-tlabs/ardy Hugging Face repository is gated (Meta-Llama access)."
         print_warning "Request access at https://huggingface.co/nv-tlabs/ardy, then run: export HF_TOKEN=<token> and re-run this script."
-        return 1
-    fi
-}
-
-# Function to download Zero123++ v1.2 multi-view model
-download_zero123plus() {
-    print_info "========================================"
-    print_info "Downloading Zero123++ v1.2 Multi-View Model"
-    print_info "========================================"
-
-    local model_dir="$PRETRAINED_DIR/zero123plus-v1.2"
-    if [ "$FORCE_DOWNLOAD" = false ] && [ -f "$model_dir/model_index.json" ] && verify_directory "$model_dir" 3; then
-        print_info "Zero123++ v1.2 model already exists and verified"
-        return 0
-    fi
-
-    mkdir -p "$model_dir"
-    print_info "Downloading Zero123++ v1.2 from sudo-ai/zero123plus-v1.2..."
-    if hf_download sudo-ai/zero123plus-v1.2 --local-dir "$model_dir"; then
-        print_success "Zero123++ v1.2 model downloaded successfully"
-    else
-        print_error "Failed to download Zero123++ v1.2 model"
-        return 1
-    fi
-}
-
-# Function to download optional normal ControlNet for Zero123++ v1.2
-download_zero123plus_normal_controlnet() {
-    print_info "========================================"
-    print_info "Downloading Zero123++ v1.2 Normal ControlNet (Optional)"
-    print_info "========================================"
-
-    local model_dir="$PRETRAINED_DIR/controlnet-zp12-normal-gen-v1"
-    if [ "$FORCE_DOWNLOAD" = false ] && [ -f "$model_dir/config.json" ] && verify_directory "$model_dir" 2; then
-        print_info "Normal ControlNet already exists and verified"
-        return 0
-    fi
-
-    mkdir -p "$model_dir"
-    print_info "Downloading normal ControlNet from sudo-ai/controlnet-zp12-normal-gen-v1..."
-    if hf_download sudo-ai/controlnet-zp12-normal-gen-v1 --local-dir "$model_dir"; then
-        print_success "Normal ControlNet downloaded successfully"
-    else
-        print_error "Failed to download Normal ControlNet"
         return 1
     fi
 }
@@ -1018,25 +919,11 @@ verify_all_models() {
     print_info "Checking UltraShape..."
     verify_file "$PRETRAINED_DIR/UltraShape/ultrashape_v1.pt" 100000000 || all_verified=false
     
-    print_info "Checking TripoSR..."
-    verify_file "$PRETRAINED_DIR/TripoSR/model.ckpt" 50000000 || all_verified=false
-
     print_info "Checking TripoSG..."
     verify_directory "$PRETRAINED_DIR/TripoSG" 2 || all_verified=false
 
-    print_info "Checking TripoSF..."
-    { verify_file "$PRETRAINED_DIR/TripoSF/pretrained_TripoSFVAE_256i1024o.safetensors" 50000000 2>/dev/null || \
-      verify_file "$PRETRAINED_DIR/TripoSF/vae/pretrained_TripoSFVAE_256i1024o.safetensors" 50000000 2>/dev/null; } || all_verified=false
-
     print_info "Checking ARDY..."
     verify_directory "$PRETRAINED_DIR/ardy" 1 || all_verified=false
-
-    print_info "Checking Zero123++ v1.2..."
-    if [ -f "$PRETRAINED_DIR/zero123plus-v1.2/model_index.json" ]; then
-        verify_directory "$PRETRAINED_DIR/zero123plus-v1.2" 3 || all_verified=false
-    else
-        print_warning "Zero123++ v1.2 not found (can be downloaded via -m zero123plus)"
-    fi
 
     print_info "Checking miscellaneous models..."
     verify_file "$PRETRAINED_DIR/misc/RealESRGAN_x4plus.pth" 50000000 || all_verified=false
@@ -1137,23 +1024,11 @@ for model in "${MODELS_ARRAY[@]}"; do
         "ultrashape")
             download_ultrashape
             ;;
-        "triposr")
-            download_triposr
-            ;;
         "triposg")
             download_triposg
             ;;
-        "triposf")
-            download_triposf
-            ;;
         "ardy")
             download_ardy
-            ;;
-        "zero123plus")
-            download_zero123plus
-            ;;
-        "zero123plus_normal_controlnet")
-            download_zero123plus_normal_controlnet
             ;;
         "voxhammer")
             download_voxhammer
@@ -1182,11 +1057,8 @@ for model in "${MODELS_ARRAY[@]}"; do
             download_partuv
             download_fastmesh
             download_ultrashape
-            download_triposr
             download_triposg
-            download_triposf
             download_ardy
-            download_zero123plus
             download_unique3d
             download_paint3d
             download_misc

@@ -49,7 +49,7 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 > 4. **Notice for Commercial & SaaS Implementors**:
 >    - The Apache 2.0 license applies **strictly to ForMash3D's original code**. We do **not** own or re-license the underlying third-party models, research weights, or ported submodules.
 >    - The ported `3DGenStudio` post-processing pipeline prohibits hosting the software as a paid public/private commercial SaaS service without explicit written consent from the upstream author (`visualbruno`).
->    - Individual model checkpoints (e.g. Hunyuan3D-2.1, FastMesh, UltraShape, TripoSF) carry their own respective upstream research, academic, or non-commercial licenses (see **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files).
+>    - Individual model checkpoints (e.g. Hunyuan3D-2.1, FastMesh, UltraShape, TripoSG) carry their respective upstream research, academic, or non-commercial licenses (see **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files).
 >    - **Do NOT blindly deploy or redistribute ForMash3D as a paid commercial product or SaaS** without auditing and complying with the respective licenses of each integrated model and component!
 
 > [!NOTE]
@@ -69,7 +69,6 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 | Source Preservation | Immutable master/source.glb checkpoint before production processing |
 | Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
 | PBR Materials | Hunyuan3D Paint-v2.1 and model-specific textured generation |
-| Multi-View | Zero123++ v1.2 plus capability-gated 3D reconstruction |
 | Smart Generation | One-click image-only intents with deterministic model selection and scheduler-backed execution |
 | QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
 | Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |
@@ -82,8 +81,8 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
    INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
 ┌─────────────────────┐    ┌───────────────────────────┐    ┌──────────────────────────┐
 │  • Single Image     │───►│  Neural Model Adapters:   │───►│ master/source.glb        │
-│  • Multi-View Image │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
-│                     │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
+│                     │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
+│                     │    │  TripoSG                  │    │ Preserves Raw Topology   │
 └─────────────────────┘    └───────────────────────────┘    └────────────┬─────────────┘
                                                                           │
  ┌───────────────────────────────────────────────────────────────────────┘
@@ -139,14 +138,13 @@ flowchart TD
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines [Neural 3D Synthesis Engines (23 selectable / 24 registered adapters)]
+    subgraph Engines [Neural 3D Synthesis Engines]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
-        TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
+        TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::purple
         RETOPO["FastMesh V1K / V4K<br/>Neural Quad Retopology"]:::purple
         EXTRAS["UltraShape / PartPacker<br/>Dense Poly / Part Decomp"]:::purple
         RIGGING["UniRig & ARDY<br/>Auto-Rigging & Motion AI"]:::purple
-        ZERO123["Zero123++ v1.2<br/>Multi-View 6-Cam Synthesis"]:::purple
         UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
 
@@ -178,7 +176,6 @@ flowchart TD
     MONITOR --> RETOPO
     MONITOR --> EXTRAS
     MONITOR --> RIGGING
-    MONITOR --> ZERO123
     MONITOR --> UNIQUE3D
 
     HUNYUAN -->|"Model Native GLB"| CHECKPOINT
@@ -203,7 +200,7 @@ flowchart TD
 
 ---
 
-## 🤖 Supported Model Catalog (22 User-Facing Models / 23 Registered Adapters)
+## 🤖 Supported Model Catalog (20 User-Facing Models / 20 Registered Adapters)
 
 The model registry is dynamically configured via `backend/config/models.yaml` and loaded lazily:
 
@@ -214,9 +211,7 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM step-distilled shape model with Turbo path |
 | **TRELLIS** | `trellis_image_to_3d` / `trellis_image_to_raw_mesh` | Raw Mesh | 11.5 GB | Raw FlexiCubes geometry; optional texture generation is a separate stage |
 | **TRELLIS.2** | `trellis2_image_to_3d` / `trellis2_image_to_raw_mesh` | Raw Mesh | 23.5 GB | High-fidelity FlexiCubes geometry; legacy textured IDs resolve to raw geometry |
-| **TripoSR** | `triposr_image_to_raw_mesh` | Raw Mesh | 6 GB | Ultra-fast feed-forward geometry extraction; centralized texturing is optional |
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
-| **TripoSF** | `triposf_image_to_raw_mesh` | SparseFlex Mesh | 12 GB | High-resolution arbitrary-topology modeling with SparseFlex VAE |
 | **FastMesh (1K & 4K)** | `fastmesh_v1k_retopology`<br>`fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB | Fixed-budget neural quad retopology producing clean animation loops |
 | **PartPacker** | `partpacker_image_to_raw_mesh` | Part-Level 3D | 10 GB | Rectified-flow multi-part geometric decomposition |
 | **UltraShape** | `ultrashape_image_to_raw_mesh` | Dense Mesh | 26.6 GB | Dense surface reconstruction via cubvh |
@@ -227,8 +222,6 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
 || **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
 || **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
-
-Zero123++ v1.2 is a separate, hidden Multi-View image-generation adapter (not a mesh generator). Its base checkpoint is available from the model download manager; the View-Space Normals ControlNet is optional.
 
 ---
 
@@ -372,7 +365,7 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 | Endpoint | Method | Description |
 |---|:---:|---|
 | `/api/v1/system/info` | `GET` | System health, GPU specs, VRAM utilization, active worker mode |
-| `/api/v1/system/models` | `GET` | List 23 registered adapters (22 user-facing models + hidden Zero123++ multi-view adapter), readiness, and VRAM requirements |
+| `/api/v1/system/models` | `GET` | List registered models, readiness, capabilities, and VRAM requirements |
 | `/api/v1/mesh-generation/image-to-raw-mesh` | `POST` | Generate high-fidelity raw geometry from single reference image |
 | `/api/v1/mesh-generation/image-to-textured-mesh` | `POST` | Backward-compatible endpoint; ordinary generation is raw-first with optional centralized texturing |
 | `/api/v1/mesh-generation/image-mesh-painting` | `POST` | Paint PBR textures onto existing 3D geometry |
@@ -449,8 +442,8 @@ Yes. Once your model checkpoints are downloaded via `bash backend/scripts/downlo
 <summary><strong>What GPU hardware is required to run ForMash3D?</strong></summary>
 
 ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+:
-- **Lightweight Models (6GB–10GB VRAM)**: TripoSR, TripoSG, Hunyuan3D-DiT-v2-mini-Turbo, PartField (runs comfortably on RTX 3060, 4060, RTX 2080).
-- **Standard Models (12GB–16GB VRAM)**: TRELLIS, FastMesh, TripoSF SparseFlex (runs on RTX 3080, 4070, 4080, T4, L4).
+- **Lightweight Models (6GB–10GB VRAM)**: TripoSG, Hunyuan3D-DiT-v2-mini-Turbo, PartField (runs comfortably on RTX 3060, 4060, RTX 2080).
+- **Standard Models (12GB–16GB VRAM)**: TRELLIS, FastMesh (runs on RTX 3080, 4070, 4080, T4, L4).
 - **Heavy & High-Poly Models (24GB+ VRAM)**: TRELLIS.2, Hunyuan3D-Paint 2B, UltraShape (runs on RTX 3090, 4090, A10, A100).
 </details>
 
@@ -502,7 +495,7 @@ Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/a
 - **ForMash3D Core**: Licensed under the **[Apache License 2.0](LICENSE)**.
 - **Post-Processing Pipeline**: Ported and adapted from **[visualbruno/3DGenStudio](https://github.com/visualbruno/3DGenStudio)** under the **3D Gen Studio Community License**. See **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)**.
 - **Backend API Gateway Base**: Forked and modernized from **[FishWoWater/3DAIGC-API](https://github.com/FishWoWater/3DAIGC-API)**.
-- **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSR/SG/SF, PartPacker, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
+- **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSG, PartPacker, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
 
 ---
 

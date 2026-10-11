@@ -1,3 +1,11 @@
+## Current Runtime Catalog — 2026-10-11
+
+- **Tripo integration:** TripoSG is the sole active/selectable Tripo model. TripoSR and TripoSF adapters, registrations, scheduling profiles, presets, UI fallbacks, download/verification paths, and model-specific installer steps have been retired. TripoSF was not retained because its image-generation path invokes TripoSR for coarse-mesh creation.
+- **Multi-View:** The dedicated Zero123++ model integration, GeneratePanel workspace, API router, model registration, tests, and download/install-manager entries have been removed. The single-image generation path remains the supported UI/API path.
+- **Scope guard:** Other model integrations and generic scheduler/capability code remain intact. All `backend/thirdparty/` vendored repository directories were deliberately left untouched for separate manual cleanup; the docs below retain historical records of prior implementations.
+
+---
+
 ## 2026-10-11 Complete Audit Remediation Pass (All 5 Specialists: Raw Geometry, Texture Pipeline, API Lifecycle, Database Admin, UI Contracts)
 - **RAW-QUALITY-001, BUG-006, BUG-024 (Specialist 1)**:
   - TripoSR mc_resolution parameter unlocked up to 512 max fidelity instead of hardcoded 320.

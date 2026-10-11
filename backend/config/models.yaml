@@ -94,21 +94,6 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
-  triposr_image_to_raw_mesh:
-    capabilities:
-      text_to_3d: false
-      image_to_3d: true
-      multiview: false
-      texture_generation: false
-      raw_mesh: true
-      max_images: 1
-    vram_requirement: 6144  # MB
-    supported_inputs: ["image"]
-    supported_outputs: ["glb", "obj"]
-    model_path: "backend/pretrained/TripoSR"
-    enabled: true
-    max_workers: 1
-
   triposg_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -132,21 +117,6 @@ image_to_raw_mesh:
     supported_inputs: ["image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/TripoSG"
-    enabled: true
-    max_workers: 1
-
-  triposf_image_to_raw_mesh:
-    capabilities:
-      text_to_3d: false
-      image_to_3d: true
-      multiview: false
-      texture_generation: false
-      raw_mesh: true
-      max_images: 1
-    vram_requirement: 12288  # MB
-    supported_inputs: ["image", "mesh"]
-    supported_outputs: ["glb", "obj"]
-    model_path: "backend/pretrained/TripoSF"
     enabled: true
     max_workers: 1
 
@@ -495,22 +465,3 @@ motion_generation:
       supports_postprocess: true
       fps: 20
       skeleton: "core"
-
-# Multi-view generation (Zero123++ v1.2)
-# Generates 6 novel viewpoints from a single image (3x2 grid, 30° azimuth intervals)
-image_to_multiview:
-  zero123plus_v12_image_to_multiview:
-    capabilities:
-      image_to_multiview: true
-      multiview: true
-      fixed_view_count: 6
-      view_normals: true
-      masks: true
-      image_export: true
-      hidden_from_model_selector: true
-    vram_requirement: 5120  # MB
-    supported_inputs: ["image"]
-    supported_outputs: ["png", "zip"]
-    model_path: "backend/pretrained/zero123plus-v1.2"
-    enabled: true
-    max_workers: 1

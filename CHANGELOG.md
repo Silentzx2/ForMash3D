@@ -1,5 +1,11 @@
 
 ## [Unreleased] - 2026-10-09
+
+### Removed — Model Catalog Cleanup (2026-10-11)
+- Removed the dedicated Zero123++ Multi-View workspace, API router, model registration, tests, and download/install-manager entries.
+- Consolidated selectable Tripo generation to TripoSG; removed TripoSR and TripoSF adapters, registry entries, presets, checkpoint download/verification paths, and model-specific install steps.
+- Kept other model integrations intact and left all `backend/thirdparty/` vendored repository code untouched for separate manual cleanup.
+- Updated active documentation and regression contracts to reflect the current catalog.
 ### Added
 - **Unified Master Logging**: Consolidated all backend and multi-process worker logs into a single `logs/master.log` with real-time FastApi SSE streaming endpoint `/api/v1/system/logs/stream`.
 - **VS Code Terminal UI**: Completely redesigned the `LogsTab.tsx` to resemble a minimal, smooth, and authentic VS Code/Linux terminal environment (pure dark mode, Consolas monospace, strict ANSI-like color formatting, and butter-smooth auto-scroll).

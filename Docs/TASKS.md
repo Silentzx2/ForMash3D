@@ -676,3 +676,11 @@ All statuses begin as **Pending**; this document is a repair handoff, not a clai
 | BUG-026 | Medium | Done | Quad retopology for native-textured mesh | Passed: test_quad_retopology_on_native_textures_reports_degraded_fallback |
 | BUG-027 | Medium | Done | Final post-process result and frontend asset state | Passed: ModelAsset preserves productionStatus and degradedReasons |
 
+---
+
+## Completed — 2026-10-11: Tripo Catalog and Multi-View Cleanup
+
+- Removed the dedicated Zero123++ Multi-View workspace/API/model integration and updated active docs and tests.
+- Kept TripoSG as the only active Tripo generation model; retired TripoSR and TripoSF adapters, registrations, presets, scheduler profiles, download-manager entries, checkpoint verification, and model-specific install steps.
+- Preserved all other model integrations and left every `backend/thirdparty/` vendored repository directory untouched for separate manual cleanup.
+- Historical task entries above are intentionally preserved.

@@ -168,30 +168,15 @@ class ModelFactory:
             "module": "adapters.voxhammer_adapter",
             "class": "VoxHammerImageMeshEditingAdapter",
         },
-        # TripoSR adapter
-        "triposr_image_to_raw_mesh": {
-            "module": "adapters.triposr_adapter",
-            "class": "TripoSRImageToRawMeshAdapter",
-        },
         # TripoSG adapter
         "triposg_image_to_raw_mesh": {
             "module": "adapters.triposg_adapter",
             "class": "TripoSGImageToRawMeshAdapter",
         },
-        # TripoSF adapter
-        "triposf_image_to_raw_mesh": {
-            "module": "adapters.triposf_adapter",
-            "class": "TripoSFImageToRawMeshAdapter",
-        },
         # ARDY adapter
         "ardy_motion_generation": {
             "module": "adapters.ardy_adapter",
             "class": "ArdyMotionGenerationAdapter",
-        },
-        # Zero123++ Multi-View adapter
-        "zero123plus_v12_image_to_multiview": {
-            "module": "adapters.zero123plus_adapter",
-            "class": "Zero123PlusAdapter",
         },
         # Unique3D adapter
         "unique3d_image_to_raw_mesh": {

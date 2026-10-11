@@ -26,14 +26,8 @@ export interface AppState {
   generationSettings: GenerationSettings;
   loadHistory: () => Promise<void>;
 
-  // ── Multi-View & References ──
+  // ── References ──
   hdMode: 'hd' | 'smart';
-  multiViewImages: {
-    front: UploadedImage | null;
-    left: UploadedImage | null;
-    right: UploadedImage | null;
-    back: UploadedImage | null;
-  };
   referenceModel: { file: File | null; name: string; url: string; preview?: string; progress?: number } | null;
 
   // ── Batch Generation ──
@@ -128,7 +122,6 @@ export interface AppState {
   resetGeneration: () => void;
 
   setHDMode: (mode: 'hd' | 'smart') => void;
-  setMultiViewImage: (view: 'front' | 'left' | 'right' | 'back', img: UploadedImage | null) => void;
   setReferenceModel: (model: AppState['referenceModel']) => void;
 
     // ── Batch Generation Actions ──
@@ -236,30 +229,6 @@ const DEFAULT_STATE: AppStateData = {
     prompt: '',
     imageName: '',
     negativePrompt: '',
-    multiviewImages: {
-      front: null,
-      right: null,
-      back: null,
-      left: null,
-    },
-    multiviewSourceFileId: null,
-    multiviewJobId: null,
-    multiviewAssetId: null,
-    multiviewStatus: 'idle',
-    multiviewViews: [],
-    multiviewManifest: null,
-    multiviewZipUrl: null,
-    multiviewError: null,
-    multiviewInputMode: 'upload',
-    multiviewAdvanced: {
-      inferenceSteps: 12,
-      seed: 42891,
-      saveContactSheet: false,
-      transparentBackground: false,
-      generateMasks: false,
-      generateNormals: false,
-      includeManifest: false,
-    },
     enableFlashVDM: false,
     lowVramMode: 'auto',
     maxNumView: 6,
@@ -277,12 +246,6 @@ const DEFAULT_STATE: AppStateData = {
   },
 
   hdMode: 'hd',
-  multiViewImages: {
-    front: null,
-    left: null,
-    right: null,
-    back: null,
-  },
   referenceModel: null,
 
   batchGenerationEnabled: false,
@@ -395,10 +358,6 @@ export const useAppStore = create<AppState>()(
         }),
 
       setHDMode: (hdMode) => set({ hdMode }),
-      setMultiViewImage: (view, img) =>
-        set((s) => ({
-          multiViewImages: { ...s.multiViewImages, [view]: img },
-        })),
       setReferenceModel: (referenceModel) => set({ referenceModel }),
 
       // ── Batch Generation Actions ──
