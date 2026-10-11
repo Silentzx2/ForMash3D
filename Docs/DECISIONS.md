@@ -793,3 +793,28 @@ Per `Docs/TASKS.md` Section 3, high-quality 1K/2K UV texture generation requires
 - 1K and 2K texture requests route cleanly to Paint3D with minimal VRAM footprint (~12GB VRAM).
 - Underlying geometry topology remains intact while generating complete UV texture atlases.
 - Checkpoints are managed cleanly through `backend/scripts/download_models.sh` with Hugging Face verification (`GeorgeQi/Paint3d_UVPos_Control`).
+
+## ADR-067 — Dedicated Database Administration Surface
+
+**Date:** 2026-10-11  
+**Status:** Accepted
+
+**Decision**:
+1. Add a dedicated backend router `backend/api/routers/database.py`, mounted at `/api/v1/system/database` in both `main_singleworker.py` and `main_multiworker.py`, exposing: `GET /stats` (combined SQLite/Redis/queue/file-metadata/disk statistics), `GET /keys` (read-only SCAN-based Redis key inspector), `DELETE /jobs` (bulk delete by ids/status/feature), `POST /jobs/clear`, and `DELETE /files/clear`. Endpoints require the API key and the admin role whenever a user is authenticated.
+2. Enforce a confirm-token safety model on every destructive endpoint: `{"confirm": true}` for bulk delete and the exact typed tokens `{"confirm": "CLEAR_ALL_JOBS"}` / `{"confirm": "CLEAR_ALL_FILES"}` for the wipes.
+3. Keep the deletion ordering from ADR-062: each job is removed from Redis hot keys and the SQLite jobs table (reusing `RedisJobQueue.delete_job`), and its canonical asset workspace under `backend/storage/models/meshes/<asset>_<job_id>/` is removed only after the durable delete succeeds, with the path validated against the models root. Non-terminal (running/queued) jobs are skipped unless `force: true`.
+4. The clear-all-jobs sweep touches only job-owned Redis key patterns (`3daigc:jobs`, `3daigc:progress`, `3daigc:stage`, `3daigc:message`, `3daigc:queue:*`, `3daigc:completed_at`, `3daigc:cancel_requested`, `3daigc:result:*`) and never user/token auth keys (`3daigc:user*`, `3daigc:token*`, `3daigc:users:all`), then VACUUMs SQLite. Uploads and file metadata are preserved; clear-all-files preserves job records and assets.
+5. Support the surface with new `DatabaseManager.delete_all_jobs()` and `DatabaseManager.get_database_size_bytes()` methods plus the admin Database tab (`/admin?tab=database`): stats cards, paginated jobs table with per-row cancel/delete, checkbox multi-select bulk delete, the Redis key inspector, and typed-confirmation danger-zone clear actions.
+
+**Reason**:
+Operators had no way to see the combined health of the two stores (SQLite rows vs. Redis hot keys, file metadata, disk usage) and no safe bulk maintenance path: clearing stuck or duplicate jobs meant calling the per-job delete endpoint in a loop with no selector, no visibility into Redis key footprint, and no storage reclamation (orphaned rows/workspaces, no VACUUM). A single authenticated, confirmation-guarded surface reuses the existing dual-store deletion instead of adding a second deletion path.
+
+**Consequences**:
+- Bulk maintenance (delete by ids/status/feature, clear-all) becomes administrative, observable, and reversible-by-token only at the exact confirm step.
+- The confirm-token ordering keeps the durable store authoritative; a workspace is never removed on a failed store delete, so a retry cannot orphan data.
+- User sessions and API keys survive a job wipe because auth keys are excluded from the sweep by design.
+- Storage reclamation is explicit: job clears remove workspaces and VACUUM SQLite; file clears remove uploads and file metadata — the two are never mixed.
+
+**Alternatives Considered**:
+- *Reuse only the per-job delete endpoint* (`DELETE /api/v1/system/jobs/{job_id}`): rejected — O(n) round-trips, no status/feature selectors, no combined statistics, no workspace sweep, and no SQLite VACUUM for storage reclamation.
+- *CLI-only maintenance tool*: rejected — operators administer the running stack through the admin dashboard; a CLI would duplicate auth/deletion logic and drift from the authenticated API surface.

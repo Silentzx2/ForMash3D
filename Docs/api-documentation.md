@@ -145,6 +145,127 @@ GET /api/v1/system/auth-status
 }
 ```
 
+### Database Administration
+
+Mounted at `/api/v1/system/database` and backing the admin Database tab (`/admin?tab=database`). Every endpoint requires the API key (`verify_api_key`); when a user is authenticated, the **admin** role is required (`403` otherwise).
+
+**Safety model**: every destructive endpoint requires an explicit typed confirmation token in the JSON body. A job's canonical asset workspace under `backend/storage/models/meshes/<asset>_<job_id>/` is removed **only after** the durable dual-store deletion (Redis hot keys + SQLite row, ADR-062) succeeds, and every path is validated against the storage root before removal. The job-key sweep never touches user/token auth keys.
+
+#### Database Statistics
+
+```http
+GET /api/v1/system/database/stats
+```
+
+**Response (200):** Combined view of both stores plus on-disk footprint.
+```json
+{
+  "sqlite": {
+    "available": true,
+    "queued_jobs": 2,
+    "processing_jobs": 1,
+    "completed_jobs": 10,
+    "failed_jobs": 1,
+    "cancelled_jobs": 0,
+    "total_jobs": 14,
+    "database_size_bytes": 204800
+  },
+  "redis": {
+    "available": true,
+    "used_memory": 1048576,
+    "used_memory_human": "1.00M",
+    "keys": 42
+  },
+  "queue": {
+    "queued_jobs": 2,
+    "processing_jobs": 1
+  },
+  "file_metadata": {
+    "available": true,
+    "count": 7
+  },
+  "disk": {
+    "storage_root": "/app/backend/storage",
+    "job_queue_db_bytes": 204800,
+    "meshes_bytes": 52428800,
+    "uploads_bytes": 1048576
+  }
+}
+```
+
+#### Inspect Redis Keys
+
+```http
+GET /api/v1/system/database/keys?pattern=3daigc:*&limit=500
+```
+
+**Query Parameters:**
+- `pattern` (string, default `3daigc:*`): Redis SCAN match pattern.
+- `limit` (int, 1..1000, default 500): Maximum keys returned.
+
+**Response (200):**
+```json
+{
+  "pattern": "3daigc:*",
+  "keys": [
+    { "key": "3daigc:jobs", "type": "hash", "size": 14, "ttl": -1 }
+  ],
+  "count": 1,
+  "truncated": false
+}
+```
+Read-only. Returns `503` when Redis is unavailable.
+
+#### Bulk Delete Jobs
+
+```http
+DELETE /api/v1/system/database/jobs
+Content-Type: application/json
+
+{
+  "confirm": true,
+  "job_ids": ["gen_abc123"],
+  "status": "completed",
+  "feature": "image_to_raw_mesh",
+  "force": false
+}
+```
+
+- **Body**: `confirm` must be `true`; a selector of `job_ids` (explicit list), `status`, or `feature` is required (`400` without one; an explicit `job_ids` list takes precedence over `status`/`feature`).
+- **Safety**: running/queued (non-terminal) jobs are **skipped** unless `force: true`; each selected job is removed from Redis hot keys and the SQLite jobs table (reusing `RedisJobQueue.delete_job`, ADR-062) and its asset workspace is deleted only after the durable delete succeeds.
+- **Response (200):** `{"deleted": n, "skipped": n, "failed": n, "results": [...]}` where each result carries `job_id`, `deleted`, a `reason` (e.g. `status=processing (not terminal)`, `not_found`), and `asset_workspace_deleted` / `cleanup_error` when deleted.
+- **400**: Missing `confirm`, or no selector provided.
+
+#### Clear All Jobs
+
+```http
+POST /api/v1/system/database/jobs/clear
+Content-Type: application/json
+
+{
+  "confirm": "CLEAR_ALL_JOBS"
+}
+```
+
+**Safety:** requires the exact typed token `CLEAR_ALL_JOBS` (`400` otherwise). Enumerates every job id from Redis + SQLite, deletes each with its asset workspace, sweeps remaining job-owned Redis keys (`3daigc:jobs`, `3daigc:progress`, `3daigc:stage`, `3daigc:message`, `3daigc:queue:*`, `3daigc:completed_at`, `3daigc:cancel_requested`, `3daigc:result:*` — **never** `3daigc:user*` / `3daigc:token*` / `3daigc:users:all` auth keys), deletes every SQLite job row, removes every job workspace directory under `storage/models/meshes`, then VACUUMs SQLite. **Uploads and file metadata are preserved.**
+
+**Response (200):** `{"jobs_deleted", "jobs_failed", "redis_keys_swept", "sqlite_rows_deleted", "workspaces_removed", "workspace_errors", "vacuum_error", "message"}`
+
+#### Clear All Files
+
+```http
+DELETE /api/v1/system/database/files/clear
+Content-Type: application/json
+
+{
+  "confirm": "CLEAR_ALL_FILES"
+}
+```
+
+**Safety:** requires the exact typed token `CLEAR_ALL_FILES` (`400` otherwise). Deletes all file metadata (Redis `3daigc:file:*` / `3daigc:files:*`) and the referenced upload files on disk. **Job records and asset workspaces are preserved.**
+
+**Response (200):** `{"file_metadata_removed", "redis_keys_swept", "errors", "message"}`
+
 ---
 
 ## File Upload APIs

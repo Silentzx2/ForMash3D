@@ -413,6 +413,44 @@ class DatabaseManager:
             logger.error(f"Unexpected error cleaning up old jobs: {e}")
             return 0
 
+    def delete_all_jobs(self) -> int:
+        """
+        Delete every job row. Used by the database admin clear-all endpoint.
+
+        Returns:
+            Number of job rows deleted
+        """
+        try:
+            with self.get_session() as session:
+                deleted_count = (
+                    session.query(JobModel).delete(synchronize_session=False)
+                )
+                session.commit()
+                if deleted_count:
+                    logger.info(f"Deleted all {deleted_count} jobs from the database")
+                return deleted_count
+
+        except SQLAlchemyError as e:
+            logger.error(f"Database error deleting all jobs: {e}")
+            return 0
+        except Exception as e:
+            logger.error(f"Unexpected error deleting all jobs: {e}")
+            return 0
+
+    def get_database_size_bytes(self) -> int:
+        """Size of the SQLite database file including WAL sidecars (0 if unknown)."""
+        url = getattr(self, "database_url", "") or ""
+        if not url.startswith("sqlite:///"):
+            return 0
+        db_path = Path(url[len("sqlite:///"):])
+        total = 0
+        for candidate in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
+            try:
+                total += candidate.stat().st_size
+            except OSError:
+                continue
+        return total
+
     def get_queue_statistics(self) -> Dict[str, Any]:
         """
         Get queue statistics from the database.

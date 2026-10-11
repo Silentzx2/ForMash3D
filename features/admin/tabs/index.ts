@@ -7,5 +7,6 @@ export { LogsTab } from './LogsTab';
 export { OverviewTab } from './OverviewTab';
 export { SettingsTab } from './SettingsTab';
 export { StorageTab } from './StorageTab';
+export { DatabaseTab } from './DatabaseTab';
 export { ConnectionsTab } from './ConnectionsTab';
 export { ModelsTab } from './ModelsTab';

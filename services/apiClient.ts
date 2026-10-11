@@ -355,9 +355,80 @@ class ApiClient {
   }
 
   async getQueueStats(): Promise<QueueStatsResponse> {
-    const response = await this.retry(() => 
+    const response = await this.retry(() =>
       this.client.get<QueueStatsResponse>('/api/v1/system/jobs/queue/stats')
     );
+    return response.data;
+  }
+
+  // Database Administration Endpoints (/api/v1/system/database)
+  async getDatabaseStats(): Promise<any> {
+    const response = await this.retry(() =>
+      this.client.get('/api/v1/system/database/stats')
+    );
+    return response.data;
+  }
+
+  async getRedisKeys(params?: { pattern?: string; limit?: number }): Promise<{
+    pattern: string;
+    keys: Array<{ key: string; type: string; size: number | null; ttl: number }>;
+    count: number;
+    truncated: boolean;
+  }> {
+    const response = await this.retry(() =>
+      this.client.get('/api/v1/system/database/keys', { params })
+    );
+    return response.data;
+  }
+
+  async deleteDatabaseJobs(payload: {
+    confirm: boolean;
+    job_ids?: string[];
+    status?: string;
+    feature?: string;
+    force?: boolean;
+  }): Promise<{
+    deleted: number;
+    skipped: number;
+    failed: number;
+    results: Array<{ job_id: string; deleted: boolean; reason?: string; cleanup_error?: string | null }>;
+  }> {
+    const response = await this.client.request({
+      method: 'DELETE',
+      url: '/api/v1/system/database/jobs',
+      data: payload,
+    });
+    return response.data;
+  }
+
+  async clearDatabaseJobs(): Promise<{
+    jobs_deleted: number;
+    jobs_failed: number;
+    redis_keys_swept: number;
+    sqlite_rows_deleted: number;
+    workspaces_removed: number;
+    workspace_errors: string[];
+    vacuum_error: string | null;
+    message: string;
+  }> {
+    const response = await this.client.post(
+      '/api/v1/system/database/jobs/clear',
+      { confirm: 'CLEAR_ALL_JOBS' }
+    );
+    return response.data;
+  }
+
+  async clearDatabaseFiles(): Promise<{
+    file_metadata_removed: number;
+    redis_keys_swept: number;
+    errors: string[];
+    message: string;
+  }> {
+    const response = await this.client.request({
+      method: 'DELETE',
+      url: '/api/v1/system/database/files/clear',
+      data: { confirm: 'CLEAR_ALL_FILES' },
+    });
     return response.data;
   }
 

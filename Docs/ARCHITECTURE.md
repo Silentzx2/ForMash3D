@@ -105,6 +105,7 @@ flowchart TB
 | **State Stores** | `stores/` | Zustand stores for global client state (`useAppStore`, `useViewerStore`, `useAnimationStore`, `useRiggingStore`, `useUIStore`) |
 | **Data Fetching** | hooks + TanStack Query | Server-state caching and synchronization for job status |
 | **Icon System** | `@hugeicons/react` + `@hugeicons/core-free-icons` | Primary icon library; replaces `lucide-react`. Mapping documented in `components/icons/hugeicons-mapping.ts` |
+| **Admin Database Tab** | `features/admin/tabs/DatabaseTab.tsx` | Database administration surface (`/admin?tab=database`): cross-store stats cards, paginated jobs table with per-row cancel/delete, checkbox multi-select bulk delete by ids/status/feature, read-only Redis key inspector, and typed-confirmation danger-zone clear actions for jobs and file metadata |
 
 ### ADR-009: Hugeicons as Frontend Icon Library
 **Decision**: Migrate frontend icon system from `lucide-react` to Hugeicons.
@@ -115,7 +116,7 @@ flowchart TB
 
 Located at `backend/api/`:
 - **Entry Points**: `main_singleworker.py` (embedded scheduler) and `main_multiworker.py` (Redis queue). Python 3.10 via Conda env `3daigc-api`.
-- **API Routers**: REST controllers for system info, file upload, mesh generation/editing, auto-rigging, segmentation, retopology, UV unwrapping, and user management.
+- **API Routers**: REST controllers for system info, file upload, mesh generation/editing, auto-rigging, segmentation, retopology, UV unwrapping, user management, and database administration (`backend/api/routers/database.py`: stats, Redis key inspector, guarded bulk job/file cleanup).
 - **Configuration** (`backend/core/config.py`): Pydantic V2 settings loaded from `.env` and YAML config files (`system.yaml`, `models.yaml`).
 - **Static File Server**: Optimized binary streaming for 3D formats (`.glb`, `.gltf`, `.fbx`, `.obj`, `.stl`) with cache headers.
 - **Auth Service** (`backend/core/auth/`): Optional Redis-based authentication controlled by `P3D_USER_AUTH_ENABLED`.
@@ -304,6 +305,13 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 - `GET /api/v1/system/info`: Host hardware specs, OS, RAM, GPU telemetry.
 - `GET /api/v1/system/models`: Model registry with VRAM budgets and weights status.
 - `GET /api/v1/system/jobs/history`: Job history with search and status filtering. Reads the SQLite page and falls back to the Redis job listing when SQLite is empty; completed jobs always carry canonical production URLs (game-ready GLB, `master/source.glb`, thumbnail) so assets remain resolvable after refresh/restart.
+
+### Database Administration (`/api/v1/system/database`)
+- `GET /api/v1/system/database/stats`: Combined statistics — SQLite status counts + db file size, Redis key count + `used_memory`, queue counts, file-metadata count, and meshes/uploads disk sizes.
+- `GET /api/v1/system/database/keys?pattern=3daigc:*&limit=500`: Read-only SCAN-based Redis key inspector (key, type, size, TTL; `limit` capped 1..1000); `503` when Redis is unavailable.
+- `DELETE /api/v1/system/database/jobs`: Bulk delete by `job_ids`, `status`, or `feature`. Requires `{"confirm": true}`; running/queued jobs are skipped unless `force: true`. Each job is removed from Redis hot keys and the SQLite jobs table (ADR-062) and its canonical asset workspace is removed only after the durable delete succeeds.
+- `POST /api/v1/system/database/jobs/clear`: Clear every job. Requires `{"confirm": "CLEAR_ALL_JOBS"}`; sweeps only job-owned Redis key patterns (never user/token auth keys), deletes all SQLite rows, removes every job workspace under `storage/models/meshes`, then VACUUMs SQLite. Uploads and file metadata are preserved.
+- `DELETE /api/v1/system/database/files/clear`: Clear all file metadata and the referenced upload files. Requires `{"confirm": "CLEAR_ALL_FILES"}`. Job records and assets are preserved.
 
 ### File Upload & Storage
 - `POST /api/v1/file-upload/image`: Upload reference image.

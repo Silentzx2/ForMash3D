@@ -361,6 +361,7 @@ The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
 - **Animation & Motion (`/animation`)**: UniRig bipedal armature generation and ARDY motion synthesis.
 - **Jobs & Run Inspector (`/workspace/jobs`)**: Real-time progress tracking, step telemetry, and VRAM monitoring.
 - **Admin & Model Registry (`/admin?tab=models`)**: Live GPU health, temperature, and adapter configuration.
+- **Database Administration (`/admin?tab=database`)**: Cross-store statistics (SQLite/Redis/queue/file-metadata/disk), read-only Redis key inspector, paginated jobs table with per-row cancel/delete and multi-select bulk delete, plus typed-confirmation clear actions for jobs and file metadata.
 
 ---
 
