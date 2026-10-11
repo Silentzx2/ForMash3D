@@ -207,8 +207,13 @@ export function DatabaseTab() {
     const jobId = pendingDelete;
     setBusy(`delete:${jobId}`);
     try {
-      await getApiClient().deleteJob(jobId);
-      toast.success('Job deleted', { description: `${jobId} was removed from the jobs database and its workspace deleted.` });
+      const res = await getApiClient().deleteJob(jobId);
+      const wsMsg = res.asset_workspace_deleted
+        ? 'and its workspace deleted'
+        : res.asset_workspace_deleted === false
+        ? 'but no workspace was recorded'
+        : 'workspace deletion failed';
+      toast.success('Job deleted', { description: `${jobId} was removed from the jobs database ${wsMsg}.` });
       setPendingDelete(null);
       setSelected((prev) => prev.filter((id) => id !== jobId));
       refreshAll();
@@ -245,7 +250,7 @@ export function DatabaseTab() {
     try {
       const res = await getApiClient().clearDatabaseJobs();
       toast.success('Job database cleared', {
-        description: `${res.jobs_deleted} jobs deleted, ${res.sqlite_rows_deleted} SQLite rows removed, ${res.workspaces_removed} workspaces removed${res.jobs_failed ? `, ${res.jobs_failed} failed` : ''}.`,
+        description: `${res.jobs_deleted} jobs deleted, ${res.sqlite_rows_deleted} SQLite rows removed, ${res.workspaces_removed} workspaces removed${res.jobs_cancelled ? `, ${res.jobs_cancelled} cancelled` : ''}${res.active_unresponsive?.length ? `, ${res.active_unresponsive.length} active jobs could not be stopped` : ''}${res.jobs_failed ? `, ${res.jobs_failed} failed` : ''}.`,
       });
       setClearJobsOpen(false);
       setJobsToken('');

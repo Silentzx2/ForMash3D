@@ -86,7 +86,7 @@ def _dir_size(path: Path, max_bytes: int = 64 * 1024 ** 3) -> int:
 
 
 def _delete_tree(path: Path, must_be_under: Path) -> Optional[str]:
-    """rmtree a contained path; returns an error string instead of raising."""
+    """Remove a contained path (file, symlink, or directory); returns an error string instead of raising."""
     try:
         resolved = path.resolve()
     except OSError as exc:
@@ -96,7 +96,10 @@ def _delete_tree(path: Path, must_be_under: Path) -> Optional[str]:
     if not resolved.exists():
         return None
     try:
-        shutil.rmtree(resolved)
+        if resolved.is_dir() and not resolved.is_symlink():
+            shutil.rmtree(resolved)
+        else:
+            resolved.unlink()
     except OSError as exc:
         return str(exc)
     return None
@@ -119,12 +122,16 @@ async def _delete_job_with_workspace(scheduler, job_id: str) -> Dict[str, Any]:
         return {"job_id": job_id, "deleted": False, "reason": "store_delete_failed"}
 
     cleanup_error = None
+    workspace_deleted = False
     if asset_root:
         cleanup_error = _delete_tree(Path(asset_root), _models_root())
+        workspace_deleted = cleanup_error is None
+    else:
+        workspace_deleted = False
     return {
         "job_id": job_id,
         "deleted": True,
-        "asset_workspace_deleted": cleanup_error is None,
+        "asset_workspace_deleted": workspace_deleted,
         "cleanup_error": cleanup_error,
     }
 
@@ -165,6 +172,28 @@ async def _collect_job_ids(scheduler, db_manager, status: Optional[str], feature
                 break
 
     return ids
+
+
+async def _filter_jobs_by_selector(
+    scheduler, job_ids: List[str], status: Optional[str], feature: Optional[str]
+) -> List[str]:
+    """Filter job IDs by status and feature selectors by checking each job's actual status."""
+    if not status and not feature:
+        return job_ids
+
+    filtered: List[str] = []
+    for job_id in job_ids:
+        job_status = await scheduler.get_job_status(job_id)
+        if job_status is None:
+            continue
+        job_state = (job_status or {}).get("status")
+        job_feat = (job_status or {}).get("feature")
+        if status and job_state != status:
+            continue
+        if feature and job_feat != feature:
+            continue
+        filtered.append(job_id)
+    return filtered
 
 
 @router.get("/stats", summary="Database statistics across both stores")
@@ -310,6 +339,11 @@ async def delete_jobs(
     if not ids:
         return {"deleted": 0, "skipped": 0, "failed": 0, "results": []}
 
+    # Apply status/feature selectors to all collected IDs (including Redis-sourced ones)
+    ids = await _filter_jobs_by_selector(scheduler, ids, status, feature)
+    if not ids:
+        return {"deleted": 0, "skipped": 0, "failed": 0, "results": []}
+
     deleted = skipped = failed = 0
     results: List[Dict[str, Any]] = []
     for job_id in ids:
@@ -346,6 +380,8 @@ async def clear_all_jobs(
     """Wipe all jobs from Redis + SQLite and remove every job asset workspace.
 
     Requires {"confirm": "CLEAR_ALL_JOBS"}. Uploads and file metadata are kept.
+    Active (queued/processing) jobs are cancelled first; jobs that cannot be
+    stopped are reported and not deleted.
     """
     if payload.get("confirm") != "CLEAR_ALL_JOBS":
         raise HTTPException(
@@ -359,7 +395,32 @@ async def clear_all_jobs(
 
     ids = await _collect_job_ids(scheduler, db_manager, None, None)
     deleted = failed = 0
+    cancelled = 0
+    active_unresponsive: List[str] = []
     for job_id in ids:
+        job_status = await scheduler.get_job_status(job_id)
+        job_state = (job_status or {}).get("status")
+        if job_state in ("queued", "processing"):
+            # Attempt to cancel the job via scheduler (stops worker if processing)
+            cancelled_ok = await scheduler.cancel_job(job_id)
+            if not cancelled_ok:
+                active_unresponsive.append(job_id)
+                failed += 1
+                continue
+            cancelled += 1
+            # Wait briefly for terminal state to propagate
+            for _ in range(10):
+                await asyncio.sleep(0.1)
+                job_status = await scheduler.get_job_status(job_id)
+                job_state = (job_status or {}).get("status")
+                if job_state in _TERMINAL_STATUSES:
+                    break
+            else:
+                # Still not terminal after waiting; skip deletion to avoid orphaning worker
+                active_unresponsive.append(job_id)
+                failed += 1
+                continue
+
         result = await _delete_job_with_workspace(scheduler, job_id)
         if result["deleted"]:
             deleted += 1
@@ -416,6 +477,8 @@ async def clear_all_jobs(
     return {
         "jobs_deleted": deleted,
         "jobs_failed": failed,
+        "jobs_cancelled": cancelled,
+        "active_unresponsive": active_unresponsive,
         "redis_keys_swept": swept,
         "sqlite_rows_deleted": rows_deleted,
         "workspaces_removed": workspaces_removed,
@@ -446,42 +509,53 @@ async def clear_all_files(
     redis_client = getattr(scheduler.job_queue, "redis", None)
     storage = _storage_root()
 
-    removed = 0
-    errors: List[str] = []
+    metadata_removed = 0
+    upload_errors: List[str] = []
 
     if file_store is not None:
         try:
-            metadata = await file_store.list_file_metadata(limit=1000)
-            for info in metadata:
-                file_id = getattr(info, "file_id", None) or (
-                    info.get("file_id") if isinstance(info, dict) else None
-                )
-                if not file_id:
-                    continue
-                try:
-                    uploads = storage / "uploads"
-                    for candidate in uploads.rglob(f"upload_{file_id}.*"):
-                        error = _delete_tree(candidate, uploads)
-                        if error:
-                            errors.append(f"{candidate.name}: {error}")
-                    thumbnail = uploads / "thumbnails" / f"{file_id}.png"
-                    if thumbnail.exists():
-                        _delete_tree(thumbnail, uploads)
-                    await file_store.delete_file_metadata(file_id)
-                    removed += 1
-                except Exception as exc:
-                    errors.append(f"{file_id}: {exc}")
+            # Iterate through all metadata without an artificial limit
+            offset = 0
+            batch_size = 1000
+            while True:
+                metadata = await file_store.list_file_metadata(limit=batch_size, offset=offset)
+                if not metadata:
+                    break
+                for info in metadata:
+                    file_id = getattr(info, "file_id", None) or (
+                        info.get("file_id") if isinstance(info, dict) else None
+                    )
+                    if not file_id:
+                        continue
+                    try:
+                        uploads = storage / "uploads"
+                        for candidate in uploads.rglob(f"upload_{file_id}.*"):
+                            error = _delete_tree(candidate, uploads)
+                            if error:
+                                upload_errors.append(f"{candidate.name}: {error}")
+                        thumbnail = uploads / "thumbnails" / f"{file_id}.png"
+                        if thumbnail.exists():
+                            error = _delete_tree(thumbnail, uploads)
+                            if error:
+                                upload_errors.append(f"{thumbnail.name}: {error}")
+                        await file_store.delete_file_metadata(file_id)
+                        metadata_removed += 1
+                    except Exception as exc:
+                        upload_errors.append(f"{file_id}: {exc}")
+                offset += len(metadata)
+                if len(metadata) < batch_size:
+                    break
         except Exception as exc:
-            errors.append(f"file_store listing failed: {exc}")
+            upload_errors.append(f"file_store listing failed: {exc}")
 
     # Redis-side cleanup even when the in-process file store is unavailable.
-    swept = 0
+    redis_keys_swept = 0
     if redis_client is not None:
         for pattern in _FILE_KEY_PATTERNS:
             try:
                 async for key in redis_client.scan_iter(match=pattern, count=200):
                     await redis_client.delete(key)
-                    swept += 1
+                    redis_keys_swept += 1
             except Exception as exc:
                 logger.warning("Database admin: file key sweep failed for %s: %s", pattern, exc)
 
@@ -494,15 +568,15 @@ async def clear_all_files(
                 for grandchild in child.iterdir():
                     error = _delete_tree(grandchild, uploads_root)
                     if error:
-                        errors.append(f"{grandchild.name}: {error}")
+                        upload_errors.append(f"{grandchild.name}: {error}")
             else:
                 error = _delete_tree(child, uploads_root)
                 if error:
-                    errors.append(f"{child.name}: {error}")
+                    upload_errors.append(f"{child.name}: {error}")
 
     return {
-        "file_metadata_removed": removed,
-        "redis_keys_swept": swept,
-        "errors": errors,
+        "file_metadata_removed": metadata_removed,
+        "redis_keys_swept": redis_keys_swept,
+        "errors": upload_errors,
         "message": "All file metadata and upload files cleared. Job records and assets are preserved.",
     }

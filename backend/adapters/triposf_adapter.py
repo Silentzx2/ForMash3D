@@ -374,8 +374,6 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
                 vertices=recon_verts,
                 faces=recon_faces,
             )
-            # Revert the -90 deg X rotation from normalize_mesh so output is upright Y-up
-            final_trimesh.apply_transform(trimesh.transformations.rotation_matrix(np.pi / 2, [1, 0, 0]))
             final_trimesh.export(str(output_path))
 
             final_mesh = self.mesh_processor.load_mesh(output_path)

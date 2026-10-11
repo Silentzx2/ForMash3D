@@ -207,7 +207,7 @@ def _execute_texture_stage(
             adapter = None
             try:
                 from core.scheduler.model_factory import ModelFactory
-                for key in ("paint3d", "paint3d_image_mesh_painting")
+                for key in ("paint3d", "paint3d_image_mesh_painting"):
                     if key in ModelFactory.ADAPTER_REGISTRY:
                         adapter = ModelFactory.create_model_from_config({
                             "model_id": key,
@@ -724,6 +724,10 @@ def _build_result(
     generated: Dict[str, Any],
     target_polycount: int = MAX_PRODUCTION_FACES,
     lod_enabled: bool = True,
+    job_inputs: Optional[Dict[str, Any]] = None,
+    job_metadata: Optional[Dict[str, Any]] = None,
+    texture_enabled: bool = False,
+    master_quality_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     primary = generated["game_ready"].get("glb") or generated["game_ready"].get("obj")
     base_url = f"/api/v1/system/jobs/{job_id}"
@@ -742,12 +746,27 @@ def _build_result(
         for name in sorted(generated["textures"])
     }
 
+    textured_glb_path = generated.get("textured_glb")
+    texture_stage = generated.get("texture_stage", {})
+    texture_completed = texture_stage.get("status") == "completed"
+    texture_failed = texture_stage.get("status") == "failed"
+    bake_status = generated.get("bake_stats", {}).get("status", "skipped")
+    bake_failed = bake_status == "failed"
+    collision_failed = generated.get("collision") is None and generated.get("artifact_errors", {}).get("collision")
+    retopo_stats = generated.get("retopo_stats", {})
+    retopo_requested = bool(job_inputs.get("quad_topology") or job_metadata.get("quad_topology") or job_inputs.get("topology_mode") == "quad" or job_metadata.get("topology_mode") == "quad")
+    retopo_skipped_native = retopo_stats.get("status") == "skipped" and "native_textures" in str(retopo_stats.get("reason", ""))
+
+    active_model_url = download_model_url
+    if texture_completed and textured_glb_path:
+        active_model_url = f"{base_url}/download?artifact_format=textured"
+
     result = {
         "success": True,
         "output_mesh_path": primary,
         "static_url": None,
         "model_url": download_model_url,
-        "active_model_url": download_model_url,
+        "active_model_url": active_model_url,
         "download_url": f"{base_url}/download?artifact_format=glb",
         "source_model_url": download_master_url,
         "high_fidelity_url": download_master_url,
@@ -782,7 +801,6 @@ def _build_result(
         "zip_url": f"{base_url}/download?artifact_format=zip",
         "asset_root": str(asset_dir),
         "asset_name": asset_name,
-        "postprocess_status": "completed",
         "target_polycount": target_polycount,
         "lod_enabled": lod_enabled,
         "artifacts": {
@@ -810,14 +828,31 @@ def _build_result(
                 for idx in sorted(generated["lods"])
             } if lod_enabled else {},
             "collision": {
-                "status": "ready" if generated.get("collision") else "skipped",
+                "status": "ready" if generated.get("collision") else ("failed" if collision_failed else "skipped"),
                 "url": f"{base_url}/download?artifact_format=collision" if generated.get("collision") else None,
                 "required": False,
+                "error": generated.get("artifact_errors", {}).get("collision"),
             },
             "physics": {
                 "status": "ready" if generated.get("physics") else "skipped",
                 "url": f"{base_url}/download?artifact_format=physics_json" if generated.get("physics") else None,
                 "required": False,
+            },
+            "bake": {
+                "status": bake_status,
+                "url": f"{base_url}/download?artifact_format=normal_map" if bake_status == "completed" else None,
+                "required": False,
+                "error": generated.get("bake_stats", {}).get("error") if bake_failed else None,
+            },
+            "retopology": {
+                "status": retopo_stats.get("status", "skipped"),
+                "required": retopo_requested,
+                "error": retopo_stats.get("error") if retopo_stats.get("status") == "failed" else (retopo_stats.get("reason") if retopo_skipped_native else None),
+            },
+            "texture_generation": {
+                "status": texture_stage.get("status", "skipped"),
+                "required": texture_enabled,
+                "error": texture_stage.get("error") if texture_failed else None,
             },
             "qa_report": {"status": "ready", "url": f"{base_url}/download?artifact_format=qa_report", "required": True},
             "zip": {"status": "ready", "url": f"{base_url}/download?artifact_format=zip", "required": False},
@@ -868,8 +903,25 @@ def _build_result(
         degraded_reasons.append("final_quality_gate_failed")
     if lod_failed:
         degraded_reasons.append("lod_validation_failed")
+    if texture_failed and texture_enabled:
+        degraded_reasons.append("texture_generation_failed")
+    if bake_failed and (job_inputs.get("bake_normal_maps") or job_inputs.get("bake_textures") or job_metadata.get("bake_normal_maps") or job_metadata.get("bake_textures")):
+        degraded_reasons.append("bake_failed")
+    if collision_failed:
+        degraded_reasons.append("collision_generation_failed")
+    if retopo_skipped_native and retopo_requested:
+        degraded_reasons.append("quad_topology_unsupported_native_textures")
+    if master_quality_report.get("quality_gate", {}).get("passed") is False:
+        degraded_reasons.append("master_to_derivative_quality_drift")
     if degraded_reasons:
         result["degraded_reasons"] = degraded_reasons
+
+    postprocess_status_map = {
+        "ready": "completed",
+        "degraded": "degraded",
+        "failed": "failed",
+    }
+    result["postprocess_status"] = postprocess_status_map.get(result["production_status"], "completed")
     return result
 
 
@@ -897,7 +949,8 @@ def run_postprocess_job(
         texture_resolution = int(explicit_texture_resolution or default_texture_resolution)
     except (TypeError, ValueError):
         texture_resolution = default_texture_resolution
-    texture_resolution = max(512, min(4096, texture_resolution))
+    uv_resolution = max(512, min(4096, texture_resolution))
+    texture_resolution = uv_resolution
 
     texture_enabled = bool(
         job_inputs.get("texture_enabled")
@@ -1582,31 +1635,7 @@ def run_postprocess_job(
             )
         )
 
-    lod_t0 = time.time()
-    _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
-    game_ready_dir.mkdir(parents=True, exist_ok=True)
-    base_name = f"{asset_name}_{clean_job_id}"
-    game_ready: Dict[str, str] = {}
-    artifact_errors: Dict[str, str] = {}
-    glb_path = game_ready_dir / f"{base_name}.glb"
-    _save_file(glb_path, _export_glb(uv_mesh))
-    game_ready["glb"] = str(glb_path)
 
-    # Pre-generate only GLB and FBX (Unity format); other formats (OBJ, STL, PLY, GLTF) convert on-demand
-    try:
-        fbx_bytes, _ = run_convert_fbx(
-            glb_path.read_bytes(),
-            ConvertOptions(preset="generic", bake_fps=30, anim_simplify=1.0),
-            progress=lambda stage, frac, msg: _emit(
-                progress, 0.62 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
-            ),
-        )
-        fbx_path = game_ready_dir / f"{base_name}.fbx"
-        fbx_path.write_bytes(fbx_bytes)
-        game_ready["fbx"] = str(fbx_path)
-    except Exception as exc:
-        artifact_errors["fbx"] = str(exc)
-        logger.warning("FBX export failed: %s", exc)
 
     # Centralized Texture Stage
     _check_cancelled(cancel_checker)
@@ -1639,62 +1668,95 @@ def run_postprocess_job(
             texture_status = "failed"
             artifact_errors["texture"] = texture_stage_info.get("error", "Texture generation failed")
 
-    _check_cancelled(cancel_checker)
-    lods: Dict[int, str] = {}
-    lod_quality: Dict[str, Dict[str, Any]] = {}
-    lod_enabled = bool(job_inputs.get("generateLOD", True))
-    if lod_enabled:
-        _emit(progress, 0.72, "lod", "Generating LOD chain.")
-        lod_dir.mkdir(parents=True, exist_ok=True)
-        source_faces = max(1, len(uv_mesh.faces))
-        target_faces = resolved_target_polycount or source_faces
-        target_ratio = min(1.0, max(0.05, target_faces / source_faces))
-        preset = str(job_inputs.get("lodPreset") or "high").lower()
-        preset_ratios = {
-            "mobile": [1.0, 0.35, 0.12, 0.05],
-            "low": [1.0, 0.5, 0.2, 0.08],
-            "medium": [1.0, 0.5, 0.25, 0.125],
-            "high": [1.0, 0.6, 0.3, 0.15],
-            "cinematic": [1.0, 0.75, 0.5, 0.25],
-        }.get(preset, [1.0, 0.6, 0.3, 0.15])
-        ratios = job_inputs.get("lod_ratios")
-        lod_ratios = ratios if isinstance(ratios, list) and ratios else [
-            1.0 if i == 0 else max(0.025, float(ratio))
-            for i, ratio in enumerate(preset_ratios)
-        ]
+        _check_cancelled(cancel_checker)
+        _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
+        game_ready_dir.mkdir(parents=True, exist_ok=True)
+        base_name = f"{asset_name}_{clean_job_id}"
+        game_ready: Dict[str, str] = {}
+        artifact_errors: Dict[str, str] = {}
+        # Determine the mesh for GLB and FBX generation
+        if texture_stage_info.get("status") == "completed" and texture_stage_info.get("textured_glb"):
+            textured_glb_path = Path(texture_stage_info["textured_glb"])
+            if textured_glb_path.exists():
+                game_ready_mesh = load_mesh(textured_glb_path.read_bytes(), textured_glb_path.name)
+            else:
+                game_ready_mesh = uv_mesh
+        else:
+            game_ready_mesh = uv_mesh
+        glb_path = game_ready_dir / f"{base_name}.glb"
+        _save_file(glb_path, _export_glb(game_ready_mesh))
+        game_ready["glb"] = str(glb_path)
+        # Pre-generate only GLB and FBX (Unity format); other formats (OBJ, STL, PLY, GLTF) convert on-demand
         try:
-            lod_count = max(1, min(4, int(job_inputs.get("lodCount") or len(lod_ratios))))
-        except (TypeError, ValueError):
-            lod_count = min(4, len(lod_ratios))
-        lod_levels = run_lods(uv_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])))
-    else:
-        lod_levels = []
-    for level in lod_levels:
-        idx = int(level["level"])
-        level_mesh = level["mesh"]
-        lod_path = lod_dir / f"lod{idx}.glb"
-        lod_path.write_bytes(_export_glb(level_mesh))
-        lods[idx] = str(lod_path)
-        lod_quality[str(idx)] = {
-            "triangles": int(len(level_mesh.faces)),
-            "vertices": int(len(level_mesh.vertices)),
-            "has_uv": bool(getattr(getattr(level_mesh, "visual", None), "uv", None) is not None),
-            "native_textures": bool(_has_native_textures(level_mesh)),
-            "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
-        }
-    lod_validation = _validate_lod_chain(lod_levels, uv_mesh)
-    lod_duration = time.time() - lod_t0
+            fbx_bytes, _ = run_convert_fbx(
+                glb_path.read_bytes(),
+                ConvertOptions(preset="generic", bake_fps=30, anim_simplify=1.0),
+                progress=lambda stage, frac, msg: _emit(
+                    progress, 0.62 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
+                ),
+            )
+            fbx_path = game_ready_dir / f"{base_name}.fbx"
+            fbx_path.write_bytes(fbx_bytes)
+            game_ready["fbx"] = str(fbx_path)
+        except Exception as exc:
+            artifact_errors["fbx"] = str(exc)
+            logger.warning("FBX export failed: %s", exc)
+        lods: Dict[int, str] = {}
+        lod_quality: Dict[str, Dict[str, Any]] = {}
+        lod_enabled = bool(job_inputs.get("generateLOD", True))
+        lod_t0 = time.time()
+        if lod_enabled:
+            _emit(progress, 0.72, "lod", "Generating LOD chain.")
+            lod_dir.mkdir(parents=True, exist_ok=True)
+            source_faces = max(1, len(game_ready_mesh.faces))
+            target_faces = resolved_target_polycount or source_faces
+            target_ratio = min(1.0, max(0.05, target_faces / source_faces))
+            preset = str(job_inputs.get("lodPreset") or "high").lower()
+            preset_ratios = {
+                "mobile": [1.0, 0.35, 0.12, 0.05],
+                "low": [1.0, 0.5, 0.2, 0.08],
+                "medium": [1.0, 0.5, 0.25, 0.125],
+                "high": [1.0, 0.6, 0.3, 0.15],
+                "cinematic": [1.0, 0.75, 0.5, 0.25],
+            }.get(preset, [1.0, 0.6, 0.3, 0.15])
+            ratios = job_inputs.get("lod_ratios")
+            lod_ratios = ratios if isinstance(ratios, list) and ratios else [
+                1.0 if i == 0 else max(0.025, float(ratio))
+                for i, ratio in enumerate(preset_ratios)
+            ]
+            try:
+                lod_count = max(1, min(4, int(job_inputs.get("lodCount") or len(lod_ratios))))
+            except (TypeError, ValueError):
+                lod_count = min(4, len(lod_ratios))
+            lod_levels = run_lods(game_ready_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])))
+        else:
+            lod_levels = []
+        for level in lod_levels:
+            idx = int(level["level"])
+            level_mesh = level["mesh"]
+            lod_path = lod_dir / f"lod{idx}.glb"
+            lod_path.write_bytes(_export_glb(level_mesh))
+            lods[idx] = str(lod_path)
+            lod_quality[str(idx)] = {
+                "triangles": int(len(level_mesh.faces)),
+                "vertices": int(len(level_mesh.vertices)),
+                "has_uv": bool(getattr(getattr(level_mesh, "visual", None), "uv", None) is not None),
+                "native_textures": bool(_has_native_textures(level_mesh)),
+                "texture_preserved": bool(level.get("texture_preserved", _has_native_textures(level_mesh))),
+            }
+        lod_validation = _validate_lod_chain(lod_levels, game_ready_mesh)
+        lod_duration = time.time() - lod_t0
 
-    glb_file_size = glb_path.stat().st_size if glb_path.exists() else 0
-    fbx_file_size = (
-        Path(game_ready["fbx"]).stat().st_size
-        if "fbx" in game_ready and Path(game_ready["fbx"]).exists()
-        else 0
-    )
-    lod_entries = [
-        (f"  LOD {lvl}", f"{l_info['triangles']:,} tris | {l_info['vertices']:,} verts -> lod{lvl}.glb")
-        for lvl, l_info in lod_quality.items()
-    ]
+        glb_file_size = glb_path.stat().st_size if glb_path.exists() else 0
+        fbx_file_size = (
+            Path(game_ready["fbx"]).stat().st_size
+            if "fbx" in game_ready and Path(game_ready["fbx"]).exists()
+            else 0
+        )
+        lod_entries = [
+            (f"  LOD {lvl}", f"{l_info['triangles']:,} tris | {l_info['vertices']:,} verts -> lod{lvl}.glb")
+            for lvl, l_info in lod_quality.items()
+        ]
     logger.info(
         "\n" + format_box(
             "POSTPROCESS: STAGE 7/8 - PRODUCTION EXPORTS & LOD CHAIN",
@@ -1922,40 +1984,22 @@ def run_postprocess_job(
         "thumbnail": str(thumbnail_path) if thumbnail_path else None,
         "artifact_errors": artifact_errors,
         "lod_validation": lod_validation,
+        "bake_stats": bake_stats,
+        "retopo_stats": retopo_stats,
     }
-    final_result = _build_result(job_id, asset_dir, asset_name, qa_report, generated, target_polycount=resolved_target_polycount, lod_enabled=lod_enabled)
-    final_result["model_url"] = final_result["game_ready_url"]
-    final_result["high_fidelity_url"] = final_result["source_model_url"]
+    final_result = _build_result(
+        job_id, asset_dir, asset_name, qa_report, generated,
+        target_polycount=resolved_target_polycount,
+        lod_enabled=lod_enabled,
+        job_inputs=job_inputs,
+        job_metadata=job_metadata,
+        texture_enabled=texture_enabled,
+        master_quality_report=master_quality_report,
+    )
     final_result["quality_trace"] = quality_trace
     final_result["master_to_derivative"] = master_quality_report
     final_result["quality_mode"] = quality_mode
     final_result["texture_stage"] = texture_stage_info
-    if texture_stage_info.get("textured_glb"):
-        final_result["textured_model_url"] = f"/api/v1/system/jobs/{job_id}/download?artifact_format=textured"
-        final_result.setdefault("artifacts", {})["textured"] = {
-            "status": "ready",
-            "url": final_result["textured_model_url"],
-            "path": texture_stage_info["textured_glb"],
-        }
-    elif texture_stage_info.get("status") == "failed":
-        final_result["production_status"] = "degraded"
-        final_result["degraded_reasons"] = list(
-            final_result.get("degraded_reasons", [])
-        ) + ["texture_generation_failed"]
-        final_result.setdefault("artifacts", {})["textured"] = {
-            "status": "failed",
-            "error": texture_stage_info.get("error"),
-        }
-    if master_quality_report.get("quality_gate", {}).get("passed") is False:
-        final_result["production_status"] = "degraded"
-        final_result["degraded_reasons"] = list(
-            final_result.get("degraded_reasons", [])
-        ) + ["master_to_derivative_quality_drift"]
-    if qa_report.get("status") == "warn" and final_result.get("production_status") == "ready":
-        final_result["production_status"] = "degraded"
-        final_result["degraded_reasons"] = list(
-            final_result.get("degraded_reasons", [])
-        ) + ["final_quality_inspection_unavailable"]
     texture_info = final_result.get("texture_stage") or {}
     final_result["texture_resolution"] = (
         int(texture_info["target_atlas_size"])
@@ -1972,11 +2016,6 @@ def run_postprocess_job(
             "after": printability_after,
             "status": printability_status,
         }
-        if printability_status == "fail":
-            final_result["production_status"] = "degraded"
-            final_result["degraded_reasons"] = list(
-                final_result.get("degraded_reasons", [])
-            ) + ["printability_failed"]
     _write_json(asset_manifest, final_result)
 
     total_pipeline_time = time.time() - pipeline_start_time

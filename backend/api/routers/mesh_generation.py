@@ -635,7 +635,7 @@ async def image_to_raw_mesh(
                 detail="enhancement_enabled requires an approved preprocessing_artifact_id",
             )
 
-        image_file_path = await process_file_input(
+        original_image_path = await process_file_input(
             file_path=mesh_request.image_path,
             base64_data=mesh_request.image_base64,
             file_id=mesh_request.image_file_id,
@@ -643,6 +643,7 @@ async def image_to_raw_mesh(
             file_store=file_store,
         )
 
+        image_file_path = original_image_path
         preprocessing_metadata = {}
         if mesh_request.preprocessing_artifact_id:
             image_file_path, preprocessing_metadata = load_preprocessed_artifact(
@@ -714,6 +715,7 @@ async def image_to_raw_mesh(
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
                 "image_path": image_file_path,
+                "reference_image_path": original_image_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
@@ -809,13 +811,15 @@ async def image_to_textured_mesh(
                 detail="enhancement_enabled requires an approved preprocessing_artifact_id",
             )
 
-        image_file_path = await process_file_input(
+        original_image_path = await process_file_input(
             file_path=mesh_request.image_path,
             base64_data=mesh_request.image_base64,
             file_id=mesh_request.image_file_id,
             input_type="image",
             file_store=file_store,
         )
+
+        image_file_path = original_image_path
         preprocessing_metadata = {}
         if mesh_request.preprocessing_artifact_id:
             image_file_path, preprocessing_metadata = load_preprocessed_artifact(
@@ -862,9 +866,6 @@ async def image_to_textured_mesh(
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
         lod_count = params.pop("lodCount", preset.get("lod_count", 4))
-        # Preserve nested resolution from old clients but keep it out of geometry inference.
-        source_texture_resolution = params.pop("texture_resolution", None)
-        params.pop("texture_resolution_preset", None)
         nested_texture_flags = [
             params.pop("texture_enabled", None),
             params.pop("generate_texture", None),

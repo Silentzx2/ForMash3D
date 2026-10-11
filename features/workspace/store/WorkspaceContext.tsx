@@ -119,7 +119,6 @@ interface WorkspaceContextType {
   paintBrushSettings: PaintBrushSettings;
   setPaintBrushSettings: React.Dispatch<React.SetStateAction<PaintBrushSettings>>;
   generate3DModel: () => Promise<void>;
-  generateImageTo3D: (customImage?: string) => Promise<void>;
   runModelGeneration: () => Promise<void>;
   runRemeshGeneration: () => Promise<void>;
   runTextureGeneration: () => Promise<void>;
@@ -214,7 +213,7 @@ function normalizeBackendJob(raw: BackendJobPayload) {
         : undefined,
     result: raw.result ? {
       ...raw.result,
-      ...(modelUrl ? { model_url: modelUrl, active_model_url: modelUrl } : {}),
+       ...(modelUrl ? { model_url: modelUrl } : {}),
       ...(raw.result.thumbnail_url ? { thumbnail_url: toProxyUrl(raw.result.thumbnail_url) } : {}),
     } : undefined,
   } as {
@@ -303,7 +302,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           componentCount: outputs.component_count ?? outputs.componentCount,
           materialCount: outputs.material_count ?? outputs.materialCount,
           meshDetails: outputs.mesh_details || outputs.meshDetails,
-          postprocessStatus: outputs.postprocess_status,
+           postprocessStatus: outputs.production_status || outputs.postprocess_status || 'unknown',
           dateCreated: '',
           tags: ['AI Generated'],
           materials: [],
@@ -1033,10 +1032,23 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                 } : prev);
               }
 
-              if (data.status === 'completed' && task.status !== 'completed') {
-                toast.success('Generation complete', {
-                  description: task.title || '3D Asset ready',
-                });
+               if (data.status === 'completed' && task.status !== 'completed') {
+                 const result = data.result || {};
+                 const productionStatus = result.production_status || 'ready';
+                 const degradedReasons = result.degraded_reasons || [];
+                 let description = task.title || '3D Asset ready';
+                 if (productionStatus === 'ready') {
+                   toast.success('Generation complete', { description });
+                 } else if (productionStatus === 'degraded') {
+                   const reasons = degradedReasons.length > 0 ? degradedReasons.join(', ') : 'unknown';
+                   toast.warning('Generation completed with issues', {
+                     description: `${description} (${reasons})`,
+                   });
+                 } else if (productionStatus === 'failed') {
+                   toast.error('Generation failed', {
+                     description: task.title || '3D Asset failed',
+                   });
+                 }
 
                 const result = data.result;
                 if (result?.model_url || result?.active_model_url) {
@@ -1058,7 +1070,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                     statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
                     topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
                     format: 'GLB',
-                    postprocessStatus: result.postprocess_status || 'completed',
+                     postprocessStatus: result.production_status || result.postprocess_status || 'completed',
                     game_ready_url: (result.game_ready_url as string) || modelUrl,
                     source_model_url: (result.source_model_url as string) || (result.high_fidelity_url as string) || undefined,
                     tags: ['AI Generated'],
@@ -1157,7 +1169,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
         topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
         format: 'GLB',
-        postprocessStatus: result.postprocess_status || 'completed',
+         postprocessStatus: result.production_status || result.postprocess_status || 'completed',
         game_ready_url: (result.game_ready_url as string) || modelUrl,
         source_model_url: (result.source_model_url as string) || (result.high_fidelity_url as string) || undefined,
         tags: ['AI Generated'],
@@ -1607,250 +1619,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     return comparisonGroups[groupId]?.results ?? {};
   }, [comparisonGroups]);
 
-  const generateImageTo3D = useCallback(async (customImage?: string) => {
-    const imageToUse = customImage ?? generationSettings.image;
-    if (!imageToUse) {
-      setExecutionStep('Please select or upload an image first');
-      toast.error('Image required', { description: 'Select or upload a reference image to generate a 3D model.' });
-      return;
-    }
-    const modelPrompt = generationSettings.prompt || generationSettings.imageName || '3D Model';
-    // ponytail: derive a human-readable name from the reference image filename so
-    // the saved model is labelled by its source image, not "Model_<uuid>".
-    const imageFileName = generationSettings.imageName
-      || (imageToUse ? decodeURIComponent(imageToUse.split('/').pop()?.replace(/\?.*$/, '') || '') : '')
-       || modelPrompt;
-     const localTaskId = startTask('image-to-3d', modelPrompt, undefined, generationSettings.aiModel, imageToUse ?? undefined, imageFileName, comparisonGroupId ?? undefined);
-
-    const currentQuality = generationSettings.meshQuality || 'high';
-    const textureResolutionByQuality: Record<string, number> = {
-      low: 1024,
-      medium: 1024,
-      high: 2048,
-      ultra: 4096,
-      '8k': 8192,
-    };
-    const selectedAtlasPreset = (
-      generationSettings.texture_resolution ||
-      generationSettings.textureResolution ||
-      ''
-    );
-    const requestedTextureResolution =
-      textureResolutionByQuality[selectedAtlasPreset] ||
-      textureResolutionByQuality[generationSettings.textureQuality] ||
-      2048;
-    // Source geometry follows the selected model's official/tuned inference schedule.
-    const sourceQuality = 'ultra' as const;
-    let modelId = generationSettings.aiModel || '';
-    if (generationSettings.enhancementEnabled && !generationSettings.preprocessingArtifactId) {
-      setExecutionStep('Enhancement preview must be approved before generation');
-      toast.error('Enhancement approval required', {
-        description: 'Accept the Generation Preview or disable enhancement before generating.',
-      });
-      return;
-    }
-    if (generationSettings.intent) {
-      const resolved = await getApiClient().resolveSmartIntent(
-        generationSettings.intent,
-        generationSettings.aiModel || undefined,
-      );
-      modelId = resolved.model_id;
-    }
-    const paramDefaults = modelParameterDefaults[modelId] || {};
-
-    // Use backend-provided parameter defaults when available; fall back to
-    // model-specific inference schedules only if the schema has not loaded yet.
-    const infSteps = Number(
-      paramDefaults.num_inference_steps ??
-      paramDefaults.ss_sampling_steps ??
-      50
-    );
-    let infGuidance = Number(
-      paramDefaults.guidance_scale ??
-      generationSettings.guidanceScale ??
-      7.5
-    );
-
-    if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-      infGuidance = infGuidance || 5.0;
-    } else if (modelId.includes('triposg')) {
-      infGuidance = infGuidance || 7.0;
-    } else if (modelId.includes('trellis')) {
-      infGuidance = infGuidance || 7.5;
-    } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
-      infGuidance = infGuidance || 5.0;
-    }
-
-    try {
-      // Route dynamically: raw models (Hunyuan3D Raw, PartPacker, UltraShape) must go to image-to-raw-mesh
-      const selectedModel = modelDetails[generationSettings.aiModel || ''];
-      const capabilities = selectedModel?.capabilities || {};
-      const isTextured = generationSettings.generateTexture !== false;
-      const isMultiviewCapable = Boolean(capabilities.multiview_input);
-      const hasMvViews = Boolean(
-        generationSettings.multiviewAssetId ||
-        (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0)
-      );
-      const useMultiviewReconstruction = isMultiviewCapable && hasMvViews;
-
-      const endpoint = useMultiviewReconstruction
-        ? '/api/v1/multiview/reconstruct-3d'
-        : '/api/v1/mesh-generation/image-to-raw-mesh';
-
-      // Resolve image input: prefer file_id from upload, fall back to base64 data URL
-      const imageInput: Record<string, unknown> = {};
-      if (generationSettings.imageFileId) {
-        imageInput.image_file_id = generationSettings.imageFileId;
-      } else if (typeof imageToUse === 'string' && imageToUse.startsWith('data:')) {
-        imageInput.image_base64 = imageToUse;
-      } else if (!useMultiviewReconstruction) {
-        throw new Error('No usable image input. Please upload an image first.');
-      }
-
-      const targetPoly = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
-      const modelParameters: Record<string, unknown> = {
-        octree_resolution: Number(paramDefaults.octree_resolution ?? 512),
-        num_inference_steps: infSteps,
-        guidance_scale: infGuidance,
-        seed: generationSettings.seed ?? undefined,
-        low_vram: Boolean(generationSettings.lowVram),
-        enable_flashvdm: generationSettings.enableFlashVDM ?? false,
-        low_vram_mode: generationSettings.lowVramMode ?? 'auto',
-        auto_optimize: targetPoly > 0 && targetPoly < 200000,
-        target_polycount: targetPoly,
-        generateLOD: generationSettings.generateLOD !== false,
-        lodPreset: generationSettings.lodPreset || 'high',
-        lodCount: generationSettings.lodCount || 4,
-        negative_prompt: generationSettings.negativePrompt || undefined,
-        source_quality: 'max',
-        quality: currentQuality,
-        texture_enabled: isTextured,
-        generate_texture: isTextured,
-      };
-
-      // Source geometry and source textures always use maximum-fidelity generation settings.
-      // UI poly/quality budgets apply only to downstream production artifacts.
-      if (sourceQuality === 'ultra' && modelId.includes('triposr')) {
-        modelParameters.mc_resolution = 320;
-      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('triposg')) {
-        modelParameters.faces = -1;
-        modelParameters.num_inference_steps = 50;
-      } else if (sourceQuality === 'ultra' && modelId.includes('triposf')) {
-        modelParameters.resolution = 1024;
-        modelParameters.sample_points_num = 1638400;
-      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('partpacker')) {
-        modelParameters.grid_resolution = 512;
-        modelParameters.num_faces = -1;
-      } else if (sourceQuality === 'ultra' && (generationSettings.aiModel || '').includes('ultrashape')) {
-        modelParameters.octree_res = 1024;
-        modelParameters.num_latents = 32768;
-      } else if ((generationSettings.aiModel || '').includes('trellis2')) {
-        modelParameters.decimation_target = -1;
-        modelParameters.remesh = false;
-      } else if (modelId.includes('trellis')) {
-        modelParameters.simplify = 0.0;
-        modelParameters.ss_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
-        modelParameters.slat_sampling_steps = modelId.includes('text_to_') ? 25 : 12;
-      } else if (modelId.includes('hunyuan')) {
-        modelParameters.octree_resolution = 512;
-      }
-
-      if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-        modelParameters.enable_flashvdm = true;
-      }
-
-
-
-      const physicsForThisJob = Boolean(generationSettings.generateCollision);
-
-      const cleanStem = (imageFileName || modelPrompt || 'asset')
-        .replace(/\.[^/.]+$/, '')
-        .replace(/[^A-Za-z0-9._-]+/g, '_')
-        .replace(/^_+|_+$/g, '') || 'asset';
-
-      const body: Record<string, unknown> = useMultiviewReconstruction
-        ? {
-            asset_id: generationSettings.multiviewAssetId || undefined,
-            images: generationSettings.multiviewViews || undefined,
-            reference_image_file_id: generationSettings.imageFileId || undefined,
-            reference_image_base64: !generationSettings.imageFileId && typeof imageToUse === 'string' && imageToUse.startsWith('data:')
-              ? imageToUse
-              : undefined,
-            model_preference: modelId || undefined,
-            intent: generationSettings.intent,
-            output_format: 'glb',
-            model_parameters: modelParameters,
-            quality: currentQuality,
-            target_polycount: targetPoly,
-            generateLOD: generationSettings.generateLOD !== false,
-            lodPreset: generationSettings.lodPreset || 'high',
-            lodCount: generationSettings.lodCount || 4,
-            texture_resolution: isTextured ? requestedTextureResolution : undefined,
-            bake_normal_maps: true,
-            physics_enabled: physicsForThisJob,
-            physics_config: generationSettings.physics,
-          }
-        : {
-            ...imageInput,
-            asset_name: cleanStem,
-            image_name: cleanStem,
-            output_format: 'glb',
-            model_preference: modelId || undefined,
-            intent: generationSettings.intent,
-            preprocessing_artifact_id: generationSettings.preprocessingArtifactId || undefined,
-            enhancement_enabled: Boolean(generationSettings.enhancementEnabled),
-            enable_printability_check: Boolean(generationSettings.enablePrintabilityCheck),
-            enable_auto_repair: Boolean(generationSettings.enableAutoRepair),
-            enable_auto_rig: Boolean(generationSettings.enableAutoRig),
-            auto_rig_mode: generationSettings.autoRigMode || 'full',
-            model_parameters: modelParameters,
-            physics_enabled: physicsForThisJob,
-            physics_config: generationSettings.physics,
-            topology_mode: generationSettings.topologyMode || (generationSettings.quadTopology ? 'quad' : 'triangle'),
-            quad_topology: Boolean(generationSettings.quadTopology || generationSettings.topologyMode === 'quad'),
-            bake_normal_maps: true,
-          };
-
-      if (!useMultiviewReconstruction && isTextured) {
-        body.texture_resolution = requestedTextureResolution;
-      }
-
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw await parseApiError(res);
-      const data = await parseApiData<{ job_id?: string; id?: string; status?: string }>(res);
-      const jobId = data.job_id ?? data.id;
-      if (!jobId) throw new Error('Backend did not return a generation job ID');
-      bindBackendJob(localTaskId, jobId, { inputImage: imageToUse, inputImageName: modelPrompt, status: 'queued', currentStep: 'Queued on backend' });
-      setExecutionStep('Generation queued on backend');
-
-          } catch (error) {
-      const message = error instanceof Error ? error.message : 'Generation submission failed';
-      setIsExecuting(false);
-      setExecutionStep(message);
-      const diagnostic = diagnoseJobError({
-        id: 'submit-error',
-        status: 'failed',
-        error: message,
-        error_message: message,
-        provider: generationSettings.aiModel || '',
-      } as any);
-      setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: message, errorMessage: message, diagnostic } : null);
-      toast.error('Generation failed', { description: message });
-    }
-  }, [
-    generationSettings,
-    modelDetails,
-    startTask,
-    bindBackendJob,
-    parseApiError,
-    parseApiData,
-    setIsExecuting,
-    setExecutionStep,
-  ]);
 
   const generate3DModel = useCallback(async () => {
     // Project is Image-to-3D only - no text-to-3D mode
@@ -2675,24 +2443,24 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     paintBrushSettings, setPaintBrushSettings,
     environmentSettings, setEnvironmentSettings]);
 
-   const generationActionsValue = useMemo(() => ({
-     generate3DModel, generateImageTo3D,
-     runModelGeneration: generate3DModel,
-     runRemeshGeneration, runTextureGeneration,
-     runUVUnwrapGeneration, runSegmentation,
-     runMeshEditing,
-     queueWorkflow,
-     processBatchQueue,
-     cancelBatchProcessing,
-     retryFailedBatchItems,
-   }), [generate3DModel, generateImageTo3D,
-     runRemeshGeneration, runTextureGeneration,
-     runUVUnwrapGeneration, runSegmentation,
-     runMeshEditing,
-     queueWorkflow,
-     processBatchQueue,
-     cancelBatchProcessing,
-     retryFailedBatchItems]);
+    const generationActionsValue = useMemo(() => ({
+      generate3DModel,
+      runModelGeneration: generate3DModel,
+      runRemeshGeneration, runTextureGeneration,
+      runUVUnwrapGeneration, runSegmentation,
+      runMeshEditing,
+      queueWorkflow,
+      processBatchQueue,
+      cancelBatchProcessing,
+      retryFailedBatchItems,
+    }), [generate3DModel,
+      runRemeshGeneration, runTextureGeneration,
+      runUVUnwrapGeneration, runSegmentation,
+      runMeshEditing,
+      queueWorkflow,
+      processBatchQueue,
+      cancelBatchProcessing,
+      retryFailedBatchItems]);
 
   const value = React.useMemo(() => ({
     ...viewportValue, ...toolValue, ...assetValue, ...systemValue,
