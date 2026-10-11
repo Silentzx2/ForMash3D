@@ -26,19 +26,20 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 ## Core Features
 
 ### 1. Neural Shape Generation
-- **Image-to-3D**: Generate raw and textured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
+- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TRELLIS.2, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
+- **Raw Geometry Output**: Normal shape generation produces raw geometry only, preserving clean topology without model-level texture baking or auto-chaining.
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
 - **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
 - **Central Source-Fidelity Firewall**: The scheduler removes production-only target, decimation, remesh, LOD, physics, and paint orchestration controls before model inference.
-- **Model-Native Texture Fidelity**: Textured source generation keeps explicit maximum source texture settings; downstream quality and polycount controls do not lower the immutable source.
 
-### 2. PBR Texture Painting
-- **Image Mesh Painting**: Paint textures onto existing meshes using Hunyuan3D-Paint-v2-1
-- **RealESRGAN x4+**: Super-resolution for texture enhancement
-- **DifferentiableRenderer**: PBR validation and material reference verification
-- **Shape→Paint Auto-Chaining**: Automatic pipeline from shape generation to textured output
-- **Configurable Parameters**: Texture resolution (512/768), max views (6-12), PBR state tracking
+### 2. Centralized PBR Texture Pipeline & Texture Studio
+- **Centralized Texture Routing**: Automatic model selection based on user-visible output resolution preset:
+  - **1K / 2K**: Paint3D (`OpenTexture/Paint3D`) coarse-to-fine UV texture diffusion
+  - **4K / 8K**: Hunyuan3D-Paint-v2-1 with RealESRGAN x4+ enhancement
+- **Universal Texture Toggle**: Single Textured Generation toggle available across all image-to-3D geometry models.
+- **Durable Reference Image Preservation**: Passes the original reference image directly to the selected texture adapter along with the raw mesh.
+- **Non-Destructive Texture Export**: Raw master geometry is preserved untouched (`master/source.glb`); textured models are exported separately (`textures/<name>_textured.glb`), allowing independent texture retries.
 
 ### 3. Post-Processing Pipeline
 - **Mesh Decimation**: meshoptimizer SIMD decimation to target polycounts

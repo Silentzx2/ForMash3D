@@ -1,5 +1,65 @@
+## 2026-10-11 Section 3 Paint3D 1K/2K Texture Integration
+- **Paint3D Adapter Implementation (`backend/adapters/paint3d_adapter.py`)**:
+  - Inherits from `ImageToMeshModel` (with `MeshToMeshModel` and `ModelAdapter` compatibility aliases).
+  - Implements two-stage workflow: Stage 1 coarse multi-view painting (`pipeline_paint3d_stage1.py`) and Stage 2 UV inpainting & seam refinement (`pipeline_paint3d_stage2.py`).
+  - Supports `1K` (1024x1024) and `2K` (2048x2048) texture presets, accepting untextured input mesh (`.glb`, `.obj`) and original reference image path (`image_path`).
+  - Job-scoped directory isolation via `tempfile.mkdtemp(prefix=f"paint3d_job_{job_id}_")` with automatic cleanup in `finally` blocks to prevent concurrent write collisions.
+  - Safe subprocess invocation with discrete argv lists, strict timeout and cancellation handling, and controlled environment (`CUDA_VISIBLE_DEVICES`, `PYTHONPATH`).
+  - Preserves underlying mesh geometry while exporting textured `.glb` / `.obj` with extracted texture maps dictionary (`{"albedo": ...}`) and real on-disk resolution metadata.
+  - Enforces strict GPU policy (`device = 'cuda:0'`), raising immediate errors if CUDA is unavailable and never silently falling back to CPU.
+- **Model Registration & Registry Aliases**:
+  - `backend/core/scheduler/model_factory.py`: Registered `paint3d` and `paint3d_image_mesh_painting` in `ADAPTER_REGISTRY` pointing to `adapters.paint3d_adapter.Paint3DAdapter`.
+  - `backend/adapters/__init__.py`: Added `Paint3DAdapter` and `Paint3DImageMeshPaintingAdapter` to `_ADAPTER_MAP` with lazy dynamic import and automatic `backend/` directory path injection.
+  - `backend/config/models.yaml`: Registered `paint3d` under `image_mesh_painting` (`vram_requirement: 12000`, `supported_inputs: ["mesh", "image"]`, `supported_outputs: ["glb", "obj"]`, `supported_resolutions: [1024, 2048]`, `model_path: "backend/pretrained/Paint3D"`, `enabled: true`, `max_workers: 1`).
+- **Vendored Upstream & Runtime Compatibility**:
+  - Upstream repository vendored in `backend/thirdparty/Paint3D` (pinned at commit `d5545d38db6aaf78efc563269f70177688a4218e`, nested `.git` removed).
+  - Maintained baseline runtime: Python 3.10, PyTorch 2.6.0+cu124, CUDA 12.4 without library downgrades. Upstream modules (`paint3d.models.textured_mesh`, `controlnet.*`, `paint3d.dataset`, `paint3d.trainer`) compile and import cleanly.
+- **Download Manager & Shell Tools**:
+  - `backend/scripts/download_models.sh`: Added `download_paint3d()` downloading official weights (`GeorgeQi/Paint3d_UVPos_Control` with fallback to `OpenTexture/Paint3D`) into `backend/pretrained/Paint3D` and validating `diffusion_pytorch_model.bin` and `config.json`. Integrated into `verify_all_models()` and the main selection loop.
+  - `manager.sh`: Added interactive option `[24] Paint3D - 1K/2K UV texture diffusion model` in `cmd_models()`.
+  - `backend/scripts/install.sh`: Added repository clone and lightweight dependency check (`omegaconf`, `xatlas`) preserving PyTorch 2.6 / CUDA 12.4.
+- **Verification**:
+  - Verified Python syntax: `python -m py_compile backend/adapters/paint3d_adapter.py backend/core/scheduler/model_factory.py backend/adapters/__init__.py`.
+  - Verified Shell syntax: `bash -n backend/scripts/download_models.sh backend/scripts/install.sh manager.sh`.
+  - Pytest regression tests: `pytest backend/tests/test_paint3d_adapter.py -v` (5/5 passed).
+
+## 2026-10-11 Section 5, A1, A2, A3 Centralized Texture Pipeline & Cooperative Cancellation
+- **Cooperative Post-Processing Cancellation (A1)**: In `backend/postprocess/pipeline.py`, added `CancelChecker = Optional[Callable[[], bool]]` and `_check_cancelled(cancel_checker)` helper raising `InterruptedError`. Inserted cancellation checkpoints before/after every major stage (inspect, repair, retopo, remesh, optimize, UV, bake, texture, LODs, QA). If cancel is signaled, post-processing aborts immediately without corrupting `master/source.glb` or writing false completion to `asset.json`.
+- **Centralized Texture Stage inside Post-Processing (Section 5)**: In `backend/postprocess/pipeline.py`, added `resolve_texture_preset()` (`1K`->1024, `2K`->2048, `4K`->4096, `8K`->8192) routing 1K/2K to Paint3D and 4K/8K to Hunyuan3D-Paint v2.1. Integrated `_execute_texture_stage()` into `run_postprocess_job()` between game-ready/FBX export and LODs. If `texture_enabled=False`, marks status `skipped`. When enabled, passes validated mesh and durable reference image, writes textured result to separate `textures/<base_name>_textured.glb` without overwriting raw master, validates on-disk atlas dimensions, and on texture failure preserves raw geometry with degraded telemetry. Audited manifest cache to permit texture-only retries without repeating raw geometry generation.
+- **Auto-rig Terminal Parent Protection (A2)**: In `backend/core/scheduler/multiprocess_scheduler.py`, updated `_watch_auto_rig()` to verify parent status (`get_job(parent_job_id)`) during child polling, before completing parent job, and in the exception fallback block. Cancels child job and exits cleanly if parent was cancelled or failed.
+- **Truthful Cooperative Cancel Signal (A3)**: In `backend/core/scheduler/multiprocess_scheduler.py`, updated `cancel_job()`. When `_stop_worker_for_job()` returns False (work in postprocess or chained stages), sets `self._cancel_requested_jobs`, triggers thread-safe `_active_postprocess_cancels[job_id]`, and requests cancellation via Redis, returning False without faking completion or premature temp file deletion.
+- **Auto-paint Orchestration in `_handle_job_result()`**: In `multiprocess_scheduler.py`, normalized `texture_enabled` into post-processing rather than scheduling redundant `image_mesh_painting` child jobs. Wrapped `run_postprocess_job` with a thread-safe `cancel_checker`, caught `(InterruptedError, asyncio.CancelledError)` to cleanly cancel the job without marking failure, and protected auto-rig and final completion against terminal parent races.
+- **Verification**: 12/12 pytest unit tests pass across `test_postprocess_texture_pipeline.py` and `test_cancellation_and_quad.py`; 21/21 official model parity tests pass (`test_official_model_parity_contract.py`); `python3 -m py_compile` clean.
+
+## 2026-10-11 Section 4 Raw-Mesh Decoupling & Model Registry Normalization
+- **Normal image-to-3D models produce raw mesh only**: Converted TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, and Unique3D to output untextured raw geometry only, completely removing embedded native texture generation, texture baking, and automatic paint chaining from the normal generation path. Texturing is decoupled into the centralized post-processing texture stage.
+- **`backend/config/models.yaml`**:
+  - Set `paint_autochain: false` on `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh`.
+  - Set `texture_generation: false` on `unique3d_image_to_raw_mesh`.
+  - Added `trellis_image_to_3d`, `trellis_image_to_raw_mesh`, `trellis2_image_to_3d`, and `trellis2_image_to_raw_mesh` under `image_to_raw_mesh`.
+  - Deprecated legacy `trellis_image_to_textured_mesh` and `trellis2_image_to_textured_mesh` under `image_to_textured_mesh` with `deprecated: true` and `alias_of` pointing to the raw-mesh IDs.
+- **`backend/adapters/hunyuan3d_shape_v21.py`**:
+  - Changed `Hunyuan3DShapeV21ImageToTexturedMeshAdapter` to inherit directly from `Hunyuan3DShapeV21ImageToRawMeshAdapter` with a deprecation warning, removing the internal auto-chain call to Hunyuan Paint.
+  - Added backward-compatible alias `Hunyuan3DShapeV21ImageToMeshAdapter = Hunyuan3DShapeV21ImageToRawMeshAdapter`.
+- **`backend/adapters/trellis_adapter.py`**:
+  - Refactored `TrellisImageToMeshAdapterCommon._process_request` so image-to-3D decodes `formats=["mesh"]` only, extracting the raw mesh without invoking `to_trimesh` multiview rendering and texture baking.
+  - Rotated the raw untextured mesh to standard Y-up (`[[1, 0, 0], [0, 0, 1], [0, -1, 0]]`) and returned metadata with `"has_texture": False`.
+  - Subclassed `TrellisImageToTexturedMeshAdapter` from `TrellisImageToRawMeshAdapter` with deprecation notices. Added `TrellisImageToMeshAdapter` alias.
+- **`backend/utils/trellis2_utils.py` & `backend/adapters/trellis2_adapter.py`**:
+  - In `trellis2_utils.py`: Added `raw_mesh_only=True` parameter to `Trellis2Runner.image_to_mesh()`, returning untextured `trimesh.Trimesh` directly from vertices/faces and skipping `o_voxel.postprocess.to_glb` texture generation and baking.
+  - In `trellis2_adapter.py`: Implemented `Trellis2ImageToRawMeshAdapter` calling `image_to_mesh(..., raw_mesh_only=True)` with `"has_texture": False`. Subclassed `Trellis2ImageToTexturedMeshAdapter` from `Trellis2ImageToRawMeshAdapter`. Added `Trellis2ImageToMeshAdapter` alias.
+- **`backend/adapters/unique3d_adapter.py`**:
+  - Corrected generation info from `"has_texture": True` to `"has_texture": False` with `"has_vertex_color": True, "vertex_color": True`, preserving native PyTorch3D mesh vertex colors without 2D UV texture baking.
+- **`backend/core/scheduler/model_factory.py` & `backend/adapters/__init__.py`**:
+  - Added `get_model_adapter()` method and function.
+  - Updated `ADAPTER_REGISTRY` with canonical `image_to_raw_mesh` mappings for TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, and Hunyuan3D-DiT-v2-mini-Turbo.
+  - Added `LEGACY_IMAGE_TO_RAW_ALIASES` dict mapping legacy `image_to_textured_mesh` IDs to raw-mesh IDs.
+  - In `create_model_from_config()`, normalized `feature_type == "image_to_textured_mesh"` to `"image_to_raw_mesh"` and resolved legacy aliases.
+  - Added legacy adapter class aliases in `backend/adapters/__init__.py` `_ADAPTER_MAP`.
+- **Verification**: Verified with `py_compile` across all modified files and executed automated assertions in `3daigc-api` virtual environment validating `models.yaml` configuration, `ModelFactory.ADAPTER_REGISTRY`, `get_model_adapter()` resolution, and lazy adapter imports.
+
 ## 2026-10-11 Backend Cancellation & Redis/SQLite Consistency (Sections A & B)
-- **Redis `update_job_progress` terminal status guard**: In `redis_job_queue.py`, `update_job_progress()` checks status first against `_TERMINAL_STATUSES` (`completed`, `failed`, `cancelled`). If terminal, returns early without mutating progress, stage, message, logs, or hot keys.
+- **Redis `update_job_progress` terminal status guard`: In `redis_job_queue.py`, `update_job_progress()` checks status first against `_TERMINAL_STATUSES` (`completed`, `failed`, `cancelled`). If terminal, returns early without mutating progress, stage, message, logs, or hot keys.
 - **SQLite cancellation persistence**: In `redis_job_queue.py`, `cancel_job()` now loads `JobRequest` and calls `await asyncio.to_thread(self.db_manager.save_job, job_request)` with `JobStatus.CANCELLED`, error `'Cancelled by user'`, and `completed_at`, mirroring `complete_job()` and `fail_job()`.
 - **Truthful cancellation endpoint**: In `mesh_generation.py`, `cancel_mesh_generation()` propagates real outcome from `scheduler.cancel_job(job_id)` instead of calling `force=True` on `job_queue`. Returns `cancelled=True` if cancelled, or `cancelled=False, cancel_requested=True, message='Cancellation requested'` if still stopping/processing.
 - **Status alias compatibility**: Reconciled status checks across `redis_job_queue.py` and `mesh_generation.py`. 'running' is cleanly accepted as an alias for 'processing', while terminal statuses are strictly (`completed`, `failed`, `cancelled`).

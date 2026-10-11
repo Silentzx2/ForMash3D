@@ -359,6 +359,20 @@ image_mesh_painting:
     enabled: true
     max_workers: 1
 
+  paint3d:
+    capabilities:
+      texture_generation: true
+      texture_refine: true
+      multiview: false
+      supported_resolutions: [1024, 2048]
+    vram_requirement: 12000  # MB
+    supported_inputs: ["mesh", "image"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/Paint3D"
+    enabled: true
+    max_workers: 1
+
+
 # mesh segmentation
 mesh_segmentation:
   partfield_mesh_segmentation:

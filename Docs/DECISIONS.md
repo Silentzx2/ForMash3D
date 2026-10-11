@@ -754,4 +754,42 @@ Hi3DGen-style normal bridging is not hard-wired into production without controll
 - FlashVDM uses optimized merge attention pooling.
 - All model adapters explicitly verify `torch.cuda.is_available()` and target CUDA devices.
 
+## ADR-065 — Normal Image-to-3D Geometry Models Output Raw Mesh Only
 
+**Date:** 2026-10-11  
+**Status:** Accepted
+
+**Decision**:
+1. All normal image-to-3D geometry models (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, Unique3D) generate raw untextured geometry only. Embedded texture baking, multiview rasterization, and automatic paint chaining are removed from the normal geometry path. Texturing is decoupled into the centralized post-processing texture stage.
+2. In `models.yaml`, set `paint_autochain: false` on Hunyuan3D shape models, `texture_generation: false` on Unique3D, and register TRELLIS / TRELLIS.2 under `image_to_raw_mesh`.
+3. In `model_factory.py`, map legacy `image_to_textured_mesh` IDs and requests as backward-compatible aliases to raw-mesh generation via `LEGACY_IMAGE_TO_RAW_ALIASES` and `get_model_adapter()`.
+4. Unique3D preserves native PyTorch3D vertex colors (`has_vertex_color: True`) without baking 2D UV textures, reporting `has_texture: False`.
+
+**Reason**:
+Per `Docs/TASKS.md` Section 4, selecting a geometry model must never implicitly run a hardcoded texture pipeline. Decoupling geometry from texturing allows the downstream production post-processing pipeline and central texture stage (Paint3D / Hunyuan3D-Paint) to manage texturing cleanly and idempotently.
+
+**Consequences**:
+- Normal image-to-3D geometry generation is faster, unburdened by redundant texture baking or paint model loading.
+- VRAM requirements during geometry generation are reduced.
+- Downstream postprocessing promotes immutable raw `master/source.glb` before any optional texturing.
+- Legacy clients and historical jobs requesting `image_to_textured_mesh` resolve cleanly to raw geometry without breaking.
+
+## ADR-066 — Paint3D Integration for 1K/2K UV Texture Diffusion
+
+**Date:** 2026-10-11  
+**Status:** Accepted
+
+**Decision**:
+1. Integrate Paint3D (`OpenTexture/Paint3D`) as the primary texture synthesis engine for 1K (1024x1024) and 2K (2048x2048) texture presets, while reserving Hunyuan3D-Paint for 4K and 8K generation.
+2. Execute a two-stage coarse-to-fine pipeline: coarse texture rendering (Stage 1) followed by UV inpainting and seam refinement (Stage 2), conditioning both stages on the original reference image.
+3. Preserve the Python 3.10 / CUDA 12.4 / PyTorch 2.6.0 baseline without library downgrades, avoiding upstream's legacy Python 3.8 / Torch 1.12 environment requirements.
+4. Enforce strict job isolation with per-job scratch directories (`paint3d_job_{job_id}_*`) and non-shell subprocess execution with explicit argument lists.
+5. Strict CUDA GPU enforcement: raise an immediate error if `torch.cuda.is_available()` is False, rejecting CPU fallback.
+
+**Reason**:
+Per `Docs/TASKS.md` Section 3, high-quality 1K/2K UV texture generation requires a specialized diffusion model capable of lighting-less albedo map synthesis and seamless UV wrapping on untextured raw meshes. Paint3D provides superior texture fidelity at 1K/2K resolutions without interfering with the immutable raw mesh master checkpoint.
+
+**Consequences**:
+- 1K and 2K texture requests route cleanly to Paint3D with minimal VRAM footprint (~12GB VRAM).
+- Underlying geometry topology remains intact while generating complete UV texture atlases.
+- Checkpoints are managed cleanly through `backend/scripts/download_models.sh` with Hugging Face verification (`GeorgeQi/Paint3d_UVPos_Control`).

@@ -224,9 +224,14 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            # Start raw extraction at the highest configured density. The existing
-            # VRAM safety guard may downshift these values on constrained hardware.
-            resolution = 1024
+            # Start raw extraction at the highest configured density. The runtime
+            # VRAM guard may reduce the sample count on constrained hardware.
+            # 256 is the official VAE volume resolution: the released checkpoint
+            # (pretrained_TripoSFVAE_256i1024o) and configs/TripoSFVAE_1024.yaml
+            # build encoder/decoder at 256; the 1024³ grid is only the FlexiCubes
+            # extraction resolution. A larger volume resolution silently drops
+            # voxels outside the constructed 256³ decoder masks.
+            resolution = 256
             sample_points_num = 1_638_400
             pruning = bool(inputs.get("pruning", self.pruning))
             use_normals = bool(inputs.get("use_normals", self.use_normals))
@@ -234,32 +239,35 @@ class TripoSFImageToRawMeshAdapter(ImageToMeshModel):
             if not torch.cuda.is_available():
                 raise RuntimeError("TripoSF requires CUDA; CPU inference is not supported.")
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            gpu_index = self.gpu_id if self.gpu_id is not None else 0
 
-            # VRAM safety check - only downshift if user explicitly requests low_vram_mode
-            # This prevents silent geometry fidelity loss. Users on constrained GPUs must opt-in.
+            # VRAM safety check. The frontend always sends low_vram_mode as the
+            # string 'auto' (an advisory enum, not a boolean), so it must be
+            # parsed as tri-state: 'auto' decides from measured free VRAM,
+            # 'low' is an explicit opt-in downshift, anything else stays full.
             if device.startswith("cuda"):
                 torch.cuda.empty_cache()
-                total_vram_mb = torch.cuda.get_device_properties(0).total_memory // (1024 ** 2)
-                allocated_mb = torch.cuda.memory_allocated(0) // (1024 ** 2)
+                total_vram_mb = torch.cuda.get_device_properties(gpu_index).total_memory // (1024 ** 2)
+                allocated_mb = torch.cuda.memory_allocated(gpu_index) // (1024 ** 2)
                 free_vram_mb = total_vram_mb - allocated_mb
-                
-                # Check if user requested low VRAM mode
-                low_vram_mode = bool(inputs.get("low_vram_mode", False))
-                
-                if low_vram_mode:
+
+                low_vram_mode = self._resolve_low_vram_mode(inputs.get("low_vram_mode", "auto"))
+
+                if low_vram_mode == "low":
                     pruning = True
-                    resolution = min(resolution, 256)
                     sample_points_num = min(sample_points_num, 409_600)
                     logger.info(
-                        "TripoSF low_vram_mode enabled: resolution=%d, pruning=True, sample_points=%d (total_vram=%dMB, free_vram=%dMB)",
-                        resolution, sample_points_num, total_vram_mb, free_vram_mb,
+                        "TripoSF low VRAM mode (explicit): sample_points=%d, pruning=True (total_vram=%dMB, free_vram=%dMB)",
+                        sample_points_num, total_vram_mb, free_vram_mb,
                     )
-                elif total_vram_mb <= 16384 or free_vram_mb < 12288:
-                    # Warn but don't silently downshift - let user decide
+                elif low_vram_mode == "auto" and free_vram_mb < 12_288:
+                    # Official upstream default (819,200) stays the floor for
+                    # automatic downshifts; never silently go below it.
+                    sample_points_num = min(sample_points_num, 819_200)
                     logger.warning(
-                        "TripoSF: GPU has limited VRAM (total=%dMB, free=%dMB). Consider enabling low_vram_mode to avoid OOM. "
-                        "Proceeding with full resolution (1024) and sample_points (1,638,400).",
-                        total_vram_mb, free_vram_mb,
+                        "TripoSF: limited free VRAM (total=%dMB, free=%dMB); automatically using official sample_points=%d "
+                        "to avoid OOM. Pass low_vram_mode='low' for the 409,600 fallback.",
+                        total_vram_mb, free_vram_mb, sample_points_num,
                     )
 
             from inference import normalize_mesh, load_quantized_mesh_original

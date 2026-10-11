@@ -230,7 +230,8 @@ cmd_models() {
         printf "  ${CYAN}[21]${NC} Zero123++ Normals   - Normal generation ControlNet (optional)\n"
          printf "  ${CYAN}[22]${NC} VoxHammer           - Local text/image mesh editing (~40GB VRAM)\n"
         printf "  ${CYAN}[23]${NC} Unique3D            - High-fidelity single-image to 3D\n"
-         printf "\n"
+        printf "  ${CYAN}[24]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
+        printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"
         printf "  ${RED}[b]${NC}  Back\n\n"
@@ -287,6 +288,7 @@ cmd_models() {
                         21) models_csv="${models_csv}zero123plus_normal_controlnet," ;;
                         22) models_csv="${models_csv}voxhammer," ;;
                         23) models_csv="${models_csv}unique3d," ;;
+                        24) models_csv="${models_csv}paint3d," ;;
                          *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1

@@ -866,6 +866,15 @@ if [ -f "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" ]; then
 fi
 ### Zero123++ end ###
 
+### Paint3D Dependencies ###
+echo ""
+echo "========================================"
+echo "Installing Paint3D Dependencies"
+echo "========================================"
+$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" || true
+echo "[SUCCESS] Paint3D dependencies processed"
+### Paint3D end ###
+
 cd "$PROJECT_ROOT/backend"
 
 echo ""
@@ -986,6 +995,14 @@ try:
     print('[SUCCESS] Zero123PlusAdapter import verified')
 except Exception as e:
     print(f'[WARN] Zero123PlusAdapter import check: {e}')
+
+try:
+    import sys
+    sys.path.insert(0, '$PROJECT_ROOT/backend')
+    from adapters.paint3d_adapter import Paint3DAdapter
+    print('[SUCCESS] Paint3DAdapter import verified')
+except Exception as e:
+    print(f'[WARN] Paint3DAdapter import check: {e}')
 "
 
 persist_env_config 2>/dev/null || true

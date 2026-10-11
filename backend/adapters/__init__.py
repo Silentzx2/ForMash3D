@@ -16,13 +16,21 @@ Adapters are lazily loaded on attribute access to prevent cascading import failu
 from loading).
 """
 
+import sys
+from pathlib import Path
 from typing import Any
+
+_backend_dir = str(Path(__file__).resolve().parent.parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
 
 _ADAPTER_MAP = {
     # FastMesh
     "FastMeshRetopologyAdapter": ("fastmesh_adapter", "FastMeshRetopologyAdapter"),
     # Hunyuan3D Shape v2-1
     "Hunyuan3DShapeV21ImageToRawMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToRawMeshAdapter"),
+    "Hunyuan3DShapeV21ImageToMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToMeshAdapter"),
+    "Hunyuan3DShapeV21ImageToTexturedMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToTexturedMeshAdapter"),
     # Hunyuan3D Paint v2-1
     "Hunyuan3DPaintV21ImageMeshPaintingAdapter": ("hunyuan3d_paint_v21", "Hunyuan3DPaintV21ImageMeshPaintingAdapter"),
     # Hunyuan3D DiT v2 Mini Turbo
@@ -42,11 +50,14 @@ _ADAPTER_MAP = {
     "PartUVUnwrappingAdapter": ("partuv_adapter", "PartUVUnwrappingAdapter"),
     # TRELLIS
     "TrellisImageToMeshAdapterCommon": ("trellis_adapter", "TrellisImageToMeshAdapterCommon"),
+    "TrellisImageToMeshAdapter": ("trellis_adapter", "TrellisImageToMeshAdapter"),
     "TrellisTextMeshPaintingAdapter": ("trellis_adapter", "TrellisTextMeshPaintingAdapter"),
     "TrellisImageToTexturedMeshAdapter": ("trellis_adapter", "TrellisImageToTexturedMeshAdapter"),
     "TrellisImageToRawMeshAdapter": ("trellis_adapter", "TrellisImageToRawMeshAdapter"),
     "TrellisImageMeshPaintingAdapter": ("trellis_adapter", "TrellisImageMeshPaintingAdapter"),
     # TRELLIS.2
+    "Trellis2ImageToRawMeshAdapter": ("trellis2_adapter", "Trellis2ImageToRawMeshAdapter"),
+    "Trellis2ImageToMeshAdapter": ("trellis2_adapter", "Trellis2ImageToMeshAdapter"),
     "Trellis2ImageToTexturedMeshAdapter": ("trellis2_adapter", "Trellis2ImageToTexturedMeshAdapter"),
     "Trellis2ImageMeshPaintingAdapter": ("trellis2_adapter", "Trellis2ImageMeshPaintingAdapter"),
     # UltraShape
@@ -68,6 +79,9 @@ _ADAPTER_MAP = {
     "Zero123PlusAdapter": ("zero123plus_adapter", "Zero123PlusAdapter"),
     # Unique3D
     "Unique3DImageToRawMeshAdapter": ("unique3d_adapter", "Unique3DImageToRawMeshAdapter"),
+    # Paint3D
+    "Paint3DAdapter": ("paint3d_adapter", "Paint3DAdapter"),
+    "Paint3DImageMeshPaintingAdapter": ("paint3d_adapter", "Paint3DImageMeshPaintingAdapter"),
 }
 
 __all__ = list(_ADAPTER_MAP.keys())

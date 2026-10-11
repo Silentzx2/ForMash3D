@@ -41,15 +41,19 @@ class ModelFactory:
     # Registry of known adapter modules and classes
     ADAPTER_REGISTRY = {
         # TRELLIS adapters
-                "trellis_text_mesh_painting": {
+        "trellis_text_mesh_painting": {
             "module": "adapters.trellis_adapter",
             "class": "TrellisTextMeshPaintingAdapter",
         },
         "trellis_image_to_textured_mesh": {
             "module": "adapters.trellis_adapter",
-            "class": "TrellisImageToTexturedMeshAdapter",
+            "class": "TrellisImageToRawMeshAdapter",
         },
         "trellis_image_to_raw_mesh": {
+            "module": "adapters.trellis_adapter",
+            "class": "TrellisImageToRawMeshAdapter",
+        },
+        "trellis_image_to_3d": {
             "module": "adapters.trellis_adapter",
             "class": "TrellisImageToRawMeshAdapter",
         },
@@ -60,7 +64,15 @@ class ModelFactory:
         # TRELLIS.2 adapters (image-only, no text support)
         "trellis2_image_to_textured_mesh": {
             "module": "adapters.trellis2_adapter",
-            "class": "Trellis2ImageToTexturedMeshAdapter",
+            "class": "Trellis2ImageToRawMeshAdapter",
+        },
+        "trellis2_image_to_raw_mesh": {
+            "module": "adapters.trellis2_adapter",
+            "class": "Trellis2ImageToRawMeshAdapter",
+        },
+        "trellis2_image_to_3d": {
+            "module": "adapters.trellis2_adapter",
+            "class": "Trellis2ImageToRawMeshAdapter",
         },
         "trellis2_image_mesh_painting": {
             "module": "adapters.trellis2_adapter",
@@ -68,6 +80,14 @@ class ModelFactory:
         },
         # Hunyuan3D adapters
         "hunyuan3d_shape_v21_image_to_raw_mesh": {
+            "module": "adapters.hunyuan3d_shape_v21",
+            "class": "Hunyuan3DShapeV21ImageToRawMeshAdapter",
+        },
+        "hunyuan3d_shape_v21_image_to_3d": {
+            "module": "adapters.hunyuan3d_shape_v21",
+            "class": "Hunyuan3DShapeV21ImageToRawMeshAdapter",
+        },
+        "hunyuan3d_shape_v21_image_to_textured_mesh": {
             "module": "adapters.hunyuan3d_shape_v21",
             "class": "Hunyuan3DShapeV21ImageToRawMeshAdapter",
         },
@@ -79,14 +99,22 @@ class ModelFactory:
             "module": "adapters.hunyuan3d_dit_v2_mini_turbo",
             "class": "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter",
         },
+        "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {
+            "module": "adapters.hunyuan3d_dit_v2_mini_turbo",
+            "class": "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter",
+        },
         # Hunyuan3D legacy adapters (deprecated)
         "hunyuan3dv21_image_to_raw_mesh": {
             "module": "adapters.hunyuan3d_adapter_v21",
             "class": "Hunyuan3DV21ImageToRawMeshAdapter",
         },
+        "hunyuan3dv21_image_to_3d": {
+            "module": "adapters.hunyuan3d_adapter_v21",
+            "class": "Hunyuan3DV21ImageToRawMeshAdapter",
+        },
         "hunyuan3dv21_image_to_textured_mesh": {
             "module": "adapters.hunyuan3d_adapter_v21",
-            "class": "Hunyuan3DV21ImageToTexturedMeshAdapter",
+            "class": "Hunyuan3DV21ImageToRawMeshAdapter",
         },
         "hunyuan3dv21_image_mesh_painting": {
             "module": "adapters.hunyuan3d_adapter_v21",
@@ -170,6 +198,22 @@ class ModelFactory:
             "module": "adapters.unique3d_adapter",
             "class": "Unique3DImageToRawMeshAdapter",
         },
+        # Paint3D adapters
+        "paint3d": {
+            "module": "adapters.paint3d_adapter",
+            "class": "Paint3DAdapter",
+        },
+        "paint3d_image_mesh_painting": {
+            "module": "adapters.paint3d_adapter",
+            "class": "Paint3DAdapter",
+        },
+    }
+
+    LEGACY_IMAGE_TO_RAW_ALIASES = {
+        "trellis_image_to_textured_mesh": "trellis_image_to_3d",
+        "trellis2_image_to_textured_mesh": "trellis2_image_to_3d",
+        "hunyuan3d_shape_v21_image_to_textured_mesh": "hunyuan3d_shape_v21_image_to_3d",
+        "hunyuan3dv21_image_to_textured_mesh": "hunyuan3dv21_image_to_3d",
     }
 
     @classmethod
@@ -177,6 +221,23 @@ class ModelFactory:
         """Register a new adapter type"""
         cls.ADAPTER_REGISTRY[model_id] = {"module": module_path, "class": class_name}
         logger.info(f"Registered adapter: {model_id} -> {module_path}.{class_name}")
+
+    @classmethod
+    def get_model_adapter(cls, model_id: str, **kwargs) -> BaseModel:
+        """
+        Get or instantiate a model adapter by model ID.
+        Ensures raw-mesh adapters are instantiated for normal image-to-3D,
+        resolving any legacy image_to_textured_mesh requests cleanly to raw geometry.
+        """
+        resolved_model_id = cls.LEGACY_IMAGE_TO_RAW_ALIASES.get(model_id, model_id)
+        if resolved_model_id != model_id:
+            logger.info(f"get_model_adapter: Resolved legacy '{model_id}' to raw '{resolved_model_id}'")
+
+        config = kwargs.copy()
+        config["model_id"] = model_id
+        if "feature_type" not in config:
+            config["feature_type"] = "image_to_raw_mesh"
+        return cls.create_model_from_config(config)
 
     @classmethod
     def create_model_from_config(cls, config: Dict[str, Any]) -> BaseModel:
@@ -197,10 +258,28 @@ class ModelFactory:
         """
         try:
             model_id = config["model_id"]
+            feature_type = config.get("feature_type")
+
+            # Route legacy image_to_textured_mesh feature to raw geometry
+            if feature_type == "image_to_textured_mesh":
+                logger.info(
+                    f"Legacy feature_type '{feature_type}' for model '{model_id}' "
+                    "resolved to raw geometry ('image_to_raw_mesh')"
+                )
+                config["feature_type"] = "image_to_raw_mesh"
+
+            # Resolve legacy aliases
+            resolved_model_id = cls.LEGACY_IMAGE_TO_RAW_ALIASES.get(model_id, model_id)
+            if resolved_model_id != model_id:
+                logger.info(f"Resolved legacy model ID '{model_id}' to '{resolved_model_id}'")
 
             # Try to get module and class from registry first
             if model_id in cls.ADAPTER_REGISTRY:
                 adapter_info = cls.ADAPTER_REGISTRY[model_id]
+                module_name = adapter_info["module"]
+                class_name = adapter_info["class"]
+            elif resolved_model_id in cls.ADAPTER_REGISTRY:
+                adapter_info = cls.ADAPTER_REGISTRY[resolved_model_id]
                 module_name = adapter_info["module"]
                 class_name = adapter_info["class"]
             elif "module" in config and "class" in config:
@@ -255,8 +334,7 @@ class ModelFactory:
     @classmethod
     def create_model(cls, model_id: str, **kwargs) -> BaseModel:
         """Convenience method to create a model instance by model_id."""
-        config = {"model_id": model_id, **kwargs}
-        return cls.create_model_from_config(config)
+        return cls.get_model_adapter(model_id, **kwargs)
 
     @classmethod
     def create_model_config(
@@ -350,6 +428,15 @@ def create_model_from_config(config: Dict[str, Any]) -> BaseModel:
     This is the function used by worker processes.
     """
     return ModelFactory.create_model_from_config(config)
+
+
+def get_model_adapter(model_id: str, **kwargs) -> BaseModel:
+    """
+    Convenience function to get or instantiate a model adapter by model ID.
+    Ensures raw-mesh adapters are instantiated for normal image-to-3D,
+    resolving any legacy image_to_textured_mesh requests cleanly to raw geometry.
+    """
+    return ModelFactory.get_model_adapter(model_id, **kwargs)
 
 
 def get_model_configs_from_settings(

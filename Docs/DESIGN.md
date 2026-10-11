@@ -198,15 +198,15 @@ Universal motion specifications compatible with `motion/react`:
 - `components/ui/skeleton.tsx`: Loading skeleton with shimmer animation.
 - `components/Providers.tsx`: Root providers (Theme, Toast, etc.).
 
-### Paint-v2-1 Texture Panel Components
-- `TexturePanel.tsx`: PBR texture controls, systemStats display, VRAM status
-- `GeneratePanel.tsx`: Model selector, FlashVDM toggle, VRAM stats
-- Source-generation controls preserve maximum model-native geometry and source texture fidelity; polycount and quality budgets are production-stage controls.
+### Texture Studio & Generation Panel Components
+- `TexturePanel.tsx`: Atlas resolution presets (1K, 2K, 4K, 8K), automatic engine routing (Paint3D for 1K/2K, Hunyuan3D-Paint for 4K/8K), reference image binding/upload, PBR map inspection
+- `GeneratePanel.tsx`: Universal Textured Generation toggle for all image-to-3D geometry models, atlas resolution preset selector, VRAM warning for 4K/8K
+- Source-generation controls output raw geometry; texturing runs as a separate, optional, non-destructive stage preserving `master/source.glb`.
 - `systemStats`: Real-time GPU/VRAM telemetry in texture panel
 
 ---
 
-## 5. Paint-v2-1 Texture Pipeline Flow
+## 5. Centralized Texture Pipeline Flow (Paint3D & Hunyuan3D-Paint)
 
 ```mermaid
 flowchart TD

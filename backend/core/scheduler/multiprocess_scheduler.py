@@ -1534,7 +1534,7 @@ class MultiprocessModelScheduler:
             result = await asyncio.wait_for(result_future, timeout=3600.0)
 
             current_job = await self.job_queue.get_job(job_id)
-            if current_job and _extract_job_status(current_job) in {"failed", "cancelled"}:
+            if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
                 self._cleanup_temporary_inputs(job_request)
                 return
 
@@ -1542,84 +1542,41 @@ class MultiprocessModelScheduler:
             if result.get("success"):
                 final_result = result.get("result") or {}
                 postprocess_mode = str(job_request.metadata.get("postprocess_mode") or "none").lower()
-                # Only auto-chain paint when the user explicitly requested production_mesh
-                # (i.e. texture is ON). If postprocess_mode is "none" or the request
-                # didn't include it, skip the paint child entirely.
-                auto_paint = (
-                    bool(job_request.metadata.get("auto_paint") or job_request.inputs.get("auto_paint"))
-                    and postprocess_mode == "production_mesh"
-                )
-                # Canonical workspace is required by both the paint child and
-                # post-processing; compute it once up front.
-                from postprocess.pipeline import canonical_asset_workspace
 
-                canonical_root = canonical_asset_workspace(
-                    job_id, final_result, job_request.inputs
+                # Normalize texture_enabled into post-processing rather than launching redundant independent child workflows.
+                texture_enabled = bool(
+                    job_request.metadata.get("texture_enabled")
+                    or job_request.inputs.get("texture_enabled")
+                    or job_request.metadata.get("generateTexture")
+                    or job_request.inputs.get("generateTexture")
+                    or job_request.metadata.get("generate_texture")
+                    or job_request.inputs.get("generate_texture")
+                    or job_request.metadata.get("auto_paint")
+                    or job_request.inputs.get("auto_paint")
                 )
-                if auto_paint and final_result.get("output_mesh_path"):
-                    workflow_id = str(job_request.metadata.get("workflow_id") or job_id)
-                    child_request = JobRequest(
-                        feature="image_mesh_painting",
-                        inputs={
-                            "image_path": job_request.inputs.get("image_path"),
-                            # Post-processing promotes the raw output to
-                            # master/source.glb and deletes the raw file, so the
-                            # paint child must consume the canonical master.
-                            "mesh_path": str(canonical_root / "master" / "source.glb"),
-                            "output_format": "glb",
-                            "texture_resolution": int(job_request.inputs.get("paint_resolution") or 512),
-                            "target_polycount": job_request.inputs.get("target_polycount"),
-                            "generateLOD": job_request.inputs.get("generateLOD"),
-                            "lodPreset": job_request.inputs.get("lodPreset"),
-                            "lodCount": job_request.inputs.get("lodCount"),
-                            "topology_mode": job_request.inputs.get("topology_mode"),
-                            "quad_topology": job_request.inputs.get("quad_topology"),
-                            "resolution": int(job_request.inputs.get("paint_resolution") or 512),
-                            "max_num_view": int(job_request.inputs.get("max_num_view") or 6),
-                            "enable_printability_check": bool(job_request.inputs.get("enable_printability_check")),
-                            "enable_auto_repair": bool(job_request.inputs.get("enable_auto_repair")),
-                            "enable_auto_rig": bool(job_request.inputs.get("enable_auto_rig")),
-                            "auto_rig_mode": job_request.inputs.get("auto_rig_mode", "full"),
-                            "intent": job_request.inputs.get("intent"),
-                            "preprocessing_metadata": job_request.inputs.get("preprocessing_metadata"),
-                        },
-                        model_preference=str(
-                            job_request.inputs.get("paint_model_preference")
-                            or "hunyuan3d_paint_v21_image_mesh_painting"
-                        ),
-                        priority=job_request.priority,
-                        timeout_seconds=job_request.timeout_seconds,
-                        metadata={
-                            "feature_type": "image_mesh_painting",
-                            "postprocess_mode": "production_mesh",
-                            "physics_enabled": bool(job_request.metadata.get("physics_enabled")),
-                            "physics_config": job_request.metadata.get("physics_config"),
-                            "workflow_id": workflow_id,
-                            "parent_job_id": job_id,
-                            "workflow_stage": "paint",
-                            "workflow_state": "queued",
-                            "auto_paint": False,
-                        },
-                        user_id=job_request.user_id,
-                    )
-                    child_id = await self.schedule_job(child_request)
-                    final_result["workflow"] = {
-                        "workflow_id": workflow_id,
-                        "parent_job_id": job_id,
-                        "child_job_id": child_id,
-                        "stage": "shape",
-                        "state": "child_queued",
-                    }
-                    await self.job_queue.update_job_progress(
-                        job_id, 0.9, "workflow", f"Paint child job queued: {child_id}"
-                    )
-                # Postprocessing must ALWAYS run for raw-mesh jobs with production_mesh mode,
-                # regardless of whether a paint child was also queued.
+                job_request.metadata["texture_enabled"] = texture_enabled
+                job_request.inputs["texture_enabled"] = texture_enabled
+
+                # Postprocessing runs for raw-mesh jobs with production_mesh mode.
                 if final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
+                    current_job = await self.job_queue.get_job(job_id)
+                    if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
+                        self._cleanup_temporary_inputs(job_request)
+                        return
+
                     await self.job_queue.update_job_progress(
                         job_id, 0.75, "postprocess", "Running production post-processing"
                     )
                     logger.info(f"[POSTPROCESS PROGRESS] job_id={job_id} progress=75% stage=postprocess message='Running production post-processing'")
+
+                    cancel_event = threading.Event()
+                    if job_id in self._cancel_requested_jobs:
+                        cancel_event.set()
+                    self._active_postprocess_cancels[job_id] = cancel_event
+
+                    def cancel_checker() -> bool:
+                        return cancel_event.is_set() or job_id in self._cancel_requested_jobs
+
                     try:
                         from postprocess.pipeline import canonical_asset_workspace, run_postprocess_job
                         canonical_root = canonical_asset_workspace(job_id, final_result, job_request.inputs)
@@ -1669,8 +1626,19 @@ class MultiprocessModelScheduler:
                                 "physics_config": job_request.metadata.get("physics_config"),
                             },
                             report,
+                            cancel_checker,
                         )
+                    except (InterruptedError, asyncio.CancelledError):
+                        logger.info(f"Post-processing cleanly cancelled for job {job_id}")
+                        current_job = await self.job_queue.get_job(job_id)
+                        if current_job and _extract_job_status(current_job) != "cancelled":
+                            await self.job_queue.cancel_job(job_id)
+                        return
                     except Exception as postprocess_error:
+                        current_job = await self.job_queue.get_job(job_id)
+                        if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
+                            logger.info(f"Job {job_id} cancelled during post-processing; skipping fail_job")
+                            return
                         err_msg = (
                             f"Post-processing failed for job {job_id}: "
                             f"{postprocess_error}"
@@ -1678,12 +1646,18 @@ class MultiprocessModelScheduler:
                         await self.job_queue.fail_job(job_id, err_msg)
                         logger.error(err_msg, exc_info=True)
                         return
+                    finally:
+                        self._active_postprocess_cancels.pop(job_id, None)
+                        self._cancel_requested_jobs.discard(job_id)
+
+                current_job = await self.job_queue.get_job(job_id)
+                if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
+                    return
 
                 if (
                     final_result.get("output_mesh_path")
                     and bool(job_request.inputs.get("enable_auto_rig"))
                     and postprocess_mode == "production_mesh"
-                    and not auto_paint
                 ):
                     child_request = JobRequest(
                         feature="auto_rig",

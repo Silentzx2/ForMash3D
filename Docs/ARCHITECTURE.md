@@ -129,8 +129,8 @@ Located at `backend/api/`:
 | **GPU Monitor** | `backend/core/scheduler/gpu_monitor.py` | Real-time VRAM and temperature polling |
 | **Job Queue** | `backend/core/scheduler/job_queue.py` | Job request models and types |
 | **Redis Job Queue** | `backend/core/scheduler/redis_job_queue.py` | Redis-backed distributed job queue with dual Redis/SQLite atomic deletion synchronization |
-| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123PlusAdapter, **Unique3D**). All raw outputs route through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). Camera-aligned model handling is model-specific; TripoSR is normalized for the viewer, while no extra TripoSG rotation is injected beyond its upstream integration. Zero123++ is isolated under `image_to_multiview` for novel viewpoint synthesis. |
-| **Paint-v2-1 Pipeline** | `backend/adapters/hunyuan3d_paint_v21.py` | Hunyuan3D-Paint-v2-1 adapter with RealESRGAN x4+ super-resolution, DifferentiableRenderer for PBR validation, VRAM status tracking, and Shape→Paint automatic chaining support |
+| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartPacker, UltraShape, PartField, UniRig, TripoSR, TripoSG, TripoSF, ARDY, FastMesh, VoxHammer, Zero123PlusAdapter, **Unique3D**, **Paint3D**). Normal image-to-3D geometry models output untextured raw geometry only, routed through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). Camera-aligned model handling is model-specific; TripoSR is normalized for the viewer, while no extra TripoSG rotation is injected beyond its upstream integration. Zero123++ is isolated under `image_to_multiview` for novel viewpoint synthesis. |
+| **Texture Synthesis Pipeline** | `backend/adapters/hunyuan3d_paint_v21.py` & `backend/adapters/paint3d_adapter.py` | Centralized texture adapters (Paint3D for 1K/2K, Hunyuan3D-Paint for 4K/8K) operating downstream on post-processed raw mesh geometry. RealESRGAN x4+ super-resolution and DifferentiableRenderer for PBR validation. |
 | **Multi-View Router** | `backend/api/routers/multiview.py` | Dedicated API router for Zero123++ view generation, manual view sets, ZIP export, and capability-gated `/reconstruct-3d` |
 
 ### 2.4 Storage Layer
@@ -178,15 +178,20 @@ sequenceDiagram
     participant SCHED as VRAM-Aware Scheduler
     participant Adapter as Model Adapter
     participant PostProcess as Production Post-Processing
+    participant TexAdapter as Texture Stage (Paint3D / Hunyuan)
     participant Storage as backend/storage/
 
-    User->>Frontend: Select image + production triangle budget
-    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
+    User->>Frontend: Select image + production triangle budget (+ optional texture)
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
     API->>SCHED: Submit job (VRAM-aware)
-    SCHED->>Adapter: Run maximum-fidelity model inference; strip production-only budget flags
-    Adapter-->>SCHED: Raw model-native mesh output
+    SCHED->>Adapter: Run maximum-fidelity geometry model inference (raw mesh only)
+    Adapter-->>SCHED: Raw model-native mesh output (untextured)
     SCHED->>Storage: Preserve master/source.glb byte-for-byte
     SCHED->>PostProcess: Repair -> conditional Retopo -> apply target polycount -> Auto UV/Preserve -> QA
+    opt Texture Enabled
+        PostProcess->>TexAdapter: Apply textures via Paint3D (1K/2K) or Hunyuan Paint (4K/8K)
+        TexAdapter-->>PostProcess: Textured GLB + real texture maps
+    end
     PostProcess->>Storage: Save game_ready/* final formats
     PostProcess->>Storage: Save lods/lod0..3.glb
     PostProcess->>Storage: Save collision/collision.glb
@@ -212,6 +217,7 @@ flowchart LR
 
     MODELS --> SRC["source.glb<br/>Untouched Master"]:::file
     MODELS --> GAME["game_ready.glb<br/>Engine-Optimized"]:::file
+    MODELS --> TEX["textures/<br/>Textured GLB & Maps"]:::dir
     MODELS --> LODS["lods/<br/>lod0–lod3.glb"]:::dir
     MODELS --> COL["collision.glb<br/>Convex Hull"]:::file
     MODELS --> QA["quality_report.json<br/>QA 0-100 Score"]:::file

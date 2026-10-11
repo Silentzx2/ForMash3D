@@ -475,7 +475,10 @@ export const TexturePanel: React.FC = () => {
               </button>
               <button
                 type="button"
-                onClick={() => setTextureSettings(prev => ({ ...prev, mode: 'manual' }))}
+                onClick={() => {
+                  setTextureSettings(prev => ({ ...prev, mode: 'manual' }));
+                  setPanelTab('paint');
+                }}
                 className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md font-bold text-[10px] transition-all cursor-pointer ${
                   textureSettings.mode === 'manual'
                     ? 'bg-primary text-black shadow-sm'
@@ -487,68 +490,98 @@ export const TexturePanel: React.FC = () => {
               </button>
             </div>
 
-            {/* AI Texture Model Selector + Dropdown */}
-            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1 relative">
+            {/* Output Atlas Resolution & Auto-routed Texture Engine */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider">AI Texture Model</span>
-                <button
-                  type="button"
-                  onClick={() => router.push('/admin?tab=models')}
-                  className="text-[9px] text-primary hover:underline flex items-center gap-1 font-medium cursor-pointer"
-                >
-                  <HugeiconsIcon icon={PackageIcon} size={16} className="w-2.5 h-2.5" />
-                  <span>Manage</span>
-                </button>
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Atlas Resolution</span>
+                <span className="text-[9px] font-mono text-primary font-bold">{textureSettings.resolution}</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {(['1K', '2K', '4K', '8K'] as const).map((res) => (
+                  <button
+                    key={res}
+                    type="button"
+                    onClick={() => {
+                      const routed = (res === '4K' || res === '8K')
+                        ? 'hunyuan3d_paint_v21_image_mesh_painting'
+                        : 'paint3d_image_mesh_painting';
+                      setTextureSettings(prev => ({
+                        ...prev,
+                        resolution: res,
+                        modelId: routed,
+                      }));
+                    }}
+                    className={`py-1.5 rounded-lg font-mono font-bold text-[10px] transition-all cursor-pointer ${
+                      textureSettings.resolution === res
+                        ? 'bg-primary text-black shadow-sm font-black'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                    }`}
+                  >
+                    {res}
+                  </button>
+                ))}
               </div>
 
-              <button
-                id="btn-select-texture-model"
-                type="button"
-                onClick={() => setTextureModelDropdownOpen(!textureModelDropdownOpen)}
-                className="w-full flex items-center justify-between p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:border-white/[0.16] hover:bg-[hsl(var(--surface-2))] transition-all text-left cursor-pointer"
-              >
-                <div className="flex flex-col min-w-0 pr-1">
-                  <span className="font-bold text-[10px] text-white flex items-center gap-1.5 truncate">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                      (activeTextureModel?.available || activeTextureModel?.installed)
-                        ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
-                        : 'bg-zinc-500'
-                    }`} />
-                    <span className="truncate">{activeTextureModel?.label || 'No texture model'}</span>
-                  </span>
-                  <span className="text-[8px] text-zinc-400 truncate mt-0.5">
-                    {activeTextureModel?.available
-                      ? 'Ready'
-                      : activeTextureModel?.installed
-                        ? 'Installed · ready'
-                        : 'Not installed'}
+              {/* High VRAM Warning for 4K / 8K */}
+              {(textureSettings.resolution === '4K' || textureSettings.resolution === '8K') && (
+                <div className="flex items-start gap-1.5 p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[8.5px] leading-tight">
+                  <HugeiconsIcon icon={TriangleAlertIcon} size={14} className="w-3 h-3 flex-shrink-0 mt-0.5 text-amber-400" />
+                  <span>{textureSettings.resolution} atlas requires Hunyuan3D-Paint with ≥16GB VRAM and significantly increases processing time.</span>
+                </div>
+              )}
+
+              {/* Routed Engine Selector & Status */}
+              <div className="pt-1 border-t border-white/[0.06] space-y-1 relative">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] text-zinc-400 font-semibold uppercase tracking-wider">AI Texture Engine</span>
+                  <span className="text-[8px] text-primary font-mono bg-primary/10 px-1.5 py-0.5 rounded border border-primary/20">
+                    Auto-routed
                   </span>
                 </div>
-                <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${textureModelDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
-              </button>
 
-              {textureModelDropdownOpen && (
-                <div className="absolute left-0 right-0 top-full mt-1 bg-[hsl(var(--surface-1))] border border-white/[0.12] rounded-xl p-1.5 shadow-2xl z-50 space-y-1 max-h-48 overflow-y-auto">
-                  <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 px-1.5 py-0.5">
-                    Texture Models ({textureCapableModels.length})
+                <button
+                  id="btn-select-texture-model"
+                  type="button"
+                  onClick={() => setTextureModelDropdownOpen(!textureModelDropdownOpen)}
+                  className="w-full flex items-center justify-between p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:border-white/[0.16] hover:bg-[hsl(var(--surface-2))] transition-all text-left cursor-pointer"
+                >
+                  <div className="flex flex-col min-w-0 pr-1">
+                    <span className="font-bold text-[10px] text-white flex items-center gap-1.5 truncate">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        (activeTextureModel?.available || activeTextureModel?.installed)
+                          ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+                          : 'bg-zinc-500'
+                      }`} />
+                      <span className="truncate">{activeTextureModel?.label || 'No texture model'}</span>
+                    </span>
+                    <span className="text-[8px] text-zinc-400 truncate mt-0.5">
+                      {activeTextureModel?.id === 'paint3d_image_mesh_painting'
+                        ? 'Paint3D (Standard for 1K/2K textures)'
+                        : 'Hunyuan3D-Paint v2.1 (Ultra-resolution for 4K/8K)'}
+                    </span>
                   </div>
-                  {textureCapableModels.length === 0 ? (
-                    <div className="px-2 py-2 text-[10px] text-zinc-400 text-center">
-                      No texture models configured.
+                  <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${textureModelDropdownOpen ? 'rotate-180 text-primary' : ''}`} />
+                </button>
+
+                {textureModelDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-[hsl(var(--surface-1))] border border-white/[0.12] rounded-xl p-1.5 shadow-2xl z-50 space-y-1 max-h-48 overflow-y-auto">
+                    <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-400 px-1.5 py-0.5">
+                      Texture Engines ({textureCapableModels.length})
                     </div>
-                  ) : (
-                    textureCapableModels.map((m) => {
+                    {textureCapableModels.map((m) => {
                       const isSelected = m.id === (activeTextureModel?.id || textureSettings.modelId);
-                      const isReady = m.available === true;
-                      const isInstalled = m.installed === true || isReady;
                       return (
                         <button
                           key={m.id}
                           type="button"
                           onClick={() => {
+                            const newRes = (m.id === 'hunyuan3d_paint_v21_image_mesh_painting')
+                              ? (textureSettings.resolution === '1K' || textureSettings.resolution === '2K' ? '4K' : textureSettings.resolution)
+                              : (textureSettings.resolution === '4K' || textureSettings.resolution === '8K' ? '2K' : textureSettings.resolution);
                             setTextureSettings(prev => ({
                               ...prev,
                               modelId: m.id,
+                              resolution: newRes,
                               lowVram: m.low_vram_supported ? prev.lowVram : false,
                             }));
                             setTextureModelDropdownOpen(false);
@@ -556,24 +589,22 @@ export const TexturePanel: React.FC = () => {
                           className={`w-full flex items-center justify-between p-1.5 rounded-lg text-left transition-all ${
                             isSelected
                               ? 'bg-primary text-black font-bold'
-                              : isInstalled
-                                ? 'text-white hover:bg-[hsl(var(--surface-2))]'
-                                : 'text-zinc-400 opacity-80 hover:bg-[hsl(var(--surface-2))]'
+                              : 'text-white hover:bg-[hsl(var(--surface-2))]'
                           }`}
                         >
                           <div className="flex flex-col min-w-0 pr-1">
                             <span className="text-[10px] font-bold truncate">{m.label}</span>
                             <span className={`text-[8px] truncate ${isSelected ? 'text-black/80' : 'text-zinc-400'}`}>
-                              {m.low_vram_supported ? 'Low VRAM supported' : `${Math.round((m.vram_required_mb || 0) / 1024)}GB VRAM`}
+                              {m.id === 'hunyuan3d_paint_v21_image_mesh_painting' ? '4K/8K Resolution (≥16GB VRAM)' : '1K/2K Resolution (Paint3D)'}
                             </span>
                           </div>
                           {isSelected && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 text-black flex-shrink-0" />}
                         </button>
                       );
-                    })
-                  )}
-                </div>
-              )}
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Essential Quick Toggle: Low VRAM Mode */}
@@ -602,93 +633,54 @@ export const TexturePanel: React.FC = () => {
               </div>
             )}
 
-            {isTexturePaintingModel(textureSettings.modelId) && (
-              <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Max Views</span>
-                  <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {textureSettings.maxNumView ?? 6}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={6}
-                  max={12}
-                  step={1}
-                  value={textureSettings.maxNumView ?? 6}
-                  onChange={(e) => {
-                    setTextureSettings(prev => ({ ...prev, maxNumView: parseInt(e.target.value, 10) }));
-                  }}
-                  className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
-                />
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-200 font-medium">Texture Resolution</span>
-                    <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                      {textureSettings.paintResolution ?? 512}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1">
-                    {[512, 768].map((res) => (
-                      <button
-                        key={res}
-                        type="button"
-                        onClick={() => setTextureSettings(prev => ({ ...prev, paintResolution: res as 512 | 768 }))}
-                        className={`py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                          (textureSettings.paintResolution ?? 512) === res
-                            ? 'bg-primary text-black font-black'
-                            : 'bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.06]'
-                        }`}
-                      >
-                        {res}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
-                  <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
-                    <HugeiconsIcon icon={PackageIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                    <span>PBR Texture</span>
-                  </span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={Boolean(textureSettings.generatePBR)}
-                    onClick={() => setTextureSettings(prev => ({ ...prev, generatePBR: !prev.generatePBR }))}
-                    className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
-                      textureSettings.generatePBR ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
-                    }`}
-                  >
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
-                        textureSettings.generatePBR ? 'translate-x-3.5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
-                  <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
-                    <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                    <span>Real-ESRGAN (4x Enhance)</span>
-                  </span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={textureSettings.enableRealESRGAN !== false}
-                    onClick={() => setTextureSettings(prev => ({ ...prev, enableRealESRGAN: prev.enableRealESRGAN === false ? true : false }))}
-                    className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
-                      textureSettings.enableRealESRGAN !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
-                    }`}
-                  >
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
-                        textureSettings.enableRealESRGAN !== false ? 'translate-x-3.5' : 'translate-x-0'
-                      }`}
-                    />
-                  </button>
-                </div>
+            {/* PBR & Texture Features (Raw hyperparameters like Max Views removed) */}
+            <div className="p-2 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider">Texture Features</span>
               </div>
-            )}
+              <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] flex items-center justify-between">
+                <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
+                  <HugeiconsIcon icon={PackageIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>PBR Texture Maps</span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(textureSettings.generatePBR)}
+                  onClick={() => setTextureSettings(prev => ({ ...prev, generatePBR: !prev.generatePBR }))}
+                  className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
+                    textureSettings.generatePBR ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                      textureSettings.generatePBR ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+              <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] flex items-center justify-between">
+                <span className="text-zinc-300 flex items-center gap-1.5 text-[10px] font-semibold">
+                  <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>Real-ESRGAN Enhancement</span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={textureSettings.enableRealESRGAN !== false}
+                  onClick={() => setTextureSettings(prev => ({ ...prev, enableRealESRGAN: prev.enableRealESRGAN === false ? true : false }))}
+                  className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
+                    textureSettings.enableRealESRGAN !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
+                  }`}
+                >
+                  <div
+                    className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
+                      textureSettings.enableRealESRGAN !== false ? 'translate-x-3.5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+            </div>
 
             {/* Style Selector Chips */}
             <div className="space-y-1">
@@ -717,177 +709,104 @@ export const TexturePanel: React.FC = () => {
               </div>
             </div>
 
-            {/* Input Mode Selection (based on model capabilities) */}
-            {(() => {
-              const supportsText = supportsTextInput(textureSettings.modelId);
-              const supportsImage = supportsImageInput(textureSettings.modelId);
-              
-              // If only one input type supported, skip selection and show that one
-              if (supportsText && !supportsImage) {
-                return (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white text-[10px] uppercase tracking-wider">Text Prompt</span>
-                    </div>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        placeholder="e.g., weathered copper armor, cinematic..."
-                        value={textureSettings.prompt}
-                        onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
-                        className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors"
-                      />
-                      {textureSettings.prompt && (
-                        <button
-                          type="button"
-                          onClick={() => setTextureSettings(prev => ({ ...prev, prompt: '' }))}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5 cursor-pointer"
-                        >
-                          <HugeiconsIcon icon={Cancel} size={16} className="w-3 h-3" />
-                        </button>
-                      )}
+            {/* Reference Image & Guidance (Supports original mesh reference or custom upload) */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white text-[10px] uppercase tracking-wider">Reference Image</span>
+                {textureSettings.referenceImage ? (
+                  <button
+                    type="button"
+                    onClick={clearReference}
+                    className="text-[9px] text-zinc-400 hover:text-red-400 transition-colors cursor-pointer"
+                  >
+                    {meshOriginalImage ? 'Revert to Mesh Image' : 'Clear'}
+                  </button>
+                ) : meshOriginalImage ? (
+                  <span className="text-[9px] text-emerald-400 flex items-center gap-1 font-medium">
+                    <HugeiconsIcon icon={CheckIcon} size={12} className="w-2.5 h-2.5 stroke-[3]" />
+                    <span>Mesh Source Bound</span>
+                  </span>
+                ) : null}
+              </div>
+
+              {textureSettings.referenceImage ? (
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img
+                      src={textureSettings.referenceImage}
+                      alt="Custom Reference"
+                      className="w-10 h-10 object-cover rounded-lg border border-white/[0.1] flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-white truncate">Custom Reference Image</div>
+                      <div className="text-[8px] text-zinc-400">User uploaded image</div>
                     </div>
                   </div>
-                );
-              }
-              
-              if (supportsImage && !supportsText) {
-                return (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white text-[10px] uppercase tracking-wider">Reference Image</span>
-                      {textureSettings.referenceImage && (
-                        <span className="text-[9px] text-emerald-400 flex items-center gap-1">
-                          <HugeiconsIcon icon={ImageIcon} size={16} className="w-2.5 h-2.5" />
-                          <span>Image Attached</span>
-                        </span>
-                      )}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[9px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Replace
+                  </button>
+                </div>
+              ) : meshOriginalImage ? (
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <img
+                      src={meshOriginalImage}
+                      alt="Mesh Reference"
+                      className="w-10 h-10 object-cover rounded-lg border border-white/[0.1] flex-shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-bold text-white truncate">Original Mesh Image</div>
+                      <div className="text-[8px] text-emerald-400 font-medium">Linked from 3D model source</div>
                     </div>
-                    {textureSettings.referenceImage ? (
-                      <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <img
-                            src={textureSettings.referenceImage}
-                            alt="Ref"
-                            className="w-7 h-7 object-cover rounded border border-white/[0.1]"
-                          />
-                          <span className="text-[9px] text-zinc-300 font-medium truncate">Reference Image Active</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={clearReference}
-                          className="text-[9px] text-zinc-400 hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-white/[0.04] transition-colors cursor-pointer"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="flex-1 py-1 px-2 rounded-lg bg-[hsl(var(--surface-0))] border border-dashed border-white/[0.12] hover:border-primary/50 text-zinc-400 hover:text-zinc-200 text-[9px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                        >
-                          <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
-                          <span>UploadIcon Reference Image (Required)</span>
-                        </button>
-                      </div>
-                    )}
                   </div>
-                );
-              }
-              
-              // Both supported - show tabs to switch
-              return (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-white text-[10px] uppercase tracking-wider">Input Mode</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setTextureSettings(prev => ({ ...prev, referenceImage: null }))}
-                      className={`py-1.5 px-1.5 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                        !textureSettings.referenceImage && textureSettings.prompt
-                          ? 'bg-primary text-black shadow-sm'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
-                      }`}
-                    >
-                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">Text Prompt</span>
-                    </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-2 py-1 rounded-md bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[9px] font-semibold transition-colors cursor-pointer"
+                  >
+                    Custom
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2.5 px-2 rounded-lg bg-[hsl(var(--surface-1))] border border-dashed border-white/[0.12] hover:border-primary/50 text-zinc-400 hover:text-zinc-200 text-[9.5px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <HugeiconsIcon icon={UploadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <span>Upload Reference Image (Required)</span>
+                </button>
+              )}
+
+              {/* Text Guidance (Optional) */}
+              <div className="space-y-1 pt-1 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] text-zinc-400 font-medium">Text Guidance (Optional)</span>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="e.g., weathered copper armor, cinematic..."
+                    value={textureSettings.prompt}
+                    onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
+                    className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors"
+                  />
+                  {textureSettings.prompt && (
                     <button
                       type="button"
                       onClick={() => setTextureSettings(prev => ({ ...prev, prompt: '' }))}
-                      className={`py-1.5 px-1.5 rounded-lg font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                        textureSettings.referenceImage
-                          ? 'bg-primary text-black shadow-sm'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
-                      }`}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5 cursor-pointer"
                     >
-                      <HugeiconsIcon icon={ImageIcon} size={16} className="w-3 h-3 flex-shrink-0" />
-                      <span className="truncate">Reference Image</span>
+                      <HugeiconsIcon icon={Cancel} size={16} className="w-3 h-3" />
                     </button>
-                  </div>
-                  
-                  {!textureSettings.referenceImage && textureSettings.prompt && (
-                    <div className="space-y-1">
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="e.g., weathered copper armor, cinematic..."
-                          value={textureSettings.prompt}
-                          onChange={(e) => setTextureSettings(prev => ({ ...prev, prompt: e.target.value }))}
-                          className="w-full py-1.5 px-2.5 pr-8 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] focus:border-primary text-[10px] text-white placeholder-zinc-500 focus:outline-none transition-colors"
-                        />
-                        {textureSettings.prompt && (
-                          <button
-                            type="button"
-                            onClick={() => setTextureSettings(prev => ({ ...prev, prompt: '' }))}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white p-0.5 cursor-pointer"
-                          >
-                            <HugeiconsIcon icon={Cancel} size={16} className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  
-                  {textureSettings.referenceImage && (
-                    <div className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <img
-                          src={textureSettings.referenceImage}
-                          alt="Ref"
-                          className="w-7 h-7 object-cover rounded border border-white/[0.1]"
-                        />
-                        <span className="text-[9px] text-zinc-300 font-medium truncate">Reference Image Active</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={clearReference}
-                        className="text-[9px] text-zinc-400 hover:text-red-400 px-1.5 py-0.5 rounded hover:bg-white/[0.04] transition-colors cursor-pointer"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  )}
-                  
-                  {!textureSettings.referenceImage && !textureSettings.prompt && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex-1 py-1 px-2 rounded-lg bg-[hsl(var(--surface-0))] border border-dashed border-white/[0.12] hover:border-primary/50 text-zinc-400 hover:text-zinc-200 text-[9px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                      >
-                        <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
-                        <span>UploadIcon Reference Image (Optional)</span>
-                      </button>
-                    </div>
                   )}
                 </div>
-              );
-            })()}
+              </div>
+            </div>
 
             {/* Quick jump links to other sections */}
             <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-[9px] text-zinc-400 font-medium">
@@ -904,39 +823,54 @@ export const TexturePanel: React.FC = () => {
                 onClick={() => setPanelTab('settings')}
                 className="hover:text-primary transition-colors flex items-center gap-1 cursor-pointer"
               >
-                <span>SettingsIcon</span>
+                <span>Settings</span>
                 <span>&rarr;</span>
               </button>
             </div>
 
             {/* Sticky Action Button */}
             <div className="pt-2 border-t border-white/[0.08]">
-              <button
-                id="btn-action-generate-texture"
-                type="button"
-                onClick={runTextureGeneration}
-                disabled={isExecuting || (!textureSettings.referenceImage && !currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl)}
-                className={`w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black tracking-wider text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.38)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer btn-lighting-shine ${isExecuting ? 'is-executing' : ''}`}
-              >
-                {isExecuting ? (
+              {(() => {
+                const hasValidReferenceImage = Boolean(textureSettings.referenceImage || meshOriginalImage);
+                const canGenerate = Boolean(currentAsset && hasValidReferenceImage && !isExecuting);
+
+                return (
                   <>
-                    <HugeiconsIcon icon={LoaderCircle} size={16} className="w-4 h-4 animate-spin text-black" />
-                    <span>Baking PBR Textures...</span>
+                    <button
+                      id="btn-action-generate-texture"
+                      type="button"
+                      onClick={runTextureGeneration}
+                      disabled={!canGenerate}
+                      className={`w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black tracking-wider text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.38)] hover:shadow-[0_6px_22px_rgba(255,204,0,0.5)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer btn-lighting-shine ${isExecuting ? 'is-executing' : ''}`}
+                    >
+                      {isExecuting ? (
+                        <>
+                          <HugeiconsIcon icon={LoaderCircle} size={16} className="w-4 h-4 animate-spin text-black" />
+                          <span>Baking PBR Textures...</span>
+                        </>
+                      ) : !currentAsset ? (
+                        <span>SELECT A TARGET MESH</span>
+                      ) : !hasValidReferenceImage ? (
+                        <span>UPLOAD REFERENCE IMAGE</span>
+                      ) : (
+                        <>
+                          <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 stroke-[2.5]" />
+                          <span>GENERATE TEXTURE ({textureSettings.resolution})</span>
+                        </>
+                      )}
+                    </button>
+                    {!currentAsset ? (
+                      <p className="text-[8px] text-amber-400/80 text-center mt-1">
+                        Target mesh required. Select or generate a model above.
+                      </p>
+                    ) : !hasValidReferenceImage ? (
+                      <p className="text-[8px] text-amber-400/80 text-center mt-1">
+                        Reference image required for texturing.
+                      </p>
+                    ) : null}
                   </>
-                ) : !currentAsset && !textureSettings.referenceImage ? (
-                  <span>SELECT A MODEL FIRST</span>
-                ) : (
-                  <>
-                    <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 stroke-[2.5]" />
-                    <span>GENERATE TEXTURE</span>
-                  </>
-                )}
-              </button>
-              {!currentAsset && (
-                <p className="text-[8px] text-amber-400/80 text-center mt-1">
-                  TargetIcon mesh required. Select or generate a model above.
-                </p>
-              )}
+                );
+              })()}
             </div>
           </div>
         )}
@@ -989,7 +923,12 @@ export const TexturePanel: React.FC = () => {
                   <button
                     key={res}
                     type="button"
-                    onClick={() => setTextureSettings(prev => ({ ...prev, resolution: res }))}
+                    onClick={() => {
+                      const routed = (res === '4K' || res === '8K')
+                        ? 'hunyuan3d_paint_v21_image_mesh_painting'
+                        : 'paint3d_image_mesh_painting';
+                      setTextureSettings(prev => ({ ...prev, resolution: res, modelId: routed }));
+                    }}
                     className={`py-1.5 rounded-lg font-mono font-bold text-[10px] transition-all cursor-pointer ${
                       textureSettings.resolution === res
                         ? 'bg-primary text-black shadow-sm font-black'
@@ -1352,15 +1291,17 @@ export const TexturePanel: React.FC = () => {
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-white text-[10px] uppercase tracking-wider">Reference Image</span>
-                {textureSettings.referenceImage && (
+                {textureSettings.referenceImage ? (
                   <button
                     type="button"
                     onClick={clearReference}
                     className="text-[9px] text-red-400 hover:underline cursor-pointer"
                   >
-                    Remove
+                    {meshOriginalImage ? 'Revert to Mesh Image' : 'Remove'}
                   </button>
-                )}
+                ) : meshOriginalImage ? (
+                  <span className="text-[9px] text-emerald-400 font-medium">Using mesh source</span>
+                ) : null}
               </div>
 
               <motion.div
@@ -1376,7 +1317,7 @@ export const TexturePanel: React.FC = () => {
                 className={`flex flex-col items-center justify-center h-28 rounded-xl border-2 border-dashed cursor-pointer transition-colors p-2 text-center bg-[hsl(var(--surface-1))] ${
                   isDragOver
                     ? 'bg-primary/10 border-primary'
-                    : textureSettings.referenceImage
+                    : (textureSettings.referenceImage || meshOriginalImage)
                     ? 'border-primary/40'
                     : 'border-white/[0.12] hover:border-white/[0.24]'
                 }`}
@@ -1395,13 +1336,16 @@ export const TexturePanel: React.FC = () => {
                       {uploadProgress.percent}%
                     </span>
                   </div>
-                ) : textureSettings.referenceImage ? (
-                  <div className="relative w-full h-full flex items-center justify-center">
+                ) : (textureSettings.referenceImage || meshOriginalImage) ? (
+                  <div className="relative w-full h-full flex flex-col items-center justify-center">
                     <img
-                      src={textureSettings.referenceImage}
+                      src={textureSettings.referenceImage || meshOriginalImage!}
                       alt="Reference"
-                      className="max-h-full max-w-full object-contain rounded-md"
+                      className="max-h-20 max-w-full object-contain rounded-md"
                     />
+                    <span className="text-[8px] text-zinc-400 mt-1">
+                      {textureSettings.referenceImage ? 'Custom Reference Image (Click to change)' : 'Original Mesh Image (Click to replace)'}
+                    </span>
                   </div>
                 ) : (
                   <>
