@@ -67,7 +67,7 @@ export function buildGenerationParameters(
     enable_flashvdm: settings.enableFlashVDM ?? false,
     low_vram_mode: 'normal',
     auto_optimize: shouldAutoOptimize(settings.autoOptimizeSettings?.targetPolycount),
-    target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 50000,
+    target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 0,
     generateLOD: settings.generateLOD !== false,
     lodPreset: settings.lodPreset || 'high',
     lodCount: settings.lodCount || 4,
@@ -169,8 +169,8 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
 }
 
 function shouldAutoOptimize(targetPolycount: number | undefined): boolean {
-  if (targetPolycount === undefined) return true;
-  return targetPolycount > 0 && targetPolycount < 200000;
+  // Missing/zero target means Native/Raw; never infer a production reduction budget.
+  return Number.isFinite(targetPolycount) && Number(targetPolycount) > 0 && Number(targetPolycount) < 200000;
 }
 
 function shouldEnablePhysics(generateCollision: boolean): boolean {

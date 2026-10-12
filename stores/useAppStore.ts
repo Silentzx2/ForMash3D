@@ -203,7 +203,7 @@ const DEFAULT_STATE: AppStateData = {
     removeBackground: true,
     lowVram: false,
     vramMode: 'auto',
-    autoOptimizeSettings: { targetPolycount: 50000 },
+    autoOptimizeSettings: { targetPolycount: 0 },
     generateTexture: true,
     gameReady: false,
     targetPlatform: 'generic',

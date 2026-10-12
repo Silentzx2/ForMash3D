@@ -459,6 +459,48 @@ def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tupl
     return True, source_sha256
 
 
+def _resolve_target_polycount(value: Any) -> int:
+    """Missing/nonpositive budgets mean Native/Raw; positive values opt into a derivative budget."""
+    if value is None:
+        return 0
+    try:
+        target = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if target <= 0:
+        return 0
+    return min(MAX_PRODUCTION_FACES, max(50, target))
+
+
+def _should_run_structural_repair(topology: Dict[str, Any], auto_repair_enabled: bool) -> bool:
+    """Structural repair mutates a derivative only after explicit user opt-in."""
+    return bool(auto_repair_enabled) and (
+        not bool(topology.get("watertight", False))
+        or int(topology.get("non_manifold_edges") or 0) > 0
+    )
+
+
+def _should_run_feature_remesh(
+    quality_mode: str,
+    solid_generation_feature: bool,
+    native_textures: bool,
+    retopo_status: str,
+    auto_optimize: bool,
+    target_polycount: Optional[int],
+) -> bool:
+    """Do not shell-remesh Native/Raw jobs just because their quality profile is high."""
+    return (
+        quality_mode in {"high", "ultra"}
+        and solid_generation_feature
+        and not native_textures
+        and retopo_status != "completed"
+        and (
+            auto_optimize
+            or (target_polycount is not None and target_polycount > 0)
+        )
+    )
+
+
 def _collect_input_hashes(inputs: Dict[str, Any]) -> Dict[str, str]:
     hashes: Dict[str, str] = {}
     for key, value in inputs.items():
@@ -1103,14 +1145,7 @@ def run_postprocess_job(
     except (TypeError, ValueError):
         parsed_target_polycount = None
 
-    # <= 0 is the explicit Native/Raw sentinel. Positive values are downstream-only budgets.
-    if parsed_target_polycount is not None:
-        if parsed_target_polycount <= 0:
-            resolved_target_polycount = 0
-        else:
-            resolved_target_polycount = min(MAX_PRODUCTION_FACES, max(50, parsed_target_polycount))
-    else:
-        resolved_target_polycount = MAX_PRODUCTION_FACES
+    resolved_target_polycount = _resolve_target_polycount(parsed_target_polycount)
 
     raw_candidate = (
         generation_result.get("output_mesh_path")
@@ -1314,32 +1349,24 @@ def run_postprocess_job(
         weld=True,
     )
     source_topology = topology_counts(mesh.vertices, mesh.faces)
-    if printability_enabled and not printability_auto_repair:
-        repaired = mesh.copy()
-        repair_stats = {
-            "before": source_topology,
-            "after": source_topology.copy(),
-            "removed_faces": 0,
-            "method": "skipped_printability_check_only",
-            "preserve_uv": True,
-            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
-            "skipped": True,
-            "reason": "Printability was requested without auto-repair; the default repair mutation was not applied.",
-        }
-    elif source_topology.get("watertight") and source_topology.get("non_manifold_edges", 0) == 0:
-        repaired = mesh.copy()
-        repair_stats = {
-            "before": source_topology,
-            "after": source_topology.copy(),
-            "removed_faces": 0,
-            "method": "skipped_healthy",
-            "preserve_uv": True,
-            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
-            "skipped": True,
-            "reason": "Source mesh already passes manifold/watertight topology checks.",
-        }
-    else:
+    if _should_run_structural_repair(source_topology, printability_auto_repair):
         repaired, repair_stats, _ = run_repair(mesh, repair_opts)
+    else:
+        repaired = mesh.copy()
+        repair_stats = {
+            "before": source_topology,
+            "after": source_topology.copy(),
+            "removed_faces": 0,
+            "method": "skipped_native_preservation",
+            "preserve_uv": True,
+            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
+            "skipped": True,
+            "reason": (
+                "Automatic repair is disabled; source geometry was preserved as a copy."
+                if not printability_auto_repair
+                else "Source mesh already passes manifold/watertight topology checks."
+            ),
+        }
     repair_duration = time.time() - repair_t0
 
     quality_trace["printability_before_repair"] = printability_before
@@ -1419,7 +1446,7 @@ def run_postprocess_job(
         except Exception as exc:
             retopo_stats = {"status": "failed", "trigger": "quad_requested", "error": str(exc)}
             logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
-    elif solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
+    elif printability_auto_repair and solid_generation_feature and not native_textures and not repaired_topology.get("watertight", True) and large_open_defect:
         _emit(progress, 0.24, "retopo", "Rebuilding topology for a large structural defect.")
         retopo_target = min(resolved_target_polycount or 6_000, max(50, int(len(repaired.faces))))
         try:
@@ -1475,15 +1502,13 @@ def run_postprocess_job(
     # masters bypass this because their native UV/material mapping is already valuable.
     feature_remesh_stats: Dict[str, Any] = {"status": "skipped", "reason": "Quality profile does not require adaptive remesh."}
     _check_cancelled(cancel_checker)
-    if (
-        quality_mode in {"high", "ultra"}
-        and solid_generation_feature
-        and not native_textures
-        and retopo_stats.get("status") != "completed"
-        and (
-            auto_optimize
-            or (parsed_target_polycount is not None and parsed_target_polycount > 0)
-        )
+    if _should_run_feature_remesh(
+        quality_mode=quality_mode,
+        solid_generation_feature=solid_generation_feature,
+        native_textures=native_textures,
+        retopo_status=str(retopo_stats.get("status", "skipped")),
+        auto_optimize=auto_optimize,
+        target_polycount=parsed_target_polycount,
     ):
         try:
             remesh_target = resolved_target_polycount or MAX_PRODUCTION_FACES

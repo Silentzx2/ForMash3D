@@ -369,11 +369,21 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
 
             # Load input image
             preview_img = Image.open(image_path)
-            
-            # Step 1: Super-resolution if image is small
-            if preview_img.size[0] <= 512:
-                logger.info("Running super-resolution on input image...")
+            original_input_size = [int(preview_img.width), int(preview_img.height)]
+            super_resolution_requested = preview_img.size[0] <= 512
+            super_resolution_backend = (
+                "configured_sr_model_or_resize_fallback" if self.sr_model is not None
+                else "lanczos_resize_fallback"
+            ) if super_resolution_requested else "not_used"
+
+            # Input upscaling can aid preprocessing but does not guarantee added geometric detail.
+            if super_resolution_requested:
+                logger.info(
+                    "Running Unique3D input upscaling (sr_model_available=%s).",
+                    self.sr_model is not None,
+                )
                 preview_img = self._run_super_resolution([preview_img])[0]
+            inference_input_size = [int(preview_img.width), int(preview_img.height)]
 
             # Step 2: Multiview prediction
             logger.info("Running multiview prediction...")
@@ -454,6 +464,20 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                     "has_vertex_color": True,
                     "vertex_color": True,
                     "seed": seed,
+                    "source_quality": inputs.get("source_quality", "max"),
+                    "native_vertex_count": mesh_stats["vertex_count"],
+                    "native_face_count": mesh_stats["face_count"],
+                    "geometry_extractor": "Unique3D multiview RGB/normal-guided reconstruction",
+                    "effective_geometry_resolution": None,
+                    "geometry_resolution_source": "reconstruction pipeline does not expose a scalar achieved grid resolution",
+                    "mesh_operations": [],
+                    "geometry_transforms": ["uniform scale", "axis orientation conversion"],
+                    "original_input_size": original_input_size,
+                    "inference_input_size": inference_input_size,
+                    "super_resolution_requested": super_resolution_requested,
+                    "super_resolution_backend": super_resolution_backend,
+                    "predicted_view_count": len(rgb_pils),
+                    "predicted_normal_count": len(normal_pils),
                     "input_processing": input_processing,
                     "do_refine": do_refine,
                     "expansion_weight": expansion_weight,

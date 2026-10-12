@@ -301,10 +301,35 @@ class Trellis2Runner:
             _unpack_trellis2_run_result(pipeline_result)
         )
         del pipeline_result
+        requested_resolution = {
+            "512": 512,
+            "1024": 1024,
+            "1024_cascade": 1024,
+            "1536_cascade": 1536,
+        }.get(pipeline_type)
+        resolution_limited = (
+            requested_resolution is not None
+            and effective_resolution is not None
+            and effective_resolution < requested_resolution
+        )
+        resolution_limit_reason = (
+            "cascade token budget reduced the achieved geometry resolution"
+            if resolution_limited and pipeline_type in {"1024_cascade", "1536_cascade"}
+            else "effective resolution differs from the requested path"
+            if resolution_limited
+            else None
+        )
         mesh_metadata = {
             "requested_geometry_resolution_path": pipeline_type,
+            "requested_geometry_resolution": requested_resolution,
             "effective_geometry_resolution": effective_resolution,
             "geometry_resolution_source": resolution_source,
+            "geometry_resolution_limited": resolution_limited,
+            "geometry_resolution_limit_reason": resolution_limit_reason,
+            "geometry_quality_warning": (
+                f"Requested {requested_resolution}, achieved {effective_resolution}: {resolution_limit_reason}"
+                if resolution_limited else None
+            ),
             "voxel_size": voxel_size,
             "geometry_extractor": "TRELLIS.2 O-Voxel native decoder",
             "native_vertex_count": len(mesh.vertices),
@@ -314,10 +339,12 @@ class Trellis2Runner:
         }
         logger.info(
             "TRELLIS.2 geometry telemetry: requested_path=%s effective_resolution=%s "
-            "resolution_source=%s voxel_size=%s vertices=%d faces=%d raw_mesh_only=%s",
+            "resolution_source=%s resolution_limited=%s limit_reason=%s voxel_size=%s vertices=%d faces=%d raw_mesh_only=%s",
             pipeline_type,
             effective_resolution,
             resolution_source or "unavailable",
+            resolution_limited,
+            resolution_limit_reason or "none",
             voxel_size,
             len(mesh.vertices),
             len(mesh.faces),

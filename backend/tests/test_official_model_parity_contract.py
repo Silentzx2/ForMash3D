@@ -286,11 +286,132 @@ class TestTrellis2EffectiveGeometryTelemetry(unittest.TestCase):
 
         self.assertTrue(pipeline.run.call_args.kwargs["return_latent"])
         self.assertEqual(output.metadata["effective_geometry_resolution"], 1280)
+        self.assertTrue(output.metadata["geometry_resolution_limited"])
+        self.assertIn("cascade token budget", output.metadata["geometry_quality_warning"])
         self.assertEqual(output.metadata["native_vertex_count"], 3)
         self.assertEqual(output.metadata["native_face_count"], 1)
         np.testing.assert_array_equal(output.vertices, native_mesh.vertices)
         np.testing.assert_array_equal(output.faces, native_mesh.faces)
         self.assertEqual(output.metadata["mesh_operations"], [])
+
+
+class TestNativeRawQualityContracts(unittest.TestCase):
+    """Regression tests for shared Native/Raw contracts across active geometry models."""
+
+    def test_scheduler_forces_each_active_model_maximum_geometry_profile(self):
+        from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
+
+        cases = {
+            "hunyuan3d_shape_v21_image_to_raw_mesh": {
+                "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0,
+            },
+            "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
+                "octree_resolution": 512, "num_inference_steps": 5, "enable_flashvdm": True,
+            },
+            "triposg_image_to_raw_mesh": {
+                "num_inference_steps": 50, "guidance_scale": 7.0,
+                "flash_octree_depth": 9, "dense_octree_depth": 8,
+                "hierarchical_octree_depth": 9, "faces": -1,
+            },
+            "unique3d_image_to_raw_mesh": {
+                "input_processing": True, "do_refine": True, "expansion_weight": 0.1,
+            },
+            "trellis_image_to_raw_mesh": {
+                "ss_sampling_steps": 50, "slat_sampling_steps": 50, "simplify": 0.0,
+            },
+            "trellis2_image_to_raw_mesh": {
+                "pipeline_type": "1536_cascade", "max_num_tokens": 262144,
+                "decimation_target": -1, "remesh": False,
+            },
+        }
+        downstream_controls = {
+            "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
+            "physics_enabled", "physics_config", "texture_enabled", "generate_texture",
+            "texture_resolution", "texture_resolution_preset",
+        }
+        for model_id, expected in cases.items():
+            with self.subTest(model=model_id):
+                model_inputs = _build_model_inference_inputs({
+                    **expected,
+                    "target_polycount": 50000,
+                    "auto_optimize": True,
+                    "generateLOD": True,
+                    "texture_enabled": True,
+                    "texture_resolution": 4096,
+                    "seed": 123,
+                }, model_id=model_id)
+                self.assertEqual(model_inputs["source_quality"], "max")
+                self.assertEqual(model_inputs["seed"], 123)
+                for key, value in expected.items():
+                    self.assertEqual(model_inputs.get(key), value, key)
+                self.assertTrue(downstream_controls.isdisjoint(model_inputs))
+
+    def test_native_budget_and_remesh_gates(self):
+        from postprocess.pipeline import (
+            MAX_PRODUCTION_FACES,
+            _resolve_target_polycount,
+            _should_run_feature_remesh,
+        )
+        self.assertEqual(_resolve_target_polycount(None), 0)
+        self.assertEqual(_resolve_target_polycount(0), 0)
+        self.assertEqual(_resolve_target_polycount(-1), 0)
+        self.assertEqual(_resolve_target_polycount(50000), 50000)
+        self.assertEqual(_resolve_target_polycount(10**9), MAX_PRODUCTION_FACES)
+        self.assertFalse(_should_run_feature_remesh("high", True, False, "skipped", False, 0))
+        self.assertFalse(_should_run_feature_remesh("high", True, False, "skipped", False, None))
+        self.assertTrue(_should_run_feature_remesh("high", True, False, "skipped", True, 0))
+        self.assertTrue(_should_run_feature_remesh("high", True, False, "skipped", False, 50000))
+
+    def test_structural_repair_is_opt_in(self):
+        from postprocess.pipeline import _should_run_structural_repair
+        open_mesh = {"watertight": False, "non_manifold_edges": 4}
+        healthy_mesh = {"watertight": True, "non_manifold_edges": 0}
+        self.assertFalse(_should_run_structural_repair(open_mesh, False))
+        self.assertTrue(_should_run_structural_repair(open_mesh, True))
+        self.assertFalse(_should_run_structural_repair(healthy_mesh, True))
+
+    def test_native_raw_frontend_defaults_and_preview_route(self):
+        builder = (backend_root.parent / "features/workspace/utils/buildGenerationParameters.ts").read_text(encoding="utf-8")
+        workspace = (backend_root.parent / "features/workspace/store/WorkspaceContext.tsx").read_text(encoding="utf-8")
+        self.assertIn("target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 0", builder)
+        self.assertIn("autoOptimizeSettings: { targetPolycount: 0 }", workspace)
+        self.assertIn("preferredGenerationPreviewUrl", workspace)
+        self.assertIn("result.source_model_url", workspace)
+
+    def test_triposg_native_mesh_construction_disables_processing(self):
+        source = (backend_root / "adapters/triposg_adapter.py").read_text(encoding="utf-8")
+        self.assertGreaterEqual(source.count("process=False)"), 2)
+
+    def test_shared_telemetry_captures_input_and_raw_output_identity(self):
+        import tempfile
+        from types import SimpleNamespace
+        from core.scheduler.multiprocess_scheduler import _attach_raw_geometry_telemetry
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image = Path(temp_dir) / "input.png"
+            raw = Path(temp_dir) / "source.glb"
+            image.write_bytes(b"input-bytes")
+            raw.write_bytes(b"raw-mesh-bytes")
+            result = {"output_mesh_path": str(raw), "generation_info": {
+                "native_vertex_count": 3, "native_face_count": 1,
+                "geometry_extractor": "test extractor", "mesh_operations": [],
+                "effective_geometry_resolution": None,
+            }}
+            request = SimpleNamespace(feature="image_to_raw_mesh", inputs={"image_path": str(image)})
+            model = SimpleNamespace(version="test", model_path="checkpoint", device="cuda:0")
+            _attach_raw_geometry_telemetry(
+                result, request, "triposg_image_to_raw_mesh",
+                {"image_path": str(image), "seed": 7, "source_quality": "max"},
+                {"model_path": "checkpoint"}, model, 0, {"gpu_ids": [0]},
+            )
+            telemetry = result["generation_info"]["raw_geometry_telemetry"]
+            self.assertEqual(telemetry["native_vertex_count"], 3)
+            self.assertEqual(telemetry["native_face_count"], 1)
+            self.assertEqual(telemetry["effective_parameters"]["seed"], 7)
+            self.assertEqual(len(telemetry["raw_mesh_sha256"]), 64)
+            self.assertEqual(len(telemetry["input_image_sha256"]), 64)
+            self.assertEqual(telemetry["effective_geometry_resolution_status"],
+                             "upstream adapter does not expose a scalar achieved resolution")
 
 
 class TestPostprocessPipelineParity(unittest.TestCase):

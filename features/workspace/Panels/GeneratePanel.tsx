@@ -930,7 +930,7 @@ export const GeneratePanel: React.FC = () => {
           ...prev.autoOptimizeSettings,
           targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
             ? prev.autoOptimizeSettings.targetPolycount
-            : 50000,
+            : 0,
         },
       }));
     }
@@ -1490,7 +1490,7 @@ export const GeneratePanel: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[11px] font-bold text-white">Target & Polycount Budget</div>
-                  <div className="text-[9px] text-zinc-400">Presets budget, LOD, and collision together; raw AI details stay intact</div>
+                  <div className="text-[9px] text-zinc-400">Native/Raw preserves source geometry; production presets opt into remesh, decimation, and LOD budgets</div>
                 </div>
                 <span className="font-mono text-xs font-black text-primary">
                   {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) <= 0
@@ -1506,7 +1506,7 @@ export const GeneratePanel: React.FC = () => {
                   ['cinematic', 'Cinematic', '100K · Ultra'],
                   ['native', 'Native', 'Raw geometry'],
                 ].map(([id, label, detail]) => {
-                  const targetP = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                  const targetP = generationSettings.autoOptimizeSettings?.targetPolycount ?? 0;
                   const isMatch = (
                     (id === 'mobile' && targetP === 15000) ||
                     (id === 'game' && targetP === 35000) ||
@@ -1562,7 +1562,7 @@ export const GeneratePanel: React.FC = () => {
                   <div className="min-w-0">
                     <div className="text-[11px] font-bold text-white">Advanced Generation</div>
                     <div className="text-[9px] text-zinc-400 truncate">
-                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
+                      {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'Native / Raw' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K tris`} · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
                     </div>
                   </div>
                 </div>
@@ -1796,9 +1796,9 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Target Polycount</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount || 50000) <= 0
+                    {generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
                       ? 'Native (Raw)'
-                      : `${((generationSettings.autoOptimizeSettings?.targetPolycount || 50000)).toLocaleString()} tris`}
+                      : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
                   </span>
                 </div>
 
@@ -1811,7 +1811,7 @@ export const GeneratePanel: React.FC = () => {
                     { label: '100K', val: 100000, desc: 'Cinema' },
                     { label: 'Native', val: 0, desc: 'Raw' },
                   ].map((preset) => {
-                    const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                    const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 0;
                     const isSelected = currentTarget === preset.val;
                     return (
                       <button
@@ -1935,7 +1935,7 @@ export const GeneratePanel: React.FC = () => {
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
+              {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'NATIVE / RAW' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K`} {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
             </span>
           </div>
           <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border flex-shrink-0 ${

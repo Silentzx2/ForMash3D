@@ -725,7 +725,10 @@ async def image_to_raw_mesh(
             (bool(value) for value in top_level_texture_flags if value is not None),
             next((bool(value) for value in nested_texture_flags if value is not None), False),
         )
-        target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
+        target_polycount = params.pop(
+            "target_polycount",
+            mesh_request.target_polycount if mesh_request.target_polycount is not None else preset.get("target_polycount"),
+        )
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
         lod_count = params.pop("lodCount", preset.get("lod_count", 4))
@@ -917,7 +920,10 @@ async def image_to_textured_mesh(
                 )
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=str(e))
-        target_polycount = params.pop("target_polycount", preset.get("target_polycount"))
+        target_polycount = params.pop(
+            "target_polycount",
+            mesh_request.target_polycount if mesh_request.target_polycount is not None else preset.get("target_polycount"),
+        )
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
         lod_count = params.pop("lodCount", preset.get("lod_count", 4))

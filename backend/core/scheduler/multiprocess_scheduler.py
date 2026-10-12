@@ -42,6 +42,7 @@ DEPLOYMENT NOTE:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import multiprocessing as mp
@@ -475,6 +476,115 @@ def _handle_control_message(
         return WorkerResponse(msg.msg_id, False, error=str(e))
 
 
+def _sha256_existing_file(path: Any) -> Optional[str]:
+    """Hash a persisted source file without loading it into memory."""
+    if not path:
+        return None
+    try:
+        source = Path(path)
+        if not source.is_file():
+            return None
+        digest = hashlib.sha256()
+        with source.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        logger.debug("Could not hash generation provenance path %s", path, exc_info=True)
+        return None
+
+
+def _attach_raw_geometry_telemetry(
+    result: Dict[str, Any],
+    job_request: JobRequest,
+    model_id: str,
+    model_inputs: Dict[str, Any],
+    model_config: Dict[str, Any],
+    loaded_model: BaseModel,
+    gpu_id: int,
+    resource_plan: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Attach common model/input/output provenance to every raw image geometry job."""
+    if str(getattr(job_request, "feature", "") or "").lower().replace("-", "_") not in {
+        "image_to_raw_mesh", "image_to_textured_mesh", "image_to_3d"
+    }:
+        return
+    output_path = (
+        result.get("output_mesh_path") or result.get("mesh_path")
+        or result.get("output_path") or result.get("file_path")
+    )
+    if not output_path or not Path(output_path).is_file():
+        return
+
+    info = result.get("generation_info")
+    if not isinstance(info, dict):
+        info = {}
+        result["generation_info"] = info
+
+    input_image = model_inputs.get("image_path") or (job_request.inputs or {}).get("image_path")
+    parameter_names = (
+        "source_quality", "seed", "num_inference_steps", "num_steps", "guidance_scale",
+        "cfg_scale", "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
+        "shape_slat_sampler_params", "ss_sampling_steps", "slat_sampling_steps",
+        "octree_resolution", "octree_res", "grid_resolution", "flash_octree_depth",
+        "dense_octree_depth", "hierarchical_octree_depth", "num_chunks",
+        "input_processing", "do_refine", "expansion_weight", "init_type",
+        "faces", "decimation_target", "simplify", "remesh", "low_vram", "low_vram_mode",
+        "enable_flashvdm",
+    )
+    native_vertices = info.get("native_vertex_count", info.get("vertex_count"))
+    native_faces = info.get("native_face_count", info.get("face_count"))
+    if native_vertices is None or native_faces is None:
+        try:
+            import trimesh
+            loaded = trimesh.load(str(output_path), process=False)
+            if isinstance(loaded, trimesh.Scene):
+                geometries = [
+                    geometry for geometry in loaded.geometry.values()
+                    if hasattr(geometry, "vertices") and hasattr(geometry, "faces")
+                ]
+                native_vertices = sum(len(geometry.vertices) for geometry in geometries)
+                native_faces = sum(len(geometry.faces) for geometry in geometries)
+            elif hasattr(loaded, "vertices") and hasattr(loaded, "faces"):
+                native_vertices, native_faces = len(loaded.vertices), len(loaded.faces)
+        except Exception:
+            logger.debug("Could not read geometry statistics for %s", output_path, exc_info=True)
+
+    try:
+        raw_bytes = Path(output_path).stat().st_size
+    except OSError:
+        return
+    resolution = info.get("effective_geometry_resolution")
+    scheduled_gpus = (resource_plan or {}).get("gpu_ids") or [gpu_id]
+    info["raw_geometry_telemetry"] = {
+        "schema_version": 1,
+        "model_id": model_id,
+        "model_version": getattr(loaded_model, "version", None),
+        "checkpoint": str(getattr(loaded_model, "model_path", model_config.get("model_path", "unknown"))),
+        "source_quality": model_inputs.get("source_quality", "model_default"),
+        "effective_parameters": {
+            key: (dict(model_inputs[key]) if isinstance(model_inputs[key], dict) else model_inputs[key])
+            for key in parameter_names if key in model_inputs
+        },
+        "scheduler_gpu_ids": list(scheduled_gpus),
+        "primary_gpu_id": int(gpu_id),
+        "model_device": str(getattr(loaded_model, "device", None) or "adapter_reported_device"),
+        "raw_mesh_path": str(output_path),
+        "raw_mesh_bytes": raw_bytes,
+        "raw_mesh_sha256": _sha256_existing_file(output_path),
+        "input_image_sha256": _sha256_existing_file(input_image),
+        "native_vertex_count": native_vertices,
+        "native_face_count": native_faces,
+        "effective_geometry_resolution": resolution,
+        "effective_geometry_resolution_status": (
+            "reported_by_adapter" if resolution is not None
+            else "upstream adapter does not expose a scalar achieved resolution"
+        ),
+        "geometry_extractor": info.get("geometry_extractor"),
+        "mesh_operations": info.get("mesh_operations", []),
+    }
+
+
 def _process_job_in_worker(
     job_request: JobRequest,
     loaded_model: Optional[BaseModel],
@@ -558,8 +668,11 @@ def _process_job_in_worker(
                 model_inputs.get("octree_resolution", model_inputs.get("octree_res", model_inputs.get("grid_resolution", "not_supported"))),
             ),
             "actual_seed": model_inputs.get("seed", "not_supported"),
-            "actual_dtype": "float16" if torch.cuda.is_available() else "float32",
-            "actual_device": f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu",
+            "actual_dtype": str(getattr(loaded_model, "dtype", None) or model_inputs.get("dtype") or "adapter_default"),
+            "actual_device": str(
+                getattr(loaded_model, "device", None)
+                or (f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+            ),
             "actual_low_vram_mode": model_inputs.get("low_vram_mode", model_inputs.get("low_vram", "not_supported")),
             "requested_target_polycount": request_inputs.get("target_polycount", "native"),
             "requested_auto_optimize": request_inputs.get("auto_optimize", False),
@@ -601,6 +714,22 @@ def _process_job_in_worker(
         # Process job with no_grad (allows overriding with enable_grad for Trellis opt)
         with torch.no_grad():
             result = loaded_model.process(model_inputs)
+
+        if isinstance(result, dict) and result.get("success", True):
+            try:
+                _attach_raw_geometry_telemetry(
+                    result,
+                    job_request,
+                    model_id,
+                    model_inputs,
+                    model_config,
+                    loaded_model,
+                    gpu_id,
+                    resource_plan,
+                )
+            except Exception:
+                # Provenance must never convert a successful model inference into a failed job.
+                logger.warning("Could not attach geometry telemetry for %s", job_id, exc_info=True)
 
         elapsed = time.time() - start_time
         logger.info(f"[GENERATION SUCCESS] job_id={job_id} model={model_id} elapsed={elapsed:.2f}s")

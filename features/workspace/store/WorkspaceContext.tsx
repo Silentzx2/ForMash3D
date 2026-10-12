@@ -194,6 +194,27 @@ interface BackendJobPayload {
   error_code?: string;
 }
 
+function previewSourceUrl(result?: Record<string, any>): string | undefined {
+  const source = result?.source_model_url || result?.high_fidelity_url || result?.artifacts?.source;
+  return typeof source === 'string' ? source : (typeof source?.url === 'string' ? source.url : undefined);
+}
+
+function isNativeRawPreview(result?: Record<string, any>): boolean {
+  const target = Number(result?.target_polycount ?? result?.requested_target_polycount);
+  return Boolean(result && Number.isFinite(target) && target <= 0 && previewSourceUrl(result));
+}
+
+function preferredGenerationPreviewUrl(result?: Record<string, any>): string | undefined {
+  if (isNativeRawPreview(result)) return previewSourceUrl(result);
+  return result?.active_model_url || result?.textured_model_url || result?.model_url || result?.mesh_url || result?.url;
+}
+
+function preferredPreviewStats(result?: Record<string, any>): Record<string, any> {
+  return isNativeRawPreview(result)
+    ? (result?.quality_trace?.source || {})
+    : (result?.quality_trace?.game_ready || {});
+}
+
 function normalizeBackendJob(raw: BackendJobPayload) {
   const rawProgress = Number(raw.progress ?? 0);
   const normalizedProgress = rawProgress <= 1 ? rawProgress * 100 : rawProgress;
@@ -204,6 +225,9 @@ function normalizeBackendJob(raw: BackendJobPayload) {
   );
   const texturedModelUrl = raw.result?.textured_model_url
     ? toProxyUrl(raw.result.textured_model_url)
+    : undefined;
+  const sourceModelUrl = previewSourceUrl(raw.result)
+    ? toProxyUrl(previewSourceUrl(raw.result)!)
     : undefined;
   return {
     status: raw.status,
@@ -222,6 +246,7 @@ function normalizeBackendJob(raw: BackendJobPayload) {
       ...(modelUrl ? { model_url: modelUrl } : {}),
       ...(activeModelUrl ? { active_model_url: activeModelUrl } : {}),
       ...(texturedModelUrl ? { textured_model_url: texturedModelUrl } : {}),
+      ...(sourceModelUrl ? { source_model_url: sourceModelUrl, high_fidelity_url: sourceModelUrl } : {}),
       ...(raw.result.thumbnail_url ? { thumbnail_url: toProxyUrl(raw.result.thumbnail_url) } : {}),
     } : undefined,
   } as {
@@ -289,7 +314,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           : null;
         const name = promptName || `Model_${id.slice(0, 8)}`;
         const outputs = (h.outputs || {}) as Record<string, any>;
-        const outputUrl = (outputs.glb as string) || (outputs.model_url as string) || (outputs.download_url as string) || `/api/v1/system/jobs/${id}/download?artifact_format=glb`;
+        const outputUrl = toProxyUrl(preferredGenerationPreviewUrl(outputs) || (outputs.glb as string) || (outputs.model_url as string) || (outputs.download_url as string) || `/api/v1/system/jobs/${id}/download?artifact_format=glb`);
         return normalizeModelAsset({
           id: id || `hist-${i}`,
           name,
@@ -526,7 +551,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       quadTopology: false, topologyMode: 'triangle', seed: 42891, guidanceScale: 7.5, removeBackground: false,
       lowVram: false,
       vramMode: 'auto',
-      autoOptimizeSettings: { targetPolycount: 50000 },
+      autoOptimizeSettings: { targetPolycount: 0 },
       generateTexture: true,
       enableFlashVDM: false,
       lowVramMode: 'auto',
@@ -1059,8 +1084,9 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                    });
                  }
 
-                if (result?.model_url || result?.active_model_url || result?.textured_model_url) {
-                  const modelUrl = (result.active_model_url || result.textured_model_url || result.model_url) as string;
+                if (result?.model_url || result?.active_model_url || result?.textured_model_url || result?.source_model_url) {
+                  const modelUrl = preferredGenerationPreviewUrl(result) as string;
+                  const previewStats = preferredPreviewStats(result);
                   const promptTitle = task.title;
                   const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
                   void prefetchGLB(modelUrl);
@@ -1070,12 +1096,12 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                     category: 'generation',
                     thumbnail: result.thumbnail_url || task.inputImage || '',
                     source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl, fileId: `job-${jobId}` },
-                    polygon_count: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-                    vertex_count: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
-                    faces: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-                    vertices: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
-                    triangles: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-                    statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
+                    polygon_count: isNativeRawPreview(result) ? previewStats.faces : (result.polygon_count ?? previewStats.faces),
+                    vertex_count: isNativeRawPreview(result) ? previewStats.vertices : (result.vertex_count ?? previewStats.vertices),
+                    faces: isNativeRawPreview(result) ? previewStats.faces : (result.polygon_count ?? previewStats.faces),
+                    vertices: isNativeRawPreview(result) ? previewStats.vertices : (result.vertex_count ?? previewStats.vertices),
+                    triangles: isNativeRawPreview(result) ? previewStats.faces : (result.polygon_count ?? previewStats.faces),
+                    statsAvailable: Boolean(previewStats.faces || result.polygon_count || previewStats.vertices || result.vertex_count),
                     topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
                     format: 'GLB',
                     postprocessStatus: productionStatus === 'degraded' ? 'degraded' : (result.production_status || result.postprocess_status || 'completed'),
@@ -1160,7 +1186,8 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     }
 
     const result = (job.result || {}) as Record<string, any>;
-    const modelUrl = (result?.active_model_url || result?.textured_model_url || result?.model_url || result?.url) as string | undefined;
+    const modelUrl = preferredGenerationPreviewUrl(result);
+    const previewStats = preferredPreviewStats(result);
     if (modelUrl) {
       const promptTitle = job.title;
       const cleanName = promptTitle && promptTitle !== 'generate' ? promptTitle : `Model_${jobId.slice(0, 6)}`;
@@ -1171,12 +1198,12 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         category: 'generation',
         thumbnail: result.thumbnail_url || job.inputImage || '',
         source: { filename: `${cleanName}.glb`, subfolder: 'generated', type: 'output', viewUrl: modelUrl, fileId: `job-${jobId}` },
-        polygon_count: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-        vertex_count: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
-        faces: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-        vertices: result.vertex_count ?? result.quality_trace?.game_ready?.vertices,
-        triangles: result.polygon_count ?? result.quality_trace?.game_ready?.faces,
-        statsAvailable: Boolean(result.polygon_count || result.quality_trace?.game_ready?.faces),
+        polygon_count: isNativeRawPreview(result) ? previewStats.faces : (result.polygon_count ?? previewStats.faces),
+        vertex_count: isNativeRawPreview(result) ? previewStats.vertices : (result.vertex_count ?? previewStats.vertices),
+        faces: isNativeRawPreview(result) ? previewStats.faces : (result.polygon_count ?? previewStats.faces),
+        vertices: isNativeRawPreview(result) ? previewStats.vertices : (result.vertex_count ?? previewStats.vertices),
+        triangles: isNativeRawPreview(result) ? previewStats.faces : (result.polygon_count ?? previewStats.faces),
+        statsAvailable: Boolean(previewStats.faces || result.polygon_count || previewStats.vertices || result.vertex_count),
         topology: (result.topology as any) || (result.quality_trace?.game_ready?.quad_dominant ? 'Quad' : 'Triangle'),
         format: 'GLB',
         postprocessStatus: result.production_status === 'degraded' ? 'degraded' : (result.production_status || result.postprocess_status || 'completed'),
@@ -2099,7 +2126,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            removeBackground: batchItem.removeBackground ?? true,
            lowVram: batchItem.lowVram ?? false,
            vramMode: batchItem.vramMode ?? 'auto',
-           autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 50000 },
+           autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 0 },
            generateTexture: batchItem.generateTexture ?? true,
            enableFlashVDM: batchItem.enableFlashVDM ?? false,
            lowVramMode: batchItem.lowVramMode ?? 'auto',

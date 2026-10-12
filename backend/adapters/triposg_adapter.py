@@ -307,7 +307,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     dense_octree_depth=dense_octree_depth,
                     hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
-                mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))
+                mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]), process=False)
             else:
                 # Run standard TripoSG pipeline
                 from image_process import prepare_image
@@ -329,7 +329,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     dense_octree_depth=dense_octree_depth,
                     hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
-                mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]))
+                mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]), process=False)
 
             # Model-native mesh is preserved for source.glb; optimization belongs strictly to downstream post-processing
             logger.info(
@@ -373,6 +373,16 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     "guidance_scale": guidance,
                     "seed": seed,
                     "is_scribble": is_scribble,
+                    "source_quality": inputs.get("source_quality", "max"),
+                    "native_vertex_count": vertex_count,
+                    "native_face_count": face_count,
+                    "geometry_extractor": "TripoSG Flash VAE decoder" if use_flash_decoder else "TripoSG dense/hierarchical VAE decoder",
+                    "effective_geometry_resolution": None,
+                    "resolution_status": "decoder depth is recorded; upstream does not return a scalar achieved grid resolution",
+                    "flash_octree_depth": octree_depth if use_flash_decoder else None,
+                    "dense_octree_depth": dense_octree_depth,
+                    "hierarchical_octree_depth": hierarchical_octree_depth,
+                    "mesh_operations": [],
                 },
             }
 

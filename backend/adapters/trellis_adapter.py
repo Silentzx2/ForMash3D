@@ -187,7 +187,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             ss_steps = max(1, min(50, int(num_steps)))
             slat_steps = max(1, min(50, int(num_steps)))
 
-            logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, texture_resolution={texture_resolution}; geometry resolution is not exposed by this pipeline)")
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, texture_resolution={texture_resolution}; upstream does not expose achieved geometry resolution)")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
@@ -582,7 +582,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             ss_steps = max(1, min(50, ss_steps))
             slat_steps = max(1, min(50, slat_steps))
 
-            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (ss_steps={ss_steps}, slat_steps={slat_steps}, texture_resolution={texture_resolution}; geometry resolution is not exposed by this pipeline)")
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (ss_steps={ss_steps}, slat_steps={slat_steps}, texture_resolution={texture_resolution}; upstream does not expose achieved geometry resolution)")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
@@ -708,7 +708,17 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         "guidance_scale": guidance,
                         "vertex_count": len(mesh.vertices),
                         "face_count": len(mesh.faces),
-                        "has_texture": has_texture,
+                        "native_vertex_count": len(mesh.vertices),
+                        "native_face_count": len(mesh.faces),
+                        "source_quality": inputs.get("source_quality", "max"),
+                        "geometry_extractor": "TRELLIS native mesh decoder",
+                        "effective_geometry_resolution": None,
+                        "geometry_resolution_source": "upstream adapter does not expose a scalar achieved resolution",
+                        "raw_mesh_only": not has_texture,
+                        "mesh_operations": (
+                            ["simplify"] if (not has_texture and simplify is not None and float(simplify) > 0)
+                            else []
+                        ),
                         "texture_resolution": texture_resolution if has_texture else None,
                         "texture_bake_mode": tex_bake_mode if has_texture else None,
                         "simplify_ratio": simplify,
