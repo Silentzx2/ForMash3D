@@ -241,7 +241,9 @@ def _execute_texture_stage(
                         gpu_id = int(cuda_vis.split(",")[0])
                     except Exception:
                         gpu_id = 0
+                _emit(progress, 0.66, "texture", f"Loading {model_id} model on GPU {gpu_id}...")
                 adapter.load(gpu_id)
+                _emit(progress, 0.68, "texture", f"{model_id} model loaded successfully")
                 should_unload = True
             try:
                 res = adapter.process({
@@ -295,7 +297,9 @@ def _execute_texture_stage(
                         gpu_id = int(cuda_vis.split(",")[0])
                     except Exception:
                         gpu_id = 0
+                _emit(progress, 0.66, "texture", f"Loading {model_id} model on GPU {gpu_id}...")
                 adapter.load(gpu_id)
+                _emit(progress, 0.68, "texture", f"{model_id} model loaded successfully")
                 should_unload_hy = True
             try:
                 hy_res = 512 if preset_label == "4K" else 768

@@ -497,12 +497,15 @@ img2img:
         env["PYTHONPATH"] = f"{self.paint3d_root}:{env.get('PYTHONPATH', '')}"
 
         logger.info(f"Running Paint3D stage: {script_name} -> {outdir}")
+        # Use explicit UTF-8 encoding with error handling to prevent UnicodeDecodeError
         proc = subprocess.run(
             cmd,
             cwd=str(self.paint3d_root),
             env=env,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=timeout_seconds,
         )
 
