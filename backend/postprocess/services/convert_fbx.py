@@ -10,6 +10,8 @@ serialized with a semaphore for the same reason (each subprocess peaks 1-2GB).
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 import json
 import os
 import shutil
@@ -21,6 +23,13 @@ from uuid import uuid4
 from postprocess.config import CONVERT_TIMEOUT_S, WORK_DIR, blender_worker_argv
 from ..schemas import ConvertOptions
 
+CancelChecker = Optional[Callable[[], bool]]
+
+
+def _check_cancelled(cancel_checker: CancelChecker) -> None:
+    if cancel_checker is not None and cancel_checker():
+        raise InterruptedError("FBX conversion cancelled by user")
+
 SENTINEL = "GENSTUDIO_EVT "  # keep in sync with app/tools/fbx_worker.py
 
 _WORKER = Path(__file__).resolve().parents[1] / "tools" / "fbx_worker.py"
@@ -28,7 +37,7 @@ _WORKER = Path(__file__).resolve().parents[1] / "tools" / "fbx_worker.py"
 _convert_lock = threading.Semaphore(1)
 
 
-def run_convert_fbx(glb_bytes: bytes, opts: ConvertOptions, progress) -> tuple[bytes, dict]:
+def run_convert_fbx(glb_bytes: bytes, opts: ConvertOptions, progress, cancel_checker: CancelChecker = None) -> tuple[bytes, dict]:
     """Convert a GLB to FBX. Returns (fbx_bytes, worker_stats); raises on failure.
 
     `progress(stage, frac, message)` is called for each worker progress event.
@@ -43,7 +52,7 @@ def run_convert_fbx(glb_bytes: bytes, opts: ConvertOptions, progress) -> tuple[b
         opt_path.write_text(opts.model_dump_json(), encoding="utf-8")
 
         with _convert_lock:
-            result = _run_worker(in_path, out_path, opt_path, progress)
+            result = _run_worker(in_path, out_path, opt_path, progress, cancel_checker)
 
         if not result.get("ok"):
             raise RuntimeError(result.get("error") or "FBX conversion failed.")
@@ -54,7 +63,7 @@ def run_convert_fbx(glb_bytes: bytes, opts: ConvertOptions, progress) -> tuple[b
         shutil.rmtree(job_dir, ignore_errors=True)
 
 
-def _run_worker(in_path: Path, out_path: Path, opt_path: Path, progress) -> dict:
+def _run_worker(in_path: Path, out_path: Path, opt_path: Path, progress, cancel_checker: CancelChecker = None) -> dict:
     proc = subprocess.Popen(
         blender_worker_argv(
             _WORKER,
@@ -84,6 +93,7 @@ def _run_worker(in_path: Path, out_path: Path, opt_path: Path, progress) -> dict
     tail: list[str] = []  # last non-protocol lines, for error context
     try:
         for line in proc.stdout:
+            _check_cancelled(cancel_checker)
             if not line.startswith(SENTINEL):
                 stripped = line.strip()
                 if stripped:
@@ -104,6 +114,7 @@ def _run_worker(in_path: Path, out_path: Path, opt_path: Path, progress) -> dict
         if proc.poll() is None:
             proc.kill()
 
+    _check_cancelled(cancel_checker)
     if timed_out.is_set():
         raise RuntimeError(f"FBX conversion timed out after {CONVERT_TIMEOUT_S}s.")
     if result is None:

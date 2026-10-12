@@ -116,12 +116,12 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 del sys.modules["hy3dshape"]
 
             try:
-                from hy3dshape.pipelines import (
+                from hy3dshape.hy3dshape.pipelines import (
                     Hunyuan3DDiTFlowMatchingPipeline,
                 )
-                from hy3dshape.rembg import BackgroundRemover
+                from hy3dshape.hy3dshape.rembg import BackgroundRemover
             except ImportError:
-                from hy3dshape.hy3dshape.pipelines import (
+                from hy3dshape.pipelines import (
                     Hunyuan3DDiTFlowMatchingPipeline,
                 )
                 from hy3dshape.hy3dshape.rembg import BackgroundRemover

@@ -15,7 +15,7 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -315,7 +315,7 @@ class Paint3DAdapter(ImageToMeshModel):
         render_cfg_content = f'''import numpy as np
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Tuple, List
+from typing import Callable, Optional, Tuple, List
 
 @dataclass
 class RenderConfig:
@@ -479,6 +479,7 @@ img2img:
         texture_path: Optional[Path] = None,
         timeout_seconds: int = 600,
         progress_callback: Optional[Callable[[str, float, str], None]] = None,
+        cancel_checker: Optional[Callable[[], bool]] = None,
     ) -> None:
         """Run a Paint3D pipeline stage using isolated subprocess with validated argv."""
         cmd = [
@@ -541,6 +542,10 @@ img2img:
         # Process output with timeout
         start_time = time.time()
         while True:
+            # Check for cancellation
+            if cancel_checker and cancel_checker():
+                proc.kill()
+                raise InterruptedError("Paint3D processing cancelled by user")
             # Check overall timeout
             if time.time() - start_time > timeout_seconds:
                 proc.kill()
@@ -651,6 +656,7 @@ img2img:
             output_path: Optional target mesh path
             output_format: 'glb' or 'obj' (default: 'glb')
             prompt: Optional text prompt
+            cancel_checker: Optional callable that returns True if cancellation requested
         """
         if not torch.cuda.is_available():
             raise RuntimeError(
@@ -689,6 +695,7 @@ img2img:
         job_id = inputs.get("job_id") or uuid.uuid4().hex[:12]
         # Get progress callback from inputs (passed by pipeline)
         progress_callback = inputs.get("progress_callback")
+        cancel_checker = inputs.get("cancel_checker")
         # Get timeout (default 1800s = 30 min for slow GPUs)
         timeout_seconds = inputs.get("timeout_seconds", 1800)
 
@@ -743,6 +750,7 @@ img2img:
                 outdir=stage1_outdir,
                 progress_callback=progress_callback,
                 timeout_seconds=timeout_seconds,
+                cancel_checker=cancel_checker,
             )
 
             # Find stage 1 albedo output
@@ -762,6 +770,7 @@ img2img:
                 texture_path=s1_albedo,
                 progress_callback=progress_callback,
                 timeout_seconds=timeout_seconds,
+                cancel_checker=cancel_checker,
             )
 
             # Locate refined albedo texture

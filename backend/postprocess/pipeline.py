@@ -254,6 +254,7 @@ def _execute_texture_stage(
                     "texture_resolution": target_atlas_size,
                     "progress_callback": lambda stage, frac, msg: _emit(progress, frac, stage, msg),
                     "timeout_seconds": 1800,
+                    "cancel_checker": cancel_checker,
                 })
             finally:
                 if should_unload:
@@ -314,6 +315,7 @@ def _execute_texture_stage(
                     "max_num_view": int(job_inputs.get("max_num_view") or 6),
                     "progress_callback": lambda stage, frac, msg: _emit(progress, frac, stage, msg),
                     "timeout_seconds": 1800,
+                    "cancel_checker": cancel_checker,
                 })
             finally:
                 if should_unload_hy:
@@ -1380,6 +1382,7 @@ def run_postprocess_job(
                     _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
                     logger.debug(f"[POSTPROCESS RETOPO] {frac*100:.0f}% stage={stage} msg={msg}"),
                 ),
+                cancel_checker=cancel_checker,
             )
             retopo_stats = {"status": "completed", "trigger": "quad_requested", **retopo_tool_stats}
         except Exception as exc:
@@ -1398,6 +1401,7 @@ def run_postprocess_job(
                     _emit(progress, 0.24 + min(1.0, max(0.0, frac)) * 0.05, "retopo", msg),
                     logger.debug(f"[POSTPROCESS RETOPO] {frac*100:.0f}% stage={stage} msg={msg}"),
                 ),
+                cancel_checker=cancel_checker,
             )
             retopo_stats = {"status": "completed", "trigger": "large_open_defect", **retopo_tool_stats}
         except Exception as exc:
@@ -1472,6 +1476,7 @@ def run_postprocess_job(
                     "remesh",
                     msg,
                 ),
+                cancel_checker=cancel_checker,
             )
             feature_remesh_stats = {
                 "status": "completed",
@@ -1512,6 +1517,7 @@ def run_postprocess_job(
                 repaired,
                 OptimizeOptions(target_faces=target_faces, simplify_error=0.05, allow_seam_breaking=False,
                                 permissive=False, aggressive=False, lock_border=False),
+                cancel_checker=cancel_checker,
             )
     optimize_guard = _quality_guard(repaired, optimized)
     if not optimize_guard["passed"]:
@@ -1590,6 +1596,7 @@ def run_postprocess_job(
             AutoUvOptions(resolution=texture_resolution, padding_texels=4, refine=True, weld=True,
                           preserve_normals=True, normal_smooth_deg=60),
             source_normals=optimized_normals,
+            cancel_checker=cancel_checker,
         )
         uv_duration = time.time() - uv_t0
         logger.info(
@@ -1655,6 +1662,7 @@ def run_postprocess_job(
                     _emit(progress, 0.58 + min(1.0, max(0.0, frac)) * 0.04, "bake", msg),
                     logger.debug(f"[POSTPROCESS BAKE] {frac*100:.0f}% stage={stage} msg={msg}"),
                 ),
+                cancel_checker=cancel_checker,
             )
             texture_dir.mkdir(parents=True, exist_ok=True)
             for map_name, img_bytes in baked_images.items():
@@ -1790,6 +1798,7 @@ def run_postprocess_job(
             progress=lambda stage, frac, msg: _emit(
                 progress, 0.62 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
             ),
+            cancel_checker=cancel_checker,
         )
         fbx_path = game_ready_dir / f"{base_name}.fbx"
         fbx_path.write_bytes(fbx_bytes)
@@ -1798,6 +1807,7 @@ def run_postprocess_job(
         artifact_errors["fbx"] = str(exc)
         logger.warning("FBX export failed: %s", exc)
 
+    _check_cancelled(cancel_checker)
     lods: Dict[int, str] = {}
     lod_quality: Dict[str, Dict[str, Any]] = {}
     lod_enabled = bool(job_inputs.get("generateLOD", True))
@@ -1825,7 +1835,7 @@ def run_postprocess_job(
             lod_count = max(1, min(4, int(job_inputs.get("lodCount") or len(lod_ratios))))
         except (TypeError, ValueError):
             lod_count = min(4, len(lod_ratios))
-        lod_levels = run_lods(game_ready_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])))
+        lod_levels = run_lods(game_ready_mesh, LODOptions(ratios=list(lod_ratios[:lod_count])), cancel_checker=cancel_checker)
     else:
         lod_levels = []
     for level in lod_levels:
@@ -1868,6 +1878,7 @@ def run_postprocess_job(
         )
     )
 
+    _check_cancelled(cancel_checker)
     collision_t0 = time.time()
     # Collision is only part of the production contract when physics is requested.
     collision_path: Optional[Path] = None
@@ -1883,6 +1894,7 @@ def run_postprocess_job(
             collision_scene, collision_stats = run_collision(
                 game_ready_mesh,
                 CollisionOptions(**collision_options),
+                cancel_checker=cancel_checker,
             )
             collision_payload = collision_scene.export(file_type="glb")
             if isinstance(collision_payload, str):
@@ -1945,6 +1957,7 @@ def run_postprocess_job(
             )
         )
 
+    _check_cancelled(cancel_checker)
     _emit(progress, 0.90, "preview", "Generating asset preview.")
     preview_dir.mkdir(parents=True, exist_ok=True)
     thumbnail_path: Optional[Path] = None

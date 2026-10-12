@@ -118,7 +118,7 @@ class UltraShapeImageToRawMeshAdapter(ImageToMeshModel):
             # Load Hunyuan3D-2.1 for coarse mesh generation
             logger.info("Loading Hunyuan3D-2.1 shape generation pipeline...")
             from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
-            from hy3dshape.rembg import BackgroundRemover
+            from hy3dshape.hy3dshape.rembg import BackgroundRemover
             
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             hy_dev = getattr(self, 'device', None)

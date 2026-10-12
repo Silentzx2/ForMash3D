@@ -108,7 +108,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 Hunyuan3DPaintConfig,
                 Hunyuan3DPaintPipeline,
             )
-            from hy3dshape.rembg import BackgroundRemover
+            from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
             max_num_view = 6
             resolution = 512
@@ -253,6 +253,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process mesh painting using Hunyuan3D-Paint-v2-1."""
+        cancel_checker = inputs.get("cancel_checker")
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
@@ -285,6 +286,9 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
             logger.info(f"Painting mesh with Hunyuan3D-Paint-v2-1: {mesh_path}")
 
+            if cancel_checker and cancel_checker():
+                raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
+
             if hasattr(self.paint_pipeline.config, "max_selected_view_num"):
                 self.paint_pipeline.config.max_selected_view_num = max_num_view
             if hasattr(self.paint_pipeline.config, "resolution"):
@@ -309,9 +313,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             use_remesh = bool(inputs.get("use_remesh", False))
             with Image.open(image_path) as reference_image:
                 reference_image = self._prepare_reference_image(reference_image)
+
+            if cancel_checker and cancel_checker():
+                raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
+
             final_mesh_path = self.paint_pipeline(
                 str(mesh_path), reference_image, str(output_path), use_remesh=use_remesh
             )
+
+            if cancel_checker and cancel_checker():
+                raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
 
             if final_mesh_path != str(output_path):
                 shutil.move(final_mesh_path, output_path)

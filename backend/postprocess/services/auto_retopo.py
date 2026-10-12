@@ -6,14 +6,28 @@ trimesh.Trimesh plus the metrics/timings for the UI.
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 import trimesh
 
 from ..schemas import AutoRetopoOptions
 from .autoretopo import AutoRetopo, RetopoConfig
 from .autoretopo import gpu
 
+CancelChecker = Optional[Callable[[], bool]]
 
-def run_auto_retopo(mesh: trimesh.Trimesh, options: AutoRetopoOptions, progress=None) -> tuple[trimesh.Trimesh, dict, None]:
+
+def _check_cancelled(cancel_checker: CancelChecker) -> None:
+    if cancel_checker is not None and cancel_checker():
+        raise InterruptedError("Auto-retopology cancelled by user")
+
+
+def run_auto_retopo(
+    mesh: trimesh.Trimesh,
+    options: AutoRetopoOptions,
+    progress=None,
+    cancel_checker: CancelChecker = None,
+) -> tuple[trimesh.Trimesh, dict, None]:
     cfg = RetopoConfig(
         target_faces=options.target_faces,
         quads=options.quads,
@@ -39,8 +53,15 @@ def run_auto_retopo(mesh: trimesh.Trimesh, options: AutoRetopoOptions, progress=
         verbose=False,
     )
 
+    retopo_progress = progress
+    if progress is not None or cancel_checker is not None:
+        def retopo_progress(stage, frac, msg=""):
+            _check_cancelled(cancel_checker)
+            if progress:
+                progress(stage, frac, msg)
+
     try:
-        result = AutoRetopo(cfg).run(mesh, progress=progress)
+        result = AutoRetopo(cfg).run(mesh, progress=retopo_progress)
     finally:
         # Long-running server: hand each run's GPU pool back to the driver so the
         # footprint doesn't accumulate across Auto Retopo requests. Also runs on

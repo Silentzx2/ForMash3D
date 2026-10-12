@@ -5,9 +5,9 @@ physics broadphase, and engines require convex parts anyway. This produces the
 simplified convex proxy an engine actually wants.
 
   decomposition  CoACD approximates the concave shape with several convex hulls.
-                 This is the useful one — a single hull swallows every cavity, so
-                 a mug collides as a solid lump and a doorway cannot be walked
-                 through.
+                  This is the useful one — a single hull swallows every cavity, so
+                  a mug collides as a solid lump and a doorway cannot be walked
+                  through.
   convex_hull    One hull around everything. Always works, no extra dependency.
   box / sphere   Primitive proxies, for when "roughly this big" is enough.
 
@@ -18,10 +18,19 @@ is an export concern, not a geometry one.
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 import numpy as np
 import trimesh
 
 from ..schemas import CollisionOptions
+
+CancelChecker = Optional[Callable[[], bool]]
+
+
+def _check_cancelled(cancel_checker: CancelChecker) -> None:
+    if cancel_checker is not None and cancel_checker():
+        raise InterruptedError("Collision generation cancelled by user")
 
 try:  # Optional: the service still offers convex_hull/box/sphere without it.
     import coacd
@@ -90,8 +99,9 @@ def _simplify_hull(hull: trimesh.Trimesh, max_vertices: int) -> trimesh.Trimesh:
 
 
 def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
-                  progress=None) -> tuple[trimesh.Scene, dict]:
+                  progress=None, cancel_checker: CancelChecker = None) -> tuple[trimesh.Scene, dict]:
     def emit(stage, frac, msg=""):
+        _check_cancelled(cancel_checker)
         if progress:
             progress(stage, frac, msg)
 
@@ -118,6 +128,7 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
             )
         emit("decimate", 0.1, "Preparing the mesh…")
         source = _decimate(mesh, int(options.input_faces))
+        _check_cancelled(cancel_checker)
 
         emit("decompose", 0.2, f"Decomposing {len(source.faces):,} faces into convex parts…")
         try:
@@ -136,6 +147,7 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
             preprocess_resolution=int(options.preprocess_resolution),
             seed=int(options.seed),
         )
+        _check_cancelled(cancel_checker)
         if not parts:
             raise RuntimeError("CoACD decomposition produced no parts.")
         emit("hulls", 0.7, f"Making {len(parts)} hulls…")
@@ -148,6 +160,7 @@ def run_collision(mesh: trimesh.Trimesh, options: CollisionOptions | dict,
     if not hulls:
         raise RuntimeError("Collision generation produced no hulls.")
 
+    _check_cancelled(cancel_checker)
     emit("simplify", 0.85, "Simplifying hulls…")
     hulls = [_simplify_hull(hull, int(options.max_hull_vertices)) for hull in hulls]
 

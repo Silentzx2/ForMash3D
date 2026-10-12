@@ -925,17 +925,21 @@ class MultiprocessModelScheduler:
             return cancelled
 
         stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
+
+        # Always signal post-processing cancellation, regardless of whether a worker was stopped.
+        # Post-processing runs in the main process and may have started after the worker returned.
+        self._cancel_requested_jobs.add(job_id)
+        if job_id in self._active_postprocess_cancels:
+            self._active_postprocess_cancels[job_id].set()
+        if hasattr(self.job_queue, "request_cancel"):
+            await self.job_queue.request_cancel(job_id)
+
         if not stopped:
-            logger.info("No live worker found for processing job %s; setting cooperative cancel request", job_id)
-            self._cancel_requested_jobs.add(job_id)
-            if job_id in self._active_postprocess_cancels:
-                self._active_postprocess_cancels[job_id].set()
-            if hasattr(self.job_queue, "request_cancel"):
-                await self.job_queue.request_cancel(job_id)
+            logger.info("No live worker found for processing job %s; set cooperative cancel request", job_id)
             return False
 
         self._cleanup_temporary_inputs(job)
-        return stopped
+        return True
 
     async def start(self):
         """Start the scheduler - no workers created initially"""
@@ -1851,6 +1855,11 @@ class MultiprocessModelScheduler:
             await asyncio.to_thread(process.join, 2.0)
 
         await self._destroy_worker(worker_id)
+
+        # Signal post-processing cancellation in case it started after worker returned
+        self._cancel_requested_jobs.add(job_id)
+        if job_id in self._active_postprocess_cancels:
+            self._active_postprocess_cancels[job_id].set()
 
         if reason == "cancelled by user":
             await self.job_queue.cancel_job(job_id, force=True)

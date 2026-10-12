@@ -7,6 +7,8 @@ ORIGINAL mesh rather than chaining simplification error from one level to the ne
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 import copy
 import os
 
@@ -19,6 +21,13 @@ import trimesh
 
 from core.scheduler.resource_planner import configure_cpu_runtime
 from ..schemas import LODOptions, OptimizeOptions
+
+CancelChecker = Optional[Callable[[], bool]]
+
+
+def _check_cancelled(cancel_checker: CancelChecker) -> None:
+    if cancel_checker is not None and cancel_checker():
+        raise InterruptedError("Mesh simplification cancelled by user")
 
 
 def _has_uv(mesh: trimesh.Trimesh) -> bool:
@@ -111,7 +120,7 @@ def _simplify_textured_fallback(mesh: trimesh.Trimesh, target_faces: int) -> tri
         return mesh.simplify_quadric_decimation(face_count=int(target_faces))
 
 
-def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh, dict]:
+def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelChecker = None) -> tuple[trimesh.Trimesh, dict]:
     configure_cpu_runtime()
     input_faces = int(len(mesh.faces))
     if target_faces >= input_faces or input_faces == 0:
@@ -135,6 +144,7 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
             uv = np.asarray(mesh.visual.uv, dtype=np.float64)
             mesh_kwargs["w_tex_coords_matrix"] = uv[np.asarray(mesh.faces, dtype=np.int64)].reshape(-1, 2)
         ms.add_mesh(pymeshlab.Mesh(**mesh_kwargs))
+        _check_cancelled(cancel_checker)
         if textured:
             ms.meshing_decimation_quadric_edge_collapse_with_texture(
                 targetfacenum=int(target_faces), qualitythr=0.3, extratcoordw=1.0,
@@ -145,6 +155,7 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
                 targetfacenum=int(target_faces), qualitythr=0.3, preservenormal=True,
                 optimalplacement=True, autoclean=True,
             )
+        _check_cancelled(cancel_checker)
         out = ms.current_mesh()
         vertices = np.asarray(out.vertex_matrix(), dtype=np.float64)
         faces = np.asarray(out.face_matrix(), dtype=np.int64)
@@ -221,12 +232,12 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int) -> tuple[trimesh.Trimesh
     }
 
 
-def run_optimize(mesh: trimesh.Trimesh, options: OptimizeOptions, progress=None):
+def run_optimize(mesh: trimesh.Trimesh, options: OptimizeOptions, progress=None, cancel_checker: CancelChecker = None):
     input_faces = int(len(mesh.faces))
     target = int(options.target_faces) if options.target_faces else max(1, round(input_faces * options.simplify_ratio))
     if progress:
         progress("simplify", 0.15, f"Reducing {input_faces:,} triangles to ~{target:,}")
-    out, stats = _simplify(mesh, target)
+    out, stats = _simplify(mesh, target, cancel_checker)
     if options.allow_seam_breaking:
         stats["seams_broken"] = bool(not stats["passthrough"])
     if progress:
@@ -234,12 +245,13 @@ def run_optimize(mesh: trimesh.Trimesh, options: OptimizeOptions, progress=None)
     return out, stats
 
 
-def run_lods(mesh: trimesh.Trimesh, options: LODOptions, progress=None):
+def run_lods(mesh: trimesh.Trimesh, options: LODOptions, progress=None, cancel_checker: CancelChecker = None):
     configure_cpu_runtime()
     input_faces = int(len(mesh.faces))
     from concurrent.futures import ThreadPoolExecutor
 
     def _build_single_lod(index: int, ratio: float) -> dict:
+        _check_cancelled(cancel_checker)
         r = float(max(0.01, min(1.0, ratio)))
         if r >= 1.0:
             return {
@@ -248,7 +260,7 @@ def run_lods(mesh: trimesh.Trimesh, options: LODOptions, progress=None):
                 "seams_broken": False, "passthrough": True, "mesh": mesh,
             }
         target = max(1, round(input_faces * r))
-        reduced, stats = _simplify(mesh, target)
+        reduced, stats = _simplify(mesh, target, cancel_checker)
         if options.allow_seam_breaking:
             stats["seams_broken"] = bool(not stats["passthrough"])
         return {"level": index, "ratio": r, "mesh": reduced, **stats}
@@ -257,6 +269,7 @@ def run_lods(mesh: trimesh.Trimesh, options: LODOptions, progress=None):
     levels = [None] * len(ratios_list)
 
     for idx, r in ratios_list:
+        _check_cancelled(cancel_checker)
         if progress:
             progress("lod", (idx + 0.2) / max(1, len(options.ratios)), f"Generating LOD{idx}")
         levels[idx] = _build_single_lod(idx, r)

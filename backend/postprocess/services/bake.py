@@ -11,6 +11,8 @@ a Cycles bake is CPU-saturating on its own).
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 import json
 import os
 import shutil
@@ -23,6 +25,13 @@ from uuid import uuid4
 from postprocess.config import BAKE_TIMEOUT_S, WORK_DIR
 from ..schemas import BakeOptions, FlattenOptions
 
+CancelChecker = Optional[Callable[[], bool]]
+
+
+def _check_cancelled(cancel_checker: CancelChecker) -> None:
+    if cancel_checker is not None and cancel_checker():
+        raise InterruptedError("Texture bake cancelled by user")
+
 SENTINEL = "GENSTUDIO_EVT "  # keep in sync with app/tools/bake_worker.py
 
 _WORKER = Path(__file__).resolve().parents[1] / "tools" / "bake_worker.py"
@@ -32,7 +41,7 @@ _bake_lock = threading.Semaphore(1)
 
 
 def run_bake(low_glb: bytes, high_glb: bytes, opts: BakeOptions,
-             progress) -> tuple[dict[str, bytes], dict]:
+             progress, cancel_checker: CancelChecker = None) -> tuple[dict[str, bytes], dict]:
     """Bake `high_glb`'s detail onto `low_glb`'s UVs.
 
     Returns ({map_name: png_bytes}, worker_stats); raises on failure.
@@ -55,7 +64,7 @@ def run_bake(low_glb: bytes, high_glb: bytes, opts: BakeOptions,
                 "--high", str(high_path),
                 "--outdir", str(out_dir),
                 "--options", str(opt_path),
-            ], progress)
+            ], progress, cancel_checker)
 
         if not result.get("ok"):
             raise RuntimeError(result.get("error") or "Bake failed.")
@@ -74,7 +83,7 @@ def run_bake(low_glb: bytes, high_glb: bytes, opts: BakeOptions,
 
 
 def run_flatten(mesh_glb: bytes, opts: FlattenOptions,
-                progress) -> tuple[dict[str, bytes], dict]:
+                progress, cancel_checker: CancelChecker = None) -> tuple[dict[str, bytes], dict]:
     """Bake `mesh_glb`'s full PBR look, under studio light, into one albedo.
 
     The mesh must carry the packed atlas as a second UV set (see
@@ -96,7 +105,7 @@ def run_flatten(mesh_glb: bytes, opts: FlattenOptions,
                 "--mesh", str(mesh_path),
                 "--outdir", str(out_dir),
                 "--options", str(opt_path),
-            ], progress)
+            ], progress, cancel_checker)
 
         if not result.get("ok"):
             raise RuntimeError(result.get("error") or "Flatten failed.")
@@ -114,7 +123,7 @@ def run_flatten(mesh_glb: bytes, opts: FlattenOptions,
         shutil.rmtree(job_dir, ignore_errors=True)
 
 
-def _run_worker(worker: Path, worker_args: list[str], progress) -> dict:
+def _run_worker(worker: Path, worker_args: list[str], progress, cancel_checker: CancelChecker = None) -> dict:
     proc = subprocess.Popen(
         [sys.executable, str(worker), *worker_args],
         stdout=subprocess.PIPE,
@@ -141,6 +150,7 @@ def _run_worker(worker: Path, worker_args: list[str], progress) -> dict:
     tail: list[str] = []  # last non-protocol lines, for error context
     try:
         for line in proc.stdout:
+            _check_cancelled(cancel_checker)
             if not line.startswith(SENTINEL):
                 stripped = line.strip()
                 if stripped:
@@ -161,6 +171,7 @@ def _run_worker(worker: Path, worker_args: list[str], progress) -> dict:
         if proc.poll() is None:
             proc.kill()
 
+    _check_cancelled(cancel_checker)
     if timed_out.is_set():
         raise RuntimeError(f"Bake timed out after {BAKE_TIMEOUT_S}s. Try a lower resolution or fewer samples.")
     if result is None:
