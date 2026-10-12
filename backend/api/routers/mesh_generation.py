@@ -65,6 +65,19 @@ def _normalize_texture_resolution(value):
     )
 
 
+def _resolve_target_polycount_precedence(
+    top_level_target: Optional[int],
+    nested_target: Optional[int],
+    preset_target: Optional[int],
+) -> Optional[int]:
+    """Resolve a generation budget without allowing a nested default to mask explicit API input."""
+    if top_level_target is not None:
+        return top_level_target
+    if nested_target is not None:
+        return nested_target
+    return preset_target
+
+
 def _clean_paint_parameters(parameters: Optional[dict]) -> Dict[str, Any]:
     """Keep direct paint jobs from re-triggering centralized texture generation."""
     obsolete = {
@@ -725,9 +738,11 @@ async def image_to_raw_mesh(
             (bool(value) for value in top_level_texture_flags if value is not None),
             next((bool(value) for value in nested_texture_flags if value is not None), False),
         )
-        target_polycount = params.pop(
-            "target_polycount",
-            mesh_request.target_polycount if mesh_request.target_polycount is not None else preset.get("target_polycount"),
+        nested_target_polycount = params.pop("target_polycount", None)
+        target_polycount = _resolve_target_polycount_precedence(
+            mesh_request.target_polycount,
+            nested_target_polycount,
+            preset.get("target_polycount"),
         )
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
@@ -920,9 +935,11 @@ async def image_to_textured_mesh(
                 )
             except ValueError as e:
                 raise HTTPException(status_code=422, detail=str(e))
-        target_polycount = params.pop(
-            "target_polycount",
-            mesh_request.target_polycount if mesh_request.target_polycount is not None else preset.get("target_polycount"),
+        nested_target_polycount = params.pop("target_polycount", None)
+        target_polycount = _resolve_target_polycount_precedence(
+            mesh_request.target_polycount,
+            nested_target_polycount,
+            preset.get("target_polycount"),
         )
         lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
         lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))

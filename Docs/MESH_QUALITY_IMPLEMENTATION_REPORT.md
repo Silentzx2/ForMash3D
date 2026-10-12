@@ -41,3 +41,35 @@ These are source-confirmed defects in the shared path. They can explain cross-mo
 **Multi-view input and evidence-guided detail refinement:** Not enabled in the default path. These should remain gated until the benchmark identifies which inputs/models are genuinely detail-limited. Synthetic subdivision or an unconditional detail hallucination stage would not establish source-faithful geometry.
 
 **Acceptance conclusion:** The shared production-path and preview-routing defects identified by the static audit are addressed and covered by new regression tests. Universal neural reconstruction quality and measured micro-detail improvement remain unverified until the GPU benchmark is run.
+
+## 2026-10-12 — Follow-up Audit and Gap Closure
+
+The follow-up audit started from `461a2816665c1f8a89247d7a401ebe5349bfc182` and re-read the research plan, the last implementation commit, the model manifest, scheduler, API request contracts, post-processing path, UI target summaries, and quality evaluation tooling.
+
+### Additional defects corrected
+
+- **API budget precedence:** an explicit top-level `target_polycount` now wins over a nested parameter and preset default. An explicit `0` therefore remains a deliberate Native/Raw request instead of being masked by a preset.
+- **Mutually consistent Native/Raw controls:** auto-optimization now requires a positive production budget, and adaptive shell remesh runs only with a positive explicit target. The workspace defaults the LOD chain off for a Native/Raw request. This prevents an inconsistent combination such as “Native/Raw + auto optimize”.
+- **Truthful Hunyuan resolution metadata:** Hunyuan Shape v2.1 and Mini-Turbo report the configured `octree_resolution` as requested/configured metadata and leave achieved resolution unset because their adapter path does not report the achieved output grid. TRELLIS.2 keeps reporting its actual returned resolution.
+- **End-to-end provenance:** schema-v2 raw-geometry telemetry includes adapter/checkpoint identity, runtime duration, raw-output/input hashes, input dimensions, requested versus reported-effective resolution, resolution downgrade warnings, per-GPU peak allocated/reserved VRAM when CUDA exposes it, and geometry operation metadata. The post-processing quality report and final job result now retain the adapter generation metadata plus a comparison of adapter output SHA-256 with the canonical immutable master SHA-256.
+- **Unique3D upscaling diagnostics:** metadata now says which SR path actually ran and includes the reason when a model path fails and falls back to Lanczos resizing.
+- **UI budget labels:** two advanced generation summaries no longer display a false 50K target when the real setting is Native/Raw (zero).
+
+### Regression coverage added in the follow-up
+
+- explicit top-level / nested / preset budget precedence;
+- every enabled, non-deprecated image-to-raw model in `backend/config/models.yaml` has a scheduler fidelity profile;
+- Native/Raw cannot enable automatic decimation and the shell-remesh gate requires a positive target;
+- telemetry metadata shape and Hunyuan requested-versus-achieved resolution semantics.
+
+### Verification and explicit remaining limits
+
+**Static review:** the follow-up source and changed-blob contracts were inspected against the current `Dev` head before commit. `Docs/TASKS.md` remains unchanged, as previously requested.
+
+**Automated execution:** the current session does not have the repository checkout/runtime needed to execute the test suite, frontend typecheck, or formatter. Tests are added but are **not marked as passing**.
+
+**GPU quality benchmark:** not run. Per-model micro-detail quality, inference-time comparisons, and actual peak VRAM observations still need controlled CUDA runs on the same input corpus and seed/protocol. The new telemetry makes those runs auditable; it is not a substitute for them.
+
+**Still intentionally gated:** Step1X-3D remains unintegrated because its runtime/dependency and checkpoint-license compatibility have not been verified in the shared environment; multi-view input and evidence-guided detail refinement remain disabled until an A/B corpus demonstrates a genuine geometry gain without source drift. No artificial subdivision or unconditional detail hallucination was added.
+
+**Acceptance:** the additional shared-path/API/telemetry correctness gaps found in the follow-up are patched in source and covered with new regression tests. Model-level sharpness improvement and benchmark acceptance remain unverified until the tests and GPU comparison are executed.

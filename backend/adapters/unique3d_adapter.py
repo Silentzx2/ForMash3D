@@ -201,10 +201,16 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         except Exception as e:
             logger.error(f"Error unloading Unique3D models: {str(e)}")
 
-    def _run_super_resolution(self, images: List[Image.Image]) -> List[Image.Image]:
-        """Run super-resolution on input images using realesrgan."""
+    def _run_super_resolution(
+        self,
+        images: List[Image.Image],
+        diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> List[Image.Image]:
+        """Upscale input images and expose the actual backend used for provenance."""
         if self.sr_model is None:
-            # Fallback: simple resize
+            if diagnostics is not None:
+                diagnostics["backend"] = "lanczos_resize_fallback"
+                diagnostics["fallback_reason"] = "configured SR model is unavailable"
             return [img.resize((img.width * 2, img.height * 2), Image.LANCZOS) for img in images]
         
         try:
@@ -230,9 +236,15 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 output = np.clip(output * 255, 0, 255).astype(np.uint8)
                 results.append(Image.fromarray(output))
             
+            if diagnostics is not None:
+                diagnostics["backend"] = "configured_sr_model"
+                diagnostics["fallback_reason"] = None
             return results
         except Exception as e:
             logger.warning(f"Super-resolution failed: {e}, using fallback resize")
+            if diagnostics is not None:
+                diagnostics["backend"] = "lanczos_resize_fallback"
+                diagnostics["fallback_reason"] = str(e)
             return [img.resize((img.width * 2, img.height * 2), Image.LANCZOS) for img in images]
 
     def _run_multiview_prediction(
@@ -371,10 +383,10 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             preview_img = Image.open(image_path)
             original_input_size = [int(preview_img.width), int(preview_img.height)]
             super_resolution_requested = preview_img.size[0] <= 512
-            super_resolution_backend = (
-                "configured_sr_model_or_resize_fallback" if self.sr_model is not None
-                else "lanczos_resize_fallback"
-            ) if super_resolution_requested else "not_used"
+            super_resolution_diagnostics: Dict[str, Any] = {
+                "backend": "not_used" if not super_resolution_requested else "not_run",
+                "fallback_reason": None,
+            }
 
             # Input upscaling can aid preprocessing but does not guarantee added geometric detail.
             if super_resolution_requested:
@@ -382,7 +394,10 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                     "Running Unique3D input upscaling (sr_model_available=%s).",
                     self.sr_model is not None,
                 )
-                preview_img = self._run_super_resolution([preview_img])[0]
+                preview_img = self._run_super_resolution(
+                    [preview_img], diagnostics=super_resolution_diagnostics
+                )[0]
+            super_resolution_backend = str(super_resolution_diagnostics.get("backend", "not_reported"))
             inference_input_size = [int(preview_img.width), int(preview_img.height)]
 
             # Step 2: Multiview prediction
@@ -476,6 +491,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                     "inference_input_size": inference_input_size,
                     "super_resolution_requested": super_resolution_requested,
                     "super_resolution_backend": super_resolution_backend,
+                    "super_resolution_fallback_reason": super_resolution_diagnostics.get("fallback_reason"),
                     "predicted_view_count": len(rgb_pils),
                     "predicted_normal_count": len(normal_pils),
                     "input_processing": input_processing,

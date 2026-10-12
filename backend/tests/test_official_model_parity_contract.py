@@ -298,6 +298,44 @@ class TestTrellis2EffectiveGeometryTelemetry(unittest.TestCase):
 class TestNativeRawQualityContracts(unittest.TestCase):
     """Regression tests for shared Native/Raw contracts across active geometry models."""
 
+    def test_explicit_api_polycount_precedes_nested_default_and_preset(self):
+        from api.routers.mesh_generation import _resolve_target_polycount_precedence
+
+        self.assertEqual(_resolve_target_polycount_precedence(35000, 0, 50000), 35000)
+        self.assertEqual(_resolve_target_polycount_precedence(None, 0, 50000), 0)
+        self.assertEqual(_resolve_target_polycount_precedence(None, None, 50000), 50000)
+        self.assertIsNone(_resolve_target_polycount_precedence(None, None, None))
+
+    def test_model_manifest_and_runtime_profiles_stay_in_sync(self):
+        import yaml
+        from core.scheduler.multiprocess_scheduler import (
+            _RAW_MESH_MAX_QUALITY_PARAMETERS,
+            _build_model_inference_inputs,
+        )
+
+        manifest = yaml.safe_load(
+            (backend_root / "config/models.yaml").read_text(encoding="utf-8")
+        )
+        active_models = {
+            model_id for model_id, config in manifest.get("image_to_raw_mesh", {}).items()
+            if config.get("enabled", True)
+            and not config.get("deprecated", False)
+            and not (config.get("capabilities") or {}).get("deprecated", False)
+            and not config.get("alias_of")
+        }
+        missing = sorted(
+            model_id for model_id in active_models
+            if model_id.lower() not in _RAW_MESH_MAX_QUALITY_PARAMETERS
+        )
+        self.assertEqual(
+            missing, [],
+            f"Enabled image geometry models lack max-fidelity profiles: {missing}",
+        )
+        for model_id in active_models:
+            with self.subTest(model=model_id):
+                profile_inputs = _build_model_inference_inputs({}, model_id=model_id)
+                self.assertEqual(profile_inputs.get("source_quality"), "max", model_id)
+
     def test_scheduler_forces_each_active_model_maximum_geometry_profile(self):
         from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
 
@@ -350,6 +388,7 @@ class TestNativeRawQualityContracts(unittest.TestCase):
         from postprocess.pipeline import (
             MAX_PRODUCTION_FACES,
             _resolve_target_polycount,
+            _should_auto_optimize,
             _should_run_feature_remesh,
         )
         self.assertEqual(_resolve_target_polycount(None), 0)
@@ -357,10 +396,23 @@ class TestNativeRawQualityContracts(unittest.TestCase):
         self.assertEqual(_resolve_target_polycount(-1), 0)
         self.assertEqual(_resolve_target_polycount(50000), 50000)
         self.assertEqual(_resolve_target_polycount(10**9), MAX_PRODUCTION_FACES)
-        self.assertFalse(_should_run_feature_remesh("high", True, False, "skipped", False, 0))
-        self.assertFalse(_should_run_feature_remesh("high", True, False, "skipped", False, None))
-        self.assertTrue(_should_run_feature_remesh("high", True, False, "skipped", True, 0))
-        self.assertTrue(_should_run_feature_remesh("high", True, False, "skipped", False, 50000))
+        self.assertFalse(_should_auto_optimize(True, 0))
+        self.assertTrue(_should_auto_optimize(True, 50000))
+        self.assertFalse(_should_run_feature_remesh("high", True, False, "skipped", 0))
+        self.assertFalse(_should_run_feature_remesh("high", True, False, "skipped", None))
+        self.assertTrue(_should_run_feature_remesh("high", True, False, "skipped", 50000))
+
+    def test_hunyuan_resolution_telemetry_does_not_claim_achieved_grid(self):
+        for adapter_path in (
+            backend_root / "adapters/hunyuan3d_shape_v21.py",
+            backend_root / "adapters/hunyuan3d_dit_v2_mini_turbo.py",
+        ):
+            with self.subTest(adapter=adapter_path.name):
+                source = adapter_path.read_text(encoding="utf-8")
+                self.assertIn('"requested_geometry_resolution": octree_res', source)
+                self.assertIn('"effective_geometry_resolution": None', source)
+                self.assertIn('"effective_geometry_resolution_status": "upstream exposes configured octree_resolution', source)
+                self.assertNotIn('"geometry_extraction_grid_resolution": octree_res', source)
 
     def test_structural_repair_is_opt_in(self):
         from postprocess.pipeline import _should_run_structural_repair
@@ -412,6 +464,9 @@ class TestNativeRawQualityContracts(unittest.TestCase):
             self.assertEqual(len(telemetry["input_image_sha256"]), 64)
             self.assertEqual(telemetry["effective_geometry_resolution_status"],
                              "upstream adapter does not expose a scalar achieved resolution")
+            self.assertIsNone(telemetry["inference_runtime_seconds"])
+            self.assertEqual(telemetry["input_image_size"], None)
+            self.assertIsInstance(telemetry["gpu_telemetry"], list)
 
 
 class TestPostprocessPipelineParity(unittest.TestCase):

@@ -476,6 +476,17 @@ def _handle_control_message(
         return WorkerResponse(msg.msg_id, False, error=str(e))
 
 
+def _reset_cuda_peak_memory_stats(resource_plan: Optional[Dict[str, Any]], fallback_gpu_id: int) -> None:
+    """Reset per-job CUDA memory peaks after model load and before inference."""
+    if not torch.cuda.is_available():
+        return
+    gpu_ids = (resource_plan or {}).get("gpu_ids") or [fallback_gpu_id]
+    for gpu_id in sorted({int(value) for value in gpu_ids if value is not None}):
+        try:
+            torch.cuda.reset_peak_memory_stats(gpu_id)
+        except Exception:
+            logger.debug("Could not reset CUDA peak stats for GPU %s", gpu_id, exc_info=True)
+
 def _sha256_existing_file(path: Any) -> Optional[str]:
     """Hash a persisted source file without loading it into memory."""
     if not path:
@@ -503,6 +514,7 @@ def _attach_raw_geometry_telemetry(
     loaded_model: BaseModel,
     gpu_id: int,
     resource_plan: Optional[Dict[str, Any]] = None,
+    inference_seconds: Optional[float] = None,
 ) -> None:
     """Attach common model/input/output provenance to every raw image geometry job."""
     if str(getattr(job_request, "feature", "") or "").lower().replace("-", "_") not in {
@@ -521,7 +533,10 @@ def _attach_raw_geometry_telemetry(
         info = {}
         result["generation_info"] = info
 
-    input_image = model_inputs.get("image_path") or (job_request.inputs or {}).get("image_path")
+    request_inputs = job_request.inputs or {}
+    input_image = model_inputs.get("image_path") or request_inputs.get("image_path")
+    reference_image = request_inputs.get("reference_image_path") or input_image
+    preprocessing_metadata = request_inputs.get("preprocessing_metadata")
     parameter_names = (
         "source_quality", "seed", "num_inference_steps", "num_steps", "guidance_scale",
         "cfg_scale", "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
@@ -554,14 +569,61 @@ def _attach_raw_geometry_telemetry(
         raw_bytes = Path(output_path).stat().st_size
     except OSError:
         return
-    resolution = info.get("effective_geometry_resolution")
     scheduled_gpus = (resource_plan or {}).get("gpu_ids") or [gpu_id]
+    gpu_details = []
+    if torch.cuda.is_available():
+        for device_id in sorted({int(value) for value in scheduled_gpus if value is not None}):
+            try:
+                props = torch.cuda.get_device_properties(device_id)
+                gpu_details.append({
+                    "id": device_id,
+                    "name": str(getattr(props, "name", f"GPU {device_id}")),
+                    "total_vram_bytes": int(getattr(props, "total_memory", 0)),
+                    "peak_allocated_vram_bytes": int(torch.cuda.max_memory_allocated(device_id)),
+                    "peak_reserved_vram_bytes": int(torch.cuda.max_memory_reserved(device_id)),
+                })
+            except Exception:
+                logger.debug("Could not collect CUDA telemetry for GPU %s", device_id, exc_info=True)
+
+    def _image_dimensions(path: Any) -> Optional[List[int]]:
+        if not path:
+            return None
+        try:
+            from PIL import Image
+            with Image.open(path) as image:
+                return [int(image.width), int(image.height)]
+        except Exception:
+            return None
+
+    resolution = info.get("effective_geometry_resolution")
+    resolution_status = (
+        info.get("effective_geometry_resolution_status")
+        or info.get("resolution_status")
+        or ("reported_by_adapter" if resolution is not None else
+            "upstream adapter does not expose a scalar achieved resolution")
+    )
     info["raw_geometry_telemetry"] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "model_id": model_id,
         "model_version": getattr(loaded_model, "version", None),
+        "adapter_class": type(loaded_model).__name__,
         "checkpoint": str(getattr(loaded_model, "model_path", model_config.get("model_path", "unknown"))),
+        "checkpoint_revision": (
+            getattr(loaded_model, "revision", None)
+            or getattr(loaded_model, "model_revision", None)
+            or model_config.get("revision")
+        ),
         "source_quality": model_inputs.get("source_quality", "model_default"),
+        "inference_runtime_seconds": round(float(inference_seconds), 4) if inference_seconds is not None else None,
+        "input_image_sha256": _sha256_existing_file(input_image),
+        "reference_image_sha256": _sha256_existing_file(reference_image),
+        "input_image_size": _image_dimensions(input_image),
+        "reference_image_size": _image_dimensions(reference_image),
+        "preprocessing": {
+            "artifact_id": request_inputs.get("preprocessing_artifact_id"),
+            "enabled": bool(request_inputs.get("enhancement_enabled", False)),
+            "metadata": preprocessing_metadata if isinstance(preprocessing_metadata, dict) else None,
+        },
         "effective_parameters": {
             key: (dict(model_inputs[key]) if isinstance(model_inputs[key], dict) else model_inputs[key])
             for key in parameter_names if key in model_inputs
@@ -569,17 +631,26 @@ def _attach_raw_geometry_telemetry(
         "scheduler_gpu_ids": list(scheduled_gpus),
         "primary_gpu_id": int(gpu_id),
         "model_device": str(getattr(loaded_model, "device", None) or "adapter_reported_device"),
+        "gpu_telemetry": gpu_details,
+        "reported_inference_dtype": str(
+            getattr(loaded_model, "dtype", None)
+            or info.get("inference_dtype")
+            or "not_exposed_by_adapter"
+        ),
         "raw_mesh_path": str(output_path),
         "raw_mesh_bytes": raw_bytes,
         "raw_mesh_sha256": _sha256_existing_file(output_path),
-        "input_image_sha256": _sha256_existing_file(input_image),
         "native_vertex_count": native_vertices,
         "native_face_count": native_faces,
+        "requested_geometry_resolution": info.get("requested_geometry_resolution"),
+        "geometry_extraction_grid_resolution": info.get("geometry_extraction_grid_resolution"),
         "effective_geometry_resolution": resolution,
-        "effective_geometry_resolution_status": (
-            "reported_by_adapter" if resolution is not None
-            else "upstream adapter does not expose a scalar achieved resolution"
-        ),
+        "effective_geometry_resolution_status": resolution_status,
+        "geometry_resolution_limited": bool(info.get("geometry_resolution_limited", False)),
+        "geometry_resolution_limit_reason": info.get("geometry_resolution_limit_reason"),
+        "geometry_quality_warning": info.get("geometry_quality_warning"),
+        "geometry_resolution_source": info.get("geometry_resolution_source"),
+        "voxel_size": info.get("voxel_size"),
         "geometry_extractor": info.get("geometry_extractor"),
         "mesh_operations": info.get("mesh_operations", []),
     }
@@ -662,11 +733,12 @@ def _process_job_in_worker(
             "postprocess_target_polycount": request_inputs.get("target_polycount", "native"),
             "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps", "not_supported")),
             "actual_guidance": model_inputs.get("guidance_scale", model_inputs.get("cfg_scale", "not_supported")),
-            "actual_resolution": model_inputs.get("resolution", "not_supported"),
-            "actual_extraction_resolution": model_inputs.get(
+            "requested_resolution_parameter": model_inputs.get("resolution", "not_supported"),
+            "requested_extraction_resolution": model_inputs.get(
                 "mc_resolution",
                 model_inputs.get("octree_resolution", model_inputs.get("octree_res", model_inputs.get("grid_resolution", "not_supported"))),
             ),
+            "effective_geometry_resolution": "reported_after_decode_if_supported",
             "actual_seed": model_inputs.get("seed", "not_supported"),
             "actual_dtype": str(getattr(loaded_model, "dtype", None) or model_inputs.get("dtype") or "adapter_default"),
             "actual_device": str(
@@ -703,7 +775,8 @@ def _process_job_in_worker(
                     ("Device", f"{runtime_log['actual_device']} ({get_gpu_memory_summary(gpu_id)})"),
                     ("Input Source", input_desc),
                     ("Steps / Guidance", f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"),
-                    ("Resolution / Grid", f"{runtime_log['actual_resolution']} / {runtime_log['actual_extraction_resolution']}"),
+                    ("Requested Resolution / Grid", f"{runtime_log['requested_resolution_parameter']} / {runtime_log['requested_extraction_resolution']}"),
+                    ("Effective Geometry Resolution", runtime_log["effective_geometry_resolution"]),
                     ("Seed", runtime_log["actual_seed"]),
                     ("Quality Contract", runtime_log["source_quality_contract"]),
                     ("Downstream Budget", runtime_log["postprocess_target_polycount"]),
@@ -711,10 +784,13 @@ def _process_job_in_worker(
             )
         )
 
-        # Process job with no_grad (allows overriding with enable_grad for Trellis opt)
+        # Reset after model load so these peaks cover this inference call, not model initialization.
+        _reset_cuda_peak_memory_stats(resource_plan, gpu_id)
+        inference_start_time = time.time()
         with torch.no_grad():
             result = loaded_model.process(model_inputs)
 
+        inference_seconds = time.time() - inference_start_time
         if isinstance(result, dict) and result.get("success", True):
             try:
                 _attach_raw_geometry_telemetry(
@@ -726,6 +802,7 @@ def _process_job_in_worker(
                     loaded_model,
                     gpu_id,
                     resource_plan,
+                    inference_seconds,
                 )
             except Exception:
                 # Provenance must never convert a successful model inference into a failed job.

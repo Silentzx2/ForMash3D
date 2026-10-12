@@ -1493,9 +1493,9 @@ export const GeneratePanel: React.FC = () => {
                   <div className="text-[9px] text-zinc-400">Native/Raw preserves source geometry; production presets opt into remesh, decimation, and LOD budgets</div>
                 </div>
                 <span className="font-mono text-xs font-black text-primary">
-                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) <= 0
+                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
                     ? 'Native / Raw'
-                    : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000).toLocaleString()} tris`}
+                    : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
                 </span>
               </div>
 

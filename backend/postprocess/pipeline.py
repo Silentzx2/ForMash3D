@@ -480,24 +480,26 @@ def _should_run_structural_repair(topology: Dict[str, Any], auto_repair_enabled:
     )
 
 
+def _should_auto_optimize(requested: Any, target_polycount: int) -> bool:
+    """A Native/Raw sentinel cannot also request automatic production decimation."""
+    return bool(requested) and int(target_polycount) > 0
+
+
 def _should_run_feature_remesh(
     quality_mode: str,
     solid_generation_feature: bool,
     native_textures: bool,
     retopo_status: str,
-    auto_optimize: bool,
     target_polycount: Optional[int],
 ) -> bool:
-    """Do not shell-remesh Native/Raw jobs just because their quality profile is high."""
+    """Adaptive remeshing requires an explicit positive production target."""
     return (
         quality_mode in {"high", "ultra"}
         and solid_generation_feature
         and not native_textures
         and retopo_status != "completed"
-        and (
-            auto_optimize
-            or (target_polycount is not None and target_polycount > 0)
-        )
+        and target_polycount is not None
+        and target_polycount > 0
     )
 
 
@@ -1231,7 +1233,7 @@ def run_postprocess_job(
         or bool(job_metadata.get("quad_topology"))
         or bool(job_inputs.get("quad_topology"))
     )
-    auto_optimize = bool(job_inputs.get("auto_optimize", False))
+    auto_optimize = _should_auto_optimize(job_inputs.get("auto_optimize", False), resolved_target_polycount)
     lod_enabled = bool(job_inputs.get("generateLOD", True))
     should_bake = (
         bool(job_inputs.get("bake_normal_maps"))
@@ -1276,13 +1278,50 @@ def run_postprocess_job(
 
     raw_bytes = master_path.read_bytes()
     source_sha256 = master_source_sha256
+    generation_info = generation_result.get("generation_info")
+    if not isinstance(generation_info, dict):
+        generation_info = {}
+    raw_geometry_telemetry = generation_info.get("raw_geometry_telemetry")
+    if not isinstance(raw_geometry_telemetry, dict):
+        raw_geometry_telemetry = {}
+    adapter_output_sha256 = raw_geometry_telemetry.get("raw_mesh_sha256")
     native_textures = _has_native_textures_scene(raw_bytes, master_path.name)
     mesh = load_mesh(raw_bytes, master_path.name)
+    raw_master_identity_matches = (
+        bool(adapter_output_sha256 and adapter_output_sha256 == source_sha256)
+        if adapter_output_sha256 else None
+    )
+    if raw_master_identity_matches is False:
+        logger.error(
+            "Raw adapter output hash does not match canonical master for job %s: adapter=%s master=%s",
+            job_id, adapter_output_sha256, source_sha256,
+        )
     quality_trace = {
         "source": {
             **mesh_stats(mesh).model_dump(),
             "native_textures": native_textures,
-        }
+        },
+        "source_identity": {
+            "adapter_output_sha256": adapter_output_sha256,
+            "canonical_master_sha256": source_sha256,
+            "canonical_master_path": str(master_path),
+            "adapter_output_matches_master": raw_master_identity_matches,
+            "status": (
+                "verified_match" if raw_master_identity_matches is True
+                else "hash_mismatch" if raw_master_identity_matches is False
+                else "adapter_hash_unavailable"
+            ),
+        },
+        "raw_generation": {
+            "model_id": generation_info.get("model"),
+            "geometry_extractor": generation_info.get("geometry_extractor"),
+            "requested_geometry_resolution": generation_info.get("requested_geometry_resolution"),
+            "geometry_extraction_grid_resolution": generation_info.get("geometry_extraction_grid_resolution"),
+            "effective_geometry_resolution": generation_info.get("effective_geometry_resolution"),
+            "geometry_resolution_limited": generation_info.get("geometry_resolution_limited", False),
+            "geometry_quality_warning": generation_info.get("geometry_quality_warning"),
+            "raw_geometry_telemetry": raw_geometry_telemetry,
+        },
     }
 
     inspect_t0 = time.time()
@@ -1507,7 +1546,6 @@ def run_postprocess_job(
         solid_generation_feature=solid_generation_feature,
         native_textures=native_textures,
         retopo_status=str(retopo_stats.get("status", "skipped")),
-        auto_optimize=auto_optimize,
         target_polycount=parsed_target_polycount,
     ):
         try:
@@ -1552,7 +1590,7 @@ def run_postprocess_job(
     _check_cancelled(cancel_checker)
     _emit(progress, 0.30, "optimize", "Optimizing game-ready triangle budget.")
     optimize_t0 = time.time()
-    auto_optimize = bool(job_inputs.get("auto_optimize", False))
+    auto_optimize = _should_auto_optimize(job_inputs.get("auto_optimize", False), resolved_target_polycount)
     has_explicit_target = resolved_target_polycount > 0
     repaired_face_count = len(repaired.faces)
 
@@ -2113,6 +2151,9 @@ def run_postprocess_job(
         metadata_dir / "quality_report.json",
         {
             "source_sha256": source_sha256,
+            "adapter_output_sha256": adapter_output_sha256,
+            "adapter_output_matches_master": raw_master_identity_matches,
+            "raw_geometry_telemetry": raw_geometry_telemetry,
             "before_postprocess": qa_before,
             "after_postprocess": qa_report,
             "repair": repair_stats,
@@ -2183,6 +2224,9 @@ def run_postprocess_job(
         master_quality_report=master_quality_report,
     )
     final_result["quality_trace"] = quality_trace
+    final_result["generation_info"] = generation_info
+    final_result["raw_geometry_telemetry"] = raw_geometry_telemetry or None
+    final_result["geometry_quality_warning"] = generation_info.get("geometry_quality_warning")
     final_result["master_to_derivative"] = master_quality_report
     final_result["quality_mode"] = quality_mode
     final_result["texture_stage"] = texture_stage_info

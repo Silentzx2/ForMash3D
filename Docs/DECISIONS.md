@@ -828,3 +828,21 @@ Operators had no way to see the combined health of the two stores (SQLite rows v
 **Rationale:** TripoSG provides a self-contained high-fidelity image/scribble-to-mesh path. TripoSF's current image path invokes TripoSR to create its coarse input mesh, so removing TripoSR weights while retaining TripoSF would leave a hidden model dependency and could break generation. Keeping TripoSG avoids that cross-model dependency while retaining one high-fidelity Tripo model. All non-Tripo model integrations and generic scheduler/capability behavior remain in place.
 
 **Consequences:** The model selector and model API expose TripoSG but no TripoSR/TripoSF/Zero123++ model IDs. The download manager installs only TripoSG and its RMBG dependencies among Tripo-specific model entries. Historical ADRs documenting the retired implementations remain as historical records; this ADR defines the current supported catalog.
+
+
+## ADR-069: Explicit Native/Raw Budget Semantics and Geometry Provenance
+
+**Status:** Accepted — 2026-10-12
+
+**Context:** The follow-up mesh-quality audit found that a nested `target_polycount` or intent preset could mask an explicit API-level value. The UI/backend could also receive an inconsistent Native/Raw target together with auto-optimization or an implicit remesh path. Some resolution fields described Hunyuan's configured octree parameter as if it were the achieved output-grid resolution, and model metadata did not carry all provenance through the canonical post-processing result.
+
+**Decision:**
+1. Resolve a generation target with precedence: explicitly supplied top-level API value, explicitly supplied nested model parameter, then preset fallback. Explicit `0` means Native/Raw; missing/nonpositive backend target continues to resolve to Native/Raw.
+2. Gate automatic production optimization and adaptive shell remesh on a positive explicit target. The Native/Raw workspace default disables LOD generation, while production workflows may opt into budgets/derivatives.
+3. Keep `master/source.glb` immutable and persist raw adapter output/master SHA-256 identity in the quality trace and final result. A mismatch is recorded as a provenance error; mutation of the canonical master during post-processing raises.
+4. Use schema-v2 telemetry to report adapter/checkpoint identity, input/reference hashes and dimensions, effective inference parameters, runtime, per-GPU peak VRAM when observable, native mesh counts, and truthful requested/achieved-resolution semantics.
+5. Do not label a configured Hunyuan octree parameter as achieved resolution without an upstream report. Keep Step1X-3D, multi-view fusion, and evidence-guided detail refinement evaluation-gated until compatible-runtime validation and controlled A/B evidence exist.
+
+**Consequences:** Native/Raw has an explicit end-to-end contract; request precedence, post-process behavior and display labels agree. Benchmark runs gain reproducible source identity and resource telemetry. Unknown achieved resolution stays unknown rather than being inferred from a requested parameter.
+
+**Validation boundary:** Regression tests were added for request precedence, profile/manifest parity, Native/Raw gates and telemetry. They have not been executed in the current environment, and no CUDA A/B quality result is claimed.

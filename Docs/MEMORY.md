@@ -391,3 +391,16 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Canonical runtime log: repository-root `logs/master.log`, absolute-path resolution, append-only/non-rotating file handling, and one target for API, scheduler/workers, startup, frontend runtime/build, and project-managed Redis.
 - Removed separate API/scheduler/Supervisor/frontend log-file targets from startup and Docker configuration. Admin/API log reading and clearing now operate on the same master file.
 - A remote Redis instance keeps host-side logs; only a local Redis instance can be redirected to the application's master file.
+
+
+## 2026-10-12 Follow-up Mesh-Fidelity Audit
+
+- Started from the just-pushed mesh-fidelity commit and re-read the unchanged `Docs/TASKS.md` research plan, model manifest, API target-resolution logic, scheduler inference profile and provenance, post-processing gates, UI budget displays, and quality evaluator.
+- Fixed budget precedence in `backend/api/routers/mesh_generation.py`: explicit top-level `target_polycount` beats a nested model parameter and preset fallback; explicit Native/Raw `0` is preserved.
+- Hardened the Native/Raw production invariant in `backend/postprocess/pipeline.py`: `auto_optimize` is false for a nonpositive/native target, and adaptive shell remesh requires a positive explicit target. Existing opt-in structural repair gating and immutable-master SHA verification remain in force.
+- Extended `raw_geometry_telemetry` to schema version 2 with input/reference hashes and dimensions, inference runtime, checkpoint/adapter identity, requested/effective resolution status, quality-limit warnings, and per-GPU total/peak allocated/peak reserved VRAM when CUDA data is available. Final post-process metadata now includes adapter-output-vs-master SHA identity and carries generation information to the final result.
+- Corrected Hunyuan Shape v2.1 and Mini-Turbo resolution labels: configured octree resolution is not reported as achieved output resolution unless upstream reports the latter. TRELLIS.2 retains true effective-resolution telemetry.
+- Unique3D SR fallback is explicit: successful model-backed SR and Lanczos fallback each record the actual path and failure reason.
+- Fixed the remaining advanced UI fallback labels that presented 50K for a native target; new workspace defaults disable automatic LOD generation in Native/Raw mode.
+- Added regression coverage for API target precedence, model-manifest/profile parity, Native/Raw optimize/remesh incompatibility, and the expanded telemetry contract.
+- **Validation status:** source-level contracts inspected; test/typecheck/format suites and CUDA A/B benchmarks have not been run in this environment. Do not claim them as passing. `Docs/TASKS.md` intentionally preserved byte-for-byte under the existing instruction; implementation and validation status is tracked in `Docs/MESH_QUALITY_IMPLEMENTATION_REPORT.md`.
