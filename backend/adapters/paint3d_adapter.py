@@ -499,7 +499,7 @@ img2img:
 
         logger.info(f"Running Paint3D stage: {script_name} -> {outdir}")
         # Use explicit UTF-8 encoding with error handling to prevent UnicodeDecodeError
-        # Stream output to capture progress
+        # Stream output to capture progress with proper timeout handling
         proc = subprocess.Popen(
             cmd,
             cwd=str(self.paint3d_root),
@@ -512,19 +512,59 @@ img2img:
             bufsize=1,  # line buffered
         )
         
-        # Read output line by line and report progress
-        output_lines = []
-        stage_name = "stage1" if "stage1" in script_name else "stage2"
-        for line in proc.stdout:
-            line = line.rstrip()
-            output_lines.append(line)
-            logger.debug(f"[Paint3D {stage_name}] {line}")
-            
-            # Parse progress from output if available
-            if progress_callback:
-                self._parse_and_report_progress(line, stage_name, progress_callback)
+        # Read output line by line with timeout watchdog
+        import threading
+        import queue
         
-        proc.wait(timeout=timeout_seconds)
+        output_lines = []
+        output_queue = queue.Queue()
+        stage_name = "stage1" if "stage1" in script_name else "stage2"
+        read_error = [None]
+        finished = [False]
+        
+        def read_stdout():
+            try:
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    output_lines.append(line)
+                    output_queue.put(("line", line))
+                output_queue.put(("done", None))
+            except Exception as e:
+                read_error[0] = e
+                output_queue.put(("error", e))
+            finally:
+                finished[0] = True
+        
+        reader_thread = threading.Thread(target=read_stdout, daemon=True)
+        reader_thread.start()
+        
+        # Process output with timeout
+        start_time = time.time()
+        while True:
+            # Check overall timeout
+            if time.time() - start_time > timeout_seconds:
+                proc.kill()
+                raise RuntimeError(f"Paint3D {script_name} timed out after {timeout_seconds} seconds")
+            
+            try:
+                item_type, item = output_queue.get(timeout=0.5)
+            except queue.Empty:
+                # Check if process ended
+                if proc.poll() is not None:
+                    break
+                continue
+            
+            if item_type == "line":
+                logger.debug(f"[Paint3D {stage_name}] {item}")
+                if progress_callback:
+                    self._parse_and_report_progress(item, stage_name, progress_callback)
+            elif item_type == "done":
+                break
+            elif item_type == "error":
+                raise read_error[0] or RuntimeError("Reader thread error")
+        
+        # Wait for process to fully terminate
+        proc.wait(timeout=5)
         stdout = "\n".join(output_lines)
         
         if proc.returncode != 0:
@@ -649,6 +689,8 @@ img2img:
         job_id = inputs.get("job_id") or uuid.uuid4().hex[:12]
         # Get progress callback from inputs (passed by pipeline)
         progress_callback = inputs.get("progress_callback")
+        # Get timeout (default 1800s = 30 min for slow GPUs)
+        timeout_seconds = inputs.get("timeout_seconds", 1800)
 
         # Destination mesh output path
         explicit_output = inputs.get("output_path")
@@ -700,6 +742,7 @@ img2img:
                 image_path=job_image,
                 outdir=stage1_outdir,
                 progress_callback=progress_callback,
+                timeout_seconds=timeout_seconds,
             )
 
             # Find stage 1 albedo output
@@ -718,6 +761,7 @@ img2img:
                 outdir=stage2_outdir,
                 texture_path=s1_albedo,
                 progress_callback=progress_callback,
+                timeout_seconds=timeout_seconds,
             )
 
             # Locate refined albedo texture
