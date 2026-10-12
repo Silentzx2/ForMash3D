@@ -754,11 +754,46 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
         exit 1
     fi
     echo "[SUCCESS] TripoSG model-specific dependency versions restored"
+
+echo ""
+echo "========================================"
+echo "Installing Pixal3D Dependencies"
+echo "========================================"
+echo "[INFO] Changing directory to thirdparty/Pixal3D..."
+cd "$THIRDPARTY_DIR/Pixal3D"
+echo "[INFO] Installing Pixal3D requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Pixal3D requirements installed"
+else
+    echo "[ERROR] Failed to install Pixal3D requirements"
+    exit 1
 fi
 
+echo ""
+echo "[INFO] Installing natten (required for sparse attention)..."
+# natten requires specific CUDA architecture and build workers
+# Users should set NATTEN_CUDA_ARCH and NATTEN_N_WORKERS in their environment
+else
+    echo "[INFO] Installing natten with CUDA_ARCH=$NATTEN_CUDA_ARCH and WORKERS=$NATTEN_N_WORKERS"
+    NATTEN_CUDA_ARCH="$NATTEN_CUDA_ARCH" NATTEN_N_WORKERS="$NATTEN_N_WORKERS" $UV_PIP install --find-links="$WHEEL_DIR" natten==0.21.0 --no-build-isolation
+fi
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] natten installed"
+else
+    echo "[ERROR] Failed to install natten"
+    exit 1
+fi
+
+echo ""
+echo "[INFO] Installing utils3d (required for voxel processing)..."
+if $UV_PIP install --find-links="$WHEEL_DIR" https://github.com/LDYang694/Storages/releases/download/20260430/utils3d-0.0.2-py3-none-any.whl; then
+    echo "[SUCCESS] utils3d installed"
+else
+    echo "[ERROR] Failed to install utils3d"
+    exit 1
+fi
 echo "[INFO] Installing test requirements..."
-# testing 
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements-test.txt 
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] Test requirements installed"
 else

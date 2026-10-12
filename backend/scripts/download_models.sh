@@ -5,7 +5,7 @@
 # 
 # Available models:
 #   hunyuan2mini, hunyuan21, trellis, trellis-text, trellis2,
-#   unirig, partuv, fastmesh, misc, all
+#   unirig, partuv, fastmesh, triposg, ardy, unique3d, paint3d, pixal3d, misc, all
 #
 # Options:
 #   -h, --help              Show this help message
@@ -86,7 +86,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "unirig" "partuv" "fastmesh" "triposg" "ardy" "unique3d" "paint3d" "misc" "all")
+AVAILABLE_MODELS=("hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "unirig" "partuv" "fastmesh" "triposg" "ardy" "unique3d" "paint3d" "pixal3d" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -117,6 +117,7 @@ Available models:
     ardy               - ARDY motion generation models
     unique3d           - Unique3D high-fidelity single-image to 3D model
     paint3d            - Paint3D 1K/2K UV texture diffusion model
+    pixal3d            - Pixal3D pixel-aligned image to 3D generation model
     misc               - Miscellaneous utility models (RealESRGAN, DINOv2)
     all                - All core models (excluding optional normal ControlNet)
 
@@ -623,6 +624,38 @@ download_unique3d() {
     print_success "Unique3D model downloaded successfully"
 }
 
+# Function to download Pixal3D models
+download_pixal3d() {
+    print_info "========================================"
+    print_info "Downloading Pixal3D Model"
+    print_info "========================================"
+
+    # Pixal3D model weights live in the TencentARC/Pixal3D HF repo.
+    # The pipeline uses from_pretrained() which expects {path}.json and {path}.safetensors.
+    local model_dir="$PRETRAINED_DIR/Pixal3D"
+
+    if [ "$FORCE_DOWNLOAD" = false ] && \
+       verify_directory "$model_dir" 1 && \
+       verify_file "$model_dir/pipeline.json" 1000 && \
+       verify_file "$model_dir/sparse_structure_flow_model.safetensors" 1000000; then
+        print_info "Pixal3D model already exists and verified"
+        return 0
+    fi
+
+    mkdir -p "$model_dir"
+
+    # Download the full Pixal3D model repo (pipeline.json + all safetensors)
+    print_info "Downloading Pixal3D model from Hugging Face (TencentARC/Pixal3D)..."
+    if ! hf_download TencentARC/Pixal3D \
+        --local-dir "$model_dir"; then
+        print_error "Failed to download Pixal3D model"
+        print_warning "The model requires ~18GB of weights. Check your disk space and network connection."
+        return 1
+    fi
+
+    print_success "Pixal3D model downloaded successfully"
+}
+
 # Function to download Paint3D models
 download_paint3d() {
     print_info "========================================"
@@ -865,6 +898,9 @@ for model in "${MODELS_ARRAY[@]}"; do
         "paint3d")
             download_paint3d
             ;;
+        "pixal3d")
+            download_pixal3d
+            ;;
         "misc")
             download_misc
             ;;
@@ -882,6 +918,7 @@ for model in "${MODELS_ARRAY[@]}"; do
             download_ardy
             download_unique3d
             download_paint3d
+            download_pixal3d
             download_misc
             ;;
         *)

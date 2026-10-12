@@ -163,6 +163,11 @@ class ModelFactory:
             "module": "adapters.paint3d_adapter",
             "class": "Paint3DAdapter",
         },
+        # Pixal3D adapter
+        "pixal3d_image_to_raw_mesh": {
+            "module": "adapters.pixal3d_adapter",
+            "class": "Pixal3DImageToRawMeshAdapter",
+        },
     }
 
     LEGACY_IMAGE_TO_RAW_ALIASES = {

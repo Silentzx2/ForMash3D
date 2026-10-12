@@ -154,6 +154,7 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
   if (modelId.includes('trellis')) return 50;
   if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21') ||
       modelId.includes('triposg')) return 50;
+  if (modelId.includes('pixal3d')) return 36; // 12 + 12 + 12
   if (schemaSteps >= 1) return schemaSteps;
 
   let infSteps = 50;
@@ -163,8 +164,10 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
     infSteps = 50;
   } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
     infSteps = 50;
+  } else if (modelId.includes('pixal3d')) {
+    infSteps = 36;
   }
-  
+
   return infSteps;
 }
 
@@ -212,13 +215,14 @@ function applyModelSpecificParams(
     modelParameters.octree_resolution = 512;
     modelParameters.num_inference_steps = 50;
     modelParameters.low_vram = false;
-  } else if (modelId.includes('unique3d')) {
+} else if (modelId.includes('pixal3d')) {
     modelParameters.low_vram = false;
-    // Unique3D model-native parameters (official defaults)
-    modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 1145;
-    modelParameters.input_processing = paramDefaults.input_processing ?? true;
-    modelParameters.do_refine = paramDefaults.do_refine ?? true;
-    modelParameters.expansion_weight = Number(paramDefaults.expansion_weight ?? 0.1);
+    modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 42;
+    modelParameters.manual_fov = paramDefaults.manual_fov ?? settings.manualFov ?? null;
+    modelParameters.resolution = paramDefaults.resolution ?? settings.resolution ?? 1024;
+    modelParameters.pipeline_type = paramDefaults.pipeline_type ?? settings.pipelineType ?? '1024_cascade';
+    modelParameters.low_vram_mode = paramDefaults.low_vram ?? settings.lowVram ?? false;
     modelParameters.init_type = paramDefaults.init_type ?? 'std';
-  }
+    modelParameters.native_pbr = true;
+}
 }

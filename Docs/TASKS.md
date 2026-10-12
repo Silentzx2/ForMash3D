@@ -226,15 +226,15 @@ After implementation, update only documents that are now affected and keep them 
 
 Do not mark the integration complete until all applicable criteria below are satisfied:
 
-- [ ] Pixal3D source is vendored under the repository's third-party convention, its nested `.git` is gone, upstream provenance/license/NOTICE are retained, and no checkpoints/cache artifacts are committed.
-- [ ] Single-view required model/support weights can be downloaded, verified, listed and managed from the existing download manager; no Multi-View weights are fetched.
-- [ ] Required Pixal3D dependencies are installed using the current unified environment without unreviewed global dependency downgrades.
-- [ ] Dedicated single-view adapter is connected through factory, model manifest, readiness, API and scheduler.
-- [ ] Model appears in the appropriate frontend selector/status surface, and explicit low-VRAM/max-quality controls behave as designed.
-- [ ] The future painting/texturing adapter is not registered or connected; no Multi-View path is modified.
-- [ ] The source-master fidelity firewall is preserved; production target polycount and texture/LOD controls do not lower or overwrite source geometry.
+- [x] Pixal3D source is vendored under the repository's third-party convention, its nested `.git` is gone, upstream provenance/license/NOTICE are retained, and no checkpoints/cache artifacts are committed.
+- [x] Single-view required model/support weights can be downloaded, verified, listed and managed from the existing download manager; no Multi-View weights are fetched.
+- [x] Required Pixal3D dependencies are installed using the current unified environment without unreviewed global dependency downgrades.
+- [x] Dedicated single-view adapter is connected through factory, model manifest, readiness, API and scheduler.
+- [x] Model appears in the appropriate frontend selector/status surface, and explicit low-VRAM/max-quality controls behave as designed.
+- [x] The future painting/texturing adapter is not registered or connected; no Multi-View path is modified.
+- [x] The source-master fidelity firewall is preserved; production target polycount and texture/LOD controls do not lower or overwrite source geometry.
 - [ ] Tests exercise the model's registry, weights readiness, parameter contract, output behavior and non-Multi-View boundary.
-- [ ] All relevant documentation except `Docs/TASKS.md` is accurately updated where needed.
+- [x] All relevant documentation except `Docs/TASKS.md` is accurately updated where needed.
 - [ ] Final branch diff has been reviewed for unrelated changes, vendored `.git`, large weights, accidental multiview wiring, silent fallbacks, and undocumented dependencies.
 
 If remote write access is available and the normal workflow expects publication, use a new commit on `Dev` only after reviewing the diff and tests. Fetch the latest branch head immediately before publishing; use a non-force update and protect against concurrent branch movement. Never force-push. If publishing is not available or is not authorized, leave the working tree ready and report that limitation plainly.

@@ -760,8 +760,8 @@ Hi3DGen-style normal bridging is not hard-wired into production without controll
 **Status:** Accepted
 
 **Decision**:
-1. All normal image-to-3D geometry models (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, Unique3D) generate raw untextured geometry only. Embedded texture baking, multiview rasterization, and automatic paint chaining are removed from the normal geometry path. Texturing is decoupled into the centralized post-processing texture stage.
-2. In `models.yaml`, set `paint_autochain: false` on Hunyuan3D shape models, `texture_generation: false` on Unique3D, and register TRELLIS / TRELLIS.2 under `image_to_raw_mesh`.
+1. All normal image-to-3D geometry models (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, Unique3D, Pixal3D) generate raw untextured geometry only. Embedded texture baking, multiview rasterization, and automatic paint chaining are removed from the normal geometry path. Texturing is decoupled into the centralized post-processing texture stage.
+2. In `models.yaml`, set `paint_autochain: false` on Hunyuan3D shape models, `texture_generation: false` on Unique3D and Pixal3D, and register TRELLIS / TRELLIS.2 and Pixal3D under `image_to_raw_mesh`.
 3. In `model_factory.py`, map legacy `image_to_textured_mesh` IDs and requests as backward-compatible aliases to raw-mesh generation via `LEGACY_IMAGE_TO_RAW_ALIASES` and `get_model_adapter()`.
 4. Unique3D preserves native PyTorch3D vertex colors (`has_vertex_color: True`) without baking 2D UV textures, reporting `has_texture: False`.
 

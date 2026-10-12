@@ -222,6 +222,7 @@ cmd_models() {
         printf "  ${CYAN}[13]${NC} ARDY               - Motion AI / Animation checkpoints\n"
         printf "  ${CYAN}[14]${NC} Unique3D            - High-fidelity single-image to 3D\n"
         printf "  ${CYAN}[15]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
+        printf "  ${CYAN}[16]${NC} Pixal3D             - High-quality pixel-aligned single-image to 3D (PBR)\n"
         printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"
@@ -271,6 +272,7 @@ cmd_models() {
                         13) models_csv="${models_csv}ardy," ;;
                         14) models_csv="${models_csv}unique3d," ;;
                         15) models_csv="${models_csv}paint3d," ;;
+                         16) models_csv="${models_csv}pixal3d_image_to_raw_mesh," ;;
                          *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1

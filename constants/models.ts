@@ -135,6 +135,22 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     status: 'available',
     description: 'High-fidelity single-image to 3D mesh with multi-view diffusion, normal prediction, and textured reconstruction.',
   },
+  {
+    id: 'pixal3d_image_to_raw_mesh',
+    name: 'Pixal3D (Image → 3D with Textured Geometry)',
+    category: 'mesh_generation',
+    feature: 'image_to_raw_mesh',
+    featureLabel: 'Image to Geometry',
+    vramMb: 18432,
+    lowVramSupported: false,
+    supportsTexture: true,
+    supportedInputs: ['image'],
+    supportedOutputs: ['glb', 'obj'],
+    modelPath: 'backend/pretrained/Pixal3D',
+    enabled: true,
+    status: 'available',
+    description: 'High-quality single-image to 3D generation with pixel-aligned projection, MoGe camera estimation, and PBR texture synthesis.',
+  },
 
   // ── TEXTURE STUDIO / MESH PAINTING ───────────────────────────────────────
   {

@@ -112,7 +112,7 @@
 - **Verification**: 12/12 pytest unit tests pass across `test_postprocess_texture_pipeline.py` and `test_cancellation_and_quad.py`; 21/21 official model parity tests pass (`test_official_model_parity_contract.py`); `python3 -m py_compile` clean.
 
 ## 2026-10-11 Section 4 Raw-Mesh Decoupling & Model Registry Normalization
-- **Normal image-to-3D models produce raw mesh only**: Converted TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, and Unique3D to output untextured raw geometry only, completely removing embedded native texture generation, texture baking, and automatic paint chaining from the normal generation path. Texturing is decoupled into the centralized post-processing texture stage.
+- **Normal image-to-3D models produce raw mesh only**: Converted TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, Unique3D, and Pixal3D to output untextured raw geometry only, completely removing embedded native texture generation, texture baking, and automatic paint chaining from the normal generation path. Texturing is decoupled into the centralized post-processing texture stage.
 - **`backend/config/models.yaml`**:
   - Set `paint_autochain: false` on `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh`.
   - Set `texture_generation: false` on `unique3d_image_to_raw_mesh`.

@@ -65,6 +65,8 @@ _ADAPTER_MAP = {
     # Paint3D
     "Paint3DAdapter": ("paint3d_adapter", "Paint3DAdapter"),
     "Paint3DImageMeshPaintingAdapter": ("paint3d_adapter", "Paint3DImageMeshPaintingAdapter"),
+    # Pixal3D
+    "Pixal3DImageToRawMeshAdapter": ("pixal3d_adapter", "Pixal3DImageToRawMeshAdapter"),
 }
 
 __all__ = list(_ADAPTER_MAP.keys())
