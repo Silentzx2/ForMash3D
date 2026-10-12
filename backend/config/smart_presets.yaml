@@ -21,8 +21,6 @@ intents:
       - hunyuan3d_shape_v21_image_to_raw_mesh
       - hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh
       - triposg_image_to_raw_mesh
-      - partpacker_image_to_raw_mesh
-      - ultrashape_image_to_raw_mesh
   cinematic:
     label: Cinematic
     target_polycount: 200000
@@ -41,7 +39,6 @@ intents:
       - trellis2_image_to_textured_mesh
       - trellis_image_to_textured_mesh
       - unique3d_image_to_raw_mesh
-      - ultrashape_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh
       - triposg_image_to_raw_mesh
   animation:
@@ -80,10 +77,8 @@ intents:
     preferred_features: [image_to_raw_mesh, image_to_textured_mesh]
     model_priority:
       - unique3d_image_to_raw_mesh
-      - ultrashape_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh
       - triposg_image_to_raw_mesh
-      - partpacker_image_to_raw_mesh
   mobile:
     label: Mobile
     target_polycount: 20000
@@ -102,5 +97,4 @@ intents:
       - unique3d_image_to_raw_mesh
       - hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh
       - triposg_image_to_raw_mesh
-      - partpacker_image_to_raw_mesh
       - hunyuan3d_shape_v21_image_to_raw_mesh

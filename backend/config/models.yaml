@@ -65,35 +65,6 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
-  partpacker_image_to_raw_mesh:
-    capabilities:
-      text_to_3d: false
-      image_to_3d: true
-      multiview: false
-      texture_generation: false
-      raw_mesh: true
-      parts: true
-    vram_requirement: 10240  # MB
-    supported_inputs: ["image"]
-    supported_outputs: ["glb", "obj"]
-    model_path: "backend/pretrained/PartPacker"
-    enabled: true
-    max_workers: 1
-
-  ultrashape_image_to_raw_mesh:
-    capabilities:
-      text_to_3d: false
-      image_to_3d: true
-      multiview: false
-      texture_generation: false
-      raw_mesh: true
-    vram_requirement: 26640  # MB (20GB: 8GB Hunyuan + 12GB UltraShape)
-    supported_inputs: ["image"]
-    supported_outputs: ["glb", "obj", "ply"]
-    model_path: "backend/pretrained/UltraShape"
-    enabled: true
-    max_workers: 1
-
   triposg_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -345,27 +316,7 @@ image_mesh_painting:
 
 # mesh segmentation
 mesh_segmentation:
-  partfield_mesh_segmentation:
-    capabilities:
-      segmentation: true
-    vram_requirement: 4096  # MB
-    supported_inputs: ["glb", "obj"]
-    supported_outputs: ["glb"]
-    model_path: "backend/pretrained/PartField/model_objaverse.pt"
-    enabled: true
-    max_workers: 1
-  
-  p3sam_mesh_segmentation:
-    capabilities:
-      segmentation: true
-    vram_requirement: 61440  # MB (60GB, P3-SAM)
-    supported_inputs: ["glb", "obj", "ply"]
-    supported_outputs: ["glb"]
-    model_path: "backend/pretrained/P3-SAM/p3sam.safetensors"
-    enabled: true
-    max_workers: 1
-
-auto_rig:
+triposg_image_to_raw_mesh:
   unirig_auto_rig:
     capabilities:
       auto_rig: true
@@ -414,31 +365,6 @@ uv_unwrapping:
     supported_inputs: ["obj", "glb"]
     supported_outputs: ["obj"]
     model_path: "backend/pretrained/PartUV/model_objaverse.ckpt"
-    enabled: true
-    max_workers: 1
-
-# Mesh editing (local editing with VoxHammer)
-text_mesh_editing:
-  voxhammer_text_mesh_editing:
-    capabilities:
-      mesh_editing: true
-      text_editing: true
-    vram_requirement: 40960  # MB (40GB: TRELLIS + rendering)
-    supported_inputs: ["mesh", "text"]
-    supported_outputs: ["glb"]
-    model_path: "backend/pretrained/VoxHammer"
-    enabled: true
-    max_workers: 1
-
-image_mesh_editing:
-  voxhammer_image_mesh_editing:
-    capabilities:
-      mesh_editing: true
-      image_editing: true
-    vram_requirement: 40960  # MB (40GB: TRELLIS + rendering)
-    supported_inputs: ["mesh", "image"]
-    supported_outputs: ["glb"]
-    model_path: "backend/pretrained/VoxHammer"
     enabled: true
     max_workers: 1
 
