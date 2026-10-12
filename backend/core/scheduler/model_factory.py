@@ -120,20 +120,10 @@ class ModelFactory:
             "module": "adapters.hunyuan3d_adapter_v21",
             "class": "Hunyuan3DV21ImageMeshPaintingAdapter",
         },
-        # PartField adapters
-        "partfield_mesh_segmentation": {
-            "module": "adapters.partfield_adapter",
-            "class": "PartFieldSegmentationAdapter",
-        },
         # P3-SAM adapters
         "p3sam_mesh_segmentation": {
             "module": "adapters.p3sam_adapter",
             "class": "P3SAMSegmentationAdapter",
-        },
-        # PartPacker adapters
-        "partpacker_image_to_raw_mesh": {
-            "module": "adapters.partpacker_adapter",
-            "class": "PartPackerImageToRawMeshAdapter",
         },
         # UniRig adapters
         "unirig_auto_rig": {

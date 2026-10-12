@@ -36,7 +36,6 @@ class PartUVRunner:
     def __init__(
         self,
         config_path: Optional[str] = None,
-        partfield_checkpoint: Optional[str] = None,
         device: Optional[str] = None,
         partuv_root: Optional[str] = None,
         distortion_threshold: float = 1.25,
@@ -46,7 +45,6 @@ class PartUVRunner:
 
         Args:
             config_path: Path to PartUV config file
-            partfield_checkpoint: Path to PartField model checkpoint
             device: Device to use for inference. If None, automatically selects GPU if available
             partuv_root: Root directory of PartUV code
             distortion_threshold: Maximum allowed distortion for UV unwrapping
@@ -67,10 +65,6 @@ class PartUVRunner:
             config_path = str(self.partuv_root / "config" / "config.yaml")
         self.config_path = config_path
 
-        if partfield_checkpoint is None:
-            partfield_checkpoint = "backend/pretrained/PartField/model_objaverse.ckpt"
-        self.partfield_checkpoint = partfield_checkpoint
-
         self.distortion_threshold = distortion_threshold
 
         # Device setup
@@ -85,25 +79,10 @@ class PartUVRunner:
 
         logger.info(f"PartUV using device: {self.device}")
 
-        # Initialize PartField model
+        # PartField model - optional for PartUV
         self.pf_model = None
-        self._load_partfield()
 
         logger.info("PartUV runner initialized")
-
-    def _load_partfield(self) -> None:
-        """Load the PartField model for part segmentation."""
-        try:
-            from thirdparty.PartUV.preprocess_utils.partfield_official.run_PF import PFInferenceModel
-            logger.info("Loading PartField model for part segmentation")
-
-            # Initialize PartField model
-            self.pf_model = PFInferenceModel(device=self.device)
-
-            logger.info("PartField model loaded successfully")
-
-        except Exception as e:
-            raise PartUVError(f"Failed to load PartField model: {e}")
 
     def _preprocess_mesh(
         self,
@@ -136,7 +115,7 @@ class PartUVRunner:
 
             mesh, tree_filename, tree_dict, preprocess_times = preprocess(
                 str(mesh_path),
-                self.pf_model,
+                None,
                 str(output_path) if output_path else None,
                 save_tree_file=save_tree_file,
                 save_processed_mesh=save_processed_mesh,
@@ -326,17 +305,12 @@ class PartUVRunner:
         return {
             "device": self.device,
             "config_path": self.config_path,
-            "partfield_checkpoint": self.partfield_checkpoint,
             "distortion_threshold": self.distortion_threshold,
             "partuv_root": str(self.partuv_root),
         }
 
     def cleanup(self):
         """Clean up resources."""
-        if self.pf_model is not None:
-            del self.pf_model
-            self.pf_model = None
-
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 

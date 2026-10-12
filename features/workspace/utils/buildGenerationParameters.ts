@@ -153,7 +153,7 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
   if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) return 5;
   if (modelId.includes('trellis')) return 50;
   if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21') ||
-      modelId.includes('triposg') || modelId.includes('ultrashape') || modelId.includes('partpacker')) return 50;
+      modelId.includes('triposg')) return 50;
   if (schemaSteps >= 1) return schemaSteps;
 
   let infSteps = 50;
@@ -162,8 +162,6 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
   } else if (modelId.includes('triposg')) {
     infSteps = 50;
   } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
-    infSteps = 50;
-  } else if (modelId.includes('ultrashape')) {
     infSteps = 50;
   }
   
@@ -193,18 +191,6 @@ function applyModelSpecificParams(
   if (modelId.includes('triposg')) {
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
     modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
-  } else if (modelId.includes('partpacker')) {
-    modelParameters.grid_resolution = 512;
-    modelParameters.num_steps = 50;
-    modelParameters.cfg_scale = 7.0;
-    modelParameters.num_faces = -1;
-  } else if (modelId.includes('ultrashape')) {
-    modelParameters.octree_res = 2048;
-    modelParameters.num_latents = 32768;
-    modelParameters.hunyuan_coarse_num_inference_steps = 50;
-    modelParameters.hunyuan_coarse_octree_resolution = 512;
-    modelParameters.hunyuan_coarse_guidance_scale = 5.0;
-    modelParameters.hunyuan_coarse_num_chunks = 20000;
   } else if (modelId.includes('trellis2')) {
     modelParameters.decimation_target = -1;
     modelParameters.remesh = false;

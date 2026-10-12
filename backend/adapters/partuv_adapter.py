@@ -82,7 +82,6 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
             from utils.partuv_utils import PartUVRunner
             self.partuv_runner = PartUVRunner(
                 config_path=self.config_path,
-                partfield_checkpoint=str(self.model_path),
                 device=device,
                 partuv_root=str(self.partuv_root),
                 distortion_threshold=self.distortion_threshold,

@@ -4,8 +4,8 @@
 # Usage: ./download_models.sh [OPTIONS]
 # 
 # Available models:
-#   partfield, hunyuan2mini, hunyuan21, trellis, trellis-text, trellis2,
-#   p3sam, unirig, partpacker, partuv, fastmesh, ultrashape, voxhammer, misc, all
+#   hunyuan2mini, hunyuan21, trellis, trellis-text, trellis2,
+#   unirig, partuv, fastmesh, voxhammer, misc, all
 #
 # Options:
 #   -h, --help              Show this help message
@@ -86,7 +86,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("partfield" "hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "p3sam" "unirig" "partpacker" "partuv" "fastmesh" "ultrashape" "triposg" "ardy" "voxhammer" "unique3d" "paint3d" "misc" "all")
+AVAILABLE_MODELS=("hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "unirig" "partuv" "fastmesh" "triposg" "ardy" "unique3d" "paint3d" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -102,7 +102,6 @@ Options:
     --list                  List all available models
 
 Available models:
-    partfield          - PartField model for mesh segmentation
     hunyuan2mini       - Hunyuan3D 2.0 mini models
     hunyuan21          - Hunyuan3D 2.1 models
     hunyuan3d_shape_v21 - Hunyuan3D-Shape-v2-1 (3.3B shape)
@@ -111,17 +110,13 @@ Available models:
     trellis            - TRELLIS image-large model
     trellis-text       - TRELLIS text-xlarge model (optional)
     trellis2           - TRELLIS.2-4B model (image-based only)
-    p3sam              - P3-SAM mesh segmentation model
     unirig             - UniRig model for auto-rigging
-    partpacker         - PartPacker model
     partuv             - PartUV model
     fastmesh           - FastMesh model
-    ultrashape         - UltraShape model
     triposg            - TripoSG and RMBG models
     ardy               - ARDY motion generation models
-    voxhammer          - VoxHammer text/image mesh-editing TRELLIS checkpoints
     unique3d           - Unique3D high-fidelity single-image to 3D model
-    paint3d            - Paint3D 1K/2K coarse-to-fine UV texture diffusion model
+    paint3d            - Paint3D 1K/2K UV texture diffusion model
     misc               - Miscellaneous utility models (RealESRGAN, DINOv2)
     all                - All core models (excluding optional normal ControlNet)
 
@@ -129,7 +124,6 @@ Examples:
     $0                                    # Download all models
     $0 -m trellis                         # Download only TRELLIS
     $0 -v                                # Verify all existing models
-    $0 -m partfield -f                   # Force re-download PartField model
     $0 --list                           # List available models
 
 EOF
@@ -246,26 +240,6 @@ download_with_verify() {
         print_error "Failed to download $description"
         return 1
     fi
-}
-
-# Function to download PartField model
-download_partfield() {
-    print_info "========================================"
-    print_info "Downloading PartField Model"
-    print_info "========================================"
-    
-    local model_path="$PRETRAINED_DIR/PartField/model_objaverse.pt"
-    
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_file "$model_path" 50000000; then # 50MB minimum
-        print_info "PartField model already exists and verified"
-        return 0
-    fi
-    
-    mkdir -p $PRETRAINED_DIR/PartField
-    download_with_verify \
-        "https://huggingface.co/mikaelaangel/partfield-ckpt/resolve/main/model_objaverse.ckpt" \
-        "$model_path" \
-        "PartField model"
 }
 
 # Function to download Hunyuan3D 2.0 mini models
@@ -434,37 +408,6 @@ download_trellis2() {
     fi
 }
 
-# Function to download P3-SAM model
-download_p3sam() {
-    print_info "========================================"
-    print_info "Downloading P3-SAM Model"
-    print_info "========================================"
-    
-    local model_dir="$PRETRAINED_DIR/P3-SAM"
-    local checkpoint_path="$model_dir/p3sam.safetensors"
-    
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_file "$checkpoint_path" 50000000; then
-        print_info "P3-SAM model already exists and verified"
-        return 0
-    fi
-    
-    mkdir -p "$model_dir"
-    print_info "Downloading P3-SAM checkpoint..."
-    if hf_download tencent/Hunyuan3D-Part \
-        --include "p3sam/p3sam.safetensors" \
-        --local-dir "$model_dir"; then
-        if [ -f "$model_dir/p3sam/p3sam.safetensors" ] && [ ! -f "$checkpoint_path" ]; then
-            mv "$model_dir/p3sam/p3sam.safetensors" "$checkpoint_path"
-            rmdir "$model_dir/p3sam" 2>/dev/null || true
-        fi
-        print_success "P3-SAM model downloaded successfully"
-    else
-        print_error "Failed to download P3-SAM model"
-        return 1
-    fi
-}
-
-
 # Function to download UniRig model
 download_unirig() {
     print_info "========================================"
@@ -484,29 +427,6 @@ download_unirig() {
         print_success "UniRig model downloaded successfully"
     else
         print_error "Failed to download UniRig model"
-        return 1
-    fi
-}
-
-# Function to download PartPacker model
-download_partpacker() {
-    print_info "========================================"
-    print_info "Downloading PartPacker Model"
-    print_info "========================================"
-    
-    local model_dir="$PRETRAINED_DIR/PartPacker"
-    
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir" 3; then
-        print_info "PartPacker model already exists and verified"
-        return 0
-    fi
-    
-    mkdir -p "$model_dir"
-    print_info "Downloading PartPacker model..."
-    if hf_download  nvidia/PartPacker --local-dir "$model_dir"; then
-        print_success "PartPacker model downloaded successfully"
-    else
-        print_error "Failed to download PartPacker model"
         return 1
     fi
 }
@@ -553,42 +473,17 @@ download_partuv() {
     print_info "Downloading PartUV Model"
     print_info "========================================"
 
-    local partfield_model_path="$PRETRAINED_DIR/PartUV/model_objaverse.ckpt"
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_file "$partfield_model_path" 50000000; then
-        print_info "PartUV model already exists and verified"
+    local partuv_checkpoint_path="$PRETRAINED_DIR/PartUV/model_objaverse.ckpt"
+    if [ "$FORCE_DOWNLOAD" = false ] && verify_file "$partuv_checkpoint_path" 50000000; then
+        print_info "PartUV checkpoint already exists and verified"
         return 0
     else
         mkdir -p $PRETRAINED_DIR/PartUV
         download_with_verify \
             "https://huggingface.co/mikaelaangel/partfield-ckpt/resolve/main/model_objaverse.ckpt" \
-            "$partfield_model_path" \
-            "PartUV model"
-        print_success "PartUV model downloaded successfully"
-    fi
-}
-
-# Function to download UltraShape model
-download_ultrashape() {
-    print_info "========================================"
-    print_info "Downloading UltraShape Model"
-    print_info "========================================"
-
-    local model_dir="$PRETRAINED_DIR/UltraShape"
-    local checkpoint_path="$model_dir/ultrashape_v1.pt"
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_file "$checkpoint_path" 100000000; then
-        print_info "UltraShape checkpoint already exists and verified"
-        return 0
-    fi
-
-    mkdir -p "$model_dir"
-    print_info "Downloading UltraShape checkpoint..."
-    if hf_download infinith/UltraShape \
-        --include "ultrashape_v1.pt" \
-        --local-dir "$model_dir"; then
-        print_success "UltraShape checkpoint downloaded successfully"
-    else
-        print_error "Failed to download UltraShape checkpoint"
-        return 1
+            "$partuv_checkpoint_path" \
+            "PartUV checkpoint"
+        print_success "PartUV checkpoint downloaded successfully"
     fi
 }
 
@@ -657,41 +552,6 @@ download_ardy() {
         print_warning "Visit https://huggingface.co/collections/nvidia/ardy and agree to the terms, then run: export HF_TOKEN=<token> and re-run this script."
         return 1
     fi
-}
-
-# Function to download VoxHammer model checkpoints
-download_voxhammer() {
-    print_info "========================================"
-    print_info "Downloading VoxHammer Model Checkpoints"
-    print_info "========================================"
-
-    local model_dir="$PRETRAINED_DIR/VoxHammer"
-    local image_cache="$model_dir/models--FishWoWater--TRELLIS-image-large-voxhammer"
-    local text_cache="$model_dir/models--FishWoWater--TRELLIS-text-large-voxhammer"
-
-    if [ "$FORCE_DOWNLOAD" = false ] &&        verify_directory "$image_cache" 2 &&        verify_directory "$text_cache" 2; then
-        print_info "VoxHammer checkpoints already exist and verified"
-        return 0
-    fi
-
-    mkdir -p "$model_dir"
-
-    # VoxHammer text editing depends on the base TRELLIS image checkpoint.
-    download_trellis
-
-    print_info "Downloading VoxHammer image-conditioned TRELLIS checkpoint..."
-    if ! hf_download FishWoWater/TRELLIS-image-large-voxhammer --cache-dir "$model_dir"; then
-        print_error "Failed to download VoxHammer image checkpoint"
-        return 1
-    fi
-
-    print_info "Downloading VoxHammer text-conditioned TRELLIS checkpoint..."
-    if ! hf_download FishWoWater/TRELLIS-text-large-voxhammer --cache-dir "$model_dir"; then
-        print_error "Failed to download VoxHammer text checkpoint"
-        return 1
-    fi
-
-    print_success "VoxHammer model checkpoints downloaded successfully"
 }
 
 # Function to download Unique3D models
@@ -836,7 +696,6 @@ download_misc() {
             "RealESRGAN_x4plus model"
     fi
     
-    # DINOv2-giant used in PartPacker or elsewhere
     local dinov2_dir="$PRETRAINED_DIR/dinov2-giant"
     if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$dinov2_dir" 5; then
         print_info "DINOv2-giant model already exists and verified"
@@ -861,9 +720,6 @@ verify_all_models() {
     
     local all_verified=true
     
-    print_info "Checking PartField..."
-    verify_file "$PRETRAINED_DIR/PartField/model_objaverse.pt" 50000000 || all_verified=false
-    
     print_info "Checking Hunyuan3D 2.1 shared checkpoint..."
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-dit-v2-1" 3 || all_verified=false
     verify_directory "$PRETRAINED_DIR/tencent/Hunyuan3D-2.1/hunyuan3d-vae-v2-1" 3 || all_verified=false
@@ -887,9 +743,6 @@ verify_all_models() {
     print_info "Checking UniRig..."
     verify_directory "$PRETRAINED_DIR/UniRig" 3 || all_verified=false
     
-    print_info "Checking PartPacker..."
-    verify_directory "$PRETRAINED_DIR/PartPacker" 3 || all_verified=false
-
     print_info "Checking PartUV..."
     verify_directory "$PRETRAINED_DIR/PartUV" 1 || all_verified=false
     print_info "Checking FastMesh v1k..."
@@ -900,24 +753,12 @@ verify_all_models() {
     print_info "Checking TRELLIS.2-4B..."
     verify_directory "$PRETRAINED_DIR/TRELLIS.2/TRELLIS.2-4B" 5 || all_verified=false
 
-    print_info "Checking VoxHammer image checkpoint..."
-    verify_directory "$PRETRAINED_DIR/VoxHammer/models--FishWoWater--TRELLIS-image-large-voxhammer" 2 || all_verified=false
-
-    print_info "Checking VoxHammer text checkpoint..."
-    verify_directory "$PRETRAINED_DIR/VoxHammer/models--FishWoWater--TRELLIS-text-large-voxhammer" 2 || all_verified=false
-
     print_info "Checking Unique3D..."
     verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/controlnet-tile" 1 || all_verified=false
     verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/image2normal" 1 || all_verified=false
     verify_directory "$PRETRAINED_DIR/Unique3D/ckpt/img2mvimg" 1 || all_verified=false
     verify_file "$PRETRAINED_DIR/Unique3D/ckpt/realesrgan-x4.onnx" 50000000 || all_verified=false
     verify_file "$PRETRAINED_DIR/Unique3D/ckpt/v1-inference.yaml" 1000 || all_verified=false
-
-    print_info "Checking P3-SAM..."
-    verify_file "$PRETRAINED_DIR/P3-SAM/p3sam.safetensors" 50000000 || all_verified=false
-    
-    print_info "Checking UltraShape..."
-    verify_file "$PRETRAINED_DIR/UltraShape/ultrashape_v1.pt" 100000000 || all_verified=false
     
     print_info "Checking TripoSG..."
     verify_directory "$PRETRAINED_DIR/TripoSG" 2 || all_verified=false
@@ -979,9 +820,6 @@ IFS=',' read -ra MODELS_ARRAY <<< "$MODELS_TO_DOWNLOAD"
 failed=false
 for model in "${MODELS_ARRAY[@]}"; do
     case "$model" in
-        "partfield")
-            download_partfield
-            ;;
         "hunyuan2mini")
             download_hunyuan2mini
             ;;
@@ -1006,14 +844,8 @@ for model in "${MODELS_ARRAY[@]}"; do
         "trellis2")
             download_trellis2
             ;;
-        "p3sam")
-            download_p3sam
-            ;;
         "unirig")
             download_unirig
-            ;;
-        "partpacker")
-            download_partpacker
             ;;
         "partuv")
             download_partuv
@@ -1021,17 +853,11 @@ for model in "${MODELS_ARRAY[@]}"; do
         "fastmesh")
             download_fastmesh
             ;;
-        "ultrashape")
-            download_ultrashape
-            ;;
         "triposg")
             download_triposg
             ;;
         "ardy")
             download_ardy
-            ;;
-        "voxhammer")
-            download_voxhammer
             ;;
         "unique3d")
             download_unique3d
@@ -1043,20 +869,15 @@ for model in "${MODELS_ARRAY[@]}"; do
             download_misc
             ;;
         "all")
-            download_partfield
             download_hunyuan21
             download_hunyuan3d_paint_v21
             download_hunyuan2mini
             download_trellis
             download_trellis_text
             download_trellis2
-            download_voxhammer
-            download_p3sam
             download_unirig
-            download_partpacker
             download_partuv
             download_fastmesh
-            download_ultrashape
             download_triposg
             download_ardy
             download_unique3d

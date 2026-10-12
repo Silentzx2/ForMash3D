@@ -81,28 +81,6 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
         self.assertFalse(schema["low_vram_mode"]["default"])
 
-    def test_ultrashape_adapter_contract(self):
-        from adapters.ultrashape_adapter import UltraShapeImageToRawMeshAdapter
-
-        adapter = UltraShapeImageToRawMeshAdapter(vram_requirement=26640)
-        schema = adapter.get_parameter_schema()["parameters"]
-
-        # The released checkpoint fixes token count at 32768; max extraction resolution is 2048.
-        self.assertEqual(schema["num_latents"]["default"], 32768)
-        self.assertEqual(schema["octree_res"]["default"], 2048)
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
-
-    def test_partpacker_adapter_contract(self):
-        from adapters.partpacker_adapter import PartPackerImageToRawMeshAdapter
-
-        adapter = PartPackerImageToRawMeshAdapter(vram_requirement=10240)
-        schema = adapter.get_parameter_schema()["parameters"]
-
-        self.assertEqual(schema["num_steps"]["default"], 50)
-        self.assertEqual(schema["cfg_scale"]["default"], 7.0)
-        self.assertEqual(schema["grid_resolution"]["default"], 512)
-        self.assertEqual(schema["num_faces"]["default"], -1)
-
     def test_trellis_adapter_contract(self):
         from adapters.trellis_adapter import TrellisImageToTexturedMeshAdapter
 

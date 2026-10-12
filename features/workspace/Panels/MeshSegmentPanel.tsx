@@ -21,7 +21,7 @@ export const MeshSegmentPanel: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'segment' | 'settings'>('segment');
 
   // Segment Tab State
-  const [model, setModel] = useState<'partfield_mesh_segmentation' | 'p3sam_mesh_segmentation'>('partfield_mesh_segmentation');
+  const [model, setModel] = useState<string>('');
   const [targetParts, setTargetParts] = useState(8);
   const [method, setMethod] = useState<'semantic' | 'geometric' | 'hierarchical'>('semantic');
   const [algorithmVersion, setAlgorithmVersion] = useState('v1');
@@ -214,25 +214,9 @@ export const MeshSegmentPanel: React.FC = () => {
 
               <div className="space-y-1.5">
                 <div className="relative">
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value as 'partfield_mesh_segmentation' | 'p3sam_mesh_segmentation')}
-                    className="w-full h-9 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs font-semibold text-white appearance-none focus:outline-none focus:border-primary cursor-pointer"
-                  >
-                    <option value="partfield_mesh_segmentation">PartField Semantic (4GB VRAM — Recommended)</option>
-                    <option value="p3sam_mesh_segmentation">P3-SAM Zero-Shot 3D (60GB VRAM)</option>
-                  </select>
-                  <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-zinc-400 px-1">
-                  <span>{model === 'p3sam_mesh_segmentation' ? 'Open-vocabulary zero-shot 3D segmentation' : 'Semantic functional parts (limbs, torso, armor)'}</span>
-                  <a
-                    href="/admin?tab=models"
-                    className="inline-flex items-center gap-1 font-semibold text-primary hover:underline ml-2 shrink-0"
-                  >
-                    <span>Details</span>
-                    <HugeiconsIcon icon={ExternalLinkIcon} size={16} className="w-2.5 h-2.5" />
-                  </a>
+                  <div className="w-full h-9 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs font-semibold text-amber-400 flex items-center">
+                    Segmentation models not available
+                  </div>
                 </div>
               </div>
             </div>

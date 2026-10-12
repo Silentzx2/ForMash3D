@@ -217,12 +217,12 @@
   - Shape v2.1: Aligned default inference steps to 30 and `octree_resolution=256` for fast generation.
 - **Strict GPU Inference Enforcement Across All Adapters**:
   - Root cause: Adapters defaulted device selection to `cuda if torch.cuda.is_available() else cpu`, risking silent CPU fallback on worker initialization.
-  - Fix: Enforced strict CUDA checks across all adapters (`TRELLIS`, `TripoSR`, `TripoSG`, `TripoSF`, `Zero123++`, `Unique3D`, `UltraShape`, `VoxHammer`), raising immediate errors if CUDA is unavailable.
+  - Fix: Enforced strict CUDA checks across all adapters (`TRELLIS`, `TripoSR`, `TripoSG`, `TripoSF`, `Zero123++`, `Unique3D`), raising immediate errors if CUDA is unavailable.
 
 ## 2026-10-10 Hunyuan3D-Shape-v2-1 Pipeline Load & Frontend Job Failure Hydration
 - **Hunyuan3D-Shape-v2-1 Pipeline Loading**: Fixed `RuntimeError: Hunyuan3D-Shape-v2-1 pipeline not loaded. Call _load_model() first or check model weights.`
   - Root cause: `Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path)).to(device)` returned `None` because the underlying `.to()` method mutates components in place and returns `None` rather than `self`.
-  - Fix: Passed `device=device` directly to `from_pretrained()` and separated `.to(device)` as an in-place call across `hunyuan3d_shape_v21.py`, `hunyuan3d_adapter_v21.py`, and `ultrashape_adapter.py`.
+  - Fix: Passed `device=device` directly to `from_pretrained()` and separated `.to(device)` as an in-place call across `hunyuan3d_shape_v21.py`, `hunyuan3d_adapter_v21.py`.
 - **Frontend Job Failure & Deep Link Hydration**:
   - Root cause: When a generation job failed or when navigating directly to `/workspace/[tool]/[job_id]`, `jobsById` was unpopulated on initial load and `activeTask` failed state was not hydrated, causing the UI to either spin indefinitely or not reflect the failure card and diagnostic trace.
   - Fix: Added URL job hydration effect in [WorkspaceContext.tsx](file:///teamspace/studios/this_studio/ForMash3D/features/workspace/store/WorkspaceContext.tsx) to fetch `/api/v1/system/jobs/[id]` and properly populate `activeTask` (with `status: 'failed'`, diagnostic, and error message) and stop `isExecuting`. Also wired failure diagnostics into the active job polling loop.

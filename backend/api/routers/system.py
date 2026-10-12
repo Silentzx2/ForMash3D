@@ -341,7 +341,7 @@ def _is_model_weights_available(model_config: Any) -> bool:
 
         # Known model weight file signatures for models without a config.json/yaml
         known_signatures = (
-            "mp_rank", "hunyuan", "partpacker", "ultrashape",
+            "mp_rank", "hunyuan", "ultrashape",
             "fastmesh", "objaverse", "p3sam", "model.ckpt", "trellis"
         )
 
@@ -376,7 +376,7 @@ def _model_supports_download(model_id: str) -> bool:
         token in model_id
         for token in (
             "trellis", "triposg",
-            "hunyuan", "partpacker", "ultrashape", "partfield", "fastmesh", "unique3d"
+            "hunyuan", "fastmesh", "unique3d"
         )
     )
 

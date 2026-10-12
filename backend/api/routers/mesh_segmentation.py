@@ -66,7 +66,7 @@ class MeshSegmentationRequest(BaseModel):
     num_parts: int = Field(8, description="Target number of parts", ge=2, le=32)
     output_format: str = Field("glb", description="Output format")
     model_preference: str = Field(
-        "partfield_mesh_segmentation", description="Model name for mesh segmentation"
+        "", description="Model name for mesh segmentation"
     )
     model_parameters: Optional[dict] = Field(
         None, 

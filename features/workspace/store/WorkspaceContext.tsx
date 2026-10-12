@@ -1933,8 +1933,8 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     modelParameters?: Record<string, any>;
     modelPreference?: string;
   } | number) => {
-    const pref = (typeof customSettings === 'object' && customSettings?.modelPreference) || 'partfield_mesh_segmentation';
-     const localTaskId = startTask('segment', `Mesh Segmentation (${pref.includes('p3sam') ? 'P3-SAM' : 'PartField'})`, undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
+    const pref = (typeof customSettings === 'object' && customSettings?.modelPreference) || '';
+     const localTaskId = startTask('segment', `Mesh Segmentation`, undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshRef = resolveMeshReference(currentAsset);
 
@@ -1993,7 +1993,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
         num_views: 150,
         resolution: customSettings?.resolution || 512,
         output_format: customSettings?.outputFormat || 'glb',
-        model_preference: isImage ? 'voxhammer_image_mesh_editing' : 'voxhammer_text_mesh_editing',
         mask_bbox: customSettings?.bbox || {
           center: [0.0, 0.45, -0.15],
           dimensions: [0.42, 0.36, 0.50],

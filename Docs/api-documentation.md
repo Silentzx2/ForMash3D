@@ -518,17 +518,15 @@ GET /api/v1/mesh-generation/models
 **Response:**
 ```json
 {
-  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposg_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
+  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposg_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
   "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
   "text_mesh_painting": ["trellis_text_mesh_painting"],
   "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],
-  "mesh_segmentation": ["partfield_mesh_segmentation", "p3sam_mesh_segmentation"],
+  "mesh_segmentation": [],
   "auto_rig": ["unirig_auto_rig"],
   "motion_generation": ["ardy_motion_generation"],
   "mesh_retopology": ["fastmesh_v1k_retopology", "fastmesh_v4k_retopology"],
-  "uv_unwrapping": ["partuv_uv_unwrapping"],
-  "text_mesh_editing": ["voxhammer_text_mesh_editing"],
-  "image_mesh_editing": ["voxhammer_image_mesh_editing"]
+  "uv_unwrapping": ["partuv_uv_unwrapping"]
 }
 ```
 
@@ -587,30 +585,6 @@ Edit an existing mesh using a text prompt.
 
 ```http
 POST /api/v1/mesh-editing/text-edit
-Content-Type: application/json
-
-{
-  "mesh_file_id": "mesh_abc123",
-  "text_prompt": "Add a horn to the top",
-  "model_preference": "voxhammer_text_mesh_editing"
-}
-```
-
-### Image Edit
-
-Edit an existing mesh using an image reference.
-
-```http
-POST /api/v1/mesh-editing/image-edit
-Content-Type: application/json
-
-{
-  "mesh_file_id": "mesh_abc123",
-  "image_file_id": "img_abc123",
-  "model_preference": "voxhammer_image_mesh_editing"
-}
-```
-
 ---
 
 ## Auto Rigging APIs
@@ -717,24 +691,6 @@ The migrated mesh-processing tools are exposed by the main FastAPI process. Brow
 
 Mesh-producing terminal results include `result.artifacts`. Each artifact declares `status`, `url`, and `required`. The successful production contract requires the master, game-ready GLB, and quality report; optional exports are explicitly represented as unavailable, skipped, or ready.
 
-
-## Mesh Segmentation APIs
-
-### Segment Mesh
-
-Segment a mesh into semantic parts.
-
-```http
-POST /api/v1/mesh-segmentation
-Content-Type: application/json
-
-{
-  "mesh_file_id": "mesh_abc123",
-  "model_preference": "partfield_mesh_segmentation"
-}
-```
-
----
 
 ## Mesh Retopology APIs
 

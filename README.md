@@ -143,7 +143,7 @@ flowchart TD
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
         TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::purple
         RETOPO["FastMesh V1K / V4K<br/>Neural Quad Retopology"]:::purple
-        EXTRAS["UltraShape / PartPacker<br/>Dense Poly / Part Decomp"]:::purple
+        EXTRAS["UltraShape<br/>Dense Poly"]:::purple
         RIGGING["UniRig & ARDY<br/>Auto-Rigging & Motion AI"]:::purple
         UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
@@ -213,14 +213,9 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **TRELLIS.2** | `trellis2_image_to_3d` / `trellis2_image_to_raw_mesh` | Raw Mesh | 23.5 GB | High-fidelity FlexiCubes geometry; legacy textured IDs resolve to raw geometry |
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
 | **FastMesh (1K & 4K)** | `fastmesh_v1k_retopology`<br>`fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB | Fixed-budget neural quad retopology producing clean animation loops |
-| **PartPacker** | `partpacker_image_to_raw_mesh` | Part-Level 3D | 10 GB | Rectified-flow multi-part geometric decomposition |
-| **UltraShape** | `ultrashape_image_to_raw_mesh` | Dense Mesh | 26.6 GB | Dense surface reconstruction via cubvh |
-| **PartField** | `partfield_mesh_segmentation` | Mesh Segmentation | 4 GB | Semantic part decomposition of 3D meshes |
-| **P3-SAM** | `p3sam_mesh_segmentation` | Precision SAM | 60 GB | High-precision point prompt 3D SAM segmentation |
 | **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB | Automated bipedal skeletal armature generation |
 | **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB | Interactive autoregressive text-to-motion generation |
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
-|| **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
 || **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
 
 ---
@@ -305,11 +300,8 @@ bash scripts/setup.sh
 Download pre-trained weights for the models you wish to use:
 
 ```bash
-# Download all core model checkpoints (includes VoxHammer)
+# Download all core model checkpoints
 bash backend/scripts/download_models.sh
-
-# Or download only the VoxHammer checkpoints
-bash backend/scripts/download_models.sh -m voxhammer
 ```
 
 ### 4. Running the Studio
@@ -349,7 +341,7 @@ The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
 - **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting and PBR map inspection/export (Albedo, Normal, Roughness, Metallic, AO). Paint3D handles 1K/2K, while Hunyuan3D-Paint runs its internal RealESRGAN enhancement for 4K/8K; this is automatic, not a separate UI setting.
 - **Retopology & Remesh (`/workspace/remesh`)**: FastMesh quad-dominant retopology with V1K and V4K target presets.
 - **UV Unwrapping (`/workspace/uv`)**: Automated conformal seam placement and atlas chart packing.
-- **Mesh Segmentation (`/workspace/segment`)**: Semantic part decomposition via PartField and P3-SAM.
+- **Mesh Segmentation (`/workspace/segment`)**: Semantic part decomposition.
 - **Mesh Editing (`/workspace/edit`)**: Localized text/image-driven neural mesh editing with VoxHammer.
 - **Animation & Motion (`/animation`)**: UniRig bipedal armature generation and ARDY motion synthesis.
 - **Jobs & Run Inspector (`/workspace/jobs`)**: Real-time progress tracking, step telemetry, and VRAM monitoring.
@@ -442,7 +434,7 @@ Yes. Once your model checkpoints are downloaded via `bash backend/scripts/downlo
 <summary><strong>What GPU hardware is required to run ForMash3D?</strong></summary>
 
 ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+:
-- **Lightweight Models (6GB–10GB VRAM)**: TripoSG, Hunyuan3D-DiT-v2-mini-Turbo, PartField (runs comfortably on RTX 3060, 4060, RTX 2080).
+- **Lightweight Models (6GB–10GB VRAM)**: TripoSG, Hunyuan3D-DiT-v2-mini-Turbo (runs comfortably on RTX 3060, 4060, RTX 2080).
 - **Standard Models (12GB–16GB VRAM)**: TRELLIS, FastMesh (runs on RTX 3080, 4070, 4080, T4, L4).
 - **Heavy & High-Poly Models (24GB+ VRAM)**: TRELLIS.2, Hunyuan3D-Paint 2B, UltraShape (runs on RTX 3090, 4090, A10, A100).
 </details>
@@ -495,7 +487,7 @@ Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/a
 - **ForMash3D Core**: Licensed under the **[Apache License 2.0](LICENSE)**.
 - **Post-Processing Pipeline**: Ported and adapted from **[visualbruno/3DGenStudio](https://github.com/visualbruno/3DGenStudio)** under the **3D Gen Studio Community License**. See **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)**.
 - **Backend API Gateway Base**: Forked and modernized from **[FishWoWater/3DAIGC-API](https://github.com/FishWoWater/3DAIGC-API)**.
-- **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSG, PartPacker, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
+- **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSG, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
 
 ---
 

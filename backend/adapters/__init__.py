@@ -42,10 +42,6 @@ _ADAPTER_MAP = {
     "Hunyuan3DV21ImageMeshPaintingAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageMeshPaintingAdapter"),
     # P3-SAM
     "P3SAMSegmentationAdapter": ("p3sam_adapter", "P3SAMSegmentationAdapter"),
-    # PartField
-    "PartFieldSegmentationAdapter": ("partfield_adapter", "PartFieldSegmentationAdapter"),
-    # PartPacker
-    "PartPackerImageToRawMeshAdapter": ("partpacker_adapter", "PartPackerImageToRawMeshAdapter"),
     # PartUV
     "PartUVUnwrappingAdapter": ("partuv_adapter", "PartUVUnwrappingAdapter"),
     # TRELLIS

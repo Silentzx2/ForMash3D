@@ -207,26 +207,21 @@ cmd_models() {
         banner
         printf "\t ${WHITE}${BOLD}MODEL DOWNLOAD${NC}\n\n"
         printf "  Select models to download from HuggingFace:\n\n"
-        printf "  ${CYAN}[1]${NC}  PartField          - Mesh segmentation checkpoint\n"
-        printf "  ${CYAN}[2]${NC}  Hunyuan3D-Shape-v2-1 - 3.3B shape model\n"
-        printf "  ${CYAN}[3]${NC}  Hunyuan3D-Paint-v2-1 - PBR texture model\n"
-        printf "  ${CYAN}[4]${NC}  Hunyuan3D-DiT-v2-mini-Turbo - low-VRAM shape model\n"
-        printf "  ${CYAN}[5]${NC}  Hunyuan3D-2.1 Legacy - legacy integration\n"
-        printf "  ${CYAN}[6]${NC}  TRELLIS            - Image-large generation model\n"
-        printf "  ${CYAN}[7]${NC}  TRELLIS Text-XL    - Text-xlarge generation model (optional)\n"
-        printf "  ${CYAN}[8]${NC}  TRELLIS.2-4B       - Image-based generation model\n"
-        printf "  ${CYAN}[9]${NC}  P3-SAM             - Part segmentation model\n"
-        printf "  ${CYAN}[10]${NC} UniRig             - Auto-rigging model\n"
-        printf "  ${CYAN}[11]${NC} PartPacker         - Part packing model\n"
-        printf "  ${CYAN}[12]${NC} PartUV             - UV unwrapping model\n"
-        printf "  ${CYAN}[13]${NC} FastMesh           - Mesh upscaling V1K/V4K\n"
-        printf "  ${CYAN}[14]${NC} UltraShape         - Shape generation model\n"
-        printf "  ${CYAN}[15]${NC} Misc               - RealESRGAN, DINOv2\n"
-        printf "  ${CYAN}[16]${NC} TripoSG            - High-fidelity image-to-3D + RMBG\n"
-        printf "  ${CYAN}[17]${NC} ARDY               - Motion AI / Animation checkpoints\n"
-        printf "  ${CYAN}[18]${NC} VoxHammer           - Local text/image mesh editing (~40GB VRAM)\n"
-        printf "  ${CYAN}[19]${NC} Unique3D            - High-fidelity single-image to 3D\n"
-        printf "  ${CYAN}[20]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
+        printf "  ${CYAN}[1]${NC}  Hunyuan3D-Shape-v2-1 - 3.3B shape model\n"
+        printf "  ${CYAN}[2]${NC}  Hunyuan3D-Paint-v2-1 - PBR texture model\n"
+        printf "  ${CYAN}[3]${NC}  Hunyuan3D-DiT-v2-mini-Turbo - low-VRAM shape model\n"
+        printf "  ${CYAN}[4]${NC}  Hunyuan3D-2.1 Legacy - legacy integration\n"
+        printf "  ${CYAN}[5]${NC}  TRELLIS            - Image-large generation model\n"
+        printf "  ${CYAN}[6]${NC}  TRELLIS Text-XL    - Text-xlarge generation model (optional)\n"
+        printf "  ${CYAN}[7]${NC}  TRELLIS.2-4B       - Image-based generation model\n"
+        printf "  ${CYAN}[8]${NC}  UniRig             - Auto-rigging model\n"
+        printf "  ${CYAN}[9]${NC}  PartUV             - UV unwrapping model\n"
+        printf "  ${CYAN}[10]${NC} FastMesh           - Mesh upscaling V1K/V4K\n"
+        printf "  ${CYAN}[11]${NC} Misc               - RealESRGAN, DINOv2\n"
+        printf "  ${CYAN}[12]${NC} TripoSG            - High-fidelity image-to-3D + RMBG\n"
+        printf "  ${CYAN}[13]${NC} ARDY               - Motion AI / Animation checkpoints\n"
+        printf "  ${CYAN}[14]${NC} Unique3D            - High-fidelity single-image to 3D\n"
+        printf "  ${CYAN}[15]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
         printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"
@@ -261,26 +256,21 @@ cmd_models() {
                 for num in $choice; do
                     num=$(echo "$num" | tr -d ' ')
                     case "$num" in
-                        1) models_csv="${models_csv}partfield," ;;
-                        2) models_csv="${models_csv}hunyuan3d_shape_v21," ;;
-                        3) models_csv="${models_csv}hunyuan3d_paint_v21," ;;
-                        4) models_csv="${models_csv}hunyuan3d_dit_v2_mini_turbo," ;;
-                        5) models_csv="${models_csv}hunyuan21," ;;
-                        6) models_csv="${models_csv}trellis," ;;
-                        7) models_csv="${models_csv}trellis-text," ;;
-                        8) models_csv="${models_csv}trellis2," ;;
-                        9) models_csv="${models_csv}p3sam," ;;
-                        10) models_csv="${models_csv}unirig," ;;
-                        11) models_csv="${models_csv}partpacker," ;;
-                        12) models_csv="${models_csv}partuv," ;;
-                        13) models_csv="${models_csv}fastmesh," ;;
-                        14) models_csv="${models_csv}ultrashape," ;;
-                        15) models_csv="${models_csv}misc," ;;
-                        16) models_csv="${models_csv}triposg," ;;
-                        17) models_csv="${models_csv}ardy," ;;
-                        18) models_csv="${models_csv}voxhammer," ;;
-                        19) models_csv="${models_csv}unique3d," ;;
-                        20) models_csv="${models_csv}paint3d," ;;
+                        1) models_csv="${models_csv}hunyuan3d_shape_v21," ;;
+                        2) models_csv="${models_csv}hunyuan3d_paint_v21," ;;
+                        3) models_csv="${models_csv}hunyuan3d_dit_v2_mini_turbo," ;;
+                        4) models_csv="${models_csv}hunyuan21," ;;
+                        5) models_csv="${models_csv}trellis," ;;
+                        6) models_csv="${models_csv}trellis-text," ;;
+                        7) models_csv="${models_csv}trellis2," ;;
+                        8) models_csv="${models_csv}unirig," ;;
+                        9) models_csv="${models_csv}partuv," ;;
+                        10) models_csv="${models_csv}fastmesh," ;;
+                        11) models_csv="${models_csv}misc," ;;
+                        12) models_csv="${models_csv}triposg," ;;
+                        13) models_csv="${models_csv}ardy," ;;
+                        14) models_csv="${models_csv}unique3d," ;;
+                        15) models_csv="${models_csv}paint3d," ;;
                          *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1

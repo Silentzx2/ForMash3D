@@ -454,43 +454,6 @@ echo "[NOTE] For systems with glibc < 2.29, you may need to build kaolin from so
 
 echo ""
 echo "========================================"
-echo "Installing PartField Dependencies"
-echo "========================================"
-# install PartField for mesh segmentation 
-echo "[INFO] Changing directory to thirdparty/PartField..."
-cd "$THIRDPARTY_DIR/PartField"
-echo "[INFO] Installing PartField core dependencies..."
-$UV_PIP install --find-links="$WHEEL_DIR" lightning==2.2 h5py yacs trimesh scikit-image loguru boto3
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] PartField core dependencies installed"
-else
-    echo "[ERROR] Failed to install PartField core dependencies"
-    exit 1
-fi
-
-echo "[INFO] Installing additional PartField dependencies..."
-$UV_PIP install --find-links="$WHEEL_DIR" mesh2sdf tetgen pymeshlab plyfile einops libigl polyscope potpourri3d simple_parsing arrgh open3d psutil 
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] Additional PartField dependencies installed"
-else
-    echo "[ERROR] Failed to install additional PartField dependencies"
-    exit 1
-fi
-
-echo "[INFO] Installing PyTorch Geometric extensions..."
-$UV_PIP install --find-links="$WHEEL_DIR" torch-scatter torch_cluster -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] PyTorch Geometric extensions installed"
-else
-    echo "[ERROR] Failed to install PyTorch Geometric extensions"
-    exit 1
-fi
-# installation for PartField end 
-echo "[SUCCESS] PartField installation completed"
-
-
-echo ""
-echo "========================================"
 echo "Installing Hunyuan3D Unified Dependencies"
 echo "========================================"
 ### unified Hunyuan dependencies — installed once for all 3 models ###
@@ -643,25 +606,6 @@ else
     exit 1
 fi
 
-echo ""
-echo "========================================"
-echo "Installing PartPacker Dependencies"
-echo "========================================"
-### part packer  ###
-echo "[INFO] Changing directory to thirdparty/PartPacker..."
-cd "$THIRDPARTY_DIR/PartPacker"
-echo "[INFO] Installing PartPacker requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" pybind11==3.0.1
-$UV_PIP install --find-links="$WHEEL_DIR" meshiki kiui fpsample pymcubes einops
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] PartPacker requirements installed"
-else
-    echo "[ERROR] Failed to install PartPacker requirements"
-    exit 1
-fi
-### part packer end ###
-echo "[SUCCESS] PartPacker installation completed"
-
 ### partuv(requires only bpy, partuv) ###
 echo "[INFO] Installing partuv requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" seaborn partuv 
@@ -673,27 +617,6 @@ else
 fi
 $UV_PIP install --find-links="$WHEEL_DIR" blenderproc 
 ### partuv end ###
-
-### P3-SAM (Hunyuan3D-Part) ###
-echo ""
-echo "========================================"
-echo "Installing P3-SAM Dependencies"
-echo "========================================"
-if [ -d "$THIRDPARTY_DIR/P3-SAM" ]; then
-    cd "$THIRDPARTY_DIR/P3-SAM"
-else
-    echo "[WARN] P3-SAM source directory not present; installing runtime dependencies from the shared environment."
-fi
-echo "[INFO] Installing P3-SAM requirements..."
-# Install numba for acceleration
-$UV_PIP install --find-links="$WHEEL_DIR" numba scikit-learn fpsample
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] P3-SAM requirements installed"
-else
-    echo "[ERROR] Failed to install P3-SAM requirements"
-    exit 1
-fi
-### P3-SAM end ###
 
 ### FastMesh ###
 cd "$THIRDPARTY_DIR/FastMesh"
@@ -779,46 +702,6 @@ else
     exit 1
 fi
 ### Unique3D end ###
-
-### UltraShape ###
-echo ""
-echo "========================================"
-echo "Installing UltraShape Dependencies"
-echo "========================================"
-cd "$THIRDPARTY_DIR/UltraShape" || echo "[WARN] UltraShape directory not found; continuing..."
-echo "[INFO] Installing UltraShape requirements..."
-# $UV_PIP install -r requirements.txt
-# actually only cubvh is required based besides trellis.2 env  
-if ! install_local_wheel "cubvh-*.whl" "cubvh"; then
-    _retry 3 5 $UV_PIP install git+https://github.com/ashawkey/cubvh --no-build-isolation
-fi
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] UltraShape requirements installed"
-else
-    echo "[ERROR] Failed to install UltraShape requirements"
-    exit 1
-fi
-### UltraShape end ###
-
-### VoxHammer ###
-echo ""
-echo "========================================"
-echo "Installing VoxHammer Dependencies"
-echo "========================================"
-cd "$THIRDPARTY_DIR/VoxHammer"
-echo "[INFO] Installing VoxHammer requirements..."
-# $UV_PIP install -r requirements.txt
-# only bpy-renderer and pysdf are required besides trellis.2 env  
-$UV_PIP install git+https://github.com/huanngzh/bpy-renderer.git
-$UV_PIP install --find-links="$WHEEL_DIR" pysdf sentencepiece
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] VoxHammer requirements installed"
-else
-    echo "[ERROR] Failed to install VoxHammer requirements"
-    exit 1
-fi
-echo "[NOTE] VoxHammer uses TRELLIS pipeline which is already installed"
-### VoxHammer end ###
 
 ### ARDY Dependencies ###
 echo ""

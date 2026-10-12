@@ -352,14 +352,9 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 | TRELLIS | `trellis_image_to_3d`; `trellis_image_to_raw_mesh`; legacy `trellis_image_to_textured_mesh` alias; legacy standalone paint IDs remain API-compatible | Raw Geometry; legacy textured ID resolves to raw output | ~11.5 GB |
 | TRELLIS.2 | `trellis2_image_to_3d`; `trellis2_image_to_raw_mesh`; legacy `trellis2_image_to_textured_mesh` alias; standalone paint ID remains API-compatible | Raw Geometry; legacy textured ID resolves to raw output | ~23.5 GB |
 | TripoSG | `triposg_image_to_raw_mesh` | Image → Raw Mesh | ~8 GB |
-| PartPacker | `partpacker_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB |
-| UltraShape | `ultrashape_image_to_raw_mesh` | Image → Raw Mesh | ~26.6 GB |
-| PartField | `partfield_mesh_segmentation` | Mesh Segmentation | ~4 GB |
-| P3-SAM | `p3sam_mesh_segmentation` | Mesh Segmentation | ~60 GB |
 | UniRig | `unirig_auto_rig` | Auto-Rigging | ~9 GB |
 | FastMesh | `fastmesh_v1k_retopology`; `fastmesh_v4k_retopology` | Mesh Retopology | ~16–24.5 GB |
 | PartUV | `partuv_uv_unwrapping` | UV Unwrapping | ~7 GB |
-| VoxHammer | `voxhammer_text_mesh_editing`; `voxhammer_image_mesh_editing` | Mesh Editing | ~40 GB |
 | ARDY | `ardy_motion_generation` | Text → Motion | ~8 GB |
 || Unique3D | `unique3d_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB ||
 
