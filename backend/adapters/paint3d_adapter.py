@@ -478,6 +478,7 @@ img2img:
         outdir: Path,
         texture_path: Optional[Path] = None,
         timeout_seconds: int = 600,
+        progress_callback: Optional[Callable[[str, float, str], None]] = None,
     ) -> None:
         """Run a Paint3D pipeline stage using isolated subprocess with validated argv."""
         cmd = [
@@ -498,21 +499,106 @@ img2img:
 
         logger.info(f"Running Paint3D stage: {script_name} -> {outdir}")
         # Use explicit UTF-8 encoding with error handling to prevent UnicodeDecodeError
-        proc = subprocess.run(
+        # Stream output to capture progress
+        proc = subprocess.Popen(
             cmd,
             cwd=str(self.paint3d_root),
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
             encoding='utf-8',
             errors='replace',
-            timeout=timeout_seconds,
+            bufsize=1,  # line buffered
         )
-
+        
+        # Read output line by line and report progress
+        output_lines = []
+        stage_name = "stage1" if "stage1" in script_name else "stage2"
+        for line in proc.stdout:
+            line = line.rstrip()
+            output_lines.append(line)
+            logger.debug(f"[Paint3D {stage_name}] {line}")
+            
+            # Parse progress from output if available
+            if progress_callback:
+                self._parse_and_report_progress(line, stage_name, progress_callback)
+        
+        proc.wait(timeout=timeout_seconds)
+        stdout = "\n".join(output_lines)
+        
         if proc.returncode != 0:
-            err_msg = (proc.stderr or proc.stdout or "Unknown subprocess failure").strip()
+            err_msg = stdout.strip()
             logger.error(f"Paint3D {script_name} failed (code {proc.returncode}):\n{err_msg}")
             raise RuntimeError(f"Paint3D {script_name} execution failed: {err_msg}")
+
+    def _parse_and_report_progress(self, line: str, stage_name: str, progress_callback: Callable[[str, float, str], None]) -> None:
+        """Parse Paint3D subprocess output for progress indicators and report via callback."""
+        line_lower = line.lower()
+        
+        # Stage 1: Coarse multi-view texture generation progress patterns
+        if stage_name == "stage1":
+            if "sampling" in line_lower or "denoising" in line_lower or "step" in line_lower:
+                # Look for patterns like "Step 5/20" or "sampling step 5 of 20"
+                import re
+                step_match = re.search(r'step\s*(\d+)\s*[/|of]\s*(\d+)', line_lower)
+                if step_match:
+                    current = int(step_match.group(1))
+                    total = int(step_match.group(2))
+                    if total > 0:
+                        frac = current / total
+                        progress_callback("texture", 0.68 + frac * 0.14, f"Stage 1: Sampling step {current}/{total}")
+                        return
+                # Generic sampling progress
+                if "sampling" in line_lower:
+                    progress_callback("texture", 0.68, "Stage 1: Sampling coarse textures...")
+                    return
+            elif "loading" in line_lower and ("model" in line_lower or "checkpoint" in line_lower):
+                progress_callback("texture", 0.68, "Stage 1: Loading models...")
+                return
+            elif "rendering" in line_lower or "view" in line_lower:
+                progress_callback("texture", 0.72, "Stage 1: Rendering multi-view...")
+                return
+        
+        # Stage 2: UV inpainting & tile refinement progress patterns
+        elif stage_name == "stage2":
+            if "inpaint" in line_lower or "uv" in line_lower or "tile" in line_lower:
+                import re
+                step_match = re.search(r'step\s*(\d+)\s*[/|of]\s*(\d+)', line_lower)
+                if step_match:
+                    current = int(step_match.group(1))
+                    total = int(step_match.group(2))
+                    if total > 0:
+                        frac = current / total
+                        progress_callback("texture", 0.82 + frac * 0.10, f"Stage 2: UV inpainting step {current}/{total}")
+                        return
+                if "inpaint" in line_lower:
+                    progress_callback("texture", 0.82, "Stage 2: UV inpainting...")
+                    return
+                elif "uv" in line_lower and "tile" in line_lower:
+                    progress_callback("texture", 0.86, "Stage 2: UV tile refinement...")
+                    return
+            elif "loading" in line_lower and ("model" in line_lower or "checkpoint" in line_lower):
+                progress_callback("texture", 0.80, "Stage 2: Loading models...")
+                return
+        
+        # Generic progress fallback - look for percentage or step patterns
+        import re
+        pct_match = re.search(r'(\d+)%', line)
+        if pct_match:
+            pct = int(pct_match.group(1))
+            base = 0.68 if stage_name == "stage1" else 0.80
+            progress_callback("texture", min(0.95, base + pct / 100 * 0.15), f"{stage_name.capitalize()}: {pct}%")
+            return
+            
+        step_match = re.search(r'step\s*(\d+)\s*[/|of]\s*(\d+)', line_lower)
+        if step_match:
+            current = int(step_match.group(1))
+            total = int(step_match.group(2))
+            if total > 0:
+                frac = current / total
+                base = 0.68 if stage_name == "stage1" else 0.80
+                progress_callback("texture", min(0.95, base + frac * 0.15), f"{stage_name.capitalize()}: Step {current}/{total}")
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -561,6 +647,8 @@ img2img:
 
         prompt = inputs.get("prompt", "")
         job_id = inputs.get("job_id") or uuid.uuid4().hex[:12]
+        # Get progress callback from inputs (passed by pipeline)
+        progress_callback = inputs.get("progress_callback")
 
         # Destination mesh output path
         explicit_output = inputs.get("output_path")
@@ -611,6 +699,7 @@ img2img:
                 mesh_path=job_mesh,
                 image_path=job_image,
                 outdir=stage1_outdir,
+                progress_callback=progress_callback,
             )
 
             # Find stage 1 albedo output
@@ -619,7 +708,7 @@ img2img:
                 raise RuntimeError("Stage 1 did not produce expected albedo.png coarse texture.")
             s1_albedo = s1_candidates[0]
 
-            # Execute Stage 2: UV inpainting & tile refinement
+# Execute Stage 2: UV inpainting & tile refinement
             self._execute_stage(
                 script_name="pipeline_paint3d_stage2.py",
                 sd_config=stage2_cfg_path,
@@ -628,6 +717,7 @@ img2img:
                 image_path=job_image,
                 outdir=stage2_outdir,
                 texture_path=s1_albedo,
+                progress_callback=progress_callback,
             )
 
             # Locate refined albedo texture

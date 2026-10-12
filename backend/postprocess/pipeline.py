@@ -252,6 +252,7 @@ def _execute_texture_stage(
                     "output_format": "glb",
                     "resolution": target_atlas_size,
                     "texture_resolution": target_atlas_size,
+                    "progress_callback": lambda stage, frac, msg: _emit(progress, frac, stage, msg),
                 })
             finally:
                 if should_unload:
@@ -310,6 +311,7 @@ def _execute_texture_stage(
                     "resolution": hy_res,
                     "texture_resolution": target_atlas_size,
                     "max_num_view": int(job_inputs.get("max_num_view") or 6),
+                    "progress_callback": lambda stage, frac, msg: _emit(progress, frac, stage, msg),
                 })
             finally:
                 if should_unload_hy:
