@@ -232,7 +232,16 @@ def _execute_texture_stage(
             should_unload = False
             from core.models.base import ModelStatus
             if getattr(adapter, "status", None) in (ModelStatus.UNLOADED, ModelStatus.ERROR):
-                adapter.load()
+                # BaseModel.load() requires gpu_id; use adapter's gpu_id or default to 0
+                gpu_id = getattr(adapter, "gpu_id", None)
+                if gpu_id is None:
+                    import os
+                    cuda_vis = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+                    try:
+                        gpu_id = int(cuda_vis.split(",")[0])
+                    except Exception:
+                        gpu_id = 0
+                adapter.load(gpu_id)
                 should_unload = True
             try:
                 res = adapter.process({
@@ -277,7 +286,16 @@ def _execute_texture_stage(
             should_unload_hy = False
             from core.models.base import ModelStatus
             if getattr(adapter, "status", None) in (ModelStatus.UNLOADED, ModelStatus.ERROR):
-                adapter.load()
+                # BaseModel.load() requires gpu_id; use adapter's gpu_id or default to 0
+                gpu_id = getattr(adapter, "gpu_id", None)
+                if gpu_id is None:
+                    import os
+                    cuda_vis = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+                    try:
+                        gpu_id = int(cuda_vis.split(",")[0])
+                    except Exception:
+                        gpu_id = 0
+                adapter.load(gpu_id)
                 should_unload_hy = True
             try:
                 hy_res = 512 if preset_label == "4K" else 768

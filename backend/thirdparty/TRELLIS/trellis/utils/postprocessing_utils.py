@@ -391,14 +391,29 @@ def postprocess_mesh(
         m = pml.Mesh(vertices, faces)
         ms.add_mesh(m)
         if postprocess_mode == "subdivision":
-            ms.meshing_surface_subdivision_midpoint(iterations=subdivision_times)
+            # Check for available subdivision method
+            if hasattr(ms, 'meshing_surface_subdivision_midpoint'):
+                ms.meshing_surface_subdivision_midpoint(iterations=subdivision_times)
+            elif hasattr(ms, 'meshing_surface_subdivision_catmull_clark'):
+                ms.meshing_surface_subdivision_catmull_clark(iterations=subdivision_times)
+            else:
+                if verbose:
+                    tqdm.write("Warning: No subdivision method available in pymeshlab, skipping")
         else:
             # pml.AbsoluteValue only works for version 2022 pml, 2023 or above change to PureValue
-            ms.meshing_isotropic_explicit_remeshing(
-                iterations=remesh_iters,
-                targetlen=pml.AbsoluteValue(0.01),
-                adaptive=True,
-            )
+            # Check for available remeshing method
+            if hasattr(ms, 'meshing_isotropic_explicit_remeshing'):
+                ms.meshing_isotropic_explicit_remeshing(
+                    iterations=remesh_iters,
+                    targetlen=pml.PureValue(0.01),
+                    adaptive=True,
+                )
+            elif hasattr(ms, 'generate_iso_parametrization_remeshing'):
+                # Fallback to newer API if available
+                ms.generate_iso_parametrization_remeshing()
+            else:
+                if verbose:
+                    tqdm.write("Warning: No isotropic remeshing method available in pymeshlab, skipping")
         updated_m = ms.current_mesh()
         updated_m.compact()
         vertices = updated_m.vertex_matrix().astype(np.float32)
