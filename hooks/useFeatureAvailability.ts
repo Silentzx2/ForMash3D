@@ -72,35 +72,38 @@ export const useFeatureAvailability = (): UseFeatureAvailabilityReturn => {
       if (featuresResponse.features) {
         featuresResponse.features.forEach((feature: FeatureInfo) => {
           // Find the UI feature name that maps to this API feature
-          const uiFeatureName = Object.keys(FEATURE_NAME_MAPPING).find(
+          const uiFeatureNames = Object.keys(FEATURE_NAME_MAPPING).filter(
             key => FEATURE_NAME_MAPPING[key] === feature.name
           );
 
-          if (uiFeatureName) {
+          uiFeatureNames.forEach(uiFeatureName => {
             featureAvailability[uiFeatureName] = {
               available: feature.model_count > 0,
               models: feature.models || [],
               error: feature.model_count === 0 ? 'No models available for this feature' : undefined
             };
-          }
+          });
         });
       }
 
       // Also check models response for additional feature info
       if (modelsResponse.available_models) {
         Object.entries(modelsResponse.available_models).forEach(([apiFeatureName, models]) => {
-          const uiFeatureName = Object.keys(FEATURE_NAME_MAPPING).find(
+          const uiFeatureNames = Object.keys(FEATURE_NAME_MAPPING).filter(
             key => FEATURE_NAME_MAPPING[key] === apiFeatureName
           );
 
-          if (uiFeatureName && Array.isArray(models)) {
-            // Merge with existing data
-            const existing = featureAvailability[uiFeatureName] || { available: false, models: [] };
-            featureAvailability[uiFeatureName] = {
-              available: models.length > 0,
-              models: Array.from(new Set([...existing.models, ...models])), // Deduplicate
-              error: models.length === 0 ? 'No models available for this feature' : undefined
-            };
+          if (uiFeatureNames.length > 0 && Array.isArray(models)) {
+            // Keep aliases synchronized so feature checks behave the same for hyphenated and API names.
+            uiFeatureNames.forEach(uiFeatureName => {
+              const existing = featureAvailability[uiFeatureName] || { available: false, models: [] };
+              const mergedModels = Array.from(new Set([...existing.models, ...models]));
+              featureAvailability[uiFeatureName] = {
+                available: mergedModels.length > 0,
+                models: mergedModels,
+                error: mergedModels.length === 0 ? 'No models available for this feature' : undefined
+              };
+            });
           }
         });
       }

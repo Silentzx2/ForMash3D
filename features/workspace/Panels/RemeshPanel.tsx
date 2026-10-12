@@ -359,7 +359,7 @@ export const RemeshPanel: React.FC = () => {
                 id="btn-action-generate-remesh"
                 type="button"
                 onClick={runRemeshGeneration}
-                disabled={isExecuting || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl)}
+                disabled={isExecuting || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
                 className="w-full h-10 rounded-xl bg-[hsl(var(--primary))] hover:bg-[hsl(var(--primary)/0.9)] text-black font-black tracking-wider text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_hsl(var(--primary)/0.25)] hover:shadow-[0_6px_20px_hsl(var(--primary)/0.35)] transition-all duration-150 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {isExecuting ? (

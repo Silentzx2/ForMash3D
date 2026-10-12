@@ -17,6 +17,7 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { uploadMeshAsset } from '../types';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { toast } from 'sonner';
+import { useFeatureAvailability } from '@/hooks/useFeatureAvailability';
 
 export const MeshEditPanel: React.FC = () => {
   const {
@@ -88,6 +89,17 @@ export const MeshEditPanel: React.FC = () => {
 
   const isRunning = isExecuting && (activeTask?.type === 'edit');
   const hasTargetMesh = Boolean(currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.source?.fileId);
+  const {
+    checkFeature,
+    getModelsForFeature,
+    loading: featureAvailabilityLoading,
+    error: featureAvailabilityError,
+  } = useFeatureAvailability();
+  const editingFeature = inputTab === 'text' ? 'text-mesh-editing' : 'image-mesh-editing';
+  const editingModels = getModelsForFeature(editingFeature);
+  const editingModelAvailable = !featureAvailabilityLoading &&
+    checkFeature(editingFeature) &&
+    editingModels.length > 0;
 
   const handleStartTextEdit = async () => {
     if (!targetPrompt.trim()) {
@@ -149,9 +161,9 @@ export const MeshEditPanel: React.FC = () => {
     if (file) setCurrentAsset(await uploadMeshAsset(file));
   };
 
-  const canExecute = inputTab === 'text'
+  const canExecute = editingModelAvailable && (inputTab === 'text'
     ? (hasTargetMesh && Boolean(targetPrompt.trim()))
-    : (hasTargetMesh && Boolean(referenceImage));
+    : (hasTargetMesh && Boolean(referenceImage)));
 
   return (
     <div id="panel-mesh-edit" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white select-none overflow-x-hidden overflow-y-hidden">
@@ -180,6 +192,16 @@ export const MeshEditPanel: React.FC = () => {
           ))}
         </div>
       </div>
+
+      {(inputTab === 'text' || inputTab === 'image') && !editingModelAvailable && (
+        <div role="status" className="mx-3 mt-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 text-[10px] leading-relaxed text-amber-300">
+          {featureAvailabilityLoading
+            ? 'Checking mesh-editing model availability…'
+            : featureAvailabilityError
+              ? 'Unable to verify mesh-editing models. Check the backend connection.'
+              : 'No mesh-editing model is configured, so text/image edits cannot be submitted yet.'}
+        </div>
+      )}
 
       {/* Main Scrollable Body */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2.5 py-2.5 space-y-2.5 scrollbar-none pr-1.5">
@@ -913,26 +935,26 @@ export const MeshEditPanel: React.FC = () => {
         {inputTab === 'sculpt' ? (
           <button
             type="button"
-            onClick={() => toast.success(`Interactive sculpt active: ${sculptBrush.toUpperCase()} brush`, {
-              description: 'Click and drag on the 3D mesh in the viewport to sculpt.'
+            onClick={() => toast.info('Viewport sculpting is not connected yet.', {
+              description: 'No mesh changes were applied.'
             })}
             disabled={!hasTargetMesh}
             className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <HugeiconsIcon icon={BrushIcon} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
-            <span>INTERACTIVE SCULPT ACTIVE: {sculptBrush.toUpperCase()}</span>
+            <span>SCULPT TOOL NOT CONNECTED</span>
           </button>
         ) : inputTab === 'boolean' ? (
           <button
             type="button"
-            onClick={() => toast.success(`Applied CSG Boolean: ${booleanOp.toUpperCase()}`, {
-              description: `${booleanPrimitive.toUpperCase()} stamp applied to target mesh geometry.`
+            onClick={() => toast.info('CSG Boolean operations are not connected yet.', {
+              description: 'No mesh changes were applied.'
             })}
             disabled={!hasTargetMesh}
             className="w-full h-10 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <HugeiconsIcon icon={ScissorsIcon} size={16} className="w-4 h-4 text-black stroke-[2.5]" />
-            <span>APPLY CSG BOOLEAN {booleanOp.toUpperCase()}</span>
+            <span>BOOLEAN OPERATION NOT CONNECTED</span>
           </button>
         ) : (
           <ShimmerButton
@@ -962,7 +984,7 @@ export const MeshEditPanel: React.FC = () => {
             ) : (
               <>
                 <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>{inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
+                <span>{featureAvailabilityLoading ? 'CHECKING MODEL AVAILABILITY…' : !editingModelAvailable ? 'NO EDITING MODEL AVAILABLE' : inputTab === 'text' ? 'GENERATE TEXT SCULPT' : 'GENERATE IMAGE SCULPT'}</span>
               </>
             )}
           </ShimmerButton>

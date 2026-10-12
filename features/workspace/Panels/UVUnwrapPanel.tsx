@@ -19,7 +19,7 @@ export const UVUnwrapPanel: React.FC = () => {
   const [outputFormat, setOutputFormat] = useState('glb');
   const [showAssetPicker, setShowAssetPicker] = useState(false);
 
-  const isRunning = isExecuting && (activeTask?.type === 'remesh' || activeTask?.type === 'uv');
+  const isRunning = isExecuting && activeTask?.type === 'uv';
 
   const handleStartUnwrap = async () => {
     await runUVUnwrapGeneration({
@@ -53,7 +53,7 @@ export const UVUnwrapPanel: React.FC = () => {
           <span>Smart UV Unwrapping</span>
         </span>
         <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
-          Auto-Packer Active
+          PartUV UV Pipeline
         </span>
       </div>
 
@@ -228,11 +228,11 @@ export const UVUnwrapPanel: React.FC = () => {
                 type="button"
                 id="btn-start-uv-unwrap"
                 onClick={handleStartUnwrap}
-                disabled={isRunning || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
+                disabled={isExecuting || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
                 className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 fill-current" />
-                <span>{isRunning ? 'Unwrapping & Packing Mesh...' : 'Start Smart UV Unwrap'}</span>
+                <span>{isRunning ? 'Unwrapping & Packing Mesh...' : isExecuting ? 'Another Task Is Running...' : 'Start Smart UV Unwrap'}</span>
               </button>
             </div>
         </div>

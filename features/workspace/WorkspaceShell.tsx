@@ -176,6 +176,14 @@ export const WorkspaceShell: React.FC = () => {
           e.preventDefault();
           navigateToTool('texture');
           setIsLeftPanelOpen(true);
+        } else if (key === 'u') {
+          e.preventDefault();
+          navigateToTool('uv');
+          setIsLeftPanelOpen(true);
+        } else if (key === 'e') {
+          e.preventDefault();
+          navigateToTool('edit');
+          setIsLeftPanelOpen(true);
         } else if (key === 'a') {
           e.preventDefault();
           navigateToTool('animation');

@@ -156,17 +156,9 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
     }
   }, [textureSettings.resolution, textureSettings.modelId, setTextureSettings]);
 
-  // Auto-select valid texture-capable model when none or invalid selected
-  useEffect(() => {
-    if (textureCapableModels.length === 0) return;
-    const isCurrentModelValid = textureCapableModels.some(m => m.id === textureSettings.modelId);
-    if (!isCurrentModelValid) {
-      const firstAvailable = textureCapableModels.find(m => m.installed) || textureCapableModels[0];
-      setTextureSettings(prev => ({ ...prev, modelId: firstAvailable.id }));
-    }
-  }, [textureCapableModels, textureSettings.modelId, setTextureSettings]);
-
-  const activeTextureModel = textureCapableModels.find(m => m.id === textureSettings.modelId) || textureCapableModels[0];
+  // Resolution routing is authoritative: do not replace a required engine with a different
+  // available model, or the UI can display one provider while submitting another.
+  const activeTextureModel = textureCapableModels.find(m => m.id === textureSettings.modelId);
   const supportsLowVram = Boolean(activeTextureModel?.low_vram_supported);
 
   // VRAM eligibility check
@@ -193,7 +185,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
     const selected = textureCapableModels.find(m => m.id === textureSettings.modelId);
     if (!selected) {
       if (textureCapableModels.length === 0) return { label: 'No texture models', tone: 'warn' as const };
-      return null;
+      return { label: 'Required engine unavailable', tone: 'warn' as const };
     }
     if (selected.available) return null;
     if (selected.status === 'weights_missing') return { label: 'Weights missing', tone: 'warn' as const };
@@ -563,7 +555,7 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
                       <span className="truncate">{activeTextureModel?.label || 'No texture model'}</span>
                     </span>
                     <span className="text-[8px] text-zinc-400 truncate mt-0.5">
-                      {activeTextureModel?.id === 'paint3d'
+                      {textureSettings.modelId === 'paint3d'
                         ? 'Paint3D (Standard for 1K/2K textures)'
                         : 'Hunyuan3D-Paint v2.1 (Ultra-resolution for 4K/8K)'}
                     </span>
@@ -808,10 +800,10 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
                         <span>SELECT A TARGET MESH</span>
                       ) : !hasValidReferenceImage ? (
                         <span>UPLOAD REFERENCE IMAGE</span>
-                      ) : !activeTextureModel || textureCapableModels.length === 0 ? (
-                        <span>NO TEXTURE MODEL AVAILABLE</span>
+                      ) : !activeTextureModel ? (
+                        <span>{textureCapableModels.length === 0 ? 'NO TEXTURE MODEL AVAILABLE' : 'REQUIRED TEXTURE ENGINE UNAVAILABLE'}</span>
                       ) : !isModelReady ? (
-                        <span>MODEL NOT READY ({activeTextureModel.status.toUpperCase()})</span>
+                        <span>MODEL NOT READY ({activeTextureModel.status?.toUpperCase() || 'UNKNOWN'})</span>
                       ) : (
                         <>
                           <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 stroke-[2.5]" />
@@ -827,9 +819,11 @@ const [modelData, setModelData] = useState<AvailableModels | null>(null);
                       <p className="text-[8px] text-amber-400/80 text-center mt-1">
                         Reference image required for texturing.
                       </p>
-                    ) : !activeTextureModel || textureCapableModels.length === 0 ? (
+                    ) : !activeTextureModel ? (
                       <p className="text-[8px] text-amber-400/80 text-center mt-1">
-                        No texture painting models registered on the server.
+                        {textureCapableModels.length === 0
+                          ? 'No texture painting models are registered on the server.'
+                          : `The required engine (${textureSettings.modelId}) is not registered. Change atlas resolution or configure that provider.`}
                       </p>
                     ) : !isModelReady ? (
                       <p className="text-[8px] text-amber-400/80 text-center mt-1">
