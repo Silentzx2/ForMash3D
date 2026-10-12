@@ -1,6 +1,0 @@
-# Zero123++ v1.2 runtime dependencies
-# (Core torch, diffusers, transformers, rembg, huggingface_hub are locked centrally in backend/requirements.txt)
-altair<5
-git+https://github.com/facebookresearch/segment-anything.git
-gradio>=3.50
-fire
