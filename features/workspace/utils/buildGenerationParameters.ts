@@ -130,7 +130,6 @@ export function buildGenerationParameters(
         texture_resolution_preset: textureResolutionPreset,
       } : {}),
     };
-  }
   
   return {
     endpoint,
@@ -223,23 +222,17 @@ function applyModelSpecificParams(
     modelParameters.low_vram_mode = false;
     modelParameters.low_vram = false;
     modelParameters.enable_flashvdm = true;
-  } else if (modelId.includes('hunyuan')) {
+} else if (modelId.includes('hunyuan')) {
     modelParameters.octree_resolution = 512;
     modelParameters.num_inference_steps = 50;
     modelParameters.low_vram = false;
-    } else if (modelId.includes('unique3d')) {
-      modelParameters.low_vram = false;
-      // Unique3D model-native parameters (official defaults)
-      modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 1145;
-      modelParameters.input_processing = paramDefaults.input_processing ?? true;
-      modelParameters.do_refine = paramDefaults.do_refine ?? true;
-      modelParameters.expansion_weight = Number(paramDefaults.expansion_weight ?? 0.1);
-      modelParameters.init_type = paramDefaults.init_type ?? 'std';
-    }
-
-    if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-      modelParameters.enable_flashvdm = true;
-    }
-  
-
+  } else if (modelId.includes('unique3d')) {
+    modelParameters.low_vram = false;
+    // Unique3D model-native parameters (official defaults)
+    modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 1145;
+    modelParameters.input_processing = paramDefaults.input_processing ?? true;
+    modelParameters.do_refine = paramDefaults.do_refine ?? true;
+    modelParameters.expansion_weight = Number(paramDefaults.expansion_weight ?? 0.1);
+    modelParameters.init_type = paramDefaults.init_type ?? 'std';
+  }
 }

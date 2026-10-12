@@ -1,8 +1,0 @@
-# TripoSF model dependencies (Python 3.10 + PyTorch 2.6.0+cu124)
-# (Core torch, numpy, trimesh, open3d, omegaconf locked centrally in backend/requirements.txt)
-spconv-cu124>=2.3.6
-safetensors
-easydict
-jaxtyping
-torch-scatter>=2.1.2
-flash-attn>=2.7.3
