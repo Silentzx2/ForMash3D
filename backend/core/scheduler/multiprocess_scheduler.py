@@ -602,7 +602,7 @@ def _process_job_in_worker(
 
         # Process job with no_grad (allows overriding with enable_grad for Trellis opt)
         with torch.no_grad():
-            result = loaded_model._process_request(model_inputs)
+            result = loaded_model.process(model_inputs)
 
         elapsed = time.time() - start_time
         logger.info(f"[GENERATION SUCCESS] job_id={job_id} model={model_id} elapsed={elapsed:.2f}s")
