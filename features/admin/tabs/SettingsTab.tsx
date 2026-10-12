@@ -10,6 +10,7 @@ import {
 import { GlassCard } from '@/components/premium/GlassCard';
 import { getApiClient } from '@/services/apiClient';
 import type { RuntimeStatus } from '@/types';
+import { mapSystemStatusToRuntimeStatus } from '@/features/admin/utils/systemStatus';
 
 // Import all settings section components from features/settings/sections
 import {
@@ -75,7 +76,7 @@ export function SettingsTab({ initialSection }: { initialSection?: string }) {
   const load = useCallback(async () => {
     try {
       const rt = await getApiClient().getSystemStatus();
-      setRuntime(rt as unknown as RuntimeStatus);
+      setRuntime(mapSystemStatusToRuntimeStatus(rt));
     } catch {
       // System status is optional during backend startup.
     }

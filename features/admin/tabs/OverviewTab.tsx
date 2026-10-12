@@ -17,6 +17,7 @@ import { Spinner } from '@/components/premium/Spinner';
 import { GpuVramLineChart } from '@/components/premium/GpuVramLineChart';
 import { getApiClient } from '@/services/apiClient';
 import type { AdminOverview, RuntimeStatus } from '@/types';
+import { mapSystemStatusToRuntimeStatus } from '@/features/admin/utils/systemStatus';
 
 export function OverviewTab() {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
@@ -30,7 +31,7 @@ export function OverviewTab() {
         getApiClient().getSystemStatus(),
         getApiClient().getQueueStats().catch(() => null),
       ]);
-      setRuntime(status as unknown as RuntimeStatus);
+      setRuntime(mapSystemStatusToRuntimeStatus(status));
       const queue = queueStats?.data;
       setOverview({
         status: 'online',

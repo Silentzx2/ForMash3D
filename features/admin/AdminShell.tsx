@@ -18,6 +18,7 @@ import { StatusDot } from '@/components/premium/StatusDot';
 import { getApiClient } from '@/services/apiClient';
 import { useBackendStatus } from '@/hooks/useBackendData';
 import type { RuntimeStatus } from '@/types';
+import { mapSystemStatusToRuntimeStatus } from '@/features/admin/utils/systemStatus';
 
 const ICON_MAP: Record<string, any> = {
   LayoutDashboardIcon: LayoutDashboardIcon,
@@ -60,7 +61,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
   const loadRuntime = useCallback(async () => {
     try {
       const status = await getApiClient().getSystemStatus();
-      if (status) setRuntime(status as unknown as RuntimeStatus);
+      if (status) setRuntime(mapSystemStatusToRuntimeStatus(status));
     } catch { /* ignore */ }
   }, []);
 
