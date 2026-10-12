@@ -5,7 +5,7 @@
 # 
 # Available models:
 #   hunyuan2mini, hunyuan21, trellis, trellis-text, trellis2,
-#   unirig, partuv, fastmesh, voxhammer, misc, all
+#   unirig, partuv, fastmesh, misc, all
 #
 # Options:
 #   -h, --help              Show this help message

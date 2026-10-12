@@ -341,8 +341,7 @@ def _is_model_weights_available(model_config: Any) -> bool:
 
         # Known model weight file signatures for models without a config.json/yaml
         known_signatures = (
-            "mp_rank", "hunyuan", "ultrashape",
-            "fastmesh", "objaverse", "p3sam", "model.ckpt", "trellis"
+            "mp_rank", "hunyuan", "fastmesh", "objaverse", "model.ckpt", "trellis"
         )
 
         has_checkpoint = False

@@ -26,7 +26,7 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 ## Core Features
 
 ### 1. Neural Shape Generation
-- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TRELLIS.2, TripoSG, UltraShape
+- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TRELLIS.2, TripoSG
 - **Raw Geometry Output**: Normal shape generation produces raw geometry only, preserving clean topology without model-level texture baking or auto-chaining.
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
@@ -74,11 +74,11 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 - Browser-playable `motion.json` format for Three.js
 
 ### 9. Mesh Segmentation
-- **P3-SAM**: High-precision point prompt 3D SAM segmentation
+- The generic segmentation interface remains, but no segmentation model adapter is currently configured.
 
 ### 10. Mesh Editing
-- **VoxHammer**: Text/image-guided local neural mesh editing
-- Localized deformation with prompt control
+- The generic mesh-editing interface remains, but no mesh-editing model adapter is currently configured.
+- Provider-specific inference is unavailable until an adapter is added.
 
 ### 11. Retopology
 - **FastMesh**: Fast neural retopology (V1K, V4K)
@@ -171,10 +171,8 @@ flowchart TB
         HUNY["Hunyuan3D<br/>Shape + Paint"]:::adapters
         TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::adapters
         ARDY["ARDY<br/>Motion AI"]:::adapters
-        US["UltraShape<br/>Arbitrary Topology"]:::adapters
         UR["UniRig<br/>Auto-Rigging"]:::adapters
         FM["FastMesh<br/>Retopology"]:::adapters
-        VH["VoxHammer<br/>Mesh Editing"]:::adapters
     end
 
     subgraph Storage["Persistent Storage"]
@@ -237,7 +235,7 @@ flowchart TD
 
     UI["UI Panel<br/>Image/Prompt Input"]:::api --> IN["Input Image / Prompt"]:::data
     IN --> PRE["Stage 1: Preprocessing<br/>Aspect ratio preservation<br/>Background removal (RemBG)<br/>Silhouette extraction"]:::stage
-    PRE --> INF["Stage 2: Provider Inference<br/>TRELLIS · Hunyuan3D · UltraShape"]:::stage
+    PRE --> INF["Stage 2: Provider Inference<br/>TRELLIS · Hunyuan3D"]:::stage
     INF --> RAW_OUT[("source.glb<br/>Untouched Master")]:::data
     INF --> PROCESS["Stage 3: Post-Processing<br/>meshoptimizer Decimation<br/>xatlas UV Unwrapping<br/>Texture Projection Baking"]:::stage
     PROCESS --> G1{"Safe Component Guard<br/>Islands ≥ 0.5% vertices or ≥ 15 verts?"}:::guard
@@ -261,12 +259,9 @@ flowchart TD
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
 | ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
-| UltraShape | 26.6 GB | Highest fidelity | ~30 seconds |
-| P3-SAM | 60 GB | High-precision segmentation | ~15 seconds |
 | UniRig | 9 GB | Auto-rigging | ~20 seconds |
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
-| VoxHammer | 40 GB | Mesh editing | ~20 seconds |
 
 ## QA Scoring Methodology
 

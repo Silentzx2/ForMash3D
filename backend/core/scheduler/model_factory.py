@@ -120,11 +120,6 @@ class ModelFactory:
             "module": "adapters.hunyuan3d_adapter_v21",
             "class": "Hunyuan3DV21ImageMeshPaintingAdapter",
         },
-        # P3-SAM adapters
-        "p3sam_mesh_segmentation": {
-            "module": "adapters.p3sam_adapter",
-            "class": "P3SAMSegmentationAdapter",
-        },
         # UniRig adapters
         "unirig_auto_rig": {
             "module": "adapters.unirig_adapter",
@@ -143,20 +138,6 @@ class ModelFactory:
         "partuv_uv_unwrapping": {
             "module": "adapters.partuv_adapter",
             "class": "PartUVUnwrappingAdapter",
-        },
-        # UltraShape adapters
-        "ultrashape_image_to_raw_mesh": {
-            "module": "adapters.ultrashape_adapter",
-            "class": "UltraShapeImageToRawMeshAdapter",
-        },
-        # VoxHammer adapters
-        "voxhammer_text_mesh_editing": {
-            "module": "adapters.voxhammer_adapter",
-            "class": "VoxHammerTextMeshEditingAdapter",
-        },
-        "voxhammer_image_mesh_editing": {
-            "module": "adapters.voxhammer_adapter",
-            "class": "VoxHammerImageMeshEditingAdapter",
         },
         # TripoSG adapter
         "triposg_image_to_raw_mesh": {

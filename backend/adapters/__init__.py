@@ -40,8 +40,6 @@ _ADAPTER_MAP = {
     "Hunyuan3DV21ImageToRawMeshAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageToRawMeshAdapter"),
     "Hunyuan3DV21ImageToTexturedMeshAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageToTexturedMeshAdapter"),
     "Hunyuan3DV21ImageMeshPaintingAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageMeshPaintingAdapter"),
-    # P3-SAM
-    "P3SAMSegmentationAdapter": ("p3sam_adapter", "P3SAMSegmentationAdapter"),
     # PartUV
     "PartUVUnwrappingAdapter": ("partuv_adapter", "PartUVUnwrappingAdapter"),
     # TRELLIS
@@ -56,13 +54,8 @@ _ADAPTER_MAP = {
     "Trellis2ImageToMeshAdapter": ("trellis2_adapter", "Trellis2ImageToMeshAdapter"),
     "Trellis2ImageToTexturedMeshAdapter": ("trellis2_adapter", "Trellis2ImageToTexturedMeshAdapter"),
     "Trellis2ImageMeshPaintingAdapter": ("trellis2_adapter", "Trellis2ImageMeshPaintingAdapter"),
-    # UltraShape
-    "UltraShapeImageToRawMeshAdapter": ("ultrashape_adapter", "UltraShapeImageToRawMeshAdapter"),
     # UniRig
     "UniRigAdapter": ("unirig_adapter", "UniRigAdapter"),
-    # VoxHammer
-    "VoxHammerTextMeshEditingAdapter": ("voxhammer_adapter", "VoxHammerTextMeshEditingAdapter"),
-    "VoxHammerImageMeshEditingAdapter": ("voxhammer_adapter", "VoxHammerImageMeshEditingAdapter"),
     # TripoSG
     "TripoSGImageToRawMeshAdapter": ("triposg_adapter", "TripoSGImageToRawMeshAdapter"),
     # ARDY

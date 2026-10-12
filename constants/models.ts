@@ -280,7 +280,7 @@ export const CANONICAL_MODELS: ModelDefinition[] = [
     supportsTexture: false,
     supportedInputs: ['obj', 'glb'],
     supportedOutputs: ['obj', 'glb'],
-    modelPath: 'backend/pretrained/PartField/model_objaverse.ckpt',
+    modelPath: 'backend/pretrained/PartUV/model_objaverse.ckpt',
     enabled: true,
     status: 'available',
     description: 'Semantic seam generation and packing for distortion-free texture mapping.',

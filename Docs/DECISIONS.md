@@ -442,7 +442,7 @@
 
 **Decision**: Translate the workspace quality setting into each model adapter's actual extraction parameter instead of assuming a shared octree_resolution name.
 
-**Reason**: Several adapters silently ignored the generic field and used lower defaults: TripoSR (mc_resolution), TripoSF (resolution), and UltraShape (octree_res).
+**Reason**: Several adapters silently ignored the generic field and used lower defaults: TripoSR (mc_resolution) and TripoSF (resolution).
 
 **Consequences**:
 - High/Ultra generation now requests higher model-native extraction resolutions for those adapters.

@@ -43,7 +43,7 @@ class MeshSegmentationModel(BaseModel):
     def _load_model(self):
         """Load the mesh segmentation model. To be implemented by adapters."""
         logger.info(f"Loading mesh segmentation model: {self.model_id}")
-        # This will be implemented by specific adapters (e.g., PartField)
+        # This will be implemented by a provider-specific adapter.
         pass
 
     def _unload_model(self):

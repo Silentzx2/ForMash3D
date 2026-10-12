@@ -79,7 +79,7 @@ class PartUVRunner:
 
         logger.info(f"PartUV using device: {self.device}")
 
-        # PartField model - optional for PartUV
+        # Optional feature-field model used by PartUV.
         self.pf_model = None
 
         logger.info("PartUV runner initialized")

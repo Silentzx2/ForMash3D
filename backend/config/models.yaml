@@ -314,9 +314,11 @@ image_mesh_painting:
     max_workers: 1
 
 
-# mesh segmentation
-mesh_segmentation:
-triposg_image_to_raw_mesh:
+# mesh segmentation (no active adapter is configured)
+mesh_segmentation: {}
+
+# auto-rigging
+auto_rig:
   unirig_auto_rig:
     capabilities:
       auto_rig: true

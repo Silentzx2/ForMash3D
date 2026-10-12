@@ -71,7 +71,7 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
             ckpt_path = Path(self.model_path)
             if not ckpt_path.is_file():
                 raise FileNotFoundError(
-                    f"PartUV checkpoint not found at {ckpt_path}; refusing an implicit PartField fallback."
+                    f"PartUV checkpoint not found at {ckpt_path}; refusing an implicit alternate-checkpoint fallback."
                 )
 
             if not torch.cuda.is_available():

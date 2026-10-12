@@ -1982,7 +1982,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     targetImageBase64?: string;
     strength?: number;
   }) => {
-     const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (VoxHammer Image)' : 'Mesh Editing (VoxHammer Text)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
+     const localTaskId = startTask('edit', customSettings?.mode === 'image' ? 'Mesh Editing (Image)' : 'Mesh Editing (Text)', undefined, undefined, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshRef = resolveMeshReference(currentAsset);
 
