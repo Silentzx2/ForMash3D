@@ -648,13 +648,13 @@ download_ardy() {
         return 0
     fi
 
-    print_info "Downloading ARDY checkpoints from nv-tlabs/ardy..."
-    if hf_download nv-tlabs/ardy --local-dir "$ardy_dir" && verify_directory "$ardy_dir" 1; then
+    print_info "Downloading ARDY checkpoints from nvidia/ARDY-Core-RP-20FPS-Horizon40..."
+    if hf_download nvidia/ARDY-Core-RP-20FPS-Horizon40 --local-dir "$ardy_dir" && verify_directory "$ardy_dir" 1; then
         print_success "ARDY checkpoints downloaded successfully"
     else
         print_error "Failed to download ARDY checkpoints"
-        print_warning "The nv-tlabs/ardy Hugging Face repository is gated (Meta-Llama access)."
-        print_warning "Request access at https://huggingface.co/nv-tlabs/ardy, then run: export HF_TOKEN=<token> and re-run this script."
+        print_warning "The nvidia/ARDY-* repositories may require acceptance of the NVIDIA Open Model Agreement."
+        print_warning "Visit https://huggingface.co/collections/nvidia/ardy and agree to the terms, then run: export HF_TOKEN=<token> and re-run this script."
         return 1
     fi
 }
