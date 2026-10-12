@@ -432,6 +432,33 @@ def _sha256_file(path: "Path | str") -> str:
     return digest.hexdigest()
 
 
+def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tuple[bool, str]:
+    """Refresh master/source.glb by content identity, not file size."""
+    source = Path(raw_path)
+    master = Path(master_path)
+    if not source.is_file():
+        raise FileNotFoundError(f"Raw source mesh is missing: {source}")
+
+    source_sha256 = _sha256_file(source)
+    master_sha256 = _sha256_file(master) if master.is_file() else None
+    if source_sha256 == master_sha256:
+        return False, source_sha256
+
+    master.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = master.with_name(f".{master.name}.{time.time_ns()}.tmp")
+    try:
+        shutil.copy2(source, temp_path)
+        if _sha256_file(temp_path) != source_sha256:
+            raise RuntimeError("Raw source mesh changed while copying to master/source.glb.")
+        temp_path.replace(master)
+    finally:
+        try:
+            temp_path.unlink()
+        except FileNotFoundError:
+            pass
+    return True, source_sha256
+
+
 def _collect_input_hashes(inputs: Dict[str, Any]) -> Dict[str, str]:
     hashes: Dict[str, str] = {}
     for key, value in inputs.items():
@@ -1126,14 +1153,18 @@ def run_postprocess_job(
     metadata_dir.mkdir(parents=True, exist_ok=True)
 
     master_path = master_dir / "source.glb"
-    raw_size = Path(raw_path).stat().st_size if Path(raw_path).exists() else 0
-    if not master_path.exists() or master_path.stat().st_size != raw_size:
-        tmp_path = master_path.with_suffix('.tmp')
-        shutil.copy2(raw_path, tmp_path)
-        tmp_path.rename(master_path)
+    master_refreshed, master_source_sha256 = _ensure_master_source(raw_path, master_path)
+    if master_refreshed:
+        logger.info(
+            "[RAW SOURCE] Created/refreshed master/source.glb after SHA-256 identity comparison."
+        )
 
     asset_manifest = metadata_dir / "asset.json"
-    if asset_manifest.exists() and (game_ready_dir / f"{base_name}.glb").exists():
+    if (
+        not master_refreshed
+        and asset_manifest.exists()
+        and (game_ready_dir / f"{base_name}.glb").exists()
+    ):
         try:
             saved = json.loads(asset_manifest.read_text(encoding="utf-8"))
             saved_texture_status = saved.get("texture_stage", {}).get("status")
@@ -1209,7 +1240,7 @@ def run_postprocess_job(
     _emit(progress, 0.05, "postprocess", "Master asset secured.")
 
     raw_bytes = master_path.read_bytes()
-    source_sha256 = _sha256_file(raw_path) if Path(raw_path).exists() else _sha256_file(master_path)
+    source_sha256 = master_source_sha256
     native_textures = _has_native_textures_scene(raw_bytes, master_path.name)
     mesh = load_mesh(raw_bytes, master_path.name)
     quality_trace = {

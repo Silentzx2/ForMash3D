@@ -192,6 +192,8 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 shape_slat_sampler_params=shape_slat_sampler_params,
             )
             
+            mesh_metadata = dict(getattr(mesh, "metadata", {}) or {})
+
             # Save mesh in requested format
             output_path = self._generate_output_path(image_path, output_format, is_prompt=False)
             self.mesh_processor.save_mesh(mesh, output_path, do_normalise=False)
@@ -213,6 +215,14 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "seed": seed,
                     "vertex_count": len(mesh.vertices),
                     "face_count": len(mesh.faces),
+                    "native_vertex_count": mesh_metadata.get("native_vertex_count", len(mesh.vertices)),
+                    "native_face_count": mesh_metadata.get("native_face_count", len(mesh.faces)),
+                    "requested_geometry_resolution_path": mesh_metadata.get("requested_geometry_resolution_path", pipeline_type),
+                    "effective_geometry_resolution": mesh_metadata.get("effective_geometry_resolution"),
+                    "geometry_resolution_source": mesh_metadata.get("geometry_resolution_source"),
+                    "voxel_size": mesh_metadata.get("voxel_size"),
+                    "geometry_extractor": mesh_metadata.get("geometry_extractor", "TRELLIS.2 O-Voxel native decoder"),
+                    "mesh_operations": mesh_metadata.get("mesh_operations", []),
                     "has_texture": False,
                     "decimation_target": decimation_target,
                     "texture_size": None,

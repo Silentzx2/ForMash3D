@@ -6,6 +6,7 @@ wrapping the inference logic from thirdparty/TRELLIS.2/example.py and example_te
 """
 
 import logging
+import math
 import os
 import sys
 from pathlib import Path
@@ -17,6 +18,58 @@ import trimesh
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+
+def _unpack_trellis2_run_result(
+    result: Any,
+) -> tuple[Any, Optional[int], Optional[float], Optional[str]]:
+    """Normalize the official TRELLIS.2 return contract and report achieved geometry resolution."""
+    decoded_meshes = result
+    effective_resolution = None
+    resolution_source = None
+
+    # The vendored official pipeline returns (meshes, (shape_slat, tex_slat, resolution))
+    # when return_latent=True. The cascade may reduce its target resolution to fit the token budget.
+    if isinstance(result, tuple) and len(result) == 2:
+        decoded_meshes, latent_result = result
+        if isinstance(latent_result, (tuple, list)) and len(latent_result) >= 3:
+            try:
+                value = latent_result[2]
+                if hasattr(value, "item"):
+                    value = value.item()
+                value = int(value)
+                if value > 0:
+                    effective_resolution = value
+                    resolution_source = "pipeline_return_latent"
+            except (TypeError, ValueError, OverflowError):
+                pass
+
+    if isinstance(decoded_meshes, (tuple, list)):
+        if not decoded_meshes:
+            raise RuntimeError("TRELLIS.2 pipeline returned an empty mesh list.")
+        mesh = decoded_meshes[0]
+    else:
+        mesh = decoded_meshes
+    if mesh is None or not hasattr(mesh, "vertices") or not hasattr(mesh, "faces"):
+        raise TypeError("TRELLIS.2 pipeline output did not contain a decoded mesh.")
+
+    voxel_size = None
+    try:
+        candidate_voxel_size = float(getattr(mesh, "voxel_size"))
+        if math.isfinite(candidate_voxel_size) and candidate_voxel_size > 0:
+            voxel_size = candidate_voxel_size
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        pass
+
+    # Older pipeline builds may omit returned latent metadata. Infer only when the decoded mesh
+    # explicitly carries a usable voxel pitch; never pretend the requested path is achieved res.
+    if effective_resolution is None and voxel_size is not None:
+        inferred_resolution = int(round(1.0 / voxel_size))
+        if inferred_resolution > 0:
+            effective_resolution = inferred_resolution
+            resolution_source = "mesh_voxel_size"
+
+    return mesh, effective_resolution, voxel_size, resolution_source
 
 
 class Trellis2Runner:
@@ -230,27 +283,54 @@ class Trellis2Runner:
             if torch.cuda.is_available():
                 torch.cuda.manual_seed(seed)
         
-        # Run generation pipeline
+        # Ask the official pipeline for latent metadata so cascade fallback is observable.
         logger.info(
             "Generating TRELLIS.2 mesh from image: %s (pipeline=%s, max_num_tokens=%s)",
             image_path, pipeline_type, max_num_tokens,
         )
-        # Explicitly request the configured high-resolution cascade instead of allowing
-        # the upstream default pipeline type (often 512) to silently cap raw geometry.
-        mesh = self.image_to_3d_pipeline.run(
+        pipeline_result = self.image_to_3d_pipeline.run(
             image,
             seed=42 if seed is None else int(seed),
             pipeline_type=pipeline_type,
             max_num_tokens=int(max_num_tokens),
             sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {"steps": 50}),
             shape_slat_sampler_params=dict(shape_slat_sampler_params or {"steps": 50}),
+            return_latent=True,
+        )
+        mesh, effective_resolution, voxel_size, resolution_source = (
+            _unpack_trellis2_run_result(pipeline_result)
+        )
+        del pipeline_result
+        mesh_metadata = {
+            "requested_geometry_resolution_path": pipeline_type,
+            "effective_geometry_resolution": effective_resolution,
+            "geometry_resolution_source": resolution_source,
+            "voxel_size": voxel_size,
+            "geometry_extractor": "TRELLIS.2 O-Voxel native decoder",
+            "native_vertex_count": len(mesh.vertices),
+            "native_face_count": len(mesh.faces),
+            "raw_mesh_only": bool(raw_mesh_only),
+            "mesh_operations": [] if raw_mesh_only else ["o_voxel.postprocess.to_glb"],
+        }
+        logger.info(
+            "TRELLIS.2 geometry telemetry: requested_path=%s effective_resolution=%s "
+            "resolution_source=%s voxel_size=%s vertices=%d faces=%d raw_mesh_only=%s",
+            pipeline_type,
+            effective_resolution,
+            resolution_source or "unavailable",
+            voxel_size,
+            len(mesh.vertices),
+            len(mesh.faces),
+            raw_mesh_only,
         )
 
         if raw_mesh_only:
             logger.info("Extracting untextured raw mesh (texture baking skipped)")
             verts = mesh.vertices.cpu().numpy() if hasattr(mesh.vertices, 'cpu') else np.array(mesh.vertices)
             faces = mesh.faces.cpu().numpy() if hasattr(mesh.faces, 'cpu') else np.array(mesh.faces)
-            return trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+            raw_mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+            raw_mesh.metadata.update(mesh_metadata)
+            return raw_mesh
 
         # This cap only exists for the texture/render path (nvdiffrast limitation).
         # Never apply it to raw_mesh_only: source geometry must stay model-native.
@@ -292,14 +372,17 @@ class Trellis2Runner:
                 output_mesh = trimesh.load(tmp.name, force="mesh")
                 os.unlink(tmp.name)
             
+            output_mesh.metadata.update(mesh_metadata)
             return output_mesh
         else:
             logger.warning("o_voxel not available, returning raw mesh")
             # Return a basic conversion (without proper texture baking)
-            return trimesh.Trimesh(
+            output_mesh = trimesh.Trimesh(
                 vertices=mesh.vertices.cpu().numpy() if hasattr(mesh.vertices, 'cpu') else mesh.vertices,
                 faces=mesh.faces.cpu().numpy() if hasattr(mesh.faces, 'cpu') else mesh.faces
             )
+            output_mesh.metadata.update(mesh_metadata)
+            return output_mesh
     
     def texture_mesh(
         self,

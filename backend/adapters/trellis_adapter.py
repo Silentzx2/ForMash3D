@@ -187,7 +187,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             ss_steps = max(1, min(50, int(num_steps)))
             slat_steps = max(1, min(50, int(num_steps)))
 
-            logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, res={texture_resolution})")
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, texture_resolution={texture_resolution}; geometry resolution is not exposed by this pipeline)")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
@@ -582,7 +582,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             ss_steps = max(1, min(50, ss_steps))
             slat_steps = max(1, min(50, slat_steps))
 
-            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (ss_steps={ss_steps}, slat_steps={slat_steps}, res={texture_resolution})")
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (ss_steps={ss_steps}, slat_steps={slat_steps}, texture_resolution={texture_resolution}; geometry resolution is not exposed by this pipeline)")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)

@@ -12,6 +12,7 @@ Verifies:
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 # Ensure backend root is on sys.path
@@ -222,8 +223,101 @@ class TestRetopologyProductionBudget(unittest.TestCase):
             )
 
 
+class TestTrellis2EffectiveGeometryTelemetry(unittest.TestCase):
+    """Lock the vendored TRELLIS.2 return contract and effective-resolution reporting."""
+
+    def test_official_return_contract_extracts_actual_cascade_resolution(self):
+        from utils.trellis2_utils import _unpack_trellis2_run_result
+
+        mesh = SimpleNamespace(
+            vertices=[[0, 0, 0], [1, 0, 0], [0, 1, 0]],
+            faces=[[0, 1, 2]],
+            voxel_size=1.0 / 1280,
+        )
+        decoded, effective, voxel_size, source = _unpack_trellis2_run_result(
+            ([mesh], (object(), object(), 1280))
+        )
+        self.assertIs(decoded, mesh)
+        self.assertEqual(effective, 1280)
+        self.assertAlmostEqual(voxel_size, 1.0 / 1280)
+        self.assertEqual(source, "pipeline_return_latent")
+
+    def test_voxel_size_is_only_a_fallback_when_latent_resolution_is_missing(self):
+        from utils.trellis2_utils import _unpack_trellis2_run_result
+
+        mesh = SimpleNamespace(vertices=[[0, 0, 0]], faces=[], voxel_size=1.0 / 512)
+        decoded, effective, voxel_size, source = _unpack_trellis2_run_result([mesh])
+        self.assertIs(decoded, mesh)
+        self.assertEqual(effective, 512)
+        self.assertAlmostEqual(voxel_size, 1.0 / 512)
+        self.assertEqual(source, "mesh_voxel_size")
+
+    def test_empty_official_mesh_list_fails_explicitly(self):
+        from utils.trellis2_utils import _unpack_trellis2_run_result
+        with self.assertRaisesRegex(RuntimeError, "empty mesh list"):
+            _unpack_trellis2_run_result(([], (object(), object(), 1536)))
+
+    def test_runner_requests_effective_resolution_and_returns_native_raw_geometry(self):
+        import numpy as np
+        import tempfile
+        from PIL import Image
+        from utils.trellis2_utils import Trellis2Runner
+
+        native_mesh = SimpleNamespace(
+            vertices=np.asarray([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32),
+            faces=np.asarray([[0, 1, 2]], dtype=np.int64),
+            voxel_size=1.0 / 1280,
+        )
+        pipeline = MagicMock()
+        pipeline.run.return_value = ([native_mesh], (object(), object(), 1280))
+        runner = object.__new__(Trellis2Runner)
+        runner.image_to_3d_pipeline = pipeline
+        runner.o_voxel = object()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            image_path = Path(temp_dir) / "input.png"
+            Image.new("RGB", (8, 8), "white").save(image_path)
+            output = runner.image_to_mesh(
+                str(image_path),
+                raw_mesh_only=True,
+                pipeline_type="1536_cascade",
+                max_num_tokens=262144,
+            )
+
+        self.assertTrue(pipeline.run.call_args.kwargs["return_latent"])
+        self.assertEqual(output.metadata["effective_geometry_resolution"], 1280)
+        self.assertEqual(output.metadata["native_vertex_count"], 3)
+        self.assertEqual(output.metadata["native_face_count"], 1)
+        np.testing.assert_array_equal(output.vertices, native_mesh.vertices)
+        np.testing.assert_array_equal(output.faces, native_mesh.faces)
+        self.assertEqual(output.metadata["mesh_operations"], [])
+
+
 class TestPostprocessPipelineParity(unittest.TestCase):
     """Test postprocessing pipeline quality controls and passthrough behavior."""
+
+    def test_master_source_refresh_detects_same_size_different_content(self):
+        import hashlib
+        import tempfile
+        from postprocess.pipeline import _ensure_master_source
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw = root / "raw.glb"
+            master = root / "master" / "source.glb"
+            master.parent.mkdir(parents=True)
+            raw.write_bytes(b"new!")
+            master.write_bytes(b"old!")
+            self.assertEqual(raw.stat().st_size, master.stat().st_size)
+
+            refreshed, source_sha256 = _ensure_master_source(raw, master)
+            self.assertTrue(refreshed)
+            self.assertEqual(master.read_bytes(), b"new!")
+            self.assertEqual(source_sha256, hashlib.sha256(b"new!").hexdigest())
+
+            refreshed_again, same_sha256 = _ensure_master_source(raw, master)
+            self.assertFalse(refreshed_again)
+            self.assertEqual(same_sha256, source_sha256)
 
     def test_max_production_faces_is_at_least_200k(self):
         from postprocess.pipeline import MAX_PRODUCTION_FACES
