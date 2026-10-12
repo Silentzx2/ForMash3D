@@ -1,311 +1,254 @@
-# ForMash3D — Raw Mesh Fidelity & Micro-Detail Improvement Plan
+# Implementation Task: Integrate Pixal3D into ForMash3D
 
-**Audit target:** `Silentzx2/ForMash3D`, branch `Dev` (capital D)  
-**Research date:** 12 October 2026  
-**Scope:** Raw image-to-3D geometry quality, sharp features, micro-detail retention, model/inference limits, and an evidence-based improvement roadmap.  
-**Explicitly out of scope for this task:** Implementing code, changing branch contents, committing, or pushing.
+> **Execution mode:** Implement the integration in the existing repository; this file is not asking for a proposal-only response. Use multiple sub-agents when the environment supports them. Do not claim success for work that was not implemented or tested.
+>
+> **Target repository:** `Silentzx2/ForMash3D`  
+> **Target branch:** `Dev`  
+> **Upstream model:** `https://github.com/TencentARC/Pixal3D`  
+> **Primary official documentation:** upstream README, inference entrypoints, dependency list, license and NOTICE.
 
-> **Bottom line:** ForMash3D already protects the generated source mesh from the normal downstream decimation pipeline. That is good, but it cannot make an under-detailed model output suddenly detailed. The highest-value work is (1) prove the true model-native output and effective extraction resolution with telemetry, (2) benchmark the current top local models against identical inputs, (3) add a strong independent geometry-model contender such as Step1X-3D, and (4) offer multi-view guidance and optional detail refinement. Polycount, subdivision, and a smoother UI are not substitutes for geometry detail that the generator never produced.
+## 1. Mission
 
----
+Add Pixal3D as a first-class, maintainable **single-image 3D generation model** in ForMash3D. The task includes vendored upstream source, weights/checkpoint management, unified-environment dependencies, a dedicated adapter and model-factory connection, backend manifest/readiness wiring, frontend selection/settings/routing, raw-master preservation, tests, and accurate documentation.
 
-## 1. Executive recommendation
+This must be a real end-to-end integration, not just a display name in a selector. Follow the current ForMash3D implementation patterns wherever they are correct. Keep the diff as small as possible after understanding the full call chain.
 
-### Recommended order
+## 2. Mandatory repository rules and preflight
 
-1. **Start with TRELLIS.2 as the current local high-quality candidate.** The `Dev` branch already selects its `1536_cascade` route, high sampler steps, a 262,144 token budget, no remesh, and native raw-mesh export. Do not assume that the requested cascade always ends at effective 1536 resolution: instrument the pipeline's *returned effective resolution* and benchmark the resulting mesh first.
-2. **Run controlled raw-only comparisons with TripoSG, Hunyuan3D-Shape-v2.1, TRELLIS, and Unique3D.** Hunyuan's configured 512 octree is its current upstream extraction ceiling; Mini-Turbo is a fast/small model, not the high-detail default. TripoSG uses its official Flash VAE decoder on supported GPUs; do not switch to a denser alternate decoder blindly because it can impose substantial memory/runtime costs.
-3. **Integrate Step1X-3D as a separate experimental adapter.** Its public geometry pipeline exposes a `sharp` edge-control label and parameters such as `octree_resolution`, `max_facenum`, `do_reduce_face`, and `do_shade_smooth`. Export untouched base geometry first; apply texture, smoothing, and face reduction only to derived copies. Apache-2.0 is the project's stated code license, but audit the exact checkpoint/data licenses too.
-4. **Add an optional multi-view workflow.** One image fundamentally under-constrains hidden geometry and fine relief. When users can provide real front/side/back views, use them as a consistent set. A generated turntable can help only when its view consistency is verified; inconsistent synthetic views can damage the reconstruction.
-5. **Create an optional, measured detail-refinement stage only after benchmarking.** It must be feature-preserving and operate on a copy of the source mesh. Use displacement/relief reconstruction only where image/normal/multi-view evidence supports it; do not globally smooth or voxel-remesh the source.
-6. **If exact parity with Meshy/Tripo matters more than fully local execution, benchmark their current high-geometry API modes too.** This is an explicit product decision: usage cost, latency, terms, privacy, and sending customer images/models to an external service must be accepted first. There is no guarantee that one local open model will match the proprietary platforms for every asset category.
+1. **Read `RULES.md` first and follow it throughout.** Treat its root-cause-first, reuse-first, no-unneeded-dependencies, minimal-diff, and documentation requirements as mandatory.
+2. Before editing code, read the **complete contents of every Markdown document in `Docs/`**, plus root `README.md`, `CONTRIBUTING.md`, and any relevant root or nested agent/rules files discovered in the repository. This includes, at minimum, `Docs/PRD.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, `Docs/DECISIONS.md`, `Docs/MEMORY.md`, `Docs/SECURITY.md`, `Docs/SYSTEM-BLUEPRINT.md`, `Docs/CHANGELOG.md`, `Docs/api-documentation.md`, `Docs/PHASE_0.md`, and `Docs/TASKS.md`. Do not skim over large documents: retrieve and review them in manageable sections and build a concise internal architecture/decision map.
+3. **Do not edit `Docs/TASKS.md`.** Read it for context only; the user has not authorized changes to that file. Update the other documents that are actually affected by the implementation.
+4. Inspect the current `Dev` HEAD and working tree before edits. Do not assume previously remembered SHAs or file contents are still current. Protect unrelated in-progress changes; never discard user changes.
+5. Inspect actual caller-to-output flows rather than assuming a model's feature based on its name. Trace registry → API/model manifest → factory → adapter → scheduler → master artifact → postprocessing → UI and readiness/download routes.
+6. Do not change unrelated model defaults, existing adapters, model behavior, or UX as part of this task. Do not rewrite an entire subsystem to add one model.
 
-### What success realistically means
+## 3. Required multi-agent workflow
 
-The attainable goal is **measurably better native geometry and preserved fine features on a defined test corpus**, not a blanket promise that every single-image mesh will equal a proprietary generator. A one-view input cannot disclose true hidden/back-side microgeometry. In addition, apparent “detail” rendered from a texture/normal map is not the same as geometric relief in the mesh.
+Use sub-agents in parallel **if sub-agent capability is available**. They must audit and report findings before the integrating agent changes shared files. If sub-agents are unavailable, execute the same workstreams sequentially and say so accurately in the final report.
 
----
+Suggested workstreams:
 
-## 2. What I inspected in the `Dev` branch
+- **Agent A — Repository architecture and rules:** Read the docs/rules and map the existing model lifecycle, raw-master contract, feature routing, and documentation obligations.
+- **Agent B — Pixal3D upstream audit:** Inspect the current official default branch and exact code paths for loading, single-view inference, shape-vs-texture stages, GLB export, supported resolutions, low-VRAM behavior, dependencies, checkpoint files, license and NOTICE. Return file/line evidence; do not infer from the README alone.
+- **Agent C — Installer and weights lifecycle:** Trace `backend/scripts/install.sh`, `backend/scripts/download_models.sh`, root `manager.sh`, model path conventions, weight verification/readiness, local wheel handling, Docker/setup flows, and `.gitignore`/`.dockerignore` behavior.
+- **Agent D — Adapter/UI/tests:** Map `backend/adapters/`, `backend/core/scheduler/model_factory.py`, `backend/config/models.yaml`, scheduler raw-mesh defaults, `constants/models.ts`, generation parameter construction, `GeneratePanel`, model readiness UI, and current adapter regression tests.
 
-The repository was located as `https://github.com/Silentzx2/ForMash3D`, and the exact branch is **`Dev`**. A local `git clone` was attempted, but this execution environment could not resolve `github.com`; code inspection therefore used the connected GitHub repository interface and branch-pinned files. The conclusions below are based on those inspected files, not on a successful local build or GPU generation run.
+The primary agent owns integration decisions. Sub-agents should not independently edit overlapping files or commit partial implementation. Ask them for specific findings, conflict risks, and recommended tests; consolidate the report before making changes. Do not merely run sub-agents and accept unverified claims.
 
-Relevant code:
+## 4. Scope boundaries — do not violate these
 
-- [Model manifest](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/config/models.yaml)
-- [Inference parameter policy and scheduler](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/core/scheduler/multiprocess_scheduler.py)
-- [TRELLIS adapter](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/adapters/trellis_adapter.py)
-- [TRELLIS.2 adapter](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/adapters/trellis2_adapter.py)
-- [TRELLIS.2 inference wrapper](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/utils/trellis2_utils.py)
-- [Hunyuan3D-Shape-v2.1 adapter](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/adapters/hunyuan3d_shape_v21.py)
-- [TripoSG adapter](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/adapters/triposg_adapter.py)
-- [Unique3D adapter](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/adapters/unique3d_adapter.py)
-- [Mesh processor](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/core/mesh_processor.py)
-- [Quality evaluation utilities](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/core/quality/evaluation.py)
-- [Mesh-quality benchmark CLI](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/scripts/run_mesh_quality_benchmark.py)
-- [Controlled model-run benchmark CLI](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/scripts/run_model_ab_benchmark.py)
-- [Existing model-parity tests](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/tests/test_official_model_parity_contract.py)
-- [Architecture decisions](https://github.com/Silentzx2/ForMash3D/blob/Dev/Docs/DECISIONS.md)
-- [Engineering history / known model fixes](https://github.com/Silentzx2/ForMash3D/blob/Dev/Docs/MEMORY.md)
+### 4.1 Single-view only; no Multi-View connection
 
-### Confirmed findings
+Integrate **only the single-image Pixal3D pipeline**. Do not connect Pixal3D to the Multi-View workspace or any existing image-to-multiview feature. Do not register `multiview: true`, do not route to `inference_mv.py`, do not download `_mv` checkpoints/configs, and do not modify `features/workspace/Panels/MultiViewWorkspace.tsx`, Zero123++ behavior, the multi-view API, or Multi-View model selection to make Pixal3D work. The upstream source checkout may contain its multiview file, but ForMash3D must never invoke or expose that path in this task.
 
-**A. Raw output is largely model-native today.** The inspected raw routes extract vertices/faces and save them without calling the generic smoothing/decimation utilities:
+In the weight downloader, exclude Pixal3D multi-view-only artifacts (including files matching the upstream multi-view checkpoint/config naming such as `*_mv` and `pipeline_mv.json`, after verifying the current upstream file list). Download only files actually required by the single-view integration.
 
-- TRELLIS calls `run(..., formats=["mesh"])`, uses `simplify=0.0` from the max-quality profile, constructs a `trimesh.Trimesh`, and saves with `do_normalise=False`.
-- TRELLIS.2's `raw_mesh_only=True` path converts returned vertices/faces to `trimesh.Trimesh` and returns before the `o_voxel.postprocess.to_glb(...)` export path. That avoids the textured/export path's remesh/decimation logic.
-- Hunyuan3D-Shape-v2.1 saves the result with `do_normalise=False` and currently requests an octree resolution of 512 for `source_quality=max`.
-- TripoSG writes a native `Trimesh` from the upstream decoder's returned vertices/faces and defaults to `faces=-1`, `auto_optimize=False`; the adapter does not deliberately decimate or smooth the raw mesh before saving.
-- The common `MeshProcessor.save_mesh(..., do_normalise=False)` path exports the mesh; it does not invoke `smooth_mesh()` or `simplify_mesh()`.
+### 4.2 Future Pixal3D painting/texturing adapter is out of scope
 
-So the user's diagnosis is plausible: if the exported adapter-level raw file already lacks grooves, ridges, bevels, or fine silhouette changes, **post-processing is not the primary source of that missing detail**. It remains important to verify exactly which file is being inspected and record its face count/hash, but simply disabling downstream smoothing will not fix model-native loss.
+Do **not** register or expose a Pixal3D painting adapter in this task. Do not connect Pixal3D's texture-generation cascade to ForMash3D's centralized texture/post-processing stage, and do not claim that Pixal3D texture generation is already a mesh-painting adapter.
 
-**B. The scheduler already strips production polycount/remesh controls from model inputs.** In `multiprocess_scheduler.py`, `_POSTPROCESS_ONLY_INPUTS` removes keys such as `target_polycount`, `faces`, `simplify`, `decimation_target`, and `remesh` before inference. The intent is correctly to preserve source geometry and apply production budgets to derivative assets, not to the original master.
+Investigate how upstream separates shape generation from texture generation. Implement the single-view geometry adapter so it uses the most appropriate supported shape-only API/stage and preserves genuine geometry. Keep the code boundaries and documentation clear so a **separate Pixal3D painting adapter can be added later** without mixing its model loading, weights, settings, routes, or UI with this generation adapter. Do not modify upstream source files to force a misleading interface; wrap or call upstream APIs from the ForMash3D adapter/helper layer.
 
-**C. Maximum configured settings are not equivalent to unlimited detail.** `_RAW_MESH_MAX_QUALITY_PARAMETERS` includes the following current profiles:
+If the upstream API unexpectedly cannot provide a true shape-only output, do not silently label a fully textured output as “raw/untextured,” do not run a duplicate texture pass, and do not fake `has_texture: false`. Exhaustively inspect supported pipeline stages first. If a truthful shape-only route is genuinely infeasible without invasive/brittle changes, preserve repository correctness and report the exact upstream blocker, affected functions, options evaluated, and smallest defensible alternative instead of claiming a completed raw-mesh integration.
 
-| Model | Current configured raw-generation profile | Main limitation / risk to test |
-|---|---|---|
-| TRELLIS.2 | `1536_cascade`, 262,144 `max_num_tokens`, 50 sparse/shape steps, no remesh, no decimation (`-1`) | `1536_cascade` is a requested path, not proof that the cascade actually returned `res=1536`. Official pipeline code returns an effective `res` from cascade sampling; current project metadata should capture that actual value. |
-| TripoSG | 50 inference steps, guidance 7.0, Flash decoder depth 9, dense depth 8, hierarchical depth 9, no face reduction | Decoder/latent representation and input evidence still limit detail. The alternative hierarchical decoder queries a much denser grid and can raise VRAM/runtime/OOM risk; compare only in a controlled resource test. |
-| Hunyuan3D-Shape-v2.1 | 50 steps, guidance 5.0, octree 512, `num_chunks=20000` | 512 is the configured/upstream extraction ceiling, so more output polygons cannot recover details the representation/extraction does not resolve. |
-| Hunyuan3D mini-Turbo | 5 steps, octree 512, FlashVDM enabled, no low-VRAM mode | Fast 0.6B distilled model; treat as latency/low-resource baseline, not the top-fidelity default. More steps should not be arbitrarily forced beyond its trained/distilled schedule. |
-| TRELLIS | 50 sparse-structure and 50 shape-latent steps, guidance 7.5, `simplify=0.0` | Its learned representation and native extraction quality set the ceiling. A log currently labels `texture_resolution` as `res`, which risks confusing texture size with geometry resolution. |
-| Unique3D | Input processing/refinement enabled; multi-view images and normals are predicted from one image | Predicted views are inferred, not genuine observed geometry. Fine details may be smoothed or inconsistent between imagined views; output needs its own raw-only evaluation. |
+### 4.3 Raw-master fidelity firewall
 
-**D. There is a telemetry gap around actual extraction.** The scheduler logs requested steps and requested extraction settings; TRELLIS.2 metadata records `pipeline_type` and `max_num_tokens`, but the model pipeline can return a *different effective resolution* from its cascade. Add a real output field for `effective_geometry_resolution`, `voxel_size` (where applicable), native vertices/faces, decoder/extractor name, and whether any reduction/smoothing ran. Never present a requested mode as the measured achieved resolution.
+The user's required geometry flow is:
 
-**E. Model metadata is duplicated.** `backend/config/models.yaml` contains preferred extraction/resolution/quality-priority capability hints, while the scheduler separately hardcodes raw max-quality profiles. Add tests to keep these definitions consistent, or consolidate the source of truth; otherwise a future model/config edit can say “high fidelity” while runtime silently uses a lower profile.
+**Pixal3D maximum supported source-generation settings → immutable high-fidelity master artifact → optional downstream production copy/decimation.**
 
-**F. The app already has a useful benchmark foundation.** `backend/core/quality/evaluation.py` supports surface sampling, Chamfer Distance, density-aware Chamfer, F-score and normalized surface drift. Its current no-reference comparisons are diagnostics, not ground-truth quality scores. The existing CLI requires exactly matching input hashes/protocol for run-vs-run comparisons; use it rather than judging solely from textured screenshots.
+- The target polycount, LOD settings, “low/medium/high” production preset, retopology, texture resolution, and other downstream production budgets must not lower the geometry-generation resolution or early-simplify the source.
+- Keep Pixal3D's native source geometry at the maximum supported source settings and highest faithful extraction/export path. Inspect upstream GLB conversion arguments carefully. If upstream exporter defaults use `decimation_target` or `remesh`, check whether a supported lossless/native source export is possible; do not blindly copy a default that could simplify the master. If a cap is inherent in the supported pipeline, document the concrete cap and why it cannot safely be removed.
+- Store the source master through the existing canonical master-artifact flow (for example, `master/source.glb` or the current project equivalent). Downstream optimization must operate on a copy and must never overwrite the source master.
+- Do not copy TRELLIS.2 settings blindly. Pixal3D has its own trained pipeline, resolution, sampler defaults, token budget, and stage-specific conditioning.
+- Make the scheduler's model-specific source-quality profile explicit and testable. Remove production-only controls before passing inference arguments to the adapter, following the current scheduler contract.
+- Runtime logs/metadata should report the actual Pixal3D configuration used (resolution, sampler settings, low-VRAM mode, output/source quality and relevant extractor/export settings), not merely the requested values.
 
----
+## 5. Upstream Pixal3D research — required before choosing parameters
 
-## 3. Why a high-poly mesh can still look smooth
+Use the live official repository and its actual current default branch. Verify whether the active branch is named `main`, `master`, or something else; do not assume. Prefer the maintained implementation, not the historical `paper` branch unless current upstream documentation explicitly requires otherwise.
 
-1. **Polycount is not information.** Subdivision can create more triangles over a smooth surface, but it cannot infer a screw thread, sharp groove, engraving, wrinkle, or hard-surface edge that never appears in the source mesh. Decimation can destroy detail, but *not* decimating cannot create it either.
-2. **The model's learned 3D prior matters.** Image-to-3D systems map a 2D observation into a learned shape representation. Fine relief might be absent from the training prior, suppressed by the latent bottleneck, or blurred by the model's denoising/reconstruction behavior. Changing the export face count does not change those upstream facts.
-3. **Geometry extraction is another ceiling.** Marching cubes/implicit grids/octree decoders sample a field at finite resolution; thin surfaces and tiny height differences can disappear below the sampling scale. O-Voxel-style field-free representations are designed to handle a broader range of topologies and sharp features, but they still depend on model predictions and their effective resolution.
-4. **A single image is an incomplete measurement.** Front-view texture, lighting, shadows and perspective do not uniquely specify true surface height or unseen sides. A real side/back view adds evidence. Super-resolution can help the image encoder see edges, but it may hallucinate details; it cannot turn guessed detail into ground truth.
-5. **Texture can fake geometry.** High-resolution albedo, roughness and normal maps may make a render appear detailed while the mesh silhouette and vertex positions remain smooth. The evaluation must separate actual geometric relief, texture detail and shader/rendering detail.
-6. **Processing can still erase detail later.** Even though the current raw route usually avoids generic smoothing, later remesh, voxel-shell reconstruction, smoothing, hole-filling, face reduction, or normal recomputation can degrade derivatives. Preserve one immutable native master and compare all derivatives back to it.
-7. **Commercial platforms have their own learned systems and quality modes.** Current Meshy documentation exposes `meshy-7.1` geometry modes including `geometry_resolution: "4k"` for a 4096³ geometry pass and recommends `should_remesh=false` for maximum quality. Current Tripo API documentation identifies `v3.1-20260211` and `geometry_quality: "detailed"` for finer geometry. These are generation-mode capabilities, not merely a requested target triangle count. They are useful comparison baselines, but vendor claims still need hands-on A/B tests.
+Read at least:
 
----
+- Official `README.md`, `inference.py`, pipeline modules/classes called by that entrypoint, any relevant configuration files, `requirements.txt`, license, `NOTICE`, and the code that exports GLB.
+- How `Pixal3DImageTo3DPipeline.from_pretrained(...)` resolves model files.
+- Where it loads any image-conditioning encoders, camera-estimation model, NAF upsampler or other required supporting weights.
+- Exactly which pipeline stage produces shape geometry versus PBR/texturing latents/attributes, and whether the shape-only path can bypass texturing without forking upstream code.
+- The active command/API parameters and their **actual defaults** for single-image generation, supported resolutions, sampler steps per stage, token budget, camera/FOV estimation, mesh conversion, texture size, remesh, decimation and seed.
+- Which files are single-view required and which are multi-view-only. Do not use the Hugging Face demo requirements as the truth for this CUDA/architecture, because demo-specific dependencies can be incompatible with non-H GPUs.
 
-## 4. Model strategy: current local candidates + new challengers
+Use upstream's documented max-fidelity single-view configuration as the initial default. The official single-view CLI has documented a 1536-resolution normal path and 1024 default under low-VRAM mode; verify that against the live upstream code before implementing. Do not imply that 1536 resolution will fit into the same 10–12 GB claimed for the low-VRAM 1024 path unless you actually measure it. Upstream has described low-VRAM loading as lowering peak memory by moving models between CPU/GPU at a slower inference speed; validate current details in code/docs.
 
-### First test the existing local stack
+Do not increase step counts beyond official supported quality settings just because other ForMash3D models use more steps. Only use parameter values that Pixal3D's own pipeline supports. Record the exact defaults and the rationale in the model-specific parameter schema/tests/docs.
 
-**1) TRELLIS.2 — primary local baseline.** Its upstream project describes a 4B image-to-3D model using O-Voxel, intended for complex topology and sharp features; its documented paths include 512³, 1024³ and 1536³. Official guidance says at least 24 GB NVIDIA GPU memory and recommends CUDA 12.4/Linux. For ForMash3D, the next task is not to blindly increase polycount: capture the effective cascade `res`, confirm its native raw output is used, and compare the actual shape to TripoSG on the same images. Full 1536 mode may be slow or memory-intensive on lower-end hardware.
+## 6. Vendored source layout and upstream integrity
 
-**2) TripoSG — strong independent local comparison.** Current adapter settings are already high. Preserve the official Flash VAE decoder route on supported GPUs as the default and run an experimental alternate decoder only in isolated profiling if warranted. Capture the selected decoder path and raw mesh statistics so results can be reproduced.
+- Add the official Pixal3D source to the existing third-party vendor area: expected convention is `backend/thirdparty/Pixal3D/`. Verify the repo's existing layout and naming before finalizing.
+- Clone the official Pixal3D repository at the verified maintained branch/commit. Record the upstream commit SHA in a small provenance file or the relevant documentation so the integration is reproducible.
+- After cloning, **remove the nested `.git` metadata** from the vendored checkout (`.git` may be a directory or file; inspect before removal). Ensure Pixal3D is a normal tracked source directory, not a nested repository or accidental submodule. Do not remove upstream source files, license, NOTICE, or required attribution.
+- Respect ForMash3D's convention that upstream source files are not edited. If an upstream defect or compatibility workaround is required, implement it in the ForMash3D adapter/helper/installer layer and document why.
+- Keep large weights, caches, downloaded archives and generated artifacts out of the source tree and Git. Use the repository's established pretrained/weights location and update `.gitignore` / `.dockerignore` only when required and verified.
+- Check the Pixal3D license and NOTICE and all new dependencies' licenses. Preserve third-party attribution and do not imply Pixal3D or its weights are licensed identically to ForMash3D. Report any checkpoint/model-card access or license restrictions accurately.
 
-**3) Hunyuan3D-Shape-v2.1 — strong baseline, known extraction cap.** The project requests `octree_resolution=512`, with 50 steps. The official upstream parameter range defaults lower and caps at 512. Treat this as a separate candidate, not as the source of “infinite micro-detail” via mesh subdivision.
+## 7. Weight download manager and readiness
 
-**4) TRELLIS and Unique3D — retain as task-dependent candidates.** TRELLIS is a useful comparison for its own image-to-shape prior. Unique3D's generated-view/normal bridging can help global reconstruction, but test whether fine geometry is genuinely retained rather than only visually implied by vertex colors. Neither should be presumed superior without the corpus test.
+Integrate Pixal3D into the **existing** model download lifecycle; do not create a parallel download manager unless the current architecture demonstrably cannot support the feature.
 
-### New open model to prototype: Step1X-3D Geometry
+Inspect and update as needed:
 
-Official repository: [stepfun-ai/Step1X-3D](https://github.com/stepfun-ai/Step1X-3D). It advertises a 1.3B geometry model alongside a separate texture model; its geometry pipeline uses a hybrid VAE-DiT and sharp-edge sampling. The public pipeline exposes useful geometry options such as `label` (including `edge_type="sharp"`), `octree_resolution`, `max_facenum`, `do_reduce_face`, and `do_shade_smooth`. Its demo explicitly exports `out.mesh[0]` as the base geometry before running cleanup/face reduction and texturing on a later mesh copy. The repository states Apache-2.0 for the project code.
+- `backend/scripts/download_models.sh`
+- root `manager.sh` (menu/help/model aliases/parity)
+- model-weight readiness logic and API payloads in `backend/api/routers/system.py` and their frontend types/consumers
+- the authoritative model path in `backend/config/models.yaml`
+- ignore rules and any install/container documentation.
+
+Requirements:
+
+1. Add a clear CLI model key (for example `pixal3d`; use the naming convention discovered in the existing script), help text, list output and `all` integration, unless there is a documented reason to keep it optional. Make single-model download, verify-only, force-download and failure reporting consistent with existing behavior.
+2. Verify actual required Pixal3D files before reporting ready. A partial directory, config-only cache, unrelated checkpoint, or empty file must not pass readiness. Use a model-specific file manifest / meaningful minimum required files as needed, consistent with the existing readiness mechanism.
+3. Include supporting single-view weights only when required by the selected shape-only execution path. Audit whether camera-estimation, DINOv3 conditioning and NAF files are downloaded locally or implicitly fetched by model initialization. Generation should use the known local/cache roots deterministically; do not unexpectedly download huge weights in a GPU job after the UI already said the model was ready.
+4. Use the repository's current Hugging Face download tool/path and token/error-handling patterns. Verify exact filter/ignore syntax against the installed CLI/library version; do not guess argument syntax.
+5. Never download Pixal3D Multi-View checkpoints/configs for this feature. Make source-weight and optional future painting-weight separation explicit in code/docs.
+6. On download failure, exit non-zero with actionable errors and do not print a success banner. Preserve the project's existing false-success safeguards. Handle interrupted and repeated downloads idempotently, verify artifacts after download, and avoid destructive deletion of a valid cache on a failed forced download.
+7. Report exact disk requirements only if verifiable. Do not fabricate the total checkpoint size.
+
+## 8. Unified dependency installation
 
-**Integration rules:**
+Integrate compatible required dependencies into the existing installer, especially `backend/scripts/install.sh`, **in the existing unified environment**. Do not create a second Python environment just for Pixal3D unless the audit proves an unavoidable dependency conflict and documents why isolation is the only stable solution.
+
+- Read the Pixal3D `requirements.txt` and installation docs line by line and compare against `backend/requirements.txt`, TRELLIS.2's installed stack, local wheel flow, pinned PyTorch/CUDA and currently installed packages.
+- Add only missing compatible requirements, with pins where native/CUDA compatibility needs them. Do not blindly `pip install -r` an upstream requirements file on top of the shared environment if it would downgrade/replace PyTorch, CUDA-dependent packages, NumPy, transformers, `natten`, attention implementations, or other shared libraries.
+- The upstream docs have mentioned `natten==0.21.0`, a specific `utils3d` wheel, native/CUDA architecture build concerns, and an `ATTN_BACKEND=sdpa` alternative when FlashAttention is unavailable. Verify each against current upstream code and the repo's CUDA/PyTorch versions before changing anything.
+- Reuse `uv pip`, local compatible wheel preference, build isolation settings and retry/error conventions already present in `backend/scripts/install.sh`. Keep environment resolution consistent with `scripts/setup.sh` and Docker/RunPod installations.
+- Add a clearly separated Pixal3D dependency section at the correct point in install order after shared base dependencies. Do not silently swallow required dependency failures. Test installer branch/flags with mocks or a safe test harness; do not run a destructive full CUDA/system package installation just to test the script.
+- Only expose environment overrides such as `ATTN_BACKEND=sdpa` when the upstream code supports them; avoid global environment changes that alter other adapters.
 
-- Build a separate `Step1X3DImageToRawMeshAdapter`; do not transplant its dependencies into existing model import paths.
-- Run upstream geometry-only inference in an isolated environment/worker first; verify Torch/CUDA/PyTorch3D/other binary dependency compatibility before merging dependency pins.
-- For the raw output, keep `do_reduce_face=False` and `do_shade_smooth=False` initially, and export the returned base mesh before any `remove_degenerate_face`, `reduce_face`, smoothing, or texture stage. Run cleanup on a derivative, with drift checks against the native master.
-- Benchmark `edge_type="sharp"` versus the other supported modes on hard-surface and organic examples. Choose the symmetry label from the asset category and test its effect rather than assuming every asset is symmetric.
-- Test 50 steps and `max_facenum` using the supported project code/schema, then tune within measured VRAM/time constraints. A face cap is an upper bound, not a detail guarantee.
-- Audit model/checkpoint license and download requirements independently; upstream code license does not automatically grant every checkpoint/dataset right.
+## 9. Backend adapter and registry integration
 
-**Alternative future route:** if a more recent geometry-specific research model appears promising, build a plugin-like adapter and benchmark it under the same contract. Do not bulk-add multiple models before measuring one challenger end-to-end.
+Follow the simplest correct existing adapter pattern. Likely touchpoints include:
 
-### Commercial parity experiment (optional, not assumed)
+- `backend/adapters/` — dedicated Pixal3D adapter/helper using lazy imports for the heavy GPU-specific modules.
+- `backend/core/scheduler/model_factory.py` — register the canonical model ID and adapter class using the current factory convention.
+- `backend/config/models.yaml` — canonical feature, model path, VRAM estimate, supported inputs/outputs, readiness metadata and truthful capabilities.
+- `backend/core/scheduler/multiprocess_scheduler.py` — add model-specific max-fidelity source defaults only after validating the supported upstream parameters; preserve scheduler stripping of target polycount and production controls.
+- current model base classes, path helpers, artifact naming, logging, exception handling, unload behavior, cancellation and worker lifecycle.
+
+Implementation requirements:
+
+1. The adapter accepts one input image (not a `transforms.json` or view directory), applies current standard preprocessing conventions only when compatible with Pixal3D, and returns the correct geometry artifact metadata.
+2. Use canonical repo-relative paths for vendored source and weights. Do not rely on process CWD, absolute personal paths, or an implicit Hugging Face network lookup.
+3. Do not import Pixal3D, CUDA extension modules, DINOv3, MoGe, or heavy native components at module import time. Adapter listing, API startup, model discovery, readiness checks and basic tests must continue to work without a GPU and without optional model dependencies installed.
+4. Load the model lazily inside the worker's `load()` path; implement clean unload/release paths consistent with current adapters. Handle missing source, missing weights, CUDA unavailable, unsupported GPU architecture, dependency/import failure, and inference failure with actionable messages. Do not falsely convert model-load failure into a placeholder mesh.
+5. Ensure output paths, mesh coordinate/rotation convention, GLB export, normals/faces and transforms are compatible with the existing canonical artifact/postprocess pipeline. Avoid arbitrary lossy remesh/decimation before the master artifact is persisted.
+6. Expose the correct model ID consistently in registry, manifest, factory, logs, download manager and tests. Do not add unnecessary aliases unless the existing routing pattern requires them.
+7. Explicitly declare single-image capability and `multiview: false`. Declare texture capability based on the implemented path, not on Pixal3D's name or potential future adapter.
+8. If the existing API's `image_to_raw_mesh` route selects adapters based on manifest capabilities, connect the new model to that same path. Do not build a parallel request route for one adapter unless existing architecture requires it.
 
-For a true competitive quality bar, compare two kinds of outputs:
+## 10. Low-VRAM and max-quality behavior
 
-- **Meshy:** current official Image-to-3D documentation exposes `meshy-7.1`, `geometry_resolution="4k"` for its finest documented geometry pass, `should_remesh=false` as its quality recommendation, and a separate target-polycount/remesh contract. Configure a geometry-first comparison with remeshing off and preserve the pre-remesh output where supported. Be careful not to mistake target polycount for native generation fidelity.
-- **Tripo:** current H-series docs list `v3.1-20260211` as their latest/best-quality version and `geometry_quality="detailed"` as the finer-geometry mode for version 3.0 or later. Verify response format/task version at integration time.
-
-Keep this behind an explicit **External Provider** feature flag. Provide clear opt-in, API-key handling, per-job estimated/actual cost, rate-limit/error handling and data-sharing notice. It is not compatible with an offline/local-only guarantee unless the user knowingly opts out of that guarantee.
-
----
-
-## 5. Input pipeline recommendations
-
-The raw model should receive a clean, high-information image, without aggressive preprocessing that removes the features we want it to reconstruct.
-
-1. **Preserve original pixels and alpha.** Do not destructively overwrite the uploaded reference. Store original input hash plus preprocessed image/hash and metadata.
-2. **Foreground segmentation must preserve thin structures.** Validate that object edges, narrow gaps, antennae, handles, hair, fabric fringes and thin protrusions survive background removal. A soft mask or antialiasing halo can make object-crop detection wrong; a simple hard threshold can also remove translucent features. Use asset-aware mask processing and log failures/fallbacks.
-3. **Crop for object occupancy without cutting extremities.** Add an inspectable preview and safe margin. Do not blindly zoom to the largest connected silhouette if detached parts/thin features are important.
-4. **Use super-resolution selectively.** It can improve encoder input in small images, but it can hallucinate microtexture and change the reference. Keep the original image accessible and A/B the original vs enhanced input; log which one was used.
-5. **When available, collect actual multi-view images.** Require camera views to describe the same physical/object design. Add consistency checks for scale, orientation, backgrounds, crop, and part identity. A multi-view mode should not treat several unrelated image variations as a coherent 3D observation.
-6. **Build a geometry-first input benchmark.** Include clean product render/reference photos and difficult real images. Record image resolution, crop bounds, alpha behavior, background-removal model/version and object occupancy. This helps separate input quality from model quality.
-
----
-
-## 6. Raw-source contract and telemetry to implement
-
-These items are implementation work for the next phase, not performed in this task.
-
-### A. Immutable source and derivative separation
-
-- Raw model output is written once to `master/source.glb` (or an equivalent native source artifact) with no smoothing, decimation, retopology, voxelization, texture bake or face reduction.
-- Every production artifact (game-ready mesh, low-poly version, LOD, UV/texture bake, remesh, repair, rigging copy) must fork from the source or a named derivative, never mutate `master/source.glb`.
-- Persist a hash of the source artifact and report it in metadata; verify the hash remains identical after all downstream jobs.
-- Store raw and derivative statistics independently; UI previews must clearly distinguish `Native source`, `Game-ready`, and `Textured preview`.
-
-### B. Record actual—not merely requested—generation settings
-
-For every job, persist at least:
-
-- Model ID, exact checkpoint/revision and dependency/adapter version.
-- Input SHA-256, original and processed image sizes, crop/alpha/SR choices, preprocessing versions.
-- Seed, actual number of sampling steps, guidance/CFG, dtype, GPU model/VRAM, memory peak, runtime.
-- Decoder/extractor path (`flash` vs `hierarchical`, marching cubes vs O-Voxel, etc.), requested resolution **and effective output resolution**, any cascade fallback, `voxel_size` where meaningful, token/face budgets.
-- Native vertices, native faces, number of components, bounds, file size and source hash.
-- Exact mesh-changing operations applied, parameters, before/after stats, and comparison drift.
-
-Correct the TRELLIS logging label that currently calls `texture_resolution` a `res` value. Geometry resolution and texture atlas size must be separate fields.
-
-### C. Align registry and inference profiles
-
-- Have one source of truth for per-model quality profiles or add tests comparing manifest capabilities with `_RAW_MESH_MAX_QUALITY_PARAMETERS`.
-- Do not present generic `preferred_resolution` values as a literal extraction grid if a model uses another representation.
-- Make “Highest Geometry Fidelity” and “Fast/Low VRAM” explicit model/profile choices. Do not silently degrade a quality job to a lower-resolution path when tokens/VRAM are insufficient. Return a clear warning or require user approval for a downgrade.
-- Add an automated contract test: target polycount/remesh controls never reach raw adapters; a max-fidelity request disables face reduction/smoothing where the upstream pipeline allows it; the effective resolution is reported.
-
----
-
-## 7. Detail refinement: only after the baseline
-
-An optional post-generation detail-restoration module could help for certain assets, but it should not be used as a universal “AI sharpener.” A wrong displacement can damage a perfectly valid surface.
-
-### Proposed `detail_refinement` stage
-
-- Input: immutable raw source + original reference image and, when available, consistent multi-view images/depth/normal evidence.
-- Estimate high-frequency displacement only where the model/reference evidence supports it. Keep feature-edge masks for bevels, mechanical edges and thin parts so normal smoothing/displacement does not round them off.
-- Prefer multiview-consistent depth/normal/photometric evidence over arbitrary generated noise. Use bounded displacement, confidence maps, edge-aware regularization and a rollback path.
-- Provide separate modes such as `Geometry detail` (actual mesh displacement / refined surface) and `Render detail` (normal/roughness/displacement texture for appearance). Do not market a high-resolution normal map as real vertex geometry.
-- Write a new asset, e.g. `derived/detail_refined.glb`; never overwrite the source.
-- Gate promotion on silhouette, surface drift, component count, degenerate-face checks and visual turntable review. When uncertain, keep the source instead.
-
-### What not to do
-
-- Do not globally increase triangle count or subdivide a smooth mesh and call it detail recovery.
-- Do not apply broad Laplacian/Taubin smoothing to the native source.
-- Do not voxel-remesh a high-detail source by default; voxel pitch can erase thin/engraved features.
-- Do not blindly run decimation, hole filling, normal recalculation or sharp-edge welding on the master.
-- Do not use generative super-resolution as ground-truth geometry.
-
----
-
-## 8. Controlled benchmark plan
-
-### Test corpus
-
-Create 15–30 reusable image cases, covering:
-
-1. Hard-surface product with engraved labels, seams and bevels.
-2. Mechanical object with teeth, slots, threads, bolts and thin edges.
-3. Organic subject with folds, scales, feathers or hair-like fine features.
-4. Cloth/leaf/open-surface geometry.
-5. Thin parts, holes, handles, narrow gaps and detached components.
-6. Smooth simple shapes as a control group.
-7. At least 5 cases with ground-truth reference meshes or a consistent multi-view capture set.
-
-Keep the same original input and image preprocessing for comparisons. Run at least three seeds where each model allows stochastic sampling. Track model/checkpoint version, inference profile, actual resolution and source file hash.
-
-### Models to compare
-
-- Current local: TRELLIS.2, TripoSG, Hunyuan3D-Shape-v2.1, TRELLIS, Unique3D.
-- Latency/low-resource control: Hunyuan3D mini-Turbo.
-- New challenger: Step1X-3D geometry-only.
-- Optional external baselines: Meshy 7.1 in finest geometry mode, Tripo v3.1 with detailed geometry.
-
-### Required artifact views
-
-For each model/input, retain:
-
-- Native raw GLB.
-- Identical neutral-lighting turntable renders (front, back, left, right, top, 3/4).
-- Close-up crops of actual physical features, plus wireframe/flat-gray shading (textures off) to reveal true geometry.
-- Rendered textured preview separately, clearly labelled as texture-assisted.
-- JSON run metadata with parameters/metrics.
-
-### Metrics
-
-Use existing `backend/scripts/run_mesh_quality_benchmark.py` and `backend/scripts/run_model_ab_benchmark.py` as the starting point.
-
-- With a ground-truth mesh: Chamfer Distance, density-aware Chamfer, F-score at a fixed normalized threshold, normalized surface drift, silhouette agreement and high-curvature/feature-edge retention.
-- Without ground truth: use fixed multi-view render/wireframe review, consistency across seeds/views, and source-versus-derivative drift. Label these as diagnostics, **not absolute geometry accuracy**.
-- All comparisons must normalize/align units and coordinate frames. A wrong rotation/scale can ruin the metric without meaning the detail itself is wrong.
-- Validate mesh health separately: degenerate faces, non-finite coordinates, disconnected noise/floater components, self-intersections where measurable, thin-part survival, non-manifold edge behavior and bounding-box sanity.
-- Measure wall time, peak VRAM, OOM frequency, peak face count and GLB size; quality gains that make the main product unusable should be surfaced as trade-offs, not hidden.
-
-Current CLI examples (run from the backend environment):
-
-```bash
-cd backend
-python -m scripts.run_mesh_quality_benchmark --reference /path/to/reference.glb --candidate /path/to/raw_output.glb --output /path/to/report.json
-python -m scripts.run_mesh_quality_benchmark --candidate /path/to/raw_output.glb --output /path/to/report-no-reference.json
-```
-
-For asset-directory comparisons, use `scripts.run_model_ab_benchmark` with `--baseline-asset`, `--candidate-asset`, and optional `--reference`. It intentionally blocks comparisons with different input hashes/protocol; keep that requirement.
-
-### Proposed acceptance gates (tune after baseline)
-
-- **Native-source preservation:** 0 automatic decimation/smoothing/remesh in the source path; source hash unchanged throughout post-processing.
-- **Resolution truthfulness:** each quality run records the decoder/extractor and achieved effective resolution. Any quality downgrade is explicit and never silent.
-- **Quality improvement:** on the ground-truth subset, target a meaningful median improvement (initial proposal: at least 10% relative improvement in the selected primary metric versus the current best local baseline) without a measurable regression in major silhouette/large-feature fidelity. Treat 10% as a test target, not a guaranteed result.
-- **Feature pass rate:** create a human rubric for the defined engravings/edges/thin features; compare blind, same-scale turntables. Set a threshold only after collecting a reliable baseline.
-- **Runtime/resource gate:** define an acceptable GPU-memory/runtime tier, with a clear “HQ / slow” option rather than silently cutting quality.
-- **Regression:** current model registrations (including `PartUV`) and existing adapter/contract tests stay intact; legacy retired models are not reintroduced unless separately approved.
-
----
-
-## 9. Phased implementation roadmap
-
-| Phase | Work | Deliverable / exit criterion | Priority |
-|---|---|---|---|
-| 0. Baseline | Save current raw outputs and neutral/wireframe turntables for the fixed corpus; capture hashes and existing parameters. | Reproducible baseline across TRELLIS.2, TripoSG, Hunyuan Shape, TRELLIS, Unique3D. | P0 |
-| 1. Truthful telemetry | Log TRELLIS.2 effective returned `res` and voxel size; fix texture-vs-geometry-resolution logging; record native counts/hash/extraction path/GPU/peak VRAM. | We know what was actually generated, and can detect silent quality downshifts. | P0 |
-| 2. Contract hardening | Preserve immutable `master/source.glb`; verify raw path has no mesh-changing stages; compare `models.yaml` and scheduler quality profiles; add tests for no postprocess inputs to adapters. | Source/detail preservation is tested and observable, not just comments. | P0 |
-| 3. Benchmark current models | Run same corpus, seeds, renders and metrics across current local candidates; rank by asset category. | A measured “best model for category” matrix; no model is crowned by face count alone. | P0 |
-| 4. Step1X prototype | Implement isolated geometry-only adapter, environment/dependency validation, model manifest + factory + UI registry + download/health check. | End-to-end raw output and identical-corpus benchmark; keep behind experimental flag until it passes. | P1 |
-| 5. Input + multi-view | Build mask/crop/SR diagnostics and opt-in multi-view input with view consistency checks. | Better source evidence without destructive preprocessing; demonstrate gains on held-out cases. | P1 |
-| 6. Detail refinement | Prototype edge-aware, confidence-gated displacement on a derivative only; report reference/source drift and visual results. | Optional mode shows measurable geometry improvement or remains disabled. | P2 |
-| 7. Provider benchmark | Optional Meshy/Tripo API adapter with clear consent, keys, cost and data policy. | Quality ceiling/commercial comparison established; cloud upload never happens silently. | P2 |
-| 8. Default policy | Set category-dependent defaults (`HQ local`, `fast`, optional cloud); publish measured memory/time vs quality. | Defaults selected from data, not model marketing claims. | P2 |
-
----
-
-## 10. Practical priority list
-
-If only three tasks can be done first, do these:
-
-1. **Verify TRELLIS.2's effective `res` and compare its raw geometry against TripoSG.** This is the most likely immediate win because the system already uses a top local model and a high-fidelity path, but current logs do not prove which resolution the cascade actually returned.
-2. **Run the raw-only benchmark and visually inspect flat-shaded/wireframe details, not just textured previews.** It tells us whether quality is limited by the base model, preprocessor, effective extraction, or downstream derivative pipeline for each type of asset.
-3. **Integrate Step1X-3D as the first new local challenger**, keeping its source output untouched and its environment isolated. Compare the actual output rather than assuming the newest model will win.
-
-Do not start by adding more general mesh libraries or making every model generate millions of faces. Only add a dependency when it solves a measured failure (e.g., better extractor, geometry refinement, mesh health metric) and remains compatible with supported GPU/OS environments.
-
----
-
-## 11. External research references
-
-All vendor/model capabilities below are sourced from their public documentation/repositories; they describe the authors' published architecture or product API, not independently verified performance on ForMash3D's hardware.
-
-1. **Microsoft TRELLIS.2 official repo** — O-Voxel, 4B image-to-3D, stated 512³ / 1024³ / 1536³ paths, sharp/complex topology focus and hardware requirements: [github.com/microsoft/TRELLIS.2](https://github.com/microsoft/TRELLIS.2).
-2. **TRELLIS.2 pipeline code** — `1536_cascade` calls a cascade sampler which returns `res`, and that `res` is used for decoding; therefore report effective output resolution rather than just requested pipeline mode: [official pipeline source](https://github.com/microsoft/TRELLIS.2/blob/main/trellis2/pipelines/trellis2_image_to_3d.py).
-3. **Step1X-3D official repo** — 1.3B geometry model, hybrid VAE-DiT, sharp-edge sampling and Apache-2.0 project-code license: [github.com/stepfun-ai/Step1X-3D](https://github.com/stepfun-ai/Step1X-3D). [Pipeline parameters](https://github.com/stepfun-ai/Step1X-3D/blob/main/step1x3d_geometry/models/pipelines/pipeline.py) and [demo exporting base geometry before face reduction/texturing](https://github.com/stepfun-ai/Step1X-3D/blob/main/app.py).
-4. **Meshy image-to-3D API docs** — `meshy-7.1`, 2K/4K geometry generation pass, remesh recommendation, and separate polycount contract: [docs.meshy.ai/en/api/image-to-3d](https://docs.meshy.ai/en/api/image-to-3d).
-5. **Tripo image-to-model API docs** — current H-series model IDs, `geometry_quality="detailed"`, model-seed reproducibility and input-image recommendations: [developers.tripo3d.ai](https://developers.tripo3d.ai/en/docs/generation-image-to-model).
-6. **TripoSG upstream extraction code** — default dense and hierarchical octree depths plus distinct flash/hierarchical decoder paths: [VAST-AI-Research/TripoSG inference utilities](https://github.com/VAST-AI-Research/TripoSG/blob/main/triposg/inference_utils.py) and [pipeline code](https://github.com/VAST-AI-Research/TripoSG/blob/main/triposg/pipelines/pipeline_triposg_scribble.py).
-7. **ForMash3D internal benchmark contract** — run comparison, fixed input hashes, normalized surface drift and quality metrics: [quality evaluation code](https://github.com/Silentzx2/ForMash3D/blob/Dev/backend/core/quality/evaluation.py).
-
----
-
-## Final decision
-
-**First prove and measure the raw geometry path; then benchmark models; then introduce one serious local model challenger.** Keep the untouched high-fidelity mesh as the immutable source. Use extraction/profile telemetry to make sure high-quality generation means the actual high-quality path ran. Use multi-view evidence for difficult detail, and treat neural displacement/detail refinement as an optional downstream copy with measurable quality gates. Keep a commercial API option as the only honest fallback if required parity is beyond what local open weights can reliably deliver for the target asset set.
+Provide both modes if the upstream code supports them; make the trade-off explicit and testable.
+
+- **Default / Max Quality:** select Pixal3D's highest supported single-view resolution/path (verify the upstream default, expected to be the 1536 cascade), normal non-offloaded inference unless the official implementation establishes a better supported default. Use official max-fidelity sampler settings and output/export settings for the model's geometry path. Do not let the UI's target polycount reduce source generation quality.
+- **Low VRAM:** expose an explicit per-model low-VRAM option only if it can be passed through the current settings mechanism cleanly. Use the official model-staging/CPU-offload approach. The upstream default may pick 1024 when low-VRAM is true; **do not silently downshift resolution** when the user explicitly selected max quality or 1536. If the user requests low-VRAM and 1536 together, pass that requested combination only if upstream supports it, report/handle memory failure clearly, and do not silently retry at 1024. Show/help-text the speed and memory trade-off in the UI.
+- Defaults must be model-specific and distinct from TRELLIS.2. Do not let shared `quality`, `target_polycount`, `auto_optimize`, `low_vram_mode`, `low_vram`, or stale parameter defaults override Pixal3D's verified settings accidentally.
+- Ensure inference options are whitelisted/validated. Never pass UI-only downstream controls (target polycount, LOD, texture-resolution preset, paint preferences) into the geometry model unless the upstream inference API explicitly supports them.
+- Add tests proving (a) default resolution remains max-quality, (b) explicit low-VRAM mode is passed through, (c) low-VRAM does not implicitly change an explicit max-resolution request, and (d) target polycount and production quality selectors do not modify Pixal3D source-generation settings.
+
+## 11. Frontend model selection and control wiring
+
+Follow the current design system and avoid a Pixal3D-specific UI silo. Inspect existing patterns before editing. Relevant files likely include:
+
+- `constants/models.ts` — canonical user-selectable model registry/feature routing.
+- `features/workspace/utils/buildGenerationParameters.ts` — per-model parameter defaults and request payload construction.
+- `features/workspace/Panels/GeneratePanel.tsx` — model selection, readiness feedback and settings controls.
+- `features/admin/tabs/ModelsTab.tsx` and existing model-status/download UI where applicable.
+- `types/api.ts`, client/API type definitions and other consumers of readiness/model capabilities.
+
+Requirements:
+
+1. Add Pixal3D to the correct single-image geometry-generation category and normal model picker. Show the correct display name, concise truthful description, supported input/output formats, estimated VRAM and explicit low-VRAM availability based on source evidence.
+2. Make backend `models.yaml`, model factory/API availability, frontend model registry, settings builder, admin model inventory/readiness and download manager agree on the same canonical ID. Avoid hardcoded duplicates where existing metadata-driven wiring is available.
+3. Include a Pixal3D-specific low-VRAM control only if the current settings architecture supports per-model flags; keep it separate from generic global settings. Make the default max-quality mode clear, and explain that low-VRAM can be slower and may use a lower default resolution unless a resolution is explicitly selected.
+4. Do not show controls for multiview, extra views or view-count on the Pixal3D single-image selection. Do not add it to `MultiViewWorkspace` or display it as an image-to-multiview model.
+5. Do not expose a Pixal3D painting/texturing adapter in the UI now. Do not route Pixal3D into a paint-autochain or centralized texture stage. Keep the future painting adapter out of the current model list and document that it is intentionally deferred.
+6. When weights are absent, show the same accurate model-readiness/download guidance the existing UI uses. Avoid saying the model is ready just because the vendor source code was cloned.
+7. Use existing Studio Gold design tokens/components from `Docs/DESIGN.md`; do not add hardcoded colors or unrelated UI redesign.
+
+## 12. Tests and verification matrix
+
+Add focused regression tests that do not require downloading real weights or a physical GPU. Use dependency/module monkeypatching consistent with existing tests, and run integration smoke tests only when the environment makes them feasible.
+
+At minimum cover:
+
+### Source/factory/manifest
+- Adapter imports without importing heavy Pixal3D/CUDA dependencies.
+- Factory resolves the canonical Pixal3D model ID to the correct class.
+- Manifest paths and declared single-view capabilities are correct.
+- Missing third-party source, missing/partial weights and missing required dependencies produce clear readiness/load failure, not false readiness or placeholder geometry.
+
+### Downloader/installer
+- Pixal3D is discoverable by downloader `--list`/help and can be selected individually and by the `all`/bundle path as appropriate.
+- Verify-only returns correct state for valid, partial and missing weights; multi-view-only weights do not count toward ready state.
+- Network/HF failure exits non-zero and never emits a false success message.
+- Shell syntax checks pass (`bash -n`) and safe mocked/unit tests cover the new branches. Confirm repeated download is idempotent and force-download does not destroy a valid cache on failure.
+- Install script includes only the intended unified-environment dependencies and does not unexpectedly downgrade/replace pinned shared libraries.
+
+### Inference/fidelity/outputs
+- Mocked call verifies exact supported Pixal3D parameters and 1536 max-quality default (or the live upstream default after verification).
+- Low-VRAM and explicit resolution behavior is preserved exactly.
+- The raw geometry path does not call the future painting adapter or centralized texture stage; metadata accurately reports whether output contains texture.
+- Output path and GLB/artifact metadata match current pipeline expectations.
+- Target polycount and LOD/production settings cannot reach inference or change source settings.
+- The source master is persisted before downstream postprocessing and is not overwritten by decimation/retopology/texture stages.
+
+### UI/API/parity
+- Frontend TypeScript/tests/build pass for model selector, capabilities and parameter building.
+- Model status/readiness is consistent from backend manifest through the UI.
+- Pixal3D remains absent from all Multi-View routing/selection code paths.
+- Add or extend parity tests so the backend manifest, model factory, frontend registry and downloader agree on IDs and intended capabilities.
+
+Run the most relevant existing suite as well, including at minimum relevant subsets of `backend/tests/test_adapter_imports.py`, `backend/tests/test_generation_adapter_regressions.py`, `backend/tests/test_model_readiness.py`, `backend/tests/test_official_model_parity_contract.py`, and any relevant frontend/unit tests. Run shell syntax checks, Python lint/type checks, frontend lint/type/build checks available in the repo. Do not claim a suite passed unless the command actually ran and returned success. Clearly separate tests run, skipped and blocked by missing CUDA/weights/system dependencies.
+
+## 13. Documentation obligations
+
+After implementation, update only documents that are now affected and keep them consistent with the real code. At minimum review whether updates are necessary for:
+
+- `README.md` — model inventory, supported workflow, low-VRAM/max-quality caveat and install/download usage.
+- `Docs/ARCHITECTURE.md` and `Docs/SYSTEM-BLUEPRINT.md` — model adapter/data/weight flow and the shape-vs-future-painting separation.
+- `Docs/DECISIONS.md` — add a concise decision record only if a non-obvious architecture decision needs a durable rationale.
+- `Docs/MEMORY.md` and `Docs/CHANGELOG.md` — record the actual completed change and verified behavior using project conventions; keep changelog format/length policy from `RULES.md`.
+- `Docs/api-documentation.md` — only if public request/response behavior, model capabilities or readiness payloads change.
+- upstream provenance/license/NOTICE details if the repository's convention requires them.
+
+**Do not update `Docs/TASKS.md`.** Do not say the painting adapter is implemented; it is intentionally future work. Do not document unverified VRAM requirements, speed claims, quality gains, or runtime tests as facts.
+
+## 14. Final acceptance criteria
+
+Do not mark the integration complete until all applicable criteria below are satisfied:
+
+- [ ] Pixal3D source is vendored under the repository's third-party convention, its nested `.git` is gone, upstream provenance/license/NOTICE are retained, and no checkpoints/cache artifacts are committed.
+- [ ] Single-view required model/support weights can be downloaded, verified, listed and managed from the existing download manager; no Multi-View weights are fetched.
+- [ ] Required Pixal3D dependencies are installed using the current unified environment without unreviewed global dependency downgrades.
+- [ ] Dedicated single-view adapter is connected through factory, model manifest, readiness, API and scheduler.
+- [ ] Model appears in the appropriate frontend selector/status surface, and explicit low-VRAM/max-quality controls behave as designed.
+- [ ] The future painting/texturing adapter is not registered or connected; no Multi-View path is modified.
+- [ ] The source-master fidelity firewall is preserved; production target polycount and texture/LOD controls do not lower or overwrite source geometry.
+- [ ] Tests exercise the model's registry, weights readiness, parameter contract, output behavior and non-Multi-View boundary.
+- [ ] All relevant documentation except `Docs/TASKS.md` is accurately updated where needed.
+- [ ] Final branch diff has been reviewed for unrelated changes, vendored `.git`, large weights, accidental multiview wiring, silent fallbacks, and undocumented dependencies.
+
+If remote write access is available and the normal workflow expects publication, use a new commit on `Dev` only after reviewing the diff and tests. Fetch the latest branch head immediately before publishing; use a non-force update and protect against concurrent branch movement. Never force-push. If publishing is not available or is not authorized, leave the working tree ready and report that limitation plainly.
+
+## 15. Required final report from the implementing agent
+
+Return a concise but evidence-based report with:
+
+1. **What was implemented** and the canonical Pixal3D model ID.
+2. **Important source findings:** whether a true shape-only path exists; exactly how its source master is preserved; upstream commit SHA; the selected max-resolution defaults and actual low-VRAM trade-off.
+3. **Files changed** grouped by source vendor, dependencies/installer, downloader/readiness, backend adapter/manifest/scheduler, frontend/UI, tests and docs.
+4. **Weight handling:** single-view files fetched, Multi-View files explicitly excluded, readiness checks and approximate disk footprint only if verified.
+5. **Verification:** exact commands run and pass/fail/skip results. Explicitly state if real GPU/weight inference was not run.
+6. **Known limitations/blockers** with evidence. Do not hide incomplete work or call a partial integration fully complete.
+7. **Git status:** commit SHA and branch head if published; otherwise explain why it was not pushed.
+
+**Success means the full single-view integration works end-to-end and respects the boundaries above. A registry entry or a download script alone is not completion.**
