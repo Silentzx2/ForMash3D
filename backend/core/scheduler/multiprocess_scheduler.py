@@ -1984,6 +1984,33 @@ class MultiprocessModelScheduler:
             if not keep_inputs_for_postprocess:
                 self._cleanup_temporary_inputs(job_request)
 
+    def _register_managed_input_dir(self, directory: Path) -> None:
+        """Register an app-managed temporary input directory for safe cleanup."""
+        try:
+            resolved = directory.resolve()
+        except OSError:
+            return
+        if not hasattr(self, "_managed_temp_input_dirs"):
+            self._managed_temp_input_dirs = set()
+        self._managed_temp_input_dirs.add(resolved)
+
+    def _unregister_managed_input_dir(self, directory: Path) -> None:
+        """Remove a managed temporary input directory from the cleanup allowlist."""
+        try:
+            resolved = directory.resolve()
+        except OSError:
+            return
+        managed = getattr(self, "_managed_temp_input_dirs", None)
+        if managed is not None:
+            managed.discard(resolved)
+
+    def _is_managed_input_dir(self, directory: Path) -> bool:
+        """Check whether a directory is explicitly managed by this scheduler."""
+        managed = getattr(self, "_managed_temp_input_dirs", None)
+        if not managed:
+            return False
+        return directory in managed
+
     def _cleanup_temporary_inputs(self, job_request: Any) -> None:
         """Remove per-request mesh_gen_* input directories once job ownership ends."""
         parents = set()
@@ -1999,6 +2026,8 @@ class MultiprocessModelScheduler:
             if not resolved.name.startswith("mesh_gen_"):
                 return None
             if resolved == temp_base or temp_base not in resolved.parents:
+                return None
+            if not self._is_managed_input_dir(resolved):
                 return None
             return resolved
 
@@ -2028,6 +2057,7 @@ class MultiprocessModelScheduler:
 
         for directory in parents:
             shutil.rmtree(directory, ignore_errors=True)
+            self._unregister_managed_input_dir(directory)
 
     def _cleanup_stale_input_dirs(self) -> None:
         """Remove orphaned mesh_gen_* input directories from previous crashed sessions.
