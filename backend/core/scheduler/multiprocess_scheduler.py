@@ -1987,6 +1987,21 @@ class MultiprocessModelScheduler:
     def _cleanup_temporary_inputs(self, job_request: Any) -> None:
         """Remove per-request mesh_gen_* input directories once job ownership ends."""
         parents = set()
+        temp_base = Path(tempfile.gettempdir()).resolve()
+
+        def _safe_mesh_gen_dir(candidate: Path) -> Optional[Path]:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                return None
+            if not resolved.is_dir():
+                return None
+            if not resolved.name.startswith("mesh_gen_"):
+                return None
+            if resolved == temp_base or temp_base not in resolved.parents:
+                return None
+            return resolved
+
         inputs = getattr(job_request, "inputs", None)
         if inputs is None and isinstance(job_request, dict):
             inputs = job_request.get("inputs", {})
@@ -2003,10 +2018,13 @@ class MultiprocessModelScheduler:
                     if not isinstance(item, (str, Path)):
                         continue
                     path = Path(item)
-                    if path.name.startswith("mesh_gen_") and path.is_dir():
-                        parents.add(path)
-                    elif path.parent.name.startswith("mesh_gen_") and path.parent.is_dir():
-                        parents.add(path.parent)
+                    candidate = _safe_mesh_gen_dir(path)
+                    if candidate:
+                        parents.add(candidate)
+                        continue
+                    parent_candidate = _safe_mesh_gen_dir(path.parent)
+                    if parent_candidate:
+                        parents.add(parent_candidate)
 
         for directory in parents:
             shutil.rmtree(directory, ignore_errors=True)
