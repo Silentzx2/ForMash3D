@@ -218,9 +218,9 @@ function applyModelSpecificParams(
 } else if (modelId.includes('pixal3d')) {
     modelParameters.low_vram = false;
     modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 42;
-    modelParameters.manual_fov = paramDefaults.manual_fov ?? settings.manualFov ?? null;
+    modelParameters.manual_fov = paramDefaults.manual_fov ?? null;
     modelParameters.resolution = paramDefaults.resolution ?? settings.resolution ?? 1024;
-    modelParameters.pipeline_type = paramDefaults.pipeline_type ?? settings.pipelineType ?? '1024_cascade';
+    modelParameters.pipeline_type = paramDefaults.pipeline_type ?? '1024_cascade';
     modelParameters.low_vram_mode = paramDefaults.low_vram ?? settings.lowVram ?? false;
     modelParameters.init_type = paramDefaults.init_type ?? 'std';
     modelParameters.native_pbr = true;
