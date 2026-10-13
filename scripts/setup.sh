@@ -11,6 +11,17 @@ log(){ printf "${GREEN}[SETUP]${NC} %s\n" "$*"; }
 info(){ printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
 warn(){ printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 fail(){ printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+
+ensure_thirdparty_submodule() {
+  log "Ensuring thirdparty submodule is present and up-to-date..."
+  if [[ ! -d "backend/thirdparty" || ! -d "backend/thirdparty/.git" ]]; then
+    log "Thirdparty submodule not found. Initializing..."
+    git submodule update --init --recursive
+  else
+    log "Updating thirdparty submodule to latest..."
+    git submodule update --remote --merge
+  fi
+}
 # Load .env if present
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set -a
@@ -704,6 +715,8 @@ ensure_bun_or_npm
 ensure_uv
 ensure_redis
 create_directories
+
+ensure_thirdparty_submodule
 
 download_release_wheels
 build_deps

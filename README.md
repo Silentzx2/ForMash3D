@@ -291,7 +291,7 @@ bun install
 
 ```bash
 # Automated setup prepares the environment, builds C++/CUDA kernels,
-# and installs backend dependencies
+# installs backend dependencies, and initializes the thirdparty submodule
 bash scripts/setup.sh
 ```
 
