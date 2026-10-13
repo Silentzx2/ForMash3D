@@ -62,6 +62,7 @@ def test_hunyuan_model_loaders_use_their_vendored_package_roots():
     assert "from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline" in shape
     assert "from hy3dshape.rembg import BackgroundRemover" in shape
     assert "hy3dshape.hy3dshape.pipelines" not in shape
+    assert 'sys.path.append(str(self.hunyuan3d_root))' in shape
     assert 'thirdparty_turbo / "hy3dgen" / "shapegen" / "pipelines.py"' in mini
     assert "requires CUDA; refusing to initialize model weights on CPU" in mini
     assert "logger.exception(" in mini

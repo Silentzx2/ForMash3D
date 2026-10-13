@@ -72,6 +72,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
+        # The vendored torchvision compatibility patch lives at the model root.
+        if str(self.hunyuan3d_root) not in sys.path:
+            sys.path.append(str(self.hunyuan3d_root))
 
     def _load_model(self):
         """Load Hunyuan3D-Shape-v2-1 pipeline."""
