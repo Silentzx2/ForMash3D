@@ -23,6 +23,12 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 - Normal image-to-3D routes return raw geometry; optional texture presets are handled after master promotion (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K). Legacy textured model IDs resolve to raw-generation aliases.
 - master/source.glb is immutable; retopology, UV, LOD, collision, and bake operations act on derived artifacts.
 
+
+### Hunyuan Runtime Loading & Shared Dependencies
+- The Python 3.10 / PyTorch 2.6 + CUDA 12.4 environment pins `transformers==4.48.3` to satisfy Mini Turbo's upstream minimum and PEFT's `HybridCache` import; `diffusers==0.30.3` remains unchanged.
+- Shape imports `hy3dshape.pipelines` and `hy3dshape.rembg` from the vendored package root. Mini resolves its vendored `hy3dgen` root before importing and validates both source files and the checkpoint subfolder.
+- Model adapters log chained initialization exceptions; the multiprocess worker stores the full traceback in backend logs and returns a concise initialization summary to the client.
+
 ```mermaid
 flowchart TB
     %% Sleek Studio Palette

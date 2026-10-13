@@ -35,6 +35,11 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 4. Source texture profiles are fixed at TRELLIS 2048 and TRELLIS.2 4096 for maximum source fidelity.
 5. master/source.glb is immutable; derived retopo, UV, LOD, collision, and bake artifacts cannot rewrite it.
 
+
+### Shared Model Runtime Dependency Contract
+- Transformers is pinned at 4.48.3 for Hunyuan3D Mini's upstream minimum and PEFT's `HybridCache` import; Diffusers 0.30.3 and PyTorch 2.6.0 + CUDA 12.4 stay pinned.
+- Hunyuan loaders resolve vendored module roots explicitly, validate expected source/checkpoint paths, and keep full initialization tracebacks in backend logs.
+
 ```mermaid
 graph TD
     classDef gold fill:#1a1915,stroke:#ffcc00,stroke-width:2px,color:#ffcc00;

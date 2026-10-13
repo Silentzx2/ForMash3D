@@ -1,9 +1,20 @@
+## 2026-10-13 — [Hunyuan Loader and Runtime Dependency Fixes]
+
+- Pinned shared Transformers to 4.48.3, satisfying Mini Turbo's upstream `transformers>=4.48.0` requirement and restoring PEFT's `HybridCache` import while retaining the existing Diffusers and PyTorch/CUDA pins.
+- Fixed Hunyuan3D-Shape imports to match the vendored `hy3dshape.pipelines` / `hy3dshape.rembg` package layout, removed runtime mutation of vendored files, and made package-root selection deterministic.
+- Hardened Mini Turbo load preflight for missing source/checkpoint directories, prioritized the vendored `hy3dgen` package, rejected CPU initialization early, and logged stage-specific failures with chained tracebacks.
+- Kept full worker tracebacks in backend logs while returning a concise model-load failure summary to the UI.
+- Added source-contract regression tests and updated runtime documentation.
+- CUDA/model inference validation is not available through the GitHub execution connection; do not treat static contract checks as a GPU pass.
+
 ## 2026-10-11 — [Tripo Catalog and Multi-View Retirement]
 
 - Removed the dedicated Zero123++ Multi-View workspace, API router, model registration, and associated tests.
 - Kept TripoSG as the sole selectable Tripo model because it is a self-contained high-fidelity image/scribble generator; removed TripoSR and TripoSF integrations. TripoSF's image path depended on TripoSR coarse-mesh generation, so retaining it while removing TripoSR weights would have left a hidden runtime dependency.
 - Removed retired models from scheduler profiles, model manifests, smart presets, UI fallback priorities, manager menu, download/verification script, and install dependency flow. TripoSG/RMBG weight downloads and its requirement installation remain.
 - Updated active architecture, product, design, API, and model catalog docs. All `backend/thirdparty/` vendored source directories were left untouched for separate manual cleanup.
+
+
 
 ## 2026-10-11 — [Full Audit Remediation: Geometry Fidelity, Texture Pipeline, API Lifecycle, DB Admin & UI Contracts]
 
@@ -14,19 +25,4 @@
 - **Frontend UI & Quality Badges (BUG-007, BUG-010, BUG-011, BUG-021, BUG-022, BUG-027)**: Mapped 4K preset to 4096 across all builders. Consumed backend model readiness dynamically from `/system/models`. Disabled unsupported TexturePanel controls (Low VRAM, style presets, PBR toggles) with tooltips. Eradicated literal icon token strings across 6 UI components. Emitted warning toasts with degradation reasons on degraded production status and preserved `productionStatus` on `ModelAsset`.
 - **Verification**: All regression suites passing with 100% success (11 passed in `test_api_contracts_lifecycle.py`, 13 passed in `test_database_admin.py`, 15 passed in `test_generation_adapter_regressions.py`, 14 passed in `test_postprocess_texture_pipeline.py`, 16 passed in `test_paint3d_adapter.py` / `test_postprocess_e2e.py`, 6 passed in `test_cancellation_and_quad.py`; `bun run test` / `tsc --noEmit` exited 0).
 
-## 2026-10-11 — [Centralized Texture, Detail Preservation & Cross-Stage Reliability]
 
-- Kept ordinary image-to-3D generation on the raw-geometry path and normalized the optional texture pipeline across legacy request paths. Named 1K/2K/4K/8K presets are normalized at the API boundary.
-- Hunyuan3D-Paint keeps RealESRGAN automatic; the embedded base-colour atlas must be observable and match the requested square target before texture generation reports success. The Hunyuan export path no longer requests atlas downsampling.
-- Removed the RealESRGAN and micro-detail UI toggles, enabled supported high-to-low bake by default, softened AutoRetopo shell smoothing and preserved already-watertight quad inputs, and made Native/Raw disable frontend auto-decimation.
-- Fixed Paint3D Texture Studio routing to the manifest ID, passed original references through multi-view requests, guarded degenerate FastMesh normalization, and fixed stale database-page responses and refresh-error visibility.
-- Added focused regression tests for request normalization, scheduler parameter filtering, atlas validation, and FastMesh degenerate inputs.
-
-## 2026-10-11 — [Database Administration Surface & Admin Database Tab]
-
-- **New admin router**: `backend/api/routers/database.py` mounted at `/api/v1/system/database` in both `main_singleworker.py` and `main_multiworker.py`: `GET /stats` (SQLite status counts + db size, Redis keys/used_memory, queue counts, file-metadata count, meshes/uploads disk sizes), `GET /keys` (read-only SCAN-based Redis key inspector, limit 1..1000), `DELETE /jobs` (bulk delete by `job_ids`/`status`/`feature`), `POST /jobs/clear`, and `DELETE /files/clear`. API key required; admin role required when a user is authenticated.
-- **Confirm-token safety model**: destructive endpoints require typed confirmation (`{"confirm": true}` for bulk delete; `{"confirm": "CLEAR_ALL_JOBS"}` / `{"confirm": "CLEAR_ALL_FILES"}` for the wipes). Non-terminal jobs are skipped unless `force: true`; each job's canonical asset workspace is removed only after the durable dual-store deletion succeeds (ADR-062). The job-key sweep never touches user/token auth keys, uploads and file metadata survive job clears (SQLite VACUUM afterwards), and job records/assets survive file clears.
-- **New DatabaseManager methods**: `delete_all_jobs()` and `get_database_size_bytes()`.
-- **Frontend**: admin Database tab (`/admin?tab=database`) with stats cards, paginated jobs table with per-row cancel/delete, checkbox multi-select bulk delete, Redis key inspector, and typed-confirmation danger-zone clear actions.
-- Tests: `backend/tests/test_database_admin.py` (7 regression tests).
-- Docs updated: MEMORY, CHANGELOG, DECISIONS (ADR-067), ARCHITECTURE, api-documentation, README.

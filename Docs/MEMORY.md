@@ -1,3 +1,13 @@
+## 2026-10-13 — Hunyuan Loader and Dependency Root Causes
+
+- TripoSG's reported `HybridCache` import failure came from shared `transformers==4.46.3` being below Mini Turbo's upstream `transformers>=4.48.0` requirement while the environment used `peft==0.17.1`. Shared runtime now targets `transformers==4.48.3`; Diffusers and Torch/CUDA pins remain unchanged.
+- Hunyuan Shape's Python package root is `backend/thirdparty/hunyuan3d-shape-v2-1/hy3dshape`; correct imports are `hy3dshape.pipelines` and `hy3dshape.rembg`. Do not delete or rewrite an `__init__.py` at runtime or alias `hy3dshape.hy3dshape` in `sys.modules`.
+- Mini's source root is `backend/thirdparty/hunyuan3d-dit-v2-mini-turbo`; its checkpoint folder is `backend/pretrained/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo`. Put the source root first in `sys.path`, remove conflicting cached `hy3dgen` modules before import, and validate both paths before pipeline initialization.
+- Model-load exceptions must use `logger.exception(...)` to retain the chained traceback. The multiprocess worker logs full details but returns a concise summary instead of forwarding a full traceback as a UI error.
+- Static source-contract tests were added. GPU inference validation remains pending until run on a CUDA-enabled host.
+
+---
+
 ## Current Runtime Catalog — 2026-10-11
 
 - **Tripo integration:** TripoSG is the sole active/selectable Tripo model. TripoSR and TripoSF adapters, registrations, scheduling profiles, presets, UI fallbacks, download/verification paths, and model-specific installer steps have been retired. TripoSF was not retained because its image-generation path invokes TripoSR for coarse-mesh creation.

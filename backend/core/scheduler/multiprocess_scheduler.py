@@ -309,7 +309,7 @@ def model_worker_process(
             err_msg = f"FATAL ERROR loading model '{model_id}' in worker {worker_id}: {e}"
             logger.error(f"❌ {err_msg}\n{tb}")
             try:
-                control_response_queue.put(WorkerResponse("init", False, error=f"{err_msg}\n{tb}"))
+                control_response_queue.put(WorkerResponse("init", False, error=err_msg))
             except Exception:
                 pass
             return  # Exit worker if model loading fails

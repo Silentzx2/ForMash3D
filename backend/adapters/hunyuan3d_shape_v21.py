@@ -72,22 +72,6 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
-        # Clean any spurious empty outer __init__.py if present on disk
-        outer_init = self.hunyuan3d_root / "hy3dshape" / "__init__.py"
-        if outer_init.exists() and outer_init.stat().st_size < 10:
-            try:
-                outer_init.unlink()
-            except Exception:
-                pass
-
-        # hy3dshape repository root has hy3dshape/ package inside it
-        hy3dshape_parent = str(self.hunyuan3d_root / "hy3dshape")
-        if hy3dshape_parent in sys.path:
-            sys.path.remove(hy3dshape_parent)
-        sys.path.insert(0, hy3dshape_parent)
-
-        if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root))
 
     def _load_model(self):
         """Load Hunyuan3D-Shape-v2-1 pipeline."""
@@ -106,32 +90,33 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     f"Please download weights via download_models.sh."
                 )
 
-            # Ensure hy3dshape package is loaded correctly and hy3dshape.models is accessible
-            hy3dshape_parent = str(self.hunyuan3d_root / "hy3dshape")
-            if hy3dshape_parent in sys.path:
-                sys.path.remove(hy3dshape_parent)
-            sys.path.insert(0, hy3dshape_parent)
-
-            if "hy3dshape" in sys.modules and not hasattr(sys.modules["hy3dshape"], "pipelines"):
-                del sys.modules["hy3dshape"]
-
-            try:
-                from hy3dshape.hy3dshape.pipelines import (
-                    Hunyuan3DDiTFlowMatchingPipeline,
+            package_root = (self.hunyuan3d_root / "hy3dshape").resolve()
+            pipeline_source = package_root / "hy3dshape" / "pipelines.py"
+            rembg_source = package_root / "hy3dshape" / "rembg.py"
+            missing = [str(path) for path in (pipeline_source, rembg_source) if not path.is_file()]
+            if missing:
+                raise ModuleNotFoundError(
+                    "Hunyuan3D-Shape source files are missing: "
+                    + ", ".join(missing)
+                    + ". Update backend/thirdparty with the project setup script."
                 )
-                from hy3dshape.hy3dshape.rembg import BackgroundRemover
-            except ImportError:
-                from hy3dshape.pipelines import (
-                    Hunyuan3DDiTFlowMatchingPipeline,
-                )
-                from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
-            import hy3dshape
-            inner_pkg = self.hunyuan3d_root / "hy3dshape" / "hy3dshape"
-            if inner_pkg.exists() and hasattr(hy3dshape, "__path__"):
-                if str(inner_pkg) not in hy3dshape.__path__:
-                    hy3dshape.__path__.append(str(inner_pkg))
-            sys.modules["hy3dshape.hy3dshape"] = hy3dshape
+            # Load this model's vendored package, not a similarly named package already on sys.path.
+            sys.path[:] = [
+                entry for entry in sys.path
+                if Path(entry or os.getcwd()).resolve() != package_root
+            ]
+            sys.path.insert(0, str(package_root))
+            loaded_package = sys.modules.get("hy3dshape")
+            loaded_file = getattr(loaded_package, "__file__", None)
+            if loaded_file and package_root not in Path(loaded_file).resolve().parents:
+                for module_name in tuple(sys.modules):
+                    if module_name == "hy3dshape" or module_name.startswith("hy3dshape."):
+                        del sys.modules[module_name]
+
+            logger.info("Resolved Hunyuan3D-Shape Python package root: %s", package_root)
+            from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
+            from hy3dshape.rembg import BackgroundRemover
 
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-Shape-v2-1 requires CUDA; CPU inference is not supported.")
@@ -182,10 +167,12 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             return {"shapegen": self.pipeline_shapegen, "bg_remover": self.bg_remover}
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            logger.error(f"Failed to load Hunyuan3D-Shape-v2-1: {str(e)}")
-            raise Exception(f"Failed to load Hunyuan3D-Shape-v2-1: {str(e)}")
+            logger.exception(
+                "Failed to load Hunyuan3D-Shape-v2-1 (source=%s, checkpoint=%s)",
+                self.hunyuan3d_root,
+                self.model_path,
+            )
+            raise RuntimeError(f"Failed to load Hunyuan3D-Shape-v2-1: {type(e).__name__}: {e}") from e
 
     def _unload_model(self):
         """Unload Hunyuan3D-Shape-v2-1 models."""

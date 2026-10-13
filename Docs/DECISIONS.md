@@ -846,3 +846,19 @@ Operators had no way to see the combined health of the two stores (SQLite rows v
 **Consequences:** Native/Raw has an explicit end-to-end contract; request precedence, post-process behavior and display labels agree. Benchmark runs gain reproducible source identity and resource telemetry. Unknown achieved resolution stays unknown rather than being inferred from a requested parameter.
 
 **Validation boundary:** Regression tests were added for request precedence, profile/manifest parity, Native/Raw gates and telemetry. They have not been executed in the current environment, and no CUDA A/B quality result is claimed.
+
+
+## ADR-070 — Compatible Shared Transformers Runtime for Hunyuan3D Mini
+
+**Date:** 2026-10-13  
+**Status:** Accepted
+
+**Decision:**
+1. Pin the shared runtime to `transformers==4.48.3`, which satisfies Hunyuan3D-DiT-v2-mini-Turbo's upstream `transformers>=4.48.0` contract and exports the `HybridCache` symbol imported by PEFT 0.17.1.
+2. Keep `diffusers==0.30.3`, PyTorch 2.6.0 + CUDA 12.4, and the shared dependency-install workflow unchanged.
+3. Resolve Shape and Mini Python package roots explicitly from `backend/thirdparty`; fail before checkpoint loading when expected package/checkpoint paths are absent.
+4. Preserve full worker tracebacks in backend logs and return a concise initialization error to the UI.
+
+**Rationale:** The shared Transformers pin was below Mini Turbo's declared minimum, causing a PEFT import failure before TripoSG's or Hunyuan's inference code could run. Hunyuan Shape also used a double-nested import path inconsistent with the vendored package layout; Mini could lose import priority to a different `hy3dgen` module and did not verify its checkpoint subfolder before pipeline initialization.
+
+**Consequences:** All three model adapters continue using the existing shared Python environment; no new dependency, registry path, or parallel install system is introduced. Static regression contracts cover the dependency floor, package paths, and concise worker errors. GPU-backed generation still requires runtime validation on a CUDA host.

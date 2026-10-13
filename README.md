@@ -277,6 +277,9 @@ backend/storage/models/meshes/<asset_name>_<job_id>/
 - **Node Environment**: [Bun](https://bun.sh/) installed.
 - **Python**: Python 3.10 via Conda (`conda create -n 3daigc-api python=3.10`).
 
+
+The shared Python runtime is version-pinned for supported model adapters: Transformers 4.48.3 (required by Hunyuan3D Mini Turbo and PEFT), Diffusers 0.30.3, and PyTorch 2.6.0 with CUDA 12.4. Use `bash scripts/setup.sh` rather than installing model dependencies individually.
+
 ### 1. Clone & Frontend Setup
 
 ```bash
