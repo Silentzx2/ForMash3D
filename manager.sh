@@ -272,7 +272,7 @@ cmd_models() {
                         13) models_csv="${models_csv}ardy," ;;
                         14) models_csv="${models_csv}unique3d," ;;
                         15) models_csv="${models_csv}paint3d," ;;
-                         16) models_csv="${models_csv}pixal3d_image_to_raw_mesh," ;;
+                         16) models_csv="${models_csv}pixal3d," ;;
                          *)
                             echo -e "${RED}[✗]${NC} Invalid selection: $num"
                             sleep 1
