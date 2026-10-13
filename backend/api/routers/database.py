@@ -320,7 +320,8 @@ async def database_stats(
             stats = await asyncio.to_thread(db_manager.get_queue_statistics)
             sqlite_stats.update(stats)
         except Exception as exc:
-            sqlite_stats["error"] = str(exc)
+            logger.exception("Failed to collect SQLite queue statistics")
+            sqlite_stats["error"] = "Failed to collect SQLite queue statistics."
         sqlite_stats["database_size_bytes"] = await asyncio.to_thread(
             db_manager.get_database_size_bytes
         )
@@ -336,20 +337,23 @@ async def database_stats(
                 int(db.get("keys", 0)) for db in keyspace.values() if isinstance(db, dict)
             )
         except Exception as exc:
-            redis_stats["error"] = str(exc)
+            logger.exception("Failed to collect Redis statistics")
+            redis_stats["error"] = "Failed to collect Redis statistics."
 
     queue_stats: Dict[str, Any] = {}
     try:
         queue_stats = await job_queue.get_queue_status()
     except Exception as exc:
-        queue_stats = {"error": str(exc)}
+        logger.exception("Failed to collect queue status")
+        queue_stats = {"error": "Failed to collect queue status."}
 
     file_stats: Dict[str, Any] = {"available": file_store is not None}
     if file_store is not None:
         try:
             file_stats["count"] = await file_store.count_files()
         except Exception as exc:
-            file_stats["error"] = str(exc)
+            logger.exception("Failed to collect file metadata statistics")
+            file_stats["error"] = "Failed to collect file metadata statistics."
 
     storage = _storage_root()
     disk_stats = {
