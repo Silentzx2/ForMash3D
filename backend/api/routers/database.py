@@ -643,10 +643,12 @@ async def clear_all_files(
                             upload_errors.append(f"{thumbnail.name}: {error}")
                     if await file_store.delete_file_metadata(file_id):
                         metadata_removed += 1
-                except Exception as exc:
-                    upload_errors.append(f"{file_id}: {exc}")
-        except Exception as exc:
-            upload_errors.append(f"file_store listing failed: {exc}")
+                except Exception:
+                    logger.exception("Database admin: failed clearing file metadata/uploads for file_id=%s", file_id)
+                    upload_errors.append(f"{file_id}: failed to clear file metadata/uploads")
+        except Exception:
+            logger.exception("Database admin: file_store listing failed during clear_all_files")
+            upload_errors.append("file_store listing failed")
 
     # Redis-side cleanup even when the in-process file store is unavailable.
     redis_keys_swept = 0
