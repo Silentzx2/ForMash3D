@@ -1,5 +1,0 @@
-# TripoSG runtime dependencies (Python 3.10 + PyTorch 2.6.0+cu124)
-# (Core torch, diffusers, transformers, huggingface_hub, trimesh locked centrally in backend/requirements.txt)
-jaxtyping
-typeguard
-diso
