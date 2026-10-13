@@ -2015,19 +2015,36 @@ class MultiprocessModelScheduler:
         """Remove per-request mesh_gen_* input directories once job ownership ends."""
         parents = set()
         temp_base = Path(tempfile.gettempdir()).resolve()
+        managed_dirs = set(getattr(self, "_managed_temp_input_dirs", set()) or set())
+        if not managed_dirs:
+            return
+
+        def _to_local_path(value: Any) -> Optional[Path]:
+            if isinstance(value, Path):
+                return value
+            if not isinstance(value, str):
+                return None
+            raw = value.strip()
+            if not raw:
+                return None
+            # Ignore URL-like/opaque values; cleanup only needs local filesystem paths.
+            lowered = raw.lower()
+            if "://" in lowered:
+                return None
+            return Path(raw)
 
         def _safe_mesh_gen_dir(candidate: Path) -> Optional[Path]:
             try:
                 resolved = candidate.resolve()
             except OSError:
                 return None
+            if resolved not in managed_dirs:
+                return None
             if not resolved.is_dir():
                 return None
             if not resolved.name.startswith("mesh_gen_"):
                 return None
             if resolved == temp_base or temp_base not in resolved.parents:
-                return None
-            if not self._is_managed_input_dir(resolved):
                 return None
             return resolved
 
@@ -2044,9 +2061,9 @@ class MultiprocessModelScheduler:
             for value in container.values():
                 items = value if isinstance(value, (list, tuple, set)) else [value]
                 for item in items:
-                    if not isinstance(item, (str, Path)):
+                    path = _to_local_path(item)
+                    if path is None:
                         continue
-                    path = Path(item)
                     candidate = _safe_mesh_gen_dir(path)
                     if candidate:
                         parents.add(candidate)
