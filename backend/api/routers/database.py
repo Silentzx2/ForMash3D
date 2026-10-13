@@ -99,7 +99,8 @@ def _delete_tree(path: Path, must_be_under: Path) -> Optional[str]:
             return None
         resolved = path.resolve()
     except OSError as exc:
-        return str(exc)
+        logger.warning("Database admin: failed to resolve/delete path %s: %s", path, exc)
+        return "Failed to process workspace path"
 
     if resolved == resolved_root or resolved_root not in resolved.parents:
         return f"Refusing to delete path outside {resolved_root}: {resolved}"
@@ -109,7 +110,8 @@ def _delete_tree(path: Path, must_be_under: Path) -> Optional[str]:
         else:
             resolved.unlink()
     except OSError as exc:
-        return str(exc)
+        logger.warning("Database admin: failed to remove path %s: %s", resolved, exc)
+        return "Failed to delete workspace path"
     return None
 
 
@@ -563,7 +565,7 @@ async def clear_all_jobs(
 
             await asyncio.to_thread(_vacuum)
         except Exception as exc:
-            vacuum_error = str(exc)
+            vacuum_error = "Database maintenance step failed"
             logger.warning("Database admin: VACUUM after clear failed: %s", exc)
 
     return {
