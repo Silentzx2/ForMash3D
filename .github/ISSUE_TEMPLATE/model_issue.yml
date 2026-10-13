@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this template when reporting an issue with a specific neural 3D model adapter (e.g. TRELLIS, Hunyuan3D, TripoSR, UniRig, PartField).
+        Use this template when reporting an issue with a specific neural 3D model adapter (e.g. TRELLIS, Hunyuan3D, TripoSG, UniRig, PartUV).
         **Do NOT paste Hugging Face API keys or private tokens.**
   - type: dropdown
     id: model_name
@@ -14,13 +14,11 @@ body:
       options:
         - TRELLIS / TRELLIS.2
         - Hunyuan3D-2.1 / Hunyuan3D-Part
-        - TripoSR / TripoSG / TripoSF
+        - TripoSG
         - UniRig (Auto-Rigging)
-        - PartField / PartPacker / PartUV
+        - PartUV (UV Unwrapping)
         - FastMesh (Retopology)
-        - VoxHammer (Mesh Editing)
         - ARDY (Motion AI)
-        - P3-SAM
         - Other / Multiple
     validations:
       required: true

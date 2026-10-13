@@ -72,20 +72,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
-        # Clean any spurious empty outer __init__.py if present on disk
-        outer_init = self.hunyuan3d_root / "hy3dshape" / "__init__.py"
-        if outer_init.exists() and outer_init.stat().st_size < 10:
-            try:
-                outer_init.unlink()
-            except Exception:
-                pass
-
-        # hy3dshape repository root has hy3dshape/ package inside it
-        hy3dshape_parent = str(self.hunyuan3d_root / "hy3dshape")
-        if hy3dshape_parent in sys.path:
-            sys.path.remove(hy3dshape_parent)
-        sys.path.insert(0, hy3dshape_parent)
-
+        # The vendored torchvision compatibility patch lives at the model root.
         if str(self.hunyuan3d_root) not in sys.path:
             sys.path.append(str(self.hunyuan3d_root))
 
@@ -106,32 +93,33 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     f"Please download weights via download_models.sh."
                 )
 
-            # Ensure hy3dshape package is loaded correctly and hy3dshape.models is accessible
-            hy3dshape_parent = str(self.hunyuan3d_root / "hy3dshape")
-            if hy3dshape_parent in sys.path:
-                sys.path.remove(hy3dshape_parent)
-            sys.path.insert(0, hy3dshape_parent)
-
-            if "hy3dshape" in sys.modules and not hasattr(sys.modules["hy3dshape"], "pipelines"):
-                del sys.modules["hy3dshape"]
-
-            try:
-                from hy3dshape.pipelines import (
-                    Hunyuan3DDiTFlowMatchingPipeline,
+            package_root = (self.hunyuan3d_root / "hy3dshape").resolve()
+            pipeline_source = package_root / "hy3dshape" / "pipelines.py"
+            rembg_source = package_root / "hy3dshape" / "rembg.py"
+            missing = [str(path) for path in (pipeline_source, rembg_source) if not path.is_file()]
+            if missing:
+                raise ModuleNotFoundError(
+                    "Hunyuan3D-Shape source files are missing: "
+                    + ", ".join(missing)
+                    + ". Update backend/thirdparty with the project setup script."
                 )
-                from hy3dshape.rembg import BackgroundRemover
-            except ImportError:
-                from hy3dshape.hy3dshape.pipelines import (
-                    Hunyuan3DDiTFlowMatchingPipeline,
-                )
-                from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
-            import hy3dshape
-            inner_pkg = self.hunyuan3d_root / "hy3dshape" / "hy3dshape"
-            if inner_pkg.exists() and hasattr(hy3dshape, "__path__"):
-                if str(inner_pkg) not in hy3dshape.__path__:
-                    hy3dshape.__path__.append(str(inner_pkg))
-            sys.modules["hy3dshape.hy3dshape"] = hy3dshape
+            # Load this model's vendored package, not a similarly named package already on sys.path.
+            sys.path[:] = [
+                entry for entry in sys.path
+                if Path(entry or os.getcwd()).resolve() != package_root
+            ]
+            sys.path.insert(0, str(package_root))
+            loaded_package = sys.modules.get("hy3dshape")
+            loaded_file = getattr(loaded_package, "__file__", None)
+            if loaded_file and package_root not in Path(loaded_file).resolve().parents:
+                for module_name in tuple(sys.modules):
+                    if module_name == "hy3dshape" or module_name.startswith("hy3dshape."):
+                        del sys.modules[module_name]
+
+            logger.info("Resolved Hunyuan3D-Shape Python package root: %s", package_root)
+            from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline
+            from hy3dshape.rembg import BackgroundRemover
 
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-Shape-v2-1 requires CUDA; CPU inference is not supported.")
@@ -182,10 +170,12 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             return {"shapegen": self.pipeline_shapegen, "bg_remover": self.bg_remover}
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            logger.error(f"Failed to load Hunyuan3D-Shape-v2-1: {str(e)}")
-            raise Exception(f"Failed to load Hunyuan3D-Shape-v2-1: {str(e)}")
+            logger.exception(
+                "Failed to load Hunyuan3D-Shape-v2-1 (source=%s, checkpoint=%s)",
+                self.hunyuan3d_root,
+                self.model_path,
+            )
+            raise RuntimeError(f"Failed to load Hunyuan3D-Shape-v2-1: {type(e).__name__}: {e}") from e
 
     def _unload_model(self):
         """Unload Hunyuan3D-Shape-v2-1 models."""
@@ -244,9 +234,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     self.pipeline_shapegen.to(self.device)
 
             logger.info(f"Generating 3D shape with Hunyuan3D-Shape-v2-1 on {self.device}...")
-            octree_res = inputs.get("octree_resolution", inputs.get("octree_res", inputs.get("grid_resolution", 256)))
+            octree_res = inputs.get("octree_resolution") or inputs.get("octree_res") or inputs.get("grid_resolution")
             if octree_res is None:
-                octree_res = 256
+                octree_res = 512 if inputs.get("source_quality", "max") == "max" else 256
             else:
                 octree_res = int(octree_res)
 
@@ -256,9 +246,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 num_chunks = int(num_chunks)
 
-            num_steps = inputs.get("num_inference_steps", inputs.get("num_steps", 30))
+            num_steps = inputs.get("num_inference_steps") or inputs.get("num_steps")
             if num_steps is None:
-                num_steps = 30
+                num_steps = 50 if inputs.get("source_quality", "max") == "max" else 30
             else:
                 num_steps = int(num_steps)
 
@@ -296,7 +286,16 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "output_format": output_format,
                     "vertex_count": mesh_stats["vertex_count"],
                     "face_count": mesh_stats["face_count"],
+                    "native_vertex_count": mesh_stats["vertex_count"],
+                    "native_face_count": mesh_stats["face_count"],
                     "has_texture": False,
+                    "source_quality": inputs.get("source_quality", "max"),
+                    "geometry_extractor": "Hunyuan3D-Shape-v2.1 shapegen pipeline",
+                    "requested_geometry_resolution": octree_res,
+                    "effective_geometry_resolution": None,
+                    "effective_geometry_resolution_status": "upstream exposes configured octree_resolution but does not report achieved output-grid resolution",
+                    "geometry_resolution_source": "configured octree_resolution passed to pipeline_shapegen; achieved grid not reported",
+                    "mesh_operations": [],
                     "octree_resolution": octree_res,
                     "num_chunks": num_chunks,
                     "num_inference_steps": num_steps,
@@ -332,8 +331,8 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Octree resolution for marching cubes reconstruction (recommended: 256 for fast, 384 for high detail).",
-                    "default": 256,
+                    "description": "Octree resolution for maximum-fidelity raw source extraction.",
+                    "default": 512,
                     "minimum": 64,
                     "maximum": 512,
                     "required": False,
@@ -346,8 +345,8 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Number of inference steps (recommended: 30 for fast, 50 for max detail)",
-                    "default": 30,
+                    "description": "Number of inference steps for maximum-fidelity raw source generation.",
+                    "default": 50,
                     "minimum": 1,
                     "maximum": 100,
                     "required": False,
@@ -372,24 +371,25 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
         return {"input": ["png", "jpg", "jpeg"], "output": ["glb", "obj"]}
 
 
-class Hunyuan3DShapeV21ImageToTexturedMeshAdapter(ImageToMeshModel):
+class Hunyuan3DShapeV21ImageToTexturedMeshAdapter(Hunyuan3DShapeV21ImageToRawMeshAdapter):
     """
-    Adapter for Hunyuan3D-Shape-v2-1 image-to-textured-mesh generation.
+    Deprecated adapter for Hunyuan3D-Shape-v2-1 image-to-textured-mesh generation.
 
-    Chains shape generation followed by Paint-v2-1 texture painting.
+    Per Docs/TASKS.md Section 4, auto-chaining wrapper is deprecated.
+    Shape generation produces raw geometry only without internally calling Hunyuan Paint.
     """
 
-    FEATURE_TYPE = "image_to_textured_mesh"
+    FEATURE_TYPE = "image_to_raw_mesh"
     MODEL_ID = "hunyuan3d_shape_v21_image_to_textured_mesh"
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.vram_requirement = 29000
-        self.supported_output_formats = ["glb", "obj"]
-
-    def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
-        """Chain shape generation + paint."""
-        raise NotImplementedError(
-            "Use shape + paint pipeline chaining via scheduler. "
-            "This adapter requires separate shape and paint stages."
+        logger.warning(
+            "Hunyuan3DShapeV21ImageToTexturedMeshAdapter is deprecated. "
+            "Normal generation produces raw geometry only. Texturing is handled by the centralized texture stage."
         )
+        super().__init__(*args, **kwargs)
+
+
+# Backward-compatible alias for raw geometry generation
+Hunyuan3DShapeV21ImageToMeshAdapter = Hunyuan3DShapeV21ImageToRawMeshAdapter
+

@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Deployment-100%25_Self--Hosted_&_Local_GPU-10B981?style=for-the-badge&logo=serverfault&logoColor=white" alt="Self-Hosted"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Compute-NVIDIA_CUDA_12.4-76B900?style=for-the-badge&logo=nvidia&logoColor=white" alt="CUDA 12.4"></a>
-  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="23 user-facing models / 24 registered adapters"></a>
+  <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Models-Neural_3D_Adapters-8B5CF6?style=for-the-badge&logo=huggingface&logoColor=white" alt="ForMash3D neural 3D model integrations"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI"></a>
   <a href="https://github.com/Silentzx2/ForMash3D"><img src="https://img.shields.io/badge/Frontend-Next.js_16-000000?style=for-the-badge&logo=nextdotjs&logoColor=white" alt="Next.js 16"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=for-the-badge" alt="License Apache-2.0"></a>
@@ -49,7 +49,7 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 > 4. **Notice for Commercial & SaaS Implementors**:
 >    - The Apache 2.0 license applies **strictly to ForMash3D's original code**. We do **not** own or re-license the underlying third-party models, research weights, or ported submodules.
 >    - The ported `3DGenStudio` post-processing pipeline prohibits hosting the software as a paid public/private commercial SaaS service without explicit written consent from the upstream author (`visualbruno`).
->    - Individual model checkpoints (e.g. Hunyuan3D-2.1, FastMesh, UltraShape, TripoSF) carry their own respective upstream research, academic, or non-commercial licenses (see **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files).
+>    - Individual model checkpoints (e.g. Hunyuan3D-2.1, FastMesh, TripoSG) carry their respective upstream research, academic, or non-commercial licenses (see **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files).
 >    - **Do NOT blindly deploy or redistribute ForMash3D as a paid commercial product or SaaS** without auditing and complying with the respective licenses of each integrated model and component!
 
 > [!NOTE]
@@ -69,7 +69,6 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 | Source Preservation | Immutable master/source.glb checkpoint before production processing |
 | Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
 | PBR Materials | Hunyuan3D Paint-v2.1 and model-specific textured generation |
-| Multi-View | Zero123++ v1.2 plus capability-gated 3D reconstruction |
 | Smart Generation | One-click image-only intents with deterministic model selection and scheduler-backed execution |
 | QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
 | Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |
@@ -82,8 +81,8 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
    INPUT                     NEURAL GENERATION               CANONICAL CHECKPOINT
 ┌─────────────────────┐    ┌───────────────────────────┐    ┌──────────────────────────┐
 │  • Single Image     │───►│  Neural Model Adapters:   │───►│ master/source.glb        │
-│  • Multi-View Image │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
-│                     │    │  TripoSR / TripoSG / SF   │    │ Preserves Raw Topology   │
+│                     │    │  TRELLIS / Hunyuan3D 2.1  │    │ (Immutable Master Mesh)  │
+│                     │    │  TripoSG                  │    │ Preserves Raw Topology   │
 └─────────────────────┘    └───────────────────────────┘    └────────────┬─────────────┘
                                                                           │
  ┌───────────────────────────────────────────────────────────────────────┘
@@ -92,8 +91,8 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │ 1. Repair       │───►│ 2. Retopo       │───►│ 3. UV & Bake    │───►│ 4. LOD Cascade  │
 │ Watertightness  │    │ FastMesh Quads  │    │ Conformal UV    │    │ LOD0: 100%      │
-│ Non-Manifold Fix│    │ AutoRetopo Def. │    │ PBR Material Map│    │ LOD1: 50%       │
-│ Boundary Guard  │    │ Feature Angle   │    │ RealESRGAN x4+  │    │ LOD2: 25% / 12% │
+│ Non-Manifold Fix│    │ AutoRetopo Def. │    │ Optional PBR Map│    │ LOD1: 50%       │
+│ Boundary Guard  │    │ Feature Angle   │    │ Hunyuan ESRGAN  │    │ LOD2: 25% / 12% │
 └─────────────────┘    └─────────────────┘    └─────────────────┘    └────────┬────────┘
                                                                                │
  ┌────────────────────────────────────────────────────────────────────────────┘
@@ -123,13 +122,13 @@ flowchart TD
     classDef amber fill:#2d1b0d,stroke:#f59e0b,stroke-width:2px,color:#fde68a;
     classDef slate fill:#181c24,stroke:#64748b,stroke-width:2px,color:#f1f5f9;
 
-    subgraph Client [Studio Frontend — Next.js 16 (:3000)]
+    subgraph Client [Studio Frontend Next.js 16 port 3000]
         UI["Studio Workspace UI<br/>React 19 + Radix UI"]:::gold
         VIEWER["3D WebGL Viewport<br/>Three.js / React Three Fiber"]:::gold
         STORES["Reactive State Stores<br/>Zustand + TanStack Query"]:::gold
     end
 
-    subgraph Gateway [API Gateway & Control Plane — FastAPI (:7842)]
+    subgraph Gateway [API Gateway and Control Plane FastAPI port 7842]
         ROUTERS["API Routers<br/>Generation / Retopo / UV / Rigging"]:::cyan
         QUEUE["Distributed Job Queue<br/>Redis 7 + Single-Worker Memory"]:::cyan
     end
@@ -139,18 +138,17 @@ flowchart TD
         MONITOR["Hardware Telemetry<br/>1024 MB Headroom Guard"]:::amber
     end
 
-    subgraph Engines [Neural 3D Synthesis Engines (23 selectable / 24 registered adapters)]
+    subgraph Engines [Neural 3D Synthesis Engines]
         HUNYUAN["Hunyuan3D-2.1 Suite<br/>Shape + Paint 2B + Turbo"]:::purple
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes Structured Meshes"]:::purple
-        TRIPO["TripoSR / SG / SF<br/>SparseFlex 1024³ / Feedforward"]:::purple
+        TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::purple
         RETOPO["FastMesh V1K / V4K<br/>Neural Quad Retopology"]:::purple
-        EXTRAS["UltraShape / PartPacker<br/>Dense Poly / Part Decomp"]:::purple
+        EXTRAS["Additional Mesh Tools<br/>No provider configured"]:::purple
         RIGGING["UniRig & ARDY<br/>Auto-Rigging & Motion AI"]:::purple
-        ZERO123["Zero123++ v1.2<br/>Multi-View 6-Cam Synthesis"]:::purple
         UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
 
-    subgraph PostProcess [Production Post-Processing Core (Ported from 3DGenStudio)]
+    subgraph PostProcess [Production Post-Processing Core based on 3DGenStudio]
         CHECKPOINT["source.glb<br/>Immutable Master Raw Mesh"]:::green
         REPAIR["Watertight Repair<br/>Boundary Component Guard"]:::green
         SIMPLIFY["PyMeshLab Decimator<br/>Texture-Preserving Fallback"]:::green
@@ -168,7 +166,7 @@ flowchart TD
 
     %% Clean Node-to-Node Data Connections
     UI --> STORES
-    STORES -->|"REST / SSE Stream"| ROUTERS
+    STORES -->|REST / SSE Stream| ROUTERS
     ROUTERS --> QUEUE
     QUEUE --> GPU_LOCK
     GPU_LOCK --> MONITOR
@@ -178,13 +176,12 @@ flowchart TD
     MONITOR --> RETOPO
     MONITOR --> EXTRAS
     MONITOR --> RIGGING
-    MONITOR --> ZERO123
     MONITOR --> UNIQUE3D
 
-    HUNYUAN -->|"Model Native GLB"| CHECKPOINT
-    TRELLIS -->|"Model Native GLB"| CHECKPOINT
-    TRIPO -->|"Model Native GLB"| CHECKPOINT
-    EXTRAS -->|"Model Native GLB"| CHECKPOINT
+    HUNYUAN -->|Model Native GLB| CHECKPOINT
+    TRELLIS -->|Model Native GLB| CHECKPOINT
+    TRIPO -->|Model Native GLB| CHECKPOINT
+    EXTRAS -->|Model Native GLB| CHECKPOINT
 
     CHECKPOINT --> REPAIR
     REPAIR --> SIMPLIFY
@@ -196,39 +193,30 @@ flowchart TD
 
     QA --> ASSET_STORE
     ASSET_STORE --> ZIP
-    ASSET_STORE -.->|"Model Stream"| VIEWER
-    RETOPO -.->|"Quad Mesh"| ASSET_STORE
-    RIGGING -.->|"Rigged Bones"| ASSET_STORE
+    ASSET_STORE -.->|Model Stream| VIEWER
+    RETOPO -.->|Quad Mesh| ASSET_STORE
+    RIGGING -.->|Rigged Bones| ASSET_STORE
 ```
 
 ---
 
-## 🤖 Supported Model Catalog (22 User-Facing Models / 23 Registered Adapters)
+## 🤖 Supported Model Catalog
 
 The model registry is dynamically configured via `backend/config/models.yaml` and loaded lazily:
 
 | Model Architecture | Registered Model ID | Category / Task | VRAM Budget | Key Technical Capabilities |
 |---|---|---|:---:|---|
 | **Hunyuan3D-Shape-v2.1** | `hunyuan3d_shape_v21_image_to_raw_mesh` | Raw Mesh | ~10 GB | 3.3B shape model, official 2.1 pipeline, octree resolution up to 512 |
-| **Hunyuan3D-Paint-v2.1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB | 2B PBR texture checkpoint, RealESRGAN x4+, DifferentiableRenderer |
+| **Hunyuan3D-Paint-v2.1** | `hunyuan3d_paint_v21_image_mesh_painting` | PBR Texture | ~21 GB declared requirement (not GPU-validated here) | 2B PBR texture checkpoint, internal RealESRGAN, exported 4K/8K atlas validation |
 | **Hunyuan3D-DiT-v2-mini-Turbo** | `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` | Raw Mesh | ~6 GB | 0.6B low-VRAM step-distilled shape model with Turbo path |
-| **TRELLIS** | `trellis_image_to_textured_mesh` | Image to Mesh | 11.5 GB | FlexiCubes PBR meshes with 2048x2048 texture maps |
-| **TRELLIS.2** | `trellis2_image_to_textured_mesh`<br>`trellis2_image_mesh_painting` | Structured 3D & Paint | 23.5 GB | High-fidelity FlexiCubes with multi-view PBR texture baking |
-| **TripoSR** | `triposr_image_to_raw_mesh` | Single-Image to 3D | 6 GB | Ultra-fast feedforward 3D reconstruction with texture baking |
+| **TRELLIS** | `trellis_image_to_3d` / `trellis_image_to_raw_mesh` | Raw Mesh | 11.5 GB | Raw FlexiCubes geometry; optional texture generation is a separate stage |
+| **TRELLIS.2** | `trellis2_image_to_3d` / `trellis2_image_to_raw_mesh` | Raw Mesh | 23.5 GB | High-fidelity FlexiCubes geometry; legacy textured IDs resolve to raw geometry |
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
-| **TripoSF** | `triposf_image_to_raw_mesh` | SparseFlex Mesh | 12 GB | High-resolution arbitrary-topology modeling with SparseFlex VAE |
 | **FastMesh (1K & 4K)** | `fastmesh_v1k_retopology`<br>`fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB | Fixed-budget neural quad retopology producing clean animation loops |
-| **PartPacker** | `partpacker_image_to_raw_mesh` | Part-Level 3D | 10 GB | Rectified-flow multi-part geometric decomposition |
-| **UltraShape** | `ultrashape_image_to_raw_mesh` | Dense Mesh | 26.6 GB | Dense surface reconstruction via cubvh |
-| **PartField** | `partfield_mesh_segmentation` | Mesh Segmentation | 4 GB | Semantic part decomposition of 3D meshes |
-| **P3-SAM** | `p3sam_mesh_segmentation` | Precision SAM | 60 GB | High-precision point prompt 3D SAM segmentation |
 | **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB | Automated bipedal skeletal armature generation |
 | **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB | Interactive autoregressive text-to-motion generation |
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
-|| **VoxHammer** | `voxhammer_text_mesh_editing`<br>`voxhammer_image_mesh_editing` | Mesh Editing | 40 GB | Voxel-guided localized neural mesh deformation |
 || **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
-
-Zero123++ v1.2 is a separate, hidden Multi-View image-generation adapter (not a mesh generator). Its base checkpoint is available from the model download manager; the View-Space Normals ControlNet is optional.
 
 ---
 
@@ -289,6 +277,9 @@ backend/storage/models/meshes/<asset_name>_<job_id>/
 - **Node Environment**: [Bun](https://bun.sh/) installed.
 - **Python**: Python 3.10 via Conda (`conda create -n 3daigc-api python=3.10`).
 
+
+The shared Python runtime is version-pinned for supported model adapters: Transformers 4.48.3 (required by Hunyuan3D Mini Turbo and PEFT), Diffusers 0.30.3, and PyTorch 2.6.0 with CUDA 12.4. Use `bash scripts/setup.sh` rather than installing model dependencies individually.
+
 ### 1. Clone & Frontend Setup
 
 ```bash
@@ -303,7 +294,7 @@ bun install
 
 ```bash
 # Automated setup prepares the environment, builds C++/CUDA kernels,
-# and installs backend dependencies
+# installs backend dependencies, and initializes the thirdparty submodule
 bash scripts/setup.sh
 ```
 
@@ -312,11 +303,8 @@ bash scripts/setup.sh
 Download pre-trained weights for the models you wish to use:
 
 ```bash
-# Download all core model checkpoints (includes VoxHammer)
+# Download all core model checkpoints
 bash backend/scripts/download_models.sh
-
-# Or download only the VoxHammer checkpoints
-bash backend/scripts/download_models.sh -m voxhammer
 ```
 
 ### 4. Running the Studio
@@ -353,14 +341,15 @@ The single-container RunPod image uses the same repository-root build context: `
 The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
 
 - **Generate Studio (`/workspace`)**: Image-to-3D generation with model selector, VRAM estimator, and step configuration.
-- **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting, Real-ESRGAN upscaling, and map baking (Albedo, Normal, Roughness, Metallic, AO).
+- **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting and PBR map inspection/export (Albedo, Normal, Roughness, Metallic, AO). Paint3D handles 1K/2K, while Hunyuan3D-Paint runs its internal RealESRGAN enhancement for 4K/8K; this is automatic, not a separate UI setting.
 - **Retopology & Remesh (`/workspace/remesh`)**: FastMesh quad-dominant retopology with V1K and V4K target presets.
 - **UV Unwrapping (`/workspace/uv`)**: Automated conformal seam placement and atlas chart packing.
-- **Mesh Segmentation (`/workspace/segment`)**: Semantic part decomposition via PartField and P3-SAM.
-- **Mesh Editing (`/workspace/edit`)**: Localized text/image-driven neural mesh editing with VoxHammer.
+- **Mesh Segmentation (`/workspace/segment`)**: Semantic part decomposition interface; no model adapter is currently configured.
+- **Mesh Editing (`/workspace/edit`)**: Workspace/API scaffolding remains, but no mesh-editing model adapter is currently configured.
 - **Animation & Motion (`/animation`)**: UniRig bipedal armature generation and ARDY motion synthesis.
 - **Jobs & Run Inspector (`/workspace/jobs`)**: Real-time progress tracking, step telemetry, and VRAM monitoring.
 - **Admin & Model Registry (`/admin?tab=models`)**: Live GPU health, temperature, and adapter configuration.
+- **Database Administration (`/admin?tab=database`)**: Cross-store statistics (SQLite/Redis/queue/file-metadata/disk), read-only Redis key inspector, paginated jobs table with per-row cancel/delete and multi-select bulk delete, plus typed-confirmation clear actions for jobs and file metadata.
 
 ---
 
@@ -371,9 +360,9 @@ The FastAPI backend exposes comprehensive REST and SSE streaming endpoints:
 | Endpoint | Method | Description |
 |---|:---:|---|
 | `/api/v1/system/info` | `GET` | System health, GPU specs, VRAM utilization, active worker mode |
-| `/api/v1/system/models` | `GET` | List 23 registered adapters (22 user-facing models + hidden Zero123++ multi-view adapter), readiness, and VRAM requirements |
+| `/api/v1/system/models` | `GET` | List registered models, readiness, capabilities, and VRAM requirements |
 | `/api/v1/mesh-generation/image-to-raw-mesh` | `POST` | Generate high-fidelity raw geometry from single reference image |
-| `/api/v1/mesh-generation/image-to-textured-mesh` | `POST` | Generate textured geometry directly from image |
+| `/api/v1/mesh-generation/image-to-textured-mesh` | `POST` | Backward-compatible endpoint; ordinary generation is raw-first with optional centralized texturing |
 | `/api/v1/mesh-generation/image-mesh-painting` | `POST` | Paint PBR textures onto existing 3D geometry |
 | `/api/v1/mesh-retopology/retopology` | `POST` | Run FastMesh V1K/V4K quad retopology on mesh |
 | `/api/v1/mesh-uv-unwrapping/uv-unwrap` | `POST` | Generate conformal UV atlas charts |
@@ -448,9 +437,9 @@ Yes. Once your model checkpoints are downloaded via `bash backend/scripts/downlo
 <summary><strong>What GPU hardware is required to run ForMash3D?</strong></summary>
 
 ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+:
-- **Lightweight Models (6GB–10GB VRAM)**: TripoSR, TripoSG, Hunyuan3D-DiT-v2-mini-Turbo, PartField (runs comfortably on RTX 3060, 4060, RTX 2080).
-- **Standard Models (12GB–16GB VRAM)**: TRELLIS, FastMesh, TripoSF SparseFlex (runs on RTX 3080, 4070, 4080, T4, L4).
-- **Heavy & High-Poly Models (24GB+ VRAM)**: TRELLIS.2, Hunyuan3D-Paint 2B, UltraShape (runs on RTX 3090, 4090, A10, A100).
+- **Lightweight Models (6GB–10GB VRAM)**: TripoSG, Hunyuan3D-DiT-v2-mini-Turbo (runs comfortably on RTX 3060, 4060, RTX 2080).
+- **Standard Models (12GB–16GB VRAM)**: TRELLIS, FastMesh (runs on RTX 3080, 4070, 4080, T4, L4).
+- **Heavy & High-Poly Models (24GB+ VRAM)**: TRELLIS.2, Hunyuan3D-Paint 2B (runs on RTX 3090, 4090, A10, A100).
 </details>
 
 <details>
@@ -501,14 +490,13 @@ Use `./manager.sh logs` or `tail -f logs/master.log`. The Admin Logs tab and `/a
 - **ForMash3D Core**: Licensed under the **[Apache License 2.0](LICENSE)**.
 - **Post-Processing Pipeline**: Ported and adapted from **[visualbruno/3DGenStudio](https://github.com/visualbruno/3DGenStudio)** under the **3D Gen Studio Community License**. See **[backend/postprocess/THIRD_PARTY_LICENSE.md](backend/postprocess/THIRD_PARTY_LICENSE.md)**.
 - **Backend API Gateway Base**: Forked and modernized from **[FishWoWater/3DAIGC-API](https://github.com/FishWoWater/3DAIGC-API)**.
-- **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSR/SG/SF, PartPacker, FastMesh, UltraShape, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
+- **Neural Model Checkpoints**: Individual neural model architectures are subject to their respective original authors' licenses (Hunyuan3D, TRELLIS, TripoSG, FastMesh, etc.). See **[backend/thirdparty/LICENSE](backend/thirdparty/LICENSE)** and individual `backend/thirdparty/<model>/LICENSE` files for full attributions and terms.
 
 ---
 
 ## Recent Fixes (2026-10-05)
 
 - Fixed Minified React error #130 on settings page by adding error handling for missing workspace context.
-- Resolved Zero123Plus worker job spam issue by adding detailed logging and disabling background removal by default.
 - Made "smash mash gen" feature visible in UI by adding fallback to hardcoded smart presets when API fails.
 
 ### Runtime note

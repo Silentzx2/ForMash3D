@@ -341,8 +341,7 @@ def _is_model_weights_available(model_config: Any) -> bool:
 
         # Known model weight file signatures for models without a config.json/yaml
         known_signatures = (
-            "triposf", "mp_rank", "hunyuan", "partpacker", "ultrashape",
-            "fastmesh", "objaverse", "p3sam", "model.ckpt", "trellis"
+            "mp_rank", "hunyuan", "fastmesh", "objaverse", "model.ckpt", "trellis"
         )
 
         has_checkpoint = False
@@ -375,8 +374,8 @@ def _model_supports_download(model_id: str) -> bool:
     return any(
         token in model_id
         for token in (
-            "trellis", "triposr", "triposg", "triposf", "zero123plus",
-            "hunyuan", "partpacker", "ultrashape", "partfield", "fastmesh", "unique3d"
+            "trellis", "triposg",
+            "hunyuan", "fastmesh", "unique3d"
         )
     )
 
@@ -1415,6 +1414,16 @@ async def download_job_result(
                 output_path = candidate
             elif canonical_format in {"lod0", "lod1", "lod2", "lod3"}:
                 output_path = asset_root_path / "lods" / f"{canonical_format}.glb"
+            elif canonical_format == "textured":
+                output_path = asset_root_path / "textures" / "textured.glb"
+                if not output_path.exists() and asset_name:
+                    alt = asset_root_path / "textures" / f"{asset_name}_textured.glb"
+                    if alt.exists():
+                        output_path = alt
+                if not output_path.exists():
+                    matches = list((asset_root_path / "textures").glob("*_textured.glb"))
+                    if matches:
+                        output_path = matches[0]
             elif canonical_format == "rigged":
                 output_path = asset_root_path / "rigging" / "game_ready_rigged.glb"
             elif canonical_format == "collision":
@@ -2203,8 +2212,10 @@ async def delete_job(
         asset_root = (job_status.get("result") or {}).get("asset_root")
         asset_root_path = None
         if asset_root:
+            from core.utils.file_utils import get_storage_base_dir
+
             asset_root_path = Path(asset_root).resolve()
-            models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+            models_root = (get_storage_base_dir() / "models").resolve()
             if asset_root_path == models_root or models_root not in asset_root_path.parents:
                 raise HTTPException(status_code=400, detail="Invalid asset workspace")
 
@@ -2218,17 +2229,28 @@ async def delete_job(
 
         if success:
             cleanup_error = None
-            if asset_root_path and asset_root_path.exists():
-                try:
-                    shutil.rmtree(asset_root_path)
-                except OSError as exc:
-                    cleanup_error = str(exc)
-                    logger.warning("Deleted job %s but failed to remove canonical workspace: %s", job_id, exc)
+            workspace_deleted = False
+            workspace_status = "not_recorded"
+            if asset_root_path:
+                if not asset_root_path.exists():
+                    workspace_status = "missing"
+                    workspace_deleted = False
+                else:
+                    try:
+                        shutil.rmtree(asset_root_path)
+                        workspace_status = "deleted"
+                        workspace_deleted = True
+                    except OSError as exc:
+                        cleanup_error = str(exc)
+                        workspace_status = "failed"
+                        workspace_deleted = False
+                        logger.warning("Deleted job %s but failed to remove canonical workspace: %s", job_id, exc)
             return {
                 "job_id": job_id,
                 "message": "Job deleted successfully",
                 "deleted": True,
-                "asset_workspace_deleted": cleanup_error is None,
+                "asset_workspace_deleted": workspace_deleted,
+                "asset_workspace_status": workspace_status,
                 "cleanup_error": cleanup_error,
                 "job_info": job_info,
             }

@@ -103,7 +103,7 @@ export default function AutoRetopoToolsPanel({
                   onChange={v => setRepairOption('preserve_uv', v)} disabled={fieldsDisabled || repairRunning}
                   hint="Repair only the faces that form the defect, leaving every other vertex — and its UV — untouched. Uncheck only if the mesh is too broken for that: the fallback rebuilds the mesh and discards all UVs (and the texture with them)." />
                 {!repairOptions.preserve_uv && (
-                  <span className="mesh-editor-panel__hint" className="text-amber-400">
+                  <span className="mesh-editor-panel__hint text-amber-400">
                     The texture will be lost — the fallback welds across UV seams.
                   </span>
                 )}

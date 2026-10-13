@@ -26,24 +26,25 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 ## Core Features
 
 ### 1. Neural Shape Generation
-- **Image-to-3D**: Generate raw and textured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TripoSR, TripoSG, TripoSF, PartPacker, UltraShape
+- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TRELLIS.2, TripoSG, Pixal3D
+- **Raw Geometry Output**: Normal shape generation produces raw geometry only, preserving clean topology without model-level texture baking or auto-chaining.
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
 - **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
 - **Central Source-Fidelity Firewall**: The scheduler removes production-only target, decimation, remesh, LOD, physics, and paint orchestration controls before model inference.
-- **Model-Native Texture Fidelity**: Textured source generation keeps explicit maximum source texture settings; downstream quality and polycount controls do not lower the immutable source.
 
-### 2. PBR Texture Painting
-- **Image Mesh Painting**: Paint textures onto existing meshes using Hunyuan3D-Paint-v2-1
-- **RealESRGAN x4+**: Super-resolution for texture enhancement
-- **DifferentiableRenderer**: PBR validation and material reference verification
-- **Shape→Paint Auto-Chaining**: Automatic pipeline from shape generation to textured output
-- **Configurable Parameters**: Texture resolution (512/768), max views (6-12), PBR state tracking
+### 2. Centralized PBR Texture Pipeline & Texture Studio
+- **Centralized Texture Routing**: Automatic model selection based on user-visible output resolution preset:
+  - **1K / 2K**: Paint3D (`OpenTexture/Paint3D`) coarse-to-fine UV texture diffusion
+  - **4K / 8K**: Hunyuan3D-Paint-v2-1 with RealESRGAN x4+ enhancement
+- **Universal Texture Toggle**: Single Textured Generation toggle available across all image-to-3D geometry models.
+- **Durable Reference Image Preservation**: Passes the original reference image directly to the selected texture adapter along with the raw mesh.
+- **Non-Destructive Texture Export**: Raw master geometry is preserved untouched (`master/source.glb`); textured models are exported separately (`textures/<name>_textured.glb`), allowing independent texture retries.
 
 ### 3. Post-Processing Pipeline
 - **Mesh Decimation**: meshoptimizer SIMD decimation to target polycounts
 - **UV Unwrapping**: xatlas conformal UV unwrapping
-- **High-to-Low Detail Baking**: Available as an explicit transfer step for projecting source detail onto simplified meshes; automatic generation never mutates the immutable source checkpoint
+- **High-to-Low Detail Baking**: Enabled by default where the production path supports it, projecting source detail into normal/AO maps on derived game-ready UVs; the immutable source checkpoint is never mutated.
 - **Safe Component Guard**: Preserve anatomical features (≥0.5% vertices or ≥15 verts)
 
 ### 4. Multi-Tier LOD Generation
@@ -73,12 +74,11 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 - Browser-playable `motion.json` format for Three.js
 
 ### 9. Mesh Segmentation
-- **PartField**: Semantic part decomposition of 3D meshes
-- **P3-SAM**: High-precision point prompt 3D SAM segmentation
+- The generic segmentation interface remains, but no segmentation model adapter is currently configured.
 
 ### 10. Mesh Editing
-- **VoxHammer**: Text/image-guided local neural mesh editing
-- Localized deformation with prompt control
+- The generic mesh-editing interface remains, but no mesh-editing model adapter is currently configured.
+- Provider-specific inference is unavailable until an adapter is added.
 
 ### 11. Retopology
 - **FastMesh**: Fast neural retopology (V1K, V4K)
@@ -88,12 +88,9 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 - **PartUV**: Automated seam placement and UV chart packing
 - Part-based UV unwrapping with LSCM
 
-### 13. Multi-View Generation
-- **Zero123++ v1.2**: 6 novel camera viewpoints generated at fixed 30° azimuth intervals (30°, 90°, 150°, 210°, 270°, 330°)
-- Seamless reference image reuse from Single Image mode without re-upload
-- Optional alpha masks and View-Space Normals (Normal ControlNet)
-- Multi-View Workspace with 6-view inspection gallery, pan/zoom viewer modal, and on-demand ZIP export (`<stem>.zip`)
-- Capability gating: strict restriction ensuring Multi-View 3D reconstruction only targets engines declared with `capabilities.multiview: true`
+### 13. Multi-View Generation (Removed 2026-10-11)
+- The Zero123++ model integration, dedicated workspace, reconstruction API, and download/install-manager entries have been removed from the active product.
+- Vendored third-party source directories were intentionally left untouched for separate manual cleanup.
 
 ## MVP
 
@@ -172,14 +169,10 @@ flowchart TB
     subgraph Adapters["Model Adapters"]
         TRELLIS["TRELLIS<br/>FlexiCubes PBR"]:::adapters
         HUNY["Hunyuan3D<br/>Shape + Paint"]:::adapters
-        TRIPO["TripoSR/SG/SF<br/>Feedforward & SparseFlex"]:::adapters
+        TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::adapters
         ARDY["ARDY<br/>Motion AI"]:::adapters
-        PP["PartPacker<br/>Rectified Flow"]:::adapters
-        US["UltraShape<br/>Arbitrary Topology"]:::adapters
-        PF["PartField<br/>Segmentation"]:::adapters
         UR["UniRig<br/>Auto-Rigging"]:::adapters
         FM["FastMesh<br/>Retopology"]:::adapters
-        VH["VoxHammer<br/>Mesh Editing"]:::adapters
     end
 
     subgraph Storage["Persistent Storage"]
@@ -213,11 +206,15 @@ sequenceDiagram
     participant Storage as backend/storage/
 
     User->>Frontend: Select image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
-    SCHED->>Storage: Save source.glb (Untouched Master)
+    SCHED->>Storage: Save master/source.glb (Untouched Master)
+    opt Textured Generation enabled
+        SCHED->>SCHED: Paint3D (1K/2K) or Hunyuan Paint (4K/8K)
+        SCHED->>Storage: Save textured GLB and observed texture maps
+    end
     SCHED->>Storage: Save game_ready.glb (Decimated)
     SCHED->>Storage: Save lods/lod0..3.glb (LOD Cascade)
     SCHED->>Storage: Save collision.glb (Convex Hull)
@@ -238,7 +235,7 @@ flowchart TD
 
     UI["UI Panel<br/>Image/Prompt Input"]:::api --> IN["Input Image / Prompt"]:::data
     IN --> PRE["Stage 1: Preprocessing<br/>Aspect ratio preservation<br/>Background removal (RemBG)<br/>Silhouette extraction"]:::stage
-    PRE --> INF["Stage 2: Provider Inference<br/>TRELLIS · Hunyuan3D · PartPacker · UltraShape"]:::stage
+    PRE --> INF["Stage 2: Provider Inference<br/>TRELLIS · Hunyuan3D"]:::stage
     INF --> RAW_OUT[("source.glb<br/>Untouched Master")]:::data
     INF --> PROCESS["Stage 3: Post-Processing<br/>meshoptimizer Decimation<br/>xatlas UV Unwrapping<br/>Texture Projection Baking"]:::stage
     PROCESS --> G1{"Safe Component Guard<br/>Islands ≥ 0.5% vertices or ≥ 15 verts?"}:::guard
@@ -260,17 +257,11 @@ flowchart TD
 | Hunyuan3D-Shape-v2-1 | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
 | Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
-| TripoSR | 6 GB | Ultra-fast raw mesh | ~2-5 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
 | ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
-| PartPacker | 10 GB | Fast | ~60 seconds |
-| UltraShape | 26.6 GB | Highest fidelity | ~30 seconds |
-| PartField | 4 GB | Segmentation | ~15 seconds |
-| P3-SAM | 60 GB | High-precision segmentation | ~15 seconds |
 | UniRig | 9 GB | Auto-rigging | ~20 seconds |
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
-| VoxHammer | 40 GB | Mesh editing | ~20 seconds |
 
 ## QA Scoring Methodology
 

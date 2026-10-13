@@ -14,12 +14,11 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import threading
 from pathlib import Path
 from uuid import uuid4
 
-from postprocess.config import BLENDER_EXECUTABLE, THUMBNAIL_TIMEOUT_S, WORK_DIR
+from postprocess.config import THUMBNAIL_TIMEOUT_S, WORK_DIR, blender_worker_argv
 
 SENTINEL = "GENSTUDIO_EVT "  # keep in sync with app/tools/thumbnail_worker.py
 
@@ -52,15 +51,10 @@ def render_mesh_thumbnail(glb_bytes: bytes) -> bytes:
 
 def _run_worker(in_path: Path, out_path: Path) -> dict:
     proc = subprocess.Popen(
-        [
-            BLENDER_EXECUTABLE,
-            "--background",
-            "--python",
-            str(_WORKER),
-            "--",
-            "--input", str(in_path),
-            "--output", str(out_path),
-        ],
+        blender_worker_argv(
+            _WORKER,
+            ["--input", str(in_path), "--output", str(out_path)],
+        ),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

@@ -27,7 +27,7 @@ def test_resolve_intent_is_deterministic_and_uses_priority(tmp_path):
     settings = SimpleNamespace(
         models={
             "image_to_raw_mesh": {
-                "triposr_image_to_raw_mesh": _model_config(first),
+                "triposg_image_to_raw_mesh": _model_config(first),
             },
             "image_to_textured_mesh": {
                 "trellis_image_to_textured_mesh": _model_config(second),
@@ -76,28 +76,6 @@ def test_capability_contract_is_normalized():
         assert key in capabilities
     assert capabilities["single_view"] is True
     assert capabilities["minimum_vram_mb"] == 8192
-
-
-def test_generated_multiview_capability_is_not_image_to_3d():
-    from core.config import ModelConfig, normalize_model_capabilities
-
-    config = ModelConfig(
-        vram_requirement=5120,
-        supported_inputs=["image"],
-        supported_outputs=["png", "zip"],
-        capabilities={"multiview": True, "generated_multiview": True},
-    )
-    normalized = normalize_model_capabilities(
-        "image_to_multiview",
-        "zero123plus_v12_image_to_multiview",
-        config,
-    )
-    capabilities = normalized.capabilities
-    assert capabilities["image_to_3d"] is False
-    assert capabilities["multiview"] is True
-    assert capabilities["multiview_input"] is False
-    assert capabilities["generated_multiview"] is True
-    assert capabilities["single_view"] is False
 
 
 def test_multi_gpu_preset_requires_more_than_one_gpu(tmp_path, monkeypatch):

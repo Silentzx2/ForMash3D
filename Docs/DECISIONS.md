@@ -204,7 +204,7 @@
 
 **Consequences**:
 - `backend/adapters/hunyuan3d_paint_v21.py` adapter
-- Shape→Paint automatic chaining
+- Legacy Shape→Paint automatic chaining (superseded by the centralized optional-texture decision below)
 - Configurable texture resolution (512/768), max views (6-12)
 - VRAM-aware scheduling (~21GB requirement)
 - Dockerfile includes Paint DifferentiableRenderer build
@@ -261,7 +261,7 @@
 
 **Consequences**:
 - `backend/adapters/hunyuan3d_paint_v21.py` adapter with `_resolve_realesrgan_path()`, `get_vram_status()`, `_verify_pbr_output()`
-- Shape→Paint automatic chaining support
+- Legacy Shape→Paint automatic chaining support (superseded by the centralized optional-texture decision below)
 - Configurable texture resolution (512/768), max views (6-12)
 - VRAM-aware scheduling with ~21GB requirement
 - Dockerfile needs separate Paint DifferentiableRenderer build step
@@ -350,13 +350,13 @@
 
 **Decision**: Treat Hunyuan3D-Shape-v2-1 as the raw-mesh stage and Hunyuan3D-Paint-v2-1 as the optional texture stage. Do not register a separate direct Shape textured model ID.
 
-**Reason**: Shape and Paint are separate model checkpoints with independent VRAM and lifecycle requirements. The existing scheduler and Workspace already support the two-stage flow, allowing Shape to finish and expose a generated file ID before Paint is scheduled.
+**Reason**: Shape and Paint are separate model checkpoints with independent VRAM and lifecycle requirements. A geometry model must not own a hidden texture-generation workflow. The scheduler preserves the raw master first, then invokes the common optional texture stage when requested.
 
 **Consequences**:
-- `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` are the current Hunyuan shape-generation IDs.
-- `hunyuan3d_paint_v21_image_mesh_painting` remains independently callable.
-- Workspace texture generation uses the generated job file ID plus the original image input for Shape-v2-1 or Mini Turbo → Paint handoff.
-- The removed direct Shape textured ID is not exposed through the model registry or GeneratePanel.
+- `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` remain raw geometry IDs.
+- `hunyuan3d_paint_v21_image_mesh_painting` remains independently callable for direct Texture Studio jobs and is reused by centralized 4K/8K texturing.
+- The central stage passes the original reference image and resolved atlas target, enables the model's built-in RealESRGAN path, and validates the exported base-colour atlas without replacing `master/source.glb`.
+- Legacy direct Shape textured IDs remain raw-only compatibility aliases.
 
 ## ADR-041: Explicit SDPA Fallback for Pre-Ampere Sparse Attention
 
@@ -442,11 +442,11 @@
 
 **Decision**: Translate the workspace quality setting into each model adapter's actual extraction parameter instead of assuming a shared octree_resolution name.
 
-**Reason**: Several adapters silently ignored the generic field and used lower defaults: TripoSR (mc_resolution), TripoSF (resolution), PartPacker (grid_resolution), and UltraShape (octree_res).
+**Reason**: Several adapters silently ignored the generic field and used lower defaults: TripoSR (mc_resolution) and TripoSF (resolution).
 
 **Consequences**:
 - High/Ultra generation now requests higher model-native extraction resolutions for those adapters.
-- PartPacker raw mode uses num_faces=-1 and TRELLIS.2 raw mode disables remeshing/decimation.
+- TRELLIS.2 raw mode disables remeshing/decimation.
 - Post-processing remains responsible for deliberate optimization and topology changes.
 - TripoSF low-VRAM pruning remains enforced on GPUs below 16GB to avoid unsafe memory use.
 
@@ -754,4 +754,111 @@ Hi3DGen-style normal bridging is not hard-wired into production without controll
 - FlashVDM uses optimized merge attention pooling.
 - All model adapters explicitly verify `torch.cuda.is_available()` and target CUDA devices.
 
+## ADR-065 — Normal Image-to-3D Geometry Models Output Raw Mesh Only
 
+**Date:** 2026-10-11  
+**Status:** Accepted
+
+**Decision**:
+1. All normal image-to-3D geometry models (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, Unique3D, Pixal3D) generate raw untextured geometry only. Embedded texture baking, multiview rasterization, and automatic paint chaining are removed from the normal geometry path. Texturing is decoupled into the centralized post-processing texture stage.
+2. In `models.yaml`, set `paint_autochain: false` on Hunyuan3D shape models, `texture_generation: false` on Unique3D and Pixal3D, and register TRELLIS / TRELLIS.2 and Pixal3D under `image_to_raw_mesh`.
+3. In `model_factory.py`, map legacy `image_to_textured_mesh` IDs and requests as backward-compatible aliases to raw-mesh generation via `LEGACY_IMAGE_TO_RAW_ALIASES` and `get_model_adapter()`.
+4. Unique3D preserves native PyTorch3D vertex colors (`has_vertex_color: True`) without baking 2D UV textures, reporting `has_texture: False`.
+
+**Reason**:
+Per `Docs/TASKS.md` Section 4, selecting a geometry model must never implicitly run a hardcoded texture pipeline. Decoupling geometry from texturing allows the downstream production post-processing pipeline and central texture stage (Paint3D / Hunyuan3D-Paint) to manage texturing cleanly and idempotently.
+
+**Consequences**:
+- Normal image-to-3D geometry generation is faster, unburdened by redundant texture baking or paint model loading.
+- VRAM requirements during geometry generation are reduced.
+- Downstream postprocessing promotes immutable raw `master/source.glb` before any optional texturing.
+- Legacy clients and historical jobs requesting `image_to_textured_mesh` resolve cleanly to raw geometry without breaking.
+
+## ADR-066 — Paint3D Integration for 1K/2K UV Texture Diffusion
+
+**Date:** 2026-10-11  
+**Status:** Accepted
+
+**Decision**:
+1. Integrate Paint3D (`OpenTexture/Paint3D`) as the primary texture synthesis engine for 1K (1024x1024) and 2K (2048x2048) texture presets, while reserving Hunyuan3D-Paint for 4K and 8K generation.
+2. Execute a two-stage coarse-to-fine pipeline: coarse texture rendering (Stage 1) followed by UV inpainting and seam refinement (Stage 2), conditioning both stages on the original reference image.
+3. Preserve the Python 3.10 / CUDA 12.4 / PyTorch 2.6.0 baseline without library downgrades, avoiding upstream's legacy Python 3.8 / Torch 1.12 environment requirements.
+4. Enforce strict job isolation with per-job scratch directories (`paint3d_job_{job_id}_*`) and non-shell subprocess execution with explicit argument lists.
+5. Strict CUDA GPU enforcement: raise an immediate error if `torch.cuda.is_available()` is False, rejecting CPU fallback.
+
+**Reason**:
+Per `Docs/TASKS.md` Section 3, high-quality 1K/2K UV texture generation requires a specialized diffusion model capable of lighting-less albedo map synthesis and seamless UV wrapping on untextured raw meshes. Paint3D provides superior texture fidelity at 1K/2K resolutions without interfering with the immutable raw mesh master checkpoint.
+
+**Consequences**:
+- 1K and 2K texture requests route cleanly to Paint3D with minimal VRAM footprint (~12GB VRAM).
+- Underlying geometry topology remains intact while generating complete UV texture atlases.
+- Checkpoints are managed cleanly through `backend/scripts/download_models.sh` with Hugging Face verification (`GeorgeQi/Paint3d_UVPos_Control`).
+
+## ADR-067 — Dedicated Database Administration Surface
+
+**Date:** 2026-10-11  
+**Status:** Accepted
+
+**Decision**:
+1. Add a dedicated backend router `backend/api/routers/database.py`, mounted at `/api/v1/system/database` in both `main_singleworker.py` and `main_multiworker.py`, exposing: `GET /stats` (combined SQLite/Redis/queue/file-metadata/disk statistics), `GET /keys` (read-only SCAN-based Redis key inspector), `DELETE /jobs` (bulk delete by ids/status/feature), `POST /jobs/clear`, and `DELETE /files/clear`. Endpoints require the API key and the admin role whenever a user is authenticated.
+2. Enforce a confirm-token safety model on every destructive endpoint: `{"confirm": true}` for bulk delete and the exact typed tokens `{"confirm": "CLEAR_ALL_JOBS"}` / `{"confirm": "CLEAR_ALL_FILES"}` for the wipes.
+3. Keep the deletion ordering from ADR-062: each job is removed from Redis hot keys and the SQLite jobs table (reusing `RedisJobQueue.delete_job`), and its canonical asset workspace under `backend/storage/models/meshes/<asset>_<job_id>/` is removed only after the durable delete succeeds, with the path validated against the models root. Non-terminal (running/queued) jobs are skipped unless `force: true`.
+4. The clear-all-jobs sweep touches only job-owned Redis key patterns (`3daigc:jobs`, `3daigc:progress`, `3daigc:stage`, `3daigc:message`, `3daigc:queue:*`, `3daigc:completed_at`, `3daigc:cancel_requested`, `3daigc:result:*`) and never user/token auth keys (`3daigc:user*`, `3daigc:token*`, `3daigc:users:all`), then VACUUMs SQLite. Uploads and file metadata are preserved; clear-all-files preserves job records and assets.
+5. Support the surface with new `DatabaseManager.delete_all_jobs()` and `DatabaseManager.get_database_size_bytes()` methods plus the admin Database tab (`/admin?tab=database`): stats cards, paginated jobs table with per-row cancel/delete, checkbox multi-select bulk delete, the Redis key inspector, and typed-confirmation danger-zone clear actions.
+
+**Reason**:
+Operators had no way to see the combined health of the two stores (SQLite rows vs. Redis hot keys, file metadata, disk usage) and no safe bulk maintenance path: clearing stuck or duplicate jobs meant calling the per-job delete endpoint in a loop with no selector, no visibility into Redis key footprint, and no storage reclamation (orphaned rows/workspaces, no VACUUM). A single authenticated, confirmation-guarded surface reuses the existing dual-store deletion instead of adding a second deletion path.
+
+**Consequences**:
+- Bulk maintenance (delete by ids/status/feature, clear-all) becomes administrative, observable, and reversible-by-token only at the exact confirm step.
+- The confirm-token ordering keeps the durable store authoritative; a workspace is never removed on a failed store delete, so a retry cannot orphan data.
+- User sessions and API keys survive a job wipe because auth keys are excluded from the sweep by design.
+- Storage reclamation is explicit: job clears remove workspaces and VACUUM SQLite; file clears remove uploads and file metadata — the two are never mixed.
+
+**Alternatives Considered**:
+- *Reuse only the per-job delete endpoint* (`DELETE /api/v1/system/jobs/{job_id}`): rejected — O(n) round-trips, no status/feature selectors, no combined statistics, no workspace sweep, and no SQLite VACUUM for storage reclamation.
+- *CLI-only maintenance tool*: rejected — operators administer the running stack through the admin dashboard; a CLI would duplicate auth/deletion logic and drift from the authenticated API surface.
+
+## ADR-068: Retire Dedicated Multi-View and Consolidate Tripo Model Catalog
+
+**Status:** Accepted — 2026-10-11
+
+**Decision:** Remove the dedicated Zero123++ Multi-View workspace, router, model registration, adapter, API documentation, tests, download-manager entries, and its installer dependency flow. Keep TripoSG as the only selectable Tripo generation model. Remove the TripoSR and TripoSF adapters and all active registry, preset, scheduling, download, verification, and install references to those models. Do not remove or modify any vendored repository code under `backend/thirdparty/`; that cleanup is explicitly deferred for separate manual work.
+
+**Rationale:** TripoSG provides a self-contained high-fidelity image/scribble-to-mesh path. TripoSF's current image path invokes TripoSR to create its coarse input mesh, so removing TripoSR weights while retaining TripoSF would leave a hidden model dependency and could break generation. Keeping TripoSG avoids that cross-model dependency while retaining one high-fidelity Tripo model. All non-Tripo model integrations and generic scheduler/capability behavior remain in place.
+
+**Consequences:** The model selector and model API expose TripoSG but no TripoSR/TripoSF/Zero123++ model IDs. The download manager installs only TripoSG and its RMBG dependencies among Tripo-specific model entries. Historical ADRs documenting the retired implementations remain as historical records; this ADR defines the current supported catalog.
+
+
+## ADR-069: Explicit Native/Raw Budget Semantics and Geometry Provenance
+
+**Status:** Accepted — 2026-10-12
+
+**Context:** The follow-up mesh-quality audit found that a nested `target_polycount` or intent preset could mask an explicit API-level value. The UI/backend could also receive an inconsistent Native/Raw target together with auto-optimization or an implicit remesh path. Some resolution fields described Hunyuan's configured octree parameter as if it were the achieved output-grid resolution, and model metadata did not carry all provenance through the canonical post-processing result.
+
+**Decision:**
+1. Resolve a generation target with precedence: explicitly supplied top-level API value, explicitly supplied nested model parameter, then preset fallback. Explicit `0` means Native/Raw; missing/nonpositive backend target continues to resolve to Native/Raw.
+2. Gate automatic production optimization and adaptive shell remesh on a positive explicit target. The Native/Raw workspace default disables LOD generation, while production workflows may opt into budgets/derivatives.
+3. Keep `master/source.glb` immutable and persist raw adapter output/master SHA-256 identity in the quality trace and final result. A mismatch is recorded as a provenance error; mutation of the canonical master during post-processing raises.
+4. Use schema-v2 telemetry to report adapter/checkpoint identity, input/reference hashes and dimensions, effective inference parameters, runtime, per-GPU peak VRAM when observable, native mesh counts, and truthful requested/achieved-resolution semantics.
+5. Do not label a configured Hunyuan octree parameter as achieved resolution without an upstream report. Keep Step1X-3D, multi-view fusion, and evidence-guided detail refinement evaluation-gated until compatible-runtime validation and controlled A/B evidence exist.
+
+**Consequences:** Native/Raw has an explicit end-to-end contract; request precedence, post-process behavior and display labels agree. Benchmark runs gain reproducible source identity and resource telemetry. Unknown achieved resolution stays unknown rather than being inferred from a requested parameter.
+
+**Validation boundary:** Regression tests were added for request precedence, profile/manifest parity, Native/Raw gates and telemetry. They have not been executed in the current environment, and no CUDA A/B quality result is claimed.
+
+
+## ADR-070 — Compatible Shared Transformers Runtime for Hunyuan3D Mini
+
+**Date:** 2026-10-13  
+**Status:** Accepted
+
+**Decision:**
+1. Pin the shared runtime to `transformers==4.48.3`, which satisfies Hunyuan3D-DiT-v2-mini-Turbo's upstream `transformers>=4.48.0` contract and exports the `HybridCache` symbol imported by PEFT 0.17.1.
+2. Keep `diffusers==0.30.3`, PyTorch 2.6.0 + CUDA 12.4, and the shared dependency-install workflow unchanged.
+3. Resolve Shape and Mini Python package roots explicitly from `backend/thirdparty`; fail before checkpoint loading when expected package/checkpoint paths are absent.
+4. Preserve full worker tracebacks in backend logs and return a concise initialization error to the UI.
+
+**Rationale:** The shared Transformers pin was below Mini Turbo's declared minimum, causing a PEFT import failure before TripoSG's or Hunyuan's inference code could run. Hunyuan Shape also used a double-nested import path inconsistent with the vendored package layout; Mini could lose import priority to a different `hy3dgen` module and did not verify its checkpoint subfolder before pipeline initialization.
+
+**Consequences:** All three model adapters continue using the existing shared Python environment; no new dependency, registry path, or parallel install system is introduced. Static regression contracts cover the dependency floor, package paths, and concise worker errors. GPU-backed generation still requires runtime validation on a CUDA host.

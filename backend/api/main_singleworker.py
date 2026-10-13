@@ -36,6 +36,7 @@ from core.utils.exceptions import BaseAPIException
 
 from .routers import (
     auto_rigging,
+    database,
     file_upload,
     mesh_editing,
     mesh_tools,
@@ -46,7 +47,6 @@ from .routers import (
     mesh_segmentation,
     mesh_uv_unwrapping,
     motion_generation,
-    multiview,
     system,
 )
 
@@ -318,6 +318,7 @@ async def internal_error_handler(request: Request, exc: Exception):
 
 # Include routers
 app.include_router(system.router, prefix="/api/v1/system", tags=["System"])
+app.include_router(database.router, prefix="/api/v1/system/database", tags=["Database"])
 
 app.include_router(file_upload.router, prefix="/api/v1", tags=["File Upload"])
 
@@ -344,9 +345,6 @@ app.include_router(
     motion_generation.router, prefix="/api/v1", tags=["Motion Generation"]
 )
 
-app.include_router(
-    multiview.router, prefix="/api/v1/multiview", tags=["Multi-View Generation"]
-)
 
 # Canonical storage static files mount (models, uploads, textures, previews)
 try:

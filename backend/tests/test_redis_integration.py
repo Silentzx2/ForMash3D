@@ -41,8 +41,8 @@ async def test_redis_queue_concurrent_scheduler_submission():
             {
                 "model_id": "integration_test_model",
                 "feature_type": "image_to_raw_mesh",
-                "module": "adapters.triposr_adapter",
-                "class": "TripoSRImageToRawMeshAdapter",
+                "module": "adapters.triposg_adapter",
+                "class": "TripoSGImageToRawMeshAdapter",
                 "vram_requirement": 0,
             }
         )

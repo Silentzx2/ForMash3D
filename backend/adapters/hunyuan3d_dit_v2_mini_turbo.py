@@ -72,44 +72,73 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
-        if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root))
-        if str(self.hunyuan3d_root / "hy3dgen") not in sys.path:
-            sys.path.append(str(self.hunyuan3d_root / "hy3dgen"))
 
     def _load_model(self):
-        """Load Hunyuan3D-DiT-v2-mini-Turbo pipeline."""
+        """Load Hunyuan3D-DiT-v2-mini-Turbo with deterministic source resolution."""
         try:
-            logger.info(f"Loading Hunyuan3D-DiT-v2-mini-Turbo from {self.model_path}")
-
-            try:
-                from torchvision_fix import apply_fix
-                apply_fix()
-            except (ImportError, Exception) as e:
-                logger.warning(f"torchvision_fix not applied: {e}")
-
-            if not self.model_path.exists():
+            thirdparty_turbo = self.hunyuan3d_root.resolve()
+            checkpoint_dir = self.model_path / "hunyuan3d-dit-v2-mini-turbo"
+            source_files = (
+                thirdparty_turbo / "hy3dgen" / "shapegen" / "pipelines.py",
+                thirdparty_turbo / "hy3dgen" / "rembg.py",
+            )
+            missing = [str(path) for path in source_files if not path.is_file()]
+            if missing:
+                raise ModuleNotFoundError(
+                    "Hunyuan3D Mini source files are missing: "
+                    + ", ".join(missing)
+                    + ". Initialize/update backend/thirdparty before loading the model."
+                )
+            if not self.model_path.is_dir():
                 raise FileNotFoundError(
-                    f"Hunyuan3D-DiT-v2-mini-Turbo model directory not found at: {self.model_path}. "
-                    f"Please download weights via download_models.sh."
+                    f"Hunyuan3D Mini checkpoint directory not found at {self.model_path}; "
+                    "download it with backend/scripts/download_models.sh -m hunyuan3d_dit_v2_mini_turbo."
+                )
+            if not checkpoint_dir.is_dir():
+                raise FileNotFoundError(
+                    f"Hunyuan3D Mini checkpoint subfolder not found at {checkpoint_dir}; "
+                    "expected the downloaded 'hunyuan3d-dit-v2-mini-turbo' directory."
                 )
 
-            thirdparty_turbo = Path(__file__).resolve().parents[1] / "thirdparty" / "hunyuan3d-dit-v2-mini-turbo"
-            if thirdparty_turbo.exists() and str(thirdparty_turbo) not in sys.path:
-                sys.path.insert(0, str(thirdparty_turbo))
+            # This vendored package must win over similarly named site-packages imports.
+            sys.path[:] = [
+                entry for entry in sys.path
+                if Path(entry or os.getcwd()).resolve() != thirdparty_turbo
+            ]
+            sys.path.insert(0, str(thirdparty_turbo))
+            loaded_package = sys.modules.get("hy3dgen")
+            loaded_file = getattr(loaded_package, "__file__", None)
+            if loaded_file and thirdparty_turbo not in Path(loaded_file).resolve().parents:
+                for module_name in tuple(sys.modules):
+                    if module_name == "hy3dgen" or module_name.startswith("hy3dgen."):
+                        del sys.modules[module_name]
 
-            from hy3dgen.shapegen.pipelines import (
-                Hunyuan3DDiTFlowMatchingPipeline,
+            logger.info(
+                "Loading Hunyuan3D-DiT-v2-mini-Turbo (source=%s, checkpoint=%s)",
+                thirdparty_turbo,
+                checkpoint_dir,
             )
-            from hy3dgen.rembg import BackgroundRemover
-
             if not torch.cuda.is_available():
-                raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
+                raise RuntimeError(
+                    "Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; refusing to initialize model weights on CPU."
+                )
             device = getattr(self, "device", None)
             if device is None or device.startswith("cpu"):
                 device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             self.device = device
-            logger.info(f"Loading Mini Turbo pipeline on {device}...")
+
+            logger.info("Applying Mini Turbo torchvision compatibility fix...")
+            try:
+                from torchvision_fix import apply_fix
+                apply_fix()
+            except Exception as e:
+                logger.warning("Mini Turbo torchvision compatibility fix was not applied: %s", e)
+
+            logger.info("Importing Mini Turbo pipeline from %s", thirdparty_turbo / "hy3dgen")
+            from hy3dgen.shapegen.pipelines import Hunyuan3DDiTFlowMatchingPipeline
+            from hy3dgen.rembg import BackgroundRemover
+
+            logger.info("Loading Mini Turbo checkpoint on %s...", device)
             self.pipeline = Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(
                 str(self.model_path),
                 subfolder="hunyuan3d-dit-v2-mini-turbo",
@@ -127,21 +156,27 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     self.pipeline.enable_model_cpu_offload(device=device)
                     logger.info("Enabled model CPU offload for Mini Turbo pipeline")
             except Exception as offload_err:
-                logger.warning(f"Could not enable CPU offload: {offload_err}")
+                logger.warning("Could not enable CPU offload for Mini Turbo pipeline: %s", offload_err)
 
-            logger.info("Loading background remover...")
+            logger.info("Initializing Mini Turbo background remover...")
             import rembg
             self.bg_remover = BackgroundRemover()
-            self.bg_remover.session = rembg.new_session(providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+            self.bg_remover.session = rembg.new_session(
+                providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+            )
 
             logger.info("Hunyuan3D-DiT-v2-mini-Turbo loaded successfully")
             return {"pipeline": self.pipeline, "bg_remover": self.bg_remover}
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            logger.error(f"Failed to load Hunyuan3D-DiT-v2-mini-Turbo: {str(e)}")
-            raise Exception(f"Failed to load Hunyuan3D-DiT-v2-mini-Turbo: {str(e)}")
+            logger.exception(
+                "Failed to load Hunyuan3D-DiT-v2-mini-Turbo (source=%s, checkpoint=%s)",
+                self.hunyuan3d_root,
+                self.model_path,
+            )
+            raise RuntimeError(
+                f"Failed to load Hunyuan3D-DiT-v2-mini-Turbo: {type(e).__name__}: {e}"
+            ) from e
 
     def _unload_model(self):
         """Unload Hunyuan3D-DiT-v2-mini-Turbo models."""
@@ -161,6 +196,8 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process image-to-raw-mesh generation using Hunyuan3D-DiT-v2-mini-Turbo."""
         try:
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
             if "image_path" not in inputs:
                 raise ValueError("image_path is required")
 
@@ -196,9 +233,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     self.pipeline.to(self.device)
 
             logger.info(f"Generating 3D shape with Mini Turbo on {self.device}...")
-            octree_res = inputs.get("octree_resolution", 380)
+            octree_res = inputs.get("octree_resolution")
             if octree_res is None:
-                octree_res = 380
+                octree_res = 512 if inputs.get("source_quality", "max") == "max" else 380
             else:
                 octree_res = int(octree_res)
 
@@ -220,7 +257,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 guidance_scale = float(guidance_scale)
 
-            low_vram_mode = bool(inputs.get("low_vram_mode", True))
+            low_vram_mode = bool(inputs.get("low_vram_mode", False))
             enable_flashvdm = bool(inputs.get("enable_flashvdm", True))
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)
@@ -255,7 +292,16 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "output_format": output_format,
                     "vertex_count": mesh_stats["vertex_count"],
                     "face_count": mesh_stats["face_count"],
+                    "native_vertex_count": mesh_stats["vertex_count"],
+                    "native_face_count": mesh_stats["face_count"],
                     "has_texture": False,
+                    "source_quality": inputs.get("source_quality", "max"),
+                    "geometry_extractor": "Hunyuan3D-DiT-v2-mini-Turbo native mesh pipeline",
+                    "requested_geometry_resolution": octree_res,
+                    "effective_geometry_resolution": None,
+                    "effective_geometry_resolution_status": "upstream exposes configured octree_resolution but does not report achieved output-grid resolution",
+                    "geometry_resolution_source": "configured octree_resolution passed to model pipeline; achieved grid not reported",
+                    "mesh_operations": [],
                     "octree_resolution": octree_res,
                     "num_chunks": num_chunks,
                     "num_inference_steps": num_steps,
@@ -293,8 +339,8 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Octree resolution for marching cubes reconstruction (official recommended: 380, fast: 256).",
-                    "default": 380,
+                    "description": "Maximum supported octree resolution for high-fidelity raw extraction; Turbo sampler remains at its trained 5 steps.",
+                    "default": 512,
                     "minimum": 64,
                     "maximum": 512,
                     "required": False,
@@ -320,7 +366,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 "low_vram_mode": {
                     "type": "boolean",
                     "description": "Enable low-VRAM mode for reduced memory usage",
-                    "default": True,
+                    "default": False,
                     "required": False,
                 },
                 "seed": {

@@ -31,9 +31,9 @@ def _edge_len_for_faces(V, F, target_faces):
 
 
 def isotropic_remesh(V, F, target_faces, adaptive=True, iters=10,
-                     feature_deg=30.0, calibrate_passes=2, verbose=False,
-                     smoothflag=True, reproject=True, checksurfdist=False,
-                     maxsurfdist_pct=1.0):
+                      feature_deg=30.0, calibrate_passes=2, verbose=False,
+                      smoothflag=True, reproject=True, checksurfdist=False,
+                      maxsurfdist_pct=1.0):
     """Remesh to ~target_faces. Each calibration pass remeshes the *same source*
     with a corrected edge length (n ~ 1/L^2), and we keep the pass closest to the
     budget so adaptive density can't make us drift.
@@ -42,6 +42,12 @@ def isotropic_remesh(V, F, target_faces, adaptive=True, iters=10,
     are kept sharp), `smoothflag=False` (don't round structural edges) and
     `reproject=True` with `checksurfdist=True` (stay glued to the original surface).
     """
+    # Check if pymeshlab has the required method (API changed in newer versions)
+    has_iso_remesh = ml is not None and hasattr(ml.MeshSet, 'meshing_isotropic_explicit_remeshing')
+    if not has_iso_remesh:
+        # Fall back to fast decimation if isotropic remeshing is not available
+        return _fast_decimate_fallback(V, F, target_faces)
+
     L = _edge_len_for_faces(V, F, target_faces)
     Vsrc, Fsrc = np.asarray(V, float), np.asarray(F, np.int64)
     best = None

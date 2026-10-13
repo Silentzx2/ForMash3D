@@ -11,7 +11,7 @@ class JobQueueRegressionTests(unittest.IsolatedAsyncioTestCase):
             job = JobRequest(feature="image_to_raw_mesh", inputs={"image_file_id": "x"})
             await queue.enqueue(job)
             await queue.dequeue()
-            await queue.mark_job_started(job.job_id, "triposr_image_to_raw_mesh")
+            await queue.mark_job_started(job.job_id, "triposg_image_to_raw_mesh")
             current = await queue.get_job(job.job_id)
             self.assertEqual(current.progress, 0.25)
             self.assertEqual(current.metadata.get("stage"), "loading_model")
@@ -23,7 +23,7 @@ class JobQueueRegressionTests(unittest.IsolatedAsyncioTestCase):
             job = JobRequest(feature="image_to_raw_mesh", inputs={"image_file_id": "x"})
             await queue1.enqueue(job)
             await queue1.dequeue()
-            await queue1.mark_job_started(job.job_id, "triposr_image_to_raw_mesh")
+            await queue1.mark_job_started(job.job_id, "triposg_image_to_raw_mesh")
 
             queue2 = JobQueue(database_url=url)
             self.assertEqual((await queue2.get_job(job.job_id)).status, JobStatus.PROCESSING)

@@ -45,7 +45,7 @@ export const SecondaryPanel: React.FC<{ tool: ToolType }> = ({ tool }) => {
             <span className="text-zinc-400">TargetIcon Mesh:</span>
             <span className="font-mono text-primary font-bold truncate max-w-[120px]">{currentAsset?.name || 'No asset selected'}</span>
           </div>
-          <div className="text-[9px] text-zinc-500">PartField segmentation decomposes your mesh into functional parts.</div>
+          <div className="text-[9px] text-zinc-500">Mesh segmentation decomposes your mesh into functional parts.</div>
         </div>
 
         <button

@@ -226,9 +226,20 @@ class ApiClient {
   }
 
   async deleteHistory(promptId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/system/jobs/${encodeURIComponent(promptId)}`, {
+      method: 'DELETE',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) return;
+
+    let message = `Unable to delete prompt history (HTTP ${response.status}).`;
     try {
-      await fetch(`${API_BASE}/system/jobs/${encodeURIComponent(promptId)}`, { method: 'DELETE', signal: AbortSignal.timeout(5000) });
-    } catch { /* ignore */ }
+      const body = await response.json();
+      message = body.detail || body.message || message;
+    } catch {
+      // Keep the HTTP status message when the server did not return JSON.
+    }
+    throw new Error(message);
   }
 
   connectWebSocket() { /* SSE handled by individual components */ }

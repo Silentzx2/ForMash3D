@@ -6,6 +6,8 @@ the unwrap stats dict for the UI.
 """
 from __future__ import annotations
 
+from typing import Callable, Optional
+
 import os
 import tempfile
 
@@ -15,6 +17,13 @@ import trimesh
 from ..config import WORK_DIR
 from ..schemas import AutoUvOptions
 from . import autouv
+
+CancelChecker = Optional[Callable[[], bool]]
+
+
+def _check_cancelled(cancel_checker: CancelChecker) -> None:
+    if cancel_checker is not None and cancel_checker():
+        raise InterruptedError("Auto-UV cancelled by user")
 
 
 def _render_uv_preview(result) -> bytes | None:
@@ -56,16 +65,23 @@ _UV_STAGE_LABELS = {
 }
 
 
-def run_auto_uv(mesh: trimesh.Trimesh, options: AutoUvOptions, progress=None,
-                source_normals=None) -> tuple[trimesh.Trimesh, dict, bytes | None]:
+def run_auto_uv(
+    mesh: trimesh.Trimesh,
+    options: AutoUvOptions,
+    progress=None,
+    source_normals=None,
+    cancel_checker: CancelChecker = None,
+) -> tuple[trimesh.Trimesh, dict, bytes | None]:
     src = autouv.Mesh(np.asarray(mesh.vertices), np.asarray(mesh.faces))
 
     unwrap_progress = None
-    if progress is not None:
+    if progress is not None or cancel_checker is not None:
         def unwrap_progress(stage, frac):  # noqa: F811
-            lo, hi = _UV_STAGE_RANGES.get(stage, (0.95, 0.98))
-            g = lo + (hi - lo) * max(0.0, min(1.0, float(frac)))
-            progress(stage, g, _UV_STAGE_LABELS.get(stage, stage))
+            _check_cancelled(cancel_checker)
+            if progress:
+                lo, hi = _UV_STAGE_RANGES.get(stage, (0.95, 0.98))
+                g = lo + (hi - lo) * max(0.0, min(1.0, float(frac)))
+                progress(stage, g, _UV_STAGE_LABELS.get(stage, stage))
 
     result = autouv.unwrap(
         src,

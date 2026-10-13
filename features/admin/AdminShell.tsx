@@ -10,7 +10,7 @@ import {
   LayoutDashboardIcon, BoxesIcon, Activity01Icon, ScrollTextIcon, Briefcase01Icon,
   ListOrderedIcon, HeartPulseIcon, Settings01Icon, HardDriveIcon,
   ChevronLeft, ChevronRight, BoxIcon, SparklesIcon, CpuIcon,
-  Wifi01Icon, Search01Icon, BellIcon, Menu01Icon
+  Wifi01Icon, Search01Icon, BellIcon, Menu01Icon, Database01Icon
 } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 import { APP_NAME, ADMIN_NAV_ITEMS } from '@/constants';
@@ -18,6 +18,7 @@ import { StatusDot } from '@/components/premium/StatusDot';
 import { getApiClient } from '@/services/apiClient';
 import { useBackendStatus } from '@/hooks/useBackendData';
 import type { RuntimeStatus } from '@/types';
+import { mapSystemStatusToRuntimeStatus } from '@/features/admin/utils/systemStatus';
 
 const ICON_MAP: Record<string, any> = {
   LayoutDashboardIcon: LayoutDashboardIcon,
@@ -29,6 +30,7 @@ const ICON_MAP: Record<string, any> = {
   HeartPulseIcon: HeartPulseIcon,
   SettingsIcon: Settings01Icon,
   HardDriveIcon: HardDriveIcon,
+  Database01Icon: Database01Icon,
 };
 
 export type AdminTab =
@@ -40,6 +42,7 @@ export type AdminTab =
   | 'queue'
   | 'health'
   | 'storage'
+  | 'database'
   | 'settings';
 
 interface AdminShellProps {
@@ -58,7 +61,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
   const loadRuntime = useCallback(async () => {
     try {
       const status = await getApiClient().getSystemStatus();
-      if (status) setRuntime(status as unknown as RuntimeStatus);
+      if (status) setRuntime(mapSystemStatusToRuntimeStatus(status));
     } catch { /* ignore */ }
   }, []);
 

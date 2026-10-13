@@ -145,6 +145,127 @@ GET /api/v1/system/auth-status
 }
 ```
 
+### Database Administration
+
+Mounted at `/api/v1/system/database` and backing the admin Database tab (`/admin?tab=database`). Every endpoint requires the API key (`verify_api_key`); when a user is authenticated, the **admin** role is required (`403` otherwise).
+
+**Safety model**: every destructive endpoint requires an explicit typed confirmation token in the JSON body. A job's canonical asset workspace under `backend/storage/models/meshes/<asset>_<job_id>/` is removed **only after** the durable dual-store deletion (Redis hot keys + SQLite row, ADR-062) succeeds, and every path is validated against the storage root before removal. The job-key sweep never touches user/token auth keys.
+
+#### Database Statistics
+
+```http
+GET /api/v1/system/database/stats
+```
+
+**Response (200):** Combined view of both stores plus on-disk footprint.
+```json
+{
+  "sqlite": {
+    "available": true,
+    "queued_jobs": 2,
+    "processing_jobs": 1,
+    "completed_jobs": 10,
+    "failed_jobs": 1,
+    "cancelled_jobs": 0,
+    "total_jobs": 14,
+    "database_size_bytes": 204800
+  },
+  "redis": {
+    "available": true,
+    "used_memory": 1048576,
+    "used_memory_human": "1.00M",
+    "keys": 42
+  },
+  "queue": {
+    "queued_jobs": 2,
+    "processing_jobs": 1
+  },
+  "file_metadata": {
+    "available": true,
+    "count": 7
+  },
+  "disk": {
+    "storage_root": "/app/backend/storage",
+    "job_queue_db_bytes": 204800,
+    "meshes_bytes": 52428800,
+    "uploads_bytes": 1048576
+  }
+}
+```
+
+#### Inspect Redis Keys
+
+```http
+GET /api/v1/system/database/keys?pattern=3daigc:*&limit=500
+```
+
+**Query Parameters:**
+- `pattern` (string, default `3daigc:*`): Redis SCAN match pattern.
+- `limit` (int, 1..1000, default 500): Maximum keys returned.
+
+**Response (200):**
+```json
+{
+  "pattern": "3daigc:*",
+  "keys": [
+    { "key": "3daigc:jobs", "type": "hash", "size": 14, "ttl": -1 }
+  ],
+  "count": 1,
+  "truncated": false
+}
+```
+Read-only. Returns `503` when Redis is unavailable.
+
+#### Bulk Delete Jobs
+
+```http
+DELETE /api/v1/system/database/jobs
+Content-Type: application/json
+
+{
+  "confirm": true,
+  "job_ids": ["gen_abc123"],
+  "status": "completed",
+  "feature": "image_to_raw_mesh",
+  "force": false
+}
+```
+
+- **Body**: `confirm` must be `true`; a selector of `job_ids` (explicit list), `status`, or `feature` is required (`400` without one; an explicit `job_ids` list takes precedence over `status`/`feature`).
+- **Safety**: running/queued (non-terminal) jobs are **skipped** unless `force: true`; each selected job is removed from Redis hot keys and the SQLite jobs table (reusing `RedisJobQueue.delete_job`, ADR-062) and its asset workspace is deleted only after the durable delete succeeds.
+- **Response (200):** `{"deleted": n, "skipped": n, "failed": n, "results": [...]}` where each result carries `job_id`, `deleted`, a `reason` (e.g. `status=processing (not terminal)`, `not_found`), and `asset_workspace_deleted` / `cleanup_error` when deleted.
+- **400**: Missing `confirm`, or no selector provided.
+
+#### Clear All Jobs
+
+```http
+POST /api/v1/system/database/jobs/clear
+Content-Type: application/json
+
+{
+  "confirm": "CLEAR_ALL_JOBS"
+}
+```
+
+**Safety:** requires the exact typed token `CLEAR_ALL_JOBS` (`400` otherwise). Enumerates every job id from Redis + SQLite, deletes each with its asset workspace, sweeps remaining job-owned Redis keys (`3daigc:jobs`, `3daigc:progress`, `3daigc:stage`, `3daigc:message`, `3daigc:queue:*`, `3daigc:completed_at`, `3daigc:cancel_requested`, `3daigc:result:*` — **never** `3daigc:user*` / `3daigc:token*` / `3daigc:users:all` auth keys), deletes every SQLite job row, removes every job workspace directory under `storage/models/meshes`, then VACUUMs SQLite. **Uploads and file metadata are preserved.**
+
+**Response (200):** `{"jobs_deleted", "jobs_failed", "redis_keys_swept", "sqlite_rows_deleted", "workspaces_removed", "workspace_errors", "vacuum_error", "message"}`
+
+#### Clear All Files
+
+```http
+DELETE /api/v1/system/database/files/clear
+Content-Type: application/json
+
+{
+  "confirm": "CLEAR_ALL_FILES"
+}
+```
+
+**Safety:** requires the exact typed token `CLEAR_ALL_FILES` (`400` otherwise). Deletes all file metadata (Redis `3daigc:file:*` / `3daigc:files:*`) and the referenced upload files on disk. **Job records and asset workspaces are preserved.**
+
+**Response (200):** `{"file_metadata_removed", "redis_keys_swept", "errors", "message"}`
+
 ---
 
 ## File Upload APIs
@@ -342,7 +463,7 @@ Content-Type: application/json
 
 ### Image Mesh Painting
 
-Paint textures onto an existing mesh using an image reference. Supports Hunyuan3D-Paint-v2-1 with configurable texture resolution (512/768), max view counts (6-12), and PBR state tracking.
+Paint textures onto an existing mesh using an image reference. The model's internal per-view settings (512/768) are independent from the requested final atlas dimension (1K/2K/4K/8K). RealESRGAN is enabled internally for Hunyuan Paint; there is no separate user-facing toggle.
 
 ```http
 POST /api/v1/mesh-generation/image-mesh-painting
@@ -362,7 +483,7 @@ Content-Type: application/json
 
 ### Image-to-Textured Mesh
 
-For Hunyuan3D, texture generation is a two-stage workflow: submit Shape-v2-1 or DiT-v2-mini-Turbo through `image-to-raw-mesh`; when texture generation is enabled in the Workspace, the client automatically chains the resulting mesh into `hunyuan3d_paint_v21_image_mesh_painting`. The generic `image-to-textured-mesh` endpoint remains available for models that natively implement that feature, such as TRELLIS.
+Normal image-to-3D generation always submits the selected geometry model to `image-to-raw-mesh`. When Textured Generation is enabled, centralized post-processing receives the raw mesh, original reference-image file reference, and requested atlas preset: 1K/2K uses Paint3D; 4K/8K uses Hunyuan3D-Paint v2.1 with its internal RealESRGAN path enabled. The API accepts named presets (`"1K"`, `"2K"`, `"4K"`, `"8K"`) or numeric dimensions (1024/2048/4096/8192). The stage inspects the embedded base-colour texture in the exported GLB and reports success only when its observed square dimensions match the requested target. If texturing fails or the atlas cannot be verified, the immutable raw master is preserved and the texture-stage result reports failure. The legacy `image-to-textured-mesh` path remains for API compatibility; legacy geometry IDs resolve to raw-only aliases rather than re-enabling model-native texture generation.
 
 ### Get Job Status
 
@@ -397,18 +518,15 @@ GET /api/v1/mesh-generation/models
 **Response:**
 ```json
 {
-  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposr_image_to_raw_mesh", "triposg_image_to_raw_mesh", "triposf_image_to_raw_mesh", "partpacker_image_to_raw_mesh", "ultrashape_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
+  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposg_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
   "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
   "text_mesh_painting": ["trellis_text_mesh_painting"],
   "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],
-  "mesh_segmentation": ["partfield_mesh_segmentation", "p3sam_mesh_segmentation"],
+  "mesh_segmentation": [],
   "auto_rig": ["unirig_auto_rig"],
   "motion_generation": ["ardy_motion_generation"],
   "mesh_retopology": ["fastmesh_v1k_retopology", "fastmesh_v4k_retopology"],
-  "uv_unwrapping": ["partuv_uv_unwrapping"],
-  "text_mesh_editing": ["voxhammer_text_mesh_editing"],
-  "image_mesh_editing": ["voxhammer_image_mesh_editing"],
-  "image_to_multiview": ["zero123plus_v12_image_to_multiview"]
+  "uv_unwrapping": ["partuv_uv_unwrapping"]
 }
 ```
 
@@ -447,24 +565,9 @@ Returns durable job history (SQLite page, falling back to the Redis job listing 
 
 Values populated by production post-processing are never overwritten; only missing URLs are backfilled.
 
-### Multi-view generation and reconstruction
+### Multi-view APIs (Removed 2026-10-11)
 
-Zero123++ generation is exposed separately as `POST /api/v1/multiview/generate`. Its readiness is controlled by the runtime `image_to_multiview` model metadata; missing weights or unavailable CUDA are surfaced to the workspace before generation.
-
-Multi-view -> 3D reconstruction is exposed as `POST /api/v1/multiview/reconstruct-3d`. A target reconstruction model must explicitly advertise `capabilities.multiview_input=true`; a model that merely generates multiview conditioning images is not sufficient. The request can use an existing `asset_id` or explicit `images` and carries the same quality/polycount/LOD/physics controls as the single-image path.
-
-```json
-{
-  "asset_id": "asset_abc123",
-  "model_preference": "model-id-that-supports-multiview-input",
-  "quality": "high",
-  "target_polycount": 50000,
-  "generateLOD": true,
-  "lodPreset": "high",
-  "lodCount": 4,
-  "texture_resolution": 2048
-}
-```
+The dedicated Zero123++ generation and multi-view reconstruction endpoints have been removed from the active API. Use the single-image `/api/v1/mesh-generation/image-to-raw-mesh` route for current image-to-3D requests.
 
 ### Model Parameters Schema
 
@@ -482,30 +585,6 @@ Edit an existing mesh using a text prompt.
 
 ```http
 POST /api/v1/mesh-editing/text-edit
-Content-Type: application/json
-
-{
-  "mesh_file_id": "mesh_abc123",
-  "text_prompt": "Add a horn to the top",
-  "model_preference": "voxhammer_text_mesh_editing"
-}
-```
-
-### Image Edit
-
-Edit an existing mesh using an image reference.
-
-```http
-POST /api/v1/mesh-editing/image-edit
-Content-Type: application/json
-
-{
-  "mesh_file_id": "mesh_abc123",
-  "image_file_id": "img_abc123",
-  "model_preference": "voxhammer_image_mesh_editing"
-}
-```
-
 ---
 
 ## Auto Rigging APIs
@@ -612,24 +691,6 @@ The migrated mesh-processing tools are exposed by the main FastAPI process. Brow
 
 Mesh-producing terminal results include `result.artifacts`. Each artifact declares `status`, `url`, and `required`. The successful production contract requires the master, game-ready GLB, and quality report; optional exports are explicitly represented as unavailable, skipped, or ready.
 
-
-## Mesh Segmentation APIs
-
-### Segment Mesh
-
-Segment a mesh into semantic parts.
-
-```http
-POST /api/v1/mesh-segmentation
-Content-Type: application/json
-
-{
-  "mesh_file_id": "mesh_abc123",
-  "model_preference": "partfield_mesh_segmentation"
-}
-```
-
----
 
 ## Mesh Retopology APIs
 
@@ -802,7 +863,7 @@ System/status responses now expose resource planning metadata including CPU coun
 
 ## Capability-Aware Generation and Quality Metadata — 2026-10-08
 
-The runtime model-details response exposes a normalized capability contract. Relevant fields include modality, multiview input/output behavior, texture/PBR/vertex-color support, preprocessing/extraction preferences, preferred resolution/face budget, minimum VRAM, CPU policy, multi-GPU strategy, latency class and supported output formats.
+The runtime model-details response exposes a normalized capability contract. Relevant fields include modality, texture/PBR/vertex-color support, preprocessing/extraction preferences, preferred resolution/face budget, minimum VRAM, CPU policy, multi-GPU strategy, latency class and supported output formats.
 
 Production generation results can include production_status, degraded_reasons, master_to_derivative, quality_trace, lod_validation, quality_mode, texture_resolution, cpu_threads, and high_fidelity_url.
 

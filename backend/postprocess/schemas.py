@@ -75,13 +75,13 @@ class AutoRetopoOptions(BaseModel):
     # --- base generation (watertight shell) ---
     watertight: bool = Field(default=True,
                              description="Build a unified voxel shell (robust) vs. remesh the surface directly.")
-    shell_resolution: int = Field(default=256, ge=16, le=1024,
+    shell_resolution: int = Field(default=384, ge=16, le=1024,
                                   description="Voxel grid cells along the longest bbox axis.")
     shell_close_iter: int = Field(default=1, ge=0, le=20,
                                   description="Morphological closing iterations to bridge cracks.")
-    shell_smooth: float = Field(default=0.6, ge=0.0, le=5.0,
+    shell_smooth: float = Field(default=0.25, ge=0.0, le=5.0,
                                 description="Gaussian sigma (voxels) on the signed-distance field; kills voxel ripple (lower = crisper).")
-    shell_taubin: int = Field(default=3, ge=0, le=100,
+    shell_taubin: int = Field(default=1, ge=0, le=100,
                               description="Taubin polish steps on the dense shell (0 disables).")
     shell_samples_per_pitch: float = Field(default=2.0, ge=1.0, le=8.0,
                                            description="Surface sampling density (>=2 = gap-free coverage).")

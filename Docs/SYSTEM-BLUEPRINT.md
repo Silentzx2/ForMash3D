@@ -23,7 +23,7 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 ### Core Stack
 - **Frontend**: Next.js 16 (React 19, TypeScript, Three.js, React Three Fiber, Tailwind CSS)
 - **API Gateway**: FastAPI (Python 3.10, Conda env `3daigc-api`, Pydantic V2, AsyncIO)
-- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartPacker, UltraShape, PartField, P3-SAM, UniRig, FastMesh, VoxHammer, Zero123++ (Multi-View)
+- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartUV, UniRig, FastMesh, TripoSG, ARDY and Pixal3D
 - **Scheduler**: VRAM-aware multiprocess scheduler with GPU monitoring
 - **Queue/Broker**: Redis 7 (optional, multi-worker mode only)
 - **File Storage**: Local filesystem + Redis FileStore (multi-worker mode)
@@ -34,6 +34,11 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 3. Adapter extraction uses the highest supported source density, with only hardware safety guards allowed to reduce it.
 4. Source texture profiles are fixed at TRELLIS 2048 and TRELLIS.2 4096 for maximum source fidelity.
 5. master/source.glb is immutable; derived retopo, UV, LOD, collision, and bake artifacts cannot rewrite it.
+
+
+### Shared Model Runtime Dependency Contract
+- Transformers is pinned at 4.48.3 for Hunyuan3D Mini's upstream minimum and PEFT's `HybridCache` import; Diffusers 0.30.3 and PyTorch 2.6.0 + CUDA 12.4 stay pinned.
+- Hunyuan loaders resolve vendored module roots explicitly, validate expected source/checkpoint paths, and keep full initialization tracebacks in backend logs.
 
 ```mermaid
 graph TD
@@ -53,7 +58,7 @@ graph TD
 
     subgraph Gateway["⚡ FastAPI Gateway :7842"]
         direction TB
-        API["Routers: system, generation,<br/>multiview, editing, rigging, segmentation"]:::cyan
+        API["Routers: system, generation,<br/>editing, rigging, segmentation"]:::cyan
         SCHED["VRAM-Aware Scheduler"]:::cyan
     end
 
@@ -65,15 +70,13 @@ graph TD
         AUTO_UNLOAD["Auto-Unload After Job"]:::orange
     end
 
-    subgraph Adapters["🧠 Model Adapters (23 registered / 22 selectable; Zero123++ hidden)"]
+    subgraph Adapters["🧠 Model Adapters"]
         direction TB
         TRELLIS["TRELLIS & TRELLIS.2<br/>FlexiCubes PBR"]:::purple
         HUNY["Hunyuan3D-2.1<br/>Shape + Paint 2B"]:::purple
-        TRIPO["TripoSR / SG / SF"]:::purple
-        PP["PartPacker & UltraShape"]:::purple
+        TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::purple
         FM["FastMesh Quad Retopo"]:::purple
         UR["UniRig & ARDY Motion"]:::purple
-        Z123["Zero123++ v1.2<br/>Multi-View 6-Cam Grid"]:::purple
     end
 
     subgraph PostProcess["⚙️ Production Post-Processing"]
@@ -117,7 +120,7 @@ sequenceDiagram
     participant Storage as backend/storage/
 
     User->>Frontend: Select image + Platform budget
-    Frontend->>API: POST /api/v1/mesh-generation/image-to-textured-mesh
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
     Adapter-->>SCHED: Raw 3D mesh output
@@ -142,17 +145,34 @@ flowchart TD
     classDef output fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
     classDef guard fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
 
-    IN["📥 Input: source.glb<br/>Untouched Master Mesh"]:::input
-    IN --> SHAPE["🔧 Stage 1: Shape Generation<br/>Hunyuan3D-Shape-v2-1"]:::process
-    SHAPE --> MESH["🧱 Raw Mesh Output"]:::output
-    MESH --> PAINT["🎨 Stage 2: Paint Pipeline<br/>hunyuan3d_paint_v21_image_mesh_painting"]:::process
-    PAINT --> RES["🔍 RealESRGAN x4+<br/>Super-Resolution"]:::process
-    RES --> PBR["📐 DifferentiableRenderer<br/>PBR Validation"]:::process
-    PBR --> VRAM{"⚡ VRAM Check<br/>~21GB Required?"}:::guard
-    VRAM -->|✅ Yes| OK["✅ PBR Texture Ready<br/>texture.glb"]:::output
-    VRAM -->|⚠️ No| LOW["⚠️ Reduce Views<br/>or Resolution"]:::guard
-    OK --> CONFIG["⚙️ Configurable Parameters<br/>Resolution: 512/768<br/>Max Views: 6-12<br/>PBR State: Tracked"]:::process
-    CONFIG --> EXPORT["📦 Export: texture.glb<br/>PBR Materials"]:::output
+    IN["Immutable master/source.glb<br/>Raw Geometry"]:::input
+    IN --> TEXTURE{"Textured Generation enabled?"}:::guard
+    TEXTURE -->|No| RAW["Keep raw master<br/>No texture stage"]:::output
+    TEXTURE -->|Yes| SIZE{"Requested atlas preset"}:::guard
+    SIZE -->|1K / 2K| PAINT3D["Paint3D<br/>Coarse generation + UV refinement"]:::process
+    SIZE -->|4K / 8K| HUNYUAN["Hunyuan3D-Paint v2.1<br/>RealESRGAN enabled internally"]:::process
+    PAINT3D --> VERIFY["Inspect embedded base-colour atlas<br/>Require exact requested square size"]:::process
+    HUNYUAN --> VERIFY
+    VERIFY -->|Verified| EXPORT["Export separate textured GLB<br/>Keep source.glb untouched"]:::output
+    VERIFY -->|Missing / mismatch / failure| RAWFAIL["Preserve raw master<br/>Record texture-stage failure"]:::output
+```mermaid
+flowchart TD
+    classDef input fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef process fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef output fill:#1e293b,stroke:#ec4899,stroke-width:2px,color:#fff
+    classDef guard fill:#0f172a,stroke:#f59e0b,stroke-width:2px,color:#fff
+
+    IN["Immutable master/source.glb<br/>Raw Geometry"]:::input
+    IN --> TEXTURE{"Textured Generation enabled?"}:::guard
+    TEXTURE -->|No| RAW["Keep raw master<br/>No texture stage"]:::output
+    TEXTURE -->|Yes| SIZE{"Requested atlas preset"}:::guard
+    SIZE -->|1K / 2K| PAINT3D["Paint3D<br/>Coarse + UV refinement"]:::process
+    SIZE -->|4K / 8K| HUNYUAN["Hunyuan3D-Paint v2.1<br/>RealESRGAN enabled internally"]:::process
+    PAINT3D --> VERIFY["Inspect embedded base-colour atlas<br/>Require exact requested dimensions"]:::process
+    HUNYUAN --> VERIFY
+    VERIFY -->|Verified| EXPORT["Export separate textured GLB<br/>Keep source.glb untouched"]:::output
+    VERIFY -->|Failed / mismatch| RAWFAIL["Preserve raw master<br/>Record texture-stage failure"]:::output
+```
 
     style IN fill:#1e293b
     style SHAPE fill:#0f172a
@@ -196,17 +216,11 @@ flowchart TD
 | Hunyuan3D-Shape-v2-1 | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
 | Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
-| TripoSR | 6 GB | Ultra-fast raw mesh | ~2-5 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
 | ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
-| PartPacker | 10 GB | Fast | ~60 seconds |
-| UltraShape | 26.6 GB | Highest fidelity | ~30 seconds |
-| PartField | 4 GB | Segmentation | ~15 seconds |
-| P3-SAM | 60 GB | High-precision segmentation | ~15 seconds |
 | UniRig | 9 GB | Auto-rigging | ~20 seconds |
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
-| VoxHammer | 40 GB | Mesh editing | ~20 seconds |
 
 ---
 
@@ -328,7 +342,7 @@ Batch jobs share one batch ID but retain independent job IDs. Cancellation is ce
 - SQLite status/progress persistence is offloaded and bounded; status reads do not mutate or synchronously persist jobs.
 - Successful raw inference is terminal for GPU execution; background production post-processing carries independent status/progress/error metadata and preserves input lineage until completion.
 - Model readiness is based on canonical manifest paths, local checkpoint payloads plus model descriptors for directory paths, CUDA availability, capabilities, and manifest VRAM; adapter defaults do not override that contract. Health routes remain liveness-only and never load models.
-- The workspace uses backend capability metadata for route selection, keeps unsupported multiview gated, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
+- The workspace uses backend capability metadata for route selection, maintains bounded LRU GLB cache accounting, and rehydrates final production artifacts into the same job asset.
 - Artifact naming is UUID-based across generation/segmentation/rig outputs, and stale request temp directories are removed during scheduler recovery.
 
 

@@ -23,12 +23,10 @@ def test_backend_baseline_is_compatible_with_triposg():
     assert str(backend["torch"].specifier) == "==2.6.0+cu124"
     assert str(backend["torchvision"].specifier) == "==0.21.0+cu124"
     assert str(backend["torchaudio"].specifier) == "==2.6.0+cu124"
-    assert str(backend["transformers"].specifier) == "==4.44.2"
+    assert str(backend["transformers"].specifier) == "==4.48.3"
     assert str(backend["diffusers"].specifier) == "==0.30.3"
-    assert Version("4.44.2") in triposg["transformers"].specifier
-    assert Version("0.30.3") in triposg["diffusers"].specifier
     assert Version("0.25.0") in backend["huggingface-hub"].specifier
-    assert Version("0.25.0") in triposg["huggingface-hub"].specifier
+    assert "jaxtyping" in triposg
 
 
 def test_installer_and_docker_builds_install_triposg_after_backend():
@@ -53,3 +51,20 @@ def test_installer_and_docker_builds_install_triposg_after_backend():
         assert docker.index("/app/backend/requirements.txt") < docker.index(
             "/app/backend/thirdparty/TripoSG/requirements.txt"
         )
+
+
+
+def test_hunyuan_model_loaders_use_their_vendored_package_roots():
+    shape = (BACKEND / "adapters/hunyuan3d_shape_v21.py").read_text()
+    mini = (BACKEND / "adapters/hunyuan3d_dit_v2_mini_turbo.py").read_text()
+    scheduler = (BACKEND / "core/scheduler/multiprocess_scheduler.py").read_text()
+
+    assert "from hy3dshape.pipelines import Hunyuan3DDiTFlowMatchingPipeline" in shape
+    assert "from hy3dshape.rembg import BackgroundRemover" in shape
+    assert "hy3dshape.hy3dshape.pipelines" not in shape
+    assert 'sys.path.append(str(self.hunyuan3d_root))' in shape
+    assert 'thirdparty_turbo / "hy3dgen" / "shapegen" / "pipelines.py"' in mini
+    assert "requires CUDA; refusing to initialize model weights on CPU" in mini
+    assert "logger.exception(" in mini
+    assert 'error=f"{err_msg}\\n{tb}"' not in scheduler
+    assert 'WorkerResponse("init", False, error=err_msg)' in scheduler

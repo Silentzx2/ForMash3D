@@ -63,6 +63,9 @@ export interface ModelAsset {
   name: string;
   category: 'all' | 'mesh' | 'texture' | 'generation';
   thumbnail: string;
+  referenceImage?: string;
+  referenceImageFileId?: string;
+  inputImage?: string;
   source?: { filename: string; subfolder: string; type: string; viewUrl?: string; mime?: string; localUrl?: string; promptId?: string; nodeId?: string; fileId?: string };
   previewColor?: string;
   meshType: 'goblin' | 'robot' | 'statue' | 'house' | 'dog' | 'table' | 'helmet' | 'car' | 'vase' | 'plant' | 'custom';
@@ -79,6 +82,8 @@ export interface ModelAsset {
   componentCount?: number;
   materialCount?: number;
   postprocessStatus?: string;
+  productionStatus?: 'ready' | 'degraded' | 'failed' | string;
+  degradedReasons?: string[];
   meshDetails?: Record<string, unknown>;
   dateCreated: string;
   tags: string[];
@@ -203,8 +208,11 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     boundingBox: raw.boundingBox || raw.bounding_box,
     objectCount: raw.objectCount ?? raw.object_count,
     componentCount: raw.componentCount ?? raw.component_count,
-    materialCount: raw.materialCount ?? raw.material_count,
-    postprocessStatus: raw.postprocessStatus ?? raw.postprocess_status,
+    postprocessStatus: (raw.production_status === 'degraded' || raw.productionStatus === 'degraded')
+      ? 'degraded'
+      : (raw.postprocessStatus ?? raw.postprocess_status),
+    productionStatus: raw.productionStatus ?? raw.production_status ?? ((raw.postprocessStatus === 'degraded' || raw.postprocess_status === 'degraded') ? 'degraded' : undefined),
+    degradedReasons: raw.degradedReasons ?? raw.degraded_reasons ?? (raw.quality_trace?.degraded_reasons || undefined),
     meshDetails: raw.meshDetails || raw.mesh_details,
     dateCreated: raw.dateCreated || raw.created_at || new Date().toISOString().split('T')[0],
     tags: Array.isArray(raw.tags) ? raw.tags : ['Model'],
@@ -213,6 +221,9 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     materials: Array.isArray(raw.materials) ? raw.materials : [],
     createdAt: raw.createdAt || raw.created_at,
     fileId: raw.fileId,
+    referenceImage: raw.referenceImage || raw.reference_image || raw.inputImage || raw.input_image || raw.thumbnail || undefined,
+    referenceImageFileId: raw.referenceImageFileId || raw.reference_image_file_id || raw.inputImageFileId || raw.input_image_file_id || raw.fileId || undefined,
+    inputImage: raw.inputImage || raw.input_image || raw.referenceImage || raw.thumbnail || undefined,
     source: raw.source
       ? { ...raw.source, fileId: raw.source.fileId ?? raw.fileId }
       : raw.source,
@@ -378,7 +389,6 @@ export interface TextureSettings {
   lowVram?: boolean;
   maxNumView?: number;
   generatePBR?: boolean;
-  enableRealESRGAN?: boolean;
 }
 
 export interface AutoOptimizeSettings {
@@ -416,6 +426,10 @@ export interface GenerationSettings {
   vramMode?: 'auto' | 'normal' | 'low';
   autoOptimizeSettings: AutoOptimizeSettings;
   generateTexture?: boolean;
+  texture_enabled?: boolean;
+  textureEnabled?: boolean;
+  texture_resolution?: '1K' | '2K' | '4K' | '8K';
+  textureResolution?: '1K' | '2K' | '4K' | '8K';
   gameReady?: boolean;
   targetPlatform?: 'generic' | 'mobile' | 'low' | 'medium' | 'high' | 'cinematic';
   generateLOD?: boolean;
@@ -424,51 +438,15 @@ export interface GenerationSettings {
   generateCollision?: boolean;
   physics?: PhysicsSettings;
   generatePBR?: boolean;
-  bakeNormalMaps?: boolean;
-  bakeHighToLow?: boolean;
-
   prompt?: string;
   imageName?: string;
 
   negativePrompt?: string;
-  multiviewImages?: {
-    front?: string | null;
-    right?: string | null;
-    back?: string | null;
-    left?: string | null;
-  };
-  multiviewSourceFileId?: string | null;
-  multiviewJobId?: string | null;
-  multiviewAssetId?: string | null;
-  multiviewStatus?: 'idle' | 'generating' | 'ready' | 'error';
-  multiviewViews?: Array<{
-    file: string;
-    label: string;
-    azimuth_deg?: number;
-    elevation_deg?: number;
-    url?: string;
-    mask_url?: string;
-    normal_url?: string;
-  }>;
-  multiviewManifest?: any;
-  multiviewZipUrl?: string | null;
-  multiviewError?: string | null;
-  multiviewInputMode?: 'generate' | 'upload';
-  multiviewAdvanced?: {
-    inferenceSteps: number;
-    seed: number;
-    saveContactSheet: boolean;
-    transparentBackground: boolean;
-    generateMasks: boolean;
-    generateNormals: boolean;
-    includeManifest: boolean;
-  };
   enableFlashVDM?: boolean;
   lowVramMode?: 'auto' | 'normal' | 'low';
   maxNumView?: number;
   resolution?: number;
   paintResolution?: 512 | 768;
-  enableRealESRGAN?: boolean;
   intent?: string;
   preprocessingArtifactId?: string | null;
   preprocessingPreviewUrl?: string | null;

@@ -344,7 +344,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
               </CommandItem>
             ))}
             <CommandItem value="assets outputs" onSelect={() => { navigateToMain('assets'); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Assets</span><CommandShortcut>⌘ 2</CommandShortcut></CommandItem>
-            <CommandItem value="jobs queue history" onSelect={() => { navigateToMain('jobs'); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Jobs</span><CommandShortcut>⌘ 4</CommandShortcut></CommandItem>
+            <CommandItem value="jobs queue history" onSelect={() => { navigateToMain('jobs'); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Jobs</span><CommandShortcut>⌘ 3</CommandShortcut></CommandItem>
+            <CommandItem value="logs system logs" onSelect={() => { router.push('/admin?tab=logs'); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Logs</span><CommandShortcut>⌘ 4</CommandShortcut></CommandItem>
           </CommandGroup>
           <CommandSeparator />
           <CommandGroup heading="Viewport">

@@ -11,6 +11,17 @@ log(){ printf "${GREEN}[SETUP]${NC} %s\n" "$*"; }
 info(){ printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
 warn(){ printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
 fail(){ printf "${RED}[ERROR]${NC} %s\n" "$*" >&2; exit 1; }
+
+ensure_thirdparty_submodule() {
+  log "Ensuring thirdparty submodule is present and up-to-date..."
+  if [[ ! -d "backend/thirdparty" || ! -d "backend/thirdparty/.git" ]]; then
+    log "Thirdparty submodule not found. Initializing..."
+    git submodule update --init --recursive
+  else
+    log "Updating thirdparty submodule to latest..."
+    git submodule update --remote --merge
+  fi
+}
 # Load .env if present
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     set -a
@@ -366,6 +377,20 @@ _ensure_node_version() {
     log "Node: v${current} (locked version active)"
     return 0
   fi
+  # Reuse an existing pinned runtime install before hitting the network: a
+  # transient download failure must not abort setup when the locked version is
+  # already present on disk.
+  local pinned="${NODE_RUNTIME_DIR}/current/bin/node"
+  if [[ -x "$pinned" ]]; then
+    local pinned_version
+    pinned_version="$("$pinned" --version 2>/dev/null | sed 's/^v//' || true)"
+    if [[ "$pinned_version" == "$REQUIRED_NODE_VERSION" ]]; then
+      export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+      hash -r
+      log "Node: v${REQUIRED_NODE_VERSION} (pinned runtime reused at ${NODE_RUNTIME_DIR}/current)"
+      return 0
+    fi
+  fi
   if [[ -n "$current" ]]; then
     warn "Node v${current} found — locked version is v${REQUIRED_NODE_VERSION}. Installing locked version..."
   else
@@ -395,12 +420,33 @@ _ensure_node_version() {
     tar -xJf "$staging/$tarball" -C "$staging"
   else
     tar -xzf "$staging/$tarball" -C "$staging"
-  fi
-  rm -rf "${NODE_RUNTIME_DIR}/current"
-  mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
-  rm -rf "$staging"
-  export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
-  hash -r
+   fi
+   rm -rf "${NODE_RUNTIME_DIR}/current"
+   mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
+   rm -rf "$staging"
+   # Verify that the Node runtime includes npm (lib/node_modules)
+   if [[ ! -d "${NODE_RUNTIME_DIR}/current/lib/node_modules" ]]; then
+       warn "Node v${REQUIRED_NODE_VERSION} appears to be missing lib/node_modules. Reinstalling..."
+       rm -rf "${NODE_RUNTIME_DIR}/current"
+       # Retry once with fresh download
+       if ! curl -fsSL --retry 3 -o "$staging/$tarball" "$url"; then
+           rm -rf "$staging"
+           fail "Failed to download Node v${REQUIRED_NODE_VERSION} from ${url}"
+       fi
+       if [[ "$tarball" == *.xz ]]; then
+           tar -xJf "$staging/$tarball" -C "$staging"
+       else
+           tar -xzf "$staging/$tarball" -C "$staging"
+       fi
+       mv "$staging/node-v${REQUIRED_NODE_VERSION}-${os}-${arch}" "${NODE_RUNTIME_DIR}/current"
+       rm -rf "$staging"
+       # Verify again
+       if [[ ! -d "${NODE_RUNTIME_DIR}/current/lib/node_modules" ]]; then
+           fail "Node v${REQUIRED_NODE_VERSION} installation incomplete (missing lib/node_modules) after retry. Aborting."
+       fi
+   fi
+   export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+   hash -r
   local verify
   verify=$(node --version 2>/dev/null | sed 's/^v//' || true)
   if [[ "$verify" == "$REQUIRED_NODE_VERSION" ]]; then
@@ -419,14 +465,45 @@ _ensure_npm_version() {
     log "npm: v${current} (locked version active)"
     return 0
   fi
+   # Reuse the npm bundled with the pinned Node runtime before any install:
+   # PATH lookups can still resolve a stale npm (e.g. nvm's) ahead of the pinned
+   # bin, and a global self-install then targets a read-only system prefix.
+   local pinned_npm="${NODE_RUNTIME_DIR}/current/bin/npm"
+   # Check if pinned npm exists and is a valid executable (not a broken symlink)
+   if [[ -L "$pinned_npm" ]]; then
+     # It's a symlink - check if target exists
+     local npm_target
+     npm_target="$(readlink "$pinned_npm" 2>/dev/null || true)"
+     if [[ -n "$npm_target" && -x "${NODE_RUNTIME_DIR}/current/bin/${npm_target}" ]]; then
+       # Symlink points to existing executable
+       local pinned_npm_version
+       pinned_npm_version="$("$pinned_npm" --version 2>/dev/null || true)"
+       if [[ "$pinned_npm_version" == "$REQUIRED_NPM_VERSION" ]]; then
+         export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+         hash -r
+         log "npm: v${REQUIRED_NPM_VERSION} (bundled with pinned runtime at ${NODE_RUNTIME_DIR}/current)"
+         return 0
+       fi
+     fi
+   elif [[ -x "$pinned_npm" ]]; then
+     # Not a symlink, regular executable
+     local pinned_npm_version
+     pinned_npm_version="$("$pinned_npm" --version 2>/dev/null || true)"
+     if [[ "$pinned_npm_version" == "$REQUIRED_NPM_VERSION" ]]; then
+       export PATH="${NODE_RUNTIME_DIR}/current/bin:${PATH}"
+       hash -r
+       log "npm: v${REQUIRED_NPM_VERSION} (bundled with pinned runtime at ${NODE_RUNTIME_DIR}/current)"
+       return 0
+     fi
+   fi
   warn "npm ${current:-none} found — locked version is v${REQUIRED_NPM_VERSION}. Installing locked version..."
-  local sudo_cmd=""
-  command -v sudo >/dev/null 2>&1 && sudo_cmd="sudo"
-  $sudo_cmd npm install -g "npm@${REQUIRED_NPM_VERSION}" >/dev/null 2>&1 \
-    || warn "npm self-upgrade to v${REQUIRED_NPM_VERSION} failed (permission issue; try running with sudo). Continuing..."
+  # Install into the user-owned pinned runtime prefix, never the ambient
+  # (read-only, conda/nvm-managed) global prefix.
+  "$pinned_npm" install -g --prefix "${NODE_RUNTIME_DIR}/current" "npm@${REQUIRED_NPM_VERSION}" >/dev/null 2>&1 \
+    || warn "npm install into pinned runtime failed (network or permission issue). Continuing..."
   hash -r
   local verify
-  verify=$(npm --version 2>/dev/null || echo 'unknown')
+  verify="$("$pinned_npm" --version 2>/dev/null || echo 'unknown')"
   if [[ "$verify" == "$REQUIRED_NPM_VERSION" ]]; then
     log "npm: v${verify} (locked version active)"
     return 0
@@ -638,6 +715,8 @@ ensure_bun_or_npm
 ensure_uv
 ensure_redis
 create_directories
+
+ensure_thirdparty_submodule
 
 download_release_wheels
 build_deps

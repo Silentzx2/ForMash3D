@@ -1,7 +1,7 @@
 """
 Mesh editing API endpoints.
 
-Provides endpoints for local 3D mesh editing using VoxHammer,
+Provides endpoints for local 3D mesh editing,
 supporting both text-guided and image-guided editing workflows.
 """
 
@@ -56,7 +56,7 @@ class TextMeshEditingRequest(BaseModel):
     num_views: int = Field(150, description="Number of rendering views", ge=50, le=300)
     resolution: int = Field(512, description="Rendering resolution", ge=256, le=1024)
     output_format: str = Field("glb", description="Output mesh format")
-    model_preference: str = Field("voxhammer_text_mesh_editing", description="Model name for editing")
+    model_preference: str = Field("", description="Model name for editing")
     model_parameters: Optional[dict] = Field(
         None, 
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
@@ -123,7 +123,7 @@ class ImageMeshEditingRequest(BaseModel):
     num_views: int = Field(150, description="Number of rendering views", ge=50, le=300)
     resolution: int = Field(512, description="Rendering resolution", ge=256, le=1024)
     output_format: str = Field("glb", description="Output mesh format")
-    model_preference: str = Field("voxhammer_image_mesh_editing", description="Model name for editing")
+    model_preference: str = Field("", description="Model name for editing")
     model_parameters: Optional[dict] = Field(
         None, 
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"

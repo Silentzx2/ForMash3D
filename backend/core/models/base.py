@@ -3,7 +3,7 @@ import time
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 
@@ -137,7 +137,7 @@ class BaseModel(ABC):
             logger.error(f"[GPU UNLOAD FAILED] model={self.model_id}: {e}", exc_info=True)
             raise Exception(f"Failed to unload model {self.model_id}: {str(e)}")
 
-    def process(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    def process(self, inputs: Dict[str, Any], progress_callback: Optional[Callable[[str, float, str], None]] = None) -> Dict[str, Any]:
         """Process input and return results"""
         if self.status in [ModelStatus.UNLOADED, ModelStatus.LOADING]:
             raise Exception(
@@ -151,6 +151,9 @@ class BaseModel(ABC):
         )
         try:
             self.status = ModelStatus.PROCESSING
+            # Pass progress_callback through inputs for adapters that support it
+            if progress_callback:
+                inputs = {**inputs, "progress_callback": progress_callback}
             result = self._process_request(inputs)
             elapsed = time.time() - start_time
             memory = ""

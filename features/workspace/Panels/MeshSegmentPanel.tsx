@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { uploadMeshAsset } from '../types';
 import { toast } from 'sonner';
+import { useFeatureAvailability } from '@/hooks/useFeatureAvailability';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -17,11 +18,21 @@ export const MeshSegmentPanel: React.FC = () => {
     activeTask,
     runSegmentation,
   } = useWorkspace();
+  const {
+    checkFeature,
+    getModelsForFeature,
+    loading: featureAvailabilityLoading,
+    error: featureAvailabilityError,
+  } = useFeatureAvailability();
+  const segmentationModels = getModelsForFeature('mesh-segmentation');
+  const canSegment = !featureAvailabilityLoading &&
+    checkFeature('mesh-segmentation') &&
+    segmentationModels.length > 0;
 
   const [activeTab, setActiveTab] = useState<'segment' | 'settings'>('segment');
 
   // Segment Tab State
-  const [model, setModel] = useState<'partfield_mesh_segmentation' | 'p3sam_mesh_segmentation'>('partfield_mesh_segmentation');
+  const [model, setModel] = useState<string>('');
   const [targetParts, setTargetParts] = useState(8);
   const [method, setMethod] = useState<'semantic' | 'geometric' | 'hierarchical'>('semantic');
   const [algorithmVersion, setAlgorithmVersion] = useState('v1');
@@ -49,7 +60,7 @@ export const MeshSegmentPanel: React.FC = () => {
       method,
       hierarchical: useHierarchical,
       outputFormat,
-      modelPreference: model,
+      modelPreference: model || segmentationModels[0] || '',
       modelParameters: {
         min_part_faces: minPartFaces,
         smoothing_passes: smoothingPasses,
@@ -214,25 +225,26 @@ export const MeshSegmentPanel: React.FC = () => {
 
               <div className="space-y-1.5">
                 <div className="relative">
-                  <select
-                    value={model}
-                    onChange={(e) => setModel(e.target.value as 'partfield_mesh_segmentation' | 'p3sam_mesh_segmentation')}
-                    className="w-full h-9 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs font-semibold text-white appearance-none focus:outline-none focus:border-primary cursor-pointer"
-                  >
-                    <option value="partfield_mesh_segmentation">PartField Semantic (4GB VRAM — Recommended)</option>
-                    <option value="p3sam_mesh_segmentation">P3-SAM Zero-Shot 3D (60GB VRAM)</option>
-                  </select>
-                  <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
-                <div className="flex items-center justify-between text-[10px] text-zinc-400 px-1">
-                  <span>{model === 'p3sam_mesh_segmentation' ? 'Open-vocabulary zero-shot 3D segmentation' : 'Semantic functional parts (limbs, torso, armor)'}</span>
-                  <a
-                    href="/admin?tab=models"
-                    className="inline-flex items-center gap-1 font-semibold text-primary hover:underline ml-2 shrink-0"
-                  >
-                    <span>Details</span>
-                    <HugeiconsIcon icon={ExternalLinkIcon} size={16} className="w-2.5 h-2.5" />
-                  </a>
+                  {featureAvailabilityLoading ? (
+                    <div role="status" className="w-full h-9 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs text-zinc-400 flex items-center">
+                      Checking segmentation models…
+                    </div>
+                  ) : canSegment ? (
+                    <select
+                      aria-label="Segmentation model"
+                      value={model || segmentationModels[0]}
+                      onChange={(e) => setModel(e.target.value)}
+                      className="w-full h-9 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs font-semibold text-white"
+                    >
+                      {segmentationModels.map(modelId => (
+                        <option key={modelId} value={modelId}>{modelId.replace(/_/g, ' ')}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div role="status" className="w-full min-h-9 px-2.5 py-2 rounded-xl bg-[hsl(var(--surface-0))] border border-amber-500/20 text-xs text-amber-400 flex items-center">
+                      {featureAvailabilityError ? 'Could not verify model availability' : 'No segmentation model is configured'}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -383,11 +395,11 @@ export const MeshSegmentPanel: React.FC = () => {
                 type="button"
                 id="btn-start-segmentation"
                 onClick={handleStartSegmentation}
-                disabled={isRunning || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
+                disabled={isExecuting || !canSegment || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
                 className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 fill-current" />
-                <span>{isRunning ? 'Segmenting Mesh...' : 'Start Segmentation'}</span>
+                <span>{isRunning ? 'Segmenting Mesh...' : isExecuting ? 'Another Task Is Running...' : featureAvailabilityLoading ? 'Checking Models...' : !canSegment ? 'No Segmentation Model Available' : 'Start Segmentation'}</span>
               </button>
             </div>
           </div>

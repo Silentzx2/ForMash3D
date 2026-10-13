@@ -8,8 +8,10 @@ from core.scheduler.multiprocess_scheduler import _extract_job_status, Multiproc
 from core.scheduler.job_queue import JobRequest, JobStatus
 from postprocess.pipeline import _export_quad_obj
 from api.routers.mesh_generation import (
+    ImageMeshPaintingRequest,
     ImageToRawMeshRequest,
     ImageToTexturedMeshRequest,
+    _clean_paint_parameters,
 )
 
 
@@ -100,3 +102,37 @@ def test_export_quad_obj_produces_quad_polygons():
     assert len(face_lines) == 1
     tokens = face_lines[0].split()
     assert len(tokens) == 5  # "f", v1, v2, v3, v4
+
+
+
+def test_texture_api_accepts_named_8k_preset_and_enables_detail_bake_by_default():
+    raw = ImageToRawMeshRequest(image_path="/tmp/test.png", texture_resolution="8K")
+    textured = ImageToTexturedMeshRequest(image_path="/tmp/test.png", texture_resolution="8K")
+    painting = ImageMeshPaintingRequest(
+        image_path="/tmp/ref.png", mesh_path="/tmp/mesh.glb",
+        texture_resolution="8K", model_preference="hunyuan3d_paint_v21_image_mesh_painting",
+    )
+    assert raw.texture_resolution == 8192
+    assert textured.texture_resolution == 8192
+    assert painting.texture_resolution == 8192
+    assert raw.bake_normal_maps is True
+    assert textured.bake_normal_maps is True
+    assert ImageToRawMeshRequest(
+        image_path="/tmp/test.png", texture_enabled=True
+    ).texture_enabled is True
+    assert ImageToTexturedMeshRequest(
+        image_path="/tmp/test.png", texture_enabled=False
+    ).texture_enabled is False
+
+
+def test_direct_paint_parameters_cannot_trigger_second_texture_stage():
+    cleaned = _clean_paint_parameters({
+        "resolution": 768,
+        "max_num_view": 6,
+        "texture_resolution": "8K",
+        "texture_enabled": True,
+        "generate_texture": True,
+        "auto_paint": True,
+        "enable_realesrgan": False,
+    })
+    assert cleaned == {"resolution": 768, "max_num_view": 6}

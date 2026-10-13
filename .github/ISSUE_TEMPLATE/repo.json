@@ -26,9 +26,7 @@
     "cuda",
     "hunyuan3d",
     "trellis",
-    "triposr",
     "triposg",
-    "triposf",
     "fastmesh"
   ],
   "topics": [
@@ -76,7 +74,6 @@
   "seo_description": "ForMash3D is an open-source, self-hosted AI 3D generation and asset creation platform combining multiple model integrations with VRAM-aware scheduling, production post-processing, physics metadata, and game-ready delivery.",
   "elevator_pitch": "A unified self-hosted studio for generating, processing, inspecting, and exporting AI-generated 3D assets.",
   "use_cases": [
-    "Image-to-3D generation",
     "Image-to-3D generation",
     "PBR texture workflows",
     "Mesh retopology and UV processing",
@@ -126,5 +123,5 @@
     "SSE progress streaming"
   ],
   "metadata_version": "2.0",
-  "last_updated": "2026-09-30"
+  "last_updated": "2026-10-11"
 }

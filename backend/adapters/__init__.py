@@ -16,13 +16,21 @@ Adapters are lazily loaded on attribute access to prevent cascading import failu
 from loading).
 """
 
+import sys
+from pathlib import Path
 from typing import Any
+
+_backend_dir = str(Path(__file__).resolve().parent.parent)
+if _backend_dir not in sys.path:
+    sys.path.insert(0, _backend_dir)
 
 _ADAPTER_MAP = {
     # FastMesh
     "FastMeshRetopologyAdapter": ("fastmesh_adapter", "FastMeshRetopologyAdapter"),
     # Hunyuan3D Shape v2-1
     "Hunyuan3DShapeV21ImageToRawMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToRawMeshAdapter"),
+    "Hunyuan3DShapeV21ImageToMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToMeshAdapter"),
+    "Hunyuan3DShapeV21ImageToTexturedMeshAdapter": ("hunyuan3d_shape_v21", "Hunyuan3DShapeV21ImageToTexturedMeshAdapter"),
     # Hunyuan3D Paint v2-1
     "Hunyuan3DPaintV21ImageMeshPaintingAdapter": ("hunyuan3d_paint_v21", "Hunyuan3DPaintV21ImageMeshPaintingAdapter"),
     # Hunyuan3D DiT v2 Mini Turbo
@@ -32,42 +40,33 @@ _ADAPTER_MAP = {
     "Hunyuan3DV21ImageToRawMeshAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageToRawMeshAdapter"),
     "Hunyuan3DV21ImageToTexturedMeshAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageToTexturedMeshAdapter"),
     "Hunyuan3DV21ImageMeshPaintingAdapter": ("hunyuan3d_adapter_v21", "Hunyuan3DV21ImageMeshPaintingAdapter"),
-    # P3-SAM
-    "P3SAMSegmentationAdapter": ("p3sam_adapter", "P3SAMSegmentationAdapter"),
-    # PartField
-    "PartFieldSegmentationAdapter": ("partfield_adapter", "PartFieldSegmentationAdapter"),
-    # PartPacker
-    "PartPackerImageToRawMeshAdapter": ("partpacker_adapter", "PartPackerImageToRawMeshAdapter"),
     # PartUV
     "PartUVUnwrappingAdapter": ("partuv_adapter", "PartUVUnwrappingAdapter"),
     # TRELLIS
     "TrellisImageToMeshAdapterCommon": ("trellis_adapter", "TrellisImageToMeshAdapterCommon"),
+    "TrellisImageToMeshAdapter": ("trellis_adapter", "TrellisImageToMeshAdapter"),
     "TrellisTextMeshPaintingAdapter": ("trellis_adapter", "TrellisTextMeshPaintingAdapter"),
     "TrellisImageToTexturedMeshAdapter": ("trellis_adapter", "TrellisImageToTexturedMeshAdapter"),
     "TrellisImageToRawMeshAdapter": ("trellis_adapter", "TrellisImageToRawMeshAdapter"),
     "TrellisImageMeshPaintingAdapter": ("trellis_adapter", "TrellisImageMeshPaintingAdapter"),
     # TRELLIS.2
+    "Trellis2ImageToRawMeshAdapter": ("trellis2_adapter", "Trellis2ImageToRawMeshAdapter"),
+    "Trellis2ImageToMeshAdapter": ("trellis2_adapter", "Trellis2ImageToMeshAdapter"),
     "Trellis2ImageToTexturedMeshAdapter": ("trellis2_adapter", "Trellis2ImageToTexturedMeshAdapter"),
     "Trellis2ImageMeshPaintingAdapter": ("trellis2_adapter", "Trellis2ImageMeshPaintingAdapter"),
-    # UltraShape
-    "UltraShapeImageToRawMeshAdapter": ("ultrashape_adapter", "UltraShapeImageToRawMeshAdapter"),
     # UniRig
     "UniRigAdapter": ("unirig_adapter", "UniRigAdapter"),
-    # VoxHammer
-    "VoxHammerTextMeshEditingAdapter": ("voxhammer_adapter", "VoxHammerTextMeshEditingAdapter"),
-    "VoxHammerImageMeshEditingAdapter": ("voxhammer_adapter", "VoxHammerImageMeshEditingAdapter"),
-    # TripoSR
-    "TripoSRImageToRawMeshAdapter": ("triposr_adapter", "TripoSRImageToRawMeshAdapter"),
     # TripoSG
     "TripoSGImageToRawMeshAdapter": ("triposg_adapter", "TripoSGImageToRawMeshAdapter"),
-    # TripoSF
-    "TripoSFImageToRawMeshAdapter": ("triposf_adapter", "TripoSFImageToRawMeshAdapter"),
     # ARDY
     "ArdyMotionGenerationAdapter": ("ardy_adapter", "ArdyMotionGenerationAdapter"),
-    # Zero123++
-    "Zero123PlusAdapter": ("zero123plus_adapter", "Zero123PlusAdapter"),
     # Unique3D
     "Unique3DImageToRawMeshAdapter": ("unique3d_adapter", "Unique3DImageToRawMeshAdapter"),
+    # Paint3D
+    "Paint3DAdapter": ("paint3d_adapter", "Paint3DAdapter"),
+    "Paint3DImageMeshPaintingAdapter": ("paint3d_adapter", "Paint3DImageMeshPaintingAdapter"),
+    # Pixal3D
+    "Pixal3DImageToRawMeshAdapter": ("pixal3d_adapter", "Pixal3DImageToRawMeshAdapter"),
 }
 
 __all__ = list(_ADAPTER_MAP.keys())

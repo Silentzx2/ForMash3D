@@ -42,6 +42,7 @@ DEPLOYMENT NOTE:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import multiprocessing as mp
@@ -91,6 +92,9 @@ def auto_unload_after_job_enabled() -> bool:
 _POSTPROCESS_ONLY_INPUTS = frozenset({
     "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
     "physics_enabled", "physics_config", "auto_paint", "paint_model_preference", "paint_resolution",
+    "texture_enabled", "generate_texture", "generateTexture", "texture_resolution",
+    "texture_resolution_preset", "production_texture_resolution",
+    "enable_realesrgan", "enableRealESRGAN", "realeg",
     "faces", "num_faces", "simplify", "decimation_target", "remesh", "remesh_band", "remesh_project",
     "bake_normal_maps", "bake_high_to_low", "bake_textures",
     "intent", "preprocessing_artifact_id", "enhancement_enabled", "preprocessing_metadata",
@@ -98,10 +102,49 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
 })
 
 
-def _build_model_inference_inputs(inputs: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Keep post-process-only controls out of neural adapter inference."""
+# High-fidelity source mesh profiles. Production budgets remain in request_inputs and
+# are applied only to downstream copies by post-processing.
+_RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
+    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 20000},
+    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 20000},
+    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 20000},
+    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
+    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
+    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": True},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": True},
+    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 9, "faces": -1, "low_vram": False},
+    "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
+    "trellis_image_to_raw_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis_image_to_3d": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis_image_to_textured_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+}
+
+
+def _build_model_inference_inputs(
+    inputs: Optional[Dict[str, Any]],
+    model_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Keep production budgets downstream and force max supported raw mesh fidelity."""
     source = inputs or {}
-    return {key: value for key, value in source.items() if key not in _POSTPROCESS_ONLY_INPUTS}
+    model_inputs = {
+        key: value for key, value in source.items()
+        if key not in _POSTPROCESS_ONLY_INPUTS
+    }
+    profile = _RAW_MESH_MAX_QUALITY_PARAMETERS.get(str(model_id or "").lower())
+    if profile:
+        model_inputs.update({
+            key: (dict(value) if isinstance(value, dict) else value)
+            for key, value in profile.items()
+        })
+        # UI quality sliders must not lower source fidelity. The user seed remains intact.
+        model_inputs.pop("quality", None)
+        model_inputs.pop("meshQuality", None)
+        model_inputs["source_quality"] = "max"
+    return model_inputs
 
 
 class WorkerConfig:
@@ -266,7 +309,7 @@ def model_worker_process(
             err_msg = f"FATAL ERROR loading model '{model_id}' in worker {worker_id}: {e}"
             logger.error(f"❌ {err_msg}\n{tb}")
             try:
-                control_response_queue.put(WorkerResponse("init", False, error=f"{err_msg}\n{tb}"))
+                control_response_queue.put(WorkerResponse("init", False, error=err_msg))
             except Exception:
                 pass
             return  # Exit worker if model loading fails
@@ -433,6 +476,186 @@ def _handle_control_message(
         return WorkerResponse(msg.msg_id, False, error=str(e))
 
 
+def _reset_cuda_peak_memory_stats(resource_plan: Optional[Dict[str, Any]], fallback_gpu_id: int) -> None:
+    """Reset per-job CUDA memory peaks after model load and before inference."""
+    if not torch.cuda.is_available():
+        return
+    gpu_ids = (resource_plan or {}).get("gpu_ids") or [fallback_gpu_id]
+    for gpu_id in sorted({int(value) for value in gpu_ids if value is not None}):
+        try:
+            torch.cuda.reset_peak_memory_stats(gpu_id)
+        except Exception:
+            logger.debug("Could not reset CUDA peak stats for GPU %s", gpu_id, exc_info=True)
+
+def _sha256_existing_file(path: Any) -> Optional[str]:
+    """Hash a persisted source file without loading it into memory."""
+    if not path:
+        return None
+    try:
+        source = Path(path)
+        if not source.is_file():
+            return None
+        digest = hashlib.sha256()
+        with source.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError:
+        logger.debug("Could not hash generation provenance path %s", path, exc_info=True)
+        return None
+
+
+def _attach_raw_geometry_telemetry(
+    result: Dict[str, Any],
+    job_request: JobRequest,
+    model_id: str,
+    model_inputs: Dict[str, Any],
+    model_config: Dict[str, Any],
+    loaded_model: BaseModel,
+    gpu_id: int,
+    resource_plan: Optional[Dict[str, Any]] = None,
+    inference_seconds: Optional[float] = None,
+) -> None:
+    """Attach common model/input/output provenance to every raw image geometry job."""
+    if str(getattr(job_request, "feature", "") or "").lower().replace("-", "_") not in {
+        "image_to_raw_mesh", "image_to_textured_mesh", "image_to_3d"
+    }:
+        return
+    output_path = (
+        result.get("output_mesh_path") or result.get("mesh_path")
+        or result.get("output_path") or result.get("file_path")
+    )
+    if not output_path or not Path(output_path).is_file():
+        return
+
+    info = result.get("generation_info")
+    if not isinstance(info, dict):
+        info = {}
+        result["generation_info"] = info
+
+    request_inputs = job_request.inputs or {}
+    input_image = model_inputs.get("image_path") or request_inputs.get("image_path")
+    reference_image = request_inputs.get("reference_image_path") or input_image
+    preprocessing_metadata = request_inputs.get("preprocessing_metadata")
+    parameter_names = (
+        "source_quality", "seed", "num_inference_steps", "num_steps", "guidance_scale",
+        "cfg_scale", "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
+        "shape_slat_sampler_params", "ss_sampling_steps", "slat_sampling_steps",
+        "octree_resolution", "octree_res", "grid_resolution", "flash_octree_depth",
+        "dense_octree_depth", "hierarchical_octree_depth", "num_chunks",
+        "input_processing", "do_refine", "expansion_weight", "init_type",
+        "faces", "decimation_target", "simplify", "remesh", "low_vram", "low_vram_mode",
+        "enable_flashvdm",
+    )
+    native_vertices = info.get("native_vertex_count", info.get("vertex_count"))
+    native_faces = info.get("native_face_count", info.get("face_count"))
+    if native_vertices is None or native_faces is None:
+        try:
+            import trimesh
+            loaded = trimesh.load(str(output_path), process=False)
+            if isinstance(loaded, trimesh.Scene):
+                geometries = [
+                    geometry for geometry in loaded.geometry.values()
+                    if hasattr(geometry, "vertices") and hasattr(geometry, "faces")
+                ]
+                native_vertices = sum(len(geometry.vertices) for geometry in geometries)
+                native_faces = sum(len(geometry.faces) for geometry in geometries)
+            elif hasattr(loaded, "vertices") and hasattr(loaded, "faces"):
+                native_vertices, native_faces = len(loaded.vertices), len(loaded.faces)
+        except Exception:
+            logger.debug("Could not read geometry statistics for %s", output_path, exc_info=True)
+
+    try:
+        raw_bytes = Path(output_path).stat().st_size
+    except OSError:
+        return
+    scheduled_gpus = (resource_plan or {}).get("gpu_ids") or [gpu_id]
+    gpu_details = []
+    if torch.cuda.is_available():
+        for device_id in sorted({int(value) for value in scheduled_gpus if value is not None}):
+            try:
+                props = torch.cuda.get_device_properties(device_id)
+                gpu_details.append({
+                    "id": device_id,
+                    "name": str(getattr(props, "name", f"GPU {device_id}")),
+                    "total_vram_bytes": int(getattr(props, "total_memory", 0)),
+                    "peak_allocated_vram_bytes": int(torch.cuda.max_memory_allocated(device_id)),
+                    "peak_reserved_vram_bytes": int(torch.cuda.max_memory_reserved(device_id)),
+                })
+            except Exception:
+                logger.debug("Could not collect CUDA telemetry for GPU %s", device_id, exc_info=True)
+
+    def _image_dimensions(path: Any) -> Optional[List[int]]:
+        if not path:
+            return None
+        try:
+            from PIL import Image
+            with Image.open(path) as image:
+                return [int(image.width), int(image.height)]
+        except Exception:
+            return None
+
+    resolution = info.get("effective_geometry_resolution")
+    resolution_status = (
+        info.get("effective_geometry_resolution_status")
+        or info.get("resolution_status")
+        or ("reported_by_adapter" if resolution is not None else
+            "upstream adapter does not expose a scalar achieved resolution")
+    )
+    info["raw_geometry_telemetry"] = {
+        "schema_version": 2,
+        "model_id": model_id,
+        "model_version": getattr(loaded_model, "version", None),
+        "adapter_class": type(loaded_model).__name__,
+        "checkpoint": str(getattr(loaded_model, "model_path", model_config.get("model_path", "unknown"))),
+        "checkpoint_revision": (
+            getattr(loaded_model, "revision", None)
+            or getattr(loaded_model, "model_revision", None)
+            or model_config.get("revision")
+        ),
+        "source_quality": model_inputs.get("source_quality", "model_default"),
+        "inference_runtime_seconds": round(float(inference_seconds), 4) if inference_seconds is not None else None,
+        "input_image_sha256": _sha256_existing_file(input_image),
+        "reference_image_sha256": _sha256_existing_file(reference_image),
+        "input_image_size": _image_dimensions(input_image),
+        "reference_image_size": _image_dimensions(reference_image),
+        "preprocessing": {
+            "artifact_id": request_inputs.get("preprocessing_artifact_id"),
+            "enabled": bool(request_inputs.get("enhancement_enabled", False)),
+            "metadata": preprocessing_metadata if isinstance(preprocessing_metadata, dict) else None,
+        },
+        "effective_parameters": {
+            key: (dict(model_inputs[key]) if isinstance(model_inputs[key], dict) else model_inputs[key])
+            for key in parameter_names if key in model_inputs
+        },
+        "scheduler_gpu_ids": list(scheduled_gpus),
+        "primary_gpu_id": int(gpu_id),
+        "model_device": str(getattr(loaded_model, "device", None) or "adapter_reported_device"),
+        "gpu_telemetry": gpu_details,
+        "reported_inference_dtype": str(
+            getattr(loaded_model, "dtype", None)
+            or info.get("inference_dtype")
+            or "not_exposed_by_adapter"
+        ),
+        "raw_mesh_path": str(output_path),
+        "raw_mesh_bytes": raw_bytes,
+        "raw_mesh_sha256": _sha256_existing_file(output_path),
+        "native_vertex_count": native_vertices,
+        "native_face_count": native_faces,
+        "requested_geometry_resolution": info.get("requested_geometry_resolution"),
+        "geometry_extraction_grid_resolution": info.get("geometry_extraction_grid_resolution"),
+        "effective_geometry_resolution": resolution,
+        "effective_geometry_resolution_status": resolution_status,
+        "geometry_resolution_limited": bool(info.get("geometry_resolution_limited", False)),
+        "geometry_resolution_limit_reason": info.get("geometry_resolution_limit_reason"),
+        "geometry_quality_warning": info.get("geometry_quality_warning"),
+        "geometry_resolution_source": info.get("geometry_resolution_source"),
+        "voxel_size": info.get("voxel_size"),
+        "geometry_extractor": info.get("geometry_extractor"),
+        "mesh_operations": info.get("mesh_operations", []),
+    }
+
+
 def _process_job_in_worker(
     job_request: JobRequest,
     loaded_model: Optional[BaseModel],
@@ -500,7 +723,7 @@ def _process_job_in_worker(
 
         # Section 26: Exact runtime parameter logging
         request_inputs = job_request.inputs or {}
-        model_inputs = _build_model_inference_inputs(request_inputs)
+        model_inputs = _build_model_inference_inputs(request_inputs, model_id=model_id)
         runtime_log = {
             "model": model_id,
             "model_version": getattr(loaded_model, "version", "1.0"),
@@ -510,14 +733,18 @@ def _process_job_in_worker(
             "postprocess_target_polycount": request_inputs.get("target_polycount", "native"),
             "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps", "not_supported")),
             "actual_guidance": model_inputs.get("guidance_scale", model_inputs.get("cfg_scale", "not_supported")),
-            "actual_resolution": model_inputs.get("resolution", "not_supported"),
-            "actual_extraction_resolution": model_inputs.get(
+            "requested_resolution_parameter": model_inputs.get("resolution", "not_supported"),
+            "requested_extraction_resolution": model_inputs.get(
                 "mc_resolution",
                 model_inputs.get("octree_resolution", model_inputs.get("octree_res", model_inputs.get("grid_resolution", "not_supported"))),
             ),
+            "effective_geometry_resolution": "reported_after_decode_if_supported",
             "actual_seed": model_inputs.get("seed", "not_supported"),
-            "actual_dtype": "float16" if torch.cuda.is_available() else "float32",
-            "actual_device": f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu",
+            "actual_dtype": str(getattr(loaded_model, "dtype", None) or model_inputs.get("dtype") or "adapter_default"),
+            "actual_device": str(
+                getattr(loaded_model, "device", None)
+                or (f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+            ),
             "actual_low_vram_mode": model_inputs.get("low_vram_mode", model_inputs.get("low_vram", "not_supported")),
             "requested_target_polycount": request_inputs.get("target_polycount", "native"),
             "requested_auto_optimize": request_inputs.get("auto_optimize", False),
@@ -548,7 +775,8 @@ def _process_job_in_worker(
                     ("Device", f"{runtime_log['actual_device']} ({get_gpu_memory_summary(gpu_id)})"),
                     ("Input Source", input_desc),
                     ("Steps / Guidance", f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"),
-                    ("Resolution / Grid", f"{runtime_log['actual_resolution']} / {runtime_log['actual_extraction_resolution']}"),
+                    ("Requested Resolution / Grid", f"{runtime_log['requested_resolution_parameter']} / {runtime_log['requested_extraction_resolution']}"),
+                    ("Effective Geometry Resolution", runtime_log["effective_geometry_resolution"]),
                     ("Seed", runtime_log["actual_seed"]),
                     ("Quality Contract", runtime_log["source_quality_contract"]),
                     ("Downstream Budget", runtime_log["postprocess_target_polycount"]),
@@ -556,9 +784,29 @@ def _process_job_in_worker(
             )
         )
 
-        # Process job with no_grad (allows overriding with enable_grad for Trellis opt)
+        # Reset after model load so these peaks cover this inference call, not model initialization.
+        _reset_cuda_peak_memory_stats(resource_plan, gpu_id)
+        inference_start_time = time.time()
         with torch.no_grad():
-            result = loaded_model._process_request(model_inputs)
+            result = loaded_model.process(model_inputs)
+
+        inference_seconds = time.time() - inference_start_time
+        if isinstance(result, dict) and result.get("success", True):
+            try:
+                _attach_raw_geometry_telemetry(
+                    result,
+                    job_request,
+                    model_id,
+                    model_inputs,
+                    model_config,
+                    loaded_model,
+                    gpu_id,
+                    resource_plan,
+                    inference_seconds,
+                )
+            except Exception:
+                # Provenance must never convert a successful model inference into a failed job.
+                logger.warning("Could not attach geometry telemetry for %s", job_id, exc_info=True)
 
         elapsed = time.time() - start_time
         logger.info(f"[GENERATION SUCCESS] job_id={job_id} model={model_id} elapsed={elapsed:.2f}s")
@@ -755,6 +1003,8 @@ class MultiprocessModelScheduler:
         self.last_worker_error: Dict[str, str] = {}
         # Backoff before the next VRAM placement attempt (monotonic deadline, 0 = none)
         self._vram_wait_until: float = 0.0
+        self._cancel_requested_jobs: set[str] = set()
+        self._active_postprocess_cancels: Dict[str, threading.Event] = {}
 
         # Per-worker locks to prevent race conditions between check-and-mark
         self.worker_locks: Dict[str, asyncio.Lock] = {}
@@ -865,7 +1115,7 @@ class MultiprocessModelScheduler:
         return None
 
     async def cancel_job(self, job_id: str) -> bool:
-        """Stop the owning worker, then finalize the job as cancelled."""
+        """Stop the owning worker, or set cooperative cancel signal for active post-processing."""
         job = await self.job_queue.get_job(job_id)
         if job is None:
             return False
@@ -879,12 +1129,21 @@ class MultiprocessModelScheduler:
             return cancelled
 
         stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
+
+        # Always signal post-processing cancellation, regardless of whether a worker was stopped.
+        # Post-processing runs in the main process and may have started after the worker returned.
+        self._cancel_requested_jobs.add(job_id)
+        if job_id in self._active_postprocess_cancels:
+            self._active_postprocess_cancels[job_id].set()
+        if hasattr(self.job_queue, "request_cancel"):
+            await self.job_queue.request_cancel(job_id)
+
         if not stopped:
-            logger.warning("No live worker found for processing job %s; forcing queue cancellation", job_id)
-            await self.job_queue.cancel_job(job_id, force=True)
-            stopped = True
+            logger.info("No live worker found for processing job %s; set cooperative cancel request", job_id)
+            return False
+
         self._cleanup_temporary_inputs(job)
-        return stopped
+        return True
 
     async def start(self):
         """Start the scheduler - no workers created initially"""
@@ -1139,6 +1398,9 @@ class MultiprocessModelScheduler:
 
         for job_id in await get_requests():
             try:
+                self._cancel_requested_jobs.add(job_id)
+                if job_id in self._active_postprocess_cancels:
+                    self._active_postprocess_cancels[job_id].set()
                 stopped = await self._stop_worker_for_job(job_id, "cancelled by user")
                 if not stopped:
                     job = await self.job_queue.get_job(job_id)
@@ -1387,11 +1649,36 @@ class MultiprocessModelScheduler:
         """Wait for UniRig, persist the durable rigged artifact, then finalize the parent job."""
         try:
             while True:
+                parent_job = await self.job_queue.get_job(parent_job_id)
+                parent_status = _extract_job_status(parent_job)
+                if parent_status in {"cancelled", "failed"}:
+                    logger.info("Parent job %s is %s; cancelling auto-rig child %s", parent_job_id, parent_status, child_job_id)
+                    await self.cancel_job(child_job_id)
+                    return
+
                 child = await self.job_queue.get_job(child_job_id)
                 status = _extract_job_status(child)
                 if status in {"completed", "failed", "cancelled"}:
                     break
                 await asyncio.sleep(1.0)
+
+            # Check parent job status before processing child results
+            parent_job = await self.job_queue.get_job(parent_job_id)
+            parent_status = _extract_job_status(parent_job)
+            if parent_status in {"cancelled", "failed"}:
+                logger.info("Parent job %s is %s; cleaning up child %s and exiting", parent_job_id, parent_status, child_job_id)
+                child_result = (
+                    child.get("result")
+                    if isinstance(child, dict)
+                    else getattr(child, "result", None)
+                ) or {}
+                child_path = child_result.get("output_mesh_path")
+                if child_path and Path(child_path).is_file():
+                    try:
+                        Path(child_path).unlink()
+                    except OSError:
+                        pass
+                return
 
             result = dict(base_result)
             child_result = (
@@ -1452,6 +1739,13 @@ class MultiprocessModelScheduler:
                 result["degraded_reasons"] = list(result.get("degraded_reasons", [])) + ["auto_rig_failed"]
 
             result["workflow_rig_job_id"] = child_job_id
+
+            # Check parent job status again before calling complete_job
+            parent_job = await self.job_queue.get_job(parent_job_id)
+            if parent_job and _extract_job_status(parent_job) in {"cancelled", "failed"}:
+                logger.info("Parent job %s is %s; skipping complete_job after auto-rig", parent_job_id, _extract_job_status(parent_job))
+                return
+
             await self.job_queue.update_job_progress(
                 parent_job_id,
                 1.0,
@@ -1466,6 +1760,11 @@ class MultiprocessModelScheduler:
                 exc,
                 exc_info=True,
             )
+            parent_job = await self.job_queue.get_job(parent_job_id)
+            if parent_job and _extract_job_status(parent_job) in {"cancelled", "failed"}:
+                logger.info("Parent job %s is %s; skipping fallback complete_job", parent_job_id, _extract_job_status(parent_job))
+                return
+
             fallback = dict(base_result)
             fallback["rigging"] = {
                 "status": "failed",
@@ -1487,7 +1786,7 @@ class MultiprocessModelScheduler:
             result = await asyncio.wait_for(result_future, timeout=3600.0)
 
             current_job = await self.job_queue.get_job(job_id)
-            if current_job and _extract_job_status(current_job) in {"failed", "cancelled"}:
+            if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
                 self._cleanup_temporary_inputs(job_request)
                 return
 
@@ -1495,84 +1794,41 @@ class MultiprocessModelScheduler:
             if result.get("success"):
                 final_result = result.get("result") or {}
                 postprocess_mode = str(job_request.metadata.get("postprocess_mode") or "none").lower()
-                # Only auto-chain paint when the user explicitly requested production_mesh
-                # (i.e. texture is ON). If postprocess_mode is "none" or the request
-                # didn't include it, skip the paint child entirely.
-                auto_paint = (
-                    bool(job_request.metadata.get("auto_paint") or job_request.inputs.get("auto_paint"))
-                    and postprocess_mode == "production_mesh"
-                )
-                # Canonical workspace is required by both the paint child and
-                # post-processing; compute it once up front.
-                from postprocess.pipeline import canonical_asset_workspace
 
-                canonical_root = canonical_asset_workspace(
-                    job_id, final_result, job_request.inputs
+                # Normalize texture_enabled into post-processing rather than launching redundant independent child workflows.
+                texture_enabled = bool(
+                    job_request.metadata.get("texture_enabled")
+                    or job_request.inputs.get("texture_enabled")
+                    or job_request.metadata.get("generateTexture")
+                    or job_request.inputs.get("generateTexture")
+                    or job_request.metadata.get("generate_texture")
+                    or job_request.inputs.get("generate_texture")
+                    or job_request.metadata.get("auto_paint")
+                    or job_request.inputs.get("auto_paint")
                 )
-                if auto_paint and final_result.get("output_mesh_path"):
-                    workflow_id = str(job_request.metadata.get("workflow_id") or job_id)
-                    child_request = JobRequest(
-                        feature="image_mesh_painting",
-                        inputs={
-                            "image_path": job_request.inputs.get("image_path"),
-                            # Post-processing promotes the raw output to
-                            # master/source.glb and deletes the raw file, so the
-                            # paint child must consume the canonical master.
-                            "mesh_path": str(canonical_root / "master" / "source.glb"),
-                            "output_format": "glb",
-                            "texture_resolution": int(job_request.inputs.get("paint_resolution") or 512),
-                            "target_polycount": job_request.inputs.get("target_polycount"),
-                            "generateLOD": job_request.inputs.get("generateLOD"),
-                            "lodPreset": job_request.inputs.get("lodPreset"),
-                            "lodCount": job_request.inputs.get("lodCount"),
-                            "topology_mode": job_request.inputs.get("topology_mode"),
-                            "quad_topology": job_request.inputs.get("quad_topology"),
-                            "resolution": int(job_request.inputs.get("paint_resolution") or 512),
-                            "max_num_view": int(job_request.inputs.get("max_num_view") or 6),
-                            "enable_printability_check": bool(job_request.inputs.get("enable_printability_check")),
-                            "enable_auto_repair": bool(job_request.inputs.get("enable_auto_repair")),
-                            "enable_auto_rig": bool(job_request.inputs.get("enable_auto_rig")),
-                            "auto_rig_mode": job_request.inputs.get("auto_rig_mode", "full"),
-                            "intent": job_request.inputs.get("intent"),
-                            "preprocessing_metadata": job_request.inputs.get("preprocessing_metadata"),
-                        },
-                        model_preference=str(
-                            job_request.inputs.get("paint_model_preference")
-                            or "hunyuan3d_paint_v21_image_mesh_painting"
-                        ),
-                        priority=job_request.priority,
-                        timeout_seconds=job_request.timeout_seconds,
-                        metadata={
-                            "feature_type": "image_mesh_painting",
-                            "postprocess_mode": "production_mesh",
-                            "physics_enabled": bool(job_request.metadata.get("physics_enabled")),
-                            "physics_config": job_request.metadata.get("physics_config"),
-                            "workflow_id": workflow_id,
-                            "parent_job_id": job_id,
-                            "workflow_stage": "paint",
-                            "workflow_state": "queued",
-                            "auto_paint": False,
-                        },
-                        user_id=job_request.user_id,
-                    )
-                    child_id = await self.schedule_job(child_request)
-                    final_result["workflow"] = {
-                        "workflow_id": workflow_id,
-                        "parent_job_id": job_id,
-                        "child_job_id": child_id,
-                        "stage": "shape",
-                        "state": "child_queued",
-                    }
-                    await self.job_queue.update_job_progress(
-                        job_id, 0.9, "workflow", f"Paint child job queued: {child_id}"
-                    )
-                # Postprocessing must ALWAYS run for raw-mesh jobs with production_mesh mode,
-                # regardless of whether a paint child was also queued.
+                job_request.metadata["texture_enabled"] = texture_enabled
+                job_request.inputs["texture_enabled"] = texture_enabled
+
+                # Postprocessing runs for raw-mesh jobs with production_mesh mode.
                 if final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
+                    current_job = await self.job_queue.get_job(job_id)
+                    if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
+                        self._cleanup_temporary_inputs(job_request)
+                        return
+
                     await self.job_queue.update_job_progress(
                         job_id, 0.75, "postprocess", "Running production post-processing"
                     )
                     logger.info(f"[POSTPROCESS PROGRESS] job_id={job_id} progress=75% stage=postprocess message='Running production post-processing'")
+
+                    cancel_event = threading.Event()
+                    if job_id in self._cancel_requested_jobs:
+                        cancel_event.set()
+                    self._active_postprocess_cancels[job_id] = cancel_event
+
+                    def cancel_checker() -> bool:
+                        return cancel_event.is_set() or job_id in self._cancel_requested_jobs
+
                     try:
                         from postprocess.pipeline import canonical_asset_workspace, run_postprocess_job
                         canonical_root = canonical_asset_workspace(job_id, final_result, job_request.inputs)
@@ -1622,8 +1878,19 @@ class MultiprocessModelScheduler:
                                 "physics_config": job_request.metadata.get("physics_config"),
                             },
                             report,
+                            cancel_checker,
                         )
+                    except (InterruptedError, asyncio.CancelledError):
+                        logger.info(f"Post-processing cleanly cancelled for job {job_id}")
+                        current_job = await self.job_queue.get_job(job_id)
+                        if current_job and _extract_job_status(current_job) != "cancelled":
+                            await self.job_queue.cancel_job(job_id)
+                        return
                     except Exception as postprocess_error:
+                        current_job = await self.job_queue.get_job(job_id)
+                        if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
+                            logger.info(f"Job {job_id} cancelled during post-processing; skipping fail_job")
+                            return
                         err_msg = (
                             f"Post-processing failed for job {job_id}: "
                             f"{postprocess_error}"
@@ -1631,12 +1898,18 @@ class MultiprocessModelScheduler:
                         await self.job_queue.fail_job(job_id, err_msg)
                         logger.error(err_msg, exc_info=True)
                         return
+                    finally:
+                        self._active_postprocess_cancels.pop(job_id, None)
+                        self._cancel_requested_jobs.discard(job_id)
+
+                current_job = await self.job_queue.get_job(job_id)
+                if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
+                    return
 
                 if (
                     final_result.get("output_mesh_path")
                     and bool(job_request.inputs.get("enable_auto_rig"))
                     and postprocess_mode == "production_mesh"
-                    and not auto_paint
                 ):
                     child_request = JobRequest(
                         feature="auto_rig",
@@ -1711,29 +1984,124 @@ class MultiprocessModelScheduler:
             if not keep_inputs_for_postprocess:
                 self._cleanup_temporary_inputs(job_request)
 
+    def _register_managed_input_dir(self, directory: Path) -> None:
+        """Register an app-managed temporary input directory for safe cleanup."""
+        try:
+            resolved = directory.resolve()
+        except OSError:
+            return
+        if not hasattr(self, "_managed_temp_input_dirs"):
+            self._managed_temp_input_dirs = set()
+        self._managed_temp_input_dirs.add(resolved)
+
+    def _unregister_managed_input_dir(self, directory: Path) -> None:
+        """Remove a managed temporary input directory from the cleanup allowlist."""
+        try:
+            resolved = directory.resolve()
+        except OSError:
+            return
+        managed = getattr(self, "_managed_temp_input_dirs", None)
+        if managed is not None:
+            managed.discard(resolved)
+
+    def _is_managed_input_dir(self, directory: Path) -> bool:
+        """Check whether a directory is explicitly managed by this scheduler."""
+        managed = getattr(self, "_managed_temp_input_dirs", None)
+        if not managed:
+            return False
+        return directory in managed
+
     def _cleanup_temporary_inputs(self, job_request: Any) -> None:
         """Remove per-request mesh_gen_* input directories once job ownership ends."""
         parents = set()
+        temp_base = Path(tempfile.gettempdir()).resolve()
+        managed_dirs = set(getattr(self, "_managed_temp_input_dirs", set()) or set())
+        if not managed_dirs:
+            return
+
+        def _to_local_path(value: Any) -> Optional[Path]:
+            if isinstance(value, Path):
+                return value
+            if not isinstance(value, str):
+                return None
+            raw = value.strip()
+            if not raw:
+                return None
+            # Ignore URL-like/opaque values; cleanup only needs local filesystem paths.
+            lowered = raw.lower()
+            if "://" in lowered:
+                return None
+            return Path(raw)
+
+        def _safe_mesh_gen_dir(candidate: Path) -> Optional[Path]:
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                return None
+            if resolved not in managed_dirs:
+                return None
+            if not resolved.is_dir():
+                return None
+            if not resolved.name.startswith("mesh_gen_"):
+                return None
+            if resolved == temp_base or temp_base not in resolved.parents:
+                return None
+            return resolved
+
         inputs = getattr(job_request, "inputs", None)
         if inputs is None and isinstance(job_request, dict):
             inputs = job_request.get("inputs", {})
-        if isinstance(inputs, dict):
-            for value in inputs.values():
-                if not isinstance(value, str):
-                    continue
-                path = Path(value)
-                if path.parent.name.startswith("mesh_gen_"):
-                    parents.add(path.parent)
+        metadata = getattr(job_request, "metadata", None)
+        if metadata is None and isinstance(job_request, dict):
+            metadata = job_request.get("metadata", {})
+
+        for container in (inputs, metadata):
+            if not isinstance(container, dict):
+                continue
+            for value in container.values():
+                items = value if isinstance(value, (list, tuple, set)) else [value]
+                for item in items:
+                    path = _to_local_path(item)
+                    if path is None:
+                        continue
+                    candidate = _safe_mesh_gen_dir(path)
+                    if candidate:
+                        parents.add(candidate)
+                        continue
+                    parent_candidate = _safe_mesh_gen_dir(path.parent)
+                    if parent_candidate:
+                        parents.add(parent_candidate)
+
         for directory in parents:
             shutil.rmtree(directory, ignore_errors=True)
+            self._unregister_managed_input_dir(directory)
 
     def _cleanup_stale_input_dirs(self) -> None:
-        """Remove orphaned mesh_gen_* input directories from previous crashed sessions."""
+        """Remove orphaned mesh_gen_* input directories from previous crashed sessions.
+
+        Only dirs untouched for several hours qualify: the API process may be
+        holding dirs for jobs still queued when this scheduler starts, and
+        deleting those breaks the job with a missing-file error.
+        """
+        stale_after_seconds = 6 * 60 * 60
+        now = time.time()
         temp_base = Path(tempfile.gettempdir())
         for entry in temp_base.iterdir():
-            if entry.is_dir() and entry.name.startswith("mesh_gen_"):
-                shutil.rmtree(entry, ignore_errors=True)
-                logger.debug("Cleaned stale input dir: %s", entry)
+            if not entry.is_dir() or not entry.name.startswith("mesh_gen_"):
+                continue
+            try:
+                age = now - entry.stat().st_mtime
+            except OSError:
+                continue
+            if age < stale_after_seconds:
+                logger.debug(
+                    "Skipping recent input dir (in flight): %s (%.0fs old)",
+                    entry,
+                    age,
+                )
+                continue
+            shutil.rmtree(entry, ignore_errors=True)
+            logger.debug("Cleaned stale input dir: %s", entry)
 
     async def _stop_worker_for_job(self, job_id: str, reason: str) -> bool:
         """Terminate the worker owning a job and release its resources."""
@@ -1756,6 +2124,11 @@ class MultiprocessModelScheduler:
             await asyncio.to_thread(process.join, 2.0)
 
         await self._destroy_worker(worker_id)
+
+        # Signal post-processing cancellation in case it started after worker returned
+        self._cancel_requested_jobs.add(job_id)
+        if job_id in self._active_postprocess_cancels:
+            self._active_postprocess_cancels[job_id].set()
 
         if reason == "cancelled by user":
             await self.job_queue.cancel_job(job_id, force=True)

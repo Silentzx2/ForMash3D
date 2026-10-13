@@ -2,7 +2,7 @@
 3D Mask Generation Utility
 
 Creates 3D mask meshes (bounding boxes and ellipsoids) for use with
-VoxHammer local mesh editing.
+localized 3D mesh editing.
 """
 
 import logging

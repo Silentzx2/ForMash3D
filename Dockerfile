@@ -77,7 +77,7 @@ ENV no_proxy=$no_proxy
 # 3. Bun & Frontend dependencies install & Next.js production build
 # 4. Conda 3daigc-api creation (Python 3.10)
 # 5. PyTorch with CUDA 12.4
-# 6. TRELLIS.2, Hunyuan3D, PartField, UniRig, PartPacker, and all model dependencies
+# 6. TRELLIS.2, Hunyuan3D, PartUV, UniRig, and all model dependencies
 RUN chmod +x scripts/*.sh backend/scripts/*.sh manager.sh && \
     bash scripts/setup.sh --auto --skip-cuda --conda
 

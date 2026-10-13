@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import redis.asyncio as aioredis
 
@@ -25,6 +25,16 @@ def _status_to_str(status: JobStatus) -> str:
     if hasattr(status, "value"):
         return status.value
     return str(status)
+
+
+_TERMINAL_STATUSES = {
+    JobStatus.COMPLETED.value,
+    JobStatus.FAILED.value,
+    JobStatus.CANCELLED.value,
+    "completed",
+    "failed",
+    "cancelled",
+}
 
 
 def _priority_score(priority: int, created_at: datetime) -> float:
@@ -110,14 +120,57 @@ class RedisJobQueue:
         orphaned_job_ids = await self.redis.smembers(self.processing_set_key)
         if not orphaned_job_ids:
             logger.info("No orphaned jobs found in 'processing' set.")
-            return
+        else:
+            logger.warning(f"Found {len(orphaned_job_ids)} orphaned jobs. Requeuing them...")
+            for job_id in orphaned_job_ids:
+                logger.info(f"Requeuing orphaned job {job_id}")
+                await self.requeue_job(job_id)
 
-        logger.warning(f"Found {len(orphaned_job_ids)} orphaned jobs. Requeuing them...")
-        for job_id in orphaned_job_ids:
-            logger.info(f"Requeuing orphaned job {job_id}")
-            await self.requeue_job(job_id)
+        await self._reconcile_stale_job_rows()
 
         logger.info("Finished requeuing all orphaned jobs.")
+
+    async def _reconcile_stale_job_rows(self):
+        """Fail SQLite transient rows that have no Redis presence.
+
+        A restart (or a delete that only reached Redis) leaves queued/processing
+        rows in the durable store that no worker will ever touch, so the UI shows
+        them as stuck forever. Transient rows only: terminal rows are history.
+        """
+        try:
+            from core.scheduler.job_queue import JobStatus
+
+            def _collect_transient_ids() -> List[str]:
+                ids: List[str] = []
+                for status in (JobStatus.QUEUED, JobStatus.PROCESSING):
+                    for job in self.db_manager.get_jobs_by_status(status):
+                        ids.append(job.job_id)
+                return ids
+
+            transient_ids = await asyncio.to_thread(_collect_transient_ids)
+            if not transient_ids:
+                return
+
+            live_ids = set(await self.redis.hkeys(self.jobs_hash_key)) | set(
+                await self.redis.zrange(self.pending_queue_key, 0, -1)
+            )
+            stale_ids = [jid for jid in transient_ids if jid not in live_ids]
+            if not stale_ids:
+                return
+
+            logger.warning(
+                f"Failing {len(stale_ids)} SQLite job rows with no queue presence "
+                "(orphaned by restart or deleted from the live queue)"
+            )
+            failed = await asyncio.to_thread(
+                self.db_manager.mark_jobs_failed,
+                stale_ids,
+                "Job orphaned: no queue presence at scheduler startup",
+            )
+            logger.info(f"Reconciled {failed} stale transient job rows")
+        except Exception as e:
+            # Reconciliation is best-effort; never block scheduler startup
+            logger.error(f"Stale job row reconciliation failed: {e}")
 
     async def enqueue(self, job_request: JobRequest) -> str:
         """Add a job to the queue"""
@@ -366,12 +419,29 @@ class RedisJobQueue:
             job.created_at = datetime.fromisoformat(data["created_at"])
         job.result = data.get("result")
         job.error = data.get("error")
+        job.progress = float(data.get("progress", 0.0) or 0.0)
+        raw_status = data.get("status")
+        if raw_status:
+            if raw_status == "running":
+                job.status = JobStatus.PROCESSING
+            elif raw_status in {"queued", "processing", "completed", "failed", "cancelled"}:
+                job.status = JobStatus(raw_status)
         return job
 
     async def update_job_progress(self, job_id: str, progress: float, stage: Optional[str] = None, message: Optional[str] = None):
         """Update job progress and stage"""
         if not self.redis:
             return
+
+        job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
+        if not job_data_str:
+            return
+
+        job_data = json.loads(job_data_str)
+        status = job_data.get("status")
+        if status in _TERMINAL_STATUSES:
+            return
+
         value = min(1.0, max(0.0, float(progress)))
         logger.info(f"[JOB PROGRESS] job_id={job_id} progress={int(value * 100)}% stage={stage or 'processing'} message='{message or ''}'")
         await self.redis.hset(self.progress_hash_key, job_id, str(value))
@@ -379,17 +449,14 @@ class RedisJobQueue:
             await self.redis.hset(self.stage_hash_key, job_id, stage)
         if message:
             await self.redis.hset(self.message_hash_key, job_id, message)
-        if stage or message:
-            job_data_str = await self.redis.hget(self.jobs_hash_key, job_id)
-            if job_data_str:
-                job_data = json.loads(job_data_str)
-                job_data["progress"] = value
-                if stage:
-                    job_data["stage"] = stage
-                if message:
-                    job_data["message"] = message
-                _append_log(job_data, stage or "processing", value, message or "Processing")
-                await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
+
+        job_data["progress"] = value
+        if stage:
+            job_data["stage"] = stage
+        if message:
+            job_data["message"] = message
+        _append_log(job_data, stage or "processing", value, message or "Processing")
+        await self.redis.hset(self.jobs_hash_key, job_id, json.dumps(job_data))
 
 
     async def prepare_postprocess_retry(self, job_id: str) -> Optional[JobRequest]:
@@ -564,9 +631,9 @@ class RedisJobQueue:
         if not job_data_str:
             return False
         status = json.loads(job_data_str).get("status")
-        if status == _status_to_str(JobStatus.QUEUED):
+        if status in {_status_to_str(JobStatus.QUEUED), "queued"}:
             return await self.cancel_job(job_id)
-        if status == _status_to_str(JobStatus.PROCESSING):
+        if status in {_status_to_str(JobStatus.PROCESSING), "processing", "running"}:
             await self.redis.sadd(self.cancel_request_key, job_id)
             return True
         return False
@@ -590,11 +657,14 @@ class RedisJobQueue:
             return False
         job_data = json.loads(job_data_str)
         status = job_data.get("status")
-        if status == _status_to_str(JobStatus.PROCESSING) and not force:
+        if status in {_status_to_str(JobStatus.PROCESSING), "processing", "running"} and not force:
             return False
         if status not in {
             _status_to_str(JobStatus.QUEUED),
+            "queued",
             _status_to_str(JobStatus.PROCESSING),
+            "processing",
+            "running",
         }:
             return False
 
@@ -611,6 +681,21 @@ class RedisJobQueue:
         await self.redis.hset(self.stage_hash_key, job_id, "cancelled")
         await self.redis.hset(self.message_hash_key, job_id, "Cancelled by user")
         await self.redis.zadd(self.completed_index_key, {job_id: completed_at.timestamp()})
+
+        # Persist cancellation to durable SQLite store mirroring complete_job() and fail_job()
+        job_request = await self._load_job_request_for_persistence(job_id)
+        if job_request is not None:
+            job_request.status = JobStatus.CANCELLED
+            job_request.progress = float(job_data.get("progress", 0.0) or 0.0)
+            job_request.error = "Cancelled by user"
+            job_request.completed_at = completed_at
+            job_request.metadata.update({
+                "stage": "cancelled",
+                "message": "Cancelled by user",
+                "error_code": "JOB_CANCELLED",
+            })
+            await asyncio.to_thread(self.db_manager.save_job, job_request)
+
         return True
 
     # Compatibility methods for original JobQueue interface
@@ -647,7 +732,8 @@ class RedisJobQueue:
         for job_id, job_data_str in all_jobs.items():
             try:
                 job_data = json.loads(job_data_str)
-                if job_data.get("status") == target_status:
+                raw_status = job_data.get("status")
+                if raw_status == target_status or (target_status == "processing" and raw_status == "running"):
                     # Hot keys hold the live progress/stage/message written by workers
                     hot_progress, hot_stage, hot_message = await asyncio.gather(
                         self.redis.hget(self.progress_hash_key, job_id),
@@ -672,7 +758,7 @@ class RedisJobQueue:
                     )
                     job_request.job_id = job_id
                     job_request.created_at = datetime.fromisoformat(job_data["created_at"])
-                    job_request.status = JobStatus(job_data["status"])
+                    job_request.status = JobStatus.PROCESSING if raw_status == "running" else JobStatus(raw_status)
                     job_request.progress = float(job_data.get("progress", 0.0) or 0.0)
                     if job_data.get("error"):
                         job_request.error = job_data["error"]

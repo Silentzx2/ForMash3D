@@ -19,6 +19,7 @@ import { Spinner } from '@/components/premium/Spinner';
 import { GpuVramLineChart } from '@/components/premium/GpuVramLineChart';
 import { getApiClient } from '@/services/apiClient';
 import type { RuntimeStatus, AdminLog } from '@/types';
+import { mapSystemStatusToRuntimeStatus } from '@/features/admin/utils/systemStatus';
 import { toast } from 'sonner';
 
 export function RuntimeTab() {
@@ -34,7 +35,7 @@ export function RuntimeTab() {
         getApiClient().getSystemStatus(),
         getApiClient().getLogs(10),
       ]);
-      if (st) setStatus(st as unknown as RuntimeStatus);
+      if (st) setStatus(mapSystemStatusToRuntimeStatus(st));
       if (lg.length > 0) setLogs(lg);
       setError(!st ? 'Failed to load runtime status' : null);
     } catch { /* ignore */ }

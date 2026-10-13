@@ -108,7 +108,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 Hunyuan3DPaintConfig,
                 Hunyuan3DPaintPipeline,
             )
-            from hy3dshape.rembg import BackgroundRemover
+            from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
             max_num_view = 6
             resolution = 512
@@ -138,57 +138,122 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             logger.error(f"Failed to load Hunyuan3D-Paint-v2-1: {str(e)}")
             raise Exception(f"Failed to load Hunyuan3D-Paint-v2-1: {str(e)}")
 
-    def get_vram_status(self) -> Dict[str, Any]:
+    def get_vram_status(self, gpu_id: Optional[int] = None) -> Dict[str, Any]:
         """Return VRAM eligibility status for this model."""
         vram_mb = self.vram_requirement
-        torch_vram = 0
-        if torch.cuda.is_available():
-            torch_vram = torch.cuda.get_device_properties(0).total_memory / (1024 * 1024)
-        return {
-            "model_id": self.model_id,
-            "vram_required_mb": vram_mb,
-            "vram_available_mb": torch_vram if torch_vram > 0 else None,
-            "eligible": torch_vram >= vram_mb if torch_vram > 0 else True,
-            "status": "eligible" if (torch_vram >= vram_mb or torch_vram == 0) else "insufficient_vram",
-        }
+
+        target_gpu_id = gpu_id
+        if target_gpu_id is None:
+            target_gpu_id = getattr(self, "gpu_id", None)
+        if target_gpu_id is None:
+            device_str = getattr(self, "device", None)
+            if isinstance(device_str, str) and device_str.startswith("cuda:"):
+                try:
+                    target_gpu_id = int(device_str.split(":")[1])
+                except (ValueError, IndexError):
+                    target_gpu_id = 0
+            else:
+                target_gpu_id = 0
+
+        if not torch.cuda.is_available():
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": None,
+                "eligible": False,
+                "status": "ineligible",
+                "gpu_id": target_gpu_id,
+                "error": "CUDA is unavailable",
+            }
+
+        try:
+            device_count = torch.cuda.device_count()
+            if target_gpu_id < 0 or target_gpu_id >= device_count:
+                return {
+                    "model_id": self.model_id,
+                    "vram_required_mb": vram_mb,
+                    "vram_available_mb": None,
+                    "eligible": False,
+                    "status": "ineligible",
+                    "gpu_id": target_gpu_id,
+                    "error": f"GPU {target_gpu_id} out of range (device count: {device_count})",
+                }
+
+            torch_vram = torch.cuda.get_device_properties(target_gpu_id).total_memory / (1024 * 1024)
+            is_eligible = torch_vram >= vram_mb
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": torch_vram,
+                "eligible": is_eligible,
+                "status": "eligible" if is_eligible else "insufficient_vram",
+                "gpu_id": target_gpu_id,
+            }
+        except Exception as e:
+            return {
+                "model_id": self.model_id,
+                "vram_required_mb": vram_mb,
+                "vram_available_mb": None,
+                "eligible": False,
+                "status": "ineligible",
+                "gpu_id": target_gpu_id,
+                "error": str(e),
+            }
 
     def _verify_pbr_output(self, output_path: str) -> Dict[str, Any]:
-        """Verify that the generated mesh has actual PBR material references."""
+        """Inspect exported GLB materials and the actual embedded base-colour atlas."""
         pbr_materials = {}
+        base_color_dimensions = None
         try:
             import trimesh
-            mesh = trimesh.load(output_path)
-            if hasattr(mesh, "materials") and mesh.materials:
-                for mat in mesh.materials:
-                    mat_name = getattr(mat, "name", "unknown")
-                    pbr_materials[mat_name] = {
-                        "has_albedo": hasattr(mat, "albedo") or hasattr(mat, "diffuseColor"),
-                        "has_normal": hasattr(mat, "normal") or hasattr(mat, "normalTexture"),
-                        "has_roughness": hasattr(mat, "roughness") or hasattr(mat, "roughnessFactor"),
-                        "has_metallic": hasattr(mat, "metallic") or hasattr(mat, "metallicFactor"),
-                        "has_ao": hasattr(mat, "ambientOcclusion") or hasattr(mat, "aoTexture"),
-                    }
-            elif hasattr(mesh, "visual") and hasattr(mesh.visual, "material"):
-                mat = mesh.visual.material
-                pbr_materials["default"] = {
-                    "has_albedo": hasattr(mat, "diffuseColor") or hasattr(mat, "color"),
-                    "has_normal": hasattr(mat, "normal"),
-                    "has_roughness": hasattr(mat, "roughness"),
-                    "has_metallic": hasattr(mat, "metallic"),
-                    "has_ao": hasattr(mat, "ambientOcclusion"),
+
+            loaded = trimesh.load(output_path, file_type="glb", process=False)
+            geometries = (
+                loaded.geometry.values()
+                if isinstance(loaded, trimesh.Scene)
+                else [loaded]
+            )
+            for index, geometry in enumerate(geometries):
+                material = getattr(getattr(geometry, "visual", None), "material", None)
+                if material is None:
+                    continue
+                name = getattr(material, "name", None) or f"material_{index}"
+                base_color = (
+                    getattr(material, "baseColorTexture", None)
+                    or getattr(material, "image", None)
+                )
+                dimensions = (
+                    [int(base_color.width), int(base_color.height)]
+                    if isinstance(base_color, Image.Image)
+                    else None
+                )
+                if dimensions and base_color_dimensions is None:
+                    base_color_dimensions = dimensions
+                pbr_materials[name] = {
+                    "has_albedo": base_color is not None,
+                    "base_color_dimensions": dimensions,
+                    "has_normal": getattr(material, "normalTexture", None) is not None
+                        or getattr(material, "normal", None) is not None,
+                    "has_roughness": getattr(material, "roughnessFactor", None) is not None
+                        or getattr(material, "roughnessTexture", None) is not None,
+                    "has_metallic": getattr(material, "metallicFactor", None) is not None
+                        or getattr(material, "metallicRoughnessTexture", None) is not None,
+                    "has_ao": getattr(material, "occlusionTexture", None) is not None,
                 }
-            mesh.close()
         except Exception as e:
-            logger.warning(f"Could not verify PBR materials: {e}")
+            logger.warning("Could not inspect exported PBR materials: %s", e)
         return {
             "output_path": output_path,
-            "has_pbr_materials": len(pbr_materials) > 0,
+            "has_pbr_materials": bool(pbr_materials),
+            "has_base_color_texture": base_color_dimensions is not None,
+            "base_color_dimensions": base_color_dimensions,
             "pbr_materials": pbr_materials,
             "material_count": len(pbr_materials),
         }
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process mesh painting using Hunyuan3D-Paint-v2-1."""
+        cancel_checker = inputs.get("cancel_checker")
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
@@ -211,20 +276,34 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
             output_format = inputs.get("output_format", "glb")
             max_num_view = inputs.get("max_num_view", 6)
-            resolution = inputs.get("resolution", 512)
+            resolution = int(inputs.get("resolution", 512))
+            texture_resolution = int(inputs.get("texture_resolution", 4096))
+            if texture_resolution not in (1024, 2048, 4096, 8192):
+                raise ValueError("texture_resolution must be one of 1024, 2048, 4096, or 8192")
 
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
             logger.info(f"Painting mesh with Hunyuan3D-Paint-v2-1: {mesh_path}")
 
+            if cancel_checker and cancel_checker():
+                raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
+
             if hasattr(self.paint_pipeline.config, "max_selected_view_num"):
                 self.paint_pipeline.config.max_selected_view_num = max_num_view
             if hasattr(self.paint_pipeline.config, "resolution"):
                 self.paint_pipeline.config.resolution = resolution
-            enable_realesrgan = bool(inputs.get("enable_realesrgan", inputs.get("realeg", True)))
+            # RealESRGAN is part of this pipeline, not a user-selectable extra pass.
             if hasattr(self.paint_pipeline.config, "enable_realesrgan"):
-                self.paint_pipeline.config.enable_realesrgan = enable_realesrgan
+                self.paint_pipeline.config.enable_realesrgan = True
+            if hasattr(self.paint_pipeline.config, "texture_size"):
+                self.paint_pipeline.config.texture_size = texture_resolution
+            renderer = getattr(self.paint_pipeline, "render", None)
+            if renderer is not None:
+                if hasattr(renderer, "texture_size"):
+                    renderer.texture_size = texture_resolution
+                if hasattr(renderer, "set_default_texture_resolution"):
+                    renderer.set_default_texture_resolution(texture_resolution)
 
             base_name = f"{self.model_id}_{mesh_path.stem}_{image_path.stem}"
             output_path = self.path_generator.generate_mesh_path(
@@ -234,9 +313,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             use_remesh = bool(inputs.get("use_remesh", False))
             with Image.open(image_path) as reference_image:
                 reference_image = self._prepare_reference_image(reference_image)
+
+            if cancel_checker and cancel_checker():
+                raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
+
             final_mesh_path = self.paint_pipeline(
                 str(mesh_path), reference_image, str(output_path), use_remesh=use_remesh
             )
+
+            if cancel_checker and cancel_checker():
+                raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
 
             if final_mesh_path != str(output_path):
                 shutil.move(final_mesh_path, output_path)
@@ -245,6 +331,14 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)
 
             pbr_verification = self._verify_pbr_output(output_path)
+            if not pbr_verification.get("has_base_color_texture"):
+                raise RuntimeError("Hunyuan3D-Paint output has no verifiable embedded base-colour texture.")
+            if pbr_verification.get("base_color_dimensions") != [texture_resolution, texture_resolution]:
+                raise RuntimeError(
+                    "Hunyuan3D-Paint exported atlas dimensions "
+                    f"{pbr_verification.get('base_color_dimensions')} do not match requested "
+                    f"{texture_resolution}x{texture_resolution}."
+                )
 
             response = {
                 "output_mesh_path": str(output_path),
@@ -258,6 +352,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     "face_count": mesh_stats["face_count"],
                     "max_num_view": max_num_view,
                     "resolution": resolution,
+                    "texture_resolution": texture_resolution,
+                    "base_color_dimensions": pbr_verification["base_color_dimensions"],
                     "reference_aspect_ratio_preserved": True,
                 },
                 "pbr_verification": pbr_verification,
@@ -298,12 +394,6 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     "description": "Texture generation resolution per view",
                     "default": 512,
                     "enum": [512, 768],
-                    "required": False,
-                },
-                "enable_realesrgan": {
-                    "type": "boolean",
-                    "description": "Enable RealESRGAN 4x Super-Resolution enhancement",
-                    "default": True,
                     "required": False,
                 },
             },

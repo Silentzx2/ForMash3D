@@ -1,3 +1,185 @@
+## 2026-10-13 — Hunyuan Loader and Dependency Root Causes
+
+- TripoSG's reported `HybridCache` import failure came from shared `transformers==4.46.3` being below Mini Turbo's upstream `transformers>=4.48.0` requirement while the environment used `peft==0.17.1`. Shared runtime now targets `transformers==4.48.3`; Diffusers and Torch/CUDA pins remain unchanged.
+- Hunyuan Shape's Python package root is `backend/thirdparty/hunyuan3d-shape-v2-1/hy3dshape`; correct imports are `hy3dshape.pipelines` and `hy3dshape.rembg`. Do not delete or rewrite an `__init__.py` at runtime or alias `hy3dshape.hy3dshape` in `sys.modules`.
+- Mini's source root is `backend/thirdparty/hunyuan3d-dit-v2-mini-turbo`; its checkpoint folder is `backend/pretrained/tencent/Hunyuan3D-2mini/hunyuan3d-dit-v2-mini-turbo`. Put the source root first in `sys.path`, remove conflicting cached `hy3dgen` modules before import, and validate both paths before pipeline initialization.
+- Model-load exceptions must use `logger.exception(...)` to retain the chained traceback. The multiprocess worker logs full details but returns a concise summary instead of forwarding a full traceback as a UI error.
+- Static source-contract tests were added. GPU inference validation remains pending until run on a CUDA-enabled host.
+
+---
+
+## Current Runtime Catalog — 2026-10-11
+
+- **Tripo integration:** TripoSG is the sole active/selectable Tripo model. TripoSR and TripoSF adapters, registrations, scheduling profiles, presets, UI fallbacks, download/verification paths, and model-specific installer steps have been retired. TripoSF was not retained because its image-generation path invokes TripoSR for coarse-mesh creation.
+- **Multi-View:** The dedicated Zero123++ model integration, GeneratePanel workspace, API router, model registration, tests, and download/install-manager entries have been removed. The single-image generation path remains the supported UI/API path.
+- **Scope guard:** Other model integrations and generic scheduler/capability code remain intact. All `backend/thirdparty/` vendored repository directories were deliberately left untouched for separate manual cleanup; the docs below retain historical records of prior implementations.
+
+---
+
+## 2026-10-11 Complete Audit Remediation Pass (All 5 Specialists: Raw Geometry, Texture Pipeline, API Lifecycle, Database Admin, UI Contracts)
+- **RAW-QUALITY-001, BUG-006, BUG-024 (Specialist 1)**:
+  - TripoSR mc_resolution parameter unlocked up to 512 max fidelity instead of hardcoded 320.
+  - TripoSG num_inference_steps clamp removed and full hierarchical octree depth forwarded.
+  - Hunyuan3D-Shape-v2.1 and Hunyuan3D-DiT-v2-mini-Turbo default to 512 octree resolution when source_quality == 'max'.
+  - TripoSF upright Y-up orientation verified and spurious +90° X rotation removed; coordinate basis tested with asymmetric 3D fixture.
+  - GeneratePanel mesh quality options copy updated to describe downstream polycount budgets (~15k, ~30k, ~60k, ~100k tris) rather than inaccurate universal grid estimates.
+- **BUG-001, BUG-008, BUG-009, BUG-017, BUG-019, BUG-020, BUG-026 (Specialist 2)**:
+  - Fixed pipeline.py Stage 7 indentation ensuring game-ready GLB, FBX, and LODs execute cleanly without UnboundLocalError when texturing is disabled.
+  - Set active_model_url to textured_model_url on texturing success while strictly preserving immutable master/source.glb.
+  - Built downstream FBX and LOD chain from the textured mesh derivative.
+  - Applied Paint3D scene node transforms via scene_to_mesh() before OBJ extraction.
+  - Unclamped 8K bake maps and recorded width/height dimensions per map in generated and result metadata.
+  - Propagated bake and collision failures into artifact_errors, degraded_reasons, and production_status: "degraded".
+  - Reported truthful degraded fallback for quad retopology on native-textured models without silent triangles.
+- **BUG-002, BUG-012, BUG-013, BUG-018, BUG-023 (Specialist 3)**:
+  - Single-pass pop of nested texture_resolution from model_parameters with strict precedence.
+  - Preserved original reference image path when preprocessing enhancement artifact is provided.
+  - Tracked and cleaned temporary mesh_gen_* directories on job completion, failure, cancellation, and scheduling errors.
+  - Fixed adapter get_vram_status to report ineligible when CUDA is unavailable and validate assigned gpu_id.
+  - Validated supported texture resolutions (1024, 2048, 4096, 8192 / 1K, 2K, 4K, 8K) returning 422 HTTP error for arbitrary sizes.
+- **BUG-003, BUG-004, BUG-005, BUG-014, BUG-015, BUG-016, BUG-025 (Specialist 4)**:
+  - _delete_tree handles files (unlink) and directories (rmtree) with root containment guards.
+  - clear_all_files collects full metadata batches without pagination skips, reporting authoritative removal count.
+  - _delete_job_with_workspace and DatabaseTab distinguish deleted, missing, and not_recorded workspace states.
+  - _collect_job_ids applies status and feature selectors to Redis keys.
+  - Active jobs cancelled and workers drained before deletion.
+  - FileStore list_file_metadata cleans stale IDs from global and per-type sorted sets.
+  - _models_root dynamically derived from _storage_root() / "models".
+- **BUG-007, BUG-010, BUG-011, BUG-021, BUG-022, BUG-027 (Specialist 5)**:
+  - 4K texture preset resolves to 4096 across all generation and batch builders.
+  - TexturePanel consumes authoritative backend model readiness directly from /system/models.
+  - Disabled unsupported TexturePanel controls (Low VRAM, style presets, PBR toggles) with clear tooltips.
+  - Removed all literal icon token placeholder strings across 6 UI components.
+  - Emitted warning toast with degradation reasons on degraded production status; persisted productionStatus and degradedReasons on ModelAsset.
+- **Full Verification**: All regression suites passing 100%: 11/11 in test_api_contracts_lifecycle.py, 13/13 in test_database_admin.py, 15/15 in test_generation_adapter_regressions.py, 14/14 in test_postprocess_texture_pipeline.py, 16/16 in test_paint3d_adapter.py / test_postprocess_e2e.py, 6/6 in test_cancellation_and_quad.py; TypeScript typecheck (`bun run test`) clean with 0 errors.
+
+---
+## 2026-10-11 Database Admin & FileStore Consistency Pass (Specialist 4)
+- Fixed `test_clear_all_jobs_requires_typed_confirmation`: `_cancel_job_if_active` safely handles schedulers/job queues without a direct `cancel_job` method, distinguishes active jobs from idle SQLite rows, and cancels/drains active workers before deletion.
+- BUG-003: `_delete_tree()` safely unlinks files/symlinks and rmtree's directories with root-containment checks before deletion, preventing escape outside storage root.
+- BUG-004: `clear_all_files()` gathers metadata in stable un-shifted batches and counts only authoritative deleted metadata records across >1,000 files without skipping items.
+- BUG-005: `_delete_job_with_workspace()` in `database.py` and `delete_job()` in `system.py` report `asset_workspace_status` (`"deleted"`, `"missing"`, `"not_recorded"`, `"failed"`). `DatabaseTab.tsx` toast accurately reflects missing vs deleted vs not recorded workspaces.
+- BUG-014: `_collect_job_ids()` applies requested status and feature selectors to Redis jobs (`3daigc:jobs`) as well as SQLite, preventing cross-status or cross-feature bulk deletion.
+- BUG-015: `_delete_job_with_workspace()` and `clear_all_jobs()` cancel and drain active jobs, refusing to delete active jobs that cannot be stopped.
+- BUG-016: `FileStore.list_file_metadata()` cleans stale IDs from both global (`3daigc:files:all`) and per-type (`3daigc:files:{file_type}`) sorted sets.
+- BUG-025: `_models_root()` dynamically derives from `_storage_root() / "models"`, honoring configured `STORAGE_LOCAL_PATH`.
+- Verification: 13 passed in `backend/tests/test_database_admin.py` (including 6 new regression tests); `py_compile` clean.
+
+---
+## 2026-10-11 Consolidated Generation, Texture, Detail-Preservation, and UI Reliability Pass
+
+- Normal image-to-3D requests use raw geometry; texture_enabled/generate_texture are post-processing controls and are filtered from geometry-model inference. Central routing sends 1K/2K to Paint3D and 4K/8K to Hunyuan3D-Paint v2.1.
+- API request validators normalize named presets and numeric atlas sizes (1K=1024, 2K=2048, 4K=4096, 8K=8192). Central texturing inspects the embedded base-colour texture in the exported GLB and refuses to report success if the observed square dimensions cannot be verified or do not match the target. The raw master remains separate on texture failure.
+- RealESRGAN remains internal to Hunyuan Paint and is forced on; its separate UI toggles were removed. Per-view generation resolution (512/768) is separate from the target atlas size, and the vendor export no longer requests atlas downsampling.
+- Removed the Advanced micro-detail control and enabled high-to-low normal/AO baking by default where supported. AutoRetopo uses less shell smoothing and avoids voxel-shell reconstruction for already-watertight requested quad meshes. Native/Raw polycount disables automatic decimation in the frontend parameter builders.
+- Texture Studio routes Paint3D through the manifest model ID paint3d. Multi-view requests carry the original reference-image file reference and the post-process settings consumed by the API. The database tab ignores stale request responses and exposes refresh failures with retry.
+- Regression coverage added for 8K request normalization, direct-paint flag isolation, atlas-dimension validation, FastMesh degenerate-input handling, and scheduler post-process parameter filtering. GPU/model outputs, browser interaction, and the complete test/build suite still need execution in the project runtime.
+
+---
+## 2026-10-11 Database Administration Surface (Admin Database Tab)
+- **Backend router**: `backend/api/routers/database.py` mounted at `/api/v1/system/database` in both `main_singleworker.py` and `main_multiworker.py`. Endpoints: `GET /stats` (SQLite status counts + db file size, Redis key count + `used_memory`, queue counts, file-metadata count, meshes/uploads disk sizes), `GET /keys` (read-only SCAN-based Redis key inspector, `limit` 1..1000, `503` when Redis is unavailable), `DELETE /jobs` (bulk by `job_ids`/`status`/`feature`), `POST /jobs/clear`, `DELETE /files/clear`. API key required; admin role required whenever a user is authenticated. Regression tests: `backend/tests/test_database_admin.py` (7).
+- **Confirm-token safety model**: `DELETE /jobs` requires `{"confirm": true}` plus a selector (`job_ids` list, or `status`, or `feature`); running/queued jobs are skipped unless `force: true`. `POST /jobs/clear` requires `{"confirm": "CLEAR_ALL_JOBS"}`; `DELETE /files/clear` requires `{"confirm": "CLEAR_ALL_FILES"}`. Each job is removed from Redis hot keys AND the SQLite jobs table (reusing `RedisJobQueue.delete_job`, ADR-062) and its canonical asset workspace under `backend/storage/models/meshes/<asset>_<job_id>/` is deleted only after the durable delete succeeds (path validated against the models root before `rmtree`).
+- **New DatabaseManager methods**: `delete_all_jobs()` (deletes every job row for the clear endpoint) and `get_database_size_bytes()` (SQLite file plus WAL/SHM sidecars).
+- **Intentionally preserved**: uploads and file metadata survive clear-all-jobs (which additionally sweeps job-owned Redis keys, removes every job workspace, and VACUUMs SQLite); job records and asset workspaces survive clear-all-files; user/token auth keys (`3daigc:user*`, `3daigc:token*`, `3daigc:users:all`) are never swept, so a job wipe never logs users out or revokes API keys.
+- **Frontend**: admin Database tab at `/admin?tab=database` — stats cards, paginated jobs table with per-row cancel (running → cancelled) and delete (full removal from the jobs DB), checkbox multi-select + bulk delete by selection/status/feature, Redis key inspector, and typed-confirmation danger-zone clear actions.
+
+## 2026-10-11 Setup Robustness — Node Locked Runtime Reuse
+- `scripts/setup.sh` `_ensure_node_version()` re-downloaded the locked Node v24.21.0 on every setup run even when the pinned runtime was already on disk at `$HOME/.formash3d/node/current`. A transient download/extract failure then aborted the entire setup with `Node v24.21.0 installation failed verification (found: 22.14.0)` — the verification saw nvm's v22.14.0 because the re-install had deleted/broken the pinned path.
+- Fixed: the function now reuses the existing pinned runtime when `current/bin/node --version` matches the lock, before any network access. Setup is idempotent for the Node step; verified live (`REUSE_OK -> v24.21.0`). `bash -n` clean.
+- Same class of failure hit npm: the pinned Node runtime already bundles the locked npm v11.19.0, but `_ensure_npm_version()` resolved the ambient (nvm) npm 10.9.2 and attempted `npm install -g npm@11.19.0`, which targets the read-only conda/nvm prefix (`npm config get prefix` → `/system/conda/node/nvm/...`) and always fails without root. Fixed: verify/reuse `${NODE_RUNTIME_DIR}/current/bin/npm` by absolute path before any install, and any fallback install uses `--prefix "${NODE_RUNTIME_DIR}/current"` (user-owned), never the ambient prefix. Removed the sudo self-upgrade path entirely — root is not required for the pinned runtime.
+
+## 2026-10-11 Section 3 Paint3D 1K/2K Texture Integration
+- **Paint3D Adapter Implementation (`backend/adapters/paint3d_adapter.py`)**:
+  - Inherits from `ImageToMeshModel` (with `MeshToMeshModel` and `ModelAdapter` compatibility aliases).
+  - Implements two-stage workflow: Stage 1 coarse multi-view painting (`pipeline_paint3d_stage1.py`) and Stage 2 UV inpainting & seam refinement (`pipeline_paint3d_stage2.py`).
+  - Supports `1K` (1024x1024) and `2K` (2048x2048) texture presets, accepting untextured input mesh (`.glb`, `.obj`) and original reference image path (`image_path`).
+  - Job-scoped directory isolation via `tempfile.mkdtemp(prefix=f"paint3d_job_{job_id}_")` with automatic cleanup in `finally` blocks to prevent concurrent write collisions.
+  - Safe subprocess invocation with discrete argv lists, strict timeout and cancellation handling, and controlled environment (`CUDA_VISIBLE_DEVICES`, `PYTHONPATH`).
+  - Preserves underlying mesh geometry while exporting textured `.glb` / `.obj` with extracted texture maps dictionary (`{"albedo": ...}`) and real on-disk resolution metadata.
+  - Enforces strict GPU policy (`device = 'cuda:0'`), raising immediate errors if CUDA is unavailable and never silently falling back to CPU.
+- **Model Registration & Registry Aliases**:
+  - `backend/core/scheduler/model_factory.py`: Registered `paint3d` and `paint3d_image_mesh_painting` in `ADAPTER_REGISTRY` pointing to `adapters.paint3d_adapter.Paint3DAdapter`.
+  - `backend/adapters/__init__.py`: Added `Paint3DAdapter` and `Paint3DImageMeshPaintingAdapter` to `_ADAPTER_MAP` with lazy dynamic import and automatic `backend/` directory path injection.
+  - `backend/config/models.yaml`: Registered `paint3d` under `image_mesh_painting` (`vram_requirement: 12000`, `supported_inputs: ["mesh", "image"]`, `supported_outputs: ["glb", "obj"]`, `supported_resolutions: [1024, 2048]`, `model_path: "backend/pretrained/Paint3D"`, `enabled: true`, `max_workers: 1`).
+- **Vendored Upstream & Runtime Compatibility**:
+  - Upstream repository vendored in `backend/thirdparty/Paint3D` (pinned at commit `d5545d38db6aaf78efc563269f70177688a4218e`, nested `.git` removed).
+  - Maintained baseline runtime: Python 3.10, PyTorch 2.6.0+cu124, CUDA 12.4 without library downgrades. Upstream modules (`paint3d.models.textured_mesh`, `controlnet.*`, `paint3d.dataset`, `paint3d.trainer`) compile and import cleanly.
+- **Download Manager & Shell Tools**:
+  - `backend/scripts/download_models.sh`: Added `download_paint3d()` downloading official weights (`GeorgeQi/Paint3d_UVPos_Control` with fallback to `OpenTexture/Paint3D`) into `backend/pretrained/Paint3D` and validating `diffusion_pytorch_model.bin` and `config.json`. Integrated into `verify_all_models()` and the main selection loop.
+  - `manager.sh`: Added interactive option `[24] Paint3D - 1K/2K UV texture diffusion model` in `cmd_models()`.
+  - `backend/scripts/install.sh`: Added repository clone and lightweight dependency check (`omegaconf`, `xatlas`) preserving PyTorch 2.6 / CUDA 12.4.
+- **Verification**:
+  - Verified Python syntax: `python -m py_compile backend/adapters/paint3d_adapter.py backend/core/scheduler/model_factory.py backend/adapters/__init__.py`.
+  - Verified Shell syntax: `bash -n backend/scripts/download_models.sh backend/scripts/install.sh manager.sh`.
+  - Pytest regression tests: `pytest backend/tests/test_paint3d_adapter.py -v` (5/5 passed).
+
+## 2026-10-11 Section 5, A1, A2, A3 Centralized Texture Pipeline & Cooperative Cancellation
+- **Cooperative Post-Processing Cancellation (A1)**: In `backend/postprocess/pipeline.py`, added `CancelChecker = Optional[Callable[[], bool]]` and `_check_cancelled(cancel_checker)` helper raising `InterruptedError`. Inserted cancellation checkpoints before/after every major stage (inspect, repair, retopo, remesh, optimize, UV, bake, texture, LODs, QA). If cancel is signaled, post-processing aborts immediately without corrupting `master/source.glb` or writing false completion to `asset.json`.
+- **Centralized Texture Stage inside Post-Processing (Section 5)**: In `backend/postprocess/pipeline.py`, added `resolve_texture_preset()` (`1K`->1024, `2K`->2048, `4K`->4096, `8K`->8192) routing 1K/2K to Paint3D and 4K/8K to Hunyuan3D-Paint v2.1. Integrated `_execute_texture_stage()` into `run_postprocess_job()` between game-ready/FBX export and LODs. If `texture_enabled=False`, marks status `skipped`. When enabled, passes validated mesh and durable reference image, writes textured result to separate `textures/<base_name>_textured.glb` without overwriting raw master, validates on-disk atlas dimensions, and on texture failure preserves raw geometry with degraded telemetry. Audited manifest cache to permit texture-only retries without repeating raw geometry generation.
+- **Auto-rig Terminal Parent Protection (A2)**: In `backend/core/scheduler/multiprocess_scheduler.py`, updated `_watch_auto_rig()` to verify parent status (`get_job(parent_job_id)`) during child polling, before completing parent job, and in the exception fallback block. Cancels child job and exits cleanly if parent was cancelled or failed.
+- **Truthful Cooperative Cancel Signal (A3)**: In `backend/core/scheduler/multiprocess_scheduler.py`, updated `cancel_job()`. When `_stop_worker_for_job()` returns False (work in postprocess or chained stages), sets `self._cancel_requested_jobs`, triggers thread-safe `_active_postprocess_cancels[job_id]`, and requests cancellation via Redis, returning False without faking completion or premature temp file deletion.
+- **Auto-paint Orchestration in `_handle_job_result()`**: In `multiprocess_scheduler.py`, normalized `texture_enabled` into post-processing rather than scheduling redundant `image_mesh_painting` child jobs. Wrapped `run_postprocess_job` with a thread-safe `cancel_checker`, caught `(InterruptedError, asyncio.CancelledError)` to cleanly cancel the job without marking failure, and protected auto-rig and final completion against terminal parent races.
+- **Verification**: 12/12 pytest unit tests pass across `test_postprocess_texture_pipeline.py` and `test_cancellation_and_quad.py`; 21/21 official model parity tests pass (`test_official_model_parity_contract.py`); `python3 -m py_compile` clean.
+
+## 2026-10-11 Section 4 Raw-Mesh Decoupling & Model Registry Normalization
+- **Normal image-to-3D models produce raw mesh only**: Converted TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, Unique3D, and Pixal3D to output untextured raw geometry only, completely removing embedded native texture generation, texture baking, and automatic paint chaining from the normal generation path. Texturing is decoupled into the centralized post-processing texture stage.
+- **`backend/config/models.yaml`**:
+  - Set `paint_autochain: false` on `hunyuan3d_shape_v21_image_to_raw_mesh` and `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh`.
+  - Set `texture_generation: false` on `unique3d_image_to_raw_mesh`.
+  - Added `trellis_image_to_3d`, `trellis_image_to_raw_mesh`, `trellis2_image_to_3d`, and `trellis2_image_to_raw_mesh` under `image_to_raw_mesh`.
+  - Deprecated legacy `trellis_image_to_textured_mesh` and `trellis2_image_to_textured_mesh` under `image_to_textured_mesh` with `deprecated: true` and `alias_of` pointing to the raw-mesh IDs.
+- **`backend/adapters/hunyuan3d_shape_v21.py`**:
+  - Changed `Hunyuan3DShapeV21ImageToTexturedMeshAdapter` to inherit directly from `Hunyuan3DShapeV21ImageToRawMeshAdapter` with a deprecation warning, removing the internal auto-chain call to Hunyuan Paint.
+  - Added backward-compatible alias `Hunyuan3DShapeV21ImageToMeshAdapter = Hunyuan3DShapeV21ImageToRawMeshAdapter`.
+- **`backend/adapters/trellis_adapter.py`**:
+  - Refactored `TrellisImageToMeshAdapterCommon._process_request` so image-to-3D decodes `formats=["mesh"]` only, extracting the raw mesh without invoking `to_trimesh` multiview rendering and texture baking.
+  - Rotated the raw untextured mesh to standard Y-up (`[[1, 0, 0], [0, 0, 1], [0, -1, 0]]`) and returned metadata with `"has_texture": False`.
+  - Subclassed `TrellisImageToTexturedMeshAdapter` from `TrellisImageToRawMeshAdapter` with deprecation notices. Added `TrellisImageToMeshAdapter` alias.
+- **`backend/utils/trellis2_utils.py` & `backend/adapters/trellis2_adapter.py`**:
+  - In `trellis2_utils.py`: Added `raw_mesh_only=True` parameter to `Trellis2Runner.image_to_mesh()`, returning untextured `trimesh.Trimesh` directly from vertices/faces and skipping `o_voxel.postprocess.to_glb` texture generation and baking.
+  - In `trellis2_adapter.py`: Implemented `Trellis2ImageToRawMeshAdapter` calling `image_to_mesh(..., raw_mesh_only=True)` with `"has_texture": False`. Subclassed `Trellis2ImageToTexturedMeshAdapter` from `Trellis2ImageToRawMeshAdapter`. Added `Trellis2ImageToMeshAdapter` alias.
+- **`backend/adapters/unique3d_adapter.py`**:
+  - Corrected generation info from `"has_texture": True` to `"has_texture": False` with `"has_vertex_color": True, "vertex_color": True`, preserving native PyTorch3D mesh vertex colors without 2D UV texture baking.
+- **`backend/core/scheduler/model_factory.py` & `backend/adapters/__init__.py`**:
+  - Added `get_model_adapter()` method and function.
+  - Updated `ADAPTER_REGISTRY` with canonical `image_to_raw_mesh` mappings for TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2.1, and Hunyuan3D-DiT-v2-mini-Turbo.
+  - Added `LEGACY_IMAGE_TO_RAW_ALIASES` dict mapping legacy `image_to_textured_mesh` IDs to raw-mesh IDs.
+  - In `create_model_from_config()`, normalized `feature_type == "image_to_textured_mesh"` to `"image_to_raw_mesh"` and resolved legacy aliases.
+  - Added legacy adapter class aliases in `backend/adapters/__init__.py` `_ADAPTER_MAP`.
+- **Verification**: Verified with `py_compile` across all modified files and executed automated assertions in `3daigc-api` virtual environment validating `models.yaml` configuration, `ModelFactory.ADAPTER_REGISTRY`, `get_model_adapter()` resolution, and lazy adapter imports.
+
+## 2026-10-11 Backend Cancellation & Redis/SQLite Consistency (Sections A & B)
+- **Redis `update_job_progress` terminal status guard`: In `redis_job_queue.py`, `update_job_progress()` checks status first against `_TERMINAL_STATUSES` (`completed`, `failed`, `cancelled`). If terminal, returns early without mutating progress, stage, message, logs, or hot keys.
+- **SQLite cancellation persistence**: In `redis_job_queue.py`, `cancel_job()` now loads `JobRequest` and calls `await asyncio.to_thread(self.db_manager.save_job, job_request)` with `JobStatus.CANCELLED`, error `'Cancelled by user'`, and `completed_at`, mirroring `complete_job()` and `fail_job()`.
+- **Truthful cancellation endpoint**: In `mesh_generation.py`, `cancel_mesh_generation()` propagates real outcome from `scheduler.cancel_job(job_id)` instead of calling `force=True` on `job_queue`. Returns `cancelled=True` if cancelled, or `cancelled=False, cancel_requested=True, message='Cancellation requested'` if still stopping/processing.
+- **Status alias compatibility**: Reconciled status checks across `redis_job_queue.py` and `mesh_generation.py`. 'running' is cleanly accepted as an alias for 'processing', while terminal statuses are strictly (`completed`, `failed`, `cancelled`).
+- **Frontend polling cancel sync**: In `WorkspaceContext.tsx`, `cancelExecution()` now synchronizes `jobsById` and `jobsByIdRef.current` with `status: 'interrupted'`, preventing the polling loop from resurrecting the cancelled job to active.
+- **Verification**: `py_compile` clean; `tsc --noEmit` clean; 5/5 regression tests pass (`test_cancellation_redis_sqlite_consistency.py`).
+
+## 2026-10-11 Tripo Mesh Quality Fixes (TripoSR / TripoSG / TripoSF)
+- **TripoSF always ran the low-VRAM downshift**: `triposf_adapter.py` parsed `low_vram_mode` with `bool(inputs.get(...))`, but the frontend always sends the advisory string `'auto'` — `bool('auto')` is `True`, so every standard job was silently cut to 256-volume / 409,600 samples / forced pruning (runtime log: `low_vram_mode enabled: resolution=256, pruning=True, sample_points=409600` on a 15 GB GPU). Fixed with a tri-state `_resolve_low_vram_mode()` (`'auto'` = measured decision from free VRAM, never below the official 819,200 floor; `'low'` = explicit 409,600 fallback; `'normal'` = full 1,638,400). Schema type corrected from `boolean` to the string enum it actually receives.
+- **TripoSF volume-resolution landmine removed**: code/schema hardcoded `resolution: 1024`, but the released checkpoint `pretrained_TripoSFVAE_256i1024o` and `configs/TripoSFVAE_1024.yaml` build the VAE at 256 (1024³ is only the FlexiCubes extraction grid). At 1024 the decoder masks cover only coordinates < 256, silently dropping ~98.4% of voxels. Adapter now uses the official 256 everywhere (constructor, runtime, schema, parity test), and logs when a request carries a different value (the frontend still sends 1024; it is now inert).
+- **TripoSR foreground was never cropped**: vendored `resize_foreground()` treats any non-zero alpha as foreground, so soft rembg masks leaked the whole frame as foreground — on full-scene photos (e.g. the reported house image) the subject stayed ~24% of the canvas instead of the upstream >70%. `TripoSRImageToRawMeshAdapter` now hardens the mask (`_binarize_alpha_mask`, alpha >= 128) before upstream cropping; rembg failure is recorded as `background_removal_failed` in `generation_info` instead of silently feeding the uncropped raw image; marching-cubes noise fragments are dropped (`_drop_noise_components`).
+- **TripoSG gate myth corrected**: the `quality`/`meshQuality` flash-decoder disable gate was dead code (the raw/textured path never sends those keys; only the multiview body does, and TripoSG is `multiview: false`), and the vendored hierarchical path it selected queries a far denser grid (OOM risk). The flash VAE decoder is the official upstream extraction path (`scripts/inference_triposg.py` relies on the pipeline default) and runs exact SDPA attention, so it is now the documented single path. RMBG-1.4 load failure now raises a clear error instead of logging "will use fallback" and crashing later in `prepare_image`.
+- **Contract correction (supersedes the 2026-10-03 note "TripoSF 1024³ + 1,638,400 samples")**: TripoSF volume resolution is 256 (official), sample count 1,638,400 (README complex-shape tip; official default 819,200 remains the auto-downshift floor). TripoSR `mc_resolution=320` is converged at the model ceiling (extraction at 512³ moves the surface < 2 mm); sharpness now depends on model selection, not extraction density.
+- Regression tests: tri-state low-VRAM parse, official 256 resolution, alpha binarization, noise-component drop (`tests/test_official_model_parity_contract.py`). Full suite matches the pre-change failure set exactly (8 pre-existing failures, none in Tripo files; 139 passed vs 135 before). GPU validation of new TripoSF sample density remains environment-gated.
+
+## 2026-10-10 Database Durability (WAL, Orphan Reconciliation, Temp-Dir Cleanup)
+
+- **SQLite concurrency**: API + scheduler + workers write `backend/storage/job_queue.db`; no WAL meant reader/writer lock contention. `database_manager._initialize_database` now applies `PRAGMA journal_mode=WAL / busy_timeout=30000 / synchronous=NORMAL` via an engine `connect` event (persistent in the file).
+- **Orphaned transient rows**: after a scheduler restart or Redis-side delete, SQLite `queued`/`processing` rows never resolved (stuck-forever jobs in the UI). `RedisJobQueue._reconcile_stale_job_rows` (called from `recover_orphaned_jobs` at startup) fails transient rows with no presence in the jobs hash or pending zset, using the new single-transaction `DatabaseManager.mark_jobs_failed`. Terminal rows are never touched. Verified live before commit.
+- **Temp-dir cleanup broke in-flight jobs**: `_cleanup_stale_input_dirs` removed every `/tmp/mesh_gen_*` dir at scheduler startup, including dirs the API process still owned for queued jobs → workers failed with `[Errno 2] No such file or directory: /tmp/mesh_gen_*/b64_*.webp`. Now only dirs with mtime older than 6h are removed.
+- Known-remaining (not bugs, tracked): UniRig needs `bpy` (no py3.10 wheel; decision pending); Quad AutoRetopo is best-effort by design.
+
+## 2026-10-10 Mesh-Tool UX Fixes (Data-URL Inputs, Panel Switching, Upload Refs, Job Deletion, UniRig)
+- **Texture data-URL rejection**: `runTextureGeneration` sent `image_path` = `data:image/webp;base64,...`; backend `process_file_input` now routes `data:` URLs into its base64 branch (mesh_generation.py:368-397), and the UI sends `image_base64` (prefix stripped) or `image_file_id`.
+- **Panel auto-switch**: `selectAsset`/`startTask`/`selectJobToView` read a stale `activeTool` closure and rewrote the URL, which Next 16 + `WorkspaceShell.tsx:249-255` mapped back to Generation on every asset change. Fixed with `activeToolRef` (WorkspaceContext.tsx:467,652; route reads at 1138,1183,1341).
+- **Uploaded meshes without backend fileId**: new `uploadMeshAsset()` (types.ts:248-289) uploads via `/api/v1/file-upload/mesh` and sets `fileId` + `source.fileId`; wired into Remesh/Segment/Edit/UV panels and MeshViewer drag-drop.
+- **Job deletion 500**: `delete_job` referenced a nonexistent `self.results_hash_key` (results are string keys under `results_prefix`) → every DELETE 500'd and SQLite rows survived as phantom history entries. Fixed at redis_job_queue.py:717.
+- **UniRig missing `src/data`**: cause was `backend/.gitignore:434` bare `data/` rule dropping the vendored UniRig data modules on clone (not a download failure). Restored 17+2 upstream files (verified byte-identical to upstream commit d993b00), one py3.10 typing fix in `src/data/asset.py`, fail-fast imports in `utils/unirig_utils.py`, plus `!thirdparty/UniRig/src/data/` negations. Rigging still needs `bpy` (Blender 4.0 bundled python; no py3.10 wheel) — needs a decision/approval before install changes.
+- **image-to-raw-mesh silent 400**: `validate_inputs` was `field_validator("image_file_id")` so it never ran for sample-preset requests (no file_id); converted to `model_validator(mode="after")` → 422 with field detail, and UI pre-checks with a clear message.
+- Validation: compileall, tsc, live checks — DELETE 200, data-URL painting 200/queued, no import errors after restart. End-to-end GPU runs (paint/rig) remain user-hardware gated.
+
 ## 2026-10-10 Downloader False-Success Fix
 - **Symptom**: selecting ARDY [18] in `download_models.sh` printed "[WARNING] ARDY Hugging Face repository requires Meta-Llama gated access or HF token." followed by "[SUCCESS] Model Download Complete! / All requested models have been downloaded successfully." while `pretrained/ardy` had 0 files.
 - **Root cause**: `download_ardy()` printed warnings and fell through to an implicit `return 0`; the main loop never checked `download_*` return codes before the success banner. `download_triposg()` had the same swallow for RMBG-1.4 and TripoSG (warnings only).
@@ -45,12 +227,12 @@
   - Shape v2.1: Aligned default inference steps to 30 and `octree_resolution=256` for fast generation.
 - **Strict GPU Inference Enforcement Across All Adapters**:
   - Root cause: Adapters defaulted device selection to `cuda if torch.cuda.is_available() else cpu`, risking silent CPU fallback on worker initialization.
-  - Fix: Enforced strict CUDA checks across all adapters (`TRELLIS`, `TripoSR`, `TripoSG`, `TripoSF`, `Zero123++`, `Unique3D`, `UltraShape`, `VoxHammer`), raising immediate errors if CUDA is unavailable.
+  - Fix: Enforced strict CUDA checks across all adapters (`TRELLIS`, `TripoSR`, `TripoSG`, `TripoSF`, `Zero123++`, `Unique3D`), raising immediate errors if CUDA is unavailable.
 
 ## 2026-10-10 Hunyuan3D-Shape-v2-1 Pipeline Load & Frontend Job Failure Hydration
 - **Hunyuan3D-Shape-v2-1 Pipeline Loading**: Fixed `RuntimeError: Hunyuan3D-Shape-v2-1 pipeline not loaded. Call _load_model() first or check model weights.`
   - Root cause: `Hunyuan3DDiTFlowMatchingPipeline.from_pretrained(str(self.model_path)).to(device)` returned `None` because the underlying `.to()` method mutates components in place and returns `None` rather than `self`.
-  - Fix: Passed `device=device` directly to `from_pretrained()` and separated `.to(device)` as an in-place call across `hunyuan3d_shape_v21.py`, `hunyuan3d_adapter_v21.py`, and `ultrashape_adapter.py`.
+  - Fix: Passed `device=device` directly to `from_pretrained()` and separated `.to(device)` as an in-place call across `hunyuan3d_shape_v21.py`, `hunyuan3d_adapter_v21.py`.
 - **Frontend Job Failure & Deep Link Hydration**:
   - Root cause: When a generation job failed or when navigating directly to `/workspace/[tool]/[job_id]`, `jobsById` was unpopulated on initial load and `activeTask` failed state was not hydrated, causing the UI to either spin indefinitely or not reflect the failure card and diagnostic trace.
   - Fix: Added URL job hydration effect in [WorkspaceContext.tsx](file:///teamspace/studios/this_studio/ForMash3D/features/workspace/store/WorkspaceContext.tsx) to fetch `/api/v1/system/jobs/[id]` and properly populate `activeTask` (with `status: 'failed'`, diagnostic, and error message) and stop `isExecuting`. Also wired failure diagnostics into the active job polling loop.
@@ -72,7 +254,6 @@
 
 ## 2026-10-05 Model Registry & Download Manager Parity Audit
 - Cross-checked the 23 backend model manifest entries against the 22 user-selectable frontend entries, the root manager.sh, and backend/scripts/download_models.sh.
-- VoxHammer was the only registered model family missing from the download manager. Added its image- and text-conditioned TRELLIS checkpoints using the adapter-compatible Hugging Face cache layout.
 - Corrected shared-checkpoint handling for Hunyuan3D-2.1 and Hunyuan3D-2mini so model-specific entries cannot falsely report readiness from an unrelated partial directory; FastMesh no longer re-downloads a verified V1K bundle.
 - Runtime CUDA/model visual validation remains environment-gated and is not represented as passed.
 
@@ -84,7 +265,7 @@
 - Verification: backend pytest passes with 0 failures (3 runtime-gated skips); `npx tsc --noEmit` clean.
 
 ## 2026-10-03 Deep Adapter Parity & Source-Fidelity Firewall Audit
-- Re-audited frontend generation contracts, scheduler sanitization, legacy Hunyuan3D-2.1, TRELLIS runtime metadata/schemas, PartPacker docs, and the source-fidelity documentation chain.
+- Re-audited frontend generation contracts, scheduler sanitization, legacy Hunyuan3D-2.1, TRELLIS runtime metadata/schemas, retained model docs, and the source-fidelity documentation chain.
 - Added a centralized scheduler firewall for adapter-level source-reduction controls: faces, num_faces, simplify, decimation_target, remesh, remesh_band, and remesh_project.
 - Unified legacy Hunyuan3D-2.1 raw and Shape→Paint source generation on seeded 50-step / 5.0-guidance inference without low-VRAM step reduction.
 - Fixed TRELLIS source texture schema/metadata drift and locked source texture generation to 2048; TRELLIS.2 source texture is locked to 4096.
@@ -92,7 +273,7 @@
 
 ## 2026-10-03 Adapter Raw-Quality / Official-Parity Audit
 - Confirmed root cause for the reported raw `source.glb` quality gap: the frontend used a generic 75-step inference contract across models with materially different official/tuned schedules.
-- Fixed model-specific schedules: Hunyuan Mini Turbo 5, Hunyuan Shape 50, TripoSG 50, TRELLIS image 12/12, TRELLIS text 25/25, UltraShape 50.
+- Fixed model-specific schedules: Hunyuan Mini Turbo 5, Hunyuan Shape 50, TripoSG 50, TRELLIS image 12/12, TRELLIS text 25/25.
 - Fixed raw extraction ceilings: TripoSR 320; TripoSF 1024³ + 1,638,400 samples, while preserving the existing constrained-VRAM safety downshift.
 - Added deterministic generators to Hunyuan Shape and Mini Turbo; Mini Turbo now applies FlashVDM through the official pipeline method.
 - TRELLIS extraction now enables hole filling and the official forward Z-up→Y-up conversion while keeping source simplification disabled.
@@ -111,7 +292,7 @@
 - Verification: full backend suite passes (67 passed, 3 runtime-gated skips) and TypeScript compilation (`npx tsc --noEmit`) passes.
 
 ## 2026-10-03 Source Fidelity + Downstream Polycount Contract Hardening
-- Root cause: target_polycount was intended as a post-process budget but was forwarded into adapters; TripoSG/TRELLIS/PartPacker could interpret it as an early decimation target.
+- Root cause: target_polycount was intended as a post-process budget but was forwarded into adapters; TripoSG/TRELLIS could interpret it as an early decimation target.
 - Fix: multiprocess_scheduler.py now builds a separate adapter-input dictionary and removes production-only budget/orchestration controls before _process_request().
 - Maximum source fidelity: generation explicitly marks source_quality: max and uses the existing maximum geometry settings for each registered model. The visible quality selector no longer lowers source geometry.
 - Canonical safety: master/source.glb is the untouched model-native checkpoint. Positive poly budgets are applied only in canonical post-processing; Native/Raw is target 0.
@@ -220,3 +401,16 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Canonical runtime log: repository-root `logs/master.log`, absolute-path resolution, append-only/non-rotating file handling, and one target for API, scheduler/workers, startup, frontend runtime/build, and project-managed Redis.
 - Removed separate API/scheduler/Supervisor/frontend log-file targets from startup and Docker configuration. Admin/API log reading and clearing now operate on the same master file.
 - A remote Redis instance keeps host-side logs; only a local Redis instance can be redirected to the application's master file.
+
+
+## 2026-10-12 Follow-up Mesh-Fidelity Audit
+
+- Started from the just-pushed mesh-fidelity commit and re-read the unchanged `Docs/TASKS.md` research plan, model manifest, API target-resolution logic, scheduler inference profile and provenance, post-processing gates, UI budget displays, and quality evaluator.
+- Fixed budget precedence in `backend/api/routers/mesh_generation.py`: explicit top-level `target_polycount` beats a nested model parameter and preset fallback; explicit Native/Raw `0` is preserved.
+- Hardened the Native/Raw production invariant in `backend/postprocess/pipeline.py`: `auto_optimize` is false for a nonpositive/native target, and adaptive shell remesh requires a positive explicit target. Existing opt-in structural repair gating and immutable-master SHA verification remain in force.
+- Extended `raw_geometry_telemetry` to schema version 2 with input/reference hashes and dimensions, inference runtime, checkpoint/adapter identity, requested/effective resolution status, quality-limit warnings, and per-GPU total/peak allocated/peak reserved VRAM when CUDA data is available. Final post-process metadata now includes adapter-output-vs-master SHA identity and carries generation information to the final result.
+- Corrected Hunyuan Shape v2.1 and Mini-Turbo resolution labels: configured octree resolution is not reported as achieved output resolution unless upstream reports the latter. TRELLIS.2 retains true effective-resolution telemetry.
+- Unique3D SR fallback is explicit: successful model-backed SR and Lanczos fallback each record the actual path and failure reason.
+- Fixed the remaining advanced UI fallback labels that presented 50K for a native target; new workspace defaults disable automatic LOD generation in Native/Raw mode.
+- Added regression coverage for API target precedence, model-manifest/profile parity, Native/Raw optimize/remesh incompatibility, and the expanded telemetry contract.
+- **Validation status:** source-level contracts inspected; test/typecheck/format suites and CUDA A/B benchmarks have not been run in this environment. Do not claim them as passing. `Docs/TASKS.md` intentionally preserved byte-for-byte under the existing instruction; implementation and validation status is tracked in `Docs/MESH_QUALITY_IMPLEMENTATION_REPORT.md`.

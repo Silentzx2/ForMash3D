@@ -42,28 +42,28 @@ export const MeshEditInspector: React.FC = () => {
       title: 'Add cape and shoulder armor',
       timestamp: '2 minutes ago',
       status: 'Completed',
-      model: 'VoxHammer',
+      model: 'Mesh Editing',
     },
     {
       id: 'edit-2',
       title: 'Remove helmet',
       timestamp: '1 hour ago',
       status: 'Completed',
-      model: 'VoxHammer',
+      model: 'Mesh Editing',
     },
     {
       id: 'edit-3',
       title: 'Add backpack',
       timestamp: '3 hours ago',
       status: 'Failed',
-      model: 'VoxHammer',
+      model: 'Mesh Editing',
     },
     {
       id: 'edit-4',
       title: 'Change weapon',
       timestamp: '1 day ago',
       status: 'Completed',
-      model: 'VoxHammer',
+      model: 'Mesh Editing',
     },
   ]);
 
@@ -268,13 +268,13 @@ export const MeshEditInspector: React.FC = () => {
           {isModelOpen && (
             <div className="px-3 pb-3 pt-1 space-y-2.5 border-t border-white/[0.04] text-xs">
               <div className="flex items-center justify-between p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.06]">
-                <span className="font-semibold text-white">VoxHammer (Default)</span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-                  Available
+                <span className="font-semibold text-white">No provider configured</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-500/15 text-zinc-300 border border-zinc-500/20">
+                  Not configured
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 leading-relaxed">
-                Text and image-guided 3D mesh editing with localized volumetric bounding constraints.
+                Provider-specific controls are unavailable until a mesh-editing adapter is configured.
               </p>
 
               <div>
@@ -288,10 +288,10 @@ export const MeshEditInspector: React.FC = () => {
                 </button>
                 {isModelDetailsOpen && (
                   <div className="p-2 mt-1 rounded bg-[hsl(var(--surface-2))] text-[10px] font-mono space-y-1 text-zinc-400 border border-white/[0.04]">
-                    <div>VRAM Requirement: ~40 GB</div>
+                    <div>VRAM Requirement: Not configured</div>
                     <div>Supported Inputs: mesh (.glb, .obj), prompt, image</div>
                     <div>Supported Outputs: .glb</div>
-                    <div>Location: backend/pretrained/VoxHammer</div>
+                    <div>Provider: Not configured</div>
                   </div>
                 )}
               </div>

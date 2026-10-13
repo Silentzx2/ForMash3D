@@ -2,6 +2,7 @@
 
 from . import (
     auto_rigging,
+    database,
     file_upload,
     mesh_editing,
     mesh_generation,
@@ -15,6 +16,7 @@ from . import (
 
 __all__ = [
     "auto_rigging",
+    "database",
     "file_upload",
     "mesh_editing",
     "mesh_generation",

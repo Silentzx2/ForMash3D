@@ -12,10 +12,10 @@ class RetopoConfig:
     # --- base generation ("the new watertight layer") ---
     watertight: bool = True           # True: build a unified SDF/voxel shell (robust to messy input)
                                       # False: remesh the original surface directly (keeps open boundaries)
-    shell_resolution: int = 256       # voxel grid cells along the longest bbox axis (silhouette fidelity)
+    shell_resolution: int = 384       # voxel grid cells along the longest bbox axis (silhouette fidelity)
     shell_close_iter: int = 1         # morphological closing to bridge cracks in non-watertight input
-    shell_smooth: float = 0.6         # ponytail: keep the shell crisp; higher smoothing erases small features
-    shell_taubin: int = 3             # ponytail: limit post-remesh smoothing before silhouette projection
+    shell_smooth: float = 0.25         # ponytail: keep the shell crisp; higher smoothing erases small features
+    shell_taubin: int = 1             # ponytail: limit post-remesh smoothing before silhouette projection
     shell_samples_per_pitch: float = 2.0  # surface sampling density (>=2 guarantees gap-free voxel coverage)
     max_memory_gb: float = 4.0        # auto-lower shell_resolution so the voxel grid fits this budget
 

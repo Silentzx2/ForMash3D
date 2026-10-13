@@ -2,7 +2,7 @@
 Mesh editing models for local 3D mesh editing tasks.
 
 This module provides base classes for mesh editing operations,
-particularly for local region editing using VoxHammer.
+particularly for localized region-editing workflows.
 """
 
 import logging

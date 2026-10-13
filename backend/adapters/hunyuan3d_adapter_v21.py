@@ -118,7 +118,7 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                 from hy3dshape.pipelines import (
                     Hunyuan3DDiTFlowMatchingPipeline,
                 )
-                from hy3dshape.rembg import BackgroundRemover
+                from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
                 logger.info(f"Loading shape generation pipeline from {self.model_path}...")
                 shape_dev = getattr(self, 'device', None)
@@ -151,7 +151,7 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
                     Hunyuan3DPaintConfig,
                     Hunyuan3DPaintPipeline,
                 )
-                from hy3dshape.rembg import BackgroundRemover
+                from hy3dshape.hy3dshape.rembg import BackgroundRemover
 
                 logger.info("Setting up paint pipeline...")
                 max_num_view = 6

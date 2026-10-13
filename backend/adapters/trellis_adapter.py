@@ -187,7 +187,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             ss_steps = max(1, min(50, int(num_steps)))
             slat_steps = max(1, min(50, int(num_steps)))
 
-            logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, res={texture_resolution})")
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for prompt: '{text_prompt}' (steps={ss_steps}, texture_resolution={texture_resolution}; upstream does not expose achieved geometry resolution)")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
@@ -260,7 +260,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                     fill_holes=fill_holes,
                     texture_size=texture_resolution,
                     texture_bake_mode=texture_bake_mode,
-                    forward_rot=True,
+                    forward_rot=False,
                     postprocess_mode=postprocess_mode,
                 )
 
@@ -577,74 +577,106 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             tex_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
 
-            ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 12)))
-            slat_steps = int(inputs.get("slat_sampling_steps", inputs.get("num_inference_steps", 12)))
+            ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 50)))
+            slat_steps = int(inputs.get("slat_sampling_steps", inputs.get("num_inference_steps", 50)))
             ss_steps = max(1, min(50, ss_steps))
             slat_steps = max(1, min(50, slat_steps))
 
-            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (ss_steps={ss_steps}, slat_steps={slat_steps}, res={texture_resolution})")
+            logger.info(f"Generating high-fidelity mesh with TRELLIS for image path: '{image_path}' (ss_steps={ss_steps}, slat_steps={slat_steps}, texture_resolution={texture_resolution}; upstream does not expose achieved geometry resolution)")
 
             # Set random seed for reproducibility
             torch.manual_seed(seed)
             if torch.cuda.is_available():
                 torch.cuda.manual_seed(seed)
 
-            # Generate 3D representation
-            if mesh_path:
-                input_mesh = trimesh.load(mesh_path, force="mesh")
-                # Notice that the input is assumed to be Y-UP, but trellis mesh painting requires it to be Z-UP
-                # Convert mesh from y-up to z-up coordinate system
-                # Transformation matrix: [[1,0,0,0], [0,0,-1,0], [0,1,0,0], [0,0,0,1]]
-                transform = np.array([
-                    [1, 0, 0, 0],
-                    [0, 0, -1, 0],
-                    [0, 1, 0, 0],
-                    [0, 0, 0, 1]
-                ])
-                input_mesh.apply_transform(transform)
-                logger.info(f"Loaded input mesh from {mesh_path} and converted from z-up to y-up")
-                # do the voxelization
-                outputs = self.pipeline.run_detail_variation(
-                    input_mesh,
-                    Image.open(image_path),
-                    seed=seed,
-                    slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
-                    formats=["gaussian"],
-                )
-                # get ready for later texturing
-                mesh = input_mesh
+            is_mesh_painting = bool(mesh_path) or (self.FEATURE_TYPE == "image_mesh_painting")
+            if is_mesh_painting:
+                # Mesh painting path: load existing mesh and bake texture
+                if mesh_path:
+                    input_mesh = trimesh.load(mesh_path, force="mesh")
+                    # Notice that the input is assumed to be Y-UP, but trellis mesh painting requires it to be Z-UP
+                    transform = np.array([
+                        [1, 0, 0, 0],
+                        [0, 0, -1, 0],
+                        [0, 1, 0, 0],
+                        [0, 0, 0, 1]
+                    ])
+                    input_mesh.apply_transform(transform)
+                    logger.info(f"Loaded input mesh from {mesh_path} and converted from z-up to y-up")
+                    outputs = self.pipeline.run_detail_variation(
+                        input_mesh,
+                        Image.open(image_path),
+                        seed=seed,
+                        slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
+                        formats=["gaussian"],
+                    )
+                    candidate_mesh = input_mesh
+                else:
+                    outputs = self.pipeline.run(
+                        Image.open(image_path),
+                        preprocess_image=True,
+                        sparse_structure_sampler_params={"steps": ss_steps, "cfg_strength": guidance},
+                        slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
+                        seed=seed,
+                        formats=["gaussian", "mesh"],
+                    )
+                    candidate_mesh = outputs["mesh"][0]
+
+                if simplify is None:
+                    simplify = 0.0
+
+                postprocess_mode = "none" if simplify == 0.0 else "simplify"
+                fill_holes = simplify != 0.0
+
+                with torch.enable_grad():
+                    mesh = self.postprocessing_utils.to_trimesh(
+                        outputs["gaussian"][0],
+                        candidate_mesh,
+                        simplify=simplify,
+                        fill_holes=fill_holes,
+                        texture_size=texture_resolution,
+                        texture_bake_mode=tex_bake_mode,
+                        forward_rot=False,
+                        postprocess_mode=postprocess_mode,
+                    )
+                has_texture = True
             else:
+                # Raw image-to-3D geometry generation: untextured raw mesh without texture bake
                 outputs = self.pipeline.run(
                     Image.open(image_path),
                     preprocess_image=True,
                     sparse_structure_sampler_params={"steps": ss_steps, "cfg_strength": guidance},
                     slat_sampler_params={"steps": slat_steps, "cfg_strength": 3.0},
                     seed=seed,
-                    formats=["gaussian", "mesh"],
+                    formats=["mesh"],
                 )
-                mesh = None
-
-            candidate_mesh = mesh or outputs["mesh"][0]
-            if simplify is None:
-                # Raw-generation mode keeps the model-native mesh intact; optimization belongs to post-processing.
-                simplify = 0.0
-
-            # Extract mesh from Gaussian representation
-            # For raw extraction, disable post-processing (hole filling + mincut) to preserve micro-details
-            postprocess_mode = "none" if simplify == 0.0 else "simplify"
-            fill_holes = simplify != 0.0
-            
-            with torch.enable_grad():
-                mesh = self.postprocessing_utils.to_trimesh(
-                    outputs["gaussian"][0],
-                    candidate_mesh,
-                    simplify=simplify,
-                    fill_holes=fill_holes,
-                    texture_size=texture_resolution,
-                    texture_bake_mode=tex_bake_mode,
-                    forward_rot=True,
-                    postprocess_mode=postprocess_mode,
+                candidate_mesh = outputs["mesh"][0]
+                vertices_raw = (
+                    candidate_mesh.vertices.cpu().numpy()
+                    if isinstance(candidate_mesh.vertices, torch.Tensor)
+                    else np.array(candidate_mesh.vertices)
                 )
+                faces_raw = (
+                    candidate_mesh.faces.cpu().numpy()
+                    if isinstance(candidate_mesh.faces, torch.Tensor)
+                    else np.array(candidate_mesh.faces)
+                )
+
+                if simplify and simplify > 0.0:
+                    vertices, faces = self.postprocessing_utils.postprocess_mesh(
+                        vertices_raw,
+                        faces_raw,
+                        postprocess_mode="simplify",
+                        simplify_ratio=simplify,
+                        fill_holes=True,
+                    )
+                else:
+                    vertices, faces = vertices_raw, faces_raw
+
+                # Rotate from TRELLIS z-up to standard y-up coordinates (x'=x, y'=z, z'=-y)
+                vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
+                mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+                has_texture = False
 
             # Save mesh in requested format
             output_path = self._generate_output_path(
@@ -676,13 +708,24 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                         "guidance_scale": guidance,
                         "vertex_count": len(mesh.vertices),
                         "face_count": len(mesh.faces),
-                        "texture_resolution": texture_resolution,
-                        "texture_bake_mode": tex_bake_mode,
+                        "native_vertex_count": len(mesh.vertices),
+                        "native_face_count": len(mesh.faces),
+                        "source_quality": inputs.get("source_quality", "max"),
+                        "geometry_extractor": "TRELLIS native mesh decoder",
+                        "effective_geometry_resolution": None,
+                        "geometry_resolution_source": "upstream adapter does not expose a scalar achieved resolution",
+                        "raw_mesh_only": not has_texture,
+                        "mesh_operations": (
+                            ["simplify"] if (not has_texture and simplify is not None and float(simplify) > 0)
+                            else []
+                        ),
+                        "texture_resolution": texture_resolution if has_texture else None,
+                        "texture_bake_mode": tex_bake_mode if has_texture else None,
                         "simplify_ratio": simplify,
                         "thumbnail_generated": thumbnail_generated,
                         "slat_cfg_strength": 3.0,
-                        "texture_size": texture_resolution,
-                        "bake_mode": tex_bake_mode,
+                        "texture_size": texture_resolution if has_texture else None,
+                        "bake_mode": tex_bake_mode if has_texture else None,
                     },
                 }
             )
@@ -752,16 +795,16 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 },
                 "ss_sampling_steps": {
                     "type": "integer",
-                    "description": "Sparse structure sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Sparse structure sampling steps; use maximum-fidelity source sampling.",
+                    "default": 50,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
-                    "description": "Structured latent sampling steps (official default: 12)",
-                    "default": 12,
+                    "description": "Structured latent sampling steps; use maximum-fidelity source sampling.",
+                    "default": 50,
                     "minimum": 1,
                     "maximum": 50,
                     "required": False
@@ -826,21 +869,6 @@ class TrellisTextMeshPaintingAdapter(TrellisTextConditionedMeshAdapterCommon):
 TrellisTextToTexturedMeshAdapter = TrellisTextMeshPaintingAdapter
 
 
-class TrellisImageToTexturedMeshAdapter(TrellisImageToMeshAdapterCommon):
-    """
-    Adapter for TRELLIS image-to-textured-mesh model.
-
-    This adapter uses the TRELLIS model to generate textured meshes from input images
-    """
-
-    FEATURE_TYPE = "image_to_textured_mesh"
-    MODEL_ID = "trellis_image_to_textured_mesh"
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.skip_models = ["slat_decoder_rf"]
-
-
 class TrellisImageToRawMeshAdapter(TrellisImageToMeshAdapterCommon):
     """
     Adapter for TRELLIS image-to-raw-mesh model.
@@ -853,7 +881,30 @@ class TrellisImageToRawMeshAdapter(TrellisImageToMeshAdapterCommon):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.skip_models = ["slat_decoder_rf"]
+        self.skip_models = ["slat_decoder_rf", "slat_decoder_gs"]
+
+
+class TrellisImageToTexturedMeshAdapter(TrellisImageToRawMeshAdapter):
+    """
+    Deprecated adapter for TRELLIS image-to-textured-mesh model.
+
+    Legacy model ID alias routing to raw geometry per Docs/TASKS.md Section 4.
+    """
+
+    FEATURE_TYPE = "image_to_raw_mesh"
+    MODEL_ID = "trellis_image_to_textured_mesh"
+
+    def __init__(self, *args, **kwargs):
+        logger.warning(
+            "TrellisImageToTexturedMeshAdapter is deprecated. "
+            "Routing to raw geometry generation. Texturing is handled by the centralized texture stage."
+        )
+        super().__init__(*args, **kwargs)
+
+
+# Backward-compatible aliases for raw geometry generation
+TrellisImageToMeshAdapter = TrellisImageToRawMeshAdapter
+TRELLISImageToMeshAdapter = TrellisImageToRawMeshAdapter
 
 
 class TrellisImageMeshPaintingAdapter(TrellisImageToMeshAdapterCommon):

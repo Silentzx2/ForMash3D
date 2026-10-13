@@ -30,6 +30,7 @@ Rules:
 - Mark deliberate simplifications that cut a real corner with a known ceiling (global lock, O(n²) scan, naive heuristic) with a `ponytail:` comment naming the ceiling and upgrade path.
 - Treat RULES.md as mandatory, not advisory. Every decision, analysis, code change, review, and output must strictly comply with its rules. If any request conflicts with RULES.md, stop, explain the conflict, and ask for explicit user confirmation before proceeding.
 - For UI verification, use agent-browser CLI (`agent-browser`). Never save screenshots or test images to the project root; store them in `/tmp/agent-browser-screenshots/` or scratch directory.
+- When making changes to the `backend/thirdparty` directory, you must push changes to both the main repository and the thirdparty repository to keep them in sync. Never leave one repository ahead of the other.
 
 
 ### Documentation

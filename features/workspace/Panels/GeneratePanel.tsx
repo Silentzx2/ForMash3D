@@ -8,7 +8,6 @@ import { getApiClient } from '@/services/apiClient';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
-import { MultiViewWorkspace } from './MultiViewWorkspace';
 import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -31,8 +30,6 @@ export interface MeshQualityPreset {
   label: string;
   subLabel: string;
   tagline: string;
-  grid: string;
-  steps: number;
   polyEstimate: string;
   badge: string;
   tooltip: string;
@@ -42,46 +39,38 @@ export const MESH_QUALITY_OPTIONS: MeshQualityPreset[] = [
   {
     id: 'low',
     label: 'Low',
-    subLabel: '256³ / 20s',
+    subLabel: 'Draft / ~15k',
     tagline: 'Fast preview',
-    grid: '256',
-    steps: 20,
     polyEstimate: '~15k tris',
-    badge: '256³ • 20 steps (Fast)',
-    tooltip: 'Low: Fast preview (256³ grid • 20 steps • ~15k tris)',
+    badge: 'Draft (Fast)',
+    tooltip: 'Low: Fast preview and draft generation with lightweight downstream polycount (~15k tris)',
   },
   {
     id: 'medium',
     label: 'Medium',
-    subLabel: '384³ / 35s',
+    subLabel: 'Balanced / ~30k',
     tagline: 'Balanced workflow',
-    grid: '384',
-    steps: 35,
     polyEstimate: '~30k tris',
-    badge: '384³ • 35 steps (Balanced)',
-    tooltip: 'Medium: Balanced workflow (384³ grid • 35 steps • ~30k tris)',
+    badge: 'Standard (Balanced)',
+    tooltip: 'Medium: Balanced workflow for interactive real-time assets (~30k tris)',
   },
   {
     id: 'high',
     label: 'High',
-    subLabel: '512³ / 50s',
+    subLabel: 'Production / ~60k',
     tagline: 'Detailed production',
-    grid: '512',
-    steps: 50,
     polyEstimate: '~60k tris',
-    badge: '512³ • 50 steps (Detailed)',
-    tooltip: 'High: Detailed production (512³ grid • 50 steps • ~60k tris)',
+    badge: 'Detailed (Production)',
+    tooltip: 'High: Detailed production mesh with high texture fidelity (~60k tris)',
   },
   {
     id: 'ultra',
     label: 'Ultra',
-    subLabel: '640³ / 75s',
+    subLabel: 'Studio / ~100k',
     tagline: 'Maximum fidelity',
-    grid: '640',
-    steps: 75,
     polyEstimate: '~100k tris',
-    badge: '640³ • 75 steps (Maximum)',
-    tooltip: 'Ultra: Maximum fidelity (640³ grid • 75 steps • ~100k tris)',
+    badge: 'Maximum (Studio)',
+    tooltip: 'Ultra: Maximum output fidelity preserving fine source geometric detail (~100k tris)',
   },
 ];
 
@@ -123,11 +112,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
       'unique3d_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
-      'partpacker_image_to_raw_mesh',
-      'ultrashape_image_to_raw_mesh',
     ],
   },
   cinematic: {
@@ -148,11 +133,8 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
       'trellis2_image_to_textured_mesh',
       'trellis_image_to_textured_mesh',
       'unique3d_image_to_raw_mesh',
-      'ultrashape_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
     ],
   },
   animation: {
@@ -174,9 +156,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'trellis2_image_to_textured_mesh',
       'trellis_image_to_textured_mesh',
-      'triposf_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
     ],
   },
   '3d_print': {
@@ -195,12 +175,8 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
     model_priority: [
       'unique3d_image_to_raw_mesh',
-      'ultrashape_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
-      'partpacker_image_to_raw_mesh',
     ],
   },
   mobile: {
@@ -220,9 +196,7 @@ const SMART_PRESET_FALLBACK: Record<string, any> = {
     model_priority: [
       'unique3d_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposr_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
-      'partpacker_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
     ],
   },
@@ -242,14 +216,10 @@ function formatGenerateModel(
 
   let cleanLabel = def?.name || id;
   if (id === 'trellis_image_to_textured_mesh') cleanLabel = 'TRELLIS (PBR Textured Mesh)';
-  else if (id === 'triposr_image_to_raw_mesh') cleanLabel = 'TripoSR (Ultra-Fast Geometry)';
   else if (id === 'triposg_image_to_raw_mesh') cleanLabel = 'TripoSG (Fast Feed-Forward Geometry)';
-  else if (id === 'triposf_image_to_raw_mesh') cleanLabel = 'TripoSF (High-Density Neural Raw Mesh)';
   else if (id === 'hunyuan3d_shape_v21_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-Shape-v2-1 (Raw Geometry)';
   else if (id === 'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh') cleanLabel = 'Hunyuan3D-DiT-v2-mini-Turbo (Low-VRAM Geometry)';
   else if (id === 'trellis2_image_to_textured_mesh') cleanLabel = 'TRELLIS 2 (Next-Gen 4B)';
-  else if (id === 'partpacker_image_to_raw_mesh') cleanLabel = 'PartPacker (Modular Mesh)';
-  else if (id === 'ultrashape_image_to_raw_mesh') cleanLabel = 'UltraShape (High-Poly Geometry)';
   else if (id === 'unique3d_image_to_raw_mesh') cleanLabel = 'Unique3D (High-Fidelity Diffusion)';
 
   return {
@@ -380,15 +350,11 @@ export const GeneratePanel: React.FC = () => {
     const combined = Array.from(new Set([...textured, ...raw]));
     const defaults = [
       'trellis_image_to_textured_mesh',
-      'triposr_image_to_raw_mesh',
       'triposg_image_to_raw_mesh',
       'hunyuan3d_shape_v21_image_to_raw_mesh',
       'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposf_image_to_raw_mesh',
       'trellis2_image_to_textured_mesh',
       'unique3d_image_to_raw_mesh',
-      'partpacker_image_to_raw_mesh',
-      'ultrashape_image_to_raw_mesh',
     ];
     ids = combined.length > 0 ? combined : defaults;
 
@@ -398,9 +364,6 @@ export const GeneratePanel: React.FC = () => {
     const otherIds = ids.filter(id => !readyIds.includes(id));
     return [...readyIds, ...otherIds];
   }, [modelRegistry, weightsStatus, memoizedModelDetails]);
-  const [subAction, setSubAction] = useState<'upload' | 'crop'>('upload');
-  const [activeMvSlot, setActiveMvSlot] = useState<'front' | 'back' | 'left' | 'right'>('front');
-  const multiFileInputRef = useRef<HTMLInputElement>(null);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
@@ -455,10 +418,15 @@ export const GeneratePanel: React.FC = () => {
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
-  const isModelMultiviewCapable = Boolean(activeModelObj?.capabilities?.multiview_input);
   
-  const supportsTextureGeneration = activeModelObj?.supports_texture ?? false;
-  const showTextureToggle = supportsTextureGeneration;
+  // Centralized Textured Generation toggle: visible for every supported geometry model
+  const showTextureToggle = true;
+  const textureAtlasSize: '1K' | '2K' | '4K' | '8K' =
+    generationSettings.texture_resolution ||
+    generationSettings.textureResolution ||
+    (generationSettings.textureQuality === 'low' ? '1K' :
+     generationSettings.textureQuality === 'medium' ? '1K' :
+     generationSettings.textureQuality === '8k' ? '8K' : '2K');
 
   const physics = generationSettings.physics ?? {
     bodyType: 'auto' as const,
@@ -650,63 +618,6 @@ export const GeneratePanel: React.FC = () => {
     });
   };
 
-  const processImageFileForSlot = async (file: File, slot: 'front' | 'back' | 'left' | 'right') => {
-    setUploadError(null);
-    if (!isAcceptedImage(file)) {
-      setUploadError('Invalid file type. Use JPG, PNG, or WEBP.');
-      return;
-    }
-    if (file.size > MAX_IMAGE_SIZE) {
-      setUploadError('File too large. Maximum size is 20MB.');
-      return;
-    }
-    try {
-      startUpload(file.name, file.size);
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await getApiClient().post<{ file_id: string }>(
-        '/api/v1/file-upload/image',
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) }
-      );
-      finishUpload();
-      if (!res.file_id) throw new Error('Backend did not return a file ID for the uploaded image.');
-      const previewUrl = URL.createObjectURL(file);
-      const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-      setGenerationSettings(prev => ({
-        ...prev,
-        multiviewImages: {
-          ...(prev.multiviewImages || {}),
-          [slot]: previewUrl,
-        },
-        image: slot === 'front' || !prev.image ? previewUrl : prev.image,
-        imageFileId: slot === 'front' || !prev.imageFileId ? res.file_id : prev.imageFileId,
-        preprocessingArtifactId: slot === 'front' || !prev.image ? null : prev.preprocessingArtifactId,
-        preprocessingPreviewUrl: slot === 'front' || !prev.image ? null : prev.preprocessingPreviewUrl,
-        preprocessingMetadata: slot === 'front' || !prev.image ? null : prev.preprocessingMetadata,
-        enhancementEnabled: slot === 'front' || !prev.image ? false : prev.enhancementEnabled,
-        imageName: slot === 'front' || !prev.imageName ? cleanPrompt : prev.imageName,
-        mode: 'image-to-3d',
-      }));
-    } catch (err) {
-      failUpload();
-      setUploadError('Failed to upload multiview image.');
-    }
-  };
-
-  const handleMultiFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) processImageFileForSlot(file, activeMvSlot);
-    if (multiFileInputRef.current) multiFileInputRef.current.value = '';
-  };
-
-  const SAMPLE_MULTIVIEW = {
-    front: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="100,30 150,70 140,160 60,160 50,70" fill="%232e3440" stroke="%23F9CF00" stroke-width="3"/><circle cx="100" cy="85" r="22" fill="%23F9CF00"/><circle cx="100" cy="85" r="10" fill="%23111"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">FRONT VIEW</text></svg>',
-    back: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="100,30 150,70 140,160 60,160 50,70" fill="%23232731" stroke="%2364748b" stroke-width="3"/><rect x="80" y="70" width="40" height="40" rx="4" fill="%23334155"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">BACK VIEW</text></svg>',
-    left: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="80,30 130,50 120,160 70,160" fill="%232a303c" stroke="%2338bdf8" stroke-width="3"/><circle cx="115" cy="85" r="8" fill="%23F9CF00"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">LEFT PROFILE</text></svg>',
-    right: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="%2318191D"/><polygon points="120,30 70,50 80,160 130,160" fill="%232a303c" stroke="%2338bdf8" stroke-width="3"/><circle cx="85" cy="85" r="8" fill="%23F9CF00"/><text x="100" y="185" text-anchor="middle" fill="%23eceff4" font-family="sans-serif" font-size="10" font-weight="bold">RIGHT PROFILE</text></svg>',
-  };
-
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -821,7 +732,6 @@ export const GeneratePanel: React.FC = () => {
       if (isAcceptedImage(file)) {
         e.preventDefault();
         e.stopPropagation();
-        setSubAction('upload');
         processImageFile(file);
       }
     }
@@ -961,11 +871,7 @@ export const GeneratePanel: React.FC = () => {
   };
 
    const handleGenerate = () => {
-    const hasImage = Boolean(
-      generationSettings.image ||
-      generationSettings.multiviewImages?.front ||
-      (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
-    );
+    const hasImage = Boolean(generationSettings.image);
     if (!hasImage) {
       setNoticeMessage('Please upload a reference image first.');
       setTimeout(() => setNoticeMessage(null), 4000);
@@ -976,21 +882,6 @@ export const GeneratePanel: React.FC = () => {
       setTimeout(() => setNoticeMessage(null), 5000);
       return;
     }
-    if (subAction === 'crop') {
-      if (!isModelMultiviewCapable) {
-        setNoticeMessage(`The selected model "${activeModelObj?.label || activeModelId}" does not support multi-view reconstruction. Please choose a multi-view enabled 3D engine or use Single Image mode.`);
-        setTimeout(() => setNoticeMessage(null), 5000);
-        return;
-      }
-      const hasMvViews = (generationSettings.multiviewViews && generationSettings.multiviewViews.length > 0) ||
-        Boolean(generationSettings.multiviewAssetId);
-      if (!hasMvViews) {
-        setNoticeMessage('Please generate or upload multi-view images before running 3D reconstruction.');
-        setTimeout(() => setNoticeMessage(null), 5000);
-        return;
-      }
-    }
-    
     // If batch generation is enabled, add current image to batch queue instead of generating immediately
     if (batchGenerationEnabled) {
       // Upload current image if not already uploaded
@@ -1039,7 +930,7 @@ export const GeneratePanel: React.FC = () => {
           ...prev.autoOptimizeSettings,
           targetPolycount: prev.autoOptimizeSettings?.targetPolycount !== undefined
             ? prev.autoOptimizeSettings.targetPolycount
-            : 50000,
+            : 0,
         },
       }));
     }
@@ -1112,64 +1003,9 @@ export const GeneratePanel: React.FC = () => {
 
         {/* Unified Studio Generation Pipeline */}
         <div className="space-y-2.5">
-          {/* Input Mode Selector Bar */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
-              <div className="relative grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
-                {[
-                  {
-                    id: 'upload',
-                    domId: 'subaction-btn-upload',
-                    label: 'Single Image',
-                    tooltip: 'Single Image to 3D Mesh',
-                    icon: (props: any) => <HugeiconsIcon icon={ImageIcon} size={16} {...props} />,
-                    onClick: () => {
-                      setSubAction('upload');
-                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
-                      fileInputRef.current?.click();
-                    },
-                  },
-                  {
-                    id: 'crop',
-                    domId: 'subaction-btn-crop',
-                    label: 'Multi-View',
-                    tooltip: 'Zero123++ Multi-View generation & manual view collections',
-                    icon: (props: any) => <HugeiconsIcon icon={Box} size={16} {...props} />,
-                    onClick: () => {
-                      setSubAction('crop');
-                      setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
-                    },
-                  },
-                ].map((tab) => {
-                  const active = subAction === tab.id;
-                  const Icon = tab.icon;
-                  return (
-                    <SimpleTooltip key={tab.id} label={tab.tooltip}>
-                      <button
-                        id={tab.domId}
-                        type="button"
-                        onClick={tab.onClick}
-                        disabled={false}
-                        className={`relative w-full py-1 px-1 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer active:scale-95 z-10 ${
-                          active ? 'text-primary font-bold' : 'text-zinc-400 hover:text-zinc-200'
-                        }`}
-                      >
-                        {active && (
-                          <motion.div
-                            layoutId="subActionActiveTab"
-                            transition={{ type: 'spring', stiffness: 450, damping: 32 }}
-                            className="absolute inset-0 rounded-md bg-[hsl(var(--surface-2))] border border-primary/50 shadow-[0_0_10px_rgba(255,204,0,0.2)] -z-10"
-                          />
-                        )}
-                        <Icon className="w-3.5 h-3.5" />
-                        <span className="truncate">{tab.label}</span>
-                      </button>
-                    </SimpleTooltip>
-                  );
-                })}
-              </div>
-
+          <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               {/* Mode 1: Single Image UploadIcon */}
-              {subAction === 'upload' && (
+              {(
                 <>
                    <input 
                      ref={fileInputRef}
@@ -1346,14 +1182,6 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               )}
 
-              {/* Mode 2: Multi-View Zero123++ & Manual Collections */}
-              {subAction === 'crop' && (
-                <MultiViewWorkspace
-                  fileInputRef={fileInputRef}
-                  activeModelObj={activeModelObj}
-                  setNoticeMessage={setNoticeMessage}
-                />
-              )}
             </div>
 
             {/* AI 3D Model Engine Selector (Clean Dropdown + Low VRAM & Texture Toggles) */}
@@ -1364,7 +1192,7 @@ export const GeneratePanel: React.FC = () => {
                   <span>AI 3D Engine</span>
                 </span>
                 <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
-                  {activeModelObj?.supports_texture ? 'PBR Textured' : 'Geometry'}
+                  {generationSettings.generateTexture !== false ? `Textured (${textureAtlasSize})` : 'Raw Geometry'}
                 </span>
               </div>
 
@@ -1387,7 +1215,7 @@ export const GeneratePanel: React.FC = () => {
                     </span>
                     <span className="text-[10px] text-zinc-400 truncate mt-0.5">
                       {activeModelObj?.vram_required_mb ? `${Math.round(activeModelObj.vram_required_mb / 1024)}GB VRAM · ` : ''}
-                      {activeModelObj?.supports_texture ? 'Full PBR Output' : 'High-Density Mesh'}
+                      {generationSettings.generateTexture !== false ? `${textureAtlasSize} PBR Output` : 'Raw Geometry Mesh'}
                     </span>
                   </div>
                 </div>
@@ -1414,7 +1242,6 @@ export const GeneratePanel: React.FC = () => {
                           setGenerationSettings(prev => ({
                             ...prev,
                             aiModel: m.id,
-                            generateTexture: m.supports_texture ? true : false,
                           }));
                           setModelDropdownOpen(false);
                         }}
@@ -1466,14 +1293,19 @@ export const GeneratePanel: React.FC = () => {
 
               {/* Engine Feature Toggles: PBR Texture & Low VRAM */}
               <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
-                {/* PBR Texture Toggle - shown only when the selected model supports texture generation */}
+                {/* Textured Generation Toggle - visible for every image-to-3D geometry model */}
                 {showTextureToggle && (
                   <button
                     type="button"
-                    onClick={() => setGenerationSettings(prev => ({
-                      ...prev,
-                      generateTexture: prev.generateTexture === false,
-                    }))}
+                    onClick={() => setGenerationSettings(prev => {
+                      const nextVal = prev.generateTexture === false;
+                      return {
+                        ...prev,
+                        generateTexture: nextVal,
+                        texture_enabled: nextVal,
+                        texture_resolution: prev.texture_resolution || prev.textureResolution || '2K',
+                      };
+                    })}
                     className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
                       generationSettings.generateTexture !== false
                         ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
@@ -1481,9 +1313,9 @@ export const GeneratePanel: React.FC = () => {
                     }`}
                   >
                     <div className="flex flex-col min-w-0 pr-1">
-                      <span className="text-[11px] font-bold text-white leading-tight">PBR Texture</span>
+                      <span className="text-[11px] font-bold text-white leading-tight">Textured Generation</span>
                       <span className="text-[9px] text-zinc-400">
-                        {generationSettings.generateTexture !== false ? 'Color Maps' : 'Disabled'}
+                        {generationSettings.generateTexture !== false ? `${textureAtlasSize} Atlas` : 'Raw Mesh'}
                       </span>
                     </div>
                     <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
@@ -1556,6 +1388,48 @@ export const GeneratePanel: React.FC = () => {
                 </button>
                 )}
               </div>
+
+              {/* Output Atlas Size Selector when Textured Generation is ON */}
+              {generationSettings.generateTexture !== false && (
+                <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-2 mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">Output Atlas Size</span>
+                    <span className="text-[10px] font-mono text-primary font-bold">{textureAtlasSize}</span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {(['1K', '2K', '4K', '8K'] as const).map(size => {
+                      const isSelected = textureAtlasSize === size;
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setGenerationSettings(prev => ({
+                            ...prev,
+                            texture_resolution: size,
+                            textureResolution: size,
+                            textureQuality: size === '1K' ? 'low' : size === '2K' ? 'high' : size === '4K' ? 'high' : '8k',
+                          }))}
+                          className={`py-1.5 rounded-lg text-xs font-mono font-bold transition-all text-center cursor-pointer ${
+                            isSelected
+                              ? 'bg-primary text-black font-black shadow-sm'
+                              : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {(textureAtlasSize === '4K' || textureAtlasSize === '8K') && (
+                    <div className="flex items-start gap-1.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300 text-[10px] leading-relaxed">
+                      <HugeiconsIcon icon={TriangleAlertIcon} size={14} className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                      <span>
+                        <strong>High Resource Notice:</strong> {textureAtlasSize} atlas generation takes longer and requires high GPU VRAM (&gt;16GB). The high-quality texture engine will bake an enhanced {textureAtlasSize} UV atlas.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
 
@@ -1616,12 +1490,12 @@ export const GeneratePanel: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[11px] font-bold text-white">Target & Polycount Budget</div>
-                  <div className="text-[9px] text-zinc-400">Presets budget, LOD, and collision together; raw AI details stay intact</div>
+                  <div className="text-[9px] text-zinc-400">Native/Raw preserves source geometry; production presets opt into remesh, decimation, and LOD budgets</div>
                 </div>
                 <span className="font-mono text-xs font-black text-primary">
-                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) <= 0
+                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
                     ? 'Native / Raw'
-                    : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000).toLocaleString()} tris`}
+                    : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
                 </span>
               </div>
 
@@ -1632,7 +1506,7 @@ export const GeneratePanel: React.FC = () => {
                   ['cinematic', 'Cinematic', '100K · Ultra'],
                   ['native', 'Native', 'Raw geometry'],
                 ].map(([id, label, detail]) => {
-                  const targetP = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                  const targetP = generationSettings.autoOptimizeSettings?.targetPolycount ?? 0;
                   const isMatch = (
                     (id === 'mobile' && targetP === 15000) ||
                     (id === 'game' && targetP === 35000) ||
@@ -1688,7 +1562,7 @@ export const GeneratePanel: React.FC = () => {
                   <div className="min-w-0">
                     <div className="text-[11px] font-bold text-white">Advanced Generation</div>
                     <div className="text-[9px] text-zinc-400 truncate">
-                      {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K tris · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
+                      {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'Native / Raw' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K tris`} · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
                     </div>
                   </div>
                 </div>
@@ -1896,20 +1770,21 @@ export const GeneratePanel: React.FC = () => {
                   Source geometry is always generated at the selected model's maximum fidelity. This control changes texture/output quality only; polycount is applied downstream.
                 </p>
                 <div className="grid grid-cols-4 gap-1">
-                  {(['low', 'medium', 'high', 'ultra'] as const).map((q) => {
-                    const isSelected = (generationSettings.meshQuality || 'high') === q;
+                  {MESH_QUALITY_OPTIONS.map((opt) => {
+                    const isSelected = (generationSettings.meshQuality || 'high') === opt.id;
                     return (
                       <button
-                        key={q}
+                        key={opt.id}
                         type="button"
-                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshQuality: q }))}
+                        title={opt.tooltip}
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshQuality: opt.id }))}
                         className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer capitalize font-bold text-[10px] ${
                           isSelected
                             ? 'bg-primary text-black shadow-sm font-black'
                             : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
                         }`}
                       >
-                        {q}
+                        {opt.label}
                       </button>
                     );
                   })}
@@ -1921,9 +1796,9 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Target Polycount</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount || 50000) <= 0
+                    {generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
                       ? 'Native (Raw)'
-                      : `${((generationSettings.autoOptimizeSettings?.targetPolycount || 50000)).toLocaleString()} tris`}
+                      : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
                   </span>
                 </div>
 
@@ -1936,7 +1811,7 @@ export const GeneratePanel: React.FC = () => {
                     { label: '100K', val: 100000, desc: 'Cinema' },
                     { label: 'Native', val: 0, desc: 'Raw' },
                   ].map((preset) => {
-                    const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000;
+                    const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 0;
                     const isSelected = currentTarget === preset.val;
                     return (
                       <button
@@ -1990,9 +1865,7 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Topology Target</span>
                   <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                    {activeModelObj?.supports_texture
-                      ? 'Triangles (PBR Native)'
-                      : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
                       ? 'Quads (post-process)'
                       : 'Triangles'}
                   </span>
@@ -2017,7 +1890,6 @@ export const GeneratePanel: React.FC = () => {
                   </button>
                   <button
                     type="button"
-                    disabled={Boolean(activeModelObj?.supports_texture && generationSettings.generateTexture !== false)}
                     onClick={() => {
                       setGenerationSettings(prev => ({
                         ...prev,
@@ -2025,68 +1897,14 @@ export const GeneratePanel: React.FC = () => {
                         quadTopology: true,
                       }));
                     }}
-                    title={activeModelObj?.supports_texture && generationSettings.generateTexture !== false ? 'Quads only available on untextured raw meshes' : 'Convert to quad-dominant topology in post-processing'}
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
-                      activeModelObj?.supports_texture && generationSettings.generateTexture !== false
-                        ? 'opacity-40 cursor-not-allowed bg-[hsl(var(--surface-1))] text-zinc-500 border border-white/[0.04]'
-                        : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
-                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
+                    title="Convert to quad-dominant topology in post-processing"
+                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
+                      (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                        ? 'bg-primary text-black font-black shadow-sm'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08]'
                     }`}
                   >
-                    <span>■ Quads (raw only)</span>
-                  </button>
-                </div>
-                {/* 3. Real-ESRGAN 4x Super-Resolution enhancement for Hunyuan3D */}
-                {(generationSettings.aiModel?.includes('hunyuan') || generationSettings.aiModel?.includes('paint')) && (
-                  <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between mt-2">
-                    <span className="text-zinc-300 flex items-center gap-1.5 text-xs font-semibold">
-                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                      <span>Real-ESRGAN (4x Texture Enhance)</span>
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={generationSettings.enableRealESRGAN !== false}
-                      onClick={() => setGenerationSettings(prev => ({ ...prev, enableRealESRGAN: prev.enableRealESRGAN === false ? true : false }))}
-                      className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer ${
-                        generationSettings.enableRealESRGAN !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
-                      }`}
-                    >
-                      <div
-                        className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
-                          generationSettings.enableRealESRGAN !== false ? 'translate-x-3.5' : 'translate-x-0'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                )}
-
-                {/* 4. High-to-Low Micro-Detail Normal Map Baking */}
-                <div className="p-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between mt-2">
-                  <div className="flex flex-col pr-2">
-                    <span className="text-zinc-300 flex items-center gap-1.5 text-xs font-semibold">
-                      <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                      <span>Bake Normal Maps (Micro-Details)</span>
-                    </span>
-                    <span className="text-[8.5px] text-zinc-500 leading-tight">
-                      Projects high-poly sculpt creases & micro-surface details onto game-ready mesh
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={generationSettings.bakeNormalMaps !== false}
-                    onClick={() => setGenerationSettings(prev => ({ ...prev, bakeNormalMaps: prev.bakeNormalMaps === false ? true : false }))}
-                    className={`w-7 h-3.5 rounded-full p-0.5 transition-colors relative cursor-pointer shrink-0 ${
-                      generationSettings.bakeNormalMaps !== false ? 'bg-primary' : 'bg-[hsl(var(--surface-2))]'
-                    }`}
-                  >
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full bg-black transition-transform ${
-                        generationSettings.bakeNormalMaps !== false ? 'translate-x-3.5' : 'translate-x-0'
-                      }`}
-                    />
+                    <span>■ Quads</span>
                   </button>
                 </div>
               </div>
@@ -2117,7 +1935,7 @@ export const GeneratePanel: React.FC = () => {
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {Math.round((generationSettings.autoOptimizeSettings?.targetPolycount || 50000) / 1000)}K {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
+              {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'NATIVE / RAW' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K`} {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
             </span>
           </div>
           <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border flex-shrink-0 ${
@@ -2134,8 +1952,6 @@ export const GeneratePanel: React.FC = () => {
           <ShimmerButton
             id="btn-generate-model-action"
             onClick={handleGenerate}
-            disabled={isExecuting || (subAction === 'crop' && !isModelMultiviewCapable)}
-            title={subAction === 'crop' && !isModelMultiviewCapable ? 'Selected 3D model does not support multi-view reconstruction' : undefined}
             shimmerColor="hsl(var(--neon-amber))"
             shimmerSize="0.1em"
             shimmerDuration="2.5s"
@@ -2169,12 +1985,7 @@ export const GeneratePanel: React.FC = () => {
               <button
                 type="button"
                 onClick={async () => {
-                  const hasImage = Boolean(
-                    generationSettings.image ||
-                    generationSettings.imageFileId ||
-                    generationSettings.multiviewImages?.front ||
-                    (generationSettings.multiviewImages && Object.values(generationSettings.multiviewImages).some(Boolean))
-                  );
+                  const hasImage = Boolean(generationSettings.image || generationSettings.imageFileId);
                   if (!hasImage) {
                     setNoticeMessage('Upload or select an image to queue.');
                     setTimeout(() => setNoticeMessage(null), 4000);

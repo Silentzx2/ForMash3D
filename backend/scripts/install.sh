@@ -454,43 +454,6 @@ echo "[NOTE] For systems with glibc < 2.29, you may need to build kaolin from so
 
 echo ""
 echo "========================================"
-echo "Installing PartField Dependencies"
-echo "========================================"
-# install PartField for mesh segmentation 
-echo "[INFO] Changing directory to thirdparty/PartField..."
-cd "$THIRDPARTY_DIR/PartField"
-echo "[INFO] Installing PartField core dependencies..."
-$UV_PIP install --find-links="$WHEEL_DIR" lightning==2.2 h5py yacs trimesh scikit-image loguru boto3
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] PartField core dependencies installed"
-else
-    echo "[ERROR] Failed to install PartField core dependencies"
-    exit 1
-fi
-
-echo "[INFO] Installing additional PartField dependencies..."
-$UV_PIP install --find-links="$WHEEL_DIR" mesh2sdf tetgen pymeshlab plyfile einops libigl polyscope potpourri3d simple_parsing arrgh open3d psutil 
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] Additional PartField dependencies installed"
-else
-    echo "[ERROR] Failed to install additional PartField dependencies"
-    exit 1
-fi
-
-echo "[INFO] Installing PyTorch Geometric extensions..."
-$UV_PIP install --find-links="$WHEEL_DIR" torch-scatter torch_cluster -f https://data.pyg.org/whl/torch-2.6.0+cu124.html
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] PyTorch Geometric extensions installed"
-else
-    echo "[ERROR] Failed to install PyTorch Geometric extensions"
-    exit 1
-fi
-# installation for PartField end 
-echo "[SUCCESS] PartField installation completed"
-
-
-echo ""
-echo "========================================"
 echo "Installing Hunyuan3D Unified Dependencies"
 echo "========================================"
 ### unified Hunyuan dependencies — installed once for all 3 models ###
@@ -634,31 +597,14 @@ cd "$THIRDPARTY_DIR/UniRig"
 echo "[INFO] Installing spconv-cu124 for UniRig..."
 $UV_PIP install --find-links="$WHEEL_DIR" spconv-cu124
 $UV_PIP install --find-links="$WHEEL_DIR" pyrender fast-simplification python-box timm
+# Install bpy 4.0 for Python 3.10 from Blender's official prebuilt wheel index
+$UV_PIP install --no-deps "https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl" || true
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] UniRig dependencies installed"
 else
     echo "[ERROR] Failed to install UniRig dependencies"
     exit 1
 fi
-
-echo ""
-echo "========================================"
-echo "Installing PartPacker Dependencies"
-echo "========================================"
-### part packer  ###
-echo "[INFO] Changing directory to thirdparty/PartPacker..."
-cd "$THIRDPARTY_DIR/PartPacker"
-echo "[INFO] Installing PartPacker requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" pybind11==3.0.1
-$UV_PIP install --find-links="$WHEEL_DIR" meshiki kiui fpsample pymcubes einops
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] PartPacker requirements installed"
-else
-    echo "[ERROR] Failed to install PartPacker requirements"
-    exit 1
-fi
-### part packer end ###
-echo "[SUCCESS] PartPacker installation completed"
 
 ### partuv(requires only bpy, partuv) ###
 echo "[INFO] Installing partuv requirements..."
@@ -671,27 +617,6 @@ else
 fi
 $UV_PIP install --find-links="$WHEEL_DIR" blenderproc 
 ### partuv end ###
-
-### P3-SAM (Hunyuan3D-Part) ###
-echo ""
-echo "========================================"
-echo "Installing P3-SAM Dependencies"
-echo "========================================"
-if [ -d "$THIRDPARTY_DIR/P3-SAM" ]; then
-    cd "$THIRDPARTY_DIR/P3-SAM"
-else
-    echo "[WARN] P3-SAM source directory not present; installing runtime dependencies from the shared environment."
-fi
-echo "[INFO] Installing P3-SAM requirements..."
-# Install numba for acceleration
-$UV_PIP install --find-links="$WHEEL_DIR" numba scikit-learn fpsample
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] P3-SAM requirements installed"
-else
-    echo "[ERROR] Failed to install P3-SAM requirements"
-    exit 1
-fi
-### P3-SAM end ###
 
 ### FastMesh ###
 cd "$THIRDPARTY_DIR/FastMesh"
@@ -778,68 +703,11 @@ else
 fi
 ### Unique3D end ###
 
-### UltraShape ###
+### ARDY Dependencies ###
 echo ""
 echo "========================================"
-echo "Installing UltraShape Dependencies"
+echo "Installing ARDY Dependencies"
 echo "========================================"
-cd "$THIRDPARTY_DIR/UltraShape" || echo "[WARN] UltraShape directory not found; continuing..."
-echo "[INFO] Installing UltraShape requirements..."
-# $UV_PIP install -r requirements.txt
-# actually only cubvh is required based besides trellis.2 env  
-if ! install_local_wheel "cubvh-*.whl" "cubvh"; then
-    _retry 3 5 $UV_PIP install git+https://github.com/ashawkey/cubvh --no-build-isolation
-fi
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] UltraShape requirements installed"
-else
-    echo "[ERROR] Failed to install UltraShape requirements"
-    exit 1
-fi
-### UltraShape end ###
-
-### VoxHammer ###
-echo ""
-echo "========================================"
-echo "Installing VoxHammer Dependencies"
-echo "========================================"
-cd "$THIRDPARTY_DIR/VoxHammer"
-echo "[INFO] Installing VoxHammer requirements..."
-# $UV_PIP install -r requirements.txt
-# only bpy-renderer and pysdf are required besides trellis.2 env  
-$UV_PIP install git+https://github.com/huanngzh/bpy-renderer.git
-$UV_PIP install --find-links="$WHEEL_DIR" pysdf sentencepiece
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] VoxHammer requirements installed"
-else
-    echo "[ERROR] Failed to install VoxHammer requirements"
-    exit 1
-fi
-echo "[NOTE] VoxHammer uses TRELLIS pipeline which is already installed"
-### VoxHammer end ###
-
-### TripoSF, TripoSG, TripoSR, ardy Dependencies ###
-echo ""
-echo "========================================"
-echo "Installing TripoSF, TripoSG, TripoSR, ardy Dependencies"
-echo "========================================"
-if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSF" ]; then
-    echo "[INFO] Installing TripoSF requirements..."
-    if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSF/requirements.txt"; then
-        echo "[ERROR] Failed to install TripoSF requirements."
-        exit 1
-    fi
-fi
-if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSR" ]; then
-    echo "[INFO] Installing TripoSR requirements..."
-    if ! install_local_wheel "torchmcubes-*.whl" "torchmcubes"; then
-        echo "[INFO] Local torchmcubes wheel not found; installing from git..."
-        $UV_PIP install git+https://github.com/tatsy/torchmcubes.git 2>/dev/null || true
-    fi
-    if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/TripoSR/requirements.txt"; then
-        echo "[WARN] TripoSR requirements install had issues; verifying basic requirements..."
-    fi
-fi
 if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then
     echo "[INFO] Installing ardy requirements..."
     if ! $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/ardy/requirements.txt"; then
@@ -848,21 +716,16 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/ardy" ]; then
     fi
 fi
 
-### Zero123++ v1.2 Multi-View Dependencies ###
+### Paint3D Dependencies ###
 echo ""
 echo "========================================"
-echo "Installing Zero123++ v1.2 Dependencies"
+echo "Installing Paint3D Dependencies"
 echo "========================================"
-if [ -d "$PROJECT_ROOT/backend/thirdparty/zero123plus" ]; then
-    echo "[INFO] Found vendored Zero123++ repository at $PROJECT_ROOT/backend/thirdparty/zero123plus"
+if [ -f "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" ]; then
+    $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" || true
+    echo "[SUCCESS] Paint3D dependencies processed"
 fi
-
-if [ -f "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" ]; then
-    echo "[INFO] Installing Zero123++ runtime dependencies..."
-    $UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/thirdparty/zero123plus/requirements.txt" || true
-    echo "[SUCCESS] Zero123++ runtime dependencies processed"
-fi
-### Zero123++ end ###
+### Paint3D end ###
 
 cd "$PROJECT_ROOT/backend"
 
@@ -891,11 +754,46 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
         exit 1
     fi
     echo "[SUCCESS] TripoSG model-specific dependency versions restored"
+
+echo ""
+echo "========================================"
+echo "Installing Pixal3D Dependencies"
+echo "========================================"
+echo "[INFO] Changing directory to thirdparty/Pixal3D..."
+cd "$THIRDPARTY_DIR/Pixal3D"
+echo "[INFO] Installing Pixal3D requirements..."
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] Pixal3D requirements installed"
+else
+    echo "[ERROR] Failed to install Pixal3D requirements"
+    exit 1
 fi
 
+echo ""
+echo "[INFO] Installing natten (required for sparse attention)..."
+# natten requires specific CUDA architecture and build workers
+# Users should set NATTEN_CUDA_ARCH and NATTEN_N_WORKERS in their environment
+else
+    echo "[INFO] Installing natten with CUDA_ARCH=$NATTEN_CUDA_ARCH and WORKERS=$NATTEN_N_WORKERS"
+    NATTEN_CUDA_ARCH="$NATTEN_CUDA_ARCH" NATTEN_N_WORKERS="$NATTEN_N_WORKERS" $UV_PIP install --find-links="$WHEEL_DIR" natten==0.21.0 --no-build-isolation
+fi
+if [ $? -eq 0 ]; then
+    echo "[SUCCESS] natten installed"
+else
+    echo "[ERROR] Failed to install natten"
+    exit 1
+fi
+
+echo ""
+echo "[INFO] Installing utils3d (required for voxel processing)..."
+if $UV_PIP install --find-links="$WHEEL_DIR" https://github.com/LDYang694/Storages/releases/download/20260430/utils3d-0.0.2-py3-none-any.whl; then
+    echo "[SUCCESS] utils3d installed"
+else
+    echo "[ERROR] Failed to install utils3d"
+    exit 1
+fi
 echo "[INFO] Installing test requirements..."
-# testing 
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements-test.txt 
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] Test requirements installed"
 else
@@ -980,10 +878,10 @@ for pkg in ['numpy', 'diffusers', 'transformers', 'pymeshlab', 'open3d', 'trimes
 try:
     import sys
     sys.path.insert(0, '$PROJECT_ROOT/backend')
-    from adapters.zero123plus_adapter import Zero123PlusAdapter
-    print('[SUCCESS] Zero123PlusAdapter import verified')
+    from adapters.paint3d_adapter import Paint3DAdapter
+    print('[SUCCESS] Paint3DAdapter import verified')
 except Exception as e:
-    print(f'[WARN] Zero123PlusAdapter import check: {e}')
+    print(f'[WARN] Paint3DAdapter import check: {e}')
 "
 
 persist_env_config 2>/dev/null || true

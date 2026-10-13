@@ -266,7 +266,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Generation SettingsIcon</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Generation Settings</h1>
         <p className="text-muted-foreground mt-2">
           Configure default AI models, output formats, and generation parameters.
         </p>
@@ -410,7 +410,7 @@ export function GenerationSection({ onSaveRegister }: { onSaveRegister?: (save: 
               <div className="space-y-1">
                 <span className="text-sm font-semibold text-[hsl(var(--foreground))] flex items-center gap-1.5">
                   <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
-                  TargetIcon Provider Compatibility: {selectedModelObj?.label || provider || 'Default Model'}
+                  Provider Compatibility: {selectedModelObj?.label || provider || 'Default Model'}
                 </span>
                 <p className="text-xs text-[hsl(var(--muted-foreground))]">
                   Supported by {selectedModelObj.label} with memory requirement of {selectedModelObj.low_vram_required_mb ? Math.round(selectedModelObj.low_vram_required_mb / 1024) : 4}GB.

@@ -14,6 +14,7 @@ const JobsTab = dynamic(() => import('@/features/admin/tabs/JobsTab').then(m => 
 const QueueTab = dynamic(() => import('@/features/admin/tabs/QueueTab').then(m => m.QueueTab), { ssr: false });
 const HealthTab = dynamic(() => import('@/features/admin/tabs/HealthTab').then(m => m.HealthTab), { ssr: false });
 const StorageTab = dynamic(() => import('@/features/admin/tabs/StorageTab').then(m => m.StorageTab), { ssr: false });
+const DatabaseTab = dynamic(() => import('@/features/admin/tabs/DatabaseTab').then(m => m.DatabaseTab), { ssr: false });
 const SettingsTab = dynamic(() => import('@/features/admin/tabs/SettingsTab').then(m => m.SettingsTab), { ssr: false });
 const ModelsTab = dynamic(() => import('@/features/admin/tabs/ModelsTab').then(m => m.ModelsTab), { ssr: false });
 
@@ -26,6 +27,7 @@ const VALID_TABS = new Set([
   'queue',
   'health',
   'storage',
+  'database',
   'settings',
 ]);
 
@@ -93,6 +95,7 @@ function AdminPageContent() {
       case 'queue': return <QueueTab />;
       case 'health': return <HealthTab />;
       case 'storage': return <StorageTab />;
+      case 'database': return <DatabaseTab />;
       case 'settings': return <SettingsTab initialSection={sectionParam} />;
       default: return <OverviewTab />;
     }
