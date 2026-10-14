@@ -26,6 +26,7 @@ def test_backend_baseline_is_compatible_with_triposg():
     assert str(backend["transformers"].specifier) == "==4.48.3"
     assert str(backend["diffusers"].specifier) == "==0.30.3"
     assert Version("0.25.0") in backend["huggingface-hub"].specifier
+    assert str(backend["datasets"].specifier) == "==3.6.0"
     assert "jaxtyping" in triposg
 
 
@@ -51,6 +52,17 @@ def test_installer_and_docker_builds_install_triposg_after_backend():
         assert docker.index("/app/backend/requirements.txt") < docker.index(
             "/app/backend/thirdparty/TripoSG/requirements.txt"
         )
+
+
+
+def test_unique3d_avoids_unused_gradio_ui_wrapper():
+    installer = (BACKEND / "scripts/install.sh").read_text()
+    unique3d_block = installer.split("### Unique3D ###", 1)[1].split("### Unique3D end ###", 1)[0]
+    assert '"datasets==3.6.0"' in unique3d_block
+    assert not any(line.strip().startswith("gradio ") for line in unique3d_block.splitlines())
+
+    adapter = (BACKEND / "adapters/unique3d_adapter.py").read_text()
+    assert "from app.custom_models.mvimg_prediction import run_mvprediction" not in adapter
 
 
 
