@@ -153,6 +153,7 @@ class TextMeshPaintingRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
 
     @field_validator("texture_resolution", mode="before")
     @classmethod
@@ -225,6 +226,7 @@ class ImageToRawMeshRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
 
@@ -306,6 +308,7 @@ class ImageToTexturedMeshRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
 
@@ -595,12 +598,14 @@ async def text_mesh_painting(
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
+                "enable_postprocess": mesh_request.enable_postprocess,
                 **_clean_paint_parameters(mesh_request.model_parameters),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
-                "postprocess_mode": "production_mesh",
+                "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
+                "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": "text_mesh_painting",
                 "physics_enabled": mesh_request.physics_enabled,
                 "physics_config": mesh_request.physics_config,
@@ -841,6 +846,7 @@ async def image_to_raw_mesh(
                 "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+                "enable_postprocess": mesh_request.enable_postprocess,
                 **params,
             },
             model_preference=model_id,
@@ -848,7 +854,8 @@ async def image_to_raw_mesh(
             metadata={
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
-                "postprocess_mode": "production_mesh",
+                "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
+                "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
                 "texture_resolution": mesh_request.texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
@@ -1098,6 +1105,7 @@ async def image_to_textured_mesh(
                 "auto_rig_mode": mesh_request.auto_rig_mode,
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
+                "enable_postprocess": mesh_request.enable_postprocess,
                 **params,
             },
             model_preference=model_id,
@@ -1105,7 +1113,8 @@ async def image_to_textured_mesh(
             metadata={
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
-                "postprocess_mode": "production_mesh",
+                "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
+                "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
                 "texture_resolution": texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
@@ -1216,12 +1225,14 @@ async def image_mesh_painting(
                         else mesh_request.texture_resolution
                     )
                 ),
+                "enable_postprocess": mesh_request.enable_postprocess,
                 **_clean_paint_parameters(mesh_request.model_parameters),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
-                "postprocess_mode": "production_mesh",
+                "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
+                "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": "image_mesh_painting",
                 "physics_enabled": mesh_request.physics_enabled,
                 "physics_config": mesh_request.physics_config,

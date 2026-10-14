@@ -205,6 +205,7 @@ const DEFAULT_STATE: AppStateData = {
     vramMode: 'auto',
     autoOptimizeSettings: { targetPolycount: 0 },
     generateTexture: true,
+    enablePostprocess: true,
     gameReady: false,
     targetPlatform: 'generic',
     generateLOD: false,
@@ -398,6 +399,7 @@ export const useAppStore = create<AppState>()(
                enableAutoRepair: s.generationSettings.enableAutoRepair,
                enableAutoRig: s.generationSettings.enableAutoRig,
                autoRigMode: s.generationSettings.autoRigMode,
+               enablePostprocess: s.generationSettings.enablePostprocess,
                createdAt: new Date(),
              }));
            return { batchQueue: [...s.batchQueue, ...newItems] };

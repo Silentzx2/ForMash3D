@@ -1796,6 +1796,13 @@ class MultiprocessModelScheduler:
             if result.get("success"):
                 final_result = result.get("result") or {}
                 postprocess_mode = str(job_request.metadata.get("postprocess_mode") or "none").lower()
+                enable_postprocess = bool(
+                    job_request.metadata.get("enable_postprocess", True)
+                    and job_request.inputs.get("enable_postprocess", True)
+                ) if ("enable_postprocess" in job_request.metadata or "enable_postprocess" in job_request.inputs) else (postprocess_mode == "production_mesh")
+
+                if not enable_postprocess:
+                    postprocess_mode = "none"
 
                 # Normalize texture_enabled into post-processing rather than launching redundant independent child workflows.
                 texture_enabled = bool(
@@ -1811,8 +1818,8 @@ class MultiprocessModelScheduler:
                 job_request.metadata["texture_enabled"] = texture_enabled
                 job_request.inputs["texture_enabled"] = texture_enabled
 
-                # Postprocessing runs for raw-mesh jobs with production_mesh mode.
-                if final_result.get("output_mesh_path") and postprocess_mode == "production_mesh":
+                # Postprocessing runs for raw-mesh jobs with production_mesh mode when postprocess is enabled.
+                if final_result.get("output_mesh_path") and postprocess_mode == "production_mesh" and enable_postprocess:
                     current_job = await self.job_queue.get_job(job_id)
                     if (current_job and _extract_job_status(current_job) in {"failed", "cancelled"}) or job_id in self._cancel_requested_jobs:
                         self._cleanup_temporary_inputs(job_request)
@@ -1955,6 +1962,26 @@ class MultiprocessModelScheduler:
                         self._watch_auto_rig(job_id, child_id, final_result)
                     )
                     return
+
+                if not enable_postprocess or postprocess_mode != "production_mesh":
+                    final_result.setdefault("postprocess_status", "bypassed")
+                    final_result.setdefault("production_status", "ready")
+                    out_mesh = (
+                        final_result.get("output_mesh_path")
+                        or final_result.get("mesh_path")
+                        or final_result.get("output_path")
+                        or final_result.get("file_path")
+                    )
+                    if out_mesh:
+                        final_result.setdefault("model_url", f"/api/v1/system/jobs/{job_id}/download?artifact_format=glb")
+                        final_result.setdefault("game_ready_url", f"/api/v1/system/jobs/{job_id}/download?artifact_format=glb")
+                        final_result.setdefault("source_model_url", f"/api/v1/system/jobs/{job_id}/download?artifact_format=glb")
+                        final_result.setdefault("download_url", f"/api/v1/system/jobs/{job_id}/download?artifact_format=glb")
+                    gen_info = final_result.get("generation_info") or {}
+                    if "polygon_count" not in final_result:
+                        final_result["polygon_count"] = gen_info.get("face_count") or gen_info.get("native_face_count") or 0
+                    if "vertex_count" not in final_result:
+                        final_result["vertex_count"] = gen_info.get("vertex_count") or gen_info.get("native_vertex_count") or 0
 
                 await self.job_queue.complete_job(job_id, final_result)
                 logger.info(f"[JOB COMPLETE] job_id={job_id} status=success")

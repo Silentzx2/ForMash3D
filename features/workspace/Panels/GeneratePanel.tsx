@@ -1485,17 +1485,67 @@ export const GeneratePanel: React.FC = () => {
               )}
             </div>
 
+            {/* Post-Processing Pipeline Master Toggle */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${generationSettings.enablePostprocess !== false ? 'bg-primary shadow-[0_0_8px_hsl(var(--primary))] animate-pulse' : 'bg-zinc-600'}`} />
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-white flex items-center gap-1.5 flex-wrap">
+                      <span>Post-Processing</span>
+                      <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded border font-semibold ${generationSettings.enablePostprocess !== false ? 'bg-primary/10 text-primary border-primary/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/30'}`}>
+                        {generationSettings.enablePostprocess !== false ? 'ON · Full Pipeline' : 'OFF · Fast Raw Mesh'}
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-zinc-400 truncate">
+                      {generationSettings.enablePostprocess !== false
+                        ? 'AutoRetopo, UV unwrap, PBR baking & decimation'
+                        : 'Bypasses post-processing; outputs raw generated mesh instantly'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Toggle post-processing"
+                  aria-checked={generationSettings.enablePostprocess !== false}
+                  onClick={() => setGenerationSettings(prev => ({
+                    ...prev,
+                    enablePostprocess: prev.enablePostprocess === false ? true : false,
+                  }))}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${generationSettings.enablePostprocess !== false ? 'bg-primary' : 'bg-zinc-700'}`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${generationSettings.enablePostprocess !== false ? 'translate-x-4' : 'translate-x-0 bg-zinc-300'}`}
+                  />
+                </button>
+              </div>
+              {generationSettings.enablePostprocess === false && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[8.5px] text-amber-300 flex items-center gap-1.5">
+                  <span className="font-bold">⚡ Fast Mode:</span>
+                  <span>Post-processing will not run after mesh generation. Raw geometry is returned immediately.</span>
+                </div>
+              )}
+            </div>
+
             {/* Unified Production Target & Polycount Budget */}
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[11px] font-bold text-white">Target & Polycount Budget</div>
-                  <div className="text-[9px] text-zinc-400">Native/Raw preserves source geometry; production presets opt into remesh, decimation, and LOD budgets</div>
+                  <div className="text-[9px] text-zinc-400">
+                    {generationSettings.enablePostprocess === false
+                      ? 'Post-processing is OFF: downstream decimation & LODs will be bypassed'
+                      : 'Native/Raw preserves source geometry; production presets opt into remesh, decimation, and LOD budgets'}
+                  </div>
                 </div>
                 <span className="font-mono text-xs font-black text-primary">
-                  {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
-                    ? 'Native / Raw'
-                    : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
+                  {generationSettings.enablePostprocess === false
+                    ? 'Bypassed (Raw Mesh)'
+                    : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
+                      ? 'Native / Raw'
+                      : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
                 </span>
               </div>
 
@@ -1605,6 +1655,41 @@ export const GeneratePanel: React.FC = () => {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
+            {/* Post-Processing Pipeline Master Toggle */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5 flex-wrap">
+                    <span>Post-Processing Pipeline</span>
+                    <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded border font-semibold ${generationSettings.enablePostprocess !== false ? 'bg-primary/10 text-primary border-primary/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/30'}`}>
+                      {generationSettings.enablePostprocess !== false ? 'ACTIVE' : 'BYPASSED'}
+                    </span>
+                  </div>
+                  <div className="text-[9px] text-zinc-500">
+                    {generationSettings.enablePostprocess !== false
+                      ? 'Executes canonical retopology, UVs, baking & repair after generation'
+                      : 'Bypasses post-processing; delivers raw source mesh immediately'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Toggle post-processing"
+                  aria-checked={generationSettings.enablePostprocess !== false}
+                  onClick={() => setGenerationSettings(prev => ({
+                    ...prev,
+                    enablePostprocess: prev.enablePostprocess === false ? true : false,
+                  }))}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${generationSettings.enablePostprocess !== false ? 'bg-primary' : 'bg-zinc-700'}`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${generationSettings.enablePostprocess !== false ? 'translate-x-4' : 'translate-x-0 bg-zinc-300'}`}
+                  />
+                </button>
+              </div>
+            </div>
+
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div>
                 <div className="text-[11px] font-bold text-white">Production QA</div>

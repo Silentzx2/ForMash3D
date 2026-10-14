@@ -104,6 +104,7 @@ export interface BatchQueueItem {
   enableAutoRepair?: GenerationSettings['enableAutoRepair'];
   enableAutoRig?: GenerationSettings['enableAutoRig'];
   autoRigMode?: GenerationSettings['autoRigMode'];
+  enablePostprocess?: GenerationSettings['enablePostprocess'];
   preprocessingPreviewUrl?: string | null;
   enhancementEnabled?: GenerationSettings['enhancementEnabled'];
 }

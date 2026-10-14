@@ -263,5 +263,65 @@ class TestDatabasePersistenceCheck(unittest.TestCase):
             self.assertTrue(check["job_record_on_disk"])
 
 
+class TestEnablePostprocessToggle(unittest.IsolatedAsyncioTestCase):
+    """Verify that toggling off postprocess from UI/API bypasses postprocessing after mesh gen."""
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_enable_postprocess_false_sets_postprocess_mode_none(self, _mock_plan):
+        b64_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        mock_scheduler = MagicMock()
+        mock_scheduler.validate_model_preference.return_value = True
+        scheduled_jobs = []
+
+        async def capture_job(job_request):
+            scheduled_jobs.append(job_request)
+            return "job-bypass-123"
+
+        mock_scheduler.schedule_job = AsyncMock(side_effect=capture_job)
+
+        req = ImageToRawMeshRequest(
+            image_base64=b64_png,
+            intent="game_ready",
+            enable_postprocess=False,
+        )
+
+        resp = await generate_mesh_from_image(req, scheduler=mock_scheduler, file_store=MagicMock())
+        self.assertEqual(resp.job_id, "job-bypass-123")
+        self.assertEqual(len(scheduled_jobs), 1)
+
+        job = scheduled_jobs[0]
+        self.assertFalse(job.inputs["enable_postprocess"])
+        self.assertFalse(job.metadata["enable_postprocess"])
+        self.assertEqual(job.metadata["postprocess_mode"], "none")
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_enable_postprocess_true_by_default(self, _mock_plan):
+        b64_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        mock_scheduler = MagicMock()
+        mock_scheduler.validate_model_preference.return_value = True
+        scheduled_jobs = []
+
+        async def capture_job(job_request):
+            scheduled_jobs.append(job_request)
+            return "job-prod-456"
+
+        mock_scheduler.schedule_job = AsyncMock(side_effect=capture_job)
+
+        req = ImageToRawMeshRequest(
+            image_base64=b64_png,
+            intent="game_ready",
+        )
+
+        resp = await generate_mesh_from_image(req, scheduler=mock_scheduler, file_store=MagicMock())
+        self.assertEqual(resp.job_id, "job-prod-456")
+        self.assertEqual(len(scheduled_jobs), 1)
+
+        job = scheduled_jobs[0]
+        self.assertTrue(job.inputs["enable_postprocess"])
+        self.assertTrue(job.metadata["enable_postprocess"])
+        self.assertEqual(job.metadata["postprocess_mode"], "production_mesh")
+
+
 if __name__ == "__main__":
     unittest.main()
+

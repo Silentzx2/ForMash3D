@@ -188,24 +188,28 @@ sequenceDiagram
     participant TexAdapter as Texture Stage (Paint3D / Hunyuan)
     participant Storage as backend/storage/
 
-    User->>Frontend: Select image + production triangle budget (+ optional texture)
-    Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
-    API->>SCHED: Submit job (VRAM-aware)
+    User->>Frontend: Select image + toggle Post-Processing (+ budget / texture)
+    Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh (enable_postprocess: bool)
+    API->>SCHED: Submit job (VRAM-aware, metadata.enable_postprocess)
     SCHED->>Adapter: Run maximum-fidelity geometry model inference (raw mesh only)
     Adapter-->>SCHED: Raw model-native mesh output (untextured)
     SCHED->>Storage: Preserve master/source.glb byte-for-byte
-    SCHED->>PostProcess: Repair -> conditional Retopo -> apply target polycount -> Auto UV/Preserve -> QA
-    opt Texture Enabled
-        PostProcess->>TexAdapter: Apply textures via Paint3D (1K/2K) or Hunyuan Paint (4K/8K)
-        TexAdapter-->>PostProcess: Textured GLB + real texture maps
+    alt Post-Processing Enabled (enable_postprocess = true)
+        SCHED->>PostProcess: Repair -> conditional Retopo -> apply target polycount -> Auto UV/Preserve -> QA
+        opt Texture Enabled
+            PostProcess->>TexAdapter: Apply textures via Paint3D (1K/2K) or Hunyuan Paint (4K/8K)
+            TexAdapter-->>PostProcess: Textured GLB + real texture maps
+        end
+        PostProcess->>Storage: Save game_ready/* final formats
+        PostProcess->>Storage: Save lods/lod0..3.glb
+        PostProcess->>Storage: Save collision/collision.glb
+        PostProcess->>Storage: Save textures/, previews/, metadata/quality_report.json
+    else Post-Processing Bypassed (enable_postprocess = false)
+        SCHED->>SCHED: Mark postprocess_status="bypassed", attach direct model URLs
     end
-    PostProcess->>Storage: Save game_ready/* final formats
-    PostProcess->>Storage: Save lods/lod0..3.glb
-    PostProcess->>Storage: Save collision/collision.glb
-    PostProcess->>Storage: Save textures/, previews/, metadata/quality_report.json
-    SCHED-->>API: Job complete
+    SCHED-->>API: Job complete (status: completed, production_status: ready)
     API-->>Frontend: Return {job_id, status: "completed", outputs}
-    Frontend->>User: Render 3D model in WebGL Viewport
+    Frontend->>User: Render 3D model in WebGL Viewport (raw or optimized)
 ```
 
 ---

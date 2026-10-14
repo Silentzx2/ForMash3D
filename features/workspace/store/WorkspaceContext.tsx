@@ -570,6 +570,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       enableAutoRepair: false,
       enableAutoRig: false,
       autoRigMode: 'full',
+      enablePostprocess: true,
       physics: {
         bodyType: 'auto',
         massMode: 'auto',
@@ -2145,6 +2146,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            enableAutoRepair: false,
            enableAutoRig: false,
            autoRigMode: 'full',
+           enablePostprocess: batchItem.enablePostprocess ?? true,
            physics: {
              bodyType: 'auto',
              massMode: 'auto',

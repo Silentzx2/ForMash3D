@@ -1612,8 +1612,8 @@ async def download_job_thumbnail(
                 if candidate.exists():
                     thumbnail_path = str(candidate)
                     break
-        if not thumbnail_path and (result.get("mesh_path") or result.get("output_path")):
-            m_path = Path(result.get("mesh_path") or result.get("output_path"))
+        if not thumbnail_path and (result.get("mesh_path") or result.get("output_path") or result.get("output_mesh_path")):
+            m_path = Path(result.get("mesh_path") or result.get("output_path") or result.get("output_mesh_path"))
             for candidate in [
                 m_path.parent / f"{m_path.stem}_thumb.png",
                 m_path.parent / f"{m_path.stem}_preview.png",

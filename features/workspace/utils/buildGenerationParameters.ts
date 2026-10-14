@@ -37,6 +37,7 @@ export function buildGenerationParameters(
     settings.textureEnabled ??
     (settings.generateTexture !== false)
   );
+  const enablePostprocess = settings.enablePostprocess !== false;
 
   const textureResolutionPreset: '1K' | '2K' | '4K' | '8K' =
     settings.texture_resolution ||
@@ -75,6 +76,7 @@ export function buildGenerationParameters(
     source_quality: 'max',
     texture_enabled: textureEnabled,
     generate_texture: textureEnabled,
+    enable_postprocess: enablePostprocess,
   };
   
   // Model-specific parameters
@@ -117,6 +119,7 @@ export function buildGenerationParameters(
       enable_auto_repair: Boolean(settings.enableAutoRepair),
       enable_auto_rig: Boolean(settings.enableAutoRig),
       auto_rig_mode: settings.autoRigMode || 'full',
+      enable_postprocess: enablePostprocess,
       model_parameters: modelParameters,
       physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false),
       physics_config: settings.physics,

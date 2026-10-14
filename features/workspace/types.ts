@@ -456,6 +456,7 @@ export interface GenerationSettings {
   enableAutoRepair?: boolean;
   enableAutoRig?: boolean;
   autoRigMode?: string;
+  enablePostprocess?: boolean;
 }
 
 
