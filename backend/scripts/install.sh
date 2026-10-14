@@ -673,7 +673,7 @@ fi
 echo "[INFO] Installing remaining Unique3D requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" \
     accelerate \
-    "datasets==3.6.0" \\
+    "datasets==3.6.0" \
     "diffusers>=0.26.3" \
     fire \
     gradio \
