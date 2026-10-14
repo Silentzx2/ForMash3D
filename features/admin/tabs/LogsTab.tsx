@@ -39,43 +39,148 @@ function parseLine(raw: string): LogLine {
   return { id, timestamp: '', source: 'sys', level: lvl, message: raw };
 }
 
+function logKey(line: LogLine): string {
+  return [line.timestamp, line.level, line.source, line.message].join('\u0000');
+}
+
+function countLogLines(lines: LogLine[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const line of lines) {
+    const key = logKey(line);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function isReplayDuplicate(line: LogLine, counts: Map<string, number>): boolean {
+  const key = logKey(line);
+  const remaining = counts.get(key) ?? 0;
+  if (remaining <= 0) return false;
+  if (remaining === 1) counts.delete(key);
+  else counts.set(key, remaining - 1);
+  return true;
+}
+
+function capLogLines(lines: LogLine[]): LogLine[] {
+  return lines.length > 3000 ? lines.slice(-2500) : lines;
+}
+
 export function LogsTab() {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [live, setLive] = useState(true);
   const [status, setStatus] = useState<ConnStatus>('CONNECTING');
   const [autoScroll, setAutoScroll] = useState(true);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
   const terminalRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const logsRef = useRef<LogLine[]>([]);
+  const initialSnapshotLoadedRef = useRef(false);
 
   useEffect(() => {
     autoScrollRef.current = autoScroll;
   }, [autoScroll]);
 
-  // SSE stream
   useEffect(() => {
-    if (!live) { setStatus('PAUSED'); return; }
+    logsRef.current = logs;
+  }, [logs]);
+
+  // Load the current master.log snapshot as well as subscribing to live writes.
+  // The stream replays recent lines, so a counted overlap removes only replayed
+  // occurrences while preserving genuinely repeated log messages.
+  useEffect(() => {
+    if (!live) {
+      setStatus('PAUSED');
+      return;
+    }
+
+    let disposed = false;
+    let snapshotReady = initialSnapshotLoadedRef.current;
+    let replayCounts = snapshotReady ? countLogLines(logsRef.current) : new Map<string, number>();
+    const bufferedStreamLines: LogLine[] = [];
+
     setStatus('CONNECTING');
+    setHistoryError(false);
 
     const es = new EventSource('/api/v1/system/logs/stream?last_n=500');
 
-    es.onopen = () => setStatus('CONNECTED');
+    es.onopen = () => {
+      if (!disposed) setStatus('CONNECTED');
+    };
+
+    const appendLiveLine = (line: LogLine) => {
+      if (disposed) return;
+      if (!snapshotReady) {
+        bufferedStreamLines.push(line);
+        return;
+      }
+      if (isReplayDuplicate(line, replayCounts)) return;
+      setLogs(prev => capLogLines([...prev, line]));
+    };
 
     es.onmessage = (e) => {
       const raw = e.data as string;
-      // Skip empty, whitespace-only, or SSE comment lines (heartbeats)
+      // Skip empty, whitespace-only, or SSE comment lines (heartbeats).
       if (!raw || !raw.trim() || raw.startsWith(':')) return;
-
-      const line = parseLine(raw);
-      setLogs(prev => {
-        const next = [...prev, line];
-        return next.length > 3000 ? next.slice(-2500) : next;
-      });
+      appendLiveLine(parseLine(raw));
     };
 
-    es.onerror = () => setStatus('ERROR');
+    es.onerror = () => {
+      if (!disposed) setStatus('ERROR');
+    };
 
-    return () => { es.close(); };
+    if (!snapshotReady) {
+      setHistoryLoaded(false);
+      void getApiClient().get<any>('/api/v1/system/logs', { params: { lines: 500 } })
+        .then((response) => {
+          if (disposed) return;
+
+          const entries = Array.isArray(response?.logs) ? response.logs : [];
+          // The API returns newest-first; reverse it for terminal chronology.
+          const history: LogLine[] = entries.slice().reverse().map((entry: any, index: number) => {
+            if (typeof entry?.raw === 'string' && entry.raw.length > 0) {
+              return parseLine(entry.raw);
+            }
+            const level = String(entry?.level || 'INFO').toUpperCase().replace('WARNING', 'WARN');
+            return {
+              id: String(entry?.id ?? `history-${index}-${entry?.timestamp ?? ''}`),
+              timestamp: String(entry?.timestamp ?? ''),
+              level,
+              source: String(entry?.source || entry?.logger || 'sys'),
+              message: String(entry?.message ?? ''),
+            };
+          });
+
+          replayCounts = countLogLines(history);
+          snapshotReady = true;
+          initialSnapshotLoadedRef.current = true;
+
+          // The SSE subscription may have replayed these same lines while the
+          // history request was in flight. Drop only matching occurrences.
+          const liveOnly = bufferedStreamLines.splice(0).filter(
+            line => !isReplayDuplicate(line, replayCounts)
+          );
+          setLogs(capLogLines([...history, ...liveOnly]));
+          setHistoryLoaded(true);
+          setHistoryError(false);
+        })
+        .catch(() => {
+          if (disposed) return;
+          snapshotReady = true;
+          const buffered = bufferedStreamLines.splice(0);
+          setLogs(prev => capLogLines([...prev, ...buffered]));
+          setHistoryLoaded(true);
+          setHistoryError(true);
+        });
+    } else {
+      setHistoryLoaded(true);
+    }
+
+    return () => {
+      disposed = true;
+      es.close();
+    };
   }, [live]);
 
   // Auto-scroll
@@ -121,6 +226,9 @@ export function LogsTab() {
             {status === 'ERROR' && (
               <span className="text-[#F44336] text-[11px]">— backend offline or unreachable</span>
             )}
+            {historyError && (
+              <span className="text-[#FFC107] text-[11px]">— could not load existing log history</span>
+            )}
           </div>
           <div className="flex items-center gap-4 text-[#888888]">
             <span>{logs.length} lines</span>
@@ -146,7 +254,9 @@ export function LogsTab() {
           {logs.length === 0 ? (
             <div className="text-[#555555] mt-2">
               {status === 'CONNECTING' && '⏳ Connecting to log stream...'}
-              {status === 'CONNECTED' && '⏳ Stream connected — waiting for new log entries...'}
+              {status === 'CONNECTED' && !historyLoaded && '⏳ Loading recent entries from master.log...'}
+              {status === 'CONNECTED' && historyLoaded && historyError && '⚠ Could not load log history; waiting for live entries...'}
+              {status === 'CONNECTED' && historyLoaded && !historyError && '⏳ No entries found in master.log yet — waiting for new log entries...'}
               {status === 'ERROR' && '✗  Cannot reach backend. Start the backend and refresh.'}
               {status === 'PAUSED' && '⏸  Stream paused. Click Resume to reconnect.'}
             </div>
