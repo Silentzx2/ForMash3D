@@ -167,7 +167,7 @@ Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the main ForM
 | **SSE Streaming** | API Gateway | Server-Sent Events for progress | Real-time feedback without polling |
 | **Tensor Core Acceleration** | Backend | `torch.backends.cuda.matmul.allow_tf32 = True` | 3x-8x matmul speedup on Ampere/Ada/Hopper |
 | **Inference Mode** | Backend | `torch.inference_mode()` | Eliminates autograd graph tracking overhead |
-| **ORJSON Serialization** | Backend | `ORJSONResponse` with fallback | 10x-20x faster JSON serialization |
+| **Pydantic Serialization** | Backend | FastAPI native Pydantic response model serialization | 10x-20x faster JSON serialization |
 | **GZip Compression** | Backend | `GZipMiddleware(minimum_size=1000)` | 75-85% response size reduction |
 | **Browser Caching** | Backend | `Cache-Control` headers | Reduces repeated asset downloads |
 | **Code-Splitting** | Frontend | `next/dynamic` with skeleton fallbacks | Reduced initial bundle size |

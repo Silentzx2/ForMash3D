@@ -29,13 +29,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
-try:
-    import orjson
-    from fastapi.responses import ORJSONResponse
-    FastAPIResponse = ORJSONResponse
-except ImportError:
-    FastAPIResponse = JSONResponse
-
 from core.config import get_settings, setup_logging #, create_directories
 from core.file_store import FileStore
 from core.scheduler.redis_job_queue import RedisJobQueue
@@ -232,7 +225,6 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    default_response_class=FastAPIResponse,
     lifespan=lifespan,
 )
 

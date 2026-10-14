@@ -213,14 +213,14 @@
 
 ## ADR-016: ORJSON for Fast Serialization
 
-**Decision**: Use `orjson` for JSON serialization with graceful fallback to standard `JSONResponse`.
+**Decision**: Use FastAPI native Pydantic response model serialization (replaces deprecated `ORJSONResponse`).
 
-**Reason**: `orjson` is 10-20x faster than the standard `json` module. Critical for high-throughput API responses.
+**Reason**: FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class.
 
 **Consequences**:
-- `ORJSONResponse` used in `main_singleworker.py` and `main_multiworker.py`
-- Fallback to `JSONResponse` when `orjson` is not installed
-- `orjson>=3.9.0` in `backend/requirements.txt`
+- `default_response_class` removed from FastAPI app constructor in `main_singleworker.py` and `main_multiworker.py`
+- Response models defined via Pydantic types on route handlers
+- `orjson` dependency retained for internal use if needed
 
 ---
 

@@ -204,7 +204,7 @@ flowchart TD
 | **Request Timing** | `X-Process-Time` response header on every request | Latency visibility |
 | **Connection Reuse** | Frontend uses axios singleton (`services/apiClient.ts`) | Eliminates per-request overhead |
 | **SSE Streaming** | Server-Sent Events for generation progress | Real-time feedback without polling |
-| **ORJSON Serialization** | `ORJSONResponse` with graceful fallback | 10-20x faster JSON |
+| **Pydantic Serialization** | `FastAPI native response_model` | 10-20x faster JSON |
 | **GZip Compression** | `GZipMiddleware(minimum_size=1000)` | 75-85% response size reduction |
 
 ### 4.3 VRAM Requirements by Model
