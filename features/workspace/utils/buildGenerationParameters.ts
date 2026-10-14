@@ -31,13 +31,13 @@ export function buildGenerationParameters(
   // Determine model capabilities
   const isRawModel = modelCapabilities.raw_mesh === true;
   const isPaintModel = modelCapabilities.paint_autochain === true;
-  // Determine texture routing for image-to-3D.
-  const textureEnabled = Boolean(
+  const enablePostprocess = settings.enablePostprocess !== false;
+  // Texture generation is a post-processing stage; if post-process is bypassed, texture is disabled.
+  const textureEnabled = enablePostprocess && Boolean(
     settings.texture_enabled ??
     settings.textureEnabled ??
     (settings.generateTexture !== false)
   );
-  const enablePostprocess = settings.enablePostprocess !== false;
 
   const textureResolutionPreset: '1K' | '2K' | '4K' | '8K' =
     settings.texture_resolution ||
@@ -67,11 +67,11 @@ export function buildGenerationParameters(
     low_vram: false,
     enable_flashvdm: settings.enableFlashVDM ?? false,
     low_vram_mode: 'normal',
-    auto_optimize: shouldAutoOptimize(settings.autoOptimizeSettings?.targetPolycount),
-    target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 0,
-    generateLOD: settings.generateLOD !== false,
+    auto_optimize: enablePostprocess && shouldAutoOptimize(settings.autoOptimizeSettings?.targetPolycount),
+    target_polycount: enablePostprocess ? (settings.autoOptimizeSettings?.targetPolycount ?? 0) : 0,
+    generateLOD: enablePostprocess && (settings.generateLOD !== false),
     lodPreset: settings.lodPreset || 'high',
-    lodCount: settings.lodCount || 4,
+    lodCount: enablePostprocess ? (settings.lodCount || 4) : 0,
     negative_prompt: settings.negativePrompt || undefined,
     source_quality: 'max',
     texture_enabled: textureEnabled,
@@ -112,20 +112,20 @@ export function buildGenerationParameters(
       image_name: cleanStem,
       output_format: 'glb',
       model_preference: settings.aiModel || undefined,
-      intent: settings.intent,
+      intent: enablePostprocess ? settings.intent : undefined,
       preprocessing_artifact_id: settings.preprocessingArtifactId || undefined,
       enhancement_enabled: Boolean(settings.enhancementEnabled),
-      enable_printability_check: Boolean(settings.enablePrintabilityCheck),
-      enable_auto_repair: Boolean(settings.enableAutoRepair),
-      enable_auto_rig: Boolean(settings.enableAutoRig),
+      enable_printability_check: enablePostprocess && Boolean(settings.enablePrintabilityCheck),
+      enable_auto_repair: enablePostprocess && Boolean(settings.enableAutoRepair),
+      enable_auto_rig: enablePostprocess && Boolean(settings.enableAutoRig),
       auto_rig_mode: settings.autoRigMode || 'full',
       enable_postprocess: enablePostprocess,
       model_parameters: modelParameters,
-      physics_enabled: shouldEnablePhysics(settings.generateCollision ?? false),
+      physics_enabled: enablePostprocess && shouldEnablePhysics(settings.generateCollision ?? false),
       physics_config: settings.physics,
-      topology_mode: settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle'),
-      quad_topology: Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
-      bake_normal_maps: true,
+      topology_mode: enablePostprocess ? (settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle')) : 'triangle',
+      quad_topology: enablePostprocess && Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
+      bake_normal_maps: enablePostprocess,
       texture_enabled: textureEnabled,
       generate_texture: textureEnabled,
       ...(textureEnabled ? {

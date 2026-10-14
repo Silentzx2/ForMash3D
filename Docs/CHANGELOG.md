@@ -10,6 +10,15 @@
 ### Postprocessing Pipeline Enhancements
 - **UI Master Post-Processing Toggle & Pipeline Bypass**: Added a master toggle in the UI (`GeneratePanel.tsx`, both on the main configuration panel and the Advanced Drawer) allowing users to cleanly disable post-processing after mesh generation.
   - When disabled (`enable_postprocess: false`), mesh generation returns the raw, unmodified high-fidelity source geometry immediately without executing remeshing, retopology, decimation, UV unwrap, or texture baking stages.
+  - **Comprehensive UI Control Blocking & Greying**: When toggled OFF, all downstream post-processing stages and buttons are completely disabled and greyed out (`opacity-40 cursor-not-allowed pointer-events-none`) with contextual `BLOCKED` badges:
+    - *Textured Generation & Output Atlas*: Toggle is disabled, locked to raw geometry, and atlas size selector displays a bypass notice.
+    - *Smart Intent Presets*: Game, Cinematic, Animation, Print, and Mobile preset buttons are disabled and locked.
+    - *Target & Polycount Budget*: Preset buttons (Mobile, Game, Cinema, Native) and the budget slider are disabled and greyed out.
+    - *Production QA & Auto-Rig*: Printability check, Auto-repair, and Auto-Rig buttons are locked with an explanatory banner.
+    - *Physics Preparation*: Collision hull generation toggle and all body/density/friction controls are disabled.
+    - *Mesh Settings*: Texture quality chips, polycount budget, and Quads vs Triangles topology selectors are locked.
+    - *Pre-flight Bar*: Header badge and bottom sticky bar display `POSTPROCESS: OFF (RAW)` and `RAW NATIVE GEOMETRY`.
+  - **Payload & Backend Parameter Enforcement**: `buildGenerationParameters.ts` and `backend/api/routers/mesh_generation.py` strictly enforce `texture_enabled = false`, `generate_texture = false`, `lod_enabled = false`, `enable_printability = false`, `enable_auto_repair = false`, `enable_auto_rig = false`, and `target_polycount = 0` whenever `enable_postprocess` is False.
   - Handled cleanly in `backend/core/scheduler/multiprocess_scheduler.py`: sets `postprocess_status: "bypassed"` and `production_status: "ready"`, attaching the raw model URLs and polygon counts so Three.js `<MeshViewer />` displays the generated raw mesh seamlessly.
   - Backend request schemas (`ImageToRawMeshRequest`, `ImageToTexturedMeshRequest`, `TextMeshPaintingRequest`) and batch generation endpoints accept `enable_postprocess: bool = Field(True, ...)` and enforce `postprocess_mode: "none"` when toggled off.
 - **Quad OBJ Polygonal Export**: Implemented `_export_quad_obj` in `backend/postprocess/pipeline.py` to serialize meshes with genuine 4-vertex polygonal faces (`f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 v4/vt4/vn4`) preserving quad-dominant topology from AutoRetopo / QuadriFlow passes. Automatically bypasses destructive triangle decimation (`Passthrough: Quad-dominant topology preserved from retopology pass`) when quad retopology is requested.

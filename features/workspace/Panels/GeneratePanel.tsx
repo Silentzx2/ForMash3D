@@ -418,7 +418,9 @@ export const GeneratePanel: React.FC = () => {
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
   const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
-  
+  // Master post-processing bypass flag
+  const isPostprocessOff = generationSettings.enablePostprocess === false;
+
   // Centralized Textured Generation toggle: visible for every supported geometry model
   const showTextureToggle = true;
   const textureAtlasSize: '1K' | '2K' | '4K' | '8K' =
@@ -1191,8 +1193,14 @@ export const GeneratePanel: React.FC = () => {
                   <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>AI 3D Engine</span>
                 </span>
-                <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/25 font-bold">
-                  {generationSettings.generateTexture !== false ? `Textured (${textureAtlasSize})` : 'Raw Geometry'}
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded border font-bold ${
+                  isPostprocessOff
+                    ? 'text-zinc-400 bg-zinc-800/80 border-white/[0.08]'
+                    : generationSettings.generateTexture !== false
+                    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25'
+                    : 'text-zinc-300 bg-white/[0.06] border-white/[0.1]'
+                }`}>
+                  {isPostprocessOff ? 'Raw Geometry (Postprocess OFF)' : generationSettings.generateTexture !== false ? `Textured (${textureAtlasSize})` : 'Raw Geometry'}
                 </span>
               </div>
 
@@ -1215,7 +1223,11 @@ export const GeneratePanel: React.FC = () => {
                     </span>
                     <span className="text-[10px] text-zinc-400 truncate mt-0.5">
                       {activeModelObj?.vram_required_mb ? `${Math.round(activeModelObj.vram_required_mb / 1024)}GB VRAM · ` : ''}
-                      {generationSettings.generateTexture !== false ? `${textureAtlasSize} PBR Output` : 'Raw Geometry Mesh'}
+                      {isPostprocessOff
+                        ? 'Raw Source Geometry (Postprocess OFF)'
+                        : generationSettings.generateTexture !== false
+                        ? `${textureAtlasSize} PBR Output`
+                        : 'Raw Geometry Mesh'}
                     </span>
                   </div>
                 </div>
@@ -1297,32 +1309,57 @@ export const GeneratePanel: React.FC = () => {
                 {showTextureToggle && (
                   <button
                     type="button"
-                    onClick={() => setGenerationSettings(prev => {
-                      const nextVal = prev.generateTexture === false;
-                      return {
-                        ...prev,
-                        generateTexture: nextVal,
-                        texture_enabled: nextVal,
-                        texture_resolution: prev.texture_resolution || prev.textureResolution || '2K',
-                      };
-                    })}
-                    className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
-                      generationSettings.generateTexture !== false
-                        ? 'bg-emerald-500/10 border-emerald-500/30 text-white'
-                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
+                    disabled={isPostprocessOff}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      setGenerationSettings(prev => {
+                        const nextVal = prev.generateTexture === false;
+                        return {
+                          ...prev,
+                          generateTexture: nextVal,
+                          texture_enabled: nextVal,
+                          texture_resolution: prev.texture_resolution || prev.textureResolution || '2K',
+                        };
+                      });
+                    }}
+                    className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all ${
+                      isPostprocessOff
+                        ? 'bg-[hsl(var(--surface-1))] border-white/[0.04] text-zinc-500 cursor-not-allowed opacity-50'
+                        : generationSettings.generateTexture !== false
+                        ? 'bg-emerald-500/10 border-emerald-500/30 text-white cursor-pointer hover:border-emerald-500/50'
+                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400 cursor-pointer hover:border-white/[0.15]'
                     }`}
                   >
                     <div className="flex flex-col min-w-0 pr-1">
-                      <span className="text-[11px] font-bold text-white leading-tight">Textured Generation</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-white leading-tight">Textured Generation</span>
+                        {isPostprocessOff && (
+                          <span className="text-[7.5px] font-mono px-1 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                            BLOCKED
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[9px] text-zinc-400">
-                        {generationSettings.generateTexture !== false ? `${textureAtlasSize} Atlas` : 'Raw Mesh'}
+                        {isPostprocessOff
+                          ? 'Requires Post-Processing'
+                          : generationSettings.generateTexture !== false
+                          ? `${textureAtlasSize} Atlas`
+                          : 'Raw Mesh'}
                       </span>
                     </div>
                     <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
-                      generationSettings.generateTexture !== false ? 'bg-emerald-500' : 'bg-zinc-700'
+                      isPostprocessOff
+                        ? 'bg-zinc-800'
+                        : generationSettings.generateTexture !== false
+                        ? 'bg-emerald-500'
+                        : 'bg-zinc-700'
                     }`}>
-                      <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
-                        generationSettings.generateTexture !== false ? 'left-4' : 'left-0.5 bg-zinc-300'
+                      <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full transition-transform ${
+                        isPostprocessOff
+                          ? 'left-0.5 bg-zinc-600'
+                          : generationSettings.generateTexture !== false
+                          ? 'left-4 bg-black'
+                          : 'left-0.5 bg-zinc-300'
                       }`} />
                     </div>
                   </button>
@@ -1390,7 +1427,22 @@ export const GeneratePanel: React.FC = () => {
               </div>
 
               {/* Output Atlas Size Selector when Textured Generation is ON */}
-              {generationSettings.generateTexture !== false && (
+              {isPostprocessOff ? (
+                <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.04] space-y-1 mt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      <span>Output Atlas Size</span>
+                    </span>
+                    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold uppercase">
+                      Bypassed
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-zinc-500 leading-tight">
+                    Texture baking and UV unwrapping are post-processing stages and are blocked when Post-Processing is OFF.
+                  </p>
+                </div>
+              ) : generationSettings.generateTexture !== false ? (
                 <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] space-y-2 mt-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-white uppercase tracking-wider">Output Atlas Size</span>
@@ -1429,17 +1481,34 @@ export const GeneratePanel: React.FC = () => {
                     </div>
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
 
 
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2">
+            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${
+              isPostprocessOff
+                ? 'border-white/[0.06] bg-[hsl(var(--surface-0))] opacity-60'
+                : 'border-primary/20 bg-primary/5'
+            }`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] font-bold text-white">Smart Intent</div>
-                  <div className="text-[9px] text-zinc-400">Backend-owned deterministic production recipe</div>
+                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                    <span>Smart Intent</span>
+                    {isPostprocessOff && (
+                      <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                        BLOCKED
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[9px] text-zinc-400">
+                    {isPostprocessOff
+                      ? 'Production recipes require post-processing pipeline'
+                      : 'Backend-owned deterministic production recipe'}
+                  </div>
                 </div>
-                <span className="text-[9px] font-mono text-primary">{generationSettings.intent || 'Manual'}</span>
+                <span className="text-[9px] font-mono text-primary">
+                  {isPostprocessOff ? 'Bypassed' : (generationSettings.intent || 'Manual')}
+                </span>
               </div>
               <div className="grid grid-cols-5 gap-1">
                 {[
@@ -1452,22 +1521,33 @@ export const GeneratePanel: React.FC = () => {
                   <button
                     key={id}
                     type="button"
-                    disabled={!smartPresets[id]}
-                    onClick={() => void applyIntentPreset(id)}
-                    className={generationSettings.intent === id
+                    disabled={isPostprocessOff || !smartPresets[id]}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      void applyIntentPreset(id);
+                    }}
+                    className={isPostprocessOff
+                      ? 'min-h-10 rounded-lg border border-white/[0.04] bg-[hsl(var(--surface-1))] text-zinc-600 cursor-not-allowed opacity-40 text-[8px]'
+                      : generationSettings.intent === id
                       ? 'min-h-10 rounded-lg border border-primary bg-primary text-black font-bold text-[8px]'
                       : 'min-h-10 rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] text-zinc-300 hover:border-primary/30 disabled:opacity-40 text-[8px]'}
                   >
                     <span className="block font-black">{label}</span>
                     <span className="block mt-0.5 text-[7px] opacity-70">
-                      {Number(smartPresets[id]?.target_polycount) > 0
+                      {isPostprocessOff
+                        ? 'Off'
+                        : Number(smartPresets[id]?.target_polycount) > 0
                         ? Math.round(Number(smartPresets[id].target_polycount) / 1000) + 'K'
                         : id === '3d_print' ? 'QA' : 'Preset'}
                     </span>
                   </button>
                 ))}
               </div>
-              {generationSettings.intent && smartResolution && (
+              {isPostprocessOff ? (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
+                  <span>🔒 Production recipes are blocked because Post-Processing is OFF.</span>
+                </div>
+              ) : generationSettings.intent && smartResolution ? (
                 <div className="rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-[8px] text-zinc-400 space-y-0.5">
                   <div className="flex justify-between gap-2"><span>Selected model</span><span className="font-mono text-white truncate">{smartResolution.model_id}</span></div>
                   <div className="flex justify-between gap-2"><span>Preset</span><span className="font-mono text-white truncate">{smartPresets[generationSettings.intent]?.label || generationSettings.intent}</span></div>
@@ -1475,8 +1555,8 @@ export const GeneratePanel: React.FC = () => {
                   <div className="flex justify-between gap-2"><span>Eligibility</span><span className="text-emerald-300">Image → 3D · ready · VRAM-fit</span></div>
                   <div className="flex justify-between gap-2"><span>Safety</span><span className="font-mono text-zinc-300">No preflight clamp · scheduler authoritative</span></div>
                 </div>
-              )}
-              {generationSettings.intent && (
+              ) : null}
+              {generationSettings.intent && !isPostprocessOff && (
                 <button type="button"
                   onClick={() => { setSmartResolution(null); setGenerationSettings(prev => ({ ...prev, intent: undefined, aiModel: '' })); }}
                   className="w-full text-[9px] text-zinc-500 hover:text-white">
@@ -1530,18 +1610,29 @@ export const GeneratePanel: React.FC = () => {
             </div>
 
             {/* Unified Production Target & Polycount Budget */}
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 space-y-2.5">
+            <div className={`rounded-xl border p-2.5 space-y-2.5 transition-all ${
+              isPostprocessOff
+                ? 'border-white/[0.06] bg-[hsl(var(--surface-0))] opacity-60'
+                : 'border-primary/20 bg-primary/5'
+            }`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] font-bold text-white">Target & Polycount Budget</div>
+                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                    <span>Target & Polycount Budget</span>
+                    {isPostprocessOff && (
+                      <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                        BLOCKED
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[9px] text-zinc-400">
-                    {generationSettings.enablePostprocess === false
-                      ? 'Post-processing is OFF: downstream decimation & LODs will be bypassed'
+                    {isPostprocessOff
+                      ? 'Post-processing is OFF: downstream decimation, remesh & LOD stages are blocked'
                       : 'Native/Raw preserves source geometry; production presets opt into remesh, decimation, and LOD budgets'}
                   </div>
                 </div>
                 <span className="font-mono text-xs font-black text-primary">
-                  {generationSettings.enablePostprocess === false
+                  {isPostprocessOff
                     ? 'Bypassed (Raw Mesh)'
                     : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
                       ? 'Native / Raw'
@@ -1567,15 +1658,21 @@ export const GeneratePanel: React.FC = () => {
                     <button
                       key={id}
                       type="button"
-                      onClick={() => applyWorkflowRecipe(id as 'mobile' | 'game' | 'cinematic' | 'native')}
+                      disabled={isPostprocessOff}
+                      onClick={() => {
+                        if (isPostprocessOff) return;
+                        applyWorkflowRecipe(id as 'mobile' | 'game' | 'cinematic' | 'native');
+                      }}
                       className={"min-h-11 rounded-lg border text-left px-2 py-1.5 transition-all " + (
-                        isMatch
-                          ? 'bg-primary text-black border-primary font-bold shadow-sm'
-                          : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:border-primary/30 hover:text-white'
+                        isPostprocessOff
+                          ? 'opacity-40 cursor-not-allowed bg-[hsl(var(--surface-1))] border-white/[0.04] text-zinc-600'
+                          : isMatch
+                            ? 'bg-primary text-black border-primary font-bold shadow-sm cursor-pointer'
+                            : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:border-primary/30 hover:text-white cursor-pointer'
                       )}
                     >
                       <span className="block text-[9px] font-black leading-tight">{label}</span>
-                      <span className={"block text-[7px] mt-0.5 " + (isMatch ? 'text-black/75' : 'text-zinc-500')}>{detail}</span>
+                      <span className={"block text-[7px] mt-0.5 " + (isPostprocessOff ? 'text-zinc-600' : isMatch ? 'text-black/75' : 'text-zinc-500')}>{detail}</span>
                     </button>
                   );
                 })}
@@ -1584,19 +1681,25 @@ export const GeneratePanel: React.FC = () => {
               <div className="space-y-1 pt-1 border-t border-white/[0.06]">
                 <div className="flex items-center justify-between text-[9px] text-zinc-400">
                   <span>Fine-tune triangle budget</span>
-                  <span>5K - 200K</span>
+                  <span>{isPostprocessOff ? 'Blocked' : '5K - 200K'}</span>
                 </div>
                 <input
                   aria-label="Production polycount"
                   type="range"
+                  disabled={isPostprocessOff}
                   min={5000}
                   max={200000}
                   step={5000}
                   value={(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) > 0 ? generationSettings.autoOptimizeSettings!.targetPolycount : 50000}
                   onChange={(e) => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(e.target.value) } }))}
-                  className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
+                  className={`w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary ${isPostprocessOff ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
                 />
               </div>
+              {isPostprocessOff && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
+                  <span>🔒 Target polycount & decimation stages are blocked when Post-Processing is OFF.</span>
+                </div>
+              )}
             </div>
             {/* Advanced generation controls are opt-in so the main workflow stays compact. */}
             <button
@@ -1606,13 +1709,25 @@ export const GeneratePanel: React.FC = () => {
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                  <div className={`w-7 h-7 rounded-lg border flex items-center justify-center shrink-0 ${
+                    isPostprocessOff ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' : 'bg-primary/10 border-primary/20 text-primary'
+                  }`}>
                     <HugeiconsIcon icon={Settings2} size={16} className="w-3.5 h-3.5" />
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-white">Advanced Generation</div>
+                    <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                      <span>Advanced Generation</span>
+                      {isPostprocessOff && (
+                        <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                          POSTPROCESS OFF
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[9px] text-zinc-400 truncate">
-                      {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'Native / Raw' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K tris`} · {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · {generationSettings.generateCollision ? 'physics on' : 'physics off'}
+                      {isPostprocessOff
+                        ? 'Post-Processing Bypassed · Raw Source Geometry Only'
+                        : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'Native / Raw' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K tris`} · ${(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'quads' : 'triangles'} · ${generationSettings.generateCollision ? 'physics on' : 'physics off'}`
+                      }
                     </div>
                   </div>
                 </div>
@@ -1690,36 +1805,73 @@ export const GeneratePanel: React.FC = () => {
               </div>
             </div>
 
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
-              <div>
-                <div className="text-[11px] font-bold text-white">Production QA</div>
-                <div className="text-[9px] text-zinc-500">Uses the shared post-processing path; no duplicate pipeline.</div>
+            <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2 transition-all ${
+              isPostprocessOff ? 'border-white/[0.06] opacity-60' : 'border-white/[0.1]'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                    <span>Production QA</span>
+                    {isPostprocessOff && (
+                      <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                        BLOCKED
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[9px] text-zinc-500">
+                    {isPostprocessOff ? 'QA and Auto-Rig stages require post-processing pipeline' : 'Uses the shared post-processing path; no duplicate pipeline.'}
+                  </div>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-1.5">
                 <button type="button"
-                  onClick={() => setGenerationSettings(prev => ({
-                    ...prev,
-                    enablePrintabilityCheck: !Boolean(prev.enablePrintabilityCheck),
-                    enableAutoRepair: !Boolean(prev.enablePrintabilityCheck) ? prev.enableAutoRepair : false,
-                  }))}
-                  className={generationSettings.enablePrintabilityCheck ? 'rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-left text-primary' : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                  disabled={isPostprocessOff}
+                  onClick={() => {
+                    if (isPostprocessOff) return;
+                    setGenerationSettings(prev => ({
+                      ...prev,
+                      enablePrintabilityCheck: !Boolean(prev.enablePrintabilityCheck),
+                      enableAutoRepair: !Boolean(prev.enablePrintabilityCheck) ? prev.enableAutoRepair : false,
+                    }));
+                  }}
+                  className={isPostprocessOff
+                    ? 'rounded-lg border border-white/[0.04] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-600 opacity-40 cursor-not-allowed'
+                    : generationSettings.enablePrintabilityCheck
+                      ? 'rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-left text-primary cursor-pointer'
+                      : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400 cursor-pointer'}>
                   <span className="block text-[10px] font-bold">Printability</span>
-                  <span className="block text-[8px]">{generationSettings.enablePrintabilityCheck ? 'Checking topology' : 'Off'}</span>
+                  <span className="block text-[8px]">{isPostprocessOff ? 'Blocked' : generationSettings.enablePrintabilityCheck ? 'Checking topology' : 'Off'}</span>
                 </button>
-                <button type="button" disabled={!generationSettings.enablePrintabilityCheck}
-                  onClick={() => setGenerationSettings(prev => ({ ...prev, enableAutoRepair: !Boolean(prev.enableAutoRepair) }))}
-                  className={generationSettings.enableAutoRepair ? 'rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-left text-emerald-300' : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                <button type="button"
+                  disabled={isPostprocessOff || !generationSettings.enablePrintabilityCheck}
+                  onClick={() => {
+                    if (isPostprocessOff) return;
+                    setGenerationSettings(prev => ({ ...prev, enableAutoRepair: !Boolean(prev.enableAutoRepair) }));
+                  }}
+                  className={isPostprocessOff || !generationSettings.enablePrintabilityCheck
+                    ? 'rounded-lg border border-white/[0.04] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-600 opacity-40 cursor-not-allowed'
+                    : generationSettings.enableAutoRepair
+                      ? 'rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-left text-emerald-300 cursor-pointer'
+                      : 'rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400 cursor-pointer'}>
                   <span className="block text-[10px] font-bold">Auto-Repair</span>
-                  <span className="block text-[8px]">{generationSettings.enableAutoRepair ? 'Repair + recheck' : 'No mutation'}</span>
+                  <span className="block text-[8px]">{isPostprocessOff ? 'Blocked' : generationSettings.enableAutoRepair ? 'Repair + recheck' : 'No mutation'}</span>
                 </button>
               </div>
               <button type="button"
-                onClick={() => setGenerationSettings(prev => ({ ...prev, enableAutoRig: !Boolean(prev.enableAutoRig) }))}
-                className={generationSettings.enableAutoRig ? 'w-full rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 text-left text-violet-200' : 'w-full rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400'}>
+                disabled={isPostprocessOff}
+                onClick={() => {
+                  if (isPostprocessOff) return;
+                  setGenerationSettings(prev => ({ ...prev, enableAutoRig: !Boolean(prev.enableAutoRig) }));
+                }}
+                className={isPostprocessOff
+                  ? 'w-full rounded-lg border border-white/[0.04] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-600 opacity-40 cursor-not-allowed'
+                  : generationSettings.enableAutoRig
+                    ? 'w-full rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 text-left text-violet-200 cursor-pointer'
+                    : 'w-full rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-left text-zinc-400 cursor-pointer'}>
                 <span className="text-[10px] font-bold">Auto-Rig Game-Ready Mesh</span>
-                <span className="block text-[8px] opacity-75">{generationSettings.enableAutoRig ? 'Runs UniRig after production processing' : 'Disabled'}</span>
+                <span className="block text-[8px] opacity-75">{isPostprocessOff ? 'Blocked (Post-processing OFF)' : generationSettings.enableAutoRig ? 'Runs UniRig after production processing' : 'Disabled'}</span>
               </button>
-              {generationSettings.enableAutoRig && (
+              {generationSettings.enableAutoRig && !isPostprocessOff && (
                 <select value={generationSettings.autoRigMode || 'full'}
                   onChange={e => setGenerationSettings(prev => ({ ...prev, autoRigMode: e.target.value as GenerationSettings['autoRigMode'] }))}
                   className="w-full rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[9px] text-zinc-200">
@@ -1728,29 +1880,53 @@ export const GeneratePanel: React.FC = () => {
                   <option value="skin">Skinning</option>
                 </select>
               )}
+              {isPostprocessOff && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
+                  <span>🔒 Production QA and Auto-Rig are bypassed when Post-Processing is OFF.</span>
+                </div>
+              )}
             </div>
 
             {/* Physics Preparation */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+            <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2 transition-all ${
+              isPostprocessOff ? 'border-white/[0.06] opacity-60' : 'border-white/[0.1]'
+            }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <HugeiconsIcon icon={ZapIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={ZapIcon} size={16} className={`w-3.5 h-3.5 ${isPostprocessOff ? 'text-zinc-600' : 'text-primary'}`} />
                   <span>Physics Preparation</span>
+                  {isPostprocessOff && (
+                    <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                      BLOCKED
+                    </span>
+                  )}
                 </div>
-                <span className="text-[9px] text-zinc-500">Post-process · no extra AI model</span>
+                <span className="text-[9px] text-zinc-500">{isPostprocessOff ? 'Blocked in Fast Mode' : 'Post-process · no extra AI model'}</span>
               </div>
 
               <button type="button"
-                onClick={() => setGenerationSettings(prev => ({ ...prev, generateCollision: !Boolean(prev.generateCollision) }))}
-                className={generationSettings.generateCollision ? 'w-full p-2 rounded-lg border border-primary/40 bg-primary/10 text-left text-white' : 'w-full p-2 rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] text-left text-zinc-400'}
+                disabled={isPostprocessOff}
+                onClick={() => {
+                  if (isPostprocessOff) return;
+                  setGenerationSettings(prev => ({ ...prev, generateCollision: !Boolean(prev.generateCollision) }));
+                }}
+                className={isPostprocessOff
+                  ? 'w-full p-2 rounded-lg border border-white/[0.04] bg-[hsl(var(--surface-1))] text-left text-zinc-600 opacity-40 cursor-not-allowed'
+                  : generationSettings.generateCollision
+                    ? 'w-full p-2 rounded-lg border border-primary/40 bg-primary/10 text-left text-white cursor-pointer'
+                    : 'w-full p-2 rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] text-left text-zinc-400 cursor-pointer'}
               >
                 <span className="text-[11px] font-bold">Physics Ready Asset</span>
                 <span className="block text-[9px] text-zinc-400 mt-0.5">
-                  {generationSettings.generateCollision ? 'Physics metadata + selected collision quality will be generated' : 'No Physics metadata; normal collision remains available'}
+                  {isPostprocessOff
+                    ? 'Blocked (Requires Post-Processing pipeline)'
+                    : generationSettings.generateCollision
+                    ? 'Physics metadata + selected collision quality will be generated'
+                    : 'No Physics metadata; normal collision remains available'}
                 </span>
               </button>
 
-              {generationSettings.generateCollision && (
+              {generationSettings.generateCollision && !isPostprocessOff && (
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <label className="space-y-1">
                     <span className="text-[9px] font-semibold text-zinc-400">Body Behaviour</span>
@@ -1828,18 +2004,34 @@ export const GeneratePanel: React.FC = () => {
                   </div>
                 </div>
               )}
+              {isPostprocessOff && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
+                  <span>🔒 Collision hull generation is a post-processing stage and is blocked.</span>
+                </div>
+              )}
             </div>
 
-            {/* Streamlined Mesh SettingsIcon Card (TargetIcon Polycount + Triangle / Quad Topology ONLY) */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+            {/* Streamlined Mesh Settings Card (Target Polycount + Triangle / Quad Topology ONLY) */}
+            <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2 transition-all ${
+              isPostprocessOff ? 'border-white/[0.06] opacity-60' : 'border-white/[0.1]'
+            }`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
+                  <HugeiconsIcon icon={Box} size={16} className={`w-3.5 h-3.5 ${isPostprocessOff ? 'text-zinc-600' : 'text-primary'}`} />
                   <span>Mesh Settings</span>
+                  {isPostprocessOff && (
+                    <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
+                      BLOCKED
+                    </span>
+                  )}
                 </div>
-                <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Studio Quality
+                <span className={`text-[9.5px] font-mono px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
+                  isPostprocessOff
+                    ? 'bg-zinc-800 text-zinc-400 border border-white/[0.08]'
+                    : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                }`}>
+                  {!isPostprocessOff && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
+                  {isPostprocessOff ? 'Bypassed' : 'Studio Quality'}
                 </span>
               </div>
 
@@ -1848,11 +2040,13 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Texture / Output Quality</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25 capitalize">
-                    {generationSettings.meshQuality || 'high'}
+                    {isPostprocessOff ? 'Bypassed' : (generationSettings.meshQuality || 'high')}
                   </span>
                 </div>
                 <p className="text-[10px] leading-4 text-zinc-500">
-                  Source geometry is always generated at the selected model's maximum fidelity. This control changes texture/output quality only; polycount is applied downstream.
+                  {isPostprocessOff
+                    ? 'Post-processing is OFF: Texture baking and downstream decimation are completely bypassed.'
+                    : "Source geometry is always generated at the selected model's maximum fidelity. This control changes texture/output quality only; polycount is applied downstream."}
                 </p>
                 <div className="grid grid-cols-4 gap-1">
                   {MESH_QUALITY_OPTIONS.map((opt) => {
@@ -1861,12 +2055,18 @@ export const GeneratePanel: React.FC = () => {
                       <button
                         key={opt.id}
                         type="button"
+                        disabled={isPostprocessOff}
                         title={opt.tooltip}
-                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshQuality: opt.id }))}
-                        className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer capitalize font-bold text-[10px] ${
-                          isSelected
-                            ? 'bg-primary text-black shadow-sm font-black'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
+                        onClick={() => {
+                          if (isPostprocessOff) return;
+                          setGenerationSettings(prev => ({ ...prev, meshQuality: opt.id }));
+                        }}
+                        className={`py-1.5 px-1 rounded-lg text-center transition-all capitalize font-bold text-[10px] ${
+                          isPostprocessOff
+                            ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-primary text-black shadow-sm font-black cursor-pointer'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06] cursor-pointer'
                         }`}
                       >
                         {opt.label}
@@ -1881,7 +2081,9 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Target Polycount</span>
                   <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
+                    {isPostprocessOff
+                      ? 'Bypassed (Native)'
+                      : generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
                       ? 'Native (Raw)'
                       : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
                   </span>
@@ -1902,7 +2104,9 @@ export const GeneratePanel: React.FC = () => {
                       <button
                         key={preset.label}
                         type="button"
+                        disabled={isPostprocessOff}
                         onClick={() => {
+                          if (isPostprocessOff) return;
                           setGenerationSettings(prev => ({
                             ...prev,
                             autoOptimizeSettings: {
@@ -1911,14 +2115,16 @@ export const GeneratePanel: React.FC = () => {
                             },
                           }));
                         }}
-                        className={`py-1.5 px-1 rounded-lg text-center transition-all cursor-pointer flex flex-col items-center justify-center ${
-                          isSelected
-                            ? 'bg-primary text-black font-black shadow-sm'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
+                        className={`py-1.5 px-1 rounded-lg text-center transition-all flex flex-col items-center justify-center ${
+                          isPostprocessOff
+                            ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                            : isSelected
+                            ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06] cursor-pointer'
                         }`}
                       >
                         <span className="text-[10px] font-black leading-tight">{preset.label}</span>
-                        <span className={`text-[7.5px] ${isSelected ? 'text-black/75 font-bold' : 'text-zinc-500'}`}>{preset.desc}</span>
+                        <span className={`text-[7.5px] ${isPostprocessOff ? 'text-zinc-600' : isSelected ? 'text-black/75 font-bold' : 'text-zinc-500'}`}>{preset.desc}</span>
                       </button>
                     );
                   })}
@@ -1927,6 +2133,7 @@ export const GeneratePanel: React.FC = () => {
                 {/* Smooth Slider */}
                 <input
                   type="range"
+                  disabled={isPostprocessOff}
                   min={5000}
                   max={200000}
                   step={5000}
@@ -1941,7 +2148,7 @@ export const GeneratePanel: React.FC = () => {
                       },
                     }));
                   }}
-                  className="w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary cursor-pointer"
+                  className={`w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary ${isPostprocessOff ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
                 />
               </div>
 
@@ -1950,7 +2157,9 @@ export const GeneratePanel: React.FC = () => {
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-zinc-200 font-medium">Topology Target</span>
                   <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                    {isPostprocessOff
+                      ? 'Bypassed (Source Topology)'
+                      : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
                       ? 'Quads (post-process)'
                       : 'Triangles'}
                   </span>
@@ -1958,24 +2167,30 @@ export const GeneratePanel: React.FC = () => {
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
+                    disabled={isPostprocessOff}
                     onClick={() => {
+                      if (isPostprocessOff) return;
                       setGenerationSettings(prev => ({
                         ...prev,
                         topologyMode: 'triangle',
                         quadTopology: false,
                       }));
                     }}
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center cursor-pointer flex items-center justify-center gap-1.5 ${
-                      generationSettings.topologyMode !== 'quad' && !generationSettings.quadTopology
-                        ? 'bg-primary text-black font-black shadow-sm'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08]'
+                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+                      isPostprocessOff
+                        ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                        : generationSettings.topologyMode !== 'quad' && !generationSettings.quadTopology
+                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
                     }`}
                   >
                     <span>▲ Triangles</span>
                   </button>
                   <button
                     type="button"
+                    disabled={isPostprocessOff}
                     onClick={() => {
+                      if (isPostprocessOff) return;
                       setGenerationSettings(prev => ({
                         ...prev,
                         topologyMode: 'quad',
@@ -1983,54 +2198,71 @@ export const GeneratePanel: React.FC = () => {
                       }));
                     }}
                     title="Convert to quad-dominant topology in post-processing"
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 cursor-pointer ${
-                      (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
-                        ? 'bg-primary text-black font-black shadow-sm'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08]'
+                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+                      isPostprocessOff
+                        ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                        : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
                     }`}
                   >
                     <span>■ Quads</span>
                   </button>
                 </div>
               </div>
-              </div>
-              </div>
-              <div className="p-2.5 border-t border-white/[0.08] shrink-0 bg-[hsl(var(--surface-1))]">
-                <button
-                  type="button"
-                  onClick={() => setAdvancedSettingsOpen(false)}
-                  className="w-full h-9 rounded-xl bg-primary text-black text-[10px] font-black tracking-wide hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5" />
-                  APPLY & CLOSE
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
-      {/* Bottom Sticky Action Footer */}
-      <div className="p-2.5 border-t border-white/[0.08] bg-[hsl(var(--surface-1))] relative z-20 flex-shrink-0 space-y-2 overflow-x-hidden">
-        {/* Smart Pre-flight Configuration Summary Bar */}
-        <div className="flex items-center justify-between text-[9.5px] font-mono text-zinc-400 px-0.5 pb-0.5">
-          <div className="flex items-center gap-1.5 truncate min-w-0">
-            <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-200 font-semibold truncate max-w-[140px]">
-              {activeModelObj?.label || activeModelObj?.id || 'Trellis'}
-            </span>
-            <span>•</span>
-            <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">
-              {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'NATIVE / RAW' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K`} {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}
-            </span>
-          </div>
-          <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border flex-shrink-0 ${
-            generationSettings.generateTexture !== false
-              ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
-              : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+              {isPostprocessOff && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
+                  <span>🔒 Mesh post-processing (decimation, quad retopology, baking) is blocked when Post-Processing is OFF.</span>
+                </div>
+              )}
+            </div>
+            </div>
+            <div className="p-2.5 border-t border-white/[0.08] shrink-0 bg-[hsl(var(--surface-1))]">
+              <button
+                type="button"
+                onClick={() => setAdvancedSettingsOpen(false)}
+                className="w-full h-9 rounded-xl bg-primary text-black text-[10px] font-black tracking-wide hover:brightness-105 active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5" />
+                APPLY & CLOSE
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* Bottom Sticky Action Footer */}
+    <div className="p-2.5 border-t border-white/[0.08] bg-[hsl(var(--surface-1))] relative z-20 flex-shrink-0 space-y-2 overflow-x-hidden">
+      {/* Smart Pre-flight Configuration Summary Bar */}
+      <div className="flex items-center justify-between text-[9.5px] font-mono text-zinc-400 px-0.5 pb-0.5">
+        <div className="flex items-center gap-1.5 truncate min-w-0">
+          <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-200 font-semibold truncate max-w-[140px]">
+            {activeModelObj?.label || activeModelObj?.id || 'Trellis'}
+          </span>
+          <span>•</span>
+          <span className={`px-1.5 py-0.5 rounded font-semibold uppercase flex-shrink-0 ${
+            isPostprocessOff
+              ? 'bg-amber-500/10 text-amber-300 border border-amber-500/30'
+              : 'bg-primary/10 text-primary'
           }`}>
-            {generationSettings.generateTexture !== false ? 'PBR TEXTURED' : 'GEOMETRY ONLY'}
+            {isPostprocessOff
+              ? 'RAW NATIVE GEOMETRY'
+              : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 ? 'NATIVE / RAW' : `${Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount) / 1000)}K`} ${(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'QUADS' : 'TRIS'}`
+            }
           </span>
         </div>
+        <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold border flex-shrink-0 ${
+          isPostprocessOff
+            ? 'bg-zinc-800/80 text-zinc-400 border-white/[0.08]'
+            : generationSettings.generateTexture !== false
+            ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+            : 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30'
+        }`}>
+          {isPostprocessOff ? 'POSTPROCESS: OFF (RAW)' : generationSettings.generateTexture !== false ? 'PBR TEXTURED' : 'GEOMETRY ONLY'}
+        </span>
+      </div>
 
         {/* Bottom Sticky Action Button */}
         <div className="flex items-center gap-1.5 w-full">

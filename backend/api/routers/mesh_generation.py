@@ -817,6 +817,14 @@ async def image_to_raw_mesh(
             )
         )
 
+        if not mesh_request.enable_postprocess:
+            texture_enabled = False
+            lod_enabled = False
+            enable_printability = False
+            enable_auto_repair = False
+            enable_auto_rig = False
+            target_polycount = 0
+
         job_request = JobRequest(
             feature=feature,
             inputs={
@@ -1073,6 +1081,14 @@ async def image_to_textured_mesh(
                 mesh_request.enable_auto_rig or preset.get("enable_auto_rig", False),
             )
         )
+
+        if not mesh_request.enable_postprocess:
+            texture_enabled = False
+            lod_enabled = False
+            enable_printability = False
+            enable_auto_repair = False
+            enable_auto_rig = False
+            target_polycount = 0
 
         job_request = JobRequest(
             feature=feature,
