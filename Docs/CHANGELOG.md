@@ -2,6 +2,7 @@
 
 - Removed the unused import of Unique3D's Gradio wrapper from the backend adapter. That wrapper also initialized a duplicate module-level inference pipeline.
 - Removed Gradio from the Unique3D installer dependency list because the ForMash3D backend uses its own FastAPI/Next.js UI and does not launch the upstream Gradio demo.
+- Added cleanup for stale `gradio`, `gradio-client`, and `hf-gradio` packages installed by older setup runs, so re-running the installer removes the current environment conflict.
 - Kept `datasets==3.6.0` with the project's `huggingface_hub==0.25.0` baseline; this resolves the Datasets bucket-exception import without violating TripoSG's Hub version contract. Added regression coverage for the installer and adapter contract.
 
 ## 2026-10-14 — [High-Performance Viewport Engine & Production Postprocessing Pipeline Hardening]
