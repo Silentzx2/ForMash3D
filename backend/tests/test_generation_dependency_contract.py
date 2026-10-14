@@ -60,7 +60,7 @@ def test_unique3d_avoids_unused_gradio_ui_wrapper():
     unique3d_block = installer.split("### Unique3D ###", 1)[1].split("### Unique3D end ###", 1)[0]
     assert '"datasets==3.6.0"' in unique3d_block
     assert not any(line.strip().startswith("gradio ") for line in unique3d_block.splitlines())
-    assert "$UV_PIP uninstall --yes gradio gradio-client hf-gradio" in installer
+    assert "$UV_PIP uninstall gradio gradio-client hf-gradio" in installer
 
     adapter = (BACKEND / "adapters/unique3d_adapter.py").read_text()
     assert "from app.custom_models.mvimg_prediction import run_mvprediction" not in adapter
