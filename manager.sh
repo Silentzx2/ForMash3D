@@ -222,7 +222,7 @@ cmd_models() {
         printf "  ${CYAN}[13]${NC} ARDY               - Motion AI / Animation checkpoints\n"
         printf "  ${CYAN}[14]${NC} Unique3D            - High-fidelity single-image to 3D\n"
         printf "  ${CYAN}[15]${NC} Paint3D             - 1K/2K UV texture diffusion model\n"
-        printf "  ${CYAN}[16]${NC} Pixal3D             - High-quality pixel-aligned single-image to 3D (PBR)\n"
+        printf "  ${CYAN}[16]${NC} Pixal3D             - High-quality pixel-aligned (Not Tested)\n"
         printf "\n"
         printf "  ${CYAN}[a]${NC}  Download ALL models\n"
         printf "  ${CYAN}[v]${NC}  Verify existing models only\n"

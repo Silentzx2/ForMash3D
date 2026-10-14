@@ -27,6 +27,10 @@ TRIPOSG_MAX_HIERARCHICAL_DEPTH = 10
 TRIPOSG_DEPTH10_MIN_FREE_BYTES = 24 * 1024**3
 TRIPOSG_DEPTH10_MIN_TOTAL_BYTES = 32 * 1024**3
 
+# Minimum VRAM for depth 9 (512^3 grid)
+TRIPOSG_DEPTH9_MIN_FREE_BYTES = 12 * 1024**3
+TRIPOSG_DEPTH9_MIN_TOTAL_BYTES = 16 * 1024**3
+
 
 def _resolve_hierarchical_octree_depth(
     requested_depth: int,
@@ -47,10 +51,17 @@ def _resolve_hierarchical_octree_depth(
             return 9, f"GPU memory query failed ({type(exc).__name__}); falling back to depth 9."
     if (int(total_memory_bytes) < TRIPOSG_DEPTH10_MIN_TOTAL_BYTES
             or int(free_memory_bytes) < TRIPOSG_DEPTH10_MIN_FREE_BYTES):
-        return 9, (
-            "depth 10 creates a large 1024^3 grid and intermediate tensors; GPU memory is below "
-            "the conservative 24 GiB free / 32 GiB total threshold, so depth 9 (512^3) is used."
-        )
+        # Check if depth 9 is feasible
+        if (int(total_memory_bytes) >= TRIPOSG_DEPTH9_MIN_TOTAL_BYTES
+                and int(free_memory_bytes) >= TRIPOSG_DEPTH9_MIN_FREE_BYTES):
+            return 9, (
+                "depth 10 creates a large 1024^3 grid and intermediate tensors; GPU memory is below "
+                "the conservative 24 GiB free / 32 GiB total threshold, so depth 9 (512^3) is used."
+            )
+        else:
+            return 8, (
+                "GPU memory below 12 GiB free / 16 GiB total; using depth 8 (256^3) to avoid OOM."
+            )
     return requested, None
 
 
@@ -300,7 +311,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
             octree_depth = int(inputs.get("flash_octree_depth", inputs.get("octree_depth", 9)))
-            dense_octree_depth = max(6, min(8, int(inputs.get("dense_octree_depth", 8))))
+            dense_octree_depth = max(8, min(9, int(inputs.get("dense_octree_depth", 9))))
             requested_hierarchical_octree_depth = min(
                 TRIPOSG_MAX_HIERARCHICAL_DEPTH,
                 max(dense_octree_depth, int(inputs.get("hierarchical_octree_depth", 10))),
@@ -367,6 +378,8 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     dense_octree_depth=dense_octree_depth,
                     hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
+                # hierarchical extraction with depth 10 (1024^3) preserves fine details
+                # standard marching_cubes (method="lewiner") is used, not DMC which can smooth
                 mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]), process=False)
 
             # Model-native mesh is preserved for source.glb; optimization belongs strictly to downstream post-processing
@@ -496,9 +509,9 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 "dense_octree_depth": {
                     "type": "integer",
                     "description": "Coarse dense seed grid depth used by hierarchical extraction.",
-                    "default": 8,
-                    "minimum": 6,
-                    "maximum": 8,
+                    "default": 9,
+                    "minimum": 8,
+                    "maximum": 9,
                     "readOnly": True,
                     "required": False,
                 },

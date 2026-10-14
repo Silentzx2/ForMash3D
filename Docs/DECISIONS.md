@@ -993,4 +993,40 @@ The production postprocessing engine converts raw neural model outputs into engi
 
 **Reason:** Fidelity settings must verify the actual decoder implementation, not infer it from a disabled acceleration call or manifest label. Depth 10 adds another sampling octave for TripoSG on sufficiently provisioned GPUs. Hunyuan remains bounded by upstream's supported resolution contract.
 
+
+## ADR-077 — Hunyuan3D & TripoSG Raw Geometry Detail-Loss Fix (2026-10-14)
+
+**Date:** 2026-10-14  
+**Status:** Accepted
+
+**Context:**
+Generated meshes from Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, and TripoSG were losing fine detail and appearing overly smooth, despite high polycount outputs. Root cause analysis revealed:
+
+1. **Hunyuan3D FlashVDM acceleration was silently active** - The upstream VAE defaults to FlashVDM decoding which uses attention-based shortcuts that smooth fine geometry. The adapter was not explicitly disabling it or verifying the active decoder.
+
+2. **Mini Turbo used untrained octree_resolution=512** - The official Mini Turbo checkpoint was trained with octree_resolution=380. Using 512 exceeded the trained range and produced artifacts.
+
+3. **TripoSG dense_octree_depth=8 limited hierarchical extraction** - The coarse seed grid was too coarse (8→256³), causing the hierarchical refinement to miss thin features before the final pass. Flash decoder was also being selected on capable GPUs, starting from an even coarser grid.
+
+**Decision:**
+1. **Strict decoder profile enforcement** (`backend/adapters/hunyuan3d_decoder_profile.py`): New `configure_native_dense_decoder()` function forces `enable_flashvdm_decoder(enabled=False)`, then verifies `volume_decoder=VanillaVolumeDecoder` and `surface_extractor=MCSurfaceExtractor`. Fails fast with descriptive error if verification fails.
+
+2. **Mini Turbo official resolution** (`hunyuan3d_dit_v2_mini_turbo.py`, scheduler, frontend): Default `octree_resolution=380` with clamping warning for values >380. Updated in `_RAW_MESH_MAX_QUALITY_PARAMETERS`, frontend `buildGenerationParameters.ts`, and adapter.
+
+3. **TripoSG max hierarchical depth** (`triposg_adapter.py`, scheduler, frontend): `dense_octree_depth=9` (512³ seed grid), `hierarchical_octree_depth=10` (1024³ final grid) with VRAM-gated fallback (10→9→8 based on free/total VRAM). Uses standard marching_cubes (method="lewiner"), not DMC which can smooth.
+
+4. **Scheduler profile updates** (`multiprocess_scheduler.py`): Updated `_RAW_MESH_MAX_QUALITY_PARAMETERS` for all three models with corrected defaults.
+
+5. **Frontend parameter alignment** (`buildGenerationParameters.ts`): Mirror backend defaults for consistent parameter passing.
+
+**Consequences:**
+- Hunyuan3D raw geometry now uses verified native dense decoder with marching cubes, preserving sharp features
+- Mini Turbo uses its officially trained resolution (380), eliminating artifacts
+- TripoSG achieves maximum hierarchical depth (1024³) on 24GB+ free VRAM GPUs, preserving fine details
+- All changes are confined to the three model adapters, scheduler profiles, and frontend parameter building
+- Telemetry now reports `geometry_extractor`, `effective_geometry_resolution`, `voxel_size`, `mc_algo` for verification
+- Regression tests updated to verify decoder profile, depth resolution, and parameter schema defaults
+
+---
+
 **Consequences:** Output detail may improve where the model's learned field contains recoverable high-frequency geometry, but single-image models cannot guarantee arbitrary microdetail. Depth 10 costs materially more memory and latency; CUDA A/B generation and raw-mesh visual inspection remain required before claiming measured quality improvement.
