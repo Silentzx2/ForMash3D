@@ -570,3 +570,28 @@ Quality mode must never silently downgrade the immutable master. A requested pol
 - **Uncoupled Animation Loop**: Dual comparative viewports (`leftScene` / `rightScene`) operate on an independent `requestAnimationFrame` loop completely decoupled from React state, eliminating 60–120fps component re-renders.
 - **Synchronized Camera Orbiting**: Interacting with either the left or right viewport smoothly mirrors camera matrices to provide seamless side-by-side mesh diffing.
 - **Resource Management**: Automatically cleans up animation frames (`cancelAnimationFrame(animId)`) and WebGL renderer contexts on unmount.
+
+---
+
+## Premier Personal SaaS Home Page — 2026-10-14
+
+### Architecture & Experience Design (`app/page.tsx`)
+- **Portal Persona**: Replaced the previous raw redirect with a world-class, premium SaaS-grade Command Center specifically tailored for personal workstation usage.
+- **Color Token Consistency**: Implements strict Matte Black (`--background: 0 0% 3.1%`, `--surface-1: 0 0% 6.7%`) and Studio Gold (`--primary: 48 100% 50%`, `#FFCC00`) HSL tokens with zero arbitrary hex styles.
+- **Sticky Glassmorphic Header**:
+  - Brand identity with Pro Studio badge and golden 3D emblem.
+  - Live hardware telemetry pill connecting to `/api/v1/system/stats`, showing real-time VRAM allocation (`4.8 / 24 GB`) and GPU accelerator health with a pulsing emerald status dot.
+  - Direct routing to all internal applications (`Workspace`, `Generate`, `Retopo`, `Textures`, `Rigging`, `Outputs`, `Telemetry`, `System`).
+- **Interactive Quick-Launch Hero**:
+  - Interactive multi-mode console directly on the hero section (`Image / Text to 3D`, `Quad Retopo`, `PBR Texture`, `Auto-Rigging`).
+  - Real-time intent preset pills (`Game Ready 50k`, `Cinematic 200k`, `3D Print Watertight`, `Mobile 20k`, `Animation Rigged`) and model selection (`Trellis 2`, `Hunyuan3D 2.1`, `Unique3D`, `TripoSG`).
+  - Submitting routes straight to `/workspace/generate` with pre-filled parameters.
+- **Autonomous Tool Matrix**:
+  - 6 interactive bento cards (`glass-card-interactive`) showcasing the core workstation engines with hover lift, amber specular border glow, technical specs, and instant launch buttons.
+- **Target Preset Comparison Grid**:
+  - Deep-dive breakdown of the 5 production intent contracts (Game Ready, Cinematic VFX, 3D Print Watertight, Animation Rigged, Mobile WebXR) displaying target face budgets, texture dimensions, LOD falloffs, and engine compatibility.
+- **Hardware Telemetry Monitor**:
+  - Live GPU VRAM gauge, job queue status, and engine latency counter connecting directly to workstation health diagnostics.
+- **Global Keyboard Navigation**:
+  - Interactive hotkey cheat sheet listening to window events (`G` → Generate, `R` → Retopo, `T` → Texture, `U` → UV, `A` → Animation, `D` → Dashboard, `O` → Outputs, `S` → System) for lightning-fast power-user navigation.
+- **Responsive Layout**: Designed mobile-first, maintaining optimal hierarchy and touch targets from 375px mobile screens up to 4K ultra-wide monitors.

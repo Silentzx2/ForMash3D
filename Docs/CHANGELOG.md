@@ -14,6 +14,13 @@
 - **Dynamic Storage Base Directory Resolution**: Unified `get_storage_base_dir()` in `backend/core/utils/file_utils.py` to dynamically resolve `STORAGE_LOCAL_PATH` relative to project root (`parents[3]`) or default to `backend/storage`, eradicating the nested `backend/backend/storage` directory duplication bug across uploads, models, and static mounts.
 - **Watertight 3D Print Preservation**: For 3D printing and closed meshes, `watertight` parameter in AutoRetopo respects already-watertight geometry (`watertight=not bool(repaired_topology.get("watertight", False))`) to avoid destructive voxel rounding on sharp features; the `3d_print` preset sets `target_polycount: 0`, guaranteeing full geometric passthrough without lossy decimation.
 
+### Personal SaaS Workstation Command Center (`app/page.tsx`)
+- **Premium Autonomous Portal**: Designed and implemented a responsive, high-performance personal SaaS home page command center replacing the previous redirect.
+- **Glassmorphic Navigation & Live Telemetry**: Header features live hardware telemetry querying `/api/v1/system/stats` for real-time VRAM allocation, GPU accelerator status, and direct routing across all application surfaces (`/workspace`, `/workspace/generate`, `/workspace/remesh`, `/workspace/texture`, `/workspace/rigging`, `/outputs`, `/dashboard`, `/system`).
+- **Interactive Quick-Launch Hero Console**: Allows typing prompts, toggling pipeline modes, selecting production intent presets (`game_ready`, `cinematic`, `3d_print`, `animation`, `mobile`), and choosing AI models, routing directly into `/workspace/generate` with prefilled query parameters.
+- **Bento Tool Grid & Production Presets**: Interactive showcase of the 6 core 3D pipeline engines and the 5 intent contract specifications (face budgets, texture maps, watertightness, LOD counts).
+- **Global Keyboard Navigation**: Listens for single-key shortcuts (`G`, `R`, `T`, `U`, `A`, `D`, `O`, `S`) for instant studio routing.
+
 ---
 
 ## 2026-10-13 — [Workspace Unified Dynamic-Tab System & Non-Destructive 3D Studio Architecture]

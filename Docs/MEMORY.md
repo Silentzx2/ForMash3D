@@ -14,6 +14,14 @@
   - **Dynamic Storage Base Directory Resolution (`backend/core/utils/file_utils.py`)**: Unified `get_storage_base_dir()` to dynamically resolve `STORAGE_LOCAL_PATH` relative to project root (`parents[3]`) when given a relative path, or default to `backend/storage`. Completely eradicates the `backend/backend/storage` directory duplication bug across model generation outputs, uploads, static mounts, and SQLite file stores.
   - **Watertight 3D Print Preservation**: AutoRetopo conditional shell reconstruction respects already-watertight geometry (`watertight=not bool(repaired_topology.get("watertight", False))`), using the source surface directly for closed meshes to avoid rounding sharp edges with voxel shells. In the `3d_print` smart preset, `target_polycount: 0` ensures complete passthrough in `run_optimize()` (`Passthrough (Native Mesh Preserved)`), preventing decimation artifacts and preserving 100% watertight topology for physical manufacturing.
 
+- **Personal SaaS Workstation Command Center (`app/page.tsx`)**:
+  - **Portal Persona**: Replaced the previous raw redirect with a world-class, premium SaaS-grade Command Center specifically tailored for personal workstation usage.
+  - **Color Token Consistency**: Implements strict Matte Black (`--background: 0 0% 3.1%`, `--surface-1: 0 0% 6.7%`) and Studio Gold (`--primary: 48 100% 50%`, `#FFCC00`) HSL tokens with zero arbitrary hex styles.
+  - **Sticky Glassmorphic Header**: Brand identity with Pro Studio badge and golden 3D emblem. Integrates live hardware telemetry pill connecting to `/api/v1/system/stats`, showing real-time VRAM allocation and GPU accelerator health with a pulsing emerald status dot, alongside direct routing to all internal applications (`Workspace`, `Generate`, `Retopo`, `Textures`, `Rigging`, `Outputs`, `Telemetry`, `System`).
+  - **Interactive Quick-Launch Hero**: Multi-mode console directly on the hero section (`Image / Text to 3D`, `Quad Retopo`, `PBR Texture`, `Auto-Rigging`). Includes real-time intent preset pills (`Game Ready 50k`, `Cinematic 200k`, `3D Print Watertight`, `Mobile 20k`, `Animation Rigged`) and model selection (`Trellis 2`, `Hunyuan3D 2.1`, `Unique3D`, `TripoSG`). Submitting dynamically routes into `/workspace/generate` with pre-filled parameters.
+  - **Autonomous Tool Matrix & Preset Comparison**: 6 interactive bento cards (`glass-card-interactive`) showcasing core workstation engines with hover lift, amber specular border glow, technical specs, and instant launch buttons. Supported by a deep-dive breakdown of the 5 production intent contracts.
+  - **Global Keyboard Navigation**: Interactive hotkey cheat sheet listening to window events (`G` → Generate, `R` → Retopo, `T` → Texture, `U` → UV, `A` → Animation, `D` → Dashboard, `O` → Outputs, `S` → System) for lightning-fast power-user navigation.
+
 ---
 
 ## 2026-10-13 — Workspace Unified Dynamic-Tab System & Non-Destructive 3D Studio Architecture
