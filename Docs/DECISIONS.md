@@ -1030,3 +1030,15 @@ Generated meshes from Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, and Tri
 ---
 
 **Consequences:** Output detail may improve where the model's learned field contains recoverable high-frequency geometry, but single-image models cannot guarantee arbitrary microdetail. Depth 10 costs materially more memory and latency; CUDA A/B generation and raw-mesh visual inspection remain required before claiming measured quality improvement.
+
+## ADR-056: Keep the Unique3D Gradio Demo Out of the Shared Backend Runtime
+
+**Decision**: The ForMash3D Unique3D adapter imports the inference pipeline components directly and does not install or initialize the upstream Gradio demo wrapper in the shared backend environment.
+
+**Reason**: The adapter already owns the trainer and pipeline lifecycle. Importing `app.custom_models.mvimg_prediction` adds an unused Gradio import and triggers a second module-level pipeline initialization. Current Gradio 6 releases also require a newer Hugging Face Hub than the project's TripoSG-compatible shared pin.
+
+**Consequences**:
+- `datasets==3.6.0` remains paired with `huggingface_hub==0.25.0`.
+- Gradio is not installed as a backend dependency solely for Unique3D.
+- The upstream vendored source is left unchanged; only the ForMash3D adapter's unused import is removed.
+
