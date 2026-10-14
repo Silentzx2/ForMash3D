@@ -813,6 +813,11 @@ else
     exit 1
 fi
 
+# Older installer runs installed Gradio only for Unique3D's standalone demo.
+# ForMash3D uses FastAPI/Next.js and does not need these packages in its shared Hub 0.25 env.
+echo "[INFO] Removing stale Unique3D Gradio UI packages (if present)..."
+$UV_PIP uninstall --yes gradio gradio-client hf-gradio || true
+
 echo ""
 echo "========================================"
 echo "Installing System Runtime Libraries"
