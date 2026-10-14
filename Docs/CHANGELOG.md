@@ -36,6 +36,11 @@
 
 ---
 
+### Unique3D Hugging Face Dependency Alignment
+
+- Fixed installation drift where the setup script installed an unpinned latest `datasets` release, then the shared runtime pinned `huggingface_hub==0.25.0`. Newer Datasets versions import `BucketNotFoundError`, which is absent in that Hub version and prevented Unique3D's inference trainer registry from loading.
+- Pinned `datasets==3.6.0` consistently in the Unique3D installer and shared backend requirements, without upgrading the shared Hub dependency used by other models.
+
 ## 2026-10-13 — [Workspace Unified Dynamic-Tab System & Non-Destructive 3D Studio Architecture]
 
 - Converted all remaining static and destructive takeovers (including 3D Animate and Character Rigging) into the Workspace continuous dynamic-tab system.
