@@ -143,18 +143,21 @@ def test_triposg_preserves_full_inference_steps_and_octree_depth():
     schema = adapter.get_parameter_schema()["parameters"]
     assert schema["num_inference_steps"]["default"] == 50
     assert schema["faces"]["default"] == -1
+    assert schema["use_flash_decoder"]["default"] is False
 
 
 def test_hunyuan3d_shape_v21_defaults_to_max_fidelity_when_source_quality_max():
     adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
     schema = adapter.get_parameter_schema()["parameters"]
-    assert schema["octree_resolution"]["maximum"] >= 512
+    assert schema["octree_resolution"]["default"] == 512
+    assert schema["octree_resolution"]["maximum"] == 512
 
 
 def test_hunyuan3d_dit_v2_mini_turbo_defaults_to_max_fidelity_when_source_quality_max():
     adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
     schema = adapter.get_parameter_schema()["parameters"]
-    assert schema["enable_flashvdm"]["default"] is True
+    assert schema["octree_resolution"]["default"] == 512
+    assert schema["enable_flashvdm"]["default"] is False
 
 
 

@@ -252,9 +252,9 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 num_steps = int(num_steps)
 
-            guidance_scale = inputs.get("guidance_scale", 5.0)
+            guidance_scale = inputs.get("guidance_scale", 7.5)
             if guidance_scale is None:
-                guidance_scale = 5.0
+                guidance_scale = 7.5
             else:
                 guidance_scale = float(guidance_scale)
 
@@ -331,7 +331,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Octree resolution for maximum-fidelity raw source extraction.",
+                    "description": "Dense sampling resolution; 512 is the upstream-supported maximum.",
                     "default": 512,
                     "minimum": 64,
                     "maximum": 512,
@@ -353,8 +353,8 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "guidance_scale": {
                     "type": "number",
-                    "description": "Guidance scale for generation",
-                    "default": 5.0,
+                    "description": "Guidance scale for maximum-fidelity raw geometry; matches the upstream default.",
+                    "default": 7.5,
                     "required": False,
                 },
                 "seed": {

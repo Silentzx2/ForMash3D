@@ -276,14 +276,14 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             if not torch.cuda.is_available():
                 raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
-            # Flash VAE decoder is the official upstream extraction path
-            # (scripts/inference_triposg.py relies on the pipeline default) and
-            # runs exact SDPA attention, so it stays enabled on supported GPUs.
-            # The previous quality-keyed gate keyed on a value the generation
-            # path never sends, and the vendored hierarchical path queries a far
-            # denser grid, so silently routing there would trade quality for
-            # OOM risk on the same hardware.
-            use_flash_decoder = torch.cuda.get_device_capability()[0] >= 8
+            # The model manifest prefers hierarchical extraction. Flash extraction
+            # starts at a much coarser grid and can miss thin features before the
+            # final pass, so maximum-fidelity raw generation uses the dense /
+            # hierarchical decoder regardless of GPU generation.
+            use_flash_decoder = bool(inputs.get("use_flash_decoder", False))
+            if use_flash_decoder and torch.cuda.get_device_capability(device)[0] < 8:
+                logger.warning("TripoSG Flash decoder requires compute capability 8.0+; using hierarchical extraction.")
+                use_flash_decoder = False
 
             if is_scribble and prompt:
                 # Run scribble pipeline
@@ -439,6 +439,13 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "boolean",
                     "description": "Treat input image as a scribble sketch with prompt",
                     "default": False,
+                    "required": False,
+                },
+                "use_flash_decoder": {
+                    "type": "boolean",
+                    "description": "Maximum-fidelity source profile uses dense/hierarchical extraction.",
+                    "default": False,
+                    "readOnly": True,
                     "required": False,
                 },
             }

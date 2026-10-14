@@ -17,7 +17,8 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 ### Model-Native Source Fidelity Contract
 - Each generation model keeps its own tuned inference schedule; the frontend does not use a project-wide step count.
-- Hunyuan3D-DiT-v2-mini-Turbo uses FlashVDM (`topk_mode='merge'`) with `octree_resolution=380` and `num_chunks=20000`, producing high-fidelity geometry in <35 seconds.
+- Hunyuan3D-Shape-v2.1 and Mini Turbo stay within the upstream-supported 512 dense sampling grid. Shape uses the upstream-default 7.5 guidance in the max-fidelity profile; Mini keeps its trained 5-step sampler and uses the native dense decoder for fidelity-first output.
+- TripoSG follows the manifest's dense/hierarchical extraction path in the raw-source profile. Flash extraction is not selected automatically from GPU capability because its coarser initial grid can omit thin features before final surface refinement.
 - The scheduler strips downstream-only target/decimation/remesh controls before adapter inference.
 - Raw extraction ceilings remain model-specific; only explicit hardware safety guards may lower them.
 - Normal image-to-3D routes return raw geometry; optional texture presets are handled after master promotion (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K). Legacy textured model IDs resolve to raw-generation aliases.
