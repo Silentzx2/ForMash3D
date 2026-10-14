@@ -105,7 +105,8 @@ flowchart TB
 | **App Router** | `app/` | Next.js 16 App Router with server components, layouts, and API proxy routes |
 | **Workspace Shell** | `features/workspace/WorkspaceShell.tsx` | Main workspace UI with tabbed panels, persistent asset store, and model viewport |
 | **API Client** | `services/apiClient.ts` | Unified axios client for all FastAPI backend REST/SSE communication |
-| **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | Three.js WebGL viewport with orbit controls, wireframe/matcap shading, physics smoke test, opt-in mirror inspection, and HUD background job capsule |
+| **3D Canvas** | `features/workspace/Viewport/MeshViewer.tsx` | High-performance Three.js WebGL viewport with zero-allocation shading switcher, event-driven reflection capture, TransformControls 3D manipulator, axial camera presets, physics smoke test, and HUD background job capsule |
+| **Mesh Diff Viewer** | `features/workspace/Viewport/MeshDiffViewer.tsx` | Side-by-side comparative WebGL mesh inspection with uncoupled requestAnimationFrame loop and synchronized dual-scene orbit controls |
 | **Telemetry HUD** | `components/Header.tsx` | Real-time vertical-pipe hardware gauges (VRAM/RAM/CPU) with saturated load colors and outside-click auto-dismissal |
 | **Asset Persistence** | `stores/useAppStore.ts` | Durable image & mesh reference tracking backed by `/api/v1/file-upload/` persistent storage endpoints |
 | **State Stores** | `stores/` | Zustand stores for global client state (`useAppStore`, `useViewerStore`, `useAnimationStore`, `useRiggingStore`, `useUIStore`) |
@@ -495,11 +496,17 @@ bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 
 ### 2.5 Post-Processing Engine
 
-The production post-processing engine lives under backend/postprocess/. Successful mesh-generation jobs run this engine before the job is marked completed.
+The production post-processing engine lives under `backend/postprocess/`. Successful mesh-generation jobs run this engine before the job is marked completed.
 
-Pipeline: MODEL INFERENCE -> immutable master/source.glb -> world-space scene flattening -> Inspect/Repair -> conditional AutoRetopo for a large boundary component -> texture-aware Optimize/Preserve -> Auto UV/Preserve for raw outputs -> GAME READY -> LOD -> collision -> preview -> QA. Scene flattening applies node transforms and fails explicitly for unsupported mixed geometry rather than silently processing local-space coordinates. Native textured outputs are optimized with UV/material-aware decimation; raw outputs receive geometry optimization and production UVs. UV coordinates do not generate an image texture; shape-only model outputs remain untextured unless an explicit texture-generation or bake step succeeds. High-to-low bake remains an explicit transfer operation, and post-processing does not synthesize semantic textures from an untextured source. Quality metadata records source hash, source/repaired/optimized/game-ready snapshots, topology state, texture state, and per-LOD UV/material preservation.
+Pipeline: MODEL INFERENCE -> immutable `master/source.glb` -> world-space scene flattening -> Inspect/Repair -> conditional AutoRetopo / Quad retopology -> texture-aware Optimize/Preserve -> Auto UV/Preserve for raw outputs -> GAME READY (GLB + Quad OBJ) -> LOD -> collision -> preview/thumbnail -> QA. Scene flattening applies node transforms and fails explicitly for unsupported mixed geometry rather than silently processing local-space coordinates. Native textured outputs are optimized with UV/material-aware decimation; raw outputs receive geometry optimization and production UVs. UV coordinates do not generate an image texture; shape-only model outputs remain untextured unless an explicit texture-generation or bake step succeeds. High-to-low bake remains an explicit transfer operation, and post-processing does not synthesize semantic textures from an untextured source. Quality metadata records source hash, source/repaired/optimized/game-ready snapshots, topology state, texture state, and per-LOD UV/material preservation.
 
-The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs in an isolated headless Blender process through BLENDER_EXECUTABLE and is best-effort for generation completion.
+- **Polygonal Quad Export**: `_export_quad_obj` serializes genuine 4-vertex polygonal faces (`f v/vt/vn ...`). When quad-dominant topology is requested and generated, the optimization stage automatically passes geometry through without destructive triangle decimation.
+- **Budget Precedence & Native Retention**: `_resolve_target_polycount_precedence` guarantees explicit top-level targets take priority over nested defaults and presets, while treating `0` as an intentional request for Native/Raw model output without decimation.
+- **Headless Blender Worker Invocation**: `blender_worker_argv` and `blender_expr_argv` in `backend/postprocess/config.py` resolve the headless Blender execution path: using `BLENDER_EXECUTABLE` on `PATH` if present, or falling back seamlessly to running scripts under `sys.executable` via the embedded `bpy` Python wheel.
+- **Dynamic Canonical Storage Resolution**: `get_storage_base_dir()` in `backend/core/utils/file_utils.py` dynamically resolves `STORAGE_LOCAL_PATH` relative to project root or defaults to `backend/storage`, preventing directory nesting bugs across artifact delivery and storage mounts.
+- **Watertight 3D Print Preservation**: For 3D printing and closed meshes, AutoRetopo shell reconstruction respects existing watertightness (`watertight=not bool(repaired_topology.get("watertight", False))`) to preserve sharp features without voxel-rounding distortion; `3d_print` presets set `target_polycount: 0` to ensure 100% native resolution passthrough without decimation.
+
+The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs headlessly via `blender_worker_argv` (standalone binary or `bpy` wheel) and is best-effort for generation completion.
 
 ## Physics layer
 Physics is an opt-in layer after the existing generation and production post-processing pipeline. The immutable master remains unchanged. When requested, the scheduler passes a provider-neutral physics intent into post-processing; the existing collision service produces the collision representation and `metadata/physics.json` records the rigid-body configuration, material response, collision statistics, provenance, and capabilities. The browser viewer uses the canonical collision artifact with pinned Rapier 0.19.3 while remaining on the existing direct Three.js renderer. Physics preparation runs against derived geometry in the production pipeline; the optional centralized texture stage does not create a second physics job or replace the immutable raw master. The physics runtime is not an inference model and does not consume generation-model VRAM.
@@ -600,3 +607,51 @@ The Next.js 16 Presentation Layer unifies all creation, editing, retopology, rig
   - The right property rail routes through `RightWorkspacePanel` to tool-specific inspectors (`AnimationRightInspector`, `RiggingRightInspector`, `UVInspector`, `SegmentInspector`, `MeshEditInspector`, `RightPropertyPanel`).
   - Viewport-anchored overlays (such as `AnimationTimelineDock`) render directly over the canvas, keeping 3D model transforms, playback clocks, and keyframe markers synchronized in memory.
 - **Non-Destructive Route State**: `navigateToMain` in `WorkspaceContext` uses `window.history.replaceState` when switching between tool editing and studio hub overlays (`overview`, `assets`, `system`, `jobs`), preserving 3D assets, camera angle, and scene state in browser memory.
+
+## 2026-10-14 High-Performance Viewport Engine & Production Postprocessing Architecture
+
+### 1. Viewport Performance & Interactive Manipulation Architecture
+- **Zero-Allocation Material Switcher (`features/workspace/Viewport/MeshViewer.tsx`)**:
+  - Eliminates garbage collection pressure and framerate hitching during interactive asset inspection by avoiding runtime material instantiation.
+  - Materials (`clay`, `ceramic`, `chrome`, `gold`, `normals`, `xray`, `turquoise`, `default`/`textured`) are lazily allocated once per mesh into `child.userData.__shadingMaterialCache`.
+  - When switching shading modes, cached materials are assigned directly to `child.material` with zero allocations; wireframe state dynamically toggles `.wireframe = isWire` on the active material instance without re-instantiating shader programs.
+- **Event-Driven Reflection Peek Capture**:
+  - Replaces legacy 1-second interval polling with an event-driven snapshot pipeline.
+  - Viewport captures trigger once on initial load and subsequently only when camera motion completes (`OrbitControls 'end'` event), throttled via a 250ms debounce window.
+  - Object URLs are revoked immediately prior to recreation, preventing memory leaks, and all timers/event listeners are cleaned up on unmount.
+- **Interactive TransformControls Integration**:
+  - Integrates Three.js `TransformControls` into the viewport scene graph with bidirectional event synchronization (`setInteractionMode`, `'orbit' | 'pan' | 'move' | 'rotate' | 'scale'`).
+  - When active tool enters edit mode (`move`, `rotate`, `scale`), `TransformControls` attaches to `currentMeshGroupRef.current` and switches gizmo modes (`translate`, `rotate`, `scale`).
+  - Mutual exclusion between `OrbitControls` and `TransformControls` (`controls.enabled = !event.value`) prevents camera rotation during active manipulator dragging.
+  - Supports bone joint manipulation during rigging mode (`animSelectedBone`) and ground grid toggling via `toggleGrid` event.
+- **Axial Camera Alignment Presets (`ViewportToolOverlay.tsx`)**:
+  - Floating `ViewportToolOverlay` exposes standard axial camera angles: `Perspective`, `Front`, `Side`, and `Top`.
+  - Snaps the camera smoothly along cardinal axes with bounding-sphere recentering and distance normalization, providing CAD-grade orthographic-style inspection.
+- **Smooth MeshDiffViewer Animation Loop (`features/workspace/Viewport/MeshDiffViewer.tsx`)**:
+  - Eradicates the React state re-render loop anti-pattern (`setAnimationFrame(prev => prev + 1)` called inside RAF), which previously forced 60–120 full React component tree re-renders per second.
+  - Uses an uncoupled native `requestAnimationFrame(animate)` loop that updates `leftControls.current.update()`, `rightControls.current.update()`, and renders both Three.js scenes into WebGL canvases with zero React re-renders.
+  - Guarantees clean component lifecycle with `cancelAnimationFrame(animId)` on unmount and an empty dependency array.
+
+### 2. Production Postprocessing Pipeline Hardening
+- **Quad OBJ Polygonal Export (`backend/postprocess/pipeline.py`)**:
+  - Implements `_export_quad_obj(mesh, quad_faces)` generating standard Wavefront OBJ files with 4-vertex polygonal face definitions (`f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 v4/vt4/vn4`).
+  - When quad retopology succeeds (`is_quad_requested and retopo_stats.get("status") == "completed"`), the decimation stage automatically preserves the quad-dominant topology (`Passthrough: Quad-dominant topology preserved from retopology pass`), preventing destructive conversion back to triangles.
+- **Smart Preset Budget Precedence Resolution (`backend/api/routers/mesh_generation.py`)**:
+  - Implements `_resolve_target_polycount_precedence(top_level_target, nested_target, preset_target)`:
+    - Explicit top-level request budgets take highest priority.
+    - Nested model parameter budgets take secondary priority.
+    - Smart preset target budgets serve as default fallback.
+  - Prevents nested parameter defaults of `0` from wiping out configured budgets, while preserving explicit `0` as an intentional request for Native/Raw model output without decimation.
+- **Headless Blender Worker Invocation Path (`backend/postprocess/config.py`)**:
+  - Implements `blender_worker_argv()` and `blender_expr_argv()` with dual-path runtime resolution:
+    1. If `BLENDER_EXECUTABLE` is found on system `PATH`, executes `[BLENDER_EXECUTABLE, "--background", "--python", ...]`.
+    2. Otherwise, detects the embedded `bpy` Python wheel (`importlib.util.find_spec("bpy")`) and executes headlessly under the current Python interpreter (`[sys.executable, ...]`).
+  - Powers headless FBX conversion (`convert_fbx.py`) and viewport thumbnail generation (`mesh_thumbnail.py`) without requiring standalone Blender binary installations.
+- **Dynamic Storage Base Directory Resolution (`backend/core/utils/file_utils.py`)**:
+  - Centralizes `get_storage_base_dir()` to dynamically resolve `STORAGE_LOCAL_PATH`:
+    - Relative paths resolve relative to repository root (`parents[3]`), eliminating the `backend/backend/storage` directory duplication bug.
+    - Unset configurations default to canonical `backend/storage`.
+  - Ensures atomic, consistent paths across model artifacts, file uploads, SQLite persistence, and FastAPI static file mounts.
+- **Watertight 3D Print Preservation**:
+  - AutoRetopo conditional shell reconstruction respects already-closed geometry (`watertight=not bool(repaired_topology.get("watertight", False))`), using the source surface directly for closed meshes to avoid rounding sharp edges with voxel shells.
+  - The `3d_print` smart preset configures `target_polycount: 0`, guaranteeing 100% passthrough in `run_optimize()` without decimation artifacts, preserving strict manifold geometry for 3D slicing and additive manufacturing.

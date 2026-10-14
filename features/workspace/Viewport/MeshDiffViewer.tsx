@@ -79,7 +79,6 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
   const rightScene = useRef<THREE.Scene | null>(null);
   const leftContainerRef = useRef<HTMLDivElement | null>(null);
   const rightContainerRef = useRef<HTMLDivElement | null>(null);
-  const [animationFrame, setAnimationFrame] = useState<number>(0);
 
   // Initialize Three.js scenes
   useEffect(() => {
@@ -298,28 +297,30 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
 
   // Animation loop
   useEffect(() => {
+    let animId: number;
     const animate = () => {
-      setAnimationFrame(prev => prev + 1);
-      
+      if (leftControls.current) leftControls.current.update();
+      if (rightControls.current) rightControls.current.update();
+
       // Render left scene
       if (leftRenderer.current && leftScene.current && leftCamera.current) {
         leftRenderer.current.render(leftScene.current, leftCamera.current);
       }
-      
+
       // Render right scene
       if (rightRenderer.current && rightScene.current && rightCamera.current) {
         rightRenderer.current.render(rightScene.current, rightCamera.current);
       }
-      
-      requestAnimationFrame(animate);
+
+      animId = requestAnimationFrame(animate);
     };
 
-    animate();
-    
+    animId = requestAnimationFrame(animate);
+
     return () => {
-      // Cleanup handled by React 18 automatic cleanup
+      cancelAnimationFrame(animId);
     };
-  }, [leftRenderer, rightRenderer, leftScene, rightScene, leftCamera, rightCamera]);
+  }, []);
 
   // Initialize renderers, scenes, and controls when refs are set
   useEffect(() => {
@@ -541,7 +542,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
       {!isLoading && (leftMesh || rightMesh) && (
         <div className="flex-1 flex overflow-hidden">
           {/* Left Mesh Viewer */}
-          <div className="flex-1 border-r border-white/[0.08]">
+          <div className="flex-1 relative border-r border-white/[0.08]">
             <div 
               ref={leftContainerRef}
               className="w-full h-full bg-[hsl(var(--surface-0))]"
@@ -566,7 +567,7 @@ export const MeshDiffViewer: React.FC<MeshDiffViewerProps> = ({
           </div>
 
           {/* Right Mesh Viewer */}
-          <div className="flex-1 border-l border-white/[0.08]">
+          <div className="flex-1 relative border-l border-white/[0.08]">
             <div 
               ref={rightContainerRef}
               className="w-full h-full bg-[hsl(var(--surface-0))]"

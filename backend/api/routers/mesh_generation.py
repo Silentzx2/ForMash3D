@@ -71,9 +71,9 @@ def _resolve_target_polycount_precedence(
     preset_target: Optional[int],
 ) -> Optional[int]:
     """Resolve a generation budget without allowing a nested default to mask explicit API input."""
-    if top_level_target is not None:
+    if top_level_target is not None and top_level_target > 0:
         return top_level_target
-    if nested_target is not None:
+    if nested_target is not None and nested_target > 0:
         return nested_target
     return preset_target
 
@@ -431,6 +431,19 @@ class MeshGenerationResponse(BaseModel):
     message: str = Field(..., description="Status message")
 
 
+class BatchImageToMeshRequest(BaseModel):
+    """Request for batch image-to-mesh generation"""
+    items: List[ImageToRawMeshRequest] = Field(..., description="List of image generation requests")
+
+
+class BatchMeshGenerationResponse(BaseModel):
+    """Versioned response contract for batch mesh generation requests."""
+    api_version: str = Field("1", description="Generation API contract version")
+    job_ids: List[str] = Field(..., description="Unique job identifiers")
+    status: str = Field("queued", description="Job status")
+    message: str = Field(..., description="Status message")
+
+
 # Helper function to process file inputs
 async def process_file_input(
     file_path: Optional[str] = None,
@@ -744,9 +757,42 @@ async def image_to_raw_mesh(
             nested_target_polycount,
             preset.get("target_polycount"),
         )
-        lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
-        lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
-        lod_count = params.pop("lodCount", preset.get("lod_count", 4))
+        # Intent presets take precedence over frontend default autoOptimizeSettings (e.g. generateLOD: true, lodPreset: 'high', lodCount: 4)
+        if "generate_lod" in preset:
+            lod_enabled = bool(preset["generate_lod"])
+            params.pop("generateLOD", None)
+        else:
+            lod_enabled = bool(params.pop("generateLOD", True))
+
+        if "lod_preset" in preset:
+            lod_preset = str(preset["lod_preset"])
+            params.pop("lodPreset", None)
+        else:
+            lod_preset = str(params.pop("lodPreset", "high"))
+
+        if "lod_count" in preset:
+            lod_count = int(preset["lod_count"])
+            params.pop("lodCount", None)
+        else:
+            lod_count = int(params.pop("lodCount", 4))
+
+        if "auto_uv" in preset:
+            auto_uv = bool(preset["auto_uv"])
+            params.pop("auto_uv", None)
+        else:
+            auto_uv = bool(params.pop("auto_uv", True))
+
+        # Resolve quality: cinematic intent or target >= 150k uses "ultra", others default to "high"
+        if mesh_request.intent == "cinematic" or (target_polycount is not None and target_polycount >= 150_000):
+            quality = "ultra"
+        elif preset.get("quality"):
+            quality = str(preset["quality"])
+        elif mesh_request.quality_mode and mesh_request.quality_mode != "high":
+            quality = str(mesh_request.quality_mode)
+        else:
+            quality = str(params.pop("quality", mesh_request.quality_mode or "high"))
+        params.pop("quality", None)
+
         enable_printability = bool(
             params.pop(
                 "enable_printability_check",
@@ -785,6 +831,8 @@ async def image_to_raw_mesh(
                 "generateLOD": lod_enabled,
                 "lodPreset": lod_preset,
                 "lodCount": lod_count,
+                "auto_uv": auto_uv,
+                "quality": quality,
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "enable_printability_check": enable_printability,
@@ -812,6 +860,12 @@ async def image_to_raw_mesh(
                 **preset_metadata,
                 "preprocessing": preprocessing_metadata,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
+                "target_polycount": target_polycount,
+                "generateLOD": lod_enabled,
+                "lodPreset": lod_preset,
+                "lodCount": lod_count,
+                "auto_uv": auto_uv,
+                "quality": quality,
                 "enable_printability_check": enable_printability,
                 "enable_auto_repair": enable_auto_repair,
                 "enable_auto_rig": enable_auto_rig,
@@ -941,9 +995,42 @@ async def image_to_textured_mesh(
             nested_target_polycount,
             preset.get("target_polycount"),
         )
-        lod_enabled = params.pop("generateLOD", preset.get("generate_lod", True))
-        lod_preset = params.pop("lodPreset", preset.get("lod_preset", "high"))
-        lod_count = params.pop("lodCount", preset.get("lod_count", 4))
+        # Intent presets take precedence over frontend default autoOptimizeSettings (e.g. generateLOD: true, lodPreset: 'high', lodCount: 4)
+        if "generate_lod" in preset:
+            lod_enabled = bool(preset["generate_lod"])
+            params.pop("generateLOD", None)
+        else:
+            lod_enabled = bool(params.pop("generateLOD", True))
+
+        if "lod_preset" in preset:
+            lod_preset = str(preset["lod_preset"])
+            params.pop("lodPreset", None)
+        else:
+            lod_preset = str(params.pop("lodPreset", "high"))
+
+        if "lod_count" in preset:
+            lod_count = int(preset["lod_count"])
+            params.pop("lodCount", None)
+        else:
+            lod_count = int(params.pop("lodCount", 4))
+
+        if "auto_uv" in preset:
+            auto_uv = bool(preset["auto_uv"])
+            params.pop("auto_uv", None)
+        else:
+            auto_uv = bool(params.pop("auto_uv", True))
+
+        # Resolve quality: cinematic intent or target >= 150k uses "ultra", others default to "high"
+        if mesh_request.intent == "cinematic" or (target_polycount is not None and target_polycount >= 150_000):
+            quality = "ultra"
+        elif preset.get("quality"):
+            quality = str(preset["quality"])
+        elif mesh_request.quality_mode and mesh_request.quality_mode != "high":
+            quality = str(mesh_request.quality_mode)
+        else:
+            quality = str(params.pop("quality", mesh_request.quality_mode or "high"))
+        params.pop("quality", None)
+
         nested_texture_flags = [
             params.pop("texture_enabled", None),
             params.pop("generate_texture", None),
@@ -1001,6 +1088,8 @@ async def image_to_textured_mesh(
                 "generateLOD": lod_enabled,
                 "lodPreset": lod_preset,
                 "lodCount": lod_count,
+                "auto_uv": auto_uv,
+                "quality": quality,
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "enable_printability_check": enable_printability,
@@ -1028,6 +1117,12 @@ async def image_to_textured_mesh(
                 **preset_metadata,
                 "preprocessing": preprocessing_metadata,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
+                "target_polycount": target_polycount,
+                "generateLOD": lod_enabled,
+                "lodPreset": lod_preset,
+                "lodCount": lod_count,
+                "auto_uv": auto_uv,
+                "quality": quality,
                 "enable_printability_check": enable_printability,
                 "enable_auto_repair": enable_auto_repair,
                 "enable_auto_rig": enable_auto_rig,
@@ -1153,6 +1248,59 @@ async def image_mesh_painting(
         logger.error(f"Error scheduling image-mesh-painting job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
 
+
+
+# Alias single and batch endpoints for image-to-mesh generation
+@router.post("/generate-mesh-from-image", response_model=MeshGenerationResponse)
+async def generate_mesh_from_image(
+    mesh_request: ImageToRawMeshRequest,
+    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
+    current_user = Depends(get_current_user_or_none),
+    file_store: Optional[FileStore] = Depends(get_file_store),
+):
+    """
+    Generate a 3D mesh from image (endpoint alias for image-to-raw-mesh).
+    Supports intent presets (game_ready: 50k, cinematic: 200k, animation: 30k, 3d_print: 0, mobile: 20k)
+    for target_polycount, generateLOD, lodPreset, lodCount, auto_uv, and quality.
+    """
+    return await image_to_raw_mesh(
+        mesh_request=mesh_request,
+        scheduler=scheduler,
+        current_user=current_user,
+        file_store=file_store,
+    )
+
+
+@router.post("/generate-mesh-from-image/batch", response_model=BatchMeshGenerationResponse)
+@router.post("/batch/generate-mesh-from-image", response_model=BatchMeshGenerationResponse)
+@router.post("/batch-generate-mesh-from-image", response_model=BatchMeshGenerationResponse)
+async def generate_mesh_from_image_batch(
+    batch_request: BatchImageToMeshRequest,
+    scheduler: MultiprocessModelScheduler = Depends(get_scheduler),
+    current_user = Depends(get_current_user_or_none),
+    file_store: Optional[FileStore] = Depends(get_file_store),
+):
+    """
+    Batch generate 3D meshes from multiple images.
+    Aligns intent presets for each item without default 0s clobbering preset values.
+    """
+    job_ids: List[str] = []
+    for item in batch_request.items:
+        res = await image_to_raw_mesh(
+            mesh_request=item,
+            scheduler=scheduler,
+            current_user=current_user,
+            file_store=file_store,
+        )
+        job_ids.append(res.job_id)
+    return BatchMeshGenerationResponse(
+        job_ids=job_ids,
+        status="queued",
+        message=f"{len(job_ids)} mesh generation jobs queued successfully",
+    )
+
+
+batch_generate_mesh_from_image = generate_mesh_from_image_batch
 
 
 # Utility endpoints

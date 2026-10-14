@@ -374,3 +374,19 @@ The Next.js 16 Presentation Layer runs a persistent, non-destructive 3D workspac
   - Right inspector rail routes via `RightWorkspacePanel` to tool-specific inspectors (`RightPropertyPanel`, `UVInspector`, `SegmentInspector`, `MeshEditInspector`, `AnimationRightInspector`, `RiggingRightInspector`).
   - Viewport-anchored overlays (`AnimationTimelineDock`) provide in-canvas transport controls, scrubbing, and FPS selection.
 - **Non-Destructive Navigation**: `navigateToMain` in `WorkspaceContext` uses `window.history.replaceState` for hub views (`overview`, `assets`, `jobs`, `system`), preserving the 3D scene state in memory without page destruction.
+
+## Viewport Performance Engine & Postprocessing Hardening — 2026-10-14
+
+### Viewport Performance & Manipulator Controls
+- **Zero-Allocation Material Switcher**: Caches alternate shading materials lazily on `child.userData.__shadingMaterialCache`, dynamically toggling wireframe and swapping materials with 0 runtime memory allocations.
+- **Event-Driven Reflection Peek**: Replaced 1-second continuous polling with OrbitControls `'end'` event listener debounced at 250ms, eliminating idle GPU load and revoking stale object URLs cleanly.
+- **Interactive TransformControls**: Embedded 3D translate/rotate/scale gizmo in Edit mode, synchronized with OrbitControls mutual exclusion to prevent camera rotation while dragging.
+- **Axial Camera View Presets**: Perspective, Front, Side, and Top alignment presets smoothly snapping camera position to cardinal coordinate axes.
+- **Decoupled MeshDiffViewer RAF Loop**: Replaced stateful React animation frame re-render loop with a direct `requestAnimationFrame` render loop with `cancelAnimationFrame` cleanup, eliminating 60–120fps component re-render overhead.
+
+### Postprocessing Pipeline Hardening
+- **Quad OBJ Polygonal Export**: `_export_quad_obj` serializes genuine 4-vertex polygonal faces (`f v/vt/vn ...`), with automatic decimation passthrough when quad retopology is requested.
+- **Smart Preset Budget Precedence**: `_resolve_target_polycount_precedence` guarantees explicit top-level targets take priority over nested parameters and smart presets, while preserving explicit `0` as an intentional Native/Raw pass-through.
+- **Headless Blender Execution**: `blender_worker_argv` and `blender_expr_argv` prefer `BLENDER_EXECUTABLE` on `PATH` with automatic fallback to `sys.executable` via the embedded `bpy` Python wheel.
+- **Dynamic Canonical Storage**: `get_storage_base_dir()` dynamically resolves `STORAGE_LOCAL_PATH` relative to project root or defaults to `backend/storage`, preventing directory nesting bugs.
+- **Watertight 3D Print Preservation**: AutoRetopo shell reconstruction respects existing watertightness without voxel-rounding distortion, and `3d_print` presets set `target_polycount: 0` for 100% native resolution passthrough.

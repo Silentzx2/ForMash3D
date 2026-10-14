@@ -22,7 +22,7 @@ from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
-from core.utils.file_utils import encode_file_to_base64, get_file_size_mb
+from core.utils.file_utils import encode_file_to_base64, get_file_size_mb, get_storage_base_dir
 
 DEFAULT_MESH_THUMBNAIL_SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">'
@@ -1374,20 +1374,21 @@ async def download_job_result(
 
         if asset_root:
             asset_root_path = Path(asset_root).resolve()
-            models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+            models_root = (get_storage_base_dir() / "models").resolve()
             if asset_root_path == models_root or models_root not in asset_root_path.parents:
                 raise HTTPException(status_code=400, detail="Invalid asset workspace")
 
             if canonical_format == "master":
                 output_path = asset_root_path / "master" / "source.glb"
-            elif canonical_format in {"glb", "gltf", "fbx", "obj", "stl", "ply"}:
-                candidate = asset_root_path / "game_ready" / f"{asset_root_path.name}.{canonical_format}"
+            elif canonical_format in {"glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj"}:
+                target_ext = "obj" if canonical_format == "quad_obj" else canonical_format
+                candidate = asset_root_path / "game_ready" / f"{asset_root_path.name}.{target_ext}"
                 if not candidate.exists() and asset_name:
-                    alt = asset_root_path / "game_ready" / f"{asset_name}.{canonical_format}"
+                    alt = asset_root_path / "game_ready" / f"{asset_name}.{target_ext}"
                     if alt.exists():
                         candidate = alt
                 if not candidate.exists():
-                    matches = list((asset_root_path / "game_ready").glob(f"*.{canonical_format}"))
+                    matches = list((asset_root_path / "game_ready").glob(f"*.{target_ext}"))
                     if matches:
                         candidate = matches[0]
                 if not candidate.exists():
@@ -1395,9 +1396,9 @@ async def download_job_result(
                     glb_matches = list((asset_root_path / "game_ready").glob("*.glb"))
                     if glb_matches:
                         src_glb = glb_matches[0]
-                        target_file = asset_root_path / "game_ready" / f"{src_glb.stem}.{canonical_format}"
+                        target_file = asset_root_path / "game_ready" / f"{src_glb.stem}.{target_ext}"
                         try:
-                            if canonical_format == "gltf":
+                            if target_ext == "gltf":
                                 from postprocess.pipeline import _export_gltf_embedded
                                 _export_gltf_embedded(src_glb.read_bytes(), target_file)
                             else:
@@ -1958,7 +1959,7 @@ async def retry_job_postprocess(
             raise HTTPException(status_code=400, detail="Job has no canonical asset workspace to retry")
 
         asset_root_path = Path(asset_root).resolve()
-        models_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+        models_root = (get_storage_base_dir() / "models").resolve()
         if asset_root_path == models_root or models_root not in asset_root_path.parents:
             raise HTTPException(status_code=400, detail="Invalid asset workspace")
 

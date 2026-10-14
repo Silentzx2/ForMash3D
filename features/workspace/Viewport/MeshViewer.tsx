@@ -154,6 +154,16 @@ function createUnitBoneGeometry(): THREE.BufferGeometry {
   return geo;
 }
 const sharedBoneGeo = createUnitBoneGeometry();
+const SHARED_STATIC_RESOURCES = new Set<unknown>([
+  sharedJointGeo,
+  sharedJointMat,
+  sharedJointSelectedMat,
+  sharedBoneGeo,
+  sharedBoneMat,
+  sharedBoneSelectedMat,
+  sharedRingGeo,
+  sharedRingMat,
+]);
 
 // Helper to create an authentic Blender-style bone octahedron mesh between parent and child positions
 function createBoneMesh(
@@ -731,7 +741,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
   const cameraMenuRef = useRef<HTMLDivElement>(null);
   const envPanelRef = useRef<HTMLDivElement>(null);
-  const [interactionMode, setInteractionMode] = useState<'orbit' | 'pan' | 'move'>('orbit');
+  const [interactionMode, setInteractionMode] = useState<'orbit' | 'pan' | 'move' | 'rotate' | 'scale'>('orbit');
   const [isDragOver, setIsDragOver] = useState(false);
   const [dropToastMessage, setDropToastMessage] = useState<string | null>(null);
   const [dropToastIsHtmlError, setDropToastIsHtmlError] = useState(false);
@@ -1442,12 +1452,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       tc.detach();
       tc.enabled = false;
     } else if (
-      interactionMode === 'move' &&
+      (interactionMode === 'move' || interactionMode === 'rotate' || interactionMode === 'scale') &&
       currentMeshGroupRef.current &&
       currentMeshGroupRef.current.children.length > 0
     ) {
       tc.attach(currentMeshGroupRef.current);
-      tc.setMode('translate');
+      tc.setMode(interactionMode === 'move' ? 'translate' : interactionMode === 'rotate' ? 'rotate' : 'scale');
       tc.enabled = true;
     } else {
       tc.detach();
@@ -2325,14 +2335,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
       scene.traverse((obj) => {
         if (obj instanceof THREE.Mesh) {
-          obj.geometry?.dispose();
+          if (obj.geometry && !SHARED_STATIC_RESOURCES.has(obj.geometry)) {
+            obj.geometry.dispose();
+          }
           const material = obj.material;
           if (Array.isArray(material)) {
             material.forEach((m) => {
-              Object.values(m).forEach((v: any) => { if (v instanceof THREE.Texture) v.dispose(); });
-              m.dispose();
+              if (!SHARED_STATIC_RESOURCES.has(m)) {
+                Object.values(m).forEach((v: any) => { if (v instanceof THREE.Texture) v.dispose(); });
+                m.dispose();
+              }
             });
-          } else if (material) {
+          } else if (material && !SHARED_STATIC_RESOURCES.has(material)) {
             Object.values(material).forEach((v: any) => { if (v instanceof THREE.Texture) v.dispose(); });
             material.dispose();
           }
@@ -2483,6 +2497,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           const material = child.material;
           if (Array.isArray(material)) material.forEach(m => disposeMaterial(m));
           else if (material) disposeMaterial(material);
+          if (child.userData?.cachedShadingMaterials) {
+            Object.values(child.userData.cachedShadingMaterials).forEach((m: any) => disposeMaterial(m));
+          }
         }
       });
     }
@@ -2562,7 +2579,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   const mats = Array.isArray(child.material) ? child.material : [child.material];
                   mats.forEach((m) => {
                     if (m instanceof THREE.MeshStandardMaterial && m.normalMap) {
-                      m.normalScale.set(1.4, 1.4);
+                      const ns = currentAsset?.materialConfig?.normalScale ?? 1.0;
+                      m.normalScale.set(ns, ns);
                       m.needsUpdate = true;
                     }
                   });
@@ -2609,6 +2627,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               setLoadedAssetId(currentAsset.id);
               setModelLoadVersion((version) => version + 1);
             }
+          } else {
+            gltf.scene.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.geometry?.dispose();
+                disposeMaterial(child.material);
+              }
+            });
           }
         } else if (format === 'obj') {
           // ponytail: verify response is text before parsing as OBJ
@@ -2651,6 +2676,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               setLoadedAssetId(currentAsset.id);
               setModelLoadVersion((version) => version + 1);
             }
+          } else {
+            object.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.geometry?.dispose();
+                disposeMaterial(child.material);
+              }
+            });
           }
         } else if (format === 'ply') {
           const response = await fetch(sourceUrl);
@@ -2675,12 +2707,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           const mesh = new THREE.Mesh(geometry, material);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
-          group.add(mesh);
-          frameCamera(mesh);
-          computeMeshStats(mesh);
           if (!cancelled) {
+            group.add(mesh);
+            frameCamera(mesh);
+            computeMeshStats(mesh);
             setLoadedAssetId(currentAsset.id);
             setModelLoadVersion((version) => version + 1);
+          } else {
+            geometry.dispose();
+            material.dispose();
           }
         } else if (format === 'stl') {
           const response = await fetch(sourceUrl);
@@ -2698,9 +2733,16 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           const mesh = new THREE.Mesh(geometry, material);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
-          group.add(mesh);
-          frameCamera(mesh);
-          computeMeshStats(mesh);
+          if (!cancelled) {
+            group.add(mesh);
+            frameCamera(mesh);
+            computeMeshStats(mesh);
+            setLoadedAssetId(currentAsset.id);
+            setModelLoadVersion((version) => version + 1);
+          } else {
+            geometry.dispose();
+            material.dispose();
+          }
         } else {
           throw new Error(`No browser preview is available for ${currentAsset.format}.`);
         }
@@ -2756,115 +2798,130 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         }
 
         const orig = child.userData.originalMaterial;
-
-        // Dispose previous non-original material to prevent GPU memory leak
-        const prevMat = child.material;
-        if (prevMat && prevMat !== orig && !child.userData.shadingMaterials?.includes(prevMat)) {
-          if (Array.isArray(prevMat)) {
-            prevMat.forEach(m => { if (m !== orig) disposeMaterial(m); });
-          } else {
-            disposeMaterial(prevMat);
-          }
+        if (!child.userData.cachedShadingMaterials) {
+          child.userData.cachedShadingMaterials = {};
         }
-
+        const cache = child.userData.cachedShadingMaterials;
         const isWire = Boolean(showWireframe) || shadingMode === 'wireframe';
 
-        switch (shadingMode) {
-          case 'textured':
-            child.material = orig;
-            if (Array.isArray(child.material)) {
-              child.material.forEach(m => { m.wireframe = isWire; });
-            } else if (child.material) {
-              child.material.wireframe = isWire;
-            }
-            break;
+        const mode = shadingMode?.toLowerCase?.() || 'default';
+        let targetMat: THREE.Material | THREE.Material[] = orig;
 
+        switch (mode) {
           case 'wireframe':
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0x00ff88,
-              wireframe: true,
-              roughness: 0.6,
-              metalness: 0.1
-            });
+            if (!cache.wireframe) {
+              cache.wireframe = new THREE.MeshStandardMaterial({
+                color: 0x00ff88,
+                wireframe: true,
+                roughness: 0.6,
+                metalness: 0.1,
+              });
+            }
+            targetMat = cache.wireframe;
             break;
 
           case 'clay':
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0xd6d9df,
-              roughness: 0.75,
-              metalness: 0.05,
-              wireframe: isWire
-            });
+            if (!cache.clay) {
+              cache.clay = new THREE.MeshStandardMaterial({
+                color: 0xd6d9df,
+                roughness: 0.75,
+                metalness: 0.05,
+              });
+            }
+            cache.clay.wireframe = isWire;
+            targetMat = cache.clay;
             break;
 
           case 'matcap':
           case 'matcap-ceramic':
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0xffffff,
-              roughness: 0.12,
-              metalness: 0.05,
-              wireframe: isWire
-            });
+            if (!cache.ceramic) {
+              cache.ceramic = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.12,
+                metalness: 0.05,
+              });
+            }
+            cache.ceramic.wireframe = isWire;
+            targetMat = cache.ceramic;
             break;
 
+          case 'metallic':
           case 'matcap-chrome':
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0xf0f3f8,
-              roughness: 0.04,
-              metalness: 0.95,
-              wireframe: isWire
-            });
+            if (!cache.chrome) {
+              cache.chrome = new THREE.MeshStandardMaterial({
+                color: 0xf0f3f8,
+                roughness: 0.04,
+                metalness: 0.95,
+              });
+            }
+            cache.chrome.wireframe = isWire;
+            targetMat = cache.chrome;
             break;
 
+          case 'gold':
           case 'matcap-gold':
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0xf9cf00,
-              roughness: 0.22,
-              metalness: 0.88,
-              wireframe: isWire
-            });
+            if (!cache.gold) {
+              cache.gold = new THREE.MeshStandardMaterial({
+                color: 0xf9cf00,
+                roughness: 0.22,
+                metalness: 0.88,
+              });
+            }
+            cache.gold.wireframe = isWire;
+            targetMat = cache.gold;
             break;
 
+          case 'normal':
           case 'normals':
           case 'matcap-normal':
-            child.material = new THREE.MeshNormalMaterial({
-              wireframe: isWire
-            });
+            if (!cache.normals) {
+              cache.normals = new THREE.MeshNormalMaterial();
+            }
+            cache.normals.wireframe = isWire;
+            targetMat = cache.normals;
             break;
 
           case 'xray':
-            child.material = new THREE.MeshBasicMaterial({
-              color: 0x3b82f6,
-              wireframe: true,
-              transparent: true,
-              opacity: 0.75
-            });
+            if (!cache.xray) {
+              cache.xray = new THREE.MeshBasicMaterial({
+                color: 0x3b82f6,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.75,
+              });
+            }
+            targetMat = cache.xray;
             break;
 
           case 'matcap-turquoise':
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0x06b6d4,
-              roughness: 0.3,
-              metalness: 0.4,
-              wireframe: isWire
-            });
+            if (!cache.turquoise) {
+              cache.turquoise = new THREE.MeshStandardMaterial({
+                color: 0x06b6d4,
+                roughness: 0.3,
+                metalness: 0.4,
+              });
+            }
+            cache.turquoise.wireframe = isWire;
+            targetMat = cache.turquoise;
             break;
 
+          case 'default':
+          case 'textured':
           default:
-            child.material = orig;
-            if (Array.isArray(child.material)) {
-              child.material.forEach(m => { m.wireframe = isWire; });
-            } else if (child.material) {
-              child.material.wireframe = isWire;
+            targetMat = orig;
+            if (Array.isArray(targetMat)) {
+              targetMat.forEach((m) => {
+                if ('wireframe' in m) {
+                  (m as THREE.MeshStandardMaterial).wireframe = isWire;
+                }
+              });
+            } else if (targetMat && 'wireframe' in targetMat) {
+              (targetMat as THREE.MeshStandardMaterial).wireframe = isWire;
             }
             break;
         }
 
-        // Track shading materials for cleanup on unmount
-        if (!child.userData.shadingMaterials) child.userData.shadingMaterials = [];
-        if (child.material !== orig && !child.userData.shadingMaterials.includes(child.material)) {
-          child.userData.shadingMaterials.push(child.material);
-        }
+        child.material = targetMat;
       }
     });
   }, [shadingMode, showWireframe]);
@@ -2963,7 +3020,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
 
     let stopped = false;
-    let timer: number | null = null;
+    let debounceTimer: number | null = null;
+
     const capture = () => {
       if (stopped || !rendererRef.current || !sceneRef.current || !cameraRef.current) return;
       rendererRef.current.render(sceneRef.current, cameraRef.current);
@@ -2973,13 +3031,28 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         if (reflectionPreviewUrlRef.current) URL.revokeObjectURL(reflectionPreviewUrlRef.current);
         reflectionPreviewUrlRef.current = url;
         setReflectionPreviewUrl(url);
-        timer = window.setTimeout(capture, 1000);
-      }, 'image/jpeg', 0.68);
+      }, 'image/jpeg', 0.72);
     };
+
+    const scheduleCapture = () => {
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      debounceTimer = window.setTimeout(capture, 250);
+    };
+
+    // Initial snapshot
     capture();
+
+    const controls = controlsRef.current;
+    if (controls) {
+      controls.addEventListener('end', scheduleCapture);
+    }
+
     return () => {
       stopped = true;
-      if (timer) window.clearTimeout(timer);
+      if (debounceTimer) window.clearTimeout(debounceTimer);
+      if (controls) {
+        controls.removeEventListener('end', scheduleCapture);
+      }
       if (reflectionPreviewUrlRef.current) {
         URL.revokeObjectURL(reflectionPreviewUrlRef.current);
         reflectionPreviewUrlRef.current = null;
@@ -3256,13 +3329,27 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const handleSnapshotEvent = () => {
       handleScreenshot();
     };
+    const handleInteractionModeEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<'orbit' | 'pan' | 'move' | 'rotate' | 'scale'>;
+      if (customEvent.detail) {
+        setInteractionMode(customEvent.detail);
+      }
+    };
+    const handleToggleGridEvent = () => {
+      setEnvironmentSettings((p) => ({ ...p, gridVisible: !p.gridVisible }));
+    };
+
     window.addEventListener('setCameraPreset', handleCameraPresetEvent);
     window.addEventListener('takeViewportSnapshot', handleSnapshotEvent);
+    window.addEventListener('setInteractionMode', handleInteractionModeEvent);
+    window.addEventListener('toggleGrid', handleToggleGridEvent);
     return () => {
       window.removeEventListener('setCameraPreset', handleCameraPresetEvent);
       window.removeEventListener('takeViewportSnapshot', handleSnapshotEvent);
+      window.removeEventListener('setInteractionMode', handleInteractionModeEvent);
+      window.removeEventListener('toggleGrid', handleToggleGridEvent);
     };
-  }, [applyCameraPreset]);
+  }, [applyCameraPreset, setInteractionMode]);
 
   // Drag and drop asset loading handler
   const handleDragOver = (e: React.DragEvent) => {

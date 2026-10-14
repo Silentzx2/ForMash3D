@@ -22,7 +22,10 @@ import threading
 from pathlib import Path
 from uuid import uuid4
 
-from postprocess.config import BAKE_TIMEOUT_S, WORK_DIR
+try:
+    from backend.postprocess.config import BAKE_TIMEOUT_S, WORK_DIR, blender_worker_argv
+except ImportError:
+    from postprocess.config import BAKE_TIMEOUT_S, WORK_DIR, blender_worker_argv
 from ..schemas import BakeOptions, FlattenOptions
 
 CancelChecker = Optional[Callable[[], bool]]
@@ -125,7 +128,7 @@ def run_flatten(mesh_glb: bytes, opts: FlattenOptions,
 
 def _run_worker(worker: Path, worker_args: list[str], progress, cancel_checker: CancelChecker = None) -> dict:
     proc = subprocess.Popen(
-        [sys.executable, str(worker), *worker_args],
+        blender_worker_argv(worker or _WORKER, worker_args),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

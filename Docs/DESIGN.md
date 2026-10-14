@@ -405,7 +405,7 @@ Post-processing stage and progress reuse the existing job status model rather th
 The Generate panel keeps Physics Preparation behind a compact Advanced Generation drawer so the primary workflow stays short and scroll-light. The viewer exposes a top-level Test Physics action. On Physics Ready assets it uses the canonical collision runtime; on ordinary loaded meshes it falls back to a lightweight bounds-based rigid-body smoke test without mutating the asset or running post-processing. The viewer still provides Play, Pause, Step, Reset, collider debug, Drop, Bounce, Slide, and Spin controls. Deformable/jiggle simulation remains capability-gated and is not faked.
 
 ## Viewport Inspect UX
-The viewport keeps frequent actions in the center-view rail: camera, shading, wireframe, turntable, Test Physics, and Mirror. Mirror is an opt-in low-rate viewport snapshot that can be hovered or focused to temporarily zoom the main camera to the mesh for detail inspection and exposes a larger mirrored preview on desktop. Snapshot capture runs only while the feature is enabled and is throttled to roughly one frame per second.
+The viewport keeps frequent actions in the center-view rail: camera, shading, wireframe, turntable, Test Physics, and Mirror/Reflection Peek. Reflection Peek is an event-driven viewport snapshot that provides a real-time thumbnail preview of the mesh and lighting. Rather than running an unthrottled timer loop, snapshot capture executes once on initial mesh load and then listens to OrbitControls `'end'` events debounced at 250ms. Previous object URLs are revoked upon each capture to prevent memory bloat, and the capture loop is completely halted when the scene is static or unmounted.
 
 ## Pipeline Execution UX — 2026-09-29
 The live execution panel is a telemetry surface, not a simulated progress animation. It renders the backend stage/message stream, global progress, completed-stage count, elapsed time, estimated remaining time, worker log timeline, and artifact readiness from the actual job result. Hidden browser tabs reduce polling activity, and log auto-scroll preserves manual inspection when the user scrolls upward.
@@ -534,3 +534,39 @@ Quality mode must never silently downgrade the immutable master. A requested pol
   - **Right Rail**: Contextual property inspector renders tool-aware inspect panels (`RightPropertyPanel`, `UVInspector`, `SegmentInspector`, `MeshEditInspector`, `AnimationRightInspector`, `RiggingRightInspector`).
   - **Bottom Dock**: Viewport overlay docks `AnimationTimelineDock` during animation workflows, exposing transport controls, dual-track keyframe/clip scrubbing, and FPS selection directly within the viewport.
 - **Overlay Navigation**: Top-level views (`Overview`, `Assets`, `Jobs`, `System`) render as lightweight Framer Motion overlays via `window.history.replaceState`, preserving underlying 3D scene state.
+
+## High-Performance Viewport Engine & Interactive Manipulation System — 2026-10-14
+
+### Zero-Allocation Shading Switcher UX
+- **Instant Mode Switching**: Allows artists to toggle between render modes without GPU hitching or garbage collection frame drops.
+  - **Textured / Default**: Native PBR textures with diffuse, roughness, and normal mapping.
+  - **Clay (`#D6D9DF`, Roughness 0.75, Metalness 0.05)**: Clean matte finish for geometric silhouette and form evaluation.
+  - **Ceramic (`#FFFFFF`, Roughness 0.12, Metalness 0.05)**: Specular gloss for curvature and surface continuity inspection.
+  - **Metallic Chrome (`#F0F3F8`, Roughness 0.04, Metalness 0.95)**: High-reflectivity chrome for detecting surface irregularities and pinching.
+  - **Gold (`#F9CF00`, Roughness 0.22, Metalness 0.88)**: Satin metallic shader for highlight roll-off.
+  - **Normals**: `THREE.MeshNormalMaterial` mapping RGB normal vectors for topology orientation verification.
+  - **X-Ray Diagnostic (`#3B82F6`, 75% opacity)**: Translucent blue wireframe pass for internal structure and non-manifold edge detection.
+  - **Turquoise Matcap (`#06B6D4`)**: Stylized studio matcap for sculpting appraisal.
+- **Persistent Material Cache**: All alternate shaders are lazily cached on `mesh.userData.__shadingMaterialCache`. Switching modes reassigns existing Three.js material instances and toggles `.wireframe = isWire` dynamically with zero object instantiation.
+
+### Interactive TransformControls & 3D Manipulator UX
+- **Floating Edit Toolbar (`ViewportToolOverlay.tsx`)**: When the active workspace tool is `edit`, a sleek vertical toolbar floats on the left viewport edge (`bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.08]`):
+  - **Select Tool (▲)**: Reverts viewport interaction to Orbit mode (`setInteractionMode('orbit')`).
+  - **Move Manipulator (`MoveIcon`)**: Activates 3D translate gizmo (`setInteractionMode('move')`).
+  - **Rotate Manipulator (`RotateCcwIcon`)**: Activates 3D spherical rotation gizmo (`setInteractionMode('rotate')`).
+  - **Scale Manipulator (`Maximize02Icon`)**: Activates 3D scale manipulator (`setInteractionMode('scale')`).
+  - **Toggle Grid (`GridIcon`)**: Instantly toggles the ground plane grid (`toggleGrid`) without scene re-renders.
+- **Gizmo State & Orbit Mutual Exclusion**: Active manipulator attaches directly to `currentMeshGroupRef.current` or the selected rigging bone joint (`animSelectedBone`). Dragging any axis of `TransformControls` temporarily locks `OrbitControls` (`controls.enabled = false`) until release, eliminating accidental camera navigation while transforming assets.
+
+### Axial Camera Alignment Presets
+- **Quick-Snap Perspective Bar**: Floating horizontally at the top of the viewport in UV, segment, and edit modes, offering one-click alignment pills:
+  - **Perspective**: Standard 45° isometric diagnostic angle.
+  - **Front**: Normal snap to Z-axis (`[0, 0, distance]`).
+  - **Side**: Orthographic-style snap to X-axis (`[-distance, 0, 0]`).
+  - **Top**: Downward planar snap along Y-axis (`[0, distance, 0]`).
+- Dispatches `setCameraPreset` custom events handled by `applyCameraPreset()`, maintaining model focal point and bounding-sphere framing.
+
+### MeshDiffViewer Dual-Scene WebGL Architecture
+- **Uncoupled Animation Loop**: Dual comparative viewports (`leftScene` / `rightScene`) operate on an independent `requestAnimationFrame` loop completely decoupled from React state, eliminating 60–120fps component re-renders.
+- **Synchronized Camera Orbiting**: Interacting with either the left or right viewport smoothly mirrors camera matrices to provide seamless side-by-side mesh diffing.
+- **Resource Management**: Automatically cleans up animation frames (`cancelAnimationFrame(animId)`) and WebGL renderer contexts on unmount.

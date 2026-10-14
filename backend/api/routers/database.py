@@ -682,3 +682,55 @@ async def clear_all_files(
         "errors": upload_errors,
         "message": "All file metadata and upload files cleared. Job records and assets are preserved.",
     }
+
+
+def check_job_asset_persistence(job_status: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Verify that postprocessing outputs (LODs, collisions, formats, quad OBJ, FBX)
+    and metadata are correctly persisted in job and asset records.
+    """
+    result = job_status.get("result") or {}
+    asset_root = result.get("asset_root")
+    artifacts = result.get("artifacts") or {}
+    game_ready = artifacts.get("game_ready") or result.get("game_ready_formats") or {}
+    lods = artifacts.get("lods") or result.get("lods") or result.get("lod_urls") or {}
+
+    outputs_check = {
+        "has_result": bool(result),
+        "asset_root": asset_root,
+        "lods_persisted": bool(lods),
+        "collision_persisted": bool(result.get("collision") or result.get("collision_url") or artifacts.get("collision")),
+        "formats_persisted": bool(game_ready),
+        "quad_obj_persisted": bool("obj" in game_ready),
+        "fbx_persisted": bool("fbx" in game_ready),
+        "metadata_persisted": bool(artifacts.get("qa_report") or result.get("qa_report") or result.get("quality_trace")),
+        "asset_record_on_disk": False,
+        "job_record_on_disk": False,
+    }
+
+    if asset_root:
+        root_path = Path(asset_root)
+        if (root_path / "metadata" / "asset.json").is_file():
+            outputs_check["asset_record_on_disk"] = True
+        if (root_path / "metadata" / "job.json").is_file():
+            outputs_check["job_record_on_disk"] = True
+
+    return outputs_check
+
+
+@router.get("/jobs/{job_id}/verify", summary="Verify job and asset persistence")
+async def verify_job_asset(
+    job_id: str,
+    scheduler=Depends(get_scheduler),
+    admin=Depends(_admin_user),
+):
+    """Check job and asset records for persisted postprocessing outputs and metadata."""
+    job_status = await scheduler.get_job_status(job_id)
+    if not job_status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "job_id": job_id,
+        "status": job_status.get("status"),
+        "persistence_check": check_job_asset_persistence(job_status),
+    }
+

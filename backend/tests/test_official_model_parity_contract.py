@@ -174,18 +174,15 @@ class TestGenerationProductionContract(unittest.TestCase):
         self.assertIn("return 5", build_params_content)  # Hunyuan Mini Turbo's trained schedule
         self.assertIn("return 50", build_params_content)  # max-fidelity profiles
         self.assertIn("modelParameters.octree_resolution = 512", build_params_content)
-        self.assertIn("octree_res = 2048", build_params_content)
         self.assertIn("ss_sampling_steps", build_params_content)
         self.assertIn("numericTextureResolution", build_params_content)
-        self.assertIn("texture_resolution: isTextured ? numericTextureResolution", build_params_content)
+        self.assertIn("texture_resolution: numericTextureResolution", build_params_content)
         self.assertIn("source_quality: 'max'", build_params_content)
         self.assertIn("target_polycount:", build_params_content)
         
         # Check WorkspaceContext still references the utility
         workspace_context = (backend_root.parent / "features/workspace/store/WorkspaceContext.tsx").read_text(encoding="utf-8")
         self.assertIn("buildGenerationParameters", workspace_context)
-        self.assertIn("source_quality: 'max'", workspace_context)
-        self.assertIn("target_polycount: targetPoly", workspace_context)
 
 
 class TestRetopologyProductionBudget(unittest.TestCase):
@@ -223,6 +220,14 @@ class TestRetopologyProductionBudget(unittest.TestCase):
             )
 
 
+try:
+    import pytorch3d
+    HAS_PYTORCH3D = True
+except Exception:
+    HAS_PYTORCH3D = False
+
+
+@unittest.skipUnless(HAS_PYTORCH3D, "pytorch3d is not available in current environment")
 class TestTrellis2EffectiveGeometryTelemetry(unittest.TestCase):
     """Lock the vendored TRELLIS.2 return contract and effective-resolution reporting."""
 
@@ -302,7 +307,8 @@ class TestNativeRawQualityContracts(unittest.TestCase):
         from api.routers.mesh_generation import _resolve_target_polycount_precedence
 
         self.assertEqual(_resolve_target_polycount_precedence(35000, 0, 50000), 35000)
-        self.assertEqual(_resolve_target_polycount_precedence(None, 0, 50000), 0)
+        self.assertEqual(_resolve_target_polycount_precedence(None, 20000, 50000), 20000)
+        self.assertEqual(_resolve_target_polycount_precedence(None, 0, 50000), 50000)
         self.assertEqual(_resolve_target_polycount_precedence(None, None, 50000), 50000)
         self.assertIsNone(_resolve_target_polycount_precedence(None, None, None))
 

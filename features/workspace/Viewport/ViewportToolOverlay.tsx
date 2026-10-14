@@ -28,6 +28,7 @@ export const ViewportToolOverlay: React.FC = () => {
   const [segmentGalleryTab, setSegmentGalleryTab] = useState<'Preview' | 'Part Hierarchy' | 'Statistics' | 'Logs'>('Preview');
   const [segmentIsolatedPart, setSegmentIsolatedPart] = useState('Head');
   const [cameraPreset, setCameraPreset] = useState<'Perspective' | 'Front' | 'Side' | 'Top'>('Perspective');
+  const [activeEditMode, setActiveEditMode] = useState<'select' | 'move' | 'rotate' | 'scale'>('select');
 
   if (activeTool !== 'uv' && activeTool !== 'segment' && activeTool !== 'edit' && activeTool !== 'animation' && activeTool !== 'rigging') {
     return null;
@@ -74,6 +75,10 @@ export const ViewportToolOverlay: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setCameraPreset(cam);
+                    const presetName = cam === 'Side' ? 'left' : cam.toLowerCase();
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new CustomEvent('setCameraPreset', { detail: presetName }));
+                    }
                     toast.info(`Camera aligned to ${cam}`);
                   }}
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -136,19 +141,76 @@ export const ViewportToolOverlay: React.FC = () => {
       {/* FLOATING VERTICAL TOOLBARS (Left for Edit) */}
       {activeTool === 'edit' && (
         <div className="pointer-events-auto absolute left-4 top-20 flex flex-col gap-1 p-1 bg-[hsl(var(--surface-1))]/90 backdrop-blur-md rounded-xl border border-white/[0.08] shadow-xl">
-          <button type="button" title="Select Tool" className="p-2 rounded-lg bg-primary text-black shadow-sm cursor-pointer">
+          <button 
+            type="button" 
+            title="Select Tool" 
+            onClick={() => {
+              setActiveEditMode('select');
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('setInteractionMode', { detail: 'orbit' }));
+              }
+            }}
+            className={`p-2 rounded-lg cursor-pointer transition-all ${
+              activeEditMode === 'select' ? 'bg-primary text-black shadow-sm font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
             <span className="text-xs font-bold">▲</span>
           </button>
-          <button type="button" title="Move Manipulator" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
+          <button 
+            type="button" 
+            title="Move Manipulator" 
+            onClick={() => {
+              setActiveEditMode('move');
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('setInteractionMode', { detail: 'move' }));
+              }
+            }}
+            className={`p-2 rounded-lg cursor-pointer transition-all ${
+              activeEditMode === 'move' ? 'bg-primary text-black shadow-sm font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
             <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4" />
           </button>
-          <button type="button" title="Rotate Selection" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
+          <button 
+            type="button" 
+            title="Rotate Selection" 
+            onClick={() => {
+              setActiveEditMode('rotate');
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('setInteractionMode', { detail: 'rotate' }));
+              }
+            }}
+            className={`p-2 rounded-lg cursor-pointer transition-all ${
+              activeEditMode === 'rotate' ? 'bg-primary text-black shadow-sm font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
             <HugeiconsIcon icon={RotateCcwIcon} size={16} className="w-4 h-4" />
           </button>
-          <button type="button" title="Scale Selection" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
+          <button 
+            type="button" 
+            title="Scale Selection" 
+            onClick={() => {
+              setActiveEditMode('scale');
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('setInteractionMode', { detail: 'scale' }));
+              }
+            }}
+            className={`p-2 rounded-lg cursor-pointer transition-all ${
+              activeEditMode === 'scale' ? 'bg-primary text-black shadow-sm font-bold' : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+            }`}
+          >
             <HugeiconsIcon icon={Maximize02Icon} size={16} className="w-4 h-4" />
           </button>
-          <button type="button" title="Toggle Grid" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
+          <button 
+            type="button" 
+            title="Toggle Grid" 
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('toggleGrid'));
+              }
+            }}
+            className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer"
+          >
             <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4" />
           </button>
         </div>

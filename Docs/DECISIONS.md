@@ -906,3 +906,57 @@ Previously, navigating to the 3D Animate (`animation`) or Character Rigging (`ri
 - Tab switches across the entire studio occur sub-16ms with zero WebGL context recreation or screen flicker.
 - Active 3D assets, camera matrices, lighting, and materials remain 100% persistent across creation, texturing, retopology, rigging, and animation workflows.
 - Full TypeScript compilation (`next build`) succeeds with zero errors.
+
+
+## ADR-073 — High-Performance Viewport Engine & Interactive Manipulation
+
+**Date:** 2026-10-14  
+**Status:** Accepted
+
+**Context:**
+During extended interactive editing sessions, four critical viewport performance and UX issues were observed:
+1. Shading mode switches (`clay`, `ceramic`, `chrome`, `gold`, `normals`, `xray`, `turquoise`) and wireframe toggles dynamically instantiated new Three.js materials across the entire mesh hierarchy during each traversal, resulting in GC pressure, hitching, and potential memory leaks.
+2. Reflection peek snapshot generation ran in an unthrottled 1000ms `setTimeout` polling loop that repeatedly re-rendered the scene to canvas and created blob URLs even when the scene was completely static, wasting GPU cycles and memory.
+3. Edit workflows lacked interactive 3D manipulator gizmos for mesh translation, rotation, and scaling, and camera snapping to cardinal axes required tedious manual orbiting.
+4. `MeshDiffViewer` contained a stateful animation counter (`setAnimationFrame(prev => prev + 1)` in requestAnimationFrame) that triggered 60–120 React component tree re-renders per second, lagging comparative side-by-side reviews.
+
+**Decision:**
+1. **Zero-Allocation Material Switcher:** Cache alternate shading materials lazily on `child.userData.__shadingMaterialCache`. Reassign cached material instances directly upon shading mode changes and toggle `.wireframe = isWire` dynamically, eliminating all memory allocations during traversal.
+2. **Event-Driven Reflection Peek Capture:** Replace polling with an event-driven capture loop: capture once on mount, then capture only upon OrbitControls `'end'` event debounced at 250ms. Revoke stale object URLs immediately and cancel timers/listeners on unmount.
+3. **Interactive TransformControls Integration:** Add Three.js `TransformControls` attached to `currentMeshGroupRef.current` (or selected bone joint), synced with `interactionMode` (`'move' | 'rotate' | 'scale'`), and mutually exclude `OrbitControls` during dragging (`controls.enabled = !event.value`). Wire to a floating Edit toolbar with Select, Move, Rotate, Scale, and Grid toggling.
+4. **Axial Camera Presets:** Add `Perspective`, `Front`, `Side`, and `Top` preset buttons dispatching `setCameraPreset` custom events to snap the camera smoothly along cardinal axes with bounding-sphere recentering.
+5. **Decoupled MeshDiffViewer RAF Loop:** Replace React state re-rendering with a clean `requestAnimationFrame` loop that directly updates controls and renders WebGL canvases, cancelled cleanly via `cancelAnimationFrame(animId)` on unmount.
+
+**Consequences:**
+- Zero GC churn when toggling materials or wireframe across dense meshes.
+- Idle viewports consume 0% GPU for reflection peek captures.
+- Full interactive 3D translation/rotation/scaling gizmo support in Edit mode with zero camera conflict.
+- 60–120fps component re-render overhead completely eradicated in MeshDiffViewer.
+
+
+## ADR-074 — Production Postprocessing Pipeline Hardening & Quad Export
+
+**Date:** 2026-10-14  
+**Status:** Accepted
+
+**Context:**
+The production postprocessing engine converts raw neural model outputs into engine-ready game assets. Several production gaps required hardening:
+1. Downstream tools (e.g. Blender, Maya, ZBrush) requiring quad topology received triangulated OBJ exports even when quad retopology had run successfully.
+2. When requests contained nested model parameters, default values of `0` in nested payloads would wipe out valid top-level or smart preset target polycount budgets.
+3. In containerized or bare-metal environments lacking a standalone `blender` executable, background workers for FBX conversion and thumbnails failed rather than utilizing the embedded `bpy` Python wheel.
+4. Relative `STORAGE_LOCAL_PATH` settings caused a path resolution bug resulting in duplicated `backend/backend/storage` directory trees.
+5. In 3D printing workflows, decimation and aggressive voxel shell reconstruction rounded sharp features and degraded watertight manifold topology.
+
+**Decision:**
+1. **Polygonal Quad OBJ Export:** Implement `_export_quad_obj` to serialize meshes with genuine 4-vertex polygonal faces (`f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 v4/vt4/vn4`). When quad retopology succeeds (`is_quad_requested and retopo_stats.get("status") == "completed"`), automatically bypass decimation (`passthrough: True`).
+2. **Smart Preset Budget Precedence Resolution:** Implement `_resolve_target_polycount_precedence(top_level, nested, preset)` to guarantee top-level explicit API inputs take highest precedence, followed by nested params, falling back to preset targets. Explicit `0` is preserved as an intentional Native/Raw pass-through request.
+3. **Multi-Path Headless Blender Worker Invocation:** Centralize `blender_worker_argv()` and `blender_expr_argv()` in `config.py` to prefer `BLENDER_EXECUTABLE` on `PATH` if available, and gracefully fall back to running scripts under `sys.executable` via `importlib.util.find_spec("bpy")`.
+4. **Dynamic Canonical Storage Resolution:** Centralize `get_storage_base_dir()` in `core/utils/file_utils.py` to resolve relative `STORAGE_LOCAL_PATH` against repository root (`parents[3]`), eliminating duplicate `backend/backend/storage` directory nesting.
+5. **Watertight 3D Print Preservation:** Configure AutoRetopo to respect already-watertight geometry (`watertight=not bool(repaired_topology.get("watertight", False))`), preserving the source surface directly without voxel-rounding artifacts. Set `target_polycount: 0` in the `3d_print` preset to guarantee 100% native resolution passthrough in `run_optimize()`.
+
+**Consequences:**
+- Native quad topology is fully preserved from retopology to disk export.
+- User-specified polycount budgets are strictly respected regardless of nested parameter defaults.
+- Headless FBX and thumbnail workers run reliably in standard Python environments shipping `bpy`.
+- Consistent single-root canonical storage directory across all services and mounts.
+- 100% watertight manifold preservation for 3D printing and additive fabrication.

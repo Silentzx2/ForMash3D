@@ -384,10 +384,13 @@ The product now supports an optional Physics Ready generation intent. Users can 
 Generation Preview is optional. The approved artifact is content-addressed and reused exactly by the generation job. High-resolution images are not blindly upscaled; enhancement failures carry explicit fallback metadata.
 
 ### Printability
-Printability QA is deterministic topology inspection in the shared production post-process path. Auto-repair is explicit. A failed final check is surfaced as a degraded result.
+Printability QA is deterministic topology inspection in the shared production post-process path. Auto-repair is explicit. A failed final check is surfaced as a degraded result. In the `3d_print` smart preset, `target_polycount: 0` ensures complete passthrough without decimation artifacts, preserving strict watertight manifold geometry for physical slicing.
+
+### Quad Retopology & Polygonal Export
+Supports quad-dominant retopology via AutoRetopo / QuadriFlow, exporting standard Wavefront OBJ format with 4-vertex polygonal faces (`f v1 v2 v3 v4`). When quad-dominant topology is requested and generated, the postprocessing optimization stage automatically preserves quad topology without destructive triangle decimation.
 
 ### Auto-Rigging
 One canonical enable_auto_rig flag runs UniRig after the final production mesh. The immutable source/master is never replaced by the rigged derivative. A rigged artifact is not reported ready until the child job has produced a durable output.
 
 ### Smart Intent
-Five built-in intent presets are backend-owned and deterministic. Explicit model selection remains an override; the scheduler remains the final concurrency and VRAM authority.
+Five built-in intent presets (`game_ready`, `cinematic`, `animation`, `3d_print`, `mobile`) are backend-owned and deterministic. Explicit top-level budget inputs take precedence over nested defaults and presets (`_resolve_target_polycount_precedence`). Explicit model selection remains an override; the scheduler remains the final concurrency and VRAM authority.

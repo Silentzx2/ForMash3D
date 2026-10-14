@@ -330,7 +330,7 @@ def test_8k_preset_normal_ao_bake_not_clamped_and_records_dimensions(tmp_path, m
     png_8k_bytes = buf.getvalue()
 
     captured_bake_opts = []
-    def mock_run_bake(low_glb, high_glb, opts, progress=None):
+    def mock_run_bake(low_glb, high_glb, opts, progress=None, cancel_checker=None, **kwargs):
         captured_bake_opts.append(opts)
         return (
             {"normal": png_8k_bytes, "ao": png_8k_bytes},

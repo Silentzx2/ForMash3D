@@ -136,3 +136,84 @@ def test_direct_paint_parameters_cannot_trigger_second_texture_stage():
         "enable_realesrgan": False,
     })
     assert cleaned == {"resolution": 768, "max_num_view": 6}
+
+
+def test_bake_run_worker_uses_blender_worker_argv(monkeypatch):
+    """Verify _run_worker uses blender_worker_argv instead of sys.executable directly."""
+    from unittest.mock import MagicMock
+    import shutil
+    import postprocess.services.bake as bake_mod
+    import postprocess.config as cfg_mod
+    from postprocess.config import blender_worker_argv
+
+    monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/blender")
+    monkeypatch.setattr(cfg_mod.shutil, "which", lambda cmd: "/usr/bin/blender")
+
+    mock_popen = MagicMock()
+    mock_proc = MagicMock()
+    mock_proc.stdout = [bake_mod.SENTINEL + '{"type": "result", "ok": true}']
+    mock_proc.poll = MagicMock(return_value=0)
+    mock_proc.wait = MagicMock()
+    mock_popen.return_value = mock_proc
+    monkeypatch.setattr(bake_mod.subprocess, "Popen", mock_popen)
+
+    worker_args = ["--low", "low.glb", "--high", "high.glb", "--outdir", "/tmp", "--options", "opt.json"]
+    bake_mod._run_worker(bake_mod._WORKER, worker_args, progress=None)
+
+    assert mock_popen.called
+    called_argv = mock_popen.call_args[0][0]
+    expected_argv = blender_worker_argv(bake_mod._WORKER, worker_args)
+    assert called_argv == expected_argv
+
+
+def test_no_hardcoded_storage_models_paths():
+    """Verify system.py and multiprocess_scheduler.py have no hardcoded storage/models paths."""
+    from pathlib import Path
+    import re
+
+    system_py = Path(__file__).resolve().parents[1] / "api" / "routers" / "system.py"
+    scheduler_py = Path(__file__).resolve().parents[1] / "core" / "scheduler" / "multiprocess_scheduler.py"
+
+    hardcoded_pattern = re.compile(r'Path\([^)]*\)\s*/\s*["\']storage["\']\s*/\s*["\']models["\']')
+    assert not hardcoded_pattern.search(system_py.read_text(encoding="utf-8")), "Found hardcoded storage/models in system.py"
+    assert not hardcoded_pattern.search(scheduler_py.read_text(encoding="utf-8")), "Found hardcoded storage/models in multiprocess_scheduler.py"
+
+
+def test_clear_gpu_cache_and_uv_detection():
+    """Verify _clear_gpu_cache and _has_uvs helper functions."""
+    from postprocess.pipeline import _clear_gpu_cache, _has_uvs
+
+    # Should run cleanly without exception
+    _clear_gpu_cache()
+
+    # Plain mesh without UVs
+    mesh_no_uv = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    if hasattr(mesh_no_uv.visual, "uv"):
+        mesh_no_uv.visual.uv = None
+    assert _has_uvs(mesh_no_uv) is False
+
+    # Mesh with UVs
+    mesh_with_uv = mesh_no_uv.copy()
+    mesh_with_uv.visual = trimesh.visual.TextureVisuals(
+        uv=np.zeros((len(mesh_with_uv.vertices), 2), dtype=np.float32)
+    )
+    assert _has_uvs(mesh_with_uv) is True
+
+
+def test_pipeline_quad_obj_and_auto_uv_logic():
+    """Verify quad OBJ export and UV presence validation."""
+    from postprocess.pipeline import _export_quad_obj, _has_uvs
+
+    # Verify quad OBJ export with quad faces
+    mesh = trimesh.creation.box(extents=(1.0, 1.0, 1.0))
+    quad_faces = [
+        [0, 1, 2, 3],
+        [4, 5, 6, 7],
+    ]
+    obj_bytes = _export_quad_obj(mesh, quad_faces)
+    assert b"# ForMash3D Quad Mesh Export" in obj_bytes
+    face_lines = [l for l in obj_bytes.decode("utf-8").splitlines() if l.startswith("f ")]
+    assert len(face_lines) == 2
+    assert len(face_lines[0].split()) == 5  # f + 4 vertex indices
+
+

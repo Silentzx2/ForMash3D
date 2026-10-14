@@ -61,6 +61,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import torch
 
 import core.config  # Initialize PyTorch compatibility shims & settings in worker processes
+from core.utils.file_utils import get_storage_base_dir
 from core.utils.log_formatters import (
     format_banner,
     format_box,
@@ -114,6 +115,7 @@ _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
     "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": True},
     "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": True},
     "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 9, "faces": -1, "low_vram": False},
+    "pixal3d_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "low_vram": False},
     "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
     "trellis_image_to_raw_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
     "trellis_image_to_3d": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
@@ -1693,7 +1695,7 @@ class MultiprocessModelScheduler:
                     raise RuntimeError("UniRig completed without a durable output_mesh_path")
 
                 asset_root = Path(result["asset_root"]).resolve()
-                storage_root = (Path(__file__).resolve().parents[2] / "storage" / "models").resolve()
+                storage_root = (get_storage_base_dir() / "models").resolve()
                 asset_root.relative_to(storage_root)
 
                 rig_dir = asset_root / "rigging"

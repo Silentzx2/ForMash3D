@@ -372,6 +372,8 @@ def _execute_texture_stage(
             "preset": preset_label,
             "target_atlas_size": target_atlas_size,
         }
+    finally:
+        _clear_gpu_cache()
 
 
 def _storage_root() -> Path:
@@ -717,6 +719,29 @@ def _has_native_textures_scene(raw_bytes: bytes, filename: str = "model.glb") ->
         return False
 
 
+def _has_uvs(mesh: trimesh.Trimesh) -> bool:
+    """Return True if mesh has non-empty UV coordinates."""
+    visual = getattr(mesh, "visual", None)
+    if visual is None:
+        return False
+    uv = getattr(visual, "uv", None)
+    return uv is not None and len(uv) > 0
+
+
+def _clear_gpu_cache() -> None:
+    """Clear PyTorch/CUDA cache and garbage collection if torch/cuda is available."""
+    try:
+        import gc
+        gc.collect()
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            if hasattr(torch.cuda, "ipc_collect"):
+                torch.cuda.ipc_collect()
+    except Exception:
+        pass
+
+
 def _printability_report(mesh: trimesh.Trimesh) -> Dict[str, Any]:
     """Return deterministic printability metrics without mutating geometry."""
     topology = topology_counts(mesh.vertices, mesh.faces)
@@ -973,7 +998,7 @@ def _build_result(
                     "error": artifact_errors.get(fmt),
                     "required": fmt == "glb",
                 }
-                for fmt in _FORMATS
+                for fmt in sorted(set(_FORMATS).union(k for k in generated.get("game_ready", {}) if k in {"obj", "quad_obj"}))
             },
             "lods": {
                 f"lod{idx}": {
@@ -1234,6 +1259,14 @@ def run_postprocess_job(
         or bool(job_inputs.get("quad_topology"))
     )
     auto_optimize = _should_auto_optimize(job_inputs.get("auto_optimize", False), resolved_target_polycount)
+    auto_uv_input = job_inputs.get("auto_uv")
+    if auto_uv_input is None:
+        auto_uv_input = job_metadata.get("auto_uv")
+    if auto_uv_input is not None:
+        auto_uv = bool(auto_uv_input) if not isinstance(auto_uv_input, str) else auto_uv_input.lower() not in {"false", "0", "no"}
+    else:
+        auto_uv = True
+    quad_source_mesh: Optional[trimesh.Trimesh] = None
     lod_enabled = bool(job_inputs.get("generateLOD", True))
     should_bake = (
         bool(job_inputs.get("bake_normal_maps"))
@@ -1265,6 +1298,7 @@ def run_postprocess_job(
                 ("Source Mesh", f"{raw_path} ({format_bytes(raw_file_size)})"),
                 ("Target Budget", f"{resolved_target_polycount:,} faces" if resolved_target_polycount else "Native / Raw (no decimation)"),
                 ("Auto-Optimize", auto_optimize),
+                ("Auto-UV", auto_uv),
                 ("Topology Mode", "Quad-dominant" if is_quad_requested else "Triangles"),
                 ("Physics / Collision", f"Enabled (quality: {physics_config.get('collision_quality')})" if physics_enabled else "Disabled"),
                 ("LOD Chain", f"Enabled (preset: {job_inputs.get('lodPreset') or 'high'})" if lod_enabled else "Disabled"),
@@ -1396,7 +1430,7 @@ def run_postprocess_job(
             "before": source_topology,
             "after": source_topology.copy(),
             "removed_faces": 0,
-            "method": "skipped_native_preservation",
+            "method": "skipped_healthy" if source_topology.get("watertight") and source_topology.get("non_manifold_edges", 0) == 0 else "skipped_native_preservation",
             "preserve_uv": True,
             "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
             "skipped": True,
@@ -1482,6 +1516,8 @@ def run_postprocess_job(
                 cancel_checker=cancel_checker,
             )
             retopo_stats = {"status": "completed", "trigger": "quad_requested", **retopo_tool_stats}
+            if retopo_stats.get("quad_faces"):
+                quad_source_mesh = repaired.copy()
         except Exception as exc:
             retopo_stats = {"status": "failed", "trigger": "quad_requested", "error": str(exc)}
             logger.warning("Quad AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
@@ -1656,7 +1692,9 @@ def run_postprocess_job(
 
     _check_cancelled(cancel_checker)
     uv_t0 = time.time()
-    if native_textures:
+    retopo_ran = retopo_stats.get("status") == "completed"
+
+    if native_textures and not retopo_ran and _has_uvs(optimized):
         if not _has_native_textures(optimized):
             logger.warning(
                 "Texture-aware optimization lost native material data for %s; safely falling back to repaired mesh to preserve textures.",
@@ -1682,8 +1720,34 @@ def run_postprocess_job(
                 ],
             )
         )
+    elif not auto_uv and not native_textures:
+        # Preserve watertightness for 3D printing: when auto_uv is False and not native_textures,
+        # skip run_auto_uv so vertices are not split along seams.
+        uv_mesh = optimized
+        uv_stats = {
+            "status": "skipped",
+            "auto_uv": False,
+            "native_textures": False,
+            "reason": "auto_uv disabled and not native_textures; preserving watertightness for 3D printing",
+        }
+        uv_duration = time.time() - uv_t0
+        logger.info(
+            "\n" + format_box(
+                "POSTPROCESS: STAGE 5/8 - UV PARAMETERIZATION",
+                [
+                    ("Status", "Skipped (auto_uv=False)"),
+                    ("Watertight Preserved", True),
+                    ("Reason", "auto_uv disabled; seam vertex splitting skipped for 3D printing"),
+                    ("Stage Elapsed", f"{uv_duration:.2f}s"),
+                ],
+            )
+        )
     else:
-        _emit(progress, 0.55, "uv", "Generating production UVs.")
+        if native_textures and retopo_ran:
+            _emit(progress, 0.55, "uv", "Generating UVs for retopologized mesh (native textures require bake mapping).")
+            logger.info("Quad retopology rebuilt topology without UVs on native-textured mesh; generating UVs for baking.")
+        else:
+            _emit(progress, 0.55, "uv", "Generating production UVs.")
         optimized_normals = np.asarray(optimized.vertex_normals)
         uv_mesh, uv_stats, _ = run_auto_uv(
             optimized,
@@ -1733,6 +1797,25 @@ def run_postprocess_job(
     _check_cancelled(cancel_checker)
     bake_t0 = time.time()
     if should_bake:
+        # If quad retopology ran on a native-textured mesh, ensure UVs exist or run auto_uv before baking
+        # to prevent Blender 'No UV map on active object' errors.
+        if not _has_uvs(uv_mesh):
+            logger.info("Target mesh lacks UVs before bake; running auto_uv to ensure UV map exists.")
+            _emit(progress, 0.56, "uv", "Generating required UV map for texture bake.")
+            uv_mesh_normals = np.asarray(uv_mesh.vertex_normals)
+            uv_mesh, uv_bake_stats, _ = run_auto_uv(
+                uv_mesh,
+                AutoUvOptions(
+                    resolution=texture_resolution,
+                    padding_texels=4,
+                    refine=True,
+                    weld=True,
+                    preserve_normals=True,
+                    normal_smooth_deg=60,
+                ),
+                source_normals=uv_mesh_normals,
+                cancel_checker=cancel_checker,
+            )
         _emit(progress, 0.58, "bake", "Baking high-to-low micro-details and normal maps.")
         try:
             from .services.bake import run_bake
@@ -1750,7 +1833,7 @@ def run_postprocess_job(
             low_glb_bytes = _export_glb(uv_mesh)
             baked_images, worker_stats = run_bake(
                 low_glb=low_glb_bytes,
-                high_glb=master_path.read_bytes(),
+                high_glb=raw_bytes,
                 opts=bake_opts,
                 progress=lambda stage, frac, msg: (
                     _emit(progress, 0.58 + min(1.0, max(0.0, frac)) * 0.04, "bake", msg),
@@ -1785,6 +1868,8 @@ def run_postprocess_job(
             bake_stats = {"status": "failed", "error": str(exc), "reason": f"Bake failed: {exc}"}
             artifact_errors["bake"] = str(exc)
             logger.warning("Bake step failed: %s", exc)
+        finally:
+            _clear_gpu_cache()
     bake_duration = time.time() - bake_t0
 
     # Compare every optimized derivative against the immutable master.
@@ -1869,6 +1954,7 @@ def run_postprocess_job(
         elif texture_stage_info.get("status") == "failed":
             texture_status = "failed"
             artifact_errors["texture"] = texture_stage_info.get("error", "Texture generation failed")
+        _clear_gpu_cache()
 
     # Determine game-ready mesh for downstream production exports (GLB, FBX, LOD chain)
     if texture_stage_info.get("status") == "completed" and texture_stage_info.get("textured_glb"):
@@ -1882,12 +1968,27 @@ def run_postprocess_job(
 
     _check_cancelled(cancel_checker)
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
-    _save_file(glb_path, _export_glb(game_ready_mesh))
+    game_ready_glb_bytes = _export_glb(game_ready_mesh)
+    _save_file(glb_path, game_ready_glb_bytes)
     game_ready["glb"] = str(glb_path)
+
+    if retopo_stats.get("quad_faces"):
+        try:
+            quad_export_mesh = quad_source_mesh if quad_source_mesh is not None else game_ready_mesh
+            obj_bytes = _export_quad_obj(quad_export_mesh, retopo_stats["quad_faces"])
+            obj_path = game_ready_dir / f"{base_name}.obj"
+            _save_file(obj_path, obj_bytes)
+            game_ready["obj"] = str(obj_path)
+            game_ready["quad_obj"] = str(obj_path)
+            logger.info("Exported quad OBJ: %s (%s)", obj_path, format_bytes(len(obj_bytes)))
+        except Exception as exc:
+            artifact_errors["obj"] = str(exc)
+            artifact_errors["quad_obj"] = str(exc)
+            logger.warning("Quad OBJ export failed: %s", exc)
 
     try:
         fbx_bytes, _ = run_convert_fbx(
-            glb_path.read_bytes(),
+            game_ready_glb_bytes,
             ConvertOptions(preset="generic", bake_fps=30, anim_simplify=1.0),
             progress=lambda stage, frac, msg: _emit(
                 progress, 0.62 + (min(1.0, max(0.0, frac)) * 0.04), "fbx", msg
@@ -2058,7 +2159,7 @@ def run_postprocess_job(
     try:
         from .services.mesh_thumbnail import render_mesh_thumbnail
         thumbnail_path = preview_dir / "thumbnail.png"
-        thumbnail_bytes = render_mesh_thumbnail(glb_path.read_bytes())
+        thumbnail_bytes = render_mesh_thumbnail(game_ready_glb_bytes if "game_ready_glb_bytes" in locals() else glb_path.read_bytes())
         thumbnail_path.write_bytes(thumbnail_bytes)
         with Image.open(thumbnail_path) as preview:
             preview.convert("RGB").save(preview_dir / "preview.jpg", "JPEG", quality=92)
@@ -2246,6 +2347,11 @@ def run_postprocess_job(
             "after": printability_after,
             "status": printability_status,
         }
+        if printability_status == "fail":
+            final_result["production_status"] = "degraded"
+            final_result["degraded_reasons"] = list(
+                final_result.get("degraded_reasons", [])
+            ) + ["printability_failed"]
     _write_json(asset_manifest, final_result)
 
     total_pipeline_time = time.time() - pipeline_start_time
