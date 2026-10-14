@@ -14,6 +14,7 @@ from adapters.hunyuan3d_paint_v21 import Hunyuan3DPaintV21ImageMeshPaintingAdapt
 from adapters.hunyuan3d_shape_v21 import Hunyuan3DShapeV21ImageToRawMeshAdapter
 from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
 from adapters.triposg_adapter import TripoSGImageToRawMeshAdapter
+from adapters.hunyuan3d_decoder_profile import configure_native_dense_decoder
 from utils.fastmesh_utils import FastMeshError, FastMeshRunner
 
 
@@ -145,6 +146,31 @@ def test_triposg_preserves_full_inference_steps_and_octree_depth():
     assert schema["faces"]["default"] == -1
     assert schema["use_flash_decoder"]["default"] is False
 
+
+
+
+def test_hunyuan_native_decoder_profile_resets_volume_and_surface_extractors():
+    class VanillaVolumeDecoder:
+        pass
+
+    class MCSurfaceExtractor:
+        pass
+
+    class FakeVAE:
+        def __init__(self):
+            self.volume_decoder = object()
+            self.surface_extractor = object()
+
+        def enable_flashvdm_decoder(self, enabled=True):
+            assert enabled is False
+            self.volume_decoder = VanillaVolumeDecoder()
+            self.surface_extractor = MCSurfaceExtractor()
+
+    profile = configure_native_dense_decoder(SimpleNamespace(vae=FakeVAE()), "test")
+    assert profile == {
+        "volume_decoder": "VanillaVolumeDecoder",
+        "surface_extractor": "MCSurfaceExtractor",
+    }
 
 def test_hunyuan3d_shape_v21_defaults_to_max_fidelity_when_source_quality_max():
     adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
