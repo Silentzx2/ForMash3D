@@ -147,10 +147,6 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             if hasattr(self.pipeline, "to"):
                 self.pipeline.to(device)
 
-            if hasattr(self.pipeline, "enable_flashvdm"):
-                self.pipeline.enable_flashvdm(enabled=True, topk_mode="merge")
-                logger.info("Enabled FlashVDM with topk_mode='merge' for Mini Turbo pipeline")
-
             try:
                 if hasattr(self.pipeline, "enable_model_cpu_offload"):
                     self.pipeline.enable_model_cpu_offload(device=device)
@@ -258,14 +254,11 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 guidance_scale = float(guidance_scale)
 
             low_vram_mode = bool(inputs.get("low_vram_mode", False))
-            enable_flashvdm = bool(inputs.get("enable_flashvdm", True))
+            enable_flashvdm = False
+            if inputs.get("enable_flashvdm"):
+                logger.warning("Ignoring enable_flashvdm=True: the raw-source fidelity profile uses the native dense decoder.")
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)
-
-            # Tencent exposes FlashVDM as a pipeline configuration method, not an
-            # inference keyword. Match the official Turbo launch contract with topk_mode='merge'.
-            if hasattr(self.pipeline, "enable_flashvdm"):
-                self.pipeline.enable_flashvdm(enabled=enable_flashvdm, topk_mode="merge")
 
             mesh_result = self.pipeline(
                 image=image,
@@ -339,7 +332,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Maximum supported octree resolution for high-fidelity raw extraction; Turbo sampler remains at its trained 5 steps.",
+                    "description": "Dense sampling resolution; keep within the upstream-supported 512 maximum. Turbo sampler remains at its trained 5 steps.",
                     "default": 512,
                     "minimum": 64,
                     "maximum": 512,
@@ -378,8 +371,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "enable_flashvdm": {
                     "type": "boolean",
-                    "description": "Enable FlashVDM for faster inference",
-                    "default": True,
+                    "description": "FlashVDM acceleration is bypassed for maximum-fidelity raw geometry.",
+                    "default": False,
+                    "readOnly": True,
                     "required": False,
                 },
             }

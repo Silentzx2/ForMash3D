@@ -960,3 +960,23 @@ The production postprocessing engine converts raw neural model outputs into engi
 - Headless FBX and thumbnail workers run reliably in standard Python environments shipping `bpy`.
 - Consistent single-root canonical storage directory across all services and mounts.
 - 100% watertight manifold preservation for 3D printing and additive fabrication.
+
+## ADR-075 — Fidelity-First Raw Geometry Profiles
+
+**Date:** 2026-10-14  
+**Status:** Proposed for review with PR #30
+
+**Decision:**
+- Keep Hunyuan Shape and Mini Turbo within the upstream-supported dense sampling ceiling of 512. Do not raise the adapter limit beyond that contract.
+- Use Hunyuan Shape's upstream-default 7.5 guidance with its 50-step sampling schedule for the active max-fidelity profile.
+- Do not force-enable FlashVDM/top-k decoding for Hunyuan Mini Turbo's raw fidelity profile; retain its trained 5-step sampler and use the native dense decoder.
+- Follow TripoSG's manifest-preferred hierarchical extraction path (dense depth 8, hierarchical depth 9) instead of choosing the Flash decoder solely from GPU compute capability.
+
+**Reason:** Output polycount cannot restore geometry detail omitted during learned decoding or surface extraction. The raw mesh path must select its model-specific fidelity decoder before any downstream processing, while staying inside supported resolution/resource contracts.
+
+**Consequences:**
+- Changes remain confined to the three requested model paths, parameter routing, regression contracts, and documentation.
+- No vendored third-party source, TRELLIS/TRELLIS.2 adapter, or shared post-processing implementation is modified.
+- Native dense/hierarchical extraction can increase latency and memory usage.
+- CUDA A/B generation and visual mesh inspection remain required before claiming a measured quality improvement.
+

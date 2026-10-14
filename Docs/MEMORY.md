@@ -1,3 +1,12 @@
+## 2026-10-14 — Raw Mesh Fidelity Audit: Hunyuan Shape, Mini Turbo, and TripoSG
+
+- **Scope**: Traced the image-to-raw-mesh API, `_build_model_inference_inputs`, the three adapters, their model manifests, and the vendored upstream volume/surface extraction implementations. No post-processing code or other model adapter was changed.
+- **Hunyuan Shape v2.1**: The upstream-supported dense grid ceiling is 512 (the architecture decision log explicitly rejects 640 as out-of-contract). Kept this ceiling and aligned the max-fidelity profile with the official 7.5 guidance default while retaining the trained 50-step schedule and untouched raw-mesh export.
+- **Hunyuan Mini Turbo**: The scheduler and adapter forcibly enabled FlashVDM with top-k merge. The fidelity-first profile now avoids that accelerated decoding path and uses the checkpoint's native dense decoder within the supported 512 grid ceiling; Tencent's distilled 5-step sampling schedule is unchanged.
+- **TripoSG**: The adapter selected the Flash extraction path from GPU compute capability, contradicting the model manifest's `hierarchical_octree` preference. It now uses dense/hierarchical extraction in the raw-source profile (dense depth 8, hierarchical depth 9); the scheduler deliberately forces Flash extraction off.
+- **Contract coverage**: Scheduler and adapter defaults plus frontend parameter construction are locked by regression/source-contract tests. The configured third-party repo's visible history does not contain the `backend/thirdparty` gitlink SHA (`423339899dd8da5a782d89855057aa7d055e3d27`); reviewed `ForMash3D-ThirdParty/main` read-only and did not modify upstream files or move the submodule pointer. The exact pinned runtime revision therefore still needs repository-level verification.
+- **Expected trade-off**: Native dense decoding is slower and can consume more host/GPU memory. Better extraction can preserve details the fast decoder misses, but cannot invent geometry evidence absent from a single-view model's learned representation. CUDA end-to-end visual comparison is still required on the target workstation.
+
 ## 2026-10-14 — High-Performance Viewport Engine & Production Postprocessing Pipeline Hardening
 
 - **Viewport Performance & Shading Optimizations (`features/workspace/Viewport/MeshViewer.tsx`)**:
