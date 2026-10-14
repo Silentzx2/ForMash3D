@@ -10,6 +10,8 @@ torchaudio==2.6.0+cu124
 transformers==4.48.3
 diffusers==0.30.3
 huggingface_hub==0.25.0
+# Unique3D imports datasets while registering inference trainers; keep it compatible with Hub 0.25.
+datasets==3.6.0
 safetensors>=0.4.4
 einops>=0.8.0
 rembg>=2.0.60
