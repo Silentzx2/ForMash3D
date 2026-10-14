@@ -76,7 +76,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [hierarchical_geometry, sharp_detail]
       preferred_preprocessing: high_fidelity
       preferred_extraction: hierarchical_octree
-      preferred_resolution: 512
+      preferred_resolution: 1024
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: balanced

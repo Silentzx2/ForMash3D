@@ -106,15 +106,15 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
 # High-fidelity source mesh profiles. Production budgets remain in request_inputs and
 # are applied only to downstream copies by post-processing.
 _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
-    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 20000},
-    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 20000},
-    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 20000},
+    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 20000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 20000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 20000, "mc_algo": "mc"},
     "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
     "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
     "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False},
-    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 9, "use_flash_decoder": False, "faces": -1, "low_vram": False},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
+    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1, "low_vram": False},
     "pixal3d_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "low_vram": False},
     "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
     "trellis_image_to_raw_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},

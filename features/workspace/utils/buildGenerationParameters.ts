@@ -198,6 +198,8 @@ function applyModelSpecificParams(
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
     modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
     modelParameters.use_flash_decoder = false;
+    modelParameters.dense_octree_depth = 8;
+    modelParameters.hierarchical_octree_depth = 10;
   } else if (modelId.includes('trellis2')) {
     modelParameters.decimation_target = -1;
     modelParameters.remesh = false;
@@ -215,12 +217,14 @@ function applyModelSpecificParams(
     modelParameters.low_vram_mode = false;
     modelParameters.low_vram = false;
     modelParameters.enable_flashvdm = false;
-} else if (modelId.startsWith('hunyuan3d_shape_v21')) {
+    modelParameters.mc_algo = 'mc';
+  } else if (modelId.startsWith('hunyuan3d_shape_v21')) {
     modelParameters.octree_resolution = 512;
     modelParameters.num_inference_steps = 50;
     modelParameters.guidance_scale = 7.5;
     modelParameters.low_vram = false;
-} else if (modelId.includes('hunyuan')) {
+    modelParameters.mc_algo = 'mc';
+  } else if (modelId.includes('hunyuan')) {
     modelParameters.octree_resolution = 512;
     modelParameters.num_inference_steps = 50;
     modelParameters.low_vram = false;
