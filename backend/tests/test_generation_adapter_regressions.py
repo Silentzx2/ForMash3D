@@ -13,7 +13,7 @@ from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToR
 from adapters.hunyuan3d_paint_v21 import Hunyuan3DPaintV21ImageMeshPaintingAdapter
 from adapters.hunyuan3d_shape_v21 import Hunyuan3DShapeV21ImageToRawMeshAdapter
 from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
-from adapters.triposg_adapter import TripoSGImageToRawMeshAdapter
+from adapters.triposg_adapter import TripoSGImageToRawMeshAdapter, _resolve_hierarchical_octree_depth
 from adapters.hunyuan3d_decoder_profile import configure_native_dense_decoder
 from utils.fastmesh_utils import FastMeshError, FastMeshRunner
 
@@ -145,6 +145,22 @@ def test_triposg_preserves_full_inference_steps_and_octree_depth():
     assert schema["num_inference_steps"]["default"] == 50
     assert schema["faces"]["default"] == -1
     assert schema["use_flash_decoder"]["default"] is False
+    assert schema["dense_octree_depth"]["default"] == 8
+    assert schema["hierarchical_octree_depth"]["default"] == 10
+
+
+def test_triposg_depth10_requires_sufficient_gpu_memory():
+    depth, reason = _resolve_hierarchical_octree_depth(
+        10, 8, "cuda:0", free_memory_bytes=26 * 1024**3, total_memory_bytes=40 * 1024**3,
+    )
+    assert depth == 10
+    assert reason is None
+
+    depth, reason = _resolve_hierarchical_octree_depth(
+        10, 8, "cuda:0", free_memory_bytes=20 * 1024**3, total_memory_bytes=24 * 1024**3,
+    )
+    assert depth == 9
+    assert "conservative" in reason
 
 
 
