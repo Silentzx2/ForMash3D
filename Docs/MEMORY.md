@@ -4,6 +4,12 @@
 - **Fix**: Pinned `datasets==3.6.0` in both `backend/scripts/install.sh` and `backend/requirements.txt`. This avoids upgrading the shared Hub runtime used by the other model adapters.
 - **Existing environments**: After pulling `dev`, reinstall `datasets==3.6.0` in the active `3daigc-api` environment and restart the backend.
 
+## 2026-10-14 — Unique3D Gradio UI Dependency Isolation
+
+- **Root cause**: The adapter imported `app.custom_models.mvimg_prediction` even though it already loads and calls its own trainer/pipeline. That upstream module imports Gradio and initializes another module-level pipeline, introducing an unnecessary dependency and duplicate initialization side effects.
+- **Fix**: Removed the unused wrapper imports and stopped installing Gradio for the backend Unique3D runtime. The project keeps `huggingface_hub==0.25.0` for TripoSG and `datasets==3.6.0` for the Unique3D trainer import; Hub is not upgraded just to satisfy Gradio 6.
+- **Existing environments**: Gradio may remain from an earlier install. In the dedicated `3daigc-api` environment, uninstall stale Gradio packages only if that environment is not used for a separate Gradio application.
+
 ## 2026-10-14 — Raw Mesh Fidelity Audit: Hunyuan Shape, Mini Turbo, and TripoSG
 
 - **Scope**: Traced the image-to-raw-mesh API, `_build_model_inference_inputs`, the three adapters, their model manifests, and the vendored upstream volume/surface extraction implementations. No post-processing code or other model adapter was changed.
