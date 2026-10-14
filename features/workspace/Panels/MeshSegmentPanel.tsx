@@ -85,7 +85,7 @@ export const MeshSegmentPanel: React.FC = () => {
     setSymmetryDetection(true);
     setAutoWatertightRepair(true);
     setConvexDecomposition(false);
-    toast.info('SettingsIcon restored to defaults');
+    toast.info('Settings restored to defaults');
   };
 
   const handleUploadNew = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,7 +186,7 @@ export const MeshSegmentPanel: React.FC = () => {
                   className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <HugeiconsIcon icon={UploadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>UploadIcon New</span>
+                  <span>Upload New</span>
                 </button>
               </div>
 
@@ -260,10 +260,10 @@ export const MeshSegmentPanel: React.FC = () => {
                 </div>
               </div>
 
-              {/* TargetIcon Parts Slider */}
+              {/* Target Parts Slider */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="font-medium text-zinc-300">TargetIcon Parts</span>
+                  <span className="font-medium text-zinc-300">Target Parts</span>
                   <span className="font-mono text-primary font-bold text-xs">{targetParts} parts</span>
                 </div>
                 <input
@@ -551,7 +551,7 @@ export const MeshSegmentPanel: React.FC = () => {
                 className="flex-1 h-10 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
               >
                 <HugeiconsIcon icon={CheckIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
-                <span>SaveIcon SettingsIcon</span>
+                <span>Save Settings</span>
               </button>
               <button
                 type="button"

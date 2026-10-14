@@ -126,7 +126,7 @@ export function JobsTab() {
         </div>
         <button
           onClick={() => { setLoading(true); load(); }}
-          title="RefreshIcon jobs"
+          title="Refresh jobs"
           className="p-2 rounded-xl glass border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
         >
           <HugeiconsIcon icon={RefreshCw} size={16} className="w-4 h-4" />

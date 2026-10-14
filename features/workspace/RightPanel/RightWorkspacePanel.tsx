@@ -12,6 +12,8 @@ import { LiveExecutionPanel } from './LiveExecutionPanel';
 import { UVInspector } from './UVInspector';
 import { SegmentInspector } from './SegmentInspector';
 import { MeshEditInspector } from './MeshEditInspector';
+import { AnimationRightInspector } from '../Animation/AnimationRightInspector';
+import { RiggingRightInspector } from '../Rigging/RiggingRightInspector';
 
 export const RightWorkspacePanel: React.FC = () => {
   const {
@@ -117,6 +119,10 @@ export const RightWorkspacePanel: React.FC = () => {
           <SegmentInspector />
         ) : activeTool === 'edit' ? (
           <MeshEditInspector />
+        ) : activeTool === 'animation' ? (
+          <AnimationRightInspector />
+        ) : activeTool === 'rigging' ? (
+          <RiggingRightInspector />
         ) : (
           <RightPropertyPanel />
         )}

@@ -47,7 +47,7 @@ interface SubTabItem {
   { id: 'workspace', label: 'Workspace', icon: LayoutGridIcon, description: '3D viewport defaults & controls' },
   { id: 'export', label: 'Export & Backup', icon: Download01Icon, description: 'File formats, ZIP packaging & backup' },
   { id: 'api', label: 'API & Runtime', icon: ServerIcon, description: 'Backend runtime status' },
-  { id: 'shortcuts', label: 'Shortcuts', icon: KeyboardIcon, description: 'KeyboardIcon shortcuts & navigation' },
+  { id: 'shortcuts', label: 'Shortcuts', icon: KeyboardIcon, description: 'Keyboard shortcuts & navigation' },
   { id: 'notifications', label: 'Notifications', icon: BellIcon, description: 'Alerts & toast preferences' },
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontalIcon, description: 'Network, proxy & debug options' },
   ];
@@ -102,7 +102,7 @@ export function SettingsTab({ initialSection }: { initialSection?: string }) {
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
             <HugeiconsIcon icon={Settings01Icon} size={16} className="w-6 h-6 text-primary" />
-            SettingsIcon & Configuration
+            Settings & Configuration
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Manage application preferences, generation pipelines, 3D viewport, and system credentials.
@@ -125,7 +125,7 @@ export function SettingsTab({ initialSection }: { initialSection?: string }) {
                   : 'text-muted-foreground hover:text-foreground hover:bg-[hsl(var(--surface-2)/0.6)] border border-transparent'
               }`}
             >
-              <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-primary' : ''}`} />
+              <HugeiconsIcon icon={Icon} size={14} className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-primary' : ''}`} />
               <span>{tab.label}</span>
             </button>
           );

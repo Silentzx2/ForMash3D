@@ -2082,7 +2082,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
 
    // Batch processing function
     const processBatchQueue = useCallback(async () => {
-      const appStore = useAppStore();
+      const appStore = useAppStore.getState();
       const { batchGenerationEnabled, batchQueue } = appStore;
      
      if (!batchGenerationEnabled) {
@@ -2253,11 +2253,11 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
 
       // Show completion toast
       toast.success('Batch processing started', { description: `${queuedItems.length} items submitted for processing.` });
-    }, [useAppStore, modelDetails, modelParameterDefaults, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
+    }, [modelDetails, modelParameterDefaults, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
 
    // Cancel batch processing function
    const cancelBatchProcessing = useCallback(async () => {
-     const appStore = useAppStore();
+     const appStore = useAppStore.getState();
      const { batchQueue, updateBatchItem } = appStore;
      
      // Get all batch queue items that are currently running or queued
@@ -2335,8 +2335,8 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
 
     // Retry failed batch items function
     const retryFailedBatchItems = useCallback(async () => {
-      const appStore = useAppStore();
-      const { batchQueue } = appStore;
+      const appStore = useAppStore.getState();
+      const { batchQueue, updateBatchItem } = appStore;
      
      // Get all batch queue items that have failed
      const failedItems = batchQueue.filter(item => 
@@ -2387,7 +2387,22 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
        }
      
       toast.success('Failed items reset for retry', { description: `${failedItems.length} failed items reset to queued status.` });
-    }, [useAppStore]);
+    }, []);
+
+  const isWorkspaceShellActive = useCallback((path?: string | null) => {
+    if (!path) return false;
+    return (
+      path.startsWith('/workspace') ||
+      path === '/animation' ||
+      path.startsWith('/animation') ||
+      path === '/rigging' ||
+      path.startsWith('/rigging') ||
+      path === '/dashboard' ||
+      path === '/outputs' ||
+      path === '/system' ||
+      path === '/jobs'
+    );
+  }, []);
 
   const navigateToTool = useCallback((tool: ToolType) => {
     setActiveTool(tool);
@@ -2395,29 +2410,49 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     mainNavRef.current = 'workspace';
     setIsLeftPanelOpen(true);
     const route = TOOL_TO_ROUTE[tool] || '/workspace/generate';
-    if (!pathname?.startsWith('/workspace')) {
+    if (!isWorkspaceShellActive(pathname)) {
       router.push(route);
       return;
     }
     if (pathname !== route) {
       // Use replaceState instead of router.push to avoid full page remount.
-      // This keeps the MeshViewer mounted while updating the URL.
+      // This keeps the MeshViewer and 3D WebGL context continuously mounted.
       if (typeof window !== 'undefined') {
         window.history.replaceState(null, '', route);
       }
     }
-  }, [pathname, router, setMainNav, setActiveTool, setIsLeftPanelOpen]);
+  }, [pathname, router, setMainNav, setActiveTool, setIsLeftPanelOpen, isWorkspaceShellActive]);
 
   const navigateToMain = useCallback((nav: MainNavRoute) => {
     setMainNav(nav);
     mainNavRef.current = nav;
-    if (nav === 'dashboard') router.push('/workspace/overview');
-    else if (nav === 'assets') router.push('/workspace/assets');
-    else if (nav === 'system') router.push('/workspace/system');
-    else if (nav === 'settings') router.push('/settings');
-    else if (nav === 'models') router.push('/admin?tab=models');
-    else if (nav === 'jobs') router.push('/workspace/jobs');
-  }, [router, setMainNav]);
+    if (nav === 'settings') {
+      router.push('/admin?tab=settings');
+      return;
+    }
+    if (nav === 'models') {
+      router.push('/admin?tab=models');
+      return;
+    }
+
+    const routeMap: Record<string, string> = {
+      dashboard: '/workspace/overview',
+      assets: '/workspace/assets',
+      system: '/workspace/system',
+      jobs: '/workspace/jobs',
+      workspace: '/workspace',
+    };
+    const targetRoute = routeMap[nav];
+    if (targetRoute) {
+      if (typeof window !== 'undefined' && isWorkspaceShellActive(pathname)) {
+        // Use replaceState instead of router.push to avoid full page remount.
+        // This keeps the MeshViewer and 3D stage alive while switching overlay views.
+        window.history.replaceState(null, '', targetRoute);
+      } else {
+        router.push(targetRoute);
+      }
+    }
+  }, [pathname, router, setMainNav, isWorkspaceShellActive]);
 
   // Split context value into smaller memos to reduce re-render scope.
   // Each memo only recalculates when its specific dependencies change.

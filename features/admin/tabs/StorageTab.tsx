@@ -157,7 +157,7 @@ export function StorageTab() {
             className="text-xs font-semibold"
           >
             <HugeiconsIcon icon={RefreshCwIcon} size={16} />
-            RefreshIcon Stats
+            Refresh Stats
           </Button>
 
           <Button

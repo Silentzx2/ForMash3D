@@ -168,7 +168,7 @@ export const ExportModal: React.FC = () => {
 
           {/* Section 2: Format Selector */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">TargetIcon Format</label>
+            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Target Format</label>
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
               {[
                 { id: 'glb', label: 'GLB', tip: 'Binary' },
@@ -208,7 +208,7 @@ export const ExportModal: React.FC = () => {
               </div>
             </div>
             <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
-              <span>PackageIcon complete workspace</span>
+              <span>Package complete workspace</span>
               <input
                 type="checkbox"
                 checked={packageZip}

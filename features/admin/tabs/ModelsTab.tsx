@@ -114,14 +114,14 @@ export function ModelsTab() {
         </GlassCard>
       </div>
 
-      {/* FilterIcon and SearchIcon Bar */}
+      {/* Filter and Search Bar */}
       <GlassCard className="p-3">
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
              <HugeiconsIcon icon={Search01Icon} size={16} className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="SearchIcon model by name, ID or keywords..."
+              placeholder="Search model by name, ID or keywords..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[hsl(var(--admin-accent))]"
@@ -146,7 +146,7 @@ export function ModelsTab() {
               onClick={loadData}
               disabled={loading}
               className="p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              title="RefreshIcon Models"
+              title="Refresh Models"
             >
                <HugeiconsIcon icon={RefreshCwIcon} size={16} />
             </button>
@@ -154,7 +154,7 @@ export function ModelsTab() {
         </div>
       </GlassCard>
 
-      {/* Models GridIcon */}
+      {/* Models Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredModels.map((m, idx) => (
           <motion.div

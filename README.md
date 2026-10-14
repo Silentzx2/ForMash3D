@@ -123,8 +123,8 @@ flowchart TD
     classDef slate fill:#181c24,stroke:#64748b,stroke-width:2px,color:#f1f5f9;
 
     subgraph Client [Studio Frontend Next.js 16 port 3000]
-        UI["Studio Workspace UI<br/>React 19 + Radix UI"]:::gold
-        VIEWER["3D WebGL Viewport<br/>Three.js / React Three Fiber"]:::gold
+        UI["Unified Dynamic-Tab Studio UI<br/>React 19 + Radix UI + Motion"]:::gold
+        VIEWER["Continuous 3D WebGL Viewport<br/>Three.js Persistent Canvas Stage"]:::gold
         STORES["Reactive State Stores<br/>Zustand + TanStack Query"]:::gold
     end
 

@@ -284,7 +284,7 @@ export async function uploadMeshAsset(file: File): Promise<ModelAsset> {
       },
       topology: 'Triangle',
       dateCreated: '',
-      tags: ['Custom', 'UserIcon-UploadIcon', 'Mesh'],
+      tags: ['Custom', 'User-Upload', 'Mesh'],
     });
   } catch {
     return createUploadedMeshAsset(file);

@@ -120,7 +120,7 @@ const handlePurge = async () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setLoading(true); load(); }}
-            title="RefreshIcon queue"
+            title="Refresh queue"
             className="p-2 rounded-xl glass border border-[hsl(var(--border)/0.5)] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           >
             <HugeiconsIcon icon={RefreshCwIcon} className="w-4 h-4" />

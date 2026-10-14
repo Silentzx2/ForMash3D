@@ -3717,7 +3717,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                       setPhysicsRunning(running);
                     }}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
-                  >{physicsRunning ? 'PauseIcon' : 'PlayIcon'}</button>
+                  >{physicsRunning ? 'Pause' : 'Play'}</button>
                   <button type="button" disabled={!physicsViewerReady}
                     onClick={() => physicsRuntimeRef.current?.isReady() && physicsRuntimeRef.current.step()}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"

@@ -502,3 +502,35 @@ Printability, Auto-Repair, and Auto-Rig are explicit controls. All execute throu
 The generation experience exposes model capability state, quality mode, polycount, texture quality, progress/fallback state and high-fidelity vs optimized output variants without exposing controls unsupported by the selected model.
 
 Quality mode must never silently downgrade the immutable master. A requested polycount applies to derivative generation, not to the master.
+
+## UI/UX Pro Max Studio Interface & Navigation Unification — 2026-10-13
+
+### Compact Studio Information Density
+- **Spacing Grid**: Standardized on 8px/12px/16px padding grids across control toolbars, cards, and inspector panels.
+- **Surface Elevation**: Dark glassmorphic background surfaces (`--surface-0: 0 0% 3.1%`, `--surface-1: 0 0% 7.5%`, `--surface-2: 0 0% 11.5%`) paired with subtle structural borders (`border-white/[0.08]` to `border-white/[0.12]`) and backdrop blur (`16px`).
+- **Tactile Feedback**: Interactive buttons and toggle rows feature micro-interactions (`active:scale-[0.98]`), gold accent focus rings (`ring-primary/40`), and smooth ease-out transitions (`200ms`).
+
+### Navigation & Settings Icon Harmonization
+- **Admin Navigation**: Each sidebar and shell route resolves to a designated semantic icon without duplicate or fallback icons (`LayoutDashboardIcon`, `BoxesIcon`, `Activity01Icon`, `ScrollTextIcon`, `Briefcase01Icon`, `ListOrderedIcon`, `HeartPulseIcon`, `HardDriveIcon`, `Database01Icon`, `Settings01Icon`).
+- **Settings Sub-Tabs**: Admin settings sections and workspace settings modal share aligned icons:
+  - **General**: `Settings02Icon`
+  - **Generation / AI Inference**: `SparklesIcon`
+  - **Workspace / Viewport**: `LayoutGridIcon`
+  - **Export & Backup**: `Download01Icon`
+  - **API & Server**: `ServerIcon`
+  - **Shortcuts**: `KeyboardIcon`
+  - **Notifications**: `BellIcon`
+  - **Advanced & Controls**: `SlidersHorizontalIcon`
+- **Cross-Surface Synchronization**: Workspace `SettingsModal` footer deep-links directly to the corresponding active section in Admin Settings (`/admin?tab=settings&section=${activeSection}`).
+- **Zero Icon Leaks**: Placeholders, tooltips, button texts, and comments strictly display plain language labels (`Refresh`, `Search`, `Target Mesh`, `Brush Dynamics`, etc.) with zero literal `*Icon` tokens.
+
+## Continuous 3D Viewport & Dynamic-Tab Studio Architecture — 2026-10-13
+
+### Non-Destructive Viewport Stage
+- **Persistent WebGL Stage**: The full-bleed 3D viewport (`MeshViewer`) and tool overlay (`ViewportToolOverlay`) remain permanently mounted across all workspace tool switches (`Model`, `Poly/Remesh`, `Texture`, `UV`, `Segment`, `Edit`, `Animate`, `Rigging`).
+- **Zero Canvas Tearing**: WebGL context, Three.js shaders, active mesh geometry, camera angle, turntable rotation, and lighting are completely preserved during tool transitions with sub-16ms response time.
+- **Dynamic Floating Rails**:
+  - **Left Rail**: Floating context panel renders tool-specific controls (`GeneratePanel`, `RemeshPanel`, `TexturePanel`, `UVUnwrapPanel`, `MeshSegmentPanel`, `MeshEditPanel`, `AnimationLeftPanel`, `RiggingLeftPanel`) with Framer Motion slide-in transitions.
+  - **Right Rail**: Contextual property inspector renders tool-aware inspect panels (`RightPropertyPanel`, `UVInspector`, `SegmentInspector`, `MeshEditInspector`, `AnimationRightInspector`, `RiggingRightInspector`).
+  - **Bottom Dock**: Viewport overlay docks `AnimationTimelineDock` during animation workflows, exposing transport controls, dual-track keyframe/clip scrubbing, and FPS selection directly within the viewport.
+- **Overlay Navigation**: Top-level views (`Overview`, `Assets`, `Jobs`, `System`) render as lightweight Framer Motion overlays via `window.history.replaceState`, preserving underlying 3D scene state.

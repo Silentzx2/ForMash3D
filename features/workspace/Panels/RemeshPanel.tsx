@@ -75,12 +75,12 @@ export const RemeshPanel: React.FC = () => {
       {/* Main Body */}
       <div className="flex-1 overflow-y-auto px-2 py-2 pb-2 space-y-2 scrollbar-none pr-1">
         <div className="space-y-2">
-            {/* TargetIcon 3D Mesh Selector Card */}
+            {/* Target 3D Mesh Selector Card */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-zinc-300 flex items-center gap-1.5">
                   <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>TargetIcon 3D Mesh</span>
+                  <span>Target 3D Mesh</span>
                 </span>
                 <div className="flex items-center gap-1.5">
                   <input
@@ -96,7 +96,7 @@ export const RemeshPanel: React.FC = () => {
                     className="px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[9px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                   >
                     <HugeiconsIcon icon={UploadIcon} size={16} className="w-2.5 h-2.5 text-primary" />
-                    <span>UploadIcon</span>
+                    <span>Upload</span>
                   </button>
                   {currentAsset ? (
                     <span className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">
@@ -173,7 +173,7 @@ export const RemeshPanel: React.FC = () => {
                       className="px-2.5 py-1 rounded-md bg-white/[0.08] hover:bg-white/[0.14] text-white font-bold text-[9px] transition-colors cursor-pointer flex items-center gap-1"
                     >
                       <HugeiconsIcon icon={UploadIcon} size={16} className="w-2.5 h-2.5 text-primary" />
-                      <span>UploadIcon Mesh</span>
+                      <span>Upload Mesh</span>
                     </button>
                     <button
                       type="button"

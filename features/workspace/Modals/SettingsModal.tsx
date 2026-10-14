@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { apiClient } from '../lib/api';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AlertCircle, BrushIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, GridIcon, Monitor, RefreshCw, ServerIcon, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
+import { AlertCircle, BrushIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, GridIcon, LayoutGridIcon, Monitor, RefreshCw, ServerIcon, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 type SettingsTab = 'server' | 'viewport' | 'sculpt' | 'ai';
 
 export const SettingsModal: React.FC = () => {
@@ -143,7 +144,7 @@ export const SettingsModal: React.FC = () => {
       } else {
         setTestResult({
           success: false,
-          msg: 'Backend server returned offline status. CheckIcon your FastAPI service.',
+          msg: 'Backend server returned offline status. Check your FastAPI service.',
         });
         refreshSystemStats();
       }
@@ -201,12 +202,11 @@ export const SettingsModal: React.FC = () => {
         {/* Tab Navigation */}
         <div className="flex items-center gap-1 px-5 pt-2.5 bg-[hsl(var(--surface-2))] border-b border-white/[0.08] flex-shrink-0">
           {[
-            { id: 'server' as const, label: 'Backend & Server', icon: (props: any) => <HugeiconsIcon icon={ServerIcon} size={16} {...props} /> },
-            { id: 'viewport' as const, label: '3D Viewport', icon: (props: any) => <HugeiconsIcon icon={Monitor} size={16} {...props} /> },
-            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: (props: any) => <HugeiconsIcon icon={BrushIcon} size={16} {...props} /> },
-            { id: 'ai' as const, label: 'AI Inference', icon: (props: any) => <HugeiconsIcon icon={SparklesIcon} size={16} {...props} /> },
+            { id: 'server' as const, label: 'Backend & Server', icon: ServerIcon },
+            { id: 'viewport' as const, label: '3D Viewport', icon: LayoutGridIcon },
+            { id: 'sculpt' as const, label: 'Sculpt & Brush', icon: BrushIcon },
+            { id: 'ai' as const, label: 'AI Inference', icon: SparklesIcon },
           ].map((tab) => {
-            const Icon = tab.icon;
             const active = activeTab === tab.id;
             return (
               <button
@@ -218,7 +218,7 @@ export const SettingsModal: React.FC = () => {
                     : 'text-zinc-400 hover:text-white border-transparent hover:bg-white/[0.04]'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <HugeiconsIcon icon={tab.icon} size={14} className={`w-3.5 h-3.5 shrink-0 ${active ? 'text-primary' : ''}`} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -649,19 +649,29 @@ export const SettingsModal: React.FC = () => {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2.5 px-5 py-3.5 bg-[hsl(var(--surface-2))] border-t border-white/[0.08] flex-shrink-0">
-          <button
+        <div className="flex items-center justify-between gap-2.5 px-5 py-3.5 bg-[hsl(var(--surface-2))] border-t border-white/[0.08] flex-shrink-0">
+          <Link
+            href={`/admin?tab=settings&section=${activeTab === 'server' ? 'api' : activeTab === 'viewport' || activeTab === 'sculpt' ? 'workspace' : 'generation'}`}
             onClick={() => setIsSettingsOpen(false)}
-            className="px-4 py-2 rounded-xl bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] hover:text-white font-medium text-xs transition-colors cursor-pointer"
+            className="text-xs text-zinc-400 hover:text-primary flex items-center gap-1.5 transition-colors"
           >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            className="px-5 py-2 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-black font-extrabold text-xs shadow-md shadow-primary/20 transition-all cursor-pointer"
-          >
-            Save Settings
-          </button>
+            <HugeiconsIcon icon={SlidersHorizontalIcon} size={14} />
+            <span>Open All Admin Settings</span>
+          </Link>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsSettingsOpen(false)}
+              className="px-4 py-2 rounded-xl bg-white/[0.04] text-zinc-400 hover:bg-white/[0.08] hover:text-white font-medium text-xs transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="px-5 py-2 rounded-xl bg-primary hover:bg-primary/90 active:scale-95 text-black font-extrabold text-xs shadow-md shadow-primary/20 transition-all cursor-pointer"
+            >
+              Save Settings
+            </button>
+          </div>
         </div>
       </div>
     </div>

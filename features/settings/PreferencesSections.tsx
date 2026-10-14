@@ -102,7 +102,7 @@ export function ShortcutsSection() {
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">KeyboardIcon Shortcuts</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Keyboard Shortcuts</h1>
         <p className="text-muted-foreground mt-2">Customize your keyboard shortcuts for faster workflow.</p>
       </div>
       
@@ -117,7 +117,7 @@ export function ShortcutsSection() {
         <CardContent>
           <div className="grid gap-4">
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Open Command PaletteIcon</span>
+              <span>Open Command Palette</span>
               <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">Ctrl/Cmd + K</kbd>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
@@ -129,7 +129,7 @@ export function ShortcutsSection() {
               <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">/</kbd>
             </div>
             <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Quick SaveIcon</span>
+              <span>Quick Save</span>
               <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">Ctrl/Cmd + S</kbd>
             </div>
           </div>
@@ -247,7 +247,7 @@ export function AdvancedSection({ onSaveRegister }: { onSaveRegister?: (save: ()
 
     if (typeof window !== 'undefined') {
       keysToReset.forEach(key => localStorage.removeItem(key));
-      toast.success("SettingsIcon have been reset to factory defaults.");
+      toast.success("Settings have been reset to factory defaults.");
       setTimeout(() => {
         window.location.reload();
       }, 1000);

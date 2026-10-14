@@ -351,7 +351,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
                 ) : (
                   <>
                     <HugeiconsIcon icon={SendIcon} size={16} className={`w-4 h-4 ${isSending ? 'animate-bounce' : ''}`} />
-                    <span>{isSending ? 'Transmitting Mesh...' : `SendIcon to ${currentPreset.name.split(' ')[0]}`}</span>
+                    <span>{isSending ? 'Transmitting Mesh...' : `Send to ${currentPreset.name.split(' ')[0]}`}</span>
                   </>
                 )}
               </button>

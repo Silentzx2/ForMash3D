@@ -364,3 +364,13 @@ The production result distinguishes the immutable high-fidelity master from the 
 ## Normalized Capability Contract — 2026-10-08
 
 Model configuration is normalized once at load time into a shared capability contract. The same contract drives smart intent admission, scheduler routing, optional preprocessing profiles, runtime model details, multi-GPU eligibility and UI capability state. Production QA reports finite-geometry checks, UV/material checks, LOD lineage and master-to-derivative drift without modifying master/source.glb.
+
+## Continuous 3D Viewport & Dynamic-Tab Architecture — 2026-10-13
+
+The Next.js 16 Presentation Layer runs a persistent, non-destructive 3D workspace:
+- **Permanent WebGL Viewport (`MeshViewer`)**: The Three.js 3D canvas and `ViewportToolOverlay` stay mounted continuously in `#center-viewport-stage` across all workspace tool switches (`model`, `remesh`, `texture`, `uv`, `segment`, `edit`, `animation`, `rigging`), eliminating canvas destructions, WebGL context recreation lag, and mesh re-loading.
+- **Dynamic Floating Rails**:
+  - Left floating rail routes via `renderToolPanel()` to lightweight modules (`GeneratePanel`, `RemeshPanel`, `TexturePanel`, `UVUnwrapPanel`, `MeshSegmentPanel`, `MeshEditPanel`, `AnimationLeftPanel`, `RiggingLeftPanel`).
+  - Right inspector rail routes via `RightWorkspacePanel` to tool-specific inspectors (`RightPropertyPanel`, `UVInspector`, `SegmentInspector`, `MeshEditInspector`, `AnimationRightInspector`, `RiggingRightInspector`).
+  - Viewport-anchored overlays (`AnimationTimelineDock`) provide in-canvas transport controls, scrubbing, and FPS selection.
+- **Non-Destructive Navigation**: `navigateToMain` in `WorkspaceContext` uses `window.history.replaceState` for hub views (`overview`, `assets`, `jobs`, `system`), preserving the 3D scene state in memory without page destruction.

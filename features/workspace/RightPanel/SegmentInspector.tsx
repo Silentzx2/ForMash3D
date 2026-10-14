@@ -89,7 +89,7 @@ export const SegmentInspector: React.FC = () => {
                 download
               >
                 <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
-                <span>DownloadIcon Segmented GLB</span>
+                <span>Download Segmented GLB</span>
               </a>
             )}
           </>

@@ -1750,7 +1750,7 @@ export const GeneratePanel: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
                   <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-                  <span>Mesh SettingsIcon</span>
+                  <span>Mesh Settings</span>
                 </div>
                 <span className="text-[9.5px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />

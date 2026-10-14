@@ -46,7 +46,7 @@ export const RightPropertyPanel: React.FC = () => {
     lockScale: true
   });
 
-  // Material & PBR Shader SettingsIcon
+  // Material & PBR Shader Settings
   const [materialSettings, setMaterialSettings] = useState({
     albedoColor: 'hsl(0, 0%, 100%)',
     roughness: 0.45,

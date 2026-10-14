@@ -21,16 +21,30 @@ import type { RuntimeStatus } from '@/types';
 import { mapSystemStatusToRuntimeStatus } from '@/features/admin/utils/systemStatus';
 
 const ICON_MAP: Record<string, any> = {
-  LayoutDashboardIcon: LayoutDashboardIcon,
-  BoxesIcon: BoxesIcon,
+  LayoutDashboard: LayoutDashboardIcon,
+  Boxes: BoxesIcon,
+  Activity: Activity01Icon,
+  ScrollText: ScrollTextIcon,
+  Briefcase: Briefcase01Icon,
+  ListOrdered: ListOrderedIcon,
+  HeartPulse: HeartPulseIcon,
+  Settings: Settings01Icon,
+  HardDrive: HardDriveIcon,
+  Database01: Database01Icon,
+  Database: Database01Icon,
+  LayoutDashboardIcon,
+  BoxesIcon,
   ActivityIcon: Activity01Icon,
-  ScrollTextIcon: ScrollTextIcon,
+  Activity01Icon,
+  ScrollTextIcon,
   BriefcaseIcon: Briefcase01Icon,
-  ListOrderedIcon: ListOrderedIcon,
-  HeartPulseIcon: HeartPulseIcon,
+  Briefcase01Icon,
+  ListOrderedIcon,
+  HeartPulseIcon,
   SettingsIcon: Settings01Icon,
-  HardDriveIcon: HardDriveIcon,
-  Database01Icon: Database01Icon,
+  Settings01Icon,
+  HardDriveIcon,
+  Database01Icon,
 };
 
 export type AdminTab =
@@ -189,7 +203,7 @@ export function AdminShell({ activeTab, onTabChange, children }: AdminShellProps
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="SearchIcon models, jobs, logs..."
+                placeholder="Search models, jobs, logs..."
                 className="w-full h-9 pl-9 pr-4 rounded-xl glass text-sm text-foreground placeholder:text-muted-foreground/50 border border-[hsl(var(--border))] focus:border-primary/50 focus:outline-none transition-colors"
               />
               <kbd className="absolute right-3 top-1/2 -translate-y-1/2 hidden md:flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-surface-2 text-[10px] text-muted-foreground border border-border">

@@ -42,7 +42,7 @@ export const SecondaryPanel: React.FC<{ tool: ToolType }> = ({ tool }) => {
 
         <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] space-y-1.5">
           <div className="flex items-center justify-between text-[10px]">
-            <span className="text-zinc-400">TargetIcon Mesh:</span>
+            <span className="text-zinc-400">Target Mesh:</span>
             <span className="font-mono text-primary font-bold truncate max-w-[120px]">{currentAsset?.name || 'No asset selected'}</span>
           </div>
           <div className="text-[9px] text-zinc-500">Mesh segmentation decomposes your mesh into functional parts.</div>
@@ -115,7 +115,7 @@ export const SecondaryPanel: React.FC<{ tool: ToolType }> = ({ tool }) => {
       <div id="panel-edit" className="flex flex-col h-full overflow-y-auto px-2.5 py-2.5 space-y-3 text-xs select-none bg-[hsl(var(--surface-1))]">
         <span className="text-[11px] font-bold uppercase tracking-wider text-primary">Sculpt Brushes</span>
         <div className="grid grid-cols-2 gap-1.5">
-          {['Grab / MoveIcon', 'Smooth', 'Inflate', 'Pinch', 'Flatten', 'Clay Strips'].map((brush) => (
+          {['Grab / Move', 'Smooth', 'Inflate', 'Pinch', 'Flatten', 'Clay Strips'].map((brush) => (
             <button key={brush} type="button" disabled title="Sculpt backend is not implemented" className="p-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] text-zinc-400 font-bold text-[10px] text-left transition-all opacity-60 cursor-not-allowed">
               {brush}
             </button>

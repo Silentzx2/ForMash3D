@@ -54,7 +54,7 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
   const isAssetsActive = mainNav === 'assets';
   const isJobsActive = mainNav === 'jobs';
 
-  // CheckIcon if a specific tool is running a background generation
+  // Check if a specific tool is running a background generation
   const isModelExecuting = isExecuting && (activeTask?.type === 'image-to-3d' || !activeTask?.type);
   const isRemeshExecuting = isExecuting && activeTask?.type === 'remesh';
   const isTextureExecuting = isExecuting && activeTask?.type === 'texture';

@@ -57,13 +57,16 @@ const ViewportToolOverlay = dynamic(() => import('./Viewport/ViewportToolOverlay
 
 import { RightWorkspacePanel } from './RightPanel/RightWorkspacePanel';
 
-const AnimationStudio = dynamic(() => import('./Animation/AnimationStudio').then(mod => mod.AnimationStudio), {
+const AnimationLeftPanel = dynamic(() => import('./Animation/AnimationLeftPanel').then(mod => mod.AnimationLeftPanel), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
 });
-const RiggingStudio = dynamic(() => import('./Rigging/RiggingStudio').then(mod => mod.RiggingStudio), {
+const RiggingLeftPanel = dynamic(() => import('./Rigging/RiggingLeftPanel').then(mod => mod.RiggingLeftPanel), {
   ssr: false,
-  loading: () => <div className="w-full h-full bg-[hsl(var(--surface-0))] animate-pulse" />
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
+const MotionLibraryDrawer = dynamic(() => import('./Animation/MotionLibraryDrawer').then(mod => mod.MotionLibraryDrawer), {
+  ssr: false,
 });
 
 const OutputsPage = dynamic(() => import('./Dashboard/OutputsPage').then(mod => mod.OutputsPage), {
@@ -123,7 +126,7 @@ export const WorkspaceShell: React.FC = () => {
   // Mobile menu state: left navigation drawer
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
-  // Global Workspace Navigation KeyboardIcon Shortcuts (⌘1, ⌘2, ⌘3, ⌘4→Logs, G, R, T, A, S, ⌘,)
+  // Global Workspace Navigation Keyboard Shortcuts (⌘1, ⌘2, ⌘3, ⌘4→Logs, G, R, T, A, S, ⌘,)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting keystrokes in inputs, textareas, or content-editable elements
@@ -323,6 +326,8 @@ export const WorkspaceShell: React.FC = () => {
       case 'uv': return <UVUnwrapPanel />;
       case 'segment': return <MeshSegmentPanel />;
       case 'edit': return <MeshEditPanel />;
+      case 'animation': return <AnimationLeftPanel />;
+      case 'rigging': return <RiggingLeftPanel />;
       case 'upscale': case 'pbr': return <SecondaryPanel tool={activeTool} />;
       default: return <GeneratePanel />;
     }
@@ -380,23 +385,13 @@ export const WorkspaceShell: React.FC = () => {
 
         {/* Center Workspace & 3D Stage */}
         <div className="flex-1 h-full relative overflow-hidden min-w-0">
-          {mainNav === 'workspace' && activeTool === 'animation' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[#111317]">
-              <AnimationStudio />
+          {/* Continuous Full-Bleed 3D Viewport in Background */}
+          {mainNav === 'workspace' && (
+            <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden bg-[#111317]">
+              <MeshViewer />
+              <ViewportToolOverlay />
             </main>
-          ) : mainNav === 'workspace' && activeTool === 'rigging' ? (
-            <main id="center-viewport-stage" className="absolute inset-0 z-10 overflow-hidden bg-[#111317]">
-              <RiggingStudio />
-            </main>
-          ) : (
-            <>
-              {/* Continuous Full-Bleed 3D Viewport in Background */}
-              {mainNav === 'workspace' && (
-                <main id="center-viewport-stage" className="absolute inset-0 z-0 overflow-hidden bg-[#111317]">
-                  <MeshViewer />
-                  <ViewportToolOverlay />
-                </main>
-              )}
+          )}
 
               {/* Floating Context Tool Panel (Left) - Responsive width & mobile sheet */}
               <AnimatePresence initial={false}>
@@ -526,8 +521,6 @@ export const WorkspaceShell: React.FC = () => {
               </button>
             </div>
           )}
-            </>
-          )}
         </div>
 
         {/* Dashboard/Assets/System overlays with smooth Framer Motion transition - matching exact workspace dimensions */}
@@ -585,6 +578,7 @@ export const WorkspaceShell: React.FC = () => {
       <SettingsModal />
       <ExportModal />
       <DccBridgeModal />
+      <MotionLibraryDrawer />
     </div>
   );
 };

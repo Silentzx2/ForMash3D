@@ -1,0 +1,235 @@
+'use client';
+
+import React from 'react';
+import { useWorkspace } from '../store/WorkspaceContext';
+import { useRiggingStore } from '@/stores/useRiggingStore';
+import { useAnimationStore } from '@/stores/useAnimationStore';
+import { toast } from 'sonner';
+import { HugeiconsIcon } from '@hugeicons/react';
+import {
+  BoneIcon,
+  ChevronDown,
+  ChevronUp,
+  FolderOpenIcon,
+  LoaderCircle,
+  SparklesIcon,
+  UserIcon,
+} from '@hugeicons/core-free-icons';
+
+export const RiggingLeftPanel: React.FC = () => {
+  const { currentAsset, navigateToTool } = useWorkspace();
+  const {
+    characterName,
+    characterVertices,
+    characterSizeMb,
+    riggingMethod,
+    setRiggingMethod,
+    targetSkeleton,
+    setTargetSkeleton,
+    createIkControls,
+    setCreateIkControls,
+    optimizeForAnimation,
+    setOptimizeForAnimation,
+    symmetry,
+    setSymmetry,
+    reuseExistingWeights,
+    setReuseExistingWeights,
+    advancedOptionsOpen,
+    setAdvancedOptionsOpen,
+    isGenerating,
+    generationProgress,
+    generationStatus,
+    generationError,
+    generateRig,
+  } = useRiggingStore();
+
+  const { setXMirrorEnabled } = useAnimationStore();
+
+  const handleGenerate = async () => {
+    try {
+      await generateRig();
+    } catch {
+      // errors handled in store
+    }
+  };
+
+  const displayName = currentAsset?.name || characterName || 'Character Mesh';
+  const displayVertices = currentAsset?.vertices || characterVertices || 28450;
+  const displaySize = currentAsset?.fileSize || `${characterSizeMb} MB`;
+
+  return (
+    <div id="rigging-left-panel" className="flex flex-col h-full overflow-y-auto p-3 space-y-3.5 text-xs select-none bg-[hsl(var(--surface-1))] custom-scrollbar">
+      {/* Target Character Card */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold text-zinc-300 uppercase tracking-wide">Target Character</label>
+        <div className="p-2.5 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] space-y-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center text-primary flex-shrink-0">
+              <HugeiconsIcon icon={UserIcon} size={16} className="w-5 h-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-white truncate">{displayName}</p>
+              <p className="text-[10px] text-zinc-400 font-mono">
+                {displaySize} • {displayVertices.toLocaleString()} verts
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => navigateToTool('model')}
+            className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] rounded-lg text-[11px] font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <HugeiconsIcon icon={FolderOpenIcon} size={14} className="w-3.5 h-3.5 text-zinc-400" />
+            <span>Select Different Model</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Rigging Method */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold text-zinc-300 uppercase tracking-wide">Rigging Pipeline</label>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            onClick={() => setRiggingMethod('auto_rig')}
+            className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+              riggingMethod === 'auto_rig'
+                ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                : 'border-white/[0.08] bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <HugeiconsIcon icon={SparklesIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+              <span className="font-bold text-[11px] text-white">UniRig AI</span>
+            </div>
+            <p className="text-[9px] text-zinc-400 leading-tight">Neural automatic skeletal fitting</p>
+          </button>
+
+          <button
+            onClick={() => setRiggingMethod('manual_rig')}
+            className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+              riggingMethod === 'manual_rig'
+                ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                : 'border-white/[0.08] bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <HugeiconsIcon icon={BoneIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+              <span className="font-bold text-[11px] text-white">Manual Armature</span>
+            </div>
+            <p className="text-[9px] text-zinc-400 leading-tight">Freehand interactive bone editing</p>
+          </button>
+        </div>
+      </div>
+
+      {/* Target Skeleton Preset */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-bold text-zinc-300 uppercase tracking-wide">Skeleton Template</label>
+        <div className="space-y-1">
+          {[
+            { id: 'biped' as const, label: 'Core Biped (19-Joint)', desc: 'Fast, lightweight humanoid for ARDY motion' },
+            { id: 'humanoid' as const, label: 'Full Humanoid (53-Joint)', desc: 'Production rig with fingers & facial joints' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTargetSkeleton(t.id)}
+              className={`w-full p-2 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                targetSkeleton === t.id
+                  ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
+                  : 'border-white/[0.08] bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white'
+              }`}
+            >
+              <div>
+                <p className="font-bold text-[11px] text-white">{t.label}</p>
+                <p className="text-[9px] text-zinc-400">{t.desc}</p>
+              </div>
+              <div className={`w-2.5 h-2.5 rounded-full border ${targetSkeleton === t.id ? 'border-primary bg-primary' : 'border-zinc-600'}`} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Advanced Options Accordion */}
+      <div className="border border-white/[0.08] rounded-xl bg-[hsl(var(--surface-0))] overflow-hidden">
+        <button
+          onClick={() => setAdvancedOptionsOpen(!advancedOptionsOpen)}
+          className="w-full px-3 py-2 flex items-center justify-between text-[11px] font-bold text-zinc-300 hover:text-white cursor-pointer"
+        >
+          <span>Advanced Rigging Options</span>
+          <HugeiconsIcon icon={advancedOptionsOpen ? ChevronUp : ChevronDown} size={14} className="w-3.5 h-3.5 text-zinc-400" />
+        </button>
+
+        {advancedOptionsOpen && (
+          <div className="p-3 border-t border-white/[0.08] space-y-2 text-[11px]">
+            <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
+              <span>Create IK Solvers</span>
+              <input
+                type="checkbox"
+                checked={createIkControls}
+                onChange={(e) => setCreateIkControls(e.target.checked)}
+                className="rounded border-white/[0.1] bg-[hsl(var(--surface-1))] text-primary focus:ring-0 cursor-pointer"
+              />
+            </label>
+            <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
+              <span>Bilateral Symmetry (-X Mirror)</span>
+              <input
+                type="checkbox"
+                checked={symmetry}
+                onChange={(e) => {
+                  setSymmetry(e.target.checked);
+                  setXMirrorEnabled(e.target.checked);
+                }}
+                className="rounded border-white/[0.1] bg-[hsl(var(--surface-1))] text-primary focus:ring-0 cursor-pointer"
+              />
+            </label>
+            <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
+              <span>Reuse Existing Skinning Weights</span>
+              <input
+                type="checkbox"
+                checked={reuseExistingWeights}
+                onChange={(e) => setReuseExistingWeights(e.target.checked)}
+                className="rounded border-white/[0.1] bg-[hsl(var(--surface-1))] text-primary focus:ring-0 cursor-pointer"
+              />
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Action: Generate Rig Button */}
+      <button
+        onClick={handleGenerate}
+        disabled={isGenerating}
+        className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+      >
+        {isGenerating ? (
+          <>
+            <HugeiconsIcon icon={LoaderCircle} size={16} className="w-4 h-4 animate-spin text-black" />
+            <span>Calculating Armature ({generationProgress}%)...</span>
+          </>
+        ) : (
+          <>
+            <HugeiconsIcon icon={BoneIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
+            <span>GENERATE RIG WITH UNIRIG</span>
+          </>
+        )}
+      </button>
+
+      {/* Progress or Error Status */}
+      {isGenerating && (
+        <div className="space-y-1">
+          <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary transition-all duration-300"
+              style={{ width: `${generationProgress}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-zinc-400 text-center font-mono">{generationStatus}</p>
+        </div>
+      )}
+      {generationError && (
+        <p className="text-[10px] text-red-400 font-mono bg-red-500/10 p-2 rounded-lg border border-red-500/20">
+          {generationError}
+        </p>
+      )}
+    </div>
+  );
+};

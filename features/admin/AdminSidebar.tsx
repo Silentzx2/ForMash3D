@@ -6,7 +6,7 @@ import {
   LayoutDashboardIcon, Layers01Icon, PackageIcon, ListOrderedIcon,
   CpuIcon, ScrollTextIcon, Settings01Icon, Activity01Icon,
   BriefcaseBusinessIcon, ChevronRight, ExternalLinkIcon,
-  BoxesIcon, HardDriveIcon,
+  BoxesIcon, HardDriveIcon, Database01Icon,
 } from '@hugeicons/core-free-icons';
 import { cn } from '@/lib/utils';
 
@@ -17,13 +17,14 @@ const PRIMARY_NAV: { id: AdminTab | null; label: string; icon: any; href?: strin
   { id: 'queue', label: 'Queue', icon: ListOrderedIcon },
   { id: 'runtime', label: 'Runtime', icon: CpuIcon },
   { id: 'logs', label: 'Live Logs', icon: ScrollTextIcon },
-  { id: 'settings', label: 'SettingsIcon', icon: Settings01Icon },
+  { id: 'settings', label: 'Settings', icon: Settings01Icon },
 ];
 
 const ADMIN_NAV: { id: AdminTab; label: string; icon: any }[] = [
   { id: 'health', label: 'Health', icon: Activity01Icon },
   { id: 'jobs', label: 'Jobs', icon: BriefcaseBusinessIcon },
   { id: 'storage', label: 'Storage', icon: HardDriveIcon },
+  { id: 'database', label: 'Database', icon: Database01Icon },
 ];
 
 export default function AdminSidebar({
@@ -175,7 +176,7 @@ export default function AdminSidebar({
         </div>
       </div>
 
-      {/* UserIcon footer */}
+      {/* User footer */}
       <div className="px-3 py-3" style={{ borderTop: '1px solid hsl(var(--border) / 0.5)' }}>
         <div className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-[hsl(var(--primary)/0.05)] transition-colors cursor-pointer group">
           <div

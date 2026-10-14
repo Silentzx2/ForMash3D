@@ -297,7 +297,7 @@ export function GpuVramLineChart({
               </div>
             )}
 
-            {/* Toggle Streaming & RefreshIcon */}
+            {/* Toggle Streaming & Refresh */}
             <button
               onClick={() => setIsLive(!isLive)}
               className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors ${
@@ -305,7 +305,7 @@ export function GpuVramLineChart({
                   ? 'bg-[hsl(var(--chart-vram))]/10 border-[hsl(var(--chart-vram))]/40 text-[hsl(var(--chart-vram))] hover:bg-[hsl(var(--chart-vram))]/20'
                   : 'bg-[hsl(var(--destructive))]/10 border-[hsl(var(--destructive))]/40 text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive))]/20'
               }`}
-              title={isLive ? 'PauseIcon live polling' : 'Resume live polling'}
+              title={isLive ? 'Pause live polling' : 'Resume live polling'}
             >
               {isLive ? 'Live' : 'Paused'}
             </button>
@@ -314,7 +314,7 @@ export function GpuVramLineChart({
               onClick={() => recordSample(true)}
               disabled={isRefreshing}
               className="p-1 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-colors disabled:opacity-50"
-              title="RefreshIcon now"
+              title="Refresh now"
             >
               <HugeiconsIcon icon={RefreshCw} size={16} className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-[hsl(var(--chart-vram))]' : ''}`} />
             </button>
@@ -322,7 +322,7 @@ export function GpuVramLineChart({
         </div>
       )}
 
-      {/* Chart FilterIcon Toggles */}
+      {/* Chart Filter Toggles */}
       <div className="flex items-center justify-between text-[11px] text-[hsl(var(--muted-foreground))] px-1">
         <div className="flex items-center gap-3">
           <button

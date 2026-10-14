@@ -302,8 +302,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           </button>
         </SimpleTooltip>
 
-        {/* Quick SettingsIcon Icon */}
-        <SimpleTooltip label="Quick SettingsIcon" side="bottom">
+        {/* Quick Settings Icon */}
+        <SimpleTooltip label="Quick Settings" side="bottom">
           <button
             id="btn-header-settings"
             onClick={() => setIsSettingsOpen(true)}
@@ -314,7 +314,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
         </SimpleTooltip>
 
         {/* Profile Avatar */}
-        <SimpleTooltip label="Admin & SettingsIcon" side="bottom">
+        <SimpleTooltip label="Admin & Settings" side="bottom">
           <div
             id="btn-header-profile"
             onClick={() => router.push('/admin?tab=settings')}

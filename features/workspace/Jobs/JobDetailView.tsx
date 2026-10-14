@@ -246,7 +246,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] hover:border-white/[0.16] text-xs text-zinc-300 hover:text-white transition-colors cursor-pointer"
           >
             <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" />
-            <span>RefreshIcon</span>
+            <span>Refresh</span>
           </button>
         </div>
       </div>
@@ -260,14 +260,14 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
               <HugeiconsIcon icon={SearchIcon} size={16} className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="SearchIcon job ID or model..."
+                placeholder="Search job ID or model..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-primary"
               />
             </div>
 
-            {/* FilterIcon pills */}
+            {/* Filter pills */}
             <div className="flex items-center gap-1">
               {(['all', 'running', 'completed', 'failed'] as const).map((f) => (
                 <button
@@ -588,7 +588,7 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                   <div className="pt-2 border-t border-white/[0.04] space-y-1.5 text-[11px]">
                     <div className="flex justify-between"><span className="text-zinc-400">Queue Mode</span><span className="font-mono text-white">Multi-Worker Async</span></div>
                     <div className="flex justify-between"><span className="text-zinc-400">Engine Protocol</span><span className="font-mono text-white">{selectedJob.feature || 'Mesh Generation'}</span></div>
-                    <div className="flex justify-between"><span className="text-zinc-400">TargetIcon Pipeline</span><span className="font-mono text-white">{selectedJob.model_preference || 'Standard'}</span></div>
+                    <div className="flex justify-between"><span className="text-zinc-400">Target Pipeline</span><span className="font-mono text-white">{selectedJob.model_preference || 'Standard'}</span></div>
                   </div>
                 </div>
               </div>

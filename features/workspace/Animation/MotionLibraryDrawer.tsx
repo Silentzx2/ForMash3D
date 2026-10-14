@@ -100,20 +100,20 @@ export const MotionLibraryDrawer: React.FC = () => {
             </button>
           </div>
 
-          {/* SearchIcon & Categories */}
+          {/* Search & Categories */}
           <div className="p-3 border-b border-white/[0.08] space-y-2.5 bg-[hsl(var(--surface-1))]">
             <div className="relative">
               <HugeiconsIcon icon={SearchIcon} size={16} className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
               <input
                 type="text"
-                placeholder="SearchIcon motion assets..."
+                placeholder="Search motion assets..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 bg-[hsl(var(--surface-2))] border border-white/[0.08] rounded-xl text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-primary transition-colors"
               />
             </div>
 
-            {/* FilterIcon Pills */}
+            {/* Filter Pills */}
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
               {categories.map((cat) => (
                 <button

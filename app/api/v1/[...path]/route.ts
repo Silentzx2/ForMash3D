@@ -36,7 +36,8 @@ function getBackendUrl(): string {
   const value = process.env.BACKEND_URL?.trim();
 
   if (value && value !== 'undefined' && value !== 'null') {
-    const clean = value.replace(/\/+$/, '');
+    const withoutComment = value.split('#')[0].trim();
+    const clean = withoutComment.replace(/\/+$/, '');
     // In Node.js on Linux/Colab, localhost can resolve to IPv6 ::1 and fail with ECONNREFUSED
     if (clean.includes('//localhost:7842')) {
       return clean.replace('//localhost:7842', '//127.0.0.1:7842');

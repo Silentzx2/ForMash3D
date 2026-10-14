@@ -210,10 +210,10 @@ export const AnimationViewportStage: React.FC = () => {
               }`}
             >
               <span className={`w-2 h-2 rounded-full ${autoCamera ? 'bg-black' : 'bg-zinc-600'}`} />
-              <span>Auto CameraIcon</span>
+              <span>Auto Camera</span>
             </button>
 
-            {/* Show GridIcon Checkbox */}
+            {/* Show Grid Checkbox */}
             <label className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-300 hover:text-white cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -221,7 +221,7 @@ export const AnimationViewportStage: React.FC = () => {
                 onChange={() => toggleDisplayOption('showGrid')}
                 className="rounded border-white/20 bg-[hsl(var(--surface-2))] text-primary focus:ring-0 cursor-pointer"
               />
-              <span>GridIcon</span>
+              <span>Grid</span>
             </label>
 
             {/* Show Skeleton Checkbox */}
@@ -272,7 +272,7 @@ export const AnimationViewportStage: React.FC = () => {
         <div className="absolute left-3 top-16 z-10 flex flex-col gap-1 p-1 bg-[hsl(var(--surface-1)/0.95)] backdrop-blur-md border border-white/[0.08] rounded-xl shadow-xl">
           {[
             { id: 'select', icon: <HugeiconsIcon icon={MousePointerIcon} size={16} className="w-4 h-4" />, label: 'Select (Q)' },
-            { id: 'move', icon: <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4" />, label: 'MoveIcon (W)' },
+            { id: 'move', icon: <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4" />, label: 'Move (W)' },
             { id: 'rotate', icon: <HugeiconsIcon icon={RotateCw} size={16} className="w-4 h-4" />, label: 'Rotate (E)' },
             { id: 'scale', icon: <HugeiconsIcon icon={MaximizeIcon} size={16} className="w-4 h-4" />, label: 'Scale (R)' },
           ].map((tool) => {
@@ -358,7 +358,7 @@ export const AnimationViewportStage: React.FC = () => {
               <button
                 onClick={togglePlay}
                 className="w-7 h-7 rounded-full bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] flex items-center justify-center font-black shadow-[0_0_14px_rgba(255,204,0,0.45)] transition-transform active:scale-95 cursor-pointer mx-1"
-                title={isPlaying ? 'PauseIcon' : 'PlayIcon'}
+                title={isPlaying ? 'Pause' : 'Play'}
               >
                 {isPlaying ? <HugeiconsIcon icon={PauseIcon} size={16} className="w-3.5 h-3.5 fill-current" /> : <HugeiconsIcon icon={PlayIcon} size={16} className="w-3.5 h-3.5 fill-current ml-0.5" />}
               </button>

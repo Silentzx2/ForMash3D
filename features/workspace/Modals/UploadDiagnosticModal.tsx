@@ -85,7 +85,7 @@ export const UploadDiagnosticModal: React.FC<UploadDiagnosticModalProps> = ({
               <HugeiconsIcon icon={SearchIcon} size={16} className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-[hsl(var(--foreground))]">UploadIcon Diagnostics</h3>
+              <h3 className="font-bold text-sm text-[hsl(var(--foreground))]">Upload Diagnostics</h3>
               <p className="text-[11px] text-[hsl(var(--muted-foreground))]">Diagnose GLB upload failures and HTML token errors</p>
             </div>
           </div>

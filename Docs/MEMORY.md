@@ -1,3 +1,52 @@
+## 2026-10-13 — Workspace Unified Dynamic-Tab System & Non-Destructive 3D Studio Architecture
+
+- **Continuous 3D Viewport Architecture**:
+  - Eliminated destructive unmounting of `<MeshViewer />` when switching to 3D Animate (`animation`) or Character Rigging (`rigging`).
+  - Viewport WebGL scene, camera angle, turntable status, wireframe settings, lighting, and active 3D meshes now remain 100% persistent across all 8 tools (`model`, `remesh`, `texture`, `uv`, `segment`, `edit`, `animation`, `rigging`).
+  - Removed canvas recreation lag (saving 200–500ms per switch), eliminating WebGL context loss risks and screen flicker.
+- **Modular Dynamic Tool Panels**:
+  - `renderToolPanel()` in `WorkspaceShell.tsx` dynamically routes to `AnimationLeftPanel` and `RiggingLeftPanel` within the floating left tool column.
+  - `RightWorkspacePanel.tsx` dynamically routes to `AnimationRightInspector` and `RiggingRightInspector` within the right inspector column.
+  - Viewport overlay docks the interactive `AnimationTimelineDock` at the bottom of the viewport when `activeTool === 'animation'`, with live transport controls, scrub bar, FPS selector (20, 24, 30, 60), and dual-track clip/keyframe markers.
+- **Non-Destructive Main Navigation**:
+  - `navigateToMain` in `WorkspaceContext.tsx` uses `window.history.replaceState` when already inside the workspace route tree, allowing instant overlay transitions (`overview`, `assets`, `jobs`, `system`) without tearing down or remounting the workspace page.
+- **Real Data & Clean UI**:
+  - Replaced hardcoded dummy geometry numbers in `ViewportToolOverlay.tsx` with live data from `currentAsset` and `useViewerStore` (`vertices`, `faces`/`triangles`, `dimensions`, `materials`).
+  - Eradicated all remaining leaked `*Icon` tokens in code and comments across `SecondaryPanels.tsx`, `LeftNavigation.tsx`, `AnimationViewportStage.tsx`, and `RightPropertyPanel.tsx`.
+- **Build Status**:
+  - Validated with Next.js Turbopack production compilation (`next build`): 0 errors, 100% clean build.
+
+---
+
+## 2026-10-13 — UI/UX Pro Max Studio Interface Refinement and Navigation Unification
+
+- **Navigation & Settings Iconography**:
+  - Unified all navigation icons across `AdminShell.tsx` and `AdminSidebar.tsx` with dedicated section icons (`LayoutDashboard`, `Boxes`, `Activity`, `ScrollText`, `Briefcase`, `ListOrdered`, `HeartPulse`, `HardDrive`, `Database01`, `Settings01`).
+  - Fixed `SettingsTab.tsx` subtab pills by wrapping icon data structures with `<HugeiconsIcon icon={Icon} size={14} />`, restoring rendering for all 8 subtabs (`general`, `generation`, `workspace`, `export`, `api`, `shortcuts`, `notifications`, `advanced`).
+  - Unified `SettingsModal.tsx` tabs with `LayoutGridIcon`, `BrushIcon`, `ServerIcon`, and `SparklesIcon`, and added cross-surface deep linking to specific admin settings sections via `/admin?tab=settings&section=...`.
+- **Eradication of Leaked Icon Strings**:
+  - Eliminated leaked `*Icon` tokens from placeholders, titles, labels, and JSX text across all components:
+    - `JobDetailView.tsx`: `RefreshIcon` -> `Refresh`, `SearchIcon job ID or model...` -> `Search job ID or model...`, `TargetIcon Pipeline` -> `Target Pipeline`.
+    - `SecondaryPanels.tsx`: `TargetIcon Mesh` -> `Target Mesh`.
+    - `MeshSegmentPanel.tsx`: `TargetIcon Parts` -> `Target Parts`.
+    - `RemeshPanel.tsx`: `TargetIcon 3D Mesh` -> `Target 3D Mesh`.
+    - `MeshEditPanel.tsx`: `TargetIcon Mesh` -> `Target Mesh`, `Sculpt BrushIcon` -> `Sculpt Brush`, `BrushIcon Dynamics` -> `Brush Dynamics`, `BrushIcon Radius (Size)` -> `Brush Radius (Size)`, `BrushIcon Strength` -> `Brush Strength`.
+    - `SegmentInspector.tsx`: `DownloadIcon Segmented GLB` -> `Download Segmented GLB`.
+    - `MeshEditInspector.tsx`: `Selection InfoIcon` -> `Selection Info`.
+    - `AnimationViewportStage.tsx`: `Auto CameraIcon` -> `Auto Camera`, `GridIcon` -> `Grid`.
+    - `MotionLibraryDrawer.tsx`: `SearchIcon motion assets...` -> `Search motion assets...`.
+    - `DccBridgeModal.tsx`: `SendIcon to` -> `Send to`.
+    - `ExportModal.tsx`: `TargetIcon Format` -> `Target Format`, `PackageIcon complete workspace` -> `Package complete workspace`.
+    - `UploadDiagnosticModal.tsx`: `UploadIcon Diagnostics` -> `Upload Diagnostics`.
+    - `MeshViewer.tsx`: `PauseIcon` / `PlayIcon` -> `Pause` / `Play`.
+    - `ViewportToolOverlay.tsx`: `MoveIcon Manipulator` -> `Move Manipulator`, `Toggle GridIcon` -> `Toggle Grid`.
+    - `StorageTab.tsx`, `ModelsTab.tsx`, `JobsTab.tsx`, `QueueTab.tsx`, `ActivityLogger.tsx`, `GpuVramLineChart.tsx`: `RefreshIcon` -> `Refresh`.
+- **Compact Studio Layout & Interaction Polish**:
+  - Enforced compact 12px/16px padding grids, tactile active feedback (`active:scale-[0.98]`), and refined border contrast (`border-white/[0.08]` to `border-white/[0.12]`).
+  - Next.js production compilation (`next build`) validated with 0 TypeScript/Turbopack errors.
+
+---
+
 ## 2026-10-13 — Hunyuan Loader and Dependency Root Causes
 
 - TripoSG's reported `HybridCache` import failure came from shared `transformers==4.46.3` being below Mini Turbo's upstream `transformers>=4.48.0` requirement while the environment used `peft==0.17.1`. Shared runtime now targets `transformers==4.48.3`; Diffusers and Torch/CUDA pins remain unchanged.

@@ -79,7 +79,7 @@ export const MeshEditInspector: React.FC = () => {
           >
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-primary" />
-              <span>Selection InfoIcon</span>
+              <span>Selection Info</span>
             </div>
             {isSelectionOpen ? <HugeiconsIcon icon={ChevronUp} size={16} className="w-3.5 h-3.5 text-zinc-400" /> : <HugeiconsIcon icon={ChevronDown} size={16} className="w-3.5 h-3.5 text-zinc-400" />}
           </button>

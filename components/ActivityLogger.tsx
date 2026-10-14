@@ -286,7 +286,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
         </div>
       </div>
 
-      {/* SearchIcon & Status Filters */}
+      {/* Search & Status Filters */}
       <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] rounded-2xl p-3">
         <div className="relative flex-1 max-w-md">
           <HugeiconsIcon icon={Search01Icon} size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[hsl(var(--muted-foreground))]" />
@@ -294,12 +294,12 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="SearchIcon timeline by prompt, model, or title..."
+            placeholder="Search timeline by prompt, model, or title..."
             className="w-full bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] rounded-xl py-2 pl-9 pr-3 text-xs text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:border-[hsl(var(--primary))] transition-all"
           />
         </div>
 
-        {/* FilterIcon Pills */}
+        {/* Filter Pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
           {(['all', 'completed', 'generating', 'queued', 'failed'] as const).map((filter) => (
             <button
@@ -320,7 +320,7 @@ export function ProjectTimeline({ onLoadProject, className }: ProjectTimelinePro
             onClick={() => loadHistory()}
             disabled={isLoadingHistory}
             className="p-2 rounded-xl bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] transition-all"
-            title="RefreshIcon Timeline"
+            title="Refresh Timeline"
           >
             <HugeiconsIcon icon={RefreshCw} size={13} className={isLoadingHistory ? 'animate-spin' : ''} />
           </button>

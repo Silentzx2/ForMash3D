@@ -7,6 +7,9 @@ import { toast } from 'sonner';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, CameraIcon, CheckIcon, GridIcon, LayersIcon, Maximize02Icon, MoveIcon, RotateCcwIcon } from '@hugeicons/core-free-icons';
+import { useViewerStore } from '@/stores/useViewerStore';
+import { AnimationTimelineDock } from '../Animation/AnimationTimelineDock';
+
 export const ViewportToolOverlay: React.FC = () => {
   const {
     activeTool,
@@ -18,13 +21,15 @@ export const ViewportToolOverlay: React.FC = () => {
     navigateToTool,
   } = useWorkspace();
 
+  const modelStats = useViewerStore((s) => s.modelStats);
+
   // Bottom gallery tab states
   const [uvGalleryTab, setUvGalleryTab] = useState<'Preview' | 'Part View' | 'Island View' | '3D / UV Split'>('Preview');
   const [segmentGalleryTab, setSegmentGalleryTab] = useState<'Preview' | 'Part Hierarchy' | 'Statistics' | 'Logs'>('Preview');
   const [segmentIsolatedPart, setSegmentIsolatedPart] = useState('Head');
   const [cameraPreset, setCameraPreset] = useState<'Perspective' | 'Front' | 'Side' | 'Top'>('Perspective');
 
-  if (activeTool !== 'uv' && activeTool !== 'segment' && activeTool !== 'edit') {
+  if (activeTool !== 'uv' && activeTool !== 'segment' && activeTool !== 'edit' && activeTool !== 'animation' && activeTool !== 'rigging') {
     return null;
   }
 
@@ -33,23 +38,35 @@ export const ViewportToolOverlay: React.FC = () => {
     navigateToTool(targetTool);
   };
 
+  const verticesDisplay = currentAsset?.vertices
+    ? currentAsset.vertices.toLocaleString()
+    : modelStats?.vertices
+    ? modelStats.vertices.toLocaleString()
+    : '—';
+
+  const facesDisplay = currentAsset?.faces
+    ? currentAsset.faces.toLocaleString()
+    : modelStats?.triangles
+    ? modelStats.triangles.toLocaleString()
+    : '—';
+
   return (
     <div id="viewport-tool-overlay" className="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between p-4 overflow-hidden">
       {/* TOP HEADER CONTROLS */}
       <div className="flex items-start justify-between w-full">
-        {/* Top Left: CameraIcon Pills or Stats */}
+        {/* Top Left: Camera Pills or Stats */}
         <div className="pointer-events-auto flex items-center gap-2">
           {activeTool === 'uv' ? (
             /* UV stats card overlay */
             <div className="px-3 py-2 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.08] text-[11px] font-mono space-y-1 shadow-xl">
-              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Vertices</span><span className="text-white font-bold">{currentAsset?.vertices?.toLocaleString() || '125,432'}</span></div>
-              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Faces</span><span className="text-white font-bold">{currentAsset?.faces?.toLocaleString() || '248,864'}</span></div>
-              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Materials</span><span className="text-white font-bold">8</span></div>
-              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Size</span><span className="text-white font-bold">{currentAsset?.fileSize || '12.4 MB'}</span></div>
+              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Vertices</span><span className="text-white font-bold">{verticesDisplay}</span></div>
+              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Faces</span><span className="text-white font-bold">{facesDisplay}</span></div>
+              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Materials</span><span className="text-white font-bold">{currentAsset?.materialConfig?.style || 'PBR Standard'}</span></div>
+              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Size</span><span className="text-white font-bold">{currentAsset?.fileSize || '—'}</span></div>
               <div className="flex gap-4 justify-between"><span className="text-zinc-400">Format</span><span className="text-primary font-bold">{currentAsset?.format || 'GLB'}</span></div>
             </div>
           ) : (
-            /* Perspective / Front / Side / Top Pills for Segment and Edit */
+            /* Perspective / Front / Side / Top Pills for Segment, Edit, Animation, Rigging */
             <div className="flex gap-1 p-1 bg-[hsl(var(--surface-1))]/90 backdrop-blur-md rounded-xl border border-white/[0.08] shadow-xl">
               {(['Perspective', 'Front', 'Side', 'Top'] as const).map((cam) => (
                 <button
@@ -57,7 +74,7 @@ export const ViewportToolOverlay: React.FC = () => {
                   type="button"
                   onClick={() => {
                     setCameraPreset(cam);
-                    toast.info(`CameraIcon aligned to ${cam}`);
+                    toast.info(`Camera aligned to ${cam}`);
                   }}
                   className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                     cameraPreset === cam
@@ -122,7 +139,7 @@ export const ViewportToolOverlay: React.FC = () => {
           <button type="button" title="Select Tool" className="p-2 rounded-lg bg-primary text-black shadow-sm cursor-pointer">
             <span className="text-xs font-bold">▲</span>
           </button>
-          <button type="button" title="MoveIcon Manipulator" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
+          <button type="button" title="Move Manipulator" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
             <HugeiconsIcon icon={MoveIcon} size={16} className="w-4 h-4" />
           </button>
           <button type="button" title="Rotate Selection" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
@@ -131,7 +148,7 @@ export const ViewportToolOverlay: React.FC = () => {
           <button type="button" title="Scale Selection" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
             <HugeiconsIcon icon={Maximize02Icon} size={16} className="w-4 h-4" />
           </button>
-          <button type="button" title="Toggle GridIcon" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
+          <button type="button" title="Toggle Grid" className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/[0.04] cursor-pointer">
             <HugeiconsIcon icon={GridIcon} size={16} className="w-4 h-4" />
           </button>
         </div>
@@ -261,6 +278,13 @@ export const ViewportToolOverlay: React.FC = () => {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ANIMATION TIMELINE DOCK */}
+        {activeTool === 'animation' && (
+          <div className="pointer-events-auto w-full -mx-4 -mb-4">
+            <AnimationTimelineDock />
           </div>
         )}
 
