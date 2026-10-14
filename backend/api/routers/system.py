@@ -1407,7 +1407,7 @@ async def download_job_result(
                                 mesh = trimesh.load(src_glb, file_type="glb", process=False)
                                 if isinstance(mesh, trimesh.Scene):
                                     mesh = trimesh.util.concatenate([g for g in mesh.geometry.values() if isinstance(g, trimesh.Trimesh)])
-                                target_file.write_bytes(_export_bytes(mesh, canonical_format))
+                                target_file.write_bytes(_export_bytes(mesh, target_ext))
                             if target_file.exists():
                                 candidate = target_file
                         except Exception as conv_err:
