@@ -670,13 +670,14 @@ fi
 
 # Keep datasets on the 3.x line: 4.x expects newer Hub bucket APIs than the shared
 # huggingface_hub==0.25.0 baseline. Match backend/requirements.txt.
+# ForMash3D calls the Unique3D inference components directly; it does not launch
+# the upstream Gradio demo. Omit Gradio to avoid conflicting Hub/Pillow constraints.
 echo "[INFO] Installing remaining Unique3D requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" \
     accelerate \
     "datasets==3.6.0" \
     "diffusers>=0.26.3" \
     fire \
-    gradio \
     jaxtyping \
     numba \
     numpy \
