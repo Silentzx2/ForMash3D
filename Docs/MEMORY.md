@@ -8,7 +8,7 @@
 
 - **Root cause**: The adapter imported `app.custom_models.mvimg_prediction` even though it already loads and calls its own trainer/pipeline. That upstream module imports Gradio and initializes another module-level pipeline, introducing an unnecessary dependency and duplicate initialization side effects.
 - **Fix**: Removed the unused wrapper imports and stopped installing Gradio for the backend Unique3D runtime. The project keeps `huggingface_hub==0.25.0` for TripoSG and `datasets==3.6.0` for the Unique3D trainer import; Hub is not upgraded just to satisfy Gradio 6.
-- **Existing environments**: Gradio may remain from an earlier install. In the dedicated `3daigc-api` environment, uninstall stale Gradio packages only if that environment is not used for a separate Gradio application.
+- **Existing environments**: The installer now removes stale `gradio`, `gradio-client`, and `hf-gradio` packages left by older Unique3D setup runs, since the dedicated backend runtime does not use the standalone demo UI.
 
 ## 2026-10-14 — Raw Mesh Fidelity Audit: Hunyuan Shape, Mini Turbo, and TripoSG
 
