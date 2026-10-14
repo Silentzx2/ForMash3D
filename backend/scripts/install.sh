@@ -668,11 +668,12 @@ if ! install_local_wheel "xformers-*.whl" "xformers"; then
     _retry 3 5 $UV_PIP install xformers --index-url https://download.pytorch.org/whl/cu124
 fi
 
-# Remaining Unique3D requirements (excluding torch/torchvision/torchaudio which use shared env)
+# Keep datasets on the 3.x line: 4.x expects newer Hub bucket APIs than the shared
+# huggingface_hub==0.25.0 baseline. Match backend/requirements.txt.
 echo "[INFO] Installing remaining Unique3D requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" \
     accelerate \
-    datasets \
+    "datasets==3.6.0" \\
     "diffusers>=0.26.3" \
     fire \
     gradio \
