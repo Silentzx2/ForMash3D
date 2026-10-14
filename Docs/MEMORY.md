@@ -7,6 +7,12 @@
 - **Contract coverage**: Scheduler and adapter defaults plus frontend parameter construction are locked by regression/source-contract tests. The configured third-party repo's visible history does not contain the `backend/thirdparty` gitlink SHA (`423339899dd8da5a782d89855057aa7d055e3d27`); reviewed `ForMash3D-ThirdParty/main` read-only and did not modify upstream files or move the submodule pointer. The exact pinned runtime revision therefore still needs repository-level verification.
 - **Expected trade-off**: Native dense decoding is slower and can consume more host/GPU memory. Better extraction can preserve details the fast decoder misses, but cannot invent geometry evidence absent from a single-view model's learned representation. CUDA end-to-end visual comparison is still required on the target workstation.
 
+## 2026-10-14 — Second-pass extraction root-cause hardening
+
+- **Verified Hunyuan decoder selection**: Removing the FlashVDM enable call alone did not prove which VAE volume decoder/surface extractor was active. Both adapters now configure the upstream VAE with enable_flashvdm_decoder(enabled=False), verify VanillaVolumeDecoder + MCSurfaceExtractor, and explicitly pass mc_algo='mc' for generation. Unsupported vendored APIs fail loudly.
+- **TripoSG sampling ceiling**: The previous depth-9 setting capped the output grid at 512 samples per axis. The target is depth 10 (1024-wide grid) only on GPUs with at least 24 GiB free and 32 GiB total; otherwise depth 9 is used. Requested/effective resolution, voxel size, and fallback reason are reported.
+- **Validation limitation**: Regression contracts were added but could not be executed locally because GitHub DNS is unavailable from the container. CUDA A/B generation and raw-source mesh inspection are still required before asserting a visual-quality improvement.
+
 ## 2026-10-14 — High-Performance Viewport Engine & Production Postprocessing Pipeline Hardening
 
 - **Viewport Performance & Shading Optimizations (`features/workspace/Viewport/MeshViewer.tsx`)**:

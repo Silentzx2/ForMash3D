@@ -980,3 +980,17 @@ The production postprocessing engine converts raw neural model outputs into engi
 - Native dense/hierarchical extraction can increase latency and memory usage.
 - CUDA A/B generation and visual mesh inspection remain required before claiming a measured quality improvement.
 
+
+
+## ADR-076 — Explicit Native Hunyuan Decoding and VRAM-Gated TripoSG Depth 10
+
+**Date:** 2026-10-14  
+**Status:** Proposed for implementation validation
+
+**Decision:**
+- Hunyuan Shape v2.1 and Mini Turbo explicitly configure and verify VanillaVolumeDecoder + MCSurfaceExtractor and pass mc_algo='mc', staying within the upstream [64, 512] resolution contract.
+- TripoSG requests hierarchical depth 10 (1024-wide target grid) only when at least 24 GiB VRAM is free and 32 GiB total VRAM exists. Otherwise use depth 9. Report requested/effective grid depth honestly.
+
+**Reason:** Fidelity settings must verify the actual decoder implementation, not infer it from a disabled acceleration call or manifest label. Depth 10 adds another sampling octave for TripoSG on sufficiently provisioned GPUs. Hunyuan remains bounded by upstream's supported resolution contract.
+
+**Consequences:** Output detail may improve where the model's learned field contains recoverable high-frequency geometry, but single-image models cannot guarantee arbitrary microdetail. Depth 10 costs materially more memory and latency; CUDA A/B generation and raw-mesh visual inspection remain required before claiming measured quality improvement.
