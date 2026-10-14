@@ -133,8 +133,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # Load multiview prediction pipeline (img2mvimg)
             logger.info("Loading multiview prediction pipeline (img2mvimg)...")
             self._ensure_unique3d_in_path()
-            from app.custom_models.utils import load_pipeline
-            
+                
             # Use official load_pipeline which expects .pth format
             # The checkpoints are safetensors from HF - load_pipeline handles conversion via strict=False
             self.mvimg_trainer, self.mvimg_pipeline = load_pipeline(
@@ -255,16 +254,14 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         guidance_scale: float = 1.5
     ) -> tuple:
         """Run multiview image prediction (img2mvimg)."""
-        from app.custom_models.mvimg_prediction import run_mvprediction
-        from app.utils import simple_remove, rgba_to_rgb
+        # Use the adapter's already-loaded pipeline directly. The upstream wrapper imports
+        # Gradio and eagerly initializes a duplicate module-level pipeline.
         from rembg import remove as rembg_remove
         from app.utils import session as rembg_session
         
         if remove_bg and (image.mode == "RGB" or np.array(image)[..., -1].mean() == 255.):
             image = rembg_remove(image, session=rembg_session)
         
-        # Import and use the existing run_mvprediction function
-        from app.custom_models.mvimg_prediction import run_mvprediction
         
         cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
         generator = torch.Generator(device=cuda_dev).manual_seed(int(seed)) if seed >= 0 else None
