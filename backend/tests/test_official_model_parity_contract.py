@@ -9,11 +9,13 @@ Verifies:
 5. Viewer artifact routing and Shape -> Paint chaining contract.
 """
 
+import asyncio
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Ensure backend root is on sys.path
 backend_root = Path(__file__).resolve().parents[1]
@@ -577,6 +579,39 @@ class TestSystemViewerRouting(unittest.TestCase):
         # Inspect the route function signature and contract
         sig = inspect.signature(download_job_result)
         self.assertIn("artifact_format", sig.parameters)
+
+    def test_fbx_download_rejects_unrigged_assets_without_native_fbx(self):
+        from fastapi import HTTPException
+        from api.routers import system
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_base = Path(temp_dir)
+            models_root = storage_base / "models"
+            asset_root = models_root / "test-asset"
+            game_ready = asset_root / "game_ready"
+            game_ready.mkdir(parents=True)
+            (game_ready / "test-asset.glb").write_bytes(b"not-needed-for-the-422-contract")
+
+            scheduler = MagicMock()
+            scheduler.get_job_status = AsyncMock(return_value={
+                "status": "completed",
+                "result": {
+                    "asset_root": str(asset_root),
+                    "asset_name": "test-asset",
+                },
+            })
+            request = SimpleNamespace(headers=SimpleNamespace(get=lambda *_: None))
+
+            with (
+                patch("api.routers.system.get_scheduler", new=AsyncMock(return_value=scheduler)),
+                patch("api.dependencies.get_current_user_optional", new=AsyncMock(return_value=None)),
+                patch("api.routers.system.get_storage_base_dir", return_value=storage_base),
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(download_job_result("job-no-fbx", request, artifact_format="fbx"))
+
+            self.assertEqual(raised.exception.status_code, 422)
+            self.assertIn("requires rigging", raised.exception.detail)
 
 
 if __name__ == "__main__":

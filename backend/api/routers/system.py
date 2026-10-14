@@ -1372,7 +1372,19 @@ async def download_job_result(
         asset_root = result.get("asset_root")
         asset_name = result.get("asset_name")
 
-        if asset_root:
+        if canonical_format == "fbx" and result.get("output_fbx_path"):
+            output_path = Path(result["output_fbx_path"]).resolve()
+            preview_path = result.get("output_mesh_path")
+            models_root = (get_storage_base_dir() / "models").resolve()
+            if output_path.suffix.lower() != ".fbx":
+                raise HTTPException(status_code=422, detail="The job has no native FBX artifact.")
+            if preview_path and output_path.parent != Path(preview_path).resolve().parent:
+                raise HTTPException(status_code=400, detail="Invalid rigged FBX artifact path")
+            try:
+                output_path.relative_to(models_root)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid rigged FBX artifact path")
+        elif asset_root:
             asset_root_path = Path(asset_root).resolve()
             models_root = (get_storage_base_dir() / "models").resolve()
             if asset_root_path == models_root or models_root not in asset_root_path.parents:
@@ -1391,6 +1403,11 @@ async def download_job_result(
                     matches = list((asset_root_path / "game_ready").glob(f"*.{target_ext}"))
                     if matches:
                         candidate = matches[0]
+                if not candidate.exists() and target_ext == "fbx":
+                    raise HTTPException(
+                        status_code=422,
+                        detail="FBX export requires rigging (UniRig) or a pre-exported FBX; this asset has no FBX artifact. Use GLB/OBJ, or rig this model first.",
+                    )
                 if not candidate.exists():
                     # On-demand conversion from game-ready GLB
                     glb_matches = list((asset_root_path / "game_ready").glob("*.glb"))
@@ -1467,10 +1484,27 @@ async def download_job_result(
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported artifact format: {canonical_format}")
         else:
-            possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-            for key in possible_keys:
-                if key in result and result[key]:
-                    output_path = result[key]
+            if canonical_format == "fbx":
+                fbx_path = result.get("output_fbx_path")
+                preview_path = result.get("output_mesh_path")
+                if not fbx_path and preview_path and Path(preview_path).suffix.lower() == ".fbx":
+                    fbx_path = preview_path
+                if not fbx_path:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="FBX export requires a rigged job with a native FBX artifact. Use GLB/OBJ, or rig this model first.",
+                    )
+                resolved_fbx = Path(fbx_path).resolve()
+                if resolved_fbx.suffix.lower() != ".fbx":
+                    raise HTTPException(status_code=422, detail="The job has no native FBX artifact.")
+                if preview_path and resolved_fbx.parent != Path(preview_path).resolve().parent:
+                    raise HTTPException(status_code=400, detail="Invalid rigged FBX artifact path")
+                output_path = resolved_fbx
+            else:
+                possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
+                for key in possible_keys:
+                    if key in result and result[key]:
+                        output_path = result[key]
                     break
 
         if not output_path:

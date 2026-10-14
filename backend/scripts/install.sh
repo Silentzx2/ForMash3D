@@ -598,11 +598,14 @@ echo "[INFO] Installing spconv-cu124 for UniRig..."
 $UV_PIP install --find-links="$WHEEL_DIR" spconv-cu124
 $UV_PIP install --find-links="$WHEEL_DIR" pyrender fast-simplification python-box timm
 # Install bpy 4.0 for Python 3.10 from Blender's official prebuilt wheel index
-$UV_PIP install --no-deps "https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl" || true
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] UniRig dependencies installed"
+$UV_PIP install --no-deps "https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl"
+BPY_STATUS=$?
+if [ "$BPY_STATUS" -eq 0 ]; then
+    echo "[SUCCESS] UniRig dependencies installed (bpy 4.0 OK)"
 else
-    echo "[ERROR] Failed to install UniRig dependencies"
+    echo "[ERROR] Failed to install bpy 4.0 wheel for UniRig (exit $BPY_STATUS)."
+    echo "[ERROR] Auto-Rigging (/rigging, /workspace/*/rig) will not work until this is resolved."
+    echo "[ERROR] Manually check https://download.blender.org/pypi/bpy/ for a wheel matching your platform/glibc."
     exit 1
 fi
 

@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { useAnimationStore, AnimationClipItem } from '@/stores/useAnimationStore';
+import { useRouter } from 'next/navigation';
+import { useAnimationStore, AnimationClipItem, mapRetargetBones } from '@/stores/useAnimationStore';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
@@ -12,10 +13,13 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { AlertCircle, BoneIcon, ChevronDown, ChevronUp, KeyIcon, LoaderCircle, PlayIcon, RefreshCw, RotateCw, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
 export const AnimationLeftPanel: React.FC = () => {
   const { currentAsset } = useWorkspace();
+  const router = useRouter();
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const {
     activeMode,
     setActiveMode,
     bones,
+    loadedSkeletonBoneNames,
     selectedBone,
     setSelectedBone,
     boneRotations,
@@ -55,6 +59,12 @@ export const AnimationLeftPanel: React.FC = () => {
     targetHeading,
     waypointMode,
     motionCorrection,
+    animations,
+    currentAnimationId,
+    retargetMapping,
+    setRetargetMapping,
+    retargetOptions,
+    setRetargetOptions,
     addAnimation,
     setCurrentAnimationId,
     setInspectorTab,
@@ -62,6 +72,92 @@ export const AnimationLeftPanel: React.FC = () => {
 
   const [isSectionOpen, setIsSectionOpen] = useState(true);
   const [samplesCount, setSamplesCount] = useState(1);
+  const [sourceSkeleton, setSourceSkeleton] = useState('ardy_core');
+  const [sourceJointNames, setSourceJointNames] = useState<string[]>([]);
+  const [isApplyingRetarget, setIsApplyingRetarget] = useState(false);
+  const hasRig = Boolean(currentAsset?.artifacts?.rigged);
+  const activeMotionClip = animations.find((clip) => clip.id === currentAnimationId);
+
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+    setMotionAiIsGenerating(false);
+  }, [setMotionAiIsGenerating]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSourceJointNames([]);
+    if (activeMode !== 'retarget' || !activeMotionClip?.motionJsonUrl) return () => { cancelled = true; };
+    fetch(activeMotionClip.motionJsonUrl)
+      .then((response) => {
+        if (!response.ok) throw new Error(`Motion metadata request failed (${response.status})`);
+        return response.json();
+      })
+      .then((doc) => {
+        if (!cancelled && Array.isArray(doc.joint_names)) {
+          setSourceJointNames(doc.joint_names.filter((name: unknown): name is string => typeof name === 'string'));
+          setSourceSkeleton(String(doc.skeleton_id || '').toLowerCase().includes('g1') ? 'unitree_g1' : 'ardy_core');
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) toast.error('Could not read motion skeleton', { description: error instanceof Error ? error.message : String(error) });
+      });
+    return () => { cancelled = true; };
+  }, [activeMode, activeMotionClip?.id, activeMotionClip?.motionJsonUrl]);
+
+  const openRigging = () => router.push(`/rigging?modelId=${encodeURIComponent(currentAsset?.id || 'active')}`);
+  const retargetTargetNames = loadedSkeletonBoneNames ?? [];
+  const retargetTargetScanned = loadedSkeletonBoneNames !== null;
+  const retargetPreview = mapRetargetBones(sourceJointNames, retargetTargetNames, retargetMapping);
+  const retargetMatchedCount = Object.keys(retargetPreview).length;
+  const retargetIsCompatible = Boolean(
+    retargetTargetScanned && retargetTargetNames.length && activeMotionClip?.artifactType === 'motion' &&
+    sourceJointNames.length && retargetMatchedCount / sourceJointNames.length >= 0.5
+  );
+
+  const handleApplyRetarget = async () => {
+    if (!hasRig) {
+      toast.info("This model isn't rigged yet — rig it first.");
+      openRigging();
+      return;
+    }
+    if (!activeMotionClip?.motionJsonUrl || activeMotionClip.artifactType !== 'motion') {
+      toast.error('Generate or select a Motion AI clip first.');
+      return;
+    }
+    setIsApplyingRetarget(true);
+    try {
+      const response = await fetch(activeMotionClip.motionJsonUrl);
+      if (!response.ok) throw new Error(`Motion metadata request failed (${response.status})`);
+      const doc = await response.json();
+      const jointNames = Array.isArray(doc.joint_names)
+        ? doc.joint_names.filter((name: unknown): name is string => typeof name === 'string')
+        : [];
+      if (!jointNames.length) throw new Error('The selected motion has no joint metadata.');
+      const actualSkeleton = String(doc.skeleton_id || activeMotionClip.skeletonId || '').toLowerCase();
+      const actualIsG1 = actualSkeleton.includes('g1') || actualSkeleton.includes('unitree');
+      if ((sourceSkeleton === 'unitree_g1') !== actualIsG1) {
+        throw new Error('The selected source skeleton does not match this motion clip. Select its detected ARDY skeleton and try again.');
+      }
+      if (!loadedSkeletonBoneNames?.length) {
+        throw new Error(loadedSkeletonBoneNames === null
+          ? 'The target skeleton is still loading. Try again when the viewport finishes loading.'
+          : 'No bones were found on the loaded rigged model. Reload or rig the model again.');
+      }
+      const mapping = mapRetargetBones(jointNames, loadedSkeletonBoneNames, retargetMapping);
+      const matched = Object.keys(mapping).length;
+      if (matched / jointNames.length < 0.5) {
+        throw new Error(`Target rig is incompatible: only ${matched} of ${jointNames.length} motion joints matched.`);
+      }
+      setRetargetMapping(mapping);
+      setCurrentAnimationId(activeMotionClip.id);
+      toast.success('Retarget mapping applied', { description: `${matched}/${jointNames.length} source joints mapped to the target rig.` });
+    } catch (error) {
+      toast.error('Retargeting failed', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      setIsApplyingRetarget(false);
+    }
+  };
 
   const characterCount = motionAiPrompt.length;
   const maxChars = 500;
@@ -74,6 +170,13 @@ export const AnimationLeftPanel: React.FC = () => {
   ];
 
   const handleGenerate = async () => {
+    if (!hasRig) {
+      toast.info("This model isn't rigged yet — rig it first.");
+      openRigging();
+      return;
+    }
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
     if (!motionAiPrompt.trim()) {
       toast.error('Please enter a motion prompt');
       return;
@@ -110,55 +213,57 @@ export const AnimationLeftPanel: React.FC = () => {
       });
 
       const jobId = resp.job_id;
-      if (jobId) {
-        setMotionAiStage('Queued in scheduler...');
-        setMotionAiProgress(25);
+      if (!jobId) throw new Error('Backend did not return a motion job ID');
+      setMotionAiStage('Queued in scheduler...');
+      setMotionAiProgress(25);
 
-        // Poll real job status
-        const pollTimer = setInterval(async () => {
-          try {
-            const job = await client.getJobStatus(jobId);
-            if (job.status === 'completed') {
-              clearInterval(pollTimer);
-              setMotionAiIsGenerating(false);
-              setMotionAiStage('Completed');
-              setMotionAiProgress(100);
+      pollRef.current = setInterval(async () => {
+        try {
+          const job = await client.getJobStatus(jobId);
+          if (!pollRef.current) return;
+          if (job.status === 'completed') {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            setMotionAiIsGenerating(false);
+            setMotionAiStage('Completed');
+            setMotionAiProgress(100);
 
-              const outputJson =
-                job.result?.mesh_url ||
-                `/api/v1/storage/models/${jobId}/motion.json`;
+            // The job download route serves the generated JSON; adapter file paths are server-local, not browser URLs.
+            const outputJson = `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download`;
+            const newClip: AnimationClipItem = {
+              id: `ardy-gen-${Date.now()}`,
+              name: motionAiPrompt.length > 28 ? motionAiPrompt.slice(0, 28) + '...' : motionAiPrompt,
+              category: 'Custom',
+              duration: Number(job.result?.duration) || motionAiDuration,
+              fps: Number(job.result?.fps) || motionAiFps,
+              keyframesCount: Number(job.result?.num_frames) || Math.round(motionAiDuration * motionAiFps),
+              url: outputJson,
+              motionJsonUrl: outputJson,
+              artifactType: 'motion',
+              skeletonId: String(job.result?.skeleton_id || targetSkeleton),
+              jointNames: Array.isArray(job.result?.joint_names) ? job.result.joint_names.filter((name: unknown): name is string => typeof name === 'string') : undefined,
+            };
 
-              const newClip: AnimationClipItem = {
-                id: `ardy-gen-${Date.now()}`,
-                name: motionAiPrompt.length > 28 ? motionAiPrompt.slice(0, 28) + '...' : motionAiPrompt,
-                category: 'Custom',
-                duration: motionAiDuration,
-                fps: motionAiFps,
-                keyframesCount: Math.round(motionAiDuration * motionAiFps),
-                motionJsonUrl: outputJson,
-                skeletonId: targetSkeleton,
-              };
-
-              addAnimation(newClip);
-              setCurrentAnimationId(newClip.id);
-              toast.success('Motion generated successfully!', {
-                description: `Created ${motionAiDuration.toFixed(1)}s clip via ARDY.`,
-              });
-            } else if (job.status === 'failed') {
-              clearInterval(pollTimer);
-              setMotionAiIsGenerating(false);
-              const errMsg = (job as any).error_message || 'Motion synthesis failed';
-              setMotionAiError(errMsg);
-              toast.error('Generation Failed', { description: errMsg });
-            } else if (job.status === 'processing') {
-              setMotionAiStage('Running ARDY motion synthesis...');
-              setMotionAiProgress(65);
-            }
-          } catch (pollErr) {
-            console.warn('Poll error:', pollErr);
+            addAnimation(newClip);
+            setCurrentAnimationId(newClip.id);
+            toast.success('Motion generated successfully!', {
+              description: `Created ${newClip.duration.toFixed(1)}s clip via ARDY.`,
+            });
+          } else if (job.status === 'failed' || job.status === 'cancelled') {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            setMotionAiIsGenerating(false);
+            const errMsg = (job as any).error_message || `Motion synthesis ${job.status}`;
+            setMotionAiError(errMsg);
+            toast.error('Generation Failed', { description: errMsg });
+          } else if (job.status === 'processing') {
+            setMotionAiStage('Running ARDY motion synthesis...');
+            setMotionAiProgress(65);
           }
-        }, 1500);
-      }
+        } catch (pollErr) {
+          console.warn('Poll error:', pollErr);
+        }
+      }, 1500);
     } catch (err: any) {
       setMotionAiIsGenerating(false);
       const msg = err.response?.data?.detail || err.message || 'Generation failed';
@@ -381,60 +486,74 @@ export const AnimationLeftPanel: React.FC = () => {
               </div>
             </div>
           ) : activeMode === 'retarget' ? (
-            /* 3. SKELETON RETARGETING MODE */
+            /* Skeleton retargeting uses the selected motion JSON and active rig */
             <div className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-zinc-200">Source Skeleton</label>
-                <select
-                  defaultValue="ardy_core"
-                  className="w-full py-2 px-3 bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-primary transition-colors cursor-pointer"
-                >
-                  <option value="ardy_core">ARDY Core (24 Joints)</option>
-                  <option value="unitree_g1">Unitree G1 Humanoid (33 Joints)</option>
-                  <option value="mixamo">Mixamo Humanoid Biped</option>
-                  <option value="smplx">SMPL-X Standard Humanoid</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-zinc-200">Target Character</label>
-                <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-bold text-white">{currentAsset?.name || 'Character Mannequin'}</span>
-                    <p className="text-[10px] text-emerald-400 font-mono mt-0.5">17 Joints Identified &amp; Aligned</p>
+              {!hasRig ? (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                  <p className="text-xs text-amber-200">This model isn't rigged yet — rig it first.</p>
+                  <button type="button" onClick={openRigging} className="w-full rounded-lg bg-primary px-3 py-2 text-xs font-bold text-black">Open Rigging</button>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-zinc-200">Source Skeleton</label>
+                    <select
+                      value={sourceSkeleton}
+                      onChange={(event) => setSourceSkeleton(event.target.value)}
+                      className="w-full py-2 px-3 bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-primary transition-colors cursor-pointer"
+                    >
+                      <option value="ardy_core">ARDY Core (27 joints)</option>
+                      <option value="unitree_g1">Unitree G1 (34 joints)</option>
+                    </select>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                    Ready
-                  </span>
-                </div>
-              </div>
 
-              <div className="space-y-2 p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-300">Scale Normalization</span>
-                  <span className="text-primary font-mono font-bold">Auto</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-300">Foot Contact Lock</span>
-                  <span className="text-primary font-mono font-bold">Active</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-300">Root Motion Preservation</span>
-                  <span className="text-primary font-mono font-bold">Enabled</span>
-                </div>
-              </div>
+                  <div className="p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-white truncate block">{currentAsset?.name || 'Target character'}</span>
+                      <p className="text-[10px] text-zinc-300 font-mono mt-0.5">
+                        {!retargetTargetScanned
+                          ? 'Loading target skeleton…'
+                          : !retargetTargetNames.length
+                            ? 'No skeleton bones found on the loaded model.'
+                            : activeMotionClip?.motionJsonUrl
+                              ? sourceJointNames.length ? `${retargetMatchedCount}/${sourceJointNames.length} source joints matched` : 'Reading motion skeleton…'
+                              : 'Select a generated motion clip first.'}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${retargetIsCompatible ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-300 border-amber-500/20'}`}>
+                      {retargetIsCompatible ? 'Mappable' : !retargetTargetScanned ? 'Loading' : !retargetTargetNames.length ? 'No skeleton' : 'Not compatible'}
+                    </span>
+                  </div>
 
-              <button
-                onClick={() => {
-                  toast.success('Retargeting applied successfully', {
-                    description: 'Motion normalized and mapped to target character bones',
-                  });
-                }}
-                className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-extrabold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98"
-              >
-                <HugeiconsIcon icon={RefreshCw} size={16} className="w-4 h-4" />
-                <span>Apply Retarget to Character</span>
-              </button>
+                  <div className="space-y-2 p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-xs">
+                    {([
+                      ['scaleNormalization', 'Scale Normalization'],
+                      ['footContactLock', 'Foot Contact Lock'],
+                      ['rootMotionPreservation', 'Root Motion Preservation'],
+                    ] as const).map(([key, label]) => (
+                      <label key={key} className="flex items-center justify-between gap-3 cursor-pointer">
+                        <span className="text-zinc-300">{label}</span>
+                        <input
+                          type="checkbox"
+                          checked={retargetOptions[key]}
+                          onChange={(event) => setRetargetOptions({ [key]: event.target.checked })}
+                          className="accent-[hsl(var(--primary))]"
+                        />
+                      </label>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleApplyRetarget}
+                    disabled={isApplyingRetarget || !retargetIsCompatible}
+                    className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-extrabold text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <HugeiconsIcon icon={RefreshCw} size={16} className="w-4 h-4" />
+                    <span>{isApplyingRetarget ? 'Applying…' : 'Apply Retarget to Character'}</span>
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             /* 4. DEFAULT TEXT TO MOTION GENERATION MODE */
@@ -597,10 +716,17 @@ export const AnimationLeftPanel: React.FC = () => {
               </div>
             )}
 
+            {!hasRig && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 space-y-2">
+                <p className="text-xs text-amber-200">This model isn't rigged yet — rig it first.</p>
+                <button type="button" onClick={openRigging} className="text-xs font-bold text-primary hover:underline">Open Rigging</button>
+              </div>
+            )}
+
             {/* Primary Action Button */}
             <div className="flex items-center gap-2 pt-1">
               <button
-                disabled={motionAiIsGenerating}
+                disabled={motionAiIsGenerating || !hasRig}
                 onClick={handleGenerate}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 disabled:opacity-50 disabled:cursor-not-allowed text-[#080808] font-black text-xs rounded-xl shadow-[0_4px_16px_rgba(255,204,0,0.38)] active:scale-[0.98] transition-all cursor-pointer btn-lighting-shine ${motionAiIsGenerating ? 'is-executing' : ''}`}
               >
@@ -635,10 +761,10 @@ export const AnimationLeftPanel: React.FC = () => {
         <div className="truncate">
           <span className="text-[10px] text-zinc-400 block uppercase font-bold tracking-wider">Target Character</span>
           <span className="text-zinc-200 font-semibold truncate block">
-            {currentAsset?.name || 'Character Mannequin (Default)'}
+            {currentAsset?.name || 'No model selected'}
           </span>
         </div>
-        <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]" title="Connected" />
+        <div className={`w-2 h-2 rounded-full ${hasRig ? 'bg-emerald-400' : 'bg-amber-400'}`} title={hasRig ? 'Rigged model loaded' : 'Model is not rigged'} />
       </div>
     </aside>
   );

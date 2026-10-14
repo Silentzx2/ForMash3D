@@ -144,7 +144,7 @@ export const ExportModal: React.FC = () => {
               {[
                 { id: 'game_ready', label: 'Game-Ready', tip: 'Optimized budget' },
                 { id: 'source', label: 'Source Master', tip: 'Uncompressed raw' },
-                { id: 'lod_package', label: 'LOD PackageIcon', tip: 'LOD0–LOD3 cascade' },
+                { id: 'lod_package', label: 'LOD Package', tip: 'LOD0–LOD3 cascade' },
               ].map(v => (
                 <button
                   key={v.id}

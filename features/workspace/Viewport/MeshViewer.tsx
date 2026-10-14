@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
@@ -10,7 +11,7 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { CameraViewPreset, ModelAsset, normalizeModelAsset } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
-import { useAnimationStore, BoneItem } from '@/stores/useAnimationStore';
+import { useAnimationStore, BoneItem, mapRetargetBones } from '@/stores/useAnimationStore';
 import { loadModelInViewer, useViewerStore } from '@/stores/useViewerStore';
 import { useAppStore } from '@/stores/useAppStore';
 
@@ -84,6 +85,7 @@ try {
 } catch {}
 
 const sharedOBJLoader = new OBJLoader();
+const sharedFBXLoader = new FBXLoader();
 const sharedPLYLoader = new PLYLoader();
 const sharedSTLLoader = new STLLoader();
 
@@ -933,6 +935,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const actionRef = useRef<THREE.AnimationAction | null>(null);
   const skeletonHelperRef = useRef<THREE.SkeletonHelper | null>(null);
+  const motionRootObjectRef = useRef<THREE.Object3D | null>(null);
+  const motionRootBasePositionRef = useRef<THREE.Vector3 | null>(null);
   const rigArmatureGroupRef = useRef<THREE.Group | null>(null);
   const meshBoundsCacheRef = useRef<{
     center: THREE.Vector3;
@@ -996,6 +1000,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     activeMode: animActiveMode,
     inspectorTab: animInspectorTab,
     bones: animBones,
+    retargetMapping: animRetargetMapping,
+    retargetOptions: animRetargetOptions,
     setSelectedBone: setAnimSelectedBone,
     activeViewportTool: animActiveViewportTool,
     isPlacingBone: animIsPlacingBone,
@@ -1064,6 +1070,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     mapping: Record<string, string>;
   } | null>(null);
   const motionLoadErrorRef = useRef<string | null>(null);
+  const [motionClipVersion, setMotionClipVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -1072,7 +1079,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const clip = animAnimations.find((item) => item.id === animCurrentAnimationId);
     if (!clip || clip.artifactType !== 'motion' || !clip.motionJsonUrl) return;
 
-    const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
     const load = async () => {
       try {
         const response = await fetch(clip.motionJsonUrl!);
@@ -1083,7 +1089,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         const frameCount = Number(doc.num_frames);
         const skeletonId = String(doc.skeleton_id || clip.skeletonId || 'unknown');
         if (!clip.url || !jointNames.length || !Number.isFinite(fps) || fps <= 0) throw new Error('Motion artifact metadata is incomplete');
-        // The backend emits a browser-playable quaternion representation in motion.json.
         const jsonFrames = Array.isArray(doc.quaternions) ? doc.quaternions : null;
         if (!jsonFrames || !Number.isFinite(frameCount) || frameCount <= 0 || jsonFrames.length !== frameCount) {
           throw new Error('Motion JSON does not contain a browser-playable quaternion frame payload');
@@ -1091,23 +1096,29 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         if (!jsonFrames.every((frame: unknown) => Array.isArray(frame) && frame.length === jointNames.length)) {
           throw new Error('Motion quaternion frame dimensions do not match joint metadata');
         }
-        const mapping: Record<string, string> = {};
-        const targetNames = new Map(animBones.map((bone) => [normalize(bone.name), bone.name]));
-        for (const source of jointNames) {
-          const target = targetNames.get(normalize(source));
-          if (target) mapping[source] = target;
-        }
+        const roots = Array.isArray(doc.root_positions) && doc.root_positions.length === frameCount
+          ? doc.root_positions.filter((row: unknown) => Array.isArray(row) && row.length >= 3).map((row: number[]) => row.slice(0, 3).map(Number))
+          : [];
+        const actualBoneNames: string[] = [];
+        currentMeshGroupRef.current?.traverse((child) => {
+          if (child instanceof THREE.Bone) actualBoneNames.push(child.name);
+        });
+        const targetNames = actualBoneNames.length ? actualBoneNames : animBones.map((bone) => bone.name);
+        const mapping = mapRetargetBones(jointNames, targetNames, animRetargetMapping);
         const coverage = Object.keys(mapping).length / jointNames.length;
         if (coverage < 0.5) throw new Error(`Incompatible motion skeleton '${skeletonId}' (${Object.keys(mapping).length}/${jointNames.length} joints mapped)`);
         if (cancelled) return;
-        motionClipRef.current = { id: clip.id, fps, duration: Number(clip.duration || frameCount / fps), jointNames, skeletonId, frames: jsonFrames, mapping };
+        motionClipRef.current = { id: clip.id, fps, duration: Number(doc.duration || clip.duration || frameCount / fps), jointNames, skeletonId, frames: jsonFrames, roots, mapping };
+        mixerRef.current?.stopAllAction();
+        motionLoadErrorRef.current = null;
+        setMotionClipVersion((version) => version + 1);
       } catch (error) {
         if (!cancelled) motionLoadErrorRef.current = error instanceof Error ? error.message : String(error);
       }
     };
     void load();
     return () => { cancelled = true; };
-  }, [animAnimations, animCurrentAnimationId, animBones]);
+  }, [animAnimations, animCurrentAnimationId, animBones, animRetargetMapping, currentAsset?.id, modelLoadVersion]);
 
   // 5. Live Pose Editor bone rotation to actual skeleton bones
   useEffect(() => {
@@ -1146,17 +1157,43 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       );
 
       const totalRotations: Record<string, [number, number, number]> = { ...animOffsets.rotations };
+      const frameIndex = activeMotion
+        ? Math.min(activeMotion.frames.length - 1, Math.max(0, Math.floor(time * activeMotion.fps)))
+        : 0;
       if (activeMotion) {
-        const frameIndex = Math.min(activeMotion.frames.length - 1, Math.max(0, Math.floor(time * activeMotion.fps)));
         const frame = activeMotion.frames[frameIndex];
         if (Array.isArray(frame)) {
+          const rotationsByTarget = new Map<string, THREE.Quaternion>();
           activeMotion.jointNames.forEach((sourceName, index) => {
             const targetName = activeMotion.mapping[sourceName];
-            const q = frame[index];
-            if (!targetName || !Array.isArray(q) || q.length < 4) return;
-            const e = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(Number(q[0]), Number(q[1]), Number(q[2]), Number(q[3])).normalize(), 'XYZ');
-            totalRotations[targetName] = [THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)];
+            const values = frame[index];
+            if (!targetName || !Array.isArray(values) || values.length < 4) return;
+            const q = new THREE.Quaternion(Number(values[0]), Number(values[1]), Number(values[2]), Number(values[3])).normalize();
+            const combined = rotationsByTarget.get(targetName);
+            if (combined) combined.multiply(q);
+            else rotationsByTarget.set(targetName, q);
           });
+          for (const [targetName, quaternion] of rotationsByTarget) {
+            const e = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+            totalRotations[targetName] = [THREE.MathUtils.radToDeg(e.x), THREE.MathUtils.radToDeg(e.y), THREE.MathUtils.radToDeg(e.z)];
+          }
+        }
+      }
+
+      const motionRoot = motionRootObjectRef.current;
+      const baseRootPosition = motionRootBasePositionRef.current;
+      if (motionRoot && baseRootPosition) {
+        const root = activeMotion && animRetargetOptions.rootMotionPreservation ? activeMotion.roots?.[frameIndex] : undefined;
+        const firstRoot = activeMotion?.roots?.[0];
+        if (root && firstRoot) {
+          const scale = animRetargetOptions.scaleNormalization ? bounds.scale : 1;
+          let x = (Number(root[0]) - Number(firstRoot[0])) * scale;
+          let y = (Number(root[1]) - Number(firstRoot[1])) * scale;
+          const z = (Number(root[2]) - Number(firstRoot[2])) * scale;
+          if (animRetargetOptions.footContactLock) y = Math.max(0, y);
+          motionRoot.position.set(baseRootPosition.x + x, baseRootPosition.y + y, baseRootPosition.z + z);
+        } else {
+          motionRoot.position.copy(baseRootPosition);
         }
       }
 
@@ -1225,8 +1262,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         skeletonHelperRef.current?.updateMatrixWorld(true);
       }
     },
-    [getMeshBounds]
-  );
+    [getMeshBounds, animRetargetOptions]);
 
   // 6b. Live Rigging Armature Visualizer in 3D Viewport (Humanoid Biped 17-Bone Hierarchy)
   useEffect(() => {
@@ -1318,6 +1354,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     animCurrentTime,
     animIsPlaying,
     animCurrentAnimationId,
+    motionClipVersion,
     animBoneRotations,
     animTracks,
     animBlendState,
@@ -2482,6 +2519,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   // Load the real selected asset into the persistent viewport.
   useEffect(() => {
     if (!sceneRef.current || !currentMeshGroupRef.current) return;
+    useAnimationStore.getState().setLoadedSkeletonBoneNames(null);
     const group = currentMeshGroupRef.current;
     while (group.children.length > 0) {
       const obj = group.children[0];
@@ -2508,6 +2546,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       mixerRef.current.stopAllAction();
       mixerRef.current = null;
     }
+    motionRootObjectRef.current = null;
+    motionRootBasePositionRef.current = null;
     if (skeletonHelperRef.current) {
       if (sceneRef.current) sceneRef.current.remove(skeletonHelperRef.current);
       skeletonHelperRef.current.dispose();
@@ -2566,6 +2606,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             : '';
           const gltf = await loader.parseAsync(arrayBuffer, basePath);
           if (!cancelled) {
+            motionRootObjectRef.current = gltf.scene;
+            motionRootBasePositionRef.current = gltf.scene.position.clone();
             group.add(gltf.scene);
             gltf.scene.traverse((child) => {
               if (child instanceof THREE.Mesh) {
@@ -2601,11 +2643,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
             // Look for SkinnedMesh or Bone to attach SkeletonHelper
             let hasSkeleton = false;
+            const skeletonBoneNames: string[] = [];
             gltf.scene.traverse((child) => {
+              if (child instanceof THREE.Bone && child.name) skeletonBoneNames.push(child.name);
               if (child instanceof THREE.SkinnedMesh || child instanceof THREE.Bone) {
                 hasSkeleton = true;
               }
             });
+            useAnimationStore.getState().setLoadedSkeletonBoneNames([...new Set(skeletonBoneNames)]);
             if (hasSkeleton && sceneRef.current) {
               if (skeletonHelperRef.current) {
                 sceneRef.current.remove(skeletonHelperRef.current);
@@ -2635,6 +2680,57 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               }
             });
           }
+        } else if (format === 'fbx') {
+          const response = await fetch(sourceUrl);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const objectUrl = URL.createObjectURL(await response.blob());
+          let fbx: THREE.Group;
+          try {
+            fbx = await sharedFBXLoader.loadAsync(objectUrl);
+          } finally {
+            URL.revokeObjectURL(objectUrl);
+          }
+          if (cancelled) {
+            fbx.traverse((child) => {
+              if (child instanceof THREE.Mesh) {
+                child.geometry?.dispose();
+                disposeMaterial(child.material);
+              }
+            });
+            return;
+          }
+          motionRootObjectRef.current = fbx;
+          motionRootBasePositionRef.current = fbx.position.clone();
+          fbx.traverse((child) => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = (child.geometry?.attributes?.position?.count || 0) < 200000;
+            }
+          });
+          group.add(fbx);
+          frameCamera(fbx);
+          computeMeshStats(fbx);
+          if (fbx.animations.length) {
+            const mixer = new THREE.AnimationMixer(fbx);
+            mixerRef.current = mixer;
+            actionRef.current = mixer.clipAction(fbx.animations[0]);
+            actionRef.current.play();
+          }
+          let hasSkeleton = false;
+          const skeletonBoneNames: string[] = [];
+          fbx.traverse((child) => {
+            if (child instanceof THREE.Bone && child.name) skeletonBoneNames.push(child.name);
+            if (child instanceof THREE.SkinnedMesh || child instanceof THREE.Bone) hasSkeleton = true;
+          });
+          useAnimationStore.getState().setLoadedSkeletonBoneNames([...new Set(skeletonBoneNames)]);
+          if (hasSkeleton && sceneRef.current) {
+            const helper = new THREE.SkeletonHelper(fbx);
+            helper.visible = useAnimationStore.getState().displayOptions.showSkeleton;
+            sceneRef.current.add(helper);
+            skeletonHelperRef.current = helper;
+          }
+          setLoadedAssetId(currentAsset.id);
+          setModelLoadVersion((version) => version + 1);
         } else if (format === 'obj') {
           // ponytail: verify response is text before parsing as OBJ
           const objResponse = await fetch(sourceUrl);

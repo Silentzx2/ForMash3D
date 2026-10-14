@@ -44,7 +44,7 @@ flowchart TB
         direction TB
         NEXT["Next.js 16 Studio :3000<br/>React 19 + TypeScript"]:::gold
         VPORT["3D Viewport<br/>Three.js / React Three Fiber"]:::gold
-        CONTROLS["Studio Panels<br/>Gen · Retopo · UV · Texture · Rig"]:::gold
+        CONTROLS["Studio Panels<br/>Gen · Retopo · UV · Texture · Rig · Retarget"]:::gold
     end
 
     subgraph GW["⚡ API Gateway Layer (FastAPI)"]
@@ -67,6 +67,7 @@ flowchart TB
         SHAPE["Shape Generation<br/>TRELLIS · Hunyuan3D-2.1<br/>TripoSG"]:::purple
         PAINT["Optional Texture Stage<br/>Paint3D 1K/2K · Hunyuan Paint 4K/8K"]:::purple
         STRUCT["Structure & Motion<br/>FastMesh (V1K/V4K)<br/>UniRig · ARDY"]:::purple
+        RETARGET["Motion Retargeting<br/>Joint mapping · rotation and root-motion playback"]:::purple
     end
 
     subgraph POST["⚙️ Production Post-Processing Core"]
@@ -87,6 +88,8 @@ flowchart TB
     API --> ROUTERS
     ROUTERS --> SCHEDULER
     SCHEDULER --> CORE
+    STRUCT --> RETARGET
+    RETARGET --> VPORT
     CORE -->|"Raw Model Output"| SRC_CHECK
     SRC_CHECK --> POST
     POST --> LOCAL
@@ -611,6 +614,7 @@ Telemetry is diagnostic evidence, not a model-quality verdict. The same-input, s
 The Next.js 16 Presentation Layer unifies all creation, editing, retopology, rigging, and animation workflows onto a single continuous WebGL canvas:
 
 - **Continuous 3D Viewport**: `MeshViewer` and `ViewportToolOverlay` remain continuously mounted in `#center-viewport-stage` across all workspace tool selections (`model`, `remesh`, `texture`, `uv`, `segment`, `edit`, `animation`, `rigging`). Canvas destructions and WebGL context recreation (200–500ms latency) are eliminated.
+- **Rig-to-animation handoff**: UniRig retains its native FBX for export and publishes a GLB preview for the shared viewport. ARDY motion JSON joint names, per-frame quaternions and root positions are mapped to the loaded skeleton; motion generation requires a real rig, and retarget playback options drive root-motion scaling and floor clamping.
 - **Dynamic Modular Panel Rail**:
   - The left floating context tool panel routes dynamically through `renderToolPanel()` to lightweight tool modules (`AnimationLeftPanel`, `RiggingLeftPanel`, etc.) with zero viewport disruption.
   - The right property rail routes through `RightWorkspacePanel` to tool-specific inspectors (`AnimationRightInspector`, `RiggingRightInspector`, `UVInspector`, `SegmentInspector`, `MeshEditInspector`, `RightPropertyPanel`).

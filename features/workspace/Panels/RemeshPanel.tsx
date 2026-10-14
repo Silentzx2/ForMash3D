@@ -388,7 +388,7 @@ export const RemeshPanel: React.FC = () => {
               </p>
               {!currentAsset && (
                 <p className="text-[9px] text-amber-400/90 text-center">
-                  TargetIcon mesh required. Select or generate a model above to remesh.
+                  Target mesh required. Select or generate a model above to remesh.
                 </p>
               )}
             </div>

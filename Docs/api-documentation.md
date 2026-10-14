@@ -561,6 +561,7 @@ Returns durable job history (SQLite page, falling back to the Redis job listing 
 
 - `model_url`, `game_ready_url`, `download_url` — `/api/v1/system/jobs/{job_id}/download?artifact_format=glb` (game-ready GLB; the default viewer artifact)
 - `source_model_url`, `high_fidelity_url` — `/api/v1/system/jobs/{job_id}/download?artifact_format=master` (immutable `master/source.glb`)
+- `GET /api/v1/system/jobs/{job_id}/download?artifact_format=fbx` — native FBX from a completed rigging job or an already-baked game-ready FBX. Generic on-demand `trimesh` FBX conversion is unsupported and returns HTTP 422 when no actual FBX is available.
 - `thumbnail_url` — `/api/v1/system/jobs/{job_id}/thumbnail` (rendered preview, input-image, or placeholder fallback)
 
 Values populated by production post-processing are never overwritten; only missing URLs are backfilled.
@@ -848,7 +849,7 @@ Event types:
 - GET /api/v1/smart-generation/presets returns the versioned intent definitions.
 - POST /api/v1/smart-generation/resolve resolves an intent to a ready, compatible Image → 3D model and applied preset; an explicit model is validated as an override.
 - Image→raw and image→textured requests accept intent, preprocessing_artifact_id, enhancement_enabled, enable_printability_check, enable_auto_repair, enable_auto_rig, and auto_rig_mode.
-- Completed auto-rig workflows expose rigged_model_url and the standard download endpoint accepts artifact_format=rigged.
+- Completed auto-rig workflows expose a GLB `rigged_model_url` for viewport display and retain the original native FBX separately for download. The `artifact_format=fbx` download option serves a real pre-exported FBX only; assets without one receive HTTP 422 rather than an unsupported generic `trimesh` conversion.
 
 ## High-Fidelity Result and Resource Metadata — 2026-10-08
 

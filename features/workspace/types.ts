@@ -105,6 +105,7 @@ export interface ModelAsset {
     physicsReady?: boolean;
     physics?: Record<string, unknown>;
     rigged?: string;
+    riggedFbx?: string;
   };
   qaScore?: number;
   qaStatus?: 'pass' | 'warn' | 'fail';
@@ -170,9 +171,13 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     typeof rawArtifacts.rigged === 'string'
       ? rawArtifacts.rigged
       : (rawArtifacts.rigged?.url || raw.rigged_model_url || undefined);
+  const riggedFbxUrl =
+    typeof rawArtifacts.riggedFbx === 'string'
+      ? rawArtifacts.riggedFbx
+      : (rawArtifacts.riggedFbx?.url || raw.rigged_fbx_url || undefined);
 
   const hasArtifacts = Boolean(
-    raw.artifacts || collisionUrl || physicsReady || physics || qaReport || sourceUrl || gameReadyUrl || lods || pbrMaps || gameReadyFormats || zipUrl || riggedUrl
+    raw.artifacts || collisionUrl || physicsReady || physics || qaReport || sourceUrl || gameReadyUrl || lods || pbrMaps || gameReadyFormats || zipUrl || riggedUrl || riggedFbxUrl
   );
 
   const artifacts = hasArtifacts ? {
@@ -188,6 +193,7 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     physicsUrl,
     physicsReady,
     rigged: riggedUrl,
+    riggedFbx: riggedFbxUrl,
     physics,
   } : undefined;
 
@@ -289,6 +295,23 @@ export async function uploadMeshAsset(file: File): Promise<ModelAsset> {
   } catch {
     return createUploadedMeshAsset(file);
   }
+}
+
+export function withRiggedModel(asset: ModelAsset, riggedUrl: string, riggedFbxUrl?: string): ModelAsset {
+  const originalSource = asset.artifacts?.source || asset.source?.viewUrl || asset.source?.localUrl;
+  return {
+    ...asset,
+    format: 'GLB',
+    source: asset.source
+      ? { ...asset.source, filename: `${asset.name}.glb`, viewUrl: riggedUrl, localUrl: undefined }
+      : { filename: `${asset.name}.glb`, subfolder: 'rigged', type: 'job', viewUrl: riggedUrl },
+    artifacts: {
+      ...asset.artifacts,
+      ...(originalSource ? { source: originalSource } : {}),
+      rigged: riggedUrl,
+      riggedFbx: riggedFbxUrl,
+    },
+  };
 }
 
 export type Asset3D = ModelAsset;

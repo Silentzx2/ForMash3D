@@ -81,6 +81,7 @@ interface RiggingState {
   generationError: string | null;
   jobId: string | null;
   riggedModelUrl: string | null;
+  riggedFbxUrl: string | null;
 
   // Workspace modes
   workspaceAction: RiggingWorkspaceAction;
@@ -108,14 +109,95 @@ interface RiggingState {
 
   // Actions
   generateRig: (meshPath?: string, meshFileId?: string) => Promise<boolean>;
-  applyAndSaveRig: () => Promise<boolean>;
+  resumeRigPolling: () => Promise<boolean>;
+  cancelRigPolling: () => void;
+  applyAndSaveRig: (snapshot?: {
+    bones: Pick<RigBoneNode, 'name' | 'parent' | 'position' | 'rotation'>[];
+    riggedModelUrl: string | null;
+  }) => Promise<boolean>;
   resetRigState: () => void;
 }
 
-export const useRiggingStore = create<RiggingState>((set, get) => ({
-  characterName: 'knight.glb',
-  characterVertices: 45231,
-  characterSizeMb: 2.8,
+let rigPollTimer: ReturnType<typeof setTimeout> | null = null;
+let rigPollPaused = false;
+let rigPollGeneration = 0;
+let rigPollWake: ((cancelled: boolean) => void) | null = null;
+
+function waitForRigPoll(ms: number): Promise<boolean> {
+  if (rigPollPaused) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    rigPollWake = resolve;
+    rigPollTimer = setTimeout(() => {
+      rigPollTimer = null;
+      const wake = rigPollWake;
+      rigPollWake = null;
+      wake?.(false);
+    }, ms);
+  });
+}
+
+function cancelRigPollWait() {
+  rigPollPaused = true;
+  rigPollGeneration += 1;
+  if (rigPollTimer) clearTimeout(rigPollTimer);
+  rigPollTimer = null;
+  const wake = rigPollWake;
+  rigPollWake = null;
+  wake?.(true);
+}
+
+export const useRiggingStore = create<RiggingState>((set, get) => {
+  const pollRigJob = async (jobId: string): Promise<boolean> => {
+    const generation = ++rigPollGeneration;
+    const client = getApiClient();
+    while (get().jobId === jobId && generation === rigPollGeneration) {
+      const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+      if (await waitForRigPoll(hidden ? 3000 : 1200)) return false;
+
+      let statusRes;
+      try {
+        statusRes = await client.getJobStatus(jobId);
+      } catch {
+        set({ generationStatus: 'Connection interrupted; retrying job status…' });
+        continue;
+      }
+      if (get().jobId !== jobId || generation !== rigPollGeneration) return false;
+
+      if (statusRes.status === 'processing' || statusRes.status === 'queued') {
+        set({
+          generationProgress: Math.min(90, get().generationProgress + (statusRes.status === 'processing' ? 2 : 1)),
+          generationStatus: statusRes.status === 'queued' ? 'Waiting for GPU scheduler…' : 'Fitting skeleton & skinning weights…',
+        });
+      } else if (statusRes.status === 'completed') {
+        set({
+          isGenerating: false,
+          generationProgress: 100,
+          generationStatus: 'Rig generated successfully!',
+          riggedModelUrl: `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download`,
+          riggedFbxUrl: `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download?artifact_format=fbx`,
+        });
+        return true;
+      } else if (statusRes.status === 'failed' || statusRes.status === 'cancelled') {
+        throw new Error((statusRes as any).error_message || `Auto-rigging job ${statusRes.status}`);
+      }
+    }
+    return false;
+  };
+
+  const failRigJob = (err: unknown) => {
+    set({
+      isGenerating: false,
+      generationProgress: 0,
+      generationStatus: 'failed',
+      generationError: err instanceof Error ? err.message : 'Auto-rigging failed',
+    });
+    return false;
+  };
+
+  return ({
+  characterName: 'Character Mesh',
+  characterVertices: 0,
+  characterSizeMb: 0,
   characterMeshUrl: null,
   setCharacterInfo: (info) =>
     set((s) => ({
@@ -152,6 +234,7 @@ export const useRiggingStore = create<RiggingState>((set, get) => ({
   generationError: null,
   jobId: null,
   riggedModelUrl: null,
+  riggedFbxUrl: null,
 
   workspaceAction: 'pose',
   setWorkspaceAction: (workspaceAction) => set({ workspaceAction }),
@@ -190,17 +273,24 @@ export const useRiggingStore = create<RiggingState>((set, get) => ({
 
   // Real backend call to /api/v1/auto-rigging/generate-rig
   generateRig: async (meshPath?: string, meshFileId?: string) => {
+    rigPollPaused = false;
     const { autoRigProvider, rigMode, targetSkeleton } = get();
+    if (!meshFileId && !meshPath) {
+      set({ generationError: 'Select or upload a mesh first' });
+      return false;
+    }
     set({
       isGenerating: true,
       generationProgress: 10,
       generationStatus: 'Initializing auto-rigging pipeline...',
       generationError: null,
+      riggedModelUrl: null,
+      riggedFbxUrl: null,
     });
 
     try {
       const client = getApiClient();
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         rig_mode: rigMode,
         output_format: 'fbx',
         model_preference: autoRigProvider,
@@ -211,66 +301,47 @@ export const useRiggingStore = create<RiggingState>((set, get) => ({
           symmetry: get().symmetry,
         },
       };
-
-      if (meshFileId) {
-        payload.mesh_file_id = meshFileId;
-      } else if (meshPath) {
-        payload.mesh_path = meshPath;
-      } else {
-        payload.mesh_path = 'models/character.glb';
-      }
+      if (meshFileId) payload.mesh_file_id = meshFileId;
+      else if (meshPath) payload.mesh_path = meshPath;
 
       const response = await client.generateRig(payload);
-      const jobId = response.job_id;
-      if (!jobId) throw new Error('Backend did not return a job ID');
-      set({ jobId, generationProgress: 25, generationStatus: 'Queued on GPU...' });
-
-      // Poll until finished
-      for (let attempts = 0; attempts < 60; attempts++) {
-        await new Promise((r) => setTimeout(r, 1200));
-        const statusRes = await client.getJobStatus(jobId);
-        const status = statusRes.status;
-
-        if (status === 'processing' || status === 'queued') {
-          const prog = Math.min(90, 30 + attempts * 3);
-          set({ generationProgress: prog, generationStatus: 'Fitting skeleton & skinning weights...' });
-        } else if (status === 'completed') {
-          const result = statusRes.result;
-          const outUrl = result?.mesh_url || (result as any)?.output_mesh_path || null;
-          set({
-            isGenerating: false,
-            generationProgress: 100,
-            generationStatus: 'Rig generated successfully!',
-            riggedModelUrl: outUrl,
-          });
-          return true;
-        } else if (status === 'failed') {
-          throw new Error((statusRes as any).error_message || `Job ${status}`);
-        }
-      }
-
-      throw new Error('Auto-rigging timed out');
-    } catch (err: any) {
-      set({
-        isGenerating: false,
-        generationProgress: 0,
-        generationStatus: 'failed',
-        generationError: err?.message || 'Auto-rigging failed',
-      });
-      return false;
+      if (!response.job_id) throw new Error('Backend did not return a job ID');
+      set({ jobId: response.job_id, generationProgress: 25, generationStatus: 'Queued on GPU...' });
+      return await pollRigJob(response.job_id);
+    } catch (err) {
+      return failRigJob(err);
     }
   },
 
-  applyAndSaveRig: async () => {
+  resumeRigPolling: async () => {
+    rigPollPaused = false;
+    const jobId = get().jobId;
+    if (!jobId || get().generationStatus !== 'paused') return false;
+    set({ isGenerating: true, generationStatus: 'Reconnecting to rig job…', generationError: null });
+    try {
+      return await pollRigJob(jobId);
+    } catch (err) {
+      return failRigJob(err);
+    }
+  },
+
+  cancelRigPolling: () => {
+    cancelRigPollWait();
+    if (get().jobId && get().isGenerating) {
+      set({ isGenerating: false, generationStatus: 'paused' });
+    }
+  },
+
+  applyAndSaveRig: async (snapshot) => {
     try {
       const { characterName, bones, riggedModelUrl } = get();
       const rigSnapshot = {
         version: 1,
         savedAt: new Date().toISOString(),
         characterName,
-        riggedModelUrl,
-        bones,
-        skeleton: 'Biped Humanoid (UniRig)',
+        riggedModelUrl: snapshot ? snapshot.riggedModelUrl : riggedModelUrl,
+        bones: snapshot?.bones ?? bones,
+        skeleton: 'Editor Armature Snapshot',
       };
       localStorage.setItem('formash-3d-rigging-asset', JSON.stringify(rigSnapshot));
       return true;
@@ -281,6 +352,7 @@ export const useRiggingStore = create<RiggingState>((set, get) => ({
   },
 
   resetRigState: () => {
+    cancelRigPollWait();
     set({
       bones: DEFAULT_RIG_BONES,
       selectedBone: 'Hips',
@@ -289,6 +361,8 @@ export const useRiggingStore = create<RiggingState>((set, get) => ({
       generationStatus: 'idle',
       generationError: null,
       jobId: null,
+      riggedModelUrl: null,
+      riggedFbxUrl: null,
     });
   },
-}));
+});

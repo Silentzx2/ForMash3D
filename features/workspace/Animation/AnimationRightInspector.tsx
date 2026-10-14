@@ -87,9 +87,10 @@ export const AnimationRightInspector: React.FC = () => {
     setOpenSections((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const modelName = currentAsset?.name || viewerStore.loadedModelName || 'character.glb';
-  const realPolys = currentAsset?.faces || currentAsset?.triangles || viewerStore.modelStats?.triangles || 45231;
-  const polysText = `${realPolys.toLocaleString()} vertices`;
+  const modelName = currentAsset?.name || viewerStore.loadedModelName || 'No model selected';
+  const hasRig = Boolean(currentAsset?.artifacts?.rigged);
+  const realVertices = currentAsset?.statsAvailable ? currentAsset.vertices : viewerStore.modelStats?.vertices;
+  const polysText = typeof realVertices === 'number' && realVertices > 0 ? `${realVertices.toLocaleString()} vertices` : '— vertices';
 
   // Navigate to dedicated Rigging page preserving context
   const handleOpenRigging = () => {
@@ -664,25 +665,21 @@ export const AnimationRightInspector: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <h4 className="text-xs font-bold text-white truncate">{modelName}</h4>
                   <p className="text-[11px] text-zinc-400">{polysText}</p>
-                  <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                    <HugeiconsIcon icon={ShieldCheckIcon} size={16} className="w-3 h-3" /> ARDY Core Compatible
-                  </span>
+                  {hasRig && <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                    <HugeiconsIcon icon={ShieldCheckIcon} size={16} className="w-3 h-3" /> Rigged model
+                  </span>}
                 </div>
               </div>
 
               {/* Skeleton Specification */}
               <div className="p-2.5 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-zinc-400">Active Skeleton:</span>
-                  <span className="text-white font-mono">Humanoid (ARDY)</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-400">Joint Nodes:</span>
-                  <span className="text-white font-mono">24 Joints</span>
-                </div>
+                {hasRig && <div className="flex justify-between">
+                  <span className="text-zinc-400">Rigged Asset:</span>
+                  <span className="text-white font-mono">{currentAsset?.artifacts?.riggedFbx ? 'Native FBX + GLB preview' : 'Rigged GLB preview'}</span>
+                </div>}
                 <div className="flex justify-between">
                   <span className="text-zinc-400">Rig Status:</span>
-                  <span className="text-emerald-400 font-medium">Fully Rigged</span>
+                  <span className={hasRig ? 'text-emerald-400 font-medium' : 'text-amber-400 font-medium'}>{hasRig ? 'Fully Rigged' : 'Not Rigged'}</span>
                 </div>
               </div>
 

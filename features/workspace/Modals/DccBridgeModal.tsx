@@ -182,7 +182,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
             {/* TargetIcon Software Select */}
             <div>
               <label className="text-[11px] font-semibold text-zinc-300 uppercase tracking-wider block mb-2">
-                TargetIcon Creative Environment
+                Target Creative Environment
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {DCC_PRESETS.map((preset) => {

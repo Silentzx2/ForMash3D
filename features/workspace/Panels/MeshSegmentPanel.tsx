@@ -149,9 +149,9 @@ export const MeshSegmentPanel: React.FC = () => {
                       <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-primary" />
                     </div>
                     <div className="min-w-0 flex-1 pr-6">
-                      <div className="text-xs font-bold text-white truncate">{currentAsset.name || 'knight_character.glb'}</div>
+                      <div className="text-xs font-bold text-white truncate">{currentAsset.name}</div>
                       <div className="text-[10px] text-zinc-400 mt-0.5">
-                        GLB · {currentAsset.fileSize || '12.4 MB'} · {currentAsset.faces ? `${Math.round(currentAsset.faces / 1000)}K` : '248K'} faces
+                        {currentAsset.format} · {currentAsset.fileSize || '—'} · {currentAsset.faces > 0 ? `${Math.round(currentAsset.faces / 1000)}K` : '—'} faces
                       </div>
                     </div>
                   </div>
