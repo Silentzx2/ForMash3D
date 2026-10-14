@@ -23,6 +23,36 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+TRIPOSG_MAX_HIERARCHICAL_DEPTH = 10
+TRIPOSG_DEPTH10_MIN_FREE_BYTES = 24 * 1024**3
+TRIPOSG_DEPTH10_MIN_TOTAL_BYTES = 32 * 1024**3
+
+
+def _resolve_hierarchical_octree_depth(
+    requested_depth: int,
+    dense_depth: int,
+    device: str,
+    *,
+    free_memory_bytes: Optional[int] = None,
+    total_memory_bytes: Optional[int] = None,
+) -> tuple[int, Optional[str]]:
+    """Resolve extraction depth conservatively; depth 10 creates a 1024-wide final grid."""
+    requested = min(TRIPOSG_MAX_HIERARCHICAL_DEPTH, max(int(dense_depth), int(requested_depth)))
+    if requested < TRIPOSG_MAX_HIERARCHICAL_DEPTH:
+        return requested, None
+    if free_memory_bytes is None or total_memory_bytes is None:
+        try:
+            free_memory_bytes, total_memory_bytes = torch.cuda.mem_get_info(device)
+        except Exception as exc:
+            return 9, f"GPU memory query failed ({type(exc).__name__}); falling back to depth 9."
+    if (int(total_memory_bytes) < TRIPOSG_DEPTH10_MIN_TOTAL_BYTES
+            or int(free_memory_bytes) < TRIPOSG_DEPTH10_MIN_FREE_BYTES):
+        return 9, (
+            "depth 10 creates a large 1024^3 grid and intermediate tensors; GPU memory is below "
+            "the conservative 24 GiB free / 32 GiB total threshold, so depth 9 (512^3) is used."
+        )
+    return requested, None
+
 
 class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -270,12 +300,20 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
             octree_depth = int(inputs.get("flash_octree_depth", inputs.get("octree_depth", 9)))
-            dense_octree_depth = int(inputs.get("dense_octree_depth", 8))
-            hierarchical_octree_depth = int(inputs.get("hierarchical_octree_depth", 9))
+            dense_octree_depth = max(6, min(8, int(inputs.get("dense_octree_depth", 8))))
+            requested_hierarchical_octree_depth = min(
+                TRIPOSG_MAX_HIERARCHICAL_DEPTH,
+                max(dense_octree_depth, int(inputs.get("hierarchical_octree_depth", 10))),
+            )
 
             if not torch.cuda.is_available():
                 raise RuntimeError("TripoSG requires CUDA; CPU inference is not supported.")
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            hierarchical_octree_depth, depth_limit_reason = _resolve_hierarchical_octree_depth(
+                requested_hierarchical_octree_depth, dense_octree_depth, device,
+            )
+            if depth_limit_reason:
+                logger.warning("TripoSG high-detail extraction fallback: %s", depth_limit_reason)
             # The model manifest prefers hierarchical extraction. Flash extraction
             # starts at a much coarser grid and can miss thin features before the
             # final pass, so maximum-fidelity raw generation uses the dense /
@@ -377,10 +415,17 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     "native_vertex_count": vertex_count,
                     "native_face_count": face_count,
                     "geometry_extractor": "TripoSG Flash VAE decoder" if use_flash_decoder else "TripoSG dense/hierarchical VAE decoder",
-                    "effective_geometry_resolution": None,
-                    "resolution_status": "decoder depth is recorded; upstream does not return a scalar achieved grid resolution",
+                    "requested_geometry_resolution": 2 ** requested_hierarchical_octree_depth,
+                    "geometry_extraction_grid_resolution": 2 ** (octree_depth if use_flash_decoder else hierarchical_octree_depth),
+                    "effective_geometry_resolution": 2 ** (octree_depth if use_flash_decoder else hierarchical_octree_depth),
+                    "effective_geometry_resolution_status": "derived from the depth passed to TripoSG extraction",
+                    "geometry_resolution_limited": hierarchical_octree_depth != requested_hierarchical_octree_depth,
+                    "geometry_resolution_limit_reason": depth_limit_reason,
+                    "voxel_size": 2.01 / (2 ** (octree_depth if use_flash_decoder else hierarchical_octree_depth)),
+                    "resolution_status": "depth-based grid resolution is reported from the effective extraction path",
                     "flash_octree_depth": octree_depth if use_flash_decoder else None,
                     "dense_octree_depth": dense_octree_depth,
+                    "requested_hierarchical_octree_depth": requested_hierarchical_octree_depth,
                     "hierarchical_octree_depth": hierarchical_octree_depth,
                     "mesh_operations": [],
                 },
@@ -445,6 +490,24 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "boolean",
                     "description": "Maximum-fidelity source profile uses dense/hierarchical extraction.",
                     "default": False,
+                    "readOnly": True,
+                    "required": False,
+                },
+                "dense_octree_depth": {
+                    "type": "integer",
+                    "description": "Coarse dense seed grid depth used by hierarchical extraction.",
+                    "default": 8,
+                    "minimum": 6,
+                    "maximum": 8,
+                    "readOnly": True,
+                    "required": False,
+                },
+                "hierarchical_octree_depth": {
+                    "type": "integer",
+                    "description": "Target extraction depth; depth 10 requires 24 GiB free and 32 GiB total VRAM.",
+                    "default": 10,
+                    "minimum": 8,
+                    "maximum": 10,
                     "readOnly": True,
                     "required": False,
                 },

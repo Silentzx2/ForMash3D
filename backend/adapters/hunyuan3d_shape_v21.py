@@ -18,6 +18,7 @@ from PIL import Image
 
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
+from adapters.hunyuan3d_decoder_profile import configure_native_dense_decoder
 from core.utils.file_utils import OutputPathGenerator
 from core.utils.mesh_utils import MeshProcessor
 
@@ -261,12 +262,14 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
+            configure_native_dense_decoder(self.pipeline_shapegen, "Hunyuan3D-Shape-v2.1")
             mesh_result = self.pipeline_shapegen(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
                 num_chunks=num_chunks,
+                mc_algo="mc",
                 generator=generator,
             )[0]
 
@@ -290,11 +293,14 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "native_face_count": mesh_stats["face_count"],
                     "has_texture": False,
                     "source_quality": inputs.get("source_quality", "max"),
-                    "geometry_extractor": "Hunyuan3D-Shape-v2.1 shapegen pipeline",
+                    "geometry_extractor": "Hunyuan3D-Shape-v2.1 VanillaVolumeDecoder + MCSurfaceExtractor",
                     "requested_geometry_resolution": octree_res,
-                    "effective_geometry_resolution": None,
-                    "effective_geometry_resolution_status": "upstream exposes configured octree_resolution but does not report achieved output-grid resolution",
-                    "geometry_resolution_source": "configured octree_resolution passed to pipeline_shapegen; achieved grid not reported",
+                    "geometry_extraction_grid_resolution": octree_res + 1,
+                    "effective_geometry_resolution": octree_res,
+                    "effective_geometry_resolution_status": "native dense decoder evaluates octree_resolution + 1 samples per axis",
+                    "geometry_resolution_source": "verified VanillaVolumeDecoder + MCSurfaceExtractor; mc_algo=mc",
+                    "voxel_size": 2.02 / octree_res,
+                    "mc_algo": "mc",
                     "mesh_operations": [],
                     "octree_resolution": octree_res,
                     "num_chunks": num_chunks,

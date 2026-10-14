@@ -35,6 +35,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["seed"]["default"], 42)
         self.assertEqual(schema["faces"]["default"], -1)
         self.assertFalse(schema["use_flash_decoder"]["default"])
+        self.assertEqual(schema["hierarchical_octree_depth"]["default"], 10)
 
     def test_common_postprocess_quality_guard_is_wired(self):
         pipeline_path = backend_root / "postprocess/pipeline.py"
@@ -353,15 +354,15 @@ class TestNativeRawQualityContracts(unittest.TestCase):
 
         cases = {
             "hunyuan3d_shape_v21_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5,
+                "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "mc_algo": "mc",
             },
             "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 5, "enable_flashvdm": False,
+                "octree_resolution": 512, "num_inference_steps": 5, "enable_flashvdm": False, "mc_algo": "mc",
             },
             "triposg_image_to_raw_mesh": {
                 "num_inference_steps": 50, "guidance_scale": 7.0,
                 "flash_octree_depth": 9, "dense_octree_depth": 8,
-                "hierarchical_octree_depth": 9, "use_flash_decoder": False, "faces": -1,
+                "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1,
             },
             "unique3d_image_to_raw_mesh": {
                 "input_processing": True, "do_refine": True, "expansion_weight": 0.1,
