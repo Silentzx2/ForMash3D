@@ -356,7 +356,7 @@ echo "========================================"
 ensure_blender
 
 echo "[INFO] Installing backend/requirements.txt..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt"
+$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt" --index-strategy unsafe-best-match
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] backend/requirements.txt installed"
 else
