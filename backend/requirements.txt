@@ -9,8 +9,8 @@
 
 
 # Shared backend/TripoSG/Hunyuan/TRELLIS/Paint3D unified runtime versions
-transformers==4.48.3
-diffusers==0.30.3
+transformers==5.10.1
+diffusers==0.38.0
 huggingface_hub==0.25.0
 # Unique3D imports datasets while registering inference trainers; keep it compatible with Hub 0.25.
 datasets==3.6.0
@@ -69,7 +69,7 @@ structlog==23.2.0
 
 # Security
 passlib[bcrypt]==1.7.4
-python-jose[cryptography]==3.4.0
+python-jose[cryptography]==3.5.0
 
 # Optional: For production deployment
 gunicorn==22.0.0
