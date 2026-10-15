@@ -24,7 +24,7 @@ image_to_raw_mesh:
       high_fidelity_geometry: true
       mesh_quality_characteristics: [high_detail, thin_feature_sensitive]
       preferred_preprocessing: high_fidelity
-      preferred_extraction: hierarchical_marching_cubes
+      preferred_extraction: dense_marching_cubes
       preferred_resolution: 512
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
@@ -48,9 +48,9 @@ image_to_raw_mesh:
       texture_generation: false
       raw_mesh: true
       high_fidelity_geometry: true
-      mesh_quality_characteristics: [fast, compact]
+      mesh_quality_characteristics: [fine_surface_sampling, dense_marching_cubes]
       preferred_preprocessing: default
-      preferred_extraction: hierarchical_marching_cubes
+      preferred_extraction: dense_marching_cubes
       preferred_resolution: 512
       preferred_face_budget: medium
       recommended_postprocess_profile: default
@@ -76,7 +76,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [hierarchical_geometry, sharp_detail]
       preferred_preprocessing: high_fidelity
       preferred_extraction: hierarchical_octree
-      preferred_resolution: 512
+      preferred_resolution: 1024
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: balanced

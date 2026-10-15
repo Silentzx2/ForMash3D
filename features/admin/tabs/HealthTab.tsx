@@ -112,7 +112,7 @@ export function HealthTab() {
         </div>
         <NeonButton variant="secondary" size="sm" onClick={() => { load(); toast.info('Running health checks...'); }}>
           <HugeiconsIcon icon={RefreshCw} size={16} className="w-3.5 h-3.5" />
-          RefreshIcon
+          Refresh
         </NeonButton>
       </div>
 

@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { useRiggingStore } from '@/stores/useRiggingStore';
 import { useAnimationStore } from '@/stores/useAnimationStore';
 import { toast } from 'sonner';
+import { withRiggedModel } from '../types';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   BoneIcon,
@@ -17,11 +18,9 @@ import {
 } from '@hugeicons/core-free-icons';
 
 export const RiggingLeftPanel: React.FC = () => {
-  const { currentAsset, navigateToTool } = useWorkspace();
+  const { currentAsset, navigateToTool, addAsset, setCurrentAsset, updateAssetProperties } = useWorkspace();
   const {
-    characterName,
-    characterVertices,
-    characterSizeMb,
+    setCharacterInfo,
     riggingMethod,
     setRiggingMethod,
     targetSkeleton,
@@ -41,21 +40,47 @@ export const RiggingLeftPanel: React.FC = () => {
     generationStatus,
     generationError,
     generateRig,
+    jobId,
+    cancelRigPolling,
+    resumeRigPolling,
+    riggedFbxUrl,
   } = useRiggingStore();
 
   const { setXMirrorEnabled } = useAnimationStore();
 
+  useEffect(() => () => cancelRigPolling(), [cancelRigPolling]);
+  useEffect(() => {
+    if (jobId && generationStatus === 'paused') void resumeRigPolling();
+  }, [jobId, generationStatus, resumeRigPolling]);
+
   const handleGenerate = async () => {
-    try {
-      await generateRig();
-    } catch {
-      // errors handled in store
+    const meshFileId = currentAsset?.source?.fileId ?? currentAsset?.fileId;
+    if (!meshFileId) {
+      toast.error('Select or upload a mesh first');
+      return;
+    }
+    const success = await generateRig(undefined, meshFileId);
+    if (!success) return;
+    const { riggedModelUrl: riggedUrl, riggedFbxUrl: fbxUrl } = useRiggingStore.getState();
+    if (currentAsset && riggedUrl) {
+      const riggedAsset = withRiggedModel(currentAsset, riggedUrl, fbxUrl || undefined);
+      updateAssetProperties(currentAsset.id, { format: riggedAsset.format, source: riggedAsset.source, artifacts: riggedAsset.artifacts });
+      addAsset(riggedAsset);
+      setCurrentAsset(riggedAsset);
+      setCharacterInfo({
+        name: currentAsset.name,
+        vertices: currentAsset.statsAvailable ? currentAsset.vertices : 0,
+        sizeMb: currentAsset.fileSize ? Number.parseFloat(currentAsset.fileSize) || 0 : 0,
+        meshUrl: riggedUrl,
+      });
+      useAnimationStore.getState().setRigStatus('rigged');
     }
   };
 
-  const displayName = currentAsset?.name || characterName || 'Character Mesh';
-  const displayVertices = currentAsset?.vertices || characterVertices || 28450;
-  const displaySize = currentAsset?.fileSize || `${characterSizeMb} MB`;
+  const displayName = currentAsset?.name || 'No mesh selected';
+  const meshFileId = currentAsset?.source?.fileId ?? currentAsset?.fileId;
+  const displayVertices = currentAsset?.statsAvailable ? currentAsset.vertices : 0;
+  const displaySize = currentAsset?.fileSize || '—';
 
   return (
     <div id="rigging-left-panel" className="flex flex-col h-full overflow-y-auto p-3 space-y-3.5 text-xs select-none bg-[hsl(var(--surface-1))] custom-scrollbar">
@@ -70,7 +95,7 @@ export const RiggingLeftPanel: React.FC = () => {
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold text-white truncate">{displayName}</p>
               <p className="text-[10px] text-zinc-400 font-mono">
-                {displaySize} • {displayVertices.toLocaleString()} verts
+                {displaySize} • {displayVertices > 0 ? displayVertices.toLocaleString() : '—'} verts
               </p>
             </div>
           </div>
@@ -197,7 +222,7 @@ export const RiggingLeftPanel: React.FC = () => {
       {/* Action: Generate Rig Button */}
       <button
         onClick={handleGenerate}
-        disabled={isGenerating}
+        disabled={isGenerating || !meshFileId}
         className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {isGenerating ? (
@@ -212,6 +237,8 @@ export const RiggingLeftPanel: React.FC = () => {
           </>
         )}
       </button>
+
+      {!meshFileId && <p className="text-[10px] text-amber-300">Select or upload a mesh first.</p>}
 
       {/* Progress or Error Status */}
       {isGenerating && (

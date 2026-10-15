@@ -31,6 +31,57 @@ export interface AnimationClipItem {
   isBuiltin?: boolean;
 }
 
+const BONE_ALIASES: Record<string, string> = {
+  root: 'hips', pelvis: 'hips', hip: 'hips', hips: 'hips',
+  spine: 'spine', spine01: 'spine', spine1: 'spine',
+  spine02: 'chest', spine2: 'chest', spine03: 'chest', spine3: 'chest', chest: 'chest', upperchest: 'chest',
+  neck: 'neck', neck01: 'neck', neck1: 'neck', head: 'head',
+  leftshoulder: 'upperarml', leftshoulderpitch: 'upperarml', leftshoulderroll: 'upperarml', leftshoulderyaw: 'upperarml',
+  leftarm: 'upperarml', leftupperarm: 'upperarml', upperarml: 'upperarml',
+  leftforearm: 'lowerarml', leftelbow: 'lowerarml', leftlowerarm: 'lowerarml', lowerarml: 'lowerarml',
+  lefthand: 'handl', leftwrist: 'handl', leftwristroll: 'handl', leftwristpitch: 'handl', leftwristyaw: 'handl', leftthumb: 'handl', handl: 'handl',
+  leftupleg: 'upperlegl', leftthigh: 'upperlegl', lefthip: 'upperlegl', lefthippitch: 'upperlegl', lefthiproll: 'upperlegl', lefthipyaw: 'upperlegl', upperlegl: 'upperlegl',
+  leftleg: 'lowerlegl', leftknee: 'lowerlegl', leftshin: 'lowerlegl', lowerlegl: 'lowerlegl',
+  leftfoot: 'footl', leftankle: 'footl', leftanklepitch: 'footl', leftankleroll: 'footl', lefttoebase: 'footl', lefttoe: 'footl', footl: 'footl',
+  rightshoulder: 'upperarmr', rightshoulderpitch: 'upperarmr', rightshoulderroll: 'upperarmr', rightshoulderyaw: 'upperarmr',
+  rightarm: 'upperarmr', rightupperarm: 'upperarmr', upperarmr: 'upperarmr',
+  rightforearm: 'lowerarmr', rightelbow: 'lowerarmr', rightlowerarm: 'lowerarmr', lowerarmr: 'lowerarmr',
+  righthand: 'handr', rightwrist: 'handr', rightwristroll: 'handr', rightwristpitch: 'handr', rightwristyaw: 'handr', rightthumb: 'handr', handr: 'handr',
+  rightupleg: 'upperlegr', rightthigh: 'upperlegr', righthip: 'upperlegr', righthippitch: 'upperlegr', righthiproll: 'upperlegr', righthipyaw: 'upperlegr', upperlegr: 'upperlegr',
+  rightleg: 'lowerlegr', rightknee: 'lowerlegr', rightshin: 'lowerlegr', lowerlegr: 'lowerlegr',
+  rightfoot: 'footr', rightankle: 'footr', rightanklepitch: 'footr', rightankleroll: 'footr', righttoebase: 'footr', righttoe: 'footr', footr: 'footr',
+};
+
+export function normalizeBoneName(name: string): string {
+  return name.toLowerCase().replace(/^(mixamorig|armature|bip001|bip|rig)/, '').replace(/[^a-z0-9]/g, '').replace(/skel$/, '');
+}
+
+export function canonicalBoneName(name: string): string {
+  const normalized = normalizeBoneName(name);
+  return BONE_ALIASES[normalized] || normalized;
+}
+
+export function mapRetargetBones(
+  sourceNames: string[],
+  targetNames: string[],
+  preferredMapping: Record<string, string> = {},
+): Record<string, string> {
+  const directTargets = new Map(targetNames.map((name) => [normalizeBoneName(name), name]));
+  const canonicalTargets = new Map<string, string>();
+  for (const name of targetNames) {
+    if (!canonicalTargets.has(canonicalBoneName(name))) canonicalTargets.set(canonicalBoneName(name), name);
+  }
+  const mapping: Record<string, string> = {};
+  for (const source of sourceNames) {
+    const preferred = preferredMapping[source] || Object.entries(preferredMapping).find(([name]) => normalizeBoneName(name) === normalizeBoneName(source))?.[1];
+    const target = (preferred && (directTargets.get(normalizeBoneName(preferred)) || canonicalTargets.get(canonicalBoneName(preferred))))
+      || directTargets.get(normalizeBoneName(source))
+      || canonicalTargets.get(canonicalBoneName(source));
+    if (target) mapping[source] = target;
+  }
+  return mapping;
+}
+
 export interface TimelineTrack {
   id: string;
   name: string;
@@ -193,6 +244,8 @@ interface AnimationState {
   setRigOptions: (opts: Partial<AnimationState['rigOptions']>) => void;
   bones: BoneItem[];
   setBones: (bones: BoneItem[]) => void;
+  loadedSkeletonBoneNames: string[] | null;
+  setLoadedSkeletonBoneNames: (names: string[] | null) => void;
   selectedBone: string | null;
   setSelectedBone: (boneName: string | null) => void;
   boneRotations: Record<string, [number, number, number]>;
@@ -220,6 +273,8 @@ interface AnimationState {
   // Retargeting
   retargetMapping: Record<string, string>;
   setRetargetMapping: (mapping: Record<string, string>) => void;
+  retargetOptions: { scaleNormalization: boolean; footContactLock: boolean; rootMotionPreservation: boolean };
+  setRetargetOptions: (opts: Partial<AnimationState['retargetOptions']>) => void;
   autoMapBones: () => void;
 
   // Motion AI (ARDY)
@@ -440,6 +495,8 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   setRigOptions: (opts) => set((s) => ({ rigOptions: { ...s.rigOptions, ...opts } })),
   bones: DEFAULT_BONES,
   setBones: (bones) => set({ bones }),
+  loadedSkeletonBoneNames: null,
+  setLoadedSkeletonBoneNames: (loadedSkeletonBoneNames) => set({ loadedSkeletonBoneNames }),
   selectedBone: 'UpperArm_R',
   setSelectedBone: (selectedBone) => set({ selectedBone }),
   boneRotations: {},
@@ -615,6 +672,8 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
       return { bones: DEFAULT_BONES, selectedBone: 'Hips', rigProfile: 'humanoid' };
     }),
 
+  retargetOptions: { scaleNormalization: true, footContactLock: true, rootMotionPreservation: true },
+  setRetargetOptions: (opts) => set((s) => ({ retargetOptions: { ...s.retargetOptions, ...opts } })),
   retargetMapping: {
     Hips: 'Hips',
     Spine1: 'Spine',

@@ -17,7 +17,8 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 ### Model-Native Source Fidelity Contract
 - Each generation model keeps its own tuned inference schedule; the frontend does not use a project-wide step count.
-- Hunyuan3D-DiT-v2-mini-Turbo uses FlashVDM (`topk_mode='merge'`) with `octree_resolution=380` and `num_chunks=20000`, producing high-fidelity geometry in <35 seconds.
+- Hunyuan3D-Shape-v2.1 and Mini Turbo stay within the upstream-supported 512-cell grid and explicitly configure/verify VanillaVolumeDecoder + MCSurfaceExtractor (mc_algo='mc'). Shape uses guidance 7.5 and its 50-step schedule; Mini keeps its trained 5-step sampler. The effective dense grid contains 513 sample points per axis.
+- TripoSG uses dense-seed + hierarchical extraction rather than GPU-capability-selected Flash extraction. The target depth is 10 (1024-wide final grid) only when at least 24 GiB VRAM is free on a GPU with at least 32 GiB total; otherwise extraction safely falls back to depth 9 (512-wide). Extra sampling can preserve only details present in the learned field.
 - The scheduler strips downstream-only target/decimation/remesh controls before adapter inference.
 - Raw extraction ceilings remain model-specific; only explicit hardware safety guards may lower them.
 - Normal image-to-3D routes return raw geometry; optional texture presets are handled after master promotion (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K). Legacy textured model IDs resolve to raw-generation aliases.
@@ -43,7 +44,7 @@ flowchart TB
         direction TB
         NEXT["Next.js 16 Studio :3000<br/>React 19 + TypeScript"]:::gold
         VPORT["3D Viewport<br/>Three.js / React Three Fiber"]:::gold
-        CONTROLS["Studio Panels<br/>Gen · Retopo · UV · Texture · Rig"]:::gold
+        CONTROLS["Studio Panels<br/>Gen · Retopo · UV · Texture · Rig · Retarget"]:::gold
     end
 
     subgraph GW["⚡ API Gateway Layer (FastAPI)"]
@@ -66,6 +67,7 @@ flowchart TB
         SHAPE["Shape Generation<br/>TRELLIS · Hunyuan3D-2.1<br/>TripoSG"]:::purple
         PAINT["Optional Texture Stage<br/>Paint3D 1K/2K · Hunyuan Paint 4K/8K"]:::purple
         STRUCT["Structure & Motion<br/>FastMesh (V1K/V4K)<br/>UniRig · ARDY"]:::purple
+        RETARGET["Motion Retargeting<br/>Joint mapping · rotation and root-motion playback"]:::purple
     end
 
     subgraph POST["⚙️ Production Post-Processing Core"]
@@ -86,6 +88,8 @@ flowchart TB
     API --> ROUTERS
     ROUTERS --> SCHEDULER
     SCHEDULER --> CORE
+    STRUCT --> RETARGET
+    RETARGET --> VPORT
     CORE -->|"Raw Model Output"| SRC_CHECK
     SRC_CHECK --> POST
     POST --> LOCAL
@@ -137,7 +141,8 @@ Located at `backend/api/`:
 | **GPU Monitor** | `backend/core/scheduler/gpu_monitor.py` | Real-time VRAM and temperature polling |
 | **Job Queue** | `backend/core/scheduler/job_queue.py` | Job request models and types |
 | **Redis Job Queue** | `backend/core/scheduler/redis_job_queue.py` | Redis-backed distributed job queue with dual Redis/SQLite atomic deletion synchronization |
-| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartUV, UniRig, TripoSG, ARDY, FastMesh, **Unique3D**, **Paint3D**). Normal image-to-3D geometry models output untextured raw geometry only, routed through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). TripoSG uses its upstream Y-up extraction orientation without an extra rotation. |
+| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartUV, UniRig, TripoSG, ARDY, FastMesh, **Unique3D**, **Paint3D**, Pixal3D). Normal image-to-3D geometry models output untextured raw geometry only, routed through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). TripoSG uses its upstream Y-up extraction orientation without an extra rotation. |
+| **Raw Geometry Fidelity Contracts** | `backend/adapters/hunyuan3d_decoder_profile.py` | Enforces native dense extraction for Hunyuan3D models: `VanillaVolumeDecoder` + `MCSurfaceExtractor` with `mc_algo="mc"`. Fails fast if VAE doesn't switch from FlashVDM. Mini Turbo uses official `octree_resolution=380`. TripoSG uses `dense_octree_depth=9`, `hierarchical_octree_depth=10` (1024³ grid) with memory-gated fallback (10→9→8). |
 | **Texture Synthesis Pipeline** | `backend/adapters/hunyuan3d_paint_v21.py` & `backend/adapters/paint3d_adapter.py` | Centralized texture adapters (Paint3D for 1K/2K, Hunyuan3D-Paint for 4K/8K) operating downstream on post-processed raw mesh geometry. RealESRGAN x4+ super-resolution and DifferentiableRenderer for PBR validation. |
 
 ### 2.4 Storage Layer
@@ -166,11 +171,14 @@ Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the main ForM
 | **SSE Streaming** | API Gateway | Server-Sent Events for progress | Real-time feedback without polling |
 | **Tensor Core Acceleration** | Backend | `torch.backends.cuda.matmul.allow_tf32 = True` | 3x-8x matmul speedup on Ampere/Ada/Hopper |
 | **Inference Mode** | Backend | `torch.inference_mode()` | Eliminates autograd graph tracking overhead |
-| **ORJSON Serialization** | Backend | `ORJSONResponse` with fallback | 10x-20x faster JSON serialization |
+| **Pydantic Serialization** | Backend | FastAPI native Pydantic response model serialization | 10x-20x faster JSON serialization |
 | **GZip Compression** | Backend | `GZipMiddleware(minimum_size=1000)` | 75-85% response size reduction |
 | **Browser Caching** | Backend | `Cache-Control` headers | Reduces repeated asset downloads |
 | **Code-Splitting** | Frontend | `next/dynamic` with skeleton fallbacks | Reduced initial bundle size |
 | **Font Optimization** | Frontend | `next/font/google` with `display: 'swap'` | Eliminates CLS and render blocking |
+| **Native Dense Decoder Enforcement** | Backend | `configure_native_dense_decoder()` forces `VanillaVolumeDecoder + MCSurfaceExtractor` with `mc_algo="mc"`, disables FlashVDM | Eliminates detail smoothing/loss in Hunyuan3D raw geometry |
+| **Official Mini Turbo Resolution** | Backend | `octree_resolution=380` (not 512 - exceeds trained range) | Prevents artifacts and quality degradation in Mini Turbo |
+| **TripoSG Max Hierarchical Depth** | Backend | `dense_octree_depth=9`, `hierarchical_octree_depth=10` (1024³ grid) with VRAM-gated fallback | Preserves fine details in TripoSG raw extraction |
 
 ---
 
@@ -606,6 +614,7 @@ Telemetry is diagnostic evidence, not a model-quality verdict. The same-input, s
 The Next.js 16 Presentation Layer unifies all creation, editing, retopology, rigging, and animation workflows onto a single continuous WebGL canvas:
 
 - **Continuous 3D Viewport**: `MeshViewer` and `ViewportToolOverlay` remain continuously mounted in `#center-viewport-stage` across all workspace tool selections (`model`, `remesh`, `texture`, `uv`, `segment`, `edit`, `animation`, `rigging`). Canvas destructions and WebGL context recreation (200–500ms latency) are eliminated.
+- **Rig-to-animation handoff**: UniRig retains its native FBX for export and publishes a GLB preview for the shared viewport. ARDY motion JSON joint names, per-frame quaternions and root positions are mapped to the loaded skeleton; motion generation requires a real rig, and retarget playback options drive root-motion scaling and floor clamping.
 - **Dynamic Modular Panel Rail**:
   - The left floating context tool panel routes dynamically through `renderToolPanel()` to lightweight tool modules (`AnimationLeftPanel`, `RiggingLeftPanel`, etc.) with zero viewport disruption.
   - The right property rail routes through `RightWorkspacePanel` to tool-specific inspectors (`AnimationRightInspector`, `RiggingRightInspector`, `UVInspector`, `SegmentInspector`, `MeshEditInspector`, `RightPropertyPanel`).

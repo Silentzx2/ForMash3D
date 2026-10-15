@@ -1,3 +1,37 @@
+## 2026-10-14 — Rigging / Animation End-to-End Integrity Pass
+
+- **UniRig installer**: the `bpy==4.0` wheel install no longer masks failures with `|| true`; a nonzero install status exits with platform/glibc troubleshooting guidance.
+- **Real mesh references and artifacts**: Rigging uses the uploaded asset's `mesh_file_id`, removes fake mesh paths and fabricated mesh statistics, wires Import/Replace to `uploadMeshAsset()`, and keeps UniRig's native FBX separate from its GLB viewport preview. Unknown mesh stats now reset to neutral values instead of carrying over from a previously selected asset. The download route rejects missing native FBX artifacts with HTTP 422 instead of trying unsupported `trimesh` FBX conversion.
+- **Honest rig state and retargeting**: the Animation inspector reports the real rig state and non-fabricated vertex counts. Motion AI requires a rig. Retargeting previews compatibility against the actual loaded Three.js bone names (not the generic editor bones), then maps ARDY joint names, quaternion frames and root positions into the existing playback path. Scale normalization, floor clamping and root-motion preservation are wired to playback options.
+- **Polling and UI integrity**: rig-job polling has no hard 72-second failure, pauses safely on navigation and resumes from the existing job ID. Motion polling clears on unmount. Manual armature snapshots now persist the actual editor bones but do not pretend to skin/export a mesh; an actual rigged artifact remains required to animate. The confirmed Remesh/Mesh Edit leaked icon-name text was corrected; placeholder mesh names/counts/sizes were replaced with real values or neutral unknown states.
+- **Validation status**: added a regression test for unsupported on-demand FBX conversion. Source changes were reviewed through GitHub; local TypeScript, Python, shell and browser end-to-end tests require an executable project runner and have not been marked as passing.
+## 2026-10-14 — Unique3D Hugging Face Dependency Compatibility
+
+- **Root cause**: `backend/scripts/install.sh` installed an unpinned latest `datasets` package before the shared runtime re-pinned `huggingface_hub==0.25.0`. The resulting versions were incompatible: Unique3D imports the trainer registry during inference startup, and newer Datasets releases import `BucketNotFoundError`, which that Hub version does not expose.
+- **Fix**: Pinned `datasets==3.6.0` in both `backend/scripts/install.sh` and `backend/requirements.txt`. This avoids upgrading the shared Hub runtime used by the other model adapters.
+- **Existing environments**: After pulling `dev`, reinstall `datasets==3.6.0` in the active `3daigc-api` environment and restart the backend.
+
+## 2026-10-14 — Unique3D Gradio UI Dependency Isolation
+
+- **Root cause**: The adapter imported `app.custom_models.mvimg_prediction` even though it already loads and calls its own trainer/pipeline. That upstream module imports Gradio and initializes another module-level pipeline, introducing an unnecessary dependency and duplicate initialization side effects.
+- **Fix**: Removed the unused wrapper imports and stopped installing Gradio for the backend Unique3D runtime. The project keeps `huggingface_hub==0.25.0` for TripoSG and `datasets==3.6.0` for the Unique3D trainer import; Hub is not upgraded just to satisfy Gradio 6.
+- **Existing environments**: The installer now removes stale `gradio`, `gradio-client`, and `hf-gradio` packages left by older Unique3D setup runs, since the dedicated backend runtime does not use the standalone demo UI.
+
+## 2026-10-14 — Raw Mesh Fidelity Audit: Hunyuan Shape, Mini Turbo, and TripoSG
+
+- **Scope**: Traced the image-to-raw-mesh API, `_build_model_inference_inputs`, the three adapters, their model manifests, and the vendored upstream volume/surface extraction implementations. No post-processing code or other model adapter was changed.
+- **Hunyuan Shape v2.1**: The upstream-supported dense grid ceiling is 512 (the architecture decision log explicitly rejects 640 as out-of-contract). Kept this ceiling and aligned the max-fidelity profile with the official 7.5 guidance default while retaining the trained 50-step schedule and untouched raw-mesh export.
+- **Hunyuan Mini Turbo**: The scheduler and adapter forcibly enabled FlashVDM with top-k merge. The fidelity-first profile now avoids that accelerated decoding path and uses the checkpoint's native dense decoder with the official `octree_resolution=380` setting; the former 512 setting exceeded the trained range, while Tencent's distilled 5-step sampling schedule remains unchanged.
+- **TripoSG**: The adapter selected the Flash extraction path from GPU compute capability, contradicting the model manifest's `hierarchical_octree` preference. It now uses dense/hierarchical extraction in the raw-source profile (dense depth 9, hierarchical target depth 10 / 1024-wide grid on GPUs with at least 24 GiB free and 32 GiB total VRAM; otherwise depth 9). The scheduler profile disables Flash extraction and records effective resolution/fallback telemetry.
+- **Contract coverage**: Scheduler and adapter defaults plus frontend parameter construction are locked by regression/source-contract tests. Recursive-clone integrity was repaired in merged PR #32 by updating `backend/thirdparty` from the unreachable SHA `423339899dd8da5a782d89855057aa7d055e3d27` to reachable `ForMash3D-ThirdParty/main` commit `a35a33af4a68228552b785d8e43bbeb1519f66f0`.
+- **Expected trade-off**: Native dense decoding is slower and can consume more host/GPU memory. Better extraction can preserve details the fast decoder misses, but cannot invent geometry evidence absent from a single-view model's learned representation. CUDA end-to-end visual comparison is still required on the target workstation.
+
+## 2026-10-14 — Second-pass extraction root-cause hardening
+
+- **Verified Hunyuan decoder selection**: Removing the FlashVDM enable call alone did not prove which VAE volume decoder/surface extractor was active. Both adapters now configure the upstream VAE with enable_flashvdm_decoder(enabled=False), verify VanillaVolumeDecoder + MCSurfaceExtractor, and explicitly pass mc_algo='mc' for generation. Unsupported vendored APIs fail loudly.
+- **TripoSG sampling ceiling**: The previous depth-9 setting capped the output grid at 512 samples per axis. The target is depth 10 (1024-wide grid) only on GPUs with at least 24 GiB free and 32 GiB total; otherwise depth 9 is used. Requested/effective resolution, voxel size, and fallback reason are reported.
+- **Validation limitation**: Regression contracts were added but could not be executed locally because GitHub DNS is unavailable from the container. CUDA A/B generation and raw-source mesh inspection are still required before asserting a visual-quality improvement.
+
 ## 2026-10-14 — High-Performance Viewport Engine & Production Postprocessing Pipeline Hardening
 
 - **Viewport Performance & Shading Optimizations (`features/workspace/Viewport/MeshViewer.tsx`)**:
@@ -249,7 +283,7 @@
 - **SQLite concurrency**: API + scheduler + workers write `backend/storage/job_queue.db`; no WAL meant reader/writer lock contention. `database_manager._initialize_database` now applies `PRAGMA journal_mode=WAL / busy_timeout=30000 / synchronous=NORMAL` via an engine `connect` event (persistent in the file).
 - **Orphaned transient rows**: after a scheduler restart or Redis-side delete, SQLite `queued`/`processing` rows never resolved (stuck-forever jobs in the UI). `RedisJobQueue._reconcile_stale_job_rows` (called from `recover_orphaned_jobs` at startup) fails transient rows with no presence in the jobs hash or pending zset, using the new single-transaction `DatabaseManager.mark_jobs_failed`. Terminal rows are never touched. Verified live before commit.
 - **Temp-dir cleanup broke in-flight jobs**: `_cleanup_stale_input_dirs` removed every `/tmp/mesh_gen_*` dir at scheduler startup, including dirs the API process still owned for queued jobs → workers failed with `[Errno 2] No such file or directory: /tmp/mesh_gen_*/b64_*.webp`. Now only dirs with mtime older than 6h are removed.
-- Known-remaining (not bugs, tracked): UniRig needs `bpy` (no py3.10 wheel; decision pending); Quad AutoRetopo is best-effort by design.
+- Known-remaining (not bugs, tracked): UniRig requires a platform-compatible Blender 4.0 `bpy` wheel; the installer now fails fast with actionable guidance instead of reporting false success. Quad AutoRetopo remains best-effort by design.
 
 ## 2026-10-10 Mesh-Tool UX Fixes (Data-URL Inputs, Panel Switching, Upload Refs, Job Deletion, UniRig)
 - **Texture data-URL rejection**: `runTextureGeneration` sent `image_path` = `data:image/webp;base64,...`; backend `process_file_input` now routes `data:` URLs into its base64 branch (mesh_generation.py:368-397), and the UI sends `image_base64` (prefix stripped) or `image_file_id`.

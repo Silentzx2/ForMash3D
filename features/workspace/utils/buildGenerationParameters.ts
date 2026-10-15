@@ -197,6 +197,9 @@ function applyModelSpecificParams(
   if (modelId.includes('triposg')) {
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
     modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
+    modelParameters.use_flash_decoder = false;
+    modelParameters.dense_octree_depth = 9;
+    modelParameters.hierarchical_octree_depth = 10;
   } else if (modelId.includes('trellis2')) {
     modelParameters.decimation_target = -1;
     modelParameters.remesh = false;
@@ -209,12 +212,20 @@ function applyModelSpecificParams(
     modelParameters.ss_sampling_steps = 50;
     modelParameters.slat_sampling_steps = 50;
   } else if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-    modelParameters.octree_resolution = 512;
+    // Official Mini Turbo uses octree_resolution=380; 512 exceeds trained range and degrades quality
+    modelParameters.octree_resolution = 380;
     modelParameters.num_inference_steps = 5;
     modelParameters.low_vram_mode = false;
     modelParameters.low_vram = false;
-    modelParameters.enable_flashvdm = true;
-} else if (modelId.includes('hunyuan')) {
+    modelParameters.enable_flashvdm = false;
+    modelParameters.mc_algo = 'mc';
+  } else if (modelId.startsWith('hunyuan3d_shape_v21')) {
+    modelParameters.octree_resolution = 512;
+    modelParameters.num_inference_steps = 50;
+    modelParameters.guidance_scale = 7.5;
+    modelParameters.low_vram = false;
+    modelParameters.mc_algo = 'mc';
+  } else if (modelId.includes('hunyuan')) {
     modelParameters.octree_resolution = 512;
     modelParameters.num_inference_steps = 50;
     modelParameters.low_vram = false;

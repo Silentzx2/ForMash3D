@@ -17,6 +17,7 @@ from PIL import Image
 
 from core.models.base import ModelStatus
 from core.models.mesh_models import ImageToMeshModel
+from adapters.hunyuan3d_decoder_profile import configure_native_dense_decoder
 from core.utils.file_utils import OutputPathGenerator
 from core.utils.mesh_utils import MeshProcessor
 
@@ -147,10 +148,6 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             if hasattr(self.pipeline, "to"):
                 self.pipeline.to(device)
 
-            if hasattr(self.pipeline, "enable_flashvdm"):
-                self.pipeline.enable_flashvdm(enabled=True, topk_mode="merge")
-                logger.info("Enabled FlashVDM with topk_mode='merge' for Mini Turbo pipeline")
-
             try:
                 if hasattr(self.pipeline, "enable_model_cpu_offload"):
                     self.pipeline.enable_model_cpu_offload(device=device)
@@ -235,9 +232,17 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Generating 3D shape with Mini Turbo on {self.device}...")
             octree_res = inputs.get("octree_resolution")
             if octree_res is None:
-                octree_res = 512 if inputs.get("source_quality", "max") == "max" else 380
+                # Official Mini Turbo uses octree_resolution=380 for optimal quality/speed balance.
+                # Higher resolutions (512) were not trained and can produce artifacts.
+                octree_res = 380
             else:
                 octree_res = int(octree_res)
+                if octree_res > 380:
+                    logger.warning(
+                        f"Mini Turbo octree_resolution={octree_res} exceeds trained maximum 380; "
+                        f"clamping to 380 to avoid quality degradation."
+                    )
+                    octree_res = 380
 
             num_chunks = inputs.get("num_chunks", 20000)
             if num_chunks is None:
@@ -258,21 +263,20 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 guidance_scale = float(guidance_scale)
 
             low_vram_mode = bool(inputs.get("low_vram_mode", False))
-            enable_flashvdm = bool(inputs.get("enable_flashvdm", True))
+            enable_flashvdm = False
+            if inputs.get("enable_flashvdm"):
+                logger.warning("Ignoring enable_flashvdm=True: the raw-source fidelity profile uses the native dense decoder.")
             seed = int(inputs.get("seed", 42))
             generator = torch.Generator(device=self.device).manual_seed(seed)
 
-            # Tencent exposes FlashVDM as a pipeline configuration method, not an
-            # inference keyword. Match the official Turbo launch contract with topk_mode='merge'.
-            if hasattr(self.pipeline, "enable_flashvdm"):
-                self.pipeline.enable_flashvdm(enabled=enable_flashvdm, topk_mode="merge")
-
+            configure_native_dense_decoder(self.pipeline, "Hunyuan3D-DiT-v2-mini-Turbo")
             mesh_result = self.pipeline(
                 image=image,
                 octree_resolution=octree_res,
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
                 num_chunks=num_chunks,
+                mc_algo="mc",
                 generator=generator,
             )[0]
 
@@ -296,13 +300,17 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "native_face_count": mesh_stats["face_count"],
                     "has_texture": False,
                     "source_quality": inputs.get("source_quality", "max"),
-                    "geometry_extractor": "Hunyuan3D-DiT-v2-mini-Turbo native mesh pipeline",
+                    "geometry_extractor": "Hunyuan3D-DiT-v2-mini-Turbo VanillaVolumeDecoder + MCSurfaceExtractor",
                     "requested_geometry_resolution": octree_res,
-                    "effective_geometry_resolution": None,
-                    "effective_geometry_resolution_status": "upstream exposes configured octree_resolution but does not report achieved output-grid resolution",
-                    "geometry_resolution_source": "configured octree_resolution passed to model pipeline; achieved grid not reported",
+                    "geometry_extraction_grid_resolution": octree_res + 1,
+                    "effective_geometry_resolution": octree_res,
+                    "effective_geometry_resolution_status": "native dense decoder evaluates octree_resolution + 1 samples per axis",
+                    "geometry_resolution_source": "verified VanillaVolumeDecoder + MCSurfaceExtractor; mc_algo=mc",
+                    "voxel_size": 2.02 / octree_res,
+                    "mc_algo": "mc",
                     "mesh_operations": [],
                     "octree_resolution": octree_res,
+                    "note": "Official Mini Turbo uses octree_resolution=380; higher values not trained",
                     "num_chunks": num_chunks,
                     "num_inference_steps": num_steps,
                     "guidance_scale": guidance_scale,
@@ -339,7 +347,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Maximum supported octree resolution for high-fidelity raw extraction; Turbo sampler remains at its trained 5 steps.",
+                    "description": "Dense sampling resolution; keep within the upstream-supported 512 maximum. Turbo sampler remains at its trained 5 steps.",
                     "default": 512,
                     "minimum": 64,
                     "maximum": 512,
@@ -378,8 +386,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "enable_flashvdm": {
                     "type": "boolean",
-                    "description": "Enable FlashVDM for faster inference",
-                    "default": True,
+                    "description": "FlashVDM acceleration is bypassed for maximum-fidelity raw geometry.",
+                    "default": False,
+                    "readOnly": True,
                     "required": False,
                 },
             }

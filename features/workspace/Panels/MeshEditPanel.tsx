@@ -919,7 +919,7 @@ export const MeshEditPanel: React.FC = () => {
         <div className="flex items-center justify-between text-[9.5px] font-mono text-zinc-400 px-0.5 pb-0.5">
           <div className="flex items-center gap-1.5 truncate min-w-0">
             <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-zinc-200 font-semibold truncate max-w-[130px]">
-              {currentAsset?.name || 'No TargetIcon Mesh'}
+              {currentAsset?.name || 'No Target Mesh'}
             </span>
             <span>•</span>
             <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-semibold uppercase flex-shrink-0">

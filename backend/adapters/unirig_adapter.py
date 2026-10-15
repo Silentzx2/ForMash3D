@@ -221,8 +221,11 @@ class UniRigAdapter(AutoRigModel):
                 )
                 has_skinning = with_skinning
 
-            # convert fbx to glb
-            result_path = fbx_to_glb(result_path)
+            # Keep native FBX for download and convert a separate GLB for the viewport.
+            output_fbx_path = Path(result_path).resolve()
+            if output_fbx_path.suffix.lower() != ".fbx" or not output_fbx_path.is_file():
+                raise RuntimeError(f"UniRig did not produce the requested FBX artifact: {output_fbx_path}")
+            result_path = fbx_to_glb(str(output_fbx_path))
 
             # Verify output was created
             if not Path(result_path).exists():
@@ -244,6 +247,7 @@ class UniRigAdapter(AutoRigModel):
             # Create response
             response = {
                 "output_mesh_path": str(result_path),
+                "output_fbx_path": str(output_fbx_path),
                 "bone_count": bone_count,
                 "rig_info": rig_info,
                 "format": output_format,

@@ -9,11 +9,13 @@ Verifies:
 5. Viewer artifact routing and Shape -> Paint chaining contract.
 """
 
+import asyncio
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Ensure backend root is on sys.path
 backend_root = Path(__file__).resolve().parents[1]
@@ -34,6 +36,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["guidance_scale"]["default"], 7.0)
         self.assertEqual(schema["seed"]["default"], 42)
         self.assertEqual(schema["faces"]["default"], -1)
+        self.assertFalse(schema["use_flash_decoder"]["default"])
+        self.assertEqual(schema["hierarchical_octree_depth"]["default"], 10)
 
     def test_common_postprocess_quality_guard_is_wired(self):
         pipeline_path = backend_root / "postprocess/pipeline.py"
@@ -63,11 +67,12 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Shape v2.1 raw source defaults to the highest supported extraction resolution.
+        # Shape v2.1 uses the upstream-supported dense sampling ceiling.
         self.assertEqual(schema["octree_resolution"]["default"], 512)
+        self.assertEqual(schema["octree_resolution"]["maximum"], 512)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
         self.assertEqual(schema["num_inference_steps"]["default"], 50)
-        self.assertEqual(schema["guidance_scale"]["default"], 5.0)
+        self.assertEqual(schema["guidance_scale"]["default"], 7.5)
 
     def test_hunyuan3d_dit_mini_turbo_contract(self):
         from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter
@@ -77,10 +82,12 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
 
         # Turbo keeps its trained 5-step schedule while using max supported extraction resolution.
         self.assertEqual(schema["octree_resolution"]["default"], 512)
+        self.assertEqual(schema["octree_resolution"]["maximum"], 512)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
         self.assertEqual(schema["num_inference_steps"]["default"], 5)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
         self.assertFalse(schema["low_vram_mode"]["default"])
+        self.assertFalse(schema["enable_flashvdm"]["default"])
 
     def test_trellis_adapter_contract(self):
         from adapters.trellis_adapter import TrellisImageToTexturedMeshAdapter
@@ -173,7 +180,9 @@ class TestGenerationProductionContract(unittest.TestCase):
         # Source sampling uses each model's max-fidelity profile; production budgets remain downstream.
         self.assertIn("return 5", build_params_content)  # Hunyuan Mini Turbo's trained schedule
         self.assertIn("return 50", build_params_content)  # max-fidelity profiles
+        self.assertIn("modelId.startsWith('hunyuan3d_shape_v21')", build_params_content)
         self.assertIn("modelParameters.octree_resolution = 512", build_params_content)
+        self.assertIn("modelParameters.use_flash_decoder = false", build_params_content)
         self.assertIn("ss_sampling_steps", build_params_content)
         self.assertIn("numericTextureResolution", build_params_content)
         self.assertIn("texture_resolution: numericTextureResolution", build_params_content)
@@ -347,15 +356,15 @@ class TestNativeRawQualityContracts(unittest.TestCase):
 
         cases = {
             "hunyuan3d_shape_v21_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0,
+                "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "mc_algo": "mc",
             },
             "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 5, "enable_flashvdm": True,
+                "octree_resolution": 512, "num_inference_steps": 5, "enable_flashvdm": False, "mc_algo": "mc",
             },
             "triposg_image_to_raw_mesh": {
                 "num_inference_steps": 50, "guidance_scale": 7.0,
                 "flash_octree_depth": 9, "dense_octree_depth": 8,
-                "hierarchical_octree_depth": 9, "faces": -1,
+                "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1,
             },
             "unique3d_image_to_raw_mesh": {
                 "input_processing": True, "do_refine": True, "expansion_weight": 0.1,
@@ -570,6 +579,39 @@ class TestSystemViewerRouting(unittest.TestCase):
         # Inspect the route function signature and contract
         sig = inspect.signature(download_job_result)
         self.assertIn("artifact_format", sig.parameters)
+
+    def test_fbx_download_rejects_unrigged_assets_without_native_fbx(self):
+        from fastapi import HTTPException
+        from api.routers import system
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_base = Path(temp_dir)
+            models_root = storage_base / "models"
+            asset_root = models_root / "test-asset"
+            game_ready = asset_root / "game_ready"
+            game_ready.mkdir(parents=True)
+            (game_ready / "test-asset.glb").write_bytes(b"not-needed-for-the-422-contract")
+
+            scheduler = MagicMock()
+            scheduler.get_job_status = AsyncMock(return_value={
+                "status": "completed",
+                "result": {
+                    "asset_root": str(asset_root),
+                    "asset_name": "test-asset",
+                },
+            })
+            request = SimpleNamespace(headers=SimpleNamespace(get=lambda *_: None))
+
+            with (
+                patch("api.routers.system.get_scheduler", new=AsyncMock(return_value=scheduler)),
+                patch("api.dependencies.get_current_user_optional", new=AsyncMock(return_value=None)),
+                patch("api.routers.system.get_storage_base_dir", return_value=storage_base),
+            ):
+                with self.assertRaises(HTTPException) as raised:
+                    asyncio.run(download_job_result("job-no-fbx", request, artifact_format="fbx"))
+
+            self.assertEqual(raised.exception.status_code, 422)
+            self.assertIn("requires rigging", raised.exception.detail)
 
 
 if __name__ == "__main__":

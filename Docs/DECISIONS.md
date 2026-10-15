@@ -213,14 +213,14 @@
 
 ## ADR-016: ORJSON for Fast Serialization
 
-**Decision**: Use `orjson` for JSON serialization with graceful fallback to standard `JSONResponse`.
+**Decision**: Use FastAPI native Pydantic response model serialization (replaces deprecated `ORJSONResponse`).
 
-**Reason**: `orjson` is 10-20x faster than the standard `json` module. Critical for high-throughput API responses.
+**Reason**: FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class.
 
 **Consequences**:
-- `ORJSONResponse` used in `main_singleworker.py` and `main_multiworker.py`
-- Fallback to `JSONResponse` when `orjson` is not installed
-- `orjson>=3.9.0` in `backend/requirements.txt`
+- `default_response_class` removed from FastAPI app constructor in `main_singleworker.py` and `main_multiworker.py`
+- Response models defined via Pydantic types on route handlers
+- `orjson` dependency retained for internal use if needed
 
 ---
 
@@ -960,3 +960,85 @@ The production postprocessing engine converts raw neural model outputs into engi
 - Headless FBX and thumbnail workers run reliably in standard Python environments shipping `bpy`.
 - Consistent single-root canonical storage directory across all services and mounts.
 - 100% watertight manifold preservation for 3D printing and additive fabrication.
+
+## ADR-075 — Fidelity-First Raw Geometry Profiles
+
+**Date:** 2026-10-14  
+**Status:** Proposed for review with PR #30
+
+**Decision:**
+- Keep Hunyuan Shape and Mini Turbo within the upstream-supported dense sampling ceiling of 512. Do not raise the adapter limit beyond that contract.
+- Use Hunyuan Shape's upstream-default 7.5 guidance with its 50-step sampling schedule for the active max-fidelity profile.
+- Do not force-enable FlashVDM/top-k decoding for Hunyuan Mini Turbo's raw fidelity profile; retain its trained 5-step sampler and use the native dense decoder.
+- Follow TripoSG's manifest-preferred hierarchical extraction path (dense depth 8, hierarchical depth 9) instead of choosing the Flash decoder solely from GPU compute capability.
+
+**Reason:** Output polycount cannot restore geometry detail omitted during learned decoding or surface extraction. The raw mesh path must select its model-specific fidelity decoder before any downstream processing, while staying inside supported resolution/resource contracts.
+
+**Consequences:**
+- Changes remain confined to the three requested model paths, parameter routing, regression contracts, and documentation.
+- No vendored third-party source, TRELLIS/TRELLIS.2 adapter, or shared post-processing implementation is modified.
+- Native dense/hierarchical extraction can increase latency and memory usage.
+- CUDA A/B generation and visual mesh inspection remain required before claiming a measured quality improvement.
+
+
+
+## ADR-076 — Explicit Native Hunyuan Decoding and VRAM-Gated TripoSG Depth 10
+
+**Date:** 2026-10-14  
+**Status:** Proposed for implementation validation
+
+**Decision:**
+- Hunyuan Shape v2.1 and Mini Turbo explicitly configure and verify VanillaVolumeDecoder + MCSurfaceExtractor and pass mc_algo='mc', staying within the upstream [64, 512] resolution contract.
+- TripoSG requests hierarchical depth 10 (1024-wide target grid) only when at least 24 GiB VRAM is free and 32 GiB total VRAM exists. Otherwise use depth 9. Report requested/effective grid depth honestly.
+
+**Reason:** Fidelity settings must verify the actual decoder implementation, not infer it from a disabled acceleration call or manifest label. Depth 10 adds another sampling octave for TripoSG on sufficiently provisioned GPUs. Hunyuan remains bounded by upstream's supported resolution contract.
+
+
+## ADR-077 — Hunyuan3D & TripoSG Raw Geometry Detail-Loss Fix (2026-10-14)
+
+**Date:** 2026-10-14  
+**Status:** Accepted
+
+**Context:**
+Generated meshes from Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, and TripoSG were losing fine detail and appearing overly smooth, despite high polycount outputs. Root cause analysis revealed:
+
+1. **Hunyuan3D FlashVDM acceleration was silently active** - The upstream VAE defaults to FlashVDM decoding which uses attention-based shortcuts that smooth fine geometry. The adapter was not explicitly disabling it or verifying the active decoder.
+
+2. **Mini Turbo used untrained octree_resolution=512** - The official Mini Turbo checkpoint was trained with octree_resolution=380. Using 512 exceeded the trained range and produced artifacts.
+
+3. **TripoSG dense_octree_depth=8 limited hierarchical extraction** - The coarse seed grid was too coarse (8→256³), causing the hierarchical refinement to miss thin features before the final pass. Flash decoder was also being selected on capable GPUs, starting from an even coarser grid.
+
+**Decision:**
+1. **Strict decoder profile enforcement** (`backend/adapters/hunyuan3d_decoder_profile.py`): New `configure_native_dense_decoder()` function forces `enable_flashvdm_decoder(enabled=False)`, then verifies `volume_decoder=VanillaVolumeDecoder` and `surface_extractor=MCSurfaceExtractor`. Fails fast with descriptive error if verification fails.
+
+2. **Mini Turbo official resolution** (`hunyuan3d_dit_v2_mini_turbo.py`, scheduler, frontend): Default `octree_resolution=380` with clamping warning for values >380. Updated in `_RAW_MESH_MAX_QUALITY_PARAMETERS`, frontend `buildGenerationParameters.ts`, and adapter.
+
+3. **TripoSG max hierarchical depth** (`triposg_adapter.py`, scheduler, frontend): `dense_octree_depth=9` (512³ seed grid), `hierarchical_octree_depth=10` (1024³ final grid) with VRAM-gated fallback (10→9→8 based on free/total VRAM). Uses standard marching_cubes (method="lewiner"), not DMC which can smooth.
+
+4. **Scheduler profile updates** (`multiprocess_scheduler.py`): Updated `_RAW_MESH_MAX_QUALITY_PARAMETERS` for all three models with corrected defaults.
+
+5. **Frontend parameter alignment** (`buildGenerationParameters.ts`): Mirror backend defaults for consistent parameter passing.
+
+**Consequences:**
+- Hunyuan3D raw geometry now uses verified native dense decoder with marching cubes, preserving sharp features
+- Mini Turbo uses its officially trained resolution (380), eliminating artifacts
+- TripoSG achieves maximum hierarchical depth (1024³) on 24GB+ free VRAM GPUs, preserving fine details
+- All changes are confined to the three model adapters, scheduler profiles, and frontend parameter building
+- Telemetry now reports `geometry_extractor`, `effective_geometry_resolution`, `voxel_size`, `mc_algo` for verification
+- Regression tests updated to verify decoder profile, depth resolution, and parameter schema defaults
+
+---
+
+**Consequences:** Output detail may improve where the model's learned field contains recoverable high-frequency geometry, but single-image models cannot guarantee arbitrary microdetail. Depth 10 costs materially more memory and latency; CUDA A/B generation and raw-mesh visual inspection remain required before claiming measured quality improvement.
+
+## ADR-056: Keep the Unique3D Gradio Demo Out of the Shared Backend Runtime
+
+**Decision**: The ForMash3D Unique3D adapter imports the inference pipeline components directly and does not install or initialize the upstream Gradio demo wrapper in the shared backend environment.
+
+**Reason**: The adapter already owns the trainer and pipeline lifecycle. Importing `app.custom_models.mvimg_prediction` adds an unused Gradio import and triggers a second module-level pipeline initialization. Current Gradio 6 releases also require a newer Hugging Face Hub than the project's TripoSG-compatible shared pin.
+
+**Consequences**:
+- `datasets==3.6.0` remains paired with `huggingface_hub==0.25.0`.
+- Gradio is not installed as a backend dependency solely for Unique3D.
+- The upstream vendored source is left unchanged; only the ForMash3D adapter's unused import is removed.
+

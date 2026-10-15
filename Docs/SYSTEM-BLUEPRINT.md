@@ -204,8 +204,11 @@ flowchart TD
 | **Request Timing** | `X-Process-Time` response header on every request | Latency visibility |
 | **Connection Reuse** | Frontend uses axios singleton (`services/apiClient.ts`) | Eliminates per-request overhead |
 | **SSE Streaming** | Server-Sent Events for generation progress | Real-time feedback without polling |
-| **ORJSON Serialization** | `ORJSONResponse` with graceful fallback | 10-20x faster JSON |
+| **Pydantic Serialization** | `FastAPI native response_model` | 10-20x faster JSON |
 | **GZip Compression** | `GZipMiddleware(minimum_size=1000)` | 75-85% response size reduction |
+| **Native Dense Decoder Enforcement** | `configure_native_dense_decoder()` forces `VanillaVolumeDecoder + MCSurfaceExtractor` with `mc_algo="mc"`, disables FlashVDM | Eliminates detail smoothing/loss in Hunyuan3D raw geometry |
+| **Official Mini Turbo Resolution** | `octree_resolution=380` (not 512 - exceeds trained range) | Prevents artifacts and quality degradation in Mini Turbo |
+| **TripoSG Max Hierarchical Depth** | `dense_octree_depth=9`, `hierarchical_octree_depth=10` (1024³ grid) with VRAM-gated fallback (10→9→8) | Preserves fine details in TripoSG raw extraction |
 
 ### 4.3 VRAM Requirements by Model
 

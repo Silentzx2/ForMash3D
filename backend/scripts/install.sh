@@ -356,7 +356,7 @@ echo "========================================"
 ensure_blender
 
 echo "[INFO] Installing backend/requirements.txt..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt"
+$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt" --index-strategy unsafe-best-match
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] backend/requirements.txt installed"
 else
@@ -596,13 +596,17 @@ echo "[INFO] Changing directory to thirdparty/UniRig..."
 cd "$THIRDPARTY_DIR/UniRig"
 echo "[INFO] Installing spconv-cu124 for UniRig..."
 $UV_PIP install --find-links="$WHEEL_DIR" spconv-cu124
-$UV_PIP install --find-links="$WHEEL_DIR" pyrender fast-simplification python-box timm
+echo "[INFO] Installing UniRig requirements from requirements.txt..."
+$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt --index-strategy unsafe-best-match
 # Install bpy 4.0 for Python 3.10 from Blender's official prebuilt wheel index
-$UV_PIP install --no-deps "https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl" || true
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] UniRig dependencies installed"
+$UV_PIP install --no-deps "https://download.blender.org/pypi/bpy/bpy-4.0.0-cp310-cp310-manylinux_2_28_x86_64.whl"
+BPY_STATUS=$?
+if [ "$BPY_STATUS" -eq 0 ]; then
+    echo "[SUCCESS] UniRig dependencies installed (bpy 4.0 OK)"
 else
-    echo "[ERROR] Failed to install UniRig dependencies"
+    echo "[ERROR] Failed to install bpy 4.0 wheel for UniRig (exit $BPY_STATUS)."
+    echo "[ERROR] Auto-Rigging (/rigging, /workspace/*/rig) will not work until this is resolved."
+    echo "[ERROR] Manually check https://download.blender.org/pypi/bpy/ for a wheel matching your platform/glibc."
     exit 1
 fi
 
@@ -668,14 +672,16 @@ if ! install_local_wheel "xformers-*.whl" "xformers"; then
     _retry 3 5 $UV_PIP install xformers --index-url https://download.pytorch.org/whl/cu124
 fi
 
-# Remaining Unique3D requirements (excluding torch/torchvision/torchaudio which use shared env)
+# Keep datasets on the 3.x line: 4.x expects newer Hub bucket APIs than the shared
+# huggingface_hub==0.25.0 baseline. Match backend/requirements.txt.
+# ForMash3D calls the Unique3D inference components directly; it does not launch
+# the upstream Gradio demo. Omit Gradio to avoid conflicting Hub/Pillow constraints.
 echo "[INFO] Installing remaining Unique3D requirements..."
 $UV_PIP install --find-links="$WHEEL_DIR" \
     accelerate \
-    datasets \
+    "datasets==3.6.0" \
     "diffusers>=0.26.3" \
     fire \
-    gradio \
     jaxtyping \
     numba \
     numpy \
@@ -810,6 +816,11 @@ else
     echo "[ERROR] Failed to install huggingface_hub"
     exit 1
 fi
+
+# Older installer runs installed Gradio only for Unique3D's standalone demo.
+# ForMash3D uses FastAPI/Next.js and does not need these packages in its shared Hub 0.25 env.
+echo "[INFO] Removing stale Unique3D Gradio UI packages (if present)..."
+$UV_PIP uninstall gradio gradio-client hf-gradio || true
 
 echo ""
 echo "========================================"

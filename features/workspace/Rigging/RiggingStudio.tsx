@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
+import { uploadMeshAsset, withRiggedModel } from '../types';
 import { useRiggingStore } from '@/stores/useRiggingStore';
 import { useViewerStore } from '@/stores/useViewerStore';
 
@@ -22,14 +23,18 @@ import { toast } from 'sonner';
 
 export const RiggingStudio: React.FC = () => {
   const router = useRouter();
-  const { currentAsset } = useWorkspace();
+  const { currentAsset, addAsset, setCurrentAsset, updateAssetProperties } = useWorkspace();
   const viewerStore = useViewerStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingMesh, setIsUploadingMesh] = useState(false);
 
   // Rigging Store (metadata, UniRig AI pipeline, character stats)
   const {
     characterName,
-    characterVertices,
-    characterSizeMb,
+    setCharacterInfo,
+    jobId,
+    cancelRigPolling,
+    resumeRigPolling,
     riggingMethod,
     setRiggingMethod,
     targetSkeleton,
@@ -113,7 +118,75 @@ export const RiggingStudio: React.FC = () => {
     setXMirrorEnabled(symmetry);
   }, [setXMirrorEnabled, symmetry]);
 
+  useEffect(() => () => cancelRigPolling(), [cancelRigPolling]);
+  useEffect(() => {
+    if (jobId && generationStatus === 'paused') void resumeRigPolling();
+  }, [jobId, generationStatus, resumeRigPolling]);
+
+  const syncRiggedAsset = (url: string, fbxUrl = useRiggingStore.getState().riggedFbxUrl) => {
+    if (!currentAsset) return;
+    const asset = withRiggedModel(currentAsset, url, fbxUrl || undefined);
+    updateAssetProperties(asset.id, { format: asset.format, source: asset.source, artifacts: asset.artifacts });
+    addAsset(asset);
+    setCurrentAsset(asset);
+    setCharacterInfo({
+      name: asset.name,
+      vertices: asset.statsAvailable ? asset.vertices : 0,
+      sizeMb: asset.fileSize ? Number.parseFloat(asset.fileSize) || 0 : 0,
+      meshUrl: url,
+    });
+    useAnimationStore.getState().setRigStatus('rigged');
+  };
+
+  const handleMeshUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+    setIsUploadingMesh(true);
+    cancelRigPolling();
+    try {
+      const asset = await uploadMeshAsset(file);
+      useRiggingStore.setState({ riggedModelUrl: null, riggedFbxUrl: null, jobId: null, generationStatus: 'idle', generationProgress: 0, generationError: null });
+      useAnimationStore.getState().setRigStatus('not_rigged');
+      addAsset(asset);
+      setCurrentAsset(asset);
+      setCharacterInfo({
+        name: asset.name,
+        vertices: asset.statsAvailable ? asset.vertices : 0,
+        sizeMb: asset.fileSize ? Number.parseFloat(asset.fileSize) || 0 : 0,
+        meshUrl: asset.source?.viewUrl || asset.source?.localUrl,
+      });
+      if (asset.source?.fileId ?? asset.fileId) {
+        toast.success('Mesh uploaded', { description: 'The mesh is ready for UniRig.' });
+      } else {
+        toast.error('Mesh upload failed', { description: 'A server file reference was not created. Retry the upload before rigging.' });
+      }
+    } catch (error) {
+      toast.error('Mesh upload failed', { description: error instanceof Error ? error.message : 'Could not upload the mesh.' });
+    } finally {
+      setIsUploadingMesh(false);
+      input.value = '';
+    }
+  };
+
+  const handleExportRig = () => {
+    const url = currentAsset?.artifacts?.riggedFbx;
+    if (!url) {
+      toast.error('Generate a rig before exporting.');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${currentAsset.name || characterName}.fbx`;
+    link.rel = 'noopener';
+    link.click();
+  };
+
   // Selected bone object
+  const displayCharacterName = currentAsset?.name || 'No mesh selected';
+  const displayCharacterVertices = currentAsset?.statsAvailable ? currentAsset.vertices : 0;
+  const displayCharacterSizeMb = currentAsset?.fileSize ? Number.parseFloat(currentAsset.fileSize) || 0 : 0;
+
   const activeBoneData = bones.find((b) => b.name === selectedBone) || bones[0];
 
   // Filter bones for hierarchy search
@@ -123,16 +196,21 @@ export const RiggingStudio: React.FC = () => {
 
   // Method 1: AI Auto-Rigging with UniRig
   const handleGenerateUniRig = async () => {
-    const meshPath = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl || 'models/knight.glb';
+    const meshFileId = currentAsset?.source?.fileId ?? currentAsset?.fileId;
+    if (!meshFileId) {
+      toast.error('Select or upload a mesh first');
+      return;
+    }
     toast.info('Starting UniRig AI Auto-Rigging...', {
       description: `Targeting ${targetSkeleton === 'quadruped' ? 'Quadruped' : '17-Bone Humanoid'} topology`,
     });
-    const success = await generateRig(meshPath);
+    const success = await generateRig(undefined, meshFileId);
     if (success) {
+      const rigUrl = useRiggingStore.getState().riggedModelUrl;
+      if (rigUrl) syncRiggedAsset(rigUrl);
       toast.success('UniRig Complete!', {
-        description: '3D Armature and skinning weights synthesized and applied.',
+        description: 'Rigged FBX saved and attached to the selected asset.',
       });
-      // Ensure viewer displays real 3D skeleton
       useAnimationStore.setState({
         activeMode: 'rigging',
         displayOptions: {
@@ -140,22 +218,54 @@ export const RiggingStudio: React.FC = () => {
           showSkeleton: true,
         },
       });
-    } else {
+    } else if (useRiggingStore.getState().generationStatus !== 'paused') {
       toast.error('Rigging Failed', {
-        description: generationError || 'Could not complete UniRig auto-rigging.',
+        description: useRiggingStore.getState().generationError || generationError || 'Could not complete UniRig auto-rigging.',
       });
     }
   };
 
-  // Save Rig & Transition to Animation
+  // Save the editor skeleton without claiming it has skinned the selected mesh.
   const handleApplyAndSave = async () => {
-    const ok = await applyAndSaveRig();
-    if (ok) {
-      toast.success('Character Rig Applied & Saved!', {
-        description: `${bones.length} bones configured. Ready for animation.`,
-      });
-      router.push('/workspace/animation');
+    if (!currentAsset) {
+      toast.error('Select or upload a mesh first');
+      return;
     }
+
+    setCharacterInfo({
+      name: currentAsset.name,
+      vertices: currentAsset.statsAvailable ? currentAsset.vertices : 0,
+      sizeMb: currentAsset.fileSize ? Number.parseFloat(currentAsset.fileSize) || 0 : 0,
+      meshUrl: currentAsset.source?.viewUrl || currentAsset.source?.localUrl,
+    });
+
+    const riggedUrl = currentAsset.artifacts?.rigged;
+    const ok = await applyAndSaveRig({
+      bones,
+      riggedModelUrl: riggedUrl ?? null,
+    });
+    if (!ok) {
+      toast.error('Could not save armature.');
+      return;
+    }
+
+    if (!riggedUrl) {
+      toast.info('Armature snapshot saved locally', {
+        description: 'Manual bone placement is an editor overlay and does not create skin weights or a rigged mesh. Run UniRig Auto-Rig before animating this model.',
+      });
+      return;
+    }
+
+    if (riggingMethod === 'manual_rig') {
+      toast.info('Manual armature snapshot saved locally', {
+        description: 'These editor-bone changes do not modify the existing skinned mesh; continuing with its existing rig.',
+      });
+    } else {
+      toast.success('Rigged character ready for animation.', {
+        description: `${currentAsset.name} has a completed rigged mesh artifact.`,
+      });
+    }
+    router.push('/workspace/animation');
   };
 
   // Toggle Bilateral Symmetry (X-Mirror)
@@ -223,6 +333,13 @@ export const RiggingStudio: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full w-full bg-[hsl(var(--surface-0))] text-zinc-200 overflow-hidden select-none">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".glb,.gltf,.obj,.fbx"
+        hidden
+        onChange={handleMeshUpload}
+      />
       {/* 1. TOP HEADER (Matching 3D Gen page styling) */}
       <div className="flex-shrink-0 h-14 bg-[hsl(var(--surface-0))]/80 backdrop-blur-md border-b border-white/[0.08] px-4 flex items-center justify-between z-20">
         {/* Left: Return Arrow & Title */}
@@ -258,23 +375,19 @@ export const RiggingStudio: React.FC = () => {
 
           {/* Import Model Action */}
           <button
-            onClick={() => {
-              toast.info('Select a 3D Character Mesh', { description: 'Supported formats: GLB, FBX, OBJ' });
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] rounded-xl text-xs font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isUploadingMesh}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[hsl(var(--surface-1))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] rounded-xl text-xs font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
           >
             <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Import Mesh</span>
+            <span>{isUploadingMesh ? 'Uploading…' : 'Import Mesh'}</span>
           </button>
 
           {/* Export Rig Action */}
           <button
-            onClick={() => {
-              toast.success('Exporting Rigged Character (FBX)', {
-                description: `Exporting ${bones.length} bones with vertex skinning weights`,
-              });
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-bold text-xs rounded-xl shadow-[0_2px_12px_rgba(249,207,0,0.25)] transition-all active:scale-95 cursor-pointer"
+            onClick={handleExportRig}
+            disabled={!currentAsset?.artifacts?.riggedFbx}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-bold text-xs rounded-xl shadow-[0_2px_12px_rgba(249,207,0,0.25)] transition-all active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <HugeiconsIcon icon={UploadIcon} size={16} className="w-3.5 h-3.5 stroke-[2.5]" />
             <span>Export Rig</span>
@@ -296,9 +409,9 @@ export const RiggingStudio: React.FC = () => {
                     <HugeiconsIcon icon={UserIcon} size={16} className="w-5 h-5" />
                   </div>
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">{characterName}</p>
+                    <p className="text-xs font-bold text-white truncate">{displayCharacterName}</p>
                     <p className="text-[10px] text-zinc-400">
-                      {characterSizeMb} MB • {characterVertices.toLocaleString()} vertices
+                      {displayCharacterSizeMb > 0 ? `${displayCharacterSizeMb} MB` : '—'} • {displayCharacterVertices > 0 ? displayCharacterVertices.toLocaleString() : '—'} vertices
                     </p>
                   </div>
                 </div>
@@ -308,11 +421,12 @@ export const RiggingStudio: React.FC = () => {
               </div>
 
               <button
-                onClick={() => toast.info('Select character mesh from Assets or upload new GLB')}
-                className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] rounded-lg text-xs font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingMesh}
+                className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] rounded-lg text-xs font-semibold text-zinc-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
               >
                 <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-3 h-3 text-zinc-400" />
-                <span>Replace Model</span>
+                <span>{isUploadingMesh ? 'Uploading…' : 'Replace Model'}</span>
               </button>
             </div>
           </div>
@@ -778,7 +892,7 @@ export const RiggingStudio: React.FC = () => {
                 className="flex items-center gap-1.5 px-4 py-1.5 bg-primary hover:bg-[hsl(var(--primary)/0.9)] text-black font-bold text-xs rounded-xl shadow-[0_2px_12px_rgba(249,207,0,0.25)] transition-all active:scale-95 cursor-pointer"
               >
                 <HugeiconsIcon icon={CheckIcon} size={16} className="w-4 h-4 stroke-[3]" />
-                <span>Save &amp; Continue to Animation</span>
+                <span>{riggingMethod === 'manual_rig' ? 'Save Manual Armature' : currentAsset?.artifacts?.rigged ? 'Save & Continue to Animation' : 'Save Armature Snapshot'}</span>
               </button>
             </div>
           </div>

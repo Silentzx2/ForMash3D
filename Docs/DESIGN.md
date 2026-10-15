@@ -336,7 +336,7 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
   - Scrubber with draggable triangular playhead needle and transport playback controls.
 - **Rigging Architecture (UniRig AI & Manual Symmetry)**:
   - **Auto-Rig (UniRig AI)**: Invokes backend `unirig_auto_rig` pipeline with user-chosen target skeleton presets (`biped`, `humanoid`, `quadruped`). No ARDY references appear in the rigging module.
-  - **Manual Rig with Bilateral Symmetry (X-Mirror)**: Interactive 3D bone placement with automatic opposite-side mirroring (`[-x, y, z]`). Editing or translating a bone on one side automatically mirrors to its anatomical counterpart (`Left*` <-> `Right*`, `*_L` <-> `*_R`).
+  - **Manual Rig with Bilateral Symmetry (X-Mirror)**: Interactive 3D bone placement with automatic opposite-side mirroring (`[-x, y, z]`). Editing or translating a bone on one side automatically mirrors to its anatomical counterpart (`Left*` <-> `Right*`, `*_L` <-> `*_R`). Saving persists the editor-bone snapshot locally; it does not create skin weights or export a rigged mesh, so motion generation remains gated until a real rigged artifact exists.
   - **Real 3D Armature**: Three.js octahedron bone meshes and glowing spherical joints rendered natively in `MeshViewer` (no fake 2D SVG overlays), with gizmo controls (`select`, `move`, `rotate`, `scale`).
 
 ---
