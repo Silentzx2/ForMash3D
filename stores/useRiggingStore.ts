@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { getApiClient } from '@/services/apiClient';
 import { getSymmetricBoneName } from '@/stores/useAnimationStore';
+import type { AutoRiggingRequest } from '@/types/api';
 
 export interface RigBoneNode {
   name: string;
@@ -290,7 +291,7 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
 
     try {
       const client = getApiClient();
-      const payload: Record<string, unknown> = {
+      const payload: AutoRiggingRequest = {
         rig_mode: rigMode,
         output_format: 'fbx',
         model_preference: autoRigProvider,
@@ -365,4 +366,5 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
       riggedFbxUrl: null,
     });
   },
+});
 });
