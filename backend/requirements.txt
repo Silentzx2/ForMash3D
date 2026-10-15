@@ -2,9 +2,11 @@
 --extra-index-url https://mirrors.aliyun.com/pypi/simple
 
 # ── Core dependencies (CUDA 12.4 + Torch 2.6.0 baseline) ──────────
-torch==2.6.0+cu124
-torchvision==0.21.0+cu124
-torchaudio==2.6.0+cu124
+# torch==2.6.0+cu124
+# torchvision==0.21.0+cu124
+# torchaudio==2.6.0+cu124
+# already managed by install.sh
+
 
 # Shared backend/TripoSG/Hunyuan/TRELLIS/Paint3D unified runtime versions
 transformers==4.48.3
