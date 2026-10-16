@@ -19,6 +19,12 @@ export interface ModelMeshStats {
   vertices: number;
   triangles: number;
   dimensions: { x: number; y: number; z: number };
+  surfaceArea?: number;
+  volume?: number;
+  isManifold?: boolean;
+  nonManifoldEdges?: number;
+  boundaryEdges?: number;
+  uvCharts?: number;
 }
 
 export interface RigInfo {

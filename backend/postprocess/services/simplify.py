@@ -71,6 +71,8 @@ def _restore_texture(source: trimesh.Trimesh, vertices: np.ndarray, faces: np.nd
         result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64), image=source_image)
     else:
         result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64))
+    if hasattr(result, "vertex_normals"):
+        _ = result.vertex_normals
     return result
 
 
@@ -115,15 +117,22 @@ def _simplify_textured_fallback(mesh: trimesh.Trimesh, target_faces: int) -> tri
                     result.visual = trimesh.visual.TextureVisuals(uv=new_uv, image=source_image)
                 else:
                     result.visual = trimesh.visual.TextureVisuals(uv=new_uv)
+        if hasattr(result, "vertex_normals"):
+            _ = result.vertex_normals
         return result
     except Exception:
-        return mesh.simplify_quadric_decimation(face_count=int(target_faces))
+        fallback = mesh.simplify_quadric_decimation(face_count=int(target_faces))
+        if hasattr(fallback, "vertex_normals"):
+            _ = fallback.vertex_normals
+        return fallback
 
 
 def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelChecker = None) -> tuple[trimesh.Trimesh, dict]:
     configure_cpu_runtime()
     input_faces = int(len(mesh.faces))
     if target_faces >= input_faces or input_faces == 0:
+        if hasattr(mesh, "vertex_normals"):
+            _ = mesh.vertex_normals
         return mesh, {
             "input_triangles": input_faces, "triangles": input_faces,
             "target_faces": int(target_faces), "achieved_ratio": 1.0,
@@ -148,12 +157,15 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
         if textured:
             ms.meshing_decimation_quadric_edge_collapse_with_texture(
                 targetfacenum=int(target_faces), qualitythr=0.3, extratcoordw=1.0,
-                preserveboundary=True, boundaryweight=1.0, optimalplacement=True,
+                preserveboundary=True, boundaryweight=3.0, optimalplacement=True,
+                preservetopology=True,
             )
         else:
             ms.meshing_decimation_quadric_edge_collapse(
                 targetfacenum=int(target_faces), qualitythr=0.3, preservenormal=True,
                 optimalplacement=True, autoclean=True,
+                preserveboundary=True, boundaryweight=3.0,
+                preservetopology=True,
             )
         _check_cancelled(cancel_checker)
         out = ms.current_mesh()
@@ -170,9 +182,11 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
         else:
             result = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     except Exception as exc:
+        from core.mesh_processor import compute_angle_weighted_normals, feature_preserving_decimate
         if textured:
             try:
                 fallback_mesh = _simplify_textured_fallback(mesh, target_faces)
+                fallback_mesh = compute_angle_weighted_normals(fallback_mesh, crease_angle_deg=35.0)
                 triangles = int(len(fallback_mesh.faces))
                 return fallback_mesh, {
                     "input_triangles": input_faces,
@@ -187,6 +201,8 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
                     "primary_error": str(exc),
                 }
             except Exception as fb_exc:
+                if hasattr(mesh, "vertex_normals"):
+                    _ = mesh.vertex_normals
                 return mesh, {
                     "input_triangles": input_faces, "triangles": input_faces,
                     "target_faces": int(target_faces), "achieved_ratio": 1.0,
@@ -206,7 +222,10 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
                 )
                 reduced = trimesh.Trimesh(vertices=v_red, faces=f_red, process=False)
             except Exception:
-                reduced = mesh.simplify_quadric_decimation(face_count=int(target_faces))
+                reduced = feature_preserving_decimate(mesh, target_faces=int(target_faces))
+            reduced = compute_angle_weighted_normals(reduced, crease_angle_deg=35.0)
+            if hasattr(reduced, "vertex_normals"):
+                _ = reduced.vertex_normals
             triangles = int(len(reduced.faces))
             return reduced, {
                 "input_triangles": input_faces, "triangles": triangles,
@@ -216,12 +235,18 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
                 "texture_preserved": False,
             }
         except Exception:
+            if hasattr(mesh, "vertex_normals"):
+                _ = mesh.vertex_normals
             return mesh, {
                 "input_triangles": input_faces, "triangles": input_faces,
                 "target_faces": int(target_faces), "achieved_ratio": 1.0,
                 "seam_limited": False, "seams_broken": False, "passthrough": True,
                 "texture_preserved": False, "decimator_error": str(exc),
             }
+    from core.mesh_processor import compute_angle_weighted_normals
+    result = compute_angle_weighted_normals(result, crease_angle_deg=35.0)
+    if hasattr(result, "vertex_normals"):
+        _ = result.vertex_normals
     triangles = int(len(result.faces))
     return result, {
         "input_triangles": input_faces, "triangles": triangles,

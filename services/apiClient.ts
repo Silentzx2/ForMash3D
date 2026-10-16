@@ -435,7 +435,7 @@ class ApiClient {
   }
 
   // NEW File Upload Endpoints
-  async uploadImageFile(file: File, onProgress?: (progress: number) => void): Promise<FileUploadResponse> {
+  async uploadImageFile(file: File, onProgress?: (loadedBytes: number, totalBytes?: number) => void): Promise<FileUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -447,17 +447,14 @@ class ApiClient {
           'Content-Type': 'multipart/form-data'
         },
         onUploadProgress: (progressEvent) => {
-          if (onProgress && progressEvent.total) {
-            const progress = (progressEvent.loaded / progressEvent.total) * 100;
-            onProgress(progress);
-          }
+          if (onProgress) onProgress(progressEvent.loaded, progressEvent.total);
         }
       }
     );
     return response.data;
   }
 
-  async uploadMeshFile(file: File, onProgress?: (progress: number) => void): Promise<FileUploadResponse> {
+  async uploadMeshFile(file: File, onProgress?: (loadedBytes: number, totalBytes?: number) => void): Promise<FileUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -469,10 +466,7 @@ class ApiClient {
           'Content-Type': 'multipart/form-data'
         },
         onUploadProgress: (progressEvent) => {
-          if (onProgress && progressEvent.total) {
-            const progress = (progressEvent.loaded / progressEvent.total) * 100;
-            onProgress(progress);
-          }
+          if (onProgress) onProgress(progressEvent.loaded, progressEvent.total);
         }
       }
     );

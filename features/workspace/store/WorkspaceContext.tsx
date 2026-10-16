@@ -85,7 +85,7 @@ interface WorkspaceContextType {
   setRightPanelOpen: (open: boolean) => void;
   environmentSettings: EnvironmentSettings;
   setEnvironmentSettings: React.Dispatch<React.SetStateAction<EnvironmentSettings>>;
-  setCurrentAsset: (asset: ModelAsset) => void;
+  setCurrentAsset: (asset: ModelAsset | null) => void;
   assetFilter: string;
   setAssetFilter: (filter: string) => void;
   duplicateAsset: (id: string) => void;
@@ -552,6 +552,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       lowVram: false,
       vramMode: 'auto',
       autoOptimizeSettings: { targetPolycount: 0 },
+      sharpFeaturePreservation: true,
+      angleCreaseThreshold: 45,
+      highResolutionNormalBaking: true,
+      textureFidelityPreset: 'high',
       generateTexture: true,
       enableFlashVDM: false,
       lowVramMode: 'auto',
@@ -563,6 +567,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       lodCount: 4,
       intent: undefined,
       preprocessingArtifactId: null,
+      preprocessingReviewOverride: false,
       preprocessingPreviewUrl: null,
       preprocessingMetadata: null,
       enhancementEnabled: false,
@@ -1241,7 +1246,14 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     setViewportResetTrigger(prev => prev + 1);
   }, [assets]);
 
-  const setCurrentAsset = useCallback((asset: ModelAsset) => selectAsset(asset.id), [selectAsset]);
+  const setCurrentAsset = useCallback((asset: ModelAsset | null) => {
+    if (!asset) {
+      setSelectedAssetId(null);
+      return;
+    }
+    addAsset(asset);
+    selectAsset(asset.id);
+  }, [addAsset, selectAsset]);
 
   const duplicateAsset = useCallback((id: string) => {
     const existing = assets.find(a => a.id === id);

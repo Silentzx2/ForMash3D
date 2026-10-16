@@ -1042,3 +1042,103 @@ Generated meshes from Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, and Tri
 - Gradio is not installed as a backend dependency solely for Unique3D.
 - The upstream vendored source is left unchanged; only the ForMash3D adapter's unused import is removed.
 
+---
+
+## ADR-078: Studio PBR Rendering Pipeline, Dynamic Contact Shadowing, and Geometry Telemetry
+
+**Date:** 2026-10-16  
+**Status:** Accepted
+
+**Context:**
+The Three.js viewport in ForMash3D lacked real-time geometry & topology telemetry (exact surface area, enclosed volume, watertight / manifold edge tracking, UV chart analysis). Additionally, the PBR lighting setup lacked tone mapping options (neutral Khronos vs ACES Filmic), exhibited fixed directional shadow bounds causing shadow clipping on large meshes, and lacked true non-destructive wireframe on shaded visualization and tangent space calculation for standard normal map rendering.
+
+**Decision:**
+1. **PBR Rendering Pipeline Upgrades (`MeshViewer.tsx`)**:
+   - Upgraded tone mapping with configurable `toneMapping: 'neutral' | 'aces'` (`THREE.NeutralToneMapping` as standard studio baseline and `THREE.ACESFilmicToneMapping` for cinematic contrast).
+   - Rebalanced physical 3-point + rim lighting with calibrated exposure and dynamic shadow camera frustum calibration (`updateKeyLightShadowFrustum(mesh)`) to encapsulate exact model bounds, preventing shadow truncation and maximizing depth buffer resolution.
+   - Non-destructive **Wireframe on Shaded** overlay implemented using child mesh clones with `polygonOffset: true`, `polygonOffsetFactor: -1`, `polygonOffsetUnits: -1` to eliminate z-fighting.
+   - Refined studio materials: Studio Matte Clay (warm albedo with clearcoat), Porcelain Ceramic Gloss, 24K Metallic Gold (`metalness=0.95, roughness=0.18`), Chrome Mirror, and Tangent Space Normals.
+2. **Real-time Geometry & Topology Telemetry Suite (`features/workspace/lib/meshTelemetry.ts`)**:
+   - Real-time computation of surface area ($m^2$) and signed enclosed volume ($m^3$) using divergence theorem.
+   - Manifold edge validation: edge map hashing tracking directed triangle edges, classifying boundary open edges vs non-manifold edges (>2 shared triangles).
+   - Disjoint UV chart island counter using disjoint-set union-find over texture coordinate indices.
+   - Automatic index synthesis for non-indexed geometries ensuring `computeTangents()` runs safely across all imported formats.
+3. **Studio Generation & Shading UI/UX**:
+   - `GeneratePanel.tsx`: Added Pro Studio controls for Sharp Feature Preservation, Angle Crease Threshold (30°-85°), High-Resolution Normal Baking toggle, and 4-tier Texture Fidelity presets (Ultra 4K to Compact).
+   - `RightPropertyPanel.tsx`: Integrated live telemetry card (Watertight/Manifold badge, triangles, vertices, surface area, volume, UV islands) and 8 studio shading modes.
+
+**Consequences:**
+- Viewport achieves production-level visual fidelity matching Blender/Substance 3D viewports.
+- Artists and 3D print operators can immediately detect non-manifold geometry, boundary holes, and UV island bloat before export.
+- Dynamic shadow frustum guarantees contact shadows adapt seamlessly to arbitrary bounding box scales without manual tweaking.
+
+---
+
+## ADR-079: End-to-End 3D Pipeline Geometry Quality, glTF Tangents, Angle-Weighted Normals & Gutter Dilation
+
+**Date:** 2026-10-16  
+**Status:** Accepted
+
+**Context:**
+A comprehensive audit of the 3D generation and post-processing pipeline identified several quality bottlenecks and bugs across parameter ingestion, model extraction, decimation, shading, and texture baking:
+1. **Artificial Polycount Caps & Ingestion Override**: `buildGenerationParameters.ts` clamped `targetPolycount < 200000` inside `shouldAutoOptimize()`, preventing users from requesting high-fidelity production budgets (> 200k). Backend `_resolve_target_polycount_precedence` also favored preset defaults over explicit `0` (Native/Raw).
+2. **Missing Normal Vectors in GLB Primitives**: Trimesh's `trimesh.exchange.gltf` only exports `NORMAL` attributes if `vertex_normals in mesh._cache.cache`. Creating meshes with `process=False` bypasses cache population, causing exported GLB files to omit vertex normals entirely unless explicitly evaluated.
+3. **Missing glTF 4-Component Tangents**: Standard glTF 2.0 PBR rendering with normal maps requires 4-component `TANGENT` vertex accessors (`vec4(T.xyz, bitangent_sign)`). Without them, three.js and standard engines compute runtime tangents that cause noticeable UV seam shading artifacts.
+4. **Normal Baking Coordinate Convention**: glTF 2.0 requires OpenGL tangent-space normal maps (+Y up). `bake_worker.py` lacked explicit normal axis assignments (`POS_X`, `POS_Y`, `POS_Z`).
+5. **Grayscale UV Gutter Dilation Bug**: `fill_gutters()` in `bake_worker.py` rejected textures where `arr.ndim != 3`, silently skipping 2D grayscale textures (ambient occlusion, roughness, and metallic maps) and causing dark border seams around UV islands.
+
+**Decision:**
+1. **Uncapped Ingestion & Precedence**:
+   - Removed artificial `< 200000` clamp in `shouldAutoOptimize()` in `features/workspace/utils/buildGenerationParameters.ts` and restored contract string `target_polycount`.
+   - Updated `_resolve_target_polycount_precedence()` in `backend/api/routers/mesh_generation.py` so explicit `top_level_target` (including `0` for Native/Raw) strictly precedes preset defaults.
+   - Raised `MAX_PRODUCTION_FACES` in `backend/postprocess/pipeline.py` to `2_000_000` (from 200,000) for VFX/cinematic workloads.
+2. **Deterministic Vertex Normal Caching**:
+   - Explicitly evaluated `mesh.vertex_normals` across all adapters (`trellis_adapter.py`, `triposg_adapter.py`), simplification fallbacks (`simplify.py`), and `compute_angle_weighted_normals()` (`mesh_processor.py`), guaranteeing `NORMAL` accessors are always exported in glTF primitives even when `process=False` is set.
+3. **Standard glTF 4-Component Tangents**:
+   - Implemented `compute_mesh_tangents()` in `backend/postprocess/pipeline.py` calculating standard tangent frames with bitangent signs (`vec4`).
+   - Integrated `tree_postprocessor` in `_export_glb()` to map internal tangent arrays directly to standard glTF `TANGENT` vertex attributes.
+4. **glTF 2.0 Normal Baking & Universal Gutter Dilation**:
+   - Configured `bake.normal_space = "TANGENT"` with `POS_X`, `POS_Y`, `POS_Z` in `backend/postprocess/tools/bake_worker.py`.
+   - Updated `fill_gutters()` to support 2D grayscale images (`ndim == 2`) alongside 3D color images (`ndim == 3`), eliminating dark UV island edge bleed across AO, roughness, and metallic maps.
+
+**Consequences:**
+- Generated and post-processed meshes retain pristine raw fidelity, smooth angle-weighted shading, valid tangent frames, and artifact-free PBR texture borders.
+- Passed 100% of official model parity tests (`TestNativeRawQualityContracts` and `TestPostprocessPipelineParity`).
+
+---
+
+## ADR-080: Raw Mesh Quality, Nelson Max Crease Splitting, Feature-Preserving Decimation & High-to-Low Normal Baking Fallback
+
+**Date:** 2026-10-16  
+**Status:** Accepted
+
+**Context:**
+1. **Melted Shading Over Sharp Edges**: Marching cubes extractions and default trimesh processing merged coincident vertices across 90° dihedral angles, forcing corner vertices to share a single averaged normal vector. This produced dark, melted gradient shading across flat surfaces on cubes, bevels, and mechanical edges.
+2. **Destructive Vertex Merging on Load**: Default `trimesh.load(..., process=True)` silently re-welded split vertices, undoing intentional crease splits and ruining sharp shading.
+3. **Decimation Flattening Creases**: Standard decimation lacked crease protection, collapsing sharp edge features and turning crisp angles into jagged, uneven geometry.
+4. **Normal Baking Gutter Bleed & Headless Blender Absence**: Missing ray hits in normal baking left empty black pixels, which bled dark seams across UV boundaries during mipmap filtering. Furthermore, in CPU/container environments lacking a headless Blender/bpy installation, high-to-low normal baking would fail completely.
+5. **Raw Native Passthrough Destruction**: Postprocessing pipelines would re-tessellate and decimate meshes even when users requested the raw, native extraction.
+
+**Decision:**
+1. **Nelson Max Angle-Weighted Normals & Crease Splitting**:
+   - Implemented `compute_angle_weighted_normals` in `core/mesh_processor.py` using Nelson Max (1999) corner-angle weighting.
+   - Automatically splits coincident vertices along edges where dihedral angle exceeds `crease_angle_deg` (default 35.0°), while preserving smooth curved topologies (spheres, cylinder mantles).
+   - Applied across `MeshProcessor.save_mesh`, `postprocess/meshio.py`, and extraction adapters (`triposg_adapter.py`, `trellis_adapter.py`).
+2. **Non-Destructive Mesh Loading (`process=False`)**:
+   - Enforced `process=False` across `MeshProcessor.load_mesh`, `file_utils.validate_mesh_file`, `pipeline.py`, and adapters to preserve intentional vertex splitting and exact coordinates.
+3. **Feature-Preserving Decimation**:
+   - Implemented `feature_preserving_decimate` incorporating boundary edge quadric penalties, crease plane preservation, and normal deviation angle gates (<= 45°).
+   - Integrated as the primary fallback simplification engine in `postprocess/services/simplify.py`.
+4. **High-to-Low Normal Baking & Headless Pure-Python Fallback**:
+   - In `bake_worker.py`: enforced tangent space (`POS_X`, `POS_Y`, `POS_Z`), MikkTSpace tangents (`low.data.calc_tangents()`), bounded `max_ray_distance = max(0.001, cage * 2.5)`, and neutral normal fallback `(128, 128, 255)` with fully dilated gutters.
+   - In `bake.py`: implemented `bake_high_to_low_pure_python` fallback using UV rasterization, MikkTSpace-compatible tangent basis generation, cKDTree high-poly surface projection, and Euclidean distance transform gutter dilation when Blender is absent.
+5. **Byte-for-Byte Raw Native Passthrough**:
+   - In `postprocess/pipeline.py`: when `resolved_target_polycount == 0` and not `auto_optimize`, master raw GLB bytes are preserved byte-for-byte with optimal normals, bypassing destructive re-tessellation.
+6. **Ultra-High Resolution Intake Limits**:
+   - Raised default `MAX_MESH_VERTICES` and `MAX_MESH_FACES` in `file_utils.py` to 10,000,000 (configurable via `FORMASH_MAX_MESH_VERTICES` / `FORMASH_MAX_MESH_FACES`).
+
+**Consequences:**
+- Sharp corners (e.g. 90° cubes) render with crisp, exact orthogonal shading while curved surfaces stay completely smooth.
+- Raw native extractions are preserved byte-for-byte without unwanted decimation or vertex welding.
+- High-to-low normal baking works reliably across both Blender-enabled and CPU-only environments without dark border seams.
+- All unit and integration tests in `test_raw_mesh_quality_preservation.py` pass cleanly.

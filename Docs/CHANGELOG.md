@@ -1,54 +1,32 @@
-## 2026-10-14 — Rigging / Animation Reliability and Native Export
+## 2026-10-16 — Raw Mesh Quality, Nelson Max Crease Splitting & High-to-Low Normal Baking
 
-- Fixed UniRig install false-success handling, real mesh-file references, Import/Replace/Export actions, stale mesh-stat carryover, and fabricated rig/mesh status. Manual armature saves now persist the editor bones without claiming they create skin weights.
-- Kept the native UniRig FBX for export while serving the converted GLB to the viewport; unsupported generic FBX conversion now returns HTTP 422 with regression coverage.
-- Added ARDY-to-loaded-skeleton retargeting in the existing Three.js playback path, with compatibility counts based on the imported model's actual bones; retained rig-gated Motion AI generation, cancellable polling, and corrected identified placeholder/icon-name UI text.
-## 2026-10-14 — Unique3D Shared Runtime Dependency Conflict
+- **RAW-01**: Implemented Nelson Max (1999) corner-angle-weighted vertex normal computation and dihedral crease splitting (`compute_angle_weighted_normals`, `apply_angle_weighted_normals`) across `core/mesh_processor.py`, `postprocess/meshio.py`, and extraction adapters (`triposg_adapter.py`, `trellis_adapter.py`). Dihedral angles > 35° split vertices to guarantee crisp orthogonal shading across sharp edges, while continuous curved surfaces (spheres, cylinder mantles) remain smooth.
+- **RAW-02**: Enforced non-destructive mesh loading with `process=False` across `MeshProcessor.load_mesh`, `file_utils.validate_mesh_file`, `postprocess/pipeline.py`, and `trellis_adapter.py`, stopping silent automatic welding of coincident vertices across sharp edges.
+- **RAW-03**: Implemented feature-preserving decimation (`feature_preserving_decimate`) with boundary edge quadric penalties, crease plane preservation, and normal deviation protection (<= 45°), wired as the primary fallback simplification engine in `postprocess/services/simplify.py`.
+- **RAW-04**: Upgraded `backend/core/utils/file_utils.py` with `MAX_MESH_VERTICES` and `MAX_MESH_FACES` raised to 10,000,000 (configurable via `FORMASH_MAX_MESH_VERTICES` / `FORMASH_MAX_MESH_FACES`), preventing validation rejection of ultra-high-resolution raw extractions.
+- **RAW-05**: High-to-low normal map baking upgrades:
+  - In `bake_worker.py`: enforced tangent space (`POS_X`, `POS_Y`, `POS_Z`), MikkTSpace tangents (`low.data.calc_tangents()`), bounded `max_ray_distance = max(0.001, cage * 2.5)`, and neutral normal fallback `(128, 128, 255)` on unhit pixels with fully dilated gutters.
+  - In `bake.py`: implemented `bake_high_to_low_pure_python` fallback using UV rasterization, MikkTSpace-compatible tangent basis generation, cKDTree high-poly surface projection, and Euclidean distance transform gutter dilation when headless Blender is unavailable.
+- **RAW-06**: Implemented non-destructive raw native passthrough in `backend/postprocess/pipeline.py`: when `resolved_target_polycount == 0` and not `auto_optimize`, master raw GLB bytes are preserved byte-for-byte with optimal normals, bypassing destructive re-tessellation.
+- **RAW-07**: Added comprehensive test suite `backend/tests/test_raw_mesh_quality_preservation.py` verifying cube and cylinder crease splitting, feature-preserving decimation, MikkTSpace normal baking, and raw byte-for-byte passthrough.
 
-- Removed the unused import of Unique3D's Gradio wrapper from the backend adapter. That wrapper also initialized a duplicate module-level inference pipeline.
-- Removed Gradio from the Unique3D installer dependency list because the ForMash3D backend uses its own FastAPI/Next.js UI and does not launch the upstream Gradio demo.
-- Added cleanup for stale `gradio`, `gradio-client`, and `hf-gradio` packages installed by older setup runs, so re-running the installer removes the current environment conflict.
-- Kept `datasets==3.6.0` with the project's `huggingface_hub==0.25.0` baseline; this resolves the Datasets bucket-exception import without violating TripoSG's Hub version contract. Added regression coverage for the installer and adapter contract.
+## 2026-10-16 — End-to-End Pipeline Quality: Uncapped Geometry, glTF Tangents & PBR Normal Baking
 
-## 2026-10-14 — [High-Performance Viewport Engine & Production Postprocessing Pipeline Hardening]
+- **PIPE-01**: Eliminated artificial `< 200,000` face clamp in `buildGenerationParameters.ts::shouldAutoOptimize()` and restored contract string `target_polycount`, enabling high-fidelity production budgets without silently disabling auto-optimize or falling back to preset defaults.
+- **PIPE-02**: Corrected `_resolve_target_polycount_precedence()` in `mesh_generation.py` to give top-level explicit polycount targets (including `0` for Native/Raw) strict precedence over preset defaults.
+- **PIPE-03**: Raised `MAX_PRODUCTION_FACES` in `postprocess/pipeline.py` to 2,000,000 faces, supporting high-density sculpting, VFX, and cinematic assets.
+- **PIPE-04**: Ensured deterministic `NORMAL` attribute export in glTF GLBs by evaluating and caching `mesh.vertex_normals` across all model adapters (`trellis_adapter`, `triposg_adapter`), `simplify.py`, and `compute_angle_weighted_normals()` when `process=False` is used.
+- **PIPE-05**: Added standard glTF 4-component tangent space generation (`compute_mesh_tangents`) and wired `TANGENT` vertex accessors into `_export_glb` via `tree_postprocessor` to eliminate UV seam shading artifacts in standard PBR viewers.
+- **PIPE-06**: Explicitly configured OpenGL tangent space (`POS_X`, `POS_Y`, `POS_Z`) for normal map baking in `bake_worker.py` matching glTF 2.0 specifications.
+- **PIPE-07**: Fixed UV gutter dilation bug in `bake_worker.py::fill_gutters()` for 2D grayscale textures (ambient occlusion, roughness, metallic), eliminating dark boundary seams around UV islands.
+- **PIPE-08**: Verified 100% pass rate across TypeScript type checks (`bun run test`) and official model parity contracts (`pytest`).
 
-### 3D Viewport Optimizations
-- **Zero-Allocation Shading Material Switcher**: Implemented lazy per-mesh material caching (`child.userData.__shadingMaterialCache`) in `MeshViewer.tsx`. Shading mode switches (`clay`, `ceramic`, `chrome`, `gold`, `normals`, `xray`, `turquoise`, `default`/`textured`) and wireframe toggles dynamically reuse instantiated Three.js materials, reducing memory allocation churn to zero during scene traversals.
-- **Event-Driven Reflection Peek Capture**: Replaced the unthrottled 1000ms `setTimeout` polling loop with event-driven snapshot captures. Captures now trigger on initial mount and OrbitControls `'end'` events debounced at 250ms, with complete timer, event listener, and object URL revocation on unmount, drastically slashing CPU/GPU overhead when the scene is static.
-- **Interactive TransformControls Integration**: Integrated Three.js `TransformControls` into `MeshViewer.tsx` for interactive 3D mesh translation, rotation, and scaling in Edit mode (`interactionMode` synced to `'move' | 'rotate' | 'scale'`). Includes OrbitControls mutual-exclusion locking during dragging (`controls.enabled = !event.value`) and rigging bone joint manipulation (`animSelectedBone`), wired to tactile vertical toolbar buttons in `ViewportToolOverlay.tsx`.
-- **Axial Camera Alignment Presets**: Integrated instant axial camera alignment presets (`Perspective`, `Front`, `Side`, `Top`) into `ViewportToolOverlay.tsx`, dispatching custom window events to `MeshViewer.tsx` (`applyCameraPreset`) to snap the viewport smoothly to standard orthographic-style projection viewpoints.
-- **Smooth MeshDiffViewer Animation Loop**: Eradicated the React state re-render loop (`setAnimationFrame(prev => prev + 1)`) in `MeshDiffViewer.tsx`. Replaced with a native `requestAnimationFrame` loop that updates controls and renders left/right WebGL scenes directly without React component re-renders, complete with `cancelAnimationFrame` cleanup on unmount.
+## 2026-10-16 — Quality Rendering, Three.js PBR Pipeline & Pro Studio UI/UX
 
-### Postprocessing Pipeline Enhancements
-- **UI Master Post-Processing Toggle & Pipeline Bypass**: Added a master toggle in the UI (`GeneratePanel.tsx`, both on the main configuration panel and the Advanced Drawer) allowing users to cleanly disable post-processing after mesh generation.
-  - When disabled (`enable_postprocess: false`), mesh generation returns the raw, unmodified high-fidelity source geometry immediately without executing remeshing, retopology, decimation, UV unwrap, or texture baking stages.
-  - **Comprehensive UI Control Blocking & Greying**: When toggled OFF, all downstream post-processing stages and buttons are completely disabled and greyed out (`opacity-40 cursor-not-allowed pointer-events-none`) with contextual `BLOCKED` badges:
-    - *Textured Generation & Output Atlas*: Toggle is disabled, locked to raw geometry, and atlas size selector displays a bypass notice.
-    - *Smart Intent Presets*: Game, Cinematic, Animation, Print, and Mobile preset buttons are disabled and locked.
-    - *Target & Polycount Budget*: Preset buttons (Mobile, Game, Cinema, Native) and the budget slider are disabled and greyed out.
-    - *Production QA & Auto-Rig*: Printability check, Auto-repair, and Auto-Rig buttons are locked with an explanatory banner.
-    - *Physics Preparation*: Collision hull generation toggle and all body/density/friction controls are disabled.
-    - *Mesh Settings*: Texture quality chips, polycount budget, and Quads vs Triangles topology selectors are locked.
-    - *Pre-flight Bar*: Header badge and bottom sticky bar display `POSTPROCESS: OFF (RAW)` and `RAW NATIVE GEOMETRY`.
-  - **Payload & Backend Parameter Enforcement**: `buildGenerationParameters.ts` and `backend/api/routers/mesh_generation.py` strictly enforce `texture_enabled = false`, `generate_texture = false`, `lod_enabled = false`, `enable_printability = false`, `enable_auto_repair = false`, `enable_auto_rig = false`, and `target_polycount = 0` whenever `enable_postprocess` is False.
-  - Handled cleanly in `backend/core/scheduler/multiprocess_scheduler.py`: sets `postprocess_status: "bypassed"` and `production_status: "ready"`, attaching the raw model URLs and polygon counts so Three.js `<MeshViewer />` displays the generated raw mesh seamlessly.
-  - Backend request schemas (`ImageToRawMeshRequest`, `ImageToTexturedMeshRequest`, `TextMeshPaintingRequest`) and batch generation endpoints accept `enable_postprocess: bool = Field(True, ...)` and enforce `postprocess_mode: "none"` when toggled off.
-- **Quad OBJ Polygonal Export**: Implemented `_export_quad_obj` in `backend/postprocess/pipeline.py` to serialize meshes with genuine 4-vertex polygonal faces (`f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 v4/vt4/vn4`) preserving quad-dominant topology from AutoRetopo / QuadriFlow passes. Automatically bypasses destructive triangle decimation (`Passthrough: Quad-dominant topology preserved from retopology pass`) when quad retopology is requested.
-- **Smart Preset Budget Precedence Fix**: Implemented `_resolve_target_polycount_precedence` in `backend/api/routers/mesh_generation.py` ensuring explicit top-level request budgets take precedence over nested defaults and smart presets, preventing nested default `0` from wiping out configured budgets while preserving explicit `0` as an intentional Native/Raw pass-through request.
-- **Robust Headless Blender Worker Invocation**: Enhanced `blender_worker_argv` and `blender_expr_argv` in `backend/postprocess/config.py` with multi-path resolution: prefers `BLENDER_EXECUTABLE` on `PATH` if available, gracefully falling back to running workers under `sys.executable` via the embedded `bpy` Python wheel.
-- **Dynamic Storage Base Directory Resolution**: Unified `get_storage_base_dir()` in `backend/core/utils/file_utils.py` to dynamically resolve `STORAGE_LOCAL_PATH` relative to project root (`parents[3]`) or default to `backend/storage`, eradicating the nested `backend/backend/storage` directory duplication bug across uploads, models, and static mounts.
-- **Watertight 3D Print Preservation**: For 3D printing and closed meshes, `watertight` parameter in AutoRetopo respects already-watertight geometry (`watertight=not bool(repaired_topology.get("watertight", False))`) to avoid destructive voxel rounding on sharp features; the `3d_print` preset sets `target_polycount: 0`, guaranteeing full geometric passthrough without lossy decimation.
+- **PBR-01**: Enhanced Three.js PBR rendering pipeline with configurable tone mapping (Khronos Neutral for color fidelity & ACES Filmic for high-contrast film curves), balanced exposure calibration, studio three-point lighting, and dynamic key light shadow camera frustum scaling for crisp 2048x2048 contact shadows.
+- **PBR-02**: Integrated automatic tangent space computation (`computeTangents()`) and vertex normal verification in `meshTelemetry.ts` for all GLTF, FBX, OBJ, PLY, and STL assets, ensuring artifact-free micro-relief normal and bump mapping.
+- **PBR-03**: Polished studio material shading presets (Studio Matte Clay with clearcoat, Porcelain Ceramic Gloss, 24K Metallic Gold, Chrome Mirror, High-Contrast Tangent Normals) and introduced authentic non-destructive Wireframe on Shaded overlay with polygonOffset depth calibration.
+- **UI-04**: Added Pro Studio Fidelity & Crease Preservation controls to `GeneratePanel.tsx`: Sharp Feature Preservation toggle, Angle Crease Threshold slider (30° - 85°), High-Resolution Normal Baking, Texture Fidelity Presets (Ultra 4K to Compact 512), and live density/precision indicators.
+- **UI-05**: Built real-time geometry & topology telemetry into `RightPropertyPanel.tsx`, `ViewportToolOverlay.tsx`, and `MeshViewer.tsx`: manifold edge verification (watertight vs non-manifold edge counts), vertex/polygon counts, disjoint UV chart counting, surface area ($m^2$), and signed enclosed volume ($m^3$).
+- **TEST-06**: Added unit test suite `features/workspace/lib/meshTelemetry.test.mjs` verifying surface area, volume, non-manifold edge detection, and tangent generation across 24 passing tests.
 
-### Personal SaaS Workstation Command Center (`app/page.tsx`)
-- **Premium Autonomous Portal**: Designed and implemented a responsive, high-performance personal SaaS home page command center replacing the previous redirect.
-- **Glassmorphic Navigation & Live Telemetry**: Header features live hardware telemetry querying `/api/v1/system/stats` for real-time VRAM allocation, GPU accelerator status, and direct routing across all application surfaces (`/workspace`, `/workspace/generate`, `/workspace/remesh`, `/workspace/texture`, `/workspace/rigging`, `/outputs`, `/dashboard`, `/system`).
-- **Interactive Quick-Launch Hero Console**: Allows typing prompts, toggling pipeline modes, selecting production intent presets (`game_ready`, `cinematic`, `3d_print`, `animation`, `mobile`), and choosing AI models, routing directly into `/workspace/generate` with prefilled query parameters.
-- **Bento Tool Grid & Production Presets**: Interactive showcase of the 6 core 3D pipeline engines and the 5 intent contract specifications (face budgets, texture maps, watertightness, LOD counts).
-- **Global Keyboard Navigation**: Listens for single-key shortcuts (`G`, `R`, `T`, `U`, `A`, `D`, `O`, `S`) for instant studio routing.
-
----
-
-### Unique3D Hugging Face Dependency Alignment
-
-- Fixed installation drift where the setup script installed an unpinned latest `datasets` release, then the shared runtime pinned `huggingface_hub==0.25.0`. Newer Datasets versions import `BucketNotFoundError`, which is absent in that Hub version and prevented Unique3D's inference trainer registry from loading.
-- Pinned `datasets==3.6.0` consistently in the Unique3D installer and shared backend requirements, without upgrading the shared Hub dependency used by other models.

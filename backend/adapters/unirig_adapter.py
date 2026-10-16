@@ -15,7 +15,7 @@ import torch
 
 from core.models.base import ModelStatus
 from core.models.rig_models import AutoRigModel
-from core.utils.file_utils import OutputPathGenerator
+from core.utils.file_utils import OutputPathGenerator, get_storage_base_dir
 from core.utils.format_utils import fbx_to_glb
 from core.utils.mesh_utils import MeshProcessor
 
@@ -180,17 +180,19 @@ class UniRigAdapter(AutoRigModel):
                 logger.warning(f"Failed to analyze input mesh: {e}")
                 mesh_stats = {"vertex_count": 0, "face_count": 0}
 
-            # Generate output paths
-            base_name = mesh_path.stem
-            output_path = self.path_generator.generate_rigged_path(
-                self.model_id, base_name, output_format
-            )
-            output_dir = output_path.parent
+            output_dir_value = inputs.get("output_dir")
+            if not output_dir_value:
+                raise ValueError("output_dir is required for canonical UniRig artifacts")
+            output_dir = Path(output_dir_value).resolve()
+            meshes_root = (get_storage_base_dir() / "models" / "meshes").resolve()
+            try:
+                output_dir.relative_to(meshes_root)
+            except ValueError as exc:
+                raise ValueError("UniRig output_dir must be inside a canonical asset workspace") from exc
 
-            output_filename = output_path.name
-
-            # Ensure output directory exists
             output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / "rigged.fbx"
+            output_filename = output_path.name
 
             if rig_mode == "skeleton":
                 # NOTE: using await here will make blender context incorrect
@@ -226,9 +228,14 @@ class UniRigAdapter(AutoRigModel):
             if output_fbx_path.suffix.lower() != ".fbx" or not output_fbx_path.is_file():
                 raise RuntimeError(f"UniRig did not produce the requested FBX artifact: {output_fbx_path}")
             result_path = fbx_to_glb(str(output_fbx_path))
+            result_path = Path(result_path).resolve()
+            try:
+                result_path.relative_to(output_dir)
+            except ValueError as exc:
+                raise RuntimeError("UniRig GLB preview was written outside its canonical job directory") from exc
 
             # Verify output was created
-            if not Path(result_path).exists():
+            if result_path.suffix.lower() != ".glb" or not result_path.is_file():
                 raise Exception(f"UniRig failed to generate output file: {result_path}")
 
             # Estimate bone count from output (simplified approach)

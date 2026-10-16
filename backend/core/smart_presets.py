@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 import yaml
 
 
@@ -16,7 +19,7 @@ def load_smart_presets() -> Dict[str, Any]:
     return data
 
 def get_gpu_memory_profile() -> Dict[str, Any]:
-    if not torch.cuda.is_available():
+    if torch is None or not torch.cuda.is_available():
         return {"gpu_count": 0, "free_mb": [], "aggregate_free_mb": None, "max_free_mb": None}
     free_mb = []
     for index in range(torch.cuda.device_count()):

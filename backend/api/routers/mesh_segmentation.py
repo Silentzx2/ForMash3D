@@ -6,10 +6,13 @@ Provides endpoints for partitioning 3D meshes into semantic parts.
 
 import logging
 import os
+import shutil
 from pathlib import Path
+import tempfile
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
@@ -17,8 +20,15 @@ from api.routers.file_upload import resolve_file_id_async, resolve_input_referen
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
+from core.utils.file_utils import (
+    MIME_TYPE_MAPPING,
+    SUPPORTED_MESH_FORMATS,
+    validate_base64_data,
+    validate_mesh_file,
+)
 
 logger = logging.getLogger(__name__)
+MAX_MESH_BASE64_BYTES = 200 * 1024 * 1024
 
 router = APIRouter(prefix="/mesh-segmentation", tags=["mesh_segmentation"])
 
@@ -121,6 +131,8 @@ async def segment_mesh(
     Returns:
         Job information for the segmentation task
     """
+    temp_dir = None
+    scheduled = False
     try:
         user_id = current_user.user_id if current_user else None
         
@@ -147,33 +159,40 @@ async def segment_mesh(
                     status_code=404, detail="Mesh file not found or expired"
                 )
         elif request.mesh_base64:
-            # Handle base64 encoded mesh
-            import base64
-            import tempfile
+            valid, content_type, mesh_data = validate_base64_data(
+                request.mesh_base64, MAX_MESH_BASE64_BYTES
+            )
+            if not valid or mesh_data is None:
+                raise HTTPException(status_code=400, detail="Invalid or oversized mesh base64 data")
 
-            try:
-                mesh_data = base64.b64decode(request.mesh_base64)
-                # Create temporary file
-                temp_dir = Path(tempfile.gettempdir()) / "mesh_uploads"
-                temp_dir.mkdir(exist_ok=True)
-
-                # Try to determine file extension from data
-                # This is a simple heuristic - in production, you'd want more robust detection
+            extension = MIME_TYPE_MAPPING.get(content_type or "")
+            if extension not in SUPPORTED_MESH_FORMATS:
                 if mesh_data.startswith(b"glTF"):
-                    ext = ".glb"
-                elif b"<mesh>" in mesh_data[:1000]:
-                    ext = ".xml"
+                    extension = ".glb"
                 else:
-                    ext = ".obj"  # default
+                    stripped = mesh_data.lstrip()
+                    if stripped.startswith(b"{"):
+                        extension = ".gltf"
+                    elif any(line.startswith((b"v ", b"o ", b"#", b"mtllib ")) for line in mesh_data[:4096].splitlines()[:32]):
+                        extension = ".obj"
+                    else:
+                        raise HTTPException(status_code=400, detail="Unsupported mesh base64 format")
+            if extension not in SUPPORTED_MESH_FORMATS:
+                raise HTTPException(status_code=400, detail="Unsupported mesh base64 format")
 
-                temp_file = temp_dir / f"uploaded_mesh_{os.urandom(8).hex()}{ext}"
-                temp_file.write_bytes(mesh_data)
-                mesh_file_path = str(temp_file)
-
-            except Exception as e:
+            temp_dir = Path(tempfile.mkdtemp(prefix="mesh_gen_"))
+            register_temp_dir = getattr(scheduler, "_register_managed_input_dir", None)
+            if callable(register_temp_dir):
+                register_temp_dir(temp_dir)
+            temp_file = temp_dir / f"uploaded_mesh{extension}"
+            temp_file.write_bytes(mesh_data)
+            validation_info = await run_in_threadpool(validate_mesh_file, str(temp_file))
+            if not validation_info.get("valid"):
                 raise HTTPException(
-                    status_code=400, detail=f"Invalid mesh data: {str(e)}"
+                    status_code=400,
+                    detail=f"Invalid mesh data: {validation_info.get('error', 'mesh validation failed')}",
                 )
+            mesh_file_path = str(temp_file)
         else:
             # mesh_path may be a download URL or bare /{file_id} path from an upstream job
             mesh_file_path = await resolve_input_reference_async(
@@ -181,7 +200,7 @@ async def segment_mesh(
             ) or request.mesh_path
 
         # Resolve server path if URL or relative path was provided
-        if mesh_file_path:
+        if mesh_file_path and temp_dir is None:
             from core.utils.file_utils import resolve_server_file_path
             from core.utils.exceptions import FileUploadError
             try:
@@ -210,11 +229,14 @@ async def segment_mesh(
             },
             model_preference=request.model_preference,
             priority=1,
-            metadata={"postprocess_mode": "production_mesh", "feature_type": "mesh_segmentation"},
+            metadata={"postprocess_mode": "manual_mesh_tool", "feature_type": "mesh_segmentation"},
             user_id=user_id,
         )
 
+        if temp_dir:
+            job_request.metadata["temp_input_dirs"] = [str(temp_dir)]
         job_id = await scheduler.schedule_job(job_request)
+        scheduled = True
 
         return MeshSegmentationResponse(
             job_id=job_id,
@@ -228,6 +250,12 @@ async def segment_mesh(
     except Exception as e:
         logger.error(f"Error scheduling mesh segmentation job: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to schedule job: {str(e)}")
+    finally:
+        if temp_dir and not scheduled:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            unregister_temp_dir = getattr(scheduler, "_unregister_managed_input_dir", None)
+            if callable(unregister_temp_dir):
+                unregister_temp_dir(temp_dir)
 
 
 @router.get("/supported-formats")

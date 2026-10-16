@@ -152,3 +152,10 @@ def mesh_stats(mesh: trimesh.Trimesh) -> MeshStats:
         face_count=int(len(mesh.faces)),
         has_uv=has_uv,
     )
+
+
+def apply_angle_weighted_normals(mesh: trimesh.Trimesh, crease_angle_deg: float = 35.0) -> trimesh.Trimesh:
+    """Compute and attach Nelson Max angle-weighted vertex normals with sharp crease splitting."""
+    from core.mesh_processor import compute_angle_weighted_normals
+    return compute_angle_weighted_normals(mesh, crease_angle_deg=crease_angle_deg)
+

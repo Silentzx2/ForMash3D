@@ -68,7 +68,7 @@ export function buildGenerationParameters(
     enable_flashvdm: settings.enableFlashVDM ?? false,
     low_vram_mode: 'normal',
     auto_optimize: enablePostprocess && shouldAutoOptimize(settings.autoOptimizeSettings?.targetPolycount),
-    target_polycount: enablePostprocess ? (settings.autoOptimizeSettings?.targetPolycount ?? 0) : 0,
+    target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 0,
     generateLOD: enablePostprocess && (settings.generateLOD !== false),
     lodPreset: settings.lodPreset || 'high',
     lodCount: enablePostprocess ? (settings.lodCount || 4) : 0,
@@ -114,18 +114,24 @@ export function buildGenerationParameters(
       model_preference: settings.aiModel || undefined,
       intent: enablePostprocess ? settings.intent : undefined,
       preprocessing_artifact_id: settings.preprocessingArtifactId || undefined,
+      preprocessing_review_override: Boolean(settings.preprocessingReviewOverride),
       enhancement_enabled: Boolean(settings.enhancementEnabled),
       enable_printability_check: enablePostprocess && Boolean(settings.enablePrintabilityCheck),
       enable_auto_repair: enablePostprocess && Boolean(settings.enableAutoRepair),
       enable_auto_rig: enablePostprocess && Boolean(settings.enableAutoRig),
       auto_rig_mode: settings.autoRigMode || 'full',
       enable_postprocess: enablePostprocess,
+      target_polycount: enablePostprocess ? (settings.autoOptimizeSettings?.targetPolycount ?? 0) : 0,
       model_parameters: modelParameters,
       physics_enabled: enablePostprocess && shouldEnablePhysics(settings.generateCollision ?? false),
       physics_config: settings.physics,
       topology_mode: enablePostprocess ? (settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle')) : 'triangle',
       quad_topology: enablePostprocess && Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
-      bake_normal_maps: enablePostprocess,
+      bake_normal_maps: enablePostprocess && (settings.highResolutionNormalBaking ?? true),
+      sharp_feature_preservation: enablePostprocess && (settings.sharpFeaturePreservation ?? true),
+      angle_crease_threshold: settings.angleCreaseThreshold ?? 45,
+      high_resolution_normal_baking: enablePostprocess && (settings.highResolutionNormalBaking ?? true),
+      texture_fidelity_preset: settings.textureFidelityPreset || 'high',
       texture_enabled: textureEnabled,
       generate_texture: textureEnabled,
       ...(textureEnabled ? {
@@ -176,7 +182,7 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
 
 function shouldAutoOptimize(targetPolycount: number | undefined): boolean {
   // Missing/zero target means Native/Raw; never infer a production reduction budget.
-  return Number.isFinite(targetPolycount) && Number(targetPolycount) > 0 && Number(targetPolycount) < 200000;
+  return Number.isFinite(targetPolycount) && Number(targetPolycount) > 0;
 }
 
 function shouldEnablePhysics(generateCollision: boolean): boolean {

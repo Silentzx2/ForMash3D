@@ -6,17 +6,20 @@ from typing import Any, Dict, List, Optional
 # ── Compatibility shim: torch 2.8.0 does not have float8_e8m0fnu ──
 # transformers >=4.44 references torch.float8_e8m0fnu which causes
 # AttributeError on torch 2.8.0. Patch it before transformers imports.
-import torch
-if not hasattr(torch, "float8_e8m0fnu"):
-    try:
-        torch.float8_e8m0fnu = torch.float8_e4m3fn
-    except Exception:
-        pass
-if not hasattr(torch, "float8_e5m2"):
-    try:
-        torch.float8_e5m2 = torch.float8_e4m3fn
-    except Exception:
-        pass
+try:
+    import torch
+    if not hasattr(torch, "float8_e8m0fnu"):
+        try:
+            torch.float8_e8m0fnu = torch.float8_e4m3fn
+        except Exception:
+            pass
+    if not hasattr(torch, "float8_e5m2"):
+        try:
+            torch.float8_e5m2 = torch.float8_e4m3fn
+        except Exception:
+            pass
+except ImportError:
+    torch = None
 
 # ── Compatibility shim: torch_scatter C++ ABI mismatch or missing ──
 import sys, types
@@ -49,7 +52,7 @@ except (ImportError, OSError):
     sys.modules["torch_scatter"] = _ts
 
 # ── High-Performance PyTorch Tensor Core & cuDNN Tuning ──
-if torch.cuda.is_available():
+if torch is not None and torch.cuda.is_available():
     try:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True

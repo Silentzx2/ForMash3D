@@ -315,10 +315,12 @@ Content-Type: multipart/form-data
   "file_type": "mesh",
   "file_size_mb": 15.3,
   "upload_time": "2026-09-21T00:00:00Z",
-  "expires_at": "2026-09-22T00:00:00Z",
+  "expires_at": null,
   "url": "/api/v1/file-upload/download/mesh_abc123"
 }
 ```
+
+Textual `.gltf` uploads must be self-contained single files: buffers use embedded data URIs, and images use embedded data URIs or valid buffer views. Relative/remote dependencies and missing sidecars are rejected; upload a self-contained GLB or embed the resources before uploading.
 
 ### Download File
 
@@ -538,7 +540,7 @@ The image-to-raw and image-to-textured generation contracts accept the same prod
 - `target_polycount`: a downstream derivative budget; the immutable high-fidelity master is never reduced to satisfy it.
 - `texture_resolution`: production atlas/bake resolution. Model-native source texture settings remain separate from this downstream target.
 - `generateLOD`, `lodPreset`, `lodCount`: derivative LOD controls.
-- `preprocessing_artifact_id` and `enhancement_enabled`: model-aware preprocessing provenance. Enhancement requires an approved artifact.
+- `preprocessing_artifact_id` and `enhancement_enabled`: model-aware preprocessing provenance. Only validated artifacts are approved; failed artifacts are rejected. `preprocessing_review_override: true` explicitly allows a `needs_review` preview and is recorded in job provenance. It cannot override a failed preprocessing status.
 - `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `auto_rig_mode`, and provider-neutral `physics_config`.
 
 Completed jobs expose production metadata through `GET /api/v1/system/jobs/{job_id}`, including `source_model_url`, `high_fidelity_url`, `game_ready_url`, `production_status`, `degraded_reasons`, `quality_mode`, `target_polycount`, `texture_resolution`, `master_to_derivative`, `quality_trace`, `lod_validation`, and artifact status.
@@ -844,11 +846,11 @@ Event types:
 
 ## Phase 1 Generation Workflow APIs
 
-- POST /api/v1/image-enhancement/preview creates a deterministic Generation Preview artifact and returns preview/approved URLs plus provenance metadata.
-- GET /api/v1/image-enhancement/artifacts/{artifact_id}?variant=preview|approved serves the exact preview/approved artifact.
+- POST /api/v1/image-enhancement/preview creates a deterministic Generation Preview and returns `approval_status`, foreground-validation metrics, provenance, and a preview URL. An approved URL is returned only for validated foregrounds.
+- GET /api/v1/image-enhancement/artifacts/{artifact_id}?variant=preview|approved serves the preview; requesting an unapproved artifact returns HTTP 409.
 - GET /api/v1/smart-generation/presets returns the versioned intent definitions.
 - POST /api/v1/smart-generation/resolve resolves an intent to a ready, compatible Image → 3D model and applied preset; an explicit model is validated as an override.
-- Image→raw and image→textured requests accept intent, preprocessing_artifact_id, enhancement_enabled, enable_printability_check, enable_auto_repair, enable_auto_rig, and auto_rig_mode.
+- Image→raw and image→textured requests accept intent, preprocessing_artifact_id, enhancement_enabled, preprocessing_review_override, enable_printability_check, enable_auto_repair, enable_auto_rig, and auto_rig_mode. A review override is required only for `needs_review`; `failed` artifacts cannot enter inference.
 - Completed auto-rig workflows expose a GLB `rigged_model_url` for viewport display and retain the original native FBX separately for download. The `artifact_format=fbx` download option serves a real pre-exported FBX only; assets without one receive HTTP 422 rather than an unsupported generic `trimesh` conversion.
 
 ## High-Fidelity Result and Resource Metadata — 2026-10-08

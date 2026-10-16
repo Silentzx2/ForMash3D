@@ -58,7 +58,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 import core.config  # Initialize PyTorch compatibility shims & settings in worker processes
 from core.utils.file_utils import get_storage_base_dir
@@ -112,9 +115,9 @@ _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
     "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
     "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
     "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 380, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 380, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 9, "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1, "low_vram": False},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 5, "guidance_scale": 5.0, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
+    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1, "low_vram": False},
     "pixal3d_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "low_vram": False},
     "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
     "trellis_image_to_raw_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
@@ -480,7 +483,7 @@ def _handle_control_message(
 
 def _reset_cuda_peak_memory_stats(resource_plan: Optional[Dict[str, Any]], fallback_gpu_id: int) -> None:
     """Reset per-job CUDA memory peaks after model load and before inference."""
-    if not torch.cuda.is_available():
+    if torch is None or not torch.cuda.is_available():
         return
     gpu_ids = (resource_plan or {}).get("gpu_ids") or [fallback_gpu_id]
     for gpu_id in sorted({int(value) for value in gpu_ids if value is not None}):
@@ -573,7 +576,7 @@ def _attach_raw_geometry_telemetry(
         return
     scheduled_gpus = (resource_plan or {}).get("gpu_ids") or [gpu_id]
     gpu_details = []
-    if torch.cuda.is_available():
+    if torch is not None and torch.cuda.is_available():
         for device_id in sorted({int(value) for value in scheduled_gpus if value is not None}):
             try:
                 props = torch.cuda.get_device_properties(device_id)
@@ -1091,6 +1094,13 @@ class MultiprocessModelScheduler:
 
     async def schedule_job(self, job_request: JobRequest) -> str:
         """Schedule a new job for processing"""
+        if str(job_request.metadata.get("postprocess_mode") or "").lower() == "manual_mesh_tool":
+            source_path = Path(str(job_request.inputs.get("mesh_path") or ""))
+            if source_path.is_file():
+                from core.utils.artifact_utils import sha256_file
+
+                job_request.metadata.setdefault("source_sha256", sha256_file(source_path))
+
         # Validate that we have models for this feature
         if job_request.feature not in self.model_features:
             raise Exception(
@@ -1691,28 +1701,44 @@ class MultiprocessModelScheduler:
 
             if status == "completed":
                 child_path = child_result.get("output_mesh_path")
-                if not child_path or not Path(child_path).is_file():
+                child_fbx_path = child_result.get("output_fbx_path")
+                if not child_path or not Path(child_path).is_file() or Path(child_path).suffix.lower() != ".glb":
                     raise RuntimeError("UniRig completed without a durable output_mesh_path")
 
                 asset_root = Path(result["asset_root"]).resolve()
-                storage_root = (get_storage_base_dir() / "models").resolve()
+                storage_root = (get_storage_base_dir() / "models" / "meshes").resolve()
                 asset_root.relative_to(storage_root)
 
-                rig_dir = asset_root / "rigging"
+                rig_dir = asset_root / "rigging" / child_job_id
                 rig_dir.mkdir(parents=True, exist_ok=True)
-                rig_path = rig_dir / "game_ready_rigged.glb"
-                shutil.copy2(child_path, rig_path)
+                rig_path = rig_dir / "rigged.glb"
+                source_glb = Path(child_path).resolve()
+                source_glb.relative_to(asset_root)
+                if source_glb != rig_path.resolve():
+                    shutil.copy2(source_glb, rig_path)
+
+                rig_fbx_path = None
+                if child_fbx_path:
+                    source_fbx = Path(child_fbx_path).resolve()
+                    if source_fbx.suffix.lower() == ".fbx" and source_fbx.is_file() and source_fbx.stat().st_size > 0:
+                        source_fbx.relative_to(asset_root)
+                        rig_fbx_path = rig_dir / "rigged.fbx"
+                        if source_fbx != rig_fbx_path.resolve():
+                            shutil.copy2(source_fbx, rig_fbx_path)
 
                 rig_url = (
                     f"/api/v1/system/jobs/{parent_job_id}/download"
                     f"?artifact_format=rigged"
                 )
+                result["output_fbx_path"] = str(rig_fbx_path) if rig_fbx_path else None
                 result["rigging"] = {
                     "status": "completed",
                     "provider": "unirig_auto_rig",
                     "child_job_id": child_job_id,
                     "artifact_path": str(rig_path),
                     "artifact_url": rig_url,
+                    "fbx_path": str(rig_fbx_path) if rig_fbx_path else None,
+                    "fbx_status": "ready" if rig_fbx_path else "unavailable",
                     "bone_count": child_result.get("bone_count"),
                     "rig_info": child_result.get("rig_info"),
                 }
@@ -1722,9 +1748,29 @@ class MultiprocessModelScheduler:
                     "rigged": {
                         "status": "ready",
                         "url": rig_url,
+                        "path": str(rig_path),
+                        "format": "glb",
+                        "required": False,
+                    },
+                    "rigged_fbx": {
+                        "status": "ready" if rig_fbx_path else "unavailable",
+                        "url": f"/api/v1/system/jobs/{parent_job_id}/download?artifact_format=fbx" if rig_fbx_path else None,
+                        "path": str(rig_fbx_path) if rig_fbx_path else None,
+                        "format": "fbx",
                         "required": False,
                     },
                 }
+                from postprocess.pipeline import register_asset_job_manifest
+
+                master_path = Path(result.get("source_model_path") or asset_root / "master" / "source.glb")
+                manifest_artifacts = {
+                    "rigged": {"path": str(rig_path), "format": "glb"},
+                }
+                if rig_fbx_path:
+                    manifest_artifacts["fbx"] = {"path": str(rig_fbx_path), "format": "fbx"}
+                register_asset_job_manifest(
+                    asset_root, parent_job_id, master_path, master_path, manifest_artifacts
+                )
             else:
                 error = (
                     child.get("error")
@@ -1801,7 +1847,7 @@ class MultiprocessModelScheduler:
                     and job_request.inputs.get("enable_postprocess", True)
                 ) if ("enable_postprocess" in job_request.metadata or "enable_postprocess" in job_request.inputs) else (postprocess_mode == "production_mesh")
 
-                if not enable_postprocess:
+                if not enable_postprocess and postprocess_mode == "production_mesh":
                     postprocess_mode = "none"
 
                 # Normalize texture_enabled into post-processing rather than launching redundant independent child workflows.
@@ -1817,6 +1863,17 @@ class MultiprocessModelScheduler:
                 )
                 job_request.metadata["texture_enabled"] = texture_enabled
                 job_request.inputs["texture_enabled"] = texture_enabled
+
+                if postprocess_mode == "manual_mesh_tool":
+                    from postprocess.pipeline import persist_manual_mesh_result
+
+                    final_result = await asyncio.to_thread(
+                        persist_manual_mesh_result,
+                        job_id,
+                        final_result,
+                        job_request.inputs,
+                        job_request.metadata,
+                    )
 
                 # Postprocessing runs for raw-mesh jobs with production_mesh mode when postprocess is enabled.
                 if final_result.get("output_mesh_path") and postprocess_mode == "production_mesh" and enable_postprocess:
@@ -1941,6 +1998,16 @@ class MultiprocessModelScheduler:
                         },
                         user_id=job_request.user_id,
                     )
+                    child_request.inputs["output_dir"] = str(
+                        Path(final_result["asset_root"]).resolve()
+                        / "rigging"
+                        / child_request.job_id
+                    )
+                    child_request.metadata["asset_root"] = final_result["asset_root"]
+                    child_request.metadata["source_path"] = final_result["output_mesh_path"]
+                    child_request.metadata["source_master_path"] = str(
+                        Path(final_result["asset_root"]).resolve() / "master" / "source.glb"
+                    )
                     child_id = await self.schedule_job(child_request)
                     final_result["rigging"] = {
                         "status": "queued",
@@ -1963,6 +2030,66 @@ class MultiprocessModelScheduler:
                     )
                     return
 
+                if job_request.feature == "auto_rig":
+                    asset_root = Path(job_request.metadata["asset_root"]).resolve(strict=True)
+                    meshes_root = (get_storage_base_dir() / "models" / "meshes").resolve()
+                    asset_root.relative_to(meshes_root)
+                    expected_dir = asset_root / "rigging" / job_id
+                    preview_path = Path(final_result.get("output_mesh_path") or "").resolve(strict=True)
+                    preview_path.relative_to(expected_dir.resolve())
+                    if preview_path.suffix.lower() != ".glb" or preview_path.stat().st_size == 0:
+                        raise RuntimeError("UniRig did not produce a valid GLB preview artifact")
+
+                    source_path = Path(job_request.metadata["source_path"]).resolve(strict=True)
+                    master_path = Path(job_request.metadata["source_master_path"]).resolve(strict=True)
+                    from core.utils.artifact_utils import sha256_file
+
+                    if sha256_file(source_path) != job_request.metadata.get("source_sha256"):
+                        raise RuntimeError("Selected source mesh changed during UniRig processing")
+
+                    fbx_path_value = final_result.get("output_fbx_path")
+                    fbx_path = Path(fbx_path_value).resolve(strict=True) if fbx_path_value else None
+                    if fbx_path:
+                        fbx_path.relative_to(expected_dir.resolve())
+                        if fbx_path.suffix.lower() != ".fbx" or fbx_path.stat().st_size == 0:
+                            fbx_path = None
+
+                    final_result["asset_root"] = str(asset_root)
+                    final_result["output_mesh_path"] = str(preview_path)
+                    final_result["output_fbx_path"] = str(fbx_path) if fbx_path else None
+                    final_result["rigging"] = {
+                        "status": "completed",
+                        "provider": "unirig_auto_rig",
+                        "artifact_path": str(preview_path),
+                        "fbx_path": str(fbx_path) if fbx_path else None,
+                        "fbx_status": "ready" if fbx_path else "unavailable",
+                    }
+                    final_result["artifacts"] = {
+                        **dict(final_result.get("artifacts") or {}),
+                        "rigged": {
+                            "status": "ready",
+                            "path": str(preview_path),
+                            "format": "glb",
+                            "url": f"/api/v1/system/jobs/{job_id}/download?artifact_format=rigged",
+                            "required": True,
+                        },
+                        "rigged_fbx": {
+                            "status": "ready" if fbx_path else "unavailable",
+                            "path": str(fbx_path) if fbx_path else None,
+                            "format": "fbx",
+                            "url": f"/api/v1/system/jobs/{job_id}/download?artifact_format=fbx" if fbx_path else None,
+                            "required": False,
+                        },
+                    }
+                    from postprocess.pipeline import register_asset_job_manifest
+
+                    manifest_artifacts = {"rigged": {"path": str(preview_path), "format": "glb"}}
+                    if fbx_path:
+                        manifest_artifacts["fbx"] = {"path": str(fbx_path), "format": "fbx"}
+                    register_asset_job_manifest(
+                        asset_root, job_id, source_path, master_path, manifest_artifacts
+                    )
+
                 if not enable_postprocess or postprocess_mode != "production_mesh":
                     final_result.setdefault("postprocess_status", "bypassed")
                     final_result.setdefault("production_status", "ready")
@@ -1972,7 +2099,15 @@ class MultiprocessModelScheduler:
                         or final_result.get("output_path")
                         or final_result.get("file_path")
                     )
-                    if out_mesh:
+                    if out_mesh and postprocess_mode == "manual_mesh_tool":
+                        derived_url = f"/api/v1/system/jobs/{job_id}/download?artifact_format=derived"
+                        master_url = f"/api/v1/system/jobs/{job_id}/download?artifact_format=master"
+                        final_result.setdefault("model_url", derived_url)
+                        final_result.setdefault("game_ready_url", derived_url)
+                        final_result.setdefault("source_model_url", master_url)
+                        final_result.setdefault("high_fidelity_url", master_url)
+                        final_result.setdefault("download_url", derived_url)
+                    elif out_mesh:
                         final_result.setdefault("model_url", f"/api/v1/system/jobs/{job_id}/download?artifact_format=glb")
                         final_result.setdefault("game_ready_url", f"/api/v1/system/jobs/{job_id}/download?artifact_format=glb")
                         final_result.setdefault("source_model_url", f"/api/v1/system/jobs/{job_id}/download?artifact_format=glb")

@@ -62,8 +62,9 @@ export const ViewportToolOverlay: React.FC = () => {
             <div className="px-3 py-2 rounded-xl bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border border-white/[0.08] text-[11px] font-mono space-y-1 shadow-xl">
               <div className="flex gap-4 justify-between"><span className="text-zinc-400">Vertices</span><span className="text-white font-bold">{verticesDisplay}</span></div>
               <div className="flex gap-4 justify-between"><span className="text-zinc-400">Faces</span><span className="text-white font-bold">{facesDisplay}</span></div>
-              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Materials</span><span className="text-white font-bold">{currentAsset?.materialConfig?.style || 'PBR Standard'}</span></div>
-              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Size</span><span className="text-white font-bold">{currentAsset?.fileSize || '—'}</span></div>
+              <div className="flex gap-4 justify-between"><span className="text-zinc-400">UV Charts</span><span className="text-primary font-bold">{modelStats?.uvCharts ?? currentAsset?.uvCharts ?? 1} charts</span></div>
+              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Surface Area</span><span className="text-white font-bold">{modelStats?.surfaceArea ?? currentAsset?.surfaceArea ? `${modelStats?.surfaceArea ?? currentAsset?.surfaceArea} m²` : '—'}</span></div>
+              <div className="flex gap-4 justify-between"><span className="text-zinc-400">Manifold</span><span className={(modelStats?.isManifold ?? currentAsset?.isManifold ?? true) ? "text-[hsl(var(--neon-green))] font-bold" : "text-amber-400 font-bold"}>{(modelStats?.isManifold ?? currentAsset?.isManifold ?? true) ? "Watertight" : "Non-Manifold"}</span></div>
               <div className="flex gap-4 justify-between"><span className="text-zinc-400">Format</span><span className="text-primary font-bold">{currentAsset?.format || 'GLB'}</span></div>
             </div>
           ) : (

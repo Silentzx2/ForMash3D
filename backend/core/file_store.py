@@ -84,7 +84,7 @@ class FileStore:
 
             # Use a pipeline for atomic operations
             async with self.redis.pipeline() as pipe:
-                if self.default_ttl > 0:
+                if self.default_ttl > 0 and not file_info.get("durable", False):
                     pipe.set(file_key, json.dumps(file_info), ex=self.default_ttl)
                 else:
                     pipe.set(file_key, json.dumps(file_info))

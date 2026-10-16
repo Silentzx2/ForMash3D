@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { useAppStore } from '@/stores/useAppStore';
 import type { GenerationSettings, PhysicsSettings } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
+import { requireUploadFileId } from '../lib/uploadResponse';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
@@ -23,6 +24,21 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new File([u8arr], filename, { type: mime });
+}
+
+function formatValidationDetails(validation: unknown): string | null {
+  if (typeof validation === 'string') return validation;
+  if (Array.isArray(validation)) return validation.map(String).join(' · ');
+  if (!validation || typeof validation !== 'object') return null;
+
+  const details = validation as Record<string, unknown>;
+  const messages = [details.message, details.error, details.detail]
+    .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()));
+  for (const key of ['errors', 'warnings']) {
+    const values = details[key];
+    if (Array.isArray(values)) messages.push(...values.map(String));
+  }
+  return messages.length > 0 ? messages.join(' · ') : JSON.stringify(validation);
 }
 
 export interface MeshQualityPreset {
@@ -270,7 +286,6 @@ export const GeneratePanel: React.FC = () => {
   const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
   const [optionsLoading, setOptionsLoading] = useState(false);
   const pendingGenerateRef = useRef(false);
-  const ownedBlobUrlsRef = useRef<Set<string>>(new Set());
   const [smartPresets, setSmartPresets] = useState<Record<string, any>>({});
   const [smartResolution, setSmartResolution] = useState<any | null>(null);
   const [enhancementLoading, setEnhancementLoading] = useState(false);
@@ -386,6 +401,12 @@ export const GeneratePanel: React.FC = () => {
     return { label: 'Not ready', tone: 'warn' as const };
   };
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'verifying' | 'saved' | 'error'>('idle');
+  const [approvalStatus, setApprovalStatus] = useState<'approved' | 'needs_review' | 'failed' | null>(null);
+  const [approvalWarning, setApprovalWarning] = useState<string | null>(null);
+  const [approvalValidation, setApprovalValidation] = useState<unknown>(null);
+  const [approvalAcknowledged, setApprovalAcknowledged] = useState(false);
+  const preprocessingApprovalStatus = generationSettings.preprocessingMetadata?.approval_status ?? null;
 
   const meshCapableModels = useMemo(() => {
     return relevantModelIds.map(id => {
@@ -460,23 +481,6 @@ export const GeneratePanel: React.FC = () => {
 
   const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20MB
 
-  const ownBlobUrl = useCallback((url: string) => {
-    ownedBlobUrlsRef.current.add(url);
-    return url;
-  }, []);
-
-  const revokeOwnedBlobUrl = useCallback((url?: string | null) => {
-    if (!url || !ownedBlobUrlsRef.current.has(url)) return;
-    URL.revokeObjectURL(url);
-    ownedBlobUrlsRef.current.delete(url);
-  }, []);
-
-  useEffect(() => () => {
-    for (const url of ownedBlobUrlsRef.current) {
-      URL.revokeObjectURL(url);
-    }
-    ownedBlobUrlsRef.current.clear();
-  }, []);
   const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/tiff', 'image/x-png', 'image/jpg'];
   const ACCEPTED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff'];
 
@@ -488,136 +492,98 @@ export const GeneratePanel: React.FC = () => {
     return ACCEPTED_IMAGE_EXTS.some(ext => name.endsWith(ext));
   };
 
-  const processImageFile = async (file: File) => {
+  const uploadReferenceImage = async (file: File) => {
     setUploadError(null);
-
-    if (!isAcceptedImage(file)) {
-      setUploadError('Invalid file type. Use JPG, PNG, or WEBP.');
-      return;
-    }
-
-    if (file.size > MAX_IMAGE_SIZE) {
-      setUploadError('File too large. Maximum size is 20MB.');
-      return;
-    }
-
+    setUploadStatus('uploading');
+    startUpload(file.name, file.size);
     try {
-      startUpload(file.name, file.size);
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await getApiClient().post<{ file_id: string; filename?: string }>(
-        '/api/v1/file-upload/image',
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' }, onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) }
-      );
+      const res = await getApiClient().uploadImageFile(file, updateProgress);
+      setUploadStatus('verifying');
+      const fileId = requireUploadFileId(res?.file_id, 'image');
       finishUpload();
-      if (!res.file_id) throw new Error('Backend did not return a file ID for the uploaded image.');
-      const serverUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
-      const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      setUploadStatus('saved');
+      return { file, fileId, url: `/api/v1/file-upload/download/${encodeURIComponent(fileId)}`, response: res };
+    } catch (error) {
+      failUpload();
+      setUploadStatus('error');
+      setUploadError(error instanceof Error ? error.message : 'Failed to upload image.');
+      return null;
+    }
+  };
+
+  const processImageFiles = async (files: File[]) => {
+    setUploadError(null);
+    const validFiles = files.filter(isAcceptedImage);
+    if (validFiles.length === 0) {
+      setUploadError('No valid image files selected. Use JPG, PNG, or WEBP.');
+      setUploadStatus('error');
+      return;
+    }
+
+    if (validFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
+      setUploadError('One or more files are too large. Maximum size is 20MB per file.');
+      setUploadStatus('error');
+      return;
+    }
+    const uploaded: Array<Exclude<Awaited<ReturnType<typeof uploadReferenceImage>>, null>> = [];
+    let failedCount = 0;
+    for (const file of validFiles) {
+      const result = await uploadReferenceImage(file);
+      if (result) uploaded.push(result);
+      else failedCount += 1;
+    }
+
+    if (uploaded.length > 0) {
+      const primary = uploaded[0];
+      const cleanPrompt = primary.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       setGenerationSettings(prev => ({
         ...prev,
-        image: serverUrl,
-        imageFileId: res.file_id,
+        image: primary.url,
+        imageFileId: primary.fileId,
         preprocessingArtifactId: null,
+        preprocessingReviewOverride: false,
         preprocessingPreviewUrl: null,
         preprocessingMetadata: null,
         enhancementEnabled: false,
         prompt: cleanPrompt,
         imageName: cleanPrompt,
+        mode: 'image-to-3d',
       }));
-    } catch (err) {
-      failUpload();
-      setUploadError('Failed to upload image.');
+      setApprovalStatus(primary.response.approval_status ?? null);
+      setApprovalWarning(primary.response.warning || null);
+      setApprovalValidation(primary.response.validation ?? null);
+      setApprovalAcknowledged(false);
+      setUploadStatus('saved');
+
+      const batchable = uploaded.slice(1).filter(item =>
+        item.response.approval_status !== 'failed' && item.response.approval_status !== 'needs_review'
+      );
+      if (batchable.length > 0) {
+        addToBatchQueue(batchable.map(item => item.fileId));
+      }
+      const heldCount = uploaded.length - 1 - batchable.length;
+      if (batchable.length > 0 || heldCount > 0) {
+        const queuedText = batchable.length > 0
+          ? `${batchable.length} additional image${batchable.length === 1 ? '' : 's'} added to batch queue.`
+          : '';
+        const heldText = heldCount > 0
+          ? `${heldCount} additional image${heldCount === 1 ? '' : 's'} held for backend review.`
+          : '';
+        setNoticeMessage([queuedText, heldText].filter(Boolean).join(' '));
+        setTimeout(() => setNoticeMessage(null), 5000);
+      }
     }
+
+    if (failedCount > 0) {
+      setUploadError(`${failedCount} image${failedCount === 1 ? '' : 's'} failed to upload.`);
+    }
+    if (uploaded.length === 0) setUploadStatus('error');
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-    
-    // Process each file
-    const validFiles = Array.from(files).filter(isAcceptedImage);
-    if (validFiles.length === 0) {
-      setUploadError('No valid image files selected. Use JPG, PNG, or WEBP.');
-      return;
-    }
-    
-    if (validFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
-      setUploadError('One or more files are too large. Maximum size is 20MB per file.');
-      return;
-    }
-    
-    // Upload all valid files and collect their file IDs
-    const uploadPromises = validFiles.map(file => 
-      new Promise<{file: File, fileId: string | null, previewUrl: string | null}>(async (resolve) => {
-        try {
-          startUpload(file.name, file.size);
-          const formData = new FormData();
-          formData.append('file', file);
-          const res = await getApiClient().post<{ file_id: string }>(
-            '/api/v1/file-upload/image',
-            formData,
-            { 
-              headers: { 'Content-Type': 'multipart/form-data' }, 
-              onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) 
-            }
-          );
-          finishUpload();
-          const persistentUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
-          resolve({ 
-            file, 
-            fileId: res.file_id || null, 
-            previewUrl: persistentUrl || null 
-          });
-        } catch (err) {
-          failUpload();
-          resolve({ 
-            file, 
-            fileId: null, 
-            previewUrl: null 
-          });
-        }
-      })
-    );
-    
-    // Wait for all uploads to complete
-    Promise.all(uploadPromises).then(results => {
-      const successfulUploads = results.filter(r => r.fileId !== null);
-      const failedUploads = results.filter(r => r.fileId === null);
-      
-      if (successfulUploads.length > 0) {
-        // Set the primary reference image to the first uploaded file so it displays immediately
-        const first = successfulUploads[0];
-        const cleanPrompt = first.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-        setGenerationSettings(prev => ({
-          ...prev,
-          image: first.previewUrl,
-          imageFileId: first.fileId,
-          preprocessingArtifactId: null,
-          preprocessingPreviewUrl: null,
-          preprocessingMetadata: null,
-          enhancementEnabled: false,
-          prompt: cleanPrompt,
-          imageName: cleanPrompt,
-          mode: 'image-to-3d',
-        }));
-
-        // If multiple images were selected, add remaining to batch queue
-        if (successfulUploads.length > 1) {
-          const imageFileIds = successfulUploads.slice(1).map(r => r.fileId!);
-          addToBatchQueue(imageFileIds);
-          setNoticeMessage(`Primary image loaded. ${imageFileIds.length} additional image${imageFileIds.length === 1 ? '' : 's'} added to batch queue.`);
-          setTimeout(() => setNoticeMessage(null), 5000);
-        }
-      }
-      
-      if (failedUploads.length > 0) {
-        setUploadError(`${failedUploads.length} image${failedUploads.length === 1 ? '' : 's'} failed to upload.`);
-      }
-      
-      // Reset file input
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    });
+    const files = Array.from(e.currentTarget.files || []);
+    if (files.length > 0) void processImageFiles(files);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -632,7 +598,7 @@ export const GeneratePanel: React.FC = () => {
     setIsDragOver(false);
   };
 
-   const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragOver(false);
@@ -640,86 +606,7 @@ export const GeneratePanel: React.FC = () => {
     const files = e.dataTransfer.files;
     if (!files || files.length === 0) return;
     
-    // Process each file
-    const validFiles = Array.from(files).filter(isAcceptedImage);
-    if (validFiles.length === 0) {
-      setUploadError('No valid image files dropped. Use JPG, PNG, or WEBP.');
-      return;
-    }
-    
-    if (validFiles.some(file => file.size > MAX_IMAGE_SIZE)) {
-      setUploadError('One or more files are too large. Maximum size is 20MB per file.');
-      return;
-    }
-    
-    // Upload all valid files and collect their file IDs
-    const uploadPromises = validFiles.map(file => 
-      new Promise<{file: File, fileId: string | null, previewUrl: string | null}>(async (resolve) => {
-        try {
-          startUpload(file.name, file.size);
-          const formData = new FormData();
-          formData.append('file', file);
-          const res = await getApiClient().post<{ file_id: string }>(
-            '/api/v1/file-upload/image',
-            formData,
-            { 
-              headers: { 'Content-Type': 'multipart/form-data' }, 
-              onUploadProgress: (progressEvent) => updateProgress(Math.round((progressEvent.loaded / (progressEvent.total || 1)) * 100)) 
-            }
-          );
-          finishUpload();
-          const persistentUrl = res.file_id ? `/api/v1/file-upload/download/${res.file_id}` : ownBlobUrl(URL.createObjectURL(file));
-          resolve({ 
-            file, 
-            fileId: res.file_id || null, 
-            previewUrl: persistentUrl || null 
-          });
-        } catch (err) {
-          failUpload();
-          resolve({ 
-            file, 
-            fileId: null, 
-            previewUrl: null 
-          });
-        }
-      })
-    );
-    
-    // Wait for all uploads to complete
-    Promise.all(uploadPromises).then(results => {
-      const successfulUploads = results.filter(r => r.fileId !== null);
-      const failedUploads = results.filter(r => r.fileId === null);
-      
-      if (successfulUploads.length > 0) {
-        // Set the primary reference image to the first uploaded file so it displays immediately
-        const first = successfulUploads[0];
-        const cleanPrompt = first.file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-        setGenerationSettings(prev => ({
-          ...prev,
-          image: first.previewUrl,
-          imageFileId: first.fileId,
-          preprocessingArtifactId: null,
-          preprocessingPreviewUrl: null,
-          preprocessingMetadata: null,
-          enhancementEnabled: false,
-          prompt: cleanPrompt,
-          imageName: cleanPrompt,
-          mode: 'image-to-3d',
-        }));
-
-        // If multiple images were dropped, add remaining to batch queue
-        if (successfulUploads.length > 1) {
-          const imageFileIds = successfulUploads.slice(1).map(r => r.fileId!);
-          addToBatchQueue(imageFileIds);
-          setNoticeMessage(`Primary image loaded. ${imageFileIds.length} additional image${imageFileIds.length === 1 ? '' : 's'} added to batch queue.`);
-          setTimeout(() => setNoticeMessage(null), 5000);
-        }
-      }
-      
-      if (failedUploads.length > 0) {
-        setUploadError(`${failedUploads.length} image${failedUploads.length === 1 ? '' : 's'} failed to upload.`);
-      }
-    });
+    void processImageFiles(Array.from(files));
   };
 
   const handlePanelDragOver = (e: React.DragEvent) => {
@@ -734,7 +621,7 @@ export const GeneratePanel: React.FC = () => {
       if (isAcceptedImage(file)) {
         e.preventDefault();
         e.stopPropagation();
-        processImageFile(file);
+        void processImageFiles([file]);
       }
     }
   };
@@ -799,6 +686,8 @@ export const GeneratePanel: React.FC = () => {
     setSmartResolution(resolved!);
     const canAutoGenerate = Boolean(generationSettings.imageFileId)
       && (!generationSettings.enhancementEnabled || Boolean(generationSettings.preprocessingArtifactId))
+      && approvalStatus !== 'failed'
+      && !(approvalStatus === 'needs_review' && !approvalAcknowledged)
       && !batchGenerationEnabled;
     if (canAutoGenerate) pendingGenerateRef.current = true;
 
@@ -840,12 +729,17 @@ export const GeneratePanel: React.FC = () => {
       });
       setGenerationSettings(prev => ({
         ...prev,
-        enhancementEnabled: true,
+        enhancementEnabled: false,
         preprocessingArtifactId: result.artifact_id,
+        preprocessingReviewOverride: false,
         preprocessingPreviewUrl: result.preview_url,
         preprocessingMetadata: result.metadata || null,
       }));
-      if (result.warning) setEnhancementError(String(result.warning));
+      if (result.approval_status !== 'approved') {
+        setEnhancementError(String(result.warning || 'Review the preprocessing result before using it for generation.'));
+      } else if (result.warning) {
+        setEnhancementError(String(result.warning));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Image enhancement failed';
       setEnhancementError(message);
@@ -853,6 +747,7 @@ export const GeneratePanel: React.FC = () => {
         ...prev,
         enhancementEnabled: false,
         preprocessingArtifactId: null,
+        preprocessingReviewOverride: false,
         preprocessingPreviewUrl: null,
         preprocessingMetadata: null,
       }));
@@ -865,6 +760,7 @@ export const GeneratePanel: React.FC = () => {
     setGenerationSettings(prev => ({
       ...prev,
       enhancementEnabled: false,
+      preprocessingReviewOverride: false,
       preprocessingArtifactId: null,
       preprocessingPreviewUrl: null,
       preprocessingMetadata: null,
@@ -872,11 +768,40 @@ export const GeneratePanel: React.FC = () => {
     setEnhancementError(null);
   };
 
-   const handleGenerate = () => {
+  const handleGenerate = async () => {
     const hasImage = Boolean(generationSettings.image);
     if (!hasImage) {
       setNoticeMessage('Please upload a reference image first.');
       setTimeout(() => setNoticeMessage(null), 4000);
+      return;
+    }
+    if (approvalStatus === 'failed') {
+      setNoticeMessage(approvalWarning || 'Backend validation failed. Choose another image before generating.');
+      setTimeout(() => setNoticeMessage(null), 5000);
+      return;
+    }
+    if (approvalStatus === 'needs_review' && !approvalAcknowledged) {
+      setNoticeMessage('Review the backend upload warning and confirm it before generating.');
+      setTimeout(() => setNoticeMessage(null), 5000);
+      return;
+    }
+    if (generationSettings.preprocessingArtifactId && !generationSettings.enhancementEnabled) {
+      setNoticeMessage('Choose the validated preview, confirm its review warning, or disable enhancement to use the original image.');
+      setTimeout(() => setNoticeMessage(null), 5000);
+      return;
+    }
+    if (generationSettings.enhancementEnabled && preprocessingApprovalStatus === 'failed') {
+      setNoticeMessage('Preprocessing failed. Disable enhancement to use the original image.');
+      setTimeout(() => setNoticeMessage(null), 5000);
+      return;
+    }
+    if (
+      generationSettings.enhancementEnabled &&
+      preprocessingApprovalStatus === 'needs_review' &&
+      !generationSettings.preprocessingReviewOverride
+    ) {
+      setNoticeMessage('Review the preprocessing warning and confirm it before generating.');
+      setTimeout(() => setNoticeMessage(null), 5000);
       return;
     }
     if (generationSettings.enhancementEnabled && !generationSettings.preprocessingArtifactId) {
@@ -886,33 +811,29 @@ export const GeneratePanel: React.FC = () => {
     }
     // If batch generation is enabled, add current image to batch queue instead of generating immediately
     if (batchGenerationEnabled) {
-      // Upload current image if not already uploaded
       if (generationSettings.image && !generationSettings.imageFileId) {
-        // Convert base64 image to file and upload
         const imageBlob = dataURLtoFile(generationSettings.image, 'image.jpg');
-        const formData = new FormData();
-        formData.append('file', imageBlob);
-        
-        getApiClient().post<{ file_id: string }>(
-          '/api/v1/file-upload/image',
-          formData,
-          { 
-            headers: { 'Content-Type': 'multipart/form-data' } 
-          }
-        ).then(res => {
-          const imageFileId = res.file_id;
-          if (imageFileId) {
-            // Save file_id to generation settings so UI keeps the image reference
-            setGenerationSettings(prev => ({ ...prev, imageFileId }));
-            // Add to batch queue
-            addToBatchQueue([imageFileId]);
-            setNoticeMessage('Image added to batch queue.');
-            setTimeout(() => setNoticeMessage(null), 5000);
-          }
-        }).catch(err => {
-          setNoticeMessage('Failed to upload image for batch.');
+        const uploaded = await uploadReferenceImage(imageBlob);
+        if (!uploaded) {
+          setNoticeMessage('The image could not be uploaded, so it was not queued.');
           setTimeout(() => setNoticeMessage(null), 5000);
-        });
+          return;
+        }
+        setGenerationSettings(prev => ({ ...prev, imageFileId: uploaded.fileId, image: uploaded.url }));
+        setApprovalStatus(uploaded.response.approval_status ?? null);
+        setApprovalWarning(uploaded.response.warning || null);
+        setApprovalValidation(uploaded.response.validation ?? null);
+        setApprovalAcknowledged(false);
+        if (uploaded.response.approval_status === 'failed' || uploaded.response.approval_status === 'needs_review') {
+          setNoticeMessage(uploaded.response.approval_status === 'failed'
+            ? uploaded.response.warning || 'Backend validation failed. The image was not queued.'
+            : 'Review the backend upload warning, confirm it, then click Generate to queue this image.');
+          setTimeout(() => setNoticeMessage(null), 5000);
+          return;
+        }
+        addToBatchQueue([uploaded.fileId]);
+        setNoticeMessage('Image added to batch queue.');
+        setTimeout(() => setNoticeMessage(null), 5000);
       } else if (generationSettings.imageFileId) {
         // Image already uploaded, add to batch queue
         addToBatchQueue([generationSettings.imageFileId]);
@@ -1030,10 +951,10 @@ export const GeneratePanel: React.FC = () => {
                     transition={{ type: 'spring' as const, stiffness: 400, damping: 25 }}
                     className="relative w-full h-24 rounded-lg border border-dashed border-white/[0.12] cursor-pointer overflow-hidden flex flex-col items-center justify-center p-2 group/dropzone bg-[hsl(var(--surface-1))]/50 hover:bg-[hsl(var(--surface-1))]"
                   >
-                    {uploadProgress.active ? (
+                    {uploadStatus === 'uploading' || uploadStatus === 'verifying' ? (
                       <div className="text-center space-y-1.5 w-full px-2 z-10">
                         <HugeiconsIcon icon={LoaderCircle} size={16} className="w-5 h-5 mx-auto animate-spin text-primary" />
-                        <div className="font-bold text-[10px] text-white">Uploading...</div>
+                        <div className="font-bold text-[10px] text-white">{uploadStatus === 'verifying' ? 'Verifying upload...' : 'Uploading...'}</div>
                         <div className="w-full bg-[hsl(var(--surface-2))] rounded-full h-1.5 overflow-hidden">
                           <motion.div
                             initial={{ width: 0 }}
@@ -1079,6 +1000,37 @@ export const GeneratePanel: React.FC = () => {
                     )}
                   </motion.div>
 
+                  {uploadStatus === 'saved' && (
+                    <div role="status" className="text-[10px] text-emerald-300">Image upload saved.</div>
+                  )}
+                  {uploadError && (
+                    <div role="alert" className="text-[10px] leading-relaxed text-rose-300">{uploadError}</div>
+                  )}
+                  {(approvalStatus || approvalWarning || approvalValidation) && (
+                    <div
+                      role={approvalStatus === 'failed' ? 'alert' : 'status'}
+                      className={`space-y-1 rounded-lg border px-2 py-1.5 text-[10px] leading-relaxed ${approvalStatus === 'failed' ? 'border-rose-500/25 bg-rose-500/[0.06] text-rose-300' : approvalStatus === 'needs_review' ? 'border-amber-500/25 bg-amber-500/[0.06] text-amber-200' : 'border-emerald-500/20 bg-emerald-500/[0.04] text-emerald-200'}`}
+                    >
+                      <div className="font-semibold">
+                        {approvalStatus === 'approved' ? 'Backend approval: approved' : approvalStatus === 'needs_review' ? 'Backend approval: review required' : approvalStatus === 'failed' ? 'Backend approval: failed' : 'Backend validation notice'}
+                      </div>
+                      {approvalWarning && <div>{approvalWarning}</div>}
+                      {formatValidationDetails(approvalValidation) && <div>{formatValidationDetails(approvalValidation)}</div>}
+                      {approvalStatus === 'needs_review' && (
+                        <label className="flex items-start gap-1.5 pt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={approvalAcknowledged}
+                            onChange={event => setApprovalAcknowledged(event.target.checked)}
+                            className="mt-0.5 accent-amber-400"
+                          />
+                          <span>I reviewed this warning and want to continue.</span>
+                        </label>
+                      )}
+                      {approvalStatus === 'failed' && <div>Choose a different image; generation is blocked.</div>}
+                    </div>
+                  )}
+
                   {/* Quick Presets / Clear image */}
                   <div className="flex items-center justify-between text-[10px] pt-0.5">
                     <span className="text-zinc-400 font-medium">{generationSettings.image ? 'Loaded' : 'Sample:'}</span>
@@ -1088,13 +1040,19 @@ export const GeneratePanel: React.FC = () => {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            revokeOwnedBlobUrl(generationSettings.image);
+                            setUploadStatus('idle');
+                            setUploadError(null);
+                            setApprovalStatus(null);
+                            setApprovalWarning(null);
+                            setApprovalValidation(null);
+                            setApprovalAcknowledged(false);
                             setGenerationSettings(prev => ({
   ...prev,
   image: null,
   imageFileId: null,
   imageName: undefined,
   preprocessingArtifactId: null,
+  preprocessingReviewOverride: false,
   preprocessingPreviewUrl: null,
   preprocessingMetadata: null,
   enhancementEnabled: false,
@@ -1138,8 +1096,12 @@ export const GeneratePanel: React.FC = () => {
                       <div className="text-[11px] font-bold text-white">Generation Preview</div>
                       <div className="text-[9px] text-zinc-400">Optional adaptive preprocessing before AI generation</div>
                     </div>
-                    <span className={generationSettings.enhancementEnabled ? 'text-[9px] font-bold text-emerald-300' : 'text-[9px] text-zinc-500'}>
-                      {generationSettings.enhancementEnabled ? 'Approved' : 'Original'}
+                    <span className={generationSettings.enhancementEnabled ? 'text-[9px] font-bold text-emerald-300' : preprocessingApprovalStatus === 'failed' || preprocessingApprovalStatus === 'needs_review' ? 'text-[9px] font-bold text-amber-300' : 'text-[9px] text-zinc-500'}>
+                      {generationSettings.enhancementEnabled
+                        ? preprocessingApprovalStatus === 'needs_review' ? 'Review override active' : 'Approved'
+                        : preprocessingApprovalStatus === 'approved' ? 'Validated preview'
+                          : preprocessingApprovalStatus === 'needs_review' ? 'Review required'
+                            : preprocessingApprovalStatus === 'failed' ? 'Preprocessing failed' : 'Original'}
                     </span>
                   </div>
                   {generationSettings.preprocessingPreviewUrl && (
@@ -1159,15 +1121,36 @@ export const GeneratePanel: React.FC = () => {
                       {enhancementError}
                     </div>
                   )}
+                  {preprocessingApprovalStatus === 'needs_review' && (
+                    <label className="flex items-start gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-2 py-1.5 text-[9px] leading-relaxed text-amber-200">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(generationSettings.preprocessingReviewOverride)}
+                        onChange={event => setGenerationSettings(prev => ({
+                          ...prev,
+                          preprocessingReviewOverride: event.target.checked,
+                        }))}
+                        className="mt-0.5 accent-amber-400"
+                      />
+                      <span>I reviewed the foreground warning and want to use this preview.</span>
+                    </label>
+                  )}
                   <div className="grid grid-cols-2 gap-1.5">
                     <button type="button" onClick={() => void previewEnhancement()} disabled={enhancementLoading}
                       className="rounded-lg border border-primary/30 bg-primary/10 px-2 py-1.5 text-[9px] font-bold text-primary disabled:opacity-50">
                       {enhancementLoading ? 'Preparing Preview…' : generationSettings.preprocessingArtifactId ? 'Regenerate Preview' : 'Create Generation Preview'}
                     </button>
                     {generationSettings.preprocessingArtifactId ? (
-                      <button type="button" onClick={() => setGenerationSettings(prev => ({ ...prev, enhancementEnabled: true }))}
-                        className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[9px] font-bold text-emerald-300">
-                        Use Approved
+                      <button
+                        type="button"
+                        disabled={
+                          preprocessingApprovalStatus === 'failed' ||
+                          (preprocessingApprovalStatus === 'needs_review' && !generationSettings.preprocessingReviewOverride) ||
+                          !['approved', 'needs_review'].includes(preprocessingApprovalStatus)
+                        }
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, enhancementEnabled: true }))}
+                        className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1.5 text-[9px] font-bold text-emerald-300 disabled:opacity-40">
+                        {preprocessingApprovalStatus === 'needs_review' ? 'Use Reviewed Preview' : 'Use Validated Preview'}
                       </button>
                     ) : (
                       <button type="button" onClick={() => navigateToTool('edit')}
@@ -1251,6 +1234,12 @@ export const GeneratePanel: React.FC = () => {
                         key={m.id}
                         type="button"
                         onClick={() => {
+                              setUploadStatus('idle');
+                              setUploadError(null);
+                              setApprovalStatus(null);
+                              setApprovalWarning(null);
+                              setApprovalValidation(null);
+                              setApprovalAcknowledged(false);
                           setGenerationSettings(prev => ({
                             ...prev,
                             aiModel: m.id,
@@ -2211,6 +2200,171 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               </div>
 
+              {/* 3. Pro Studio Fidelity & Surface Crease Controls */}
+              <div className="space-y-2.5 pt-2 border-t border-white/[0.04]">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-200 font-medium flex items-center gap-1.5">
+                    <HugeiconsIcon icon={SparklesIcon} size={14} className="text-primary" />
+                    Pro Studio Fidelity & Creases
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-mono">Tripo / Meshy Grade</span>
+                </div>
+
+                {/* Sharp Feature Preservation Toggle */}
+                <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div>
+                    <span className="text-xs font-semibold text-zinc-200 block">Sharp Feature Preservation</span>
+                    <span className="text-[9.5px] text-zinc-500 block">Protects mechanical edges, vehicle creases, and hard organic silhouettes</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isPostprocessOff}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      setGenerationSettings(p => ({
+                        ...p,
+                        sharpFeaturePreservation: p.sharpFeaturePreservation === false ? true : false,
+                      }));
+                    }}
+                    className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
+                      (generationSettings.sharpFeaturePreservation ?? true) ? 'bg-primary' : 'bg-zinc-700'
+                    } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                      (generationSettings.sharpFeaturePreservation ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* Angle Crease Threshold Slider */}
+                <div className="space-y-1.5 p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-300 text-[11px] font-medium">Angle Crease Threshold</span>
+                    <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
+                      {generationSettings.angleCreaseThreshold ?? 45}°
+                    </span>
+                  </div>
+                  <p className="text-[9.5px] text-zinc-500">
+                    Normals split boundary angle. Surface creases sharper than this value remain crisp rather than smoothed.
+                  </p>
+                  <input
+                    type="range"
+                    min={30}
+                    max={85}
+                    step={1}
+                    disabled={isPostprocessOff}
+                    value={generationSettings.angleCreaseThreshold ?? 45}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setGenerationSettings(p => ({ ...p, angleCreaseThreshold: val }));
+                    }}
+                    className={`w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary ${
+                      isPostprocessOff ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  />
+                  <div className="flex justify-between text-[8px] text-zinc-600 font-mono">
+                    <span>30° (Ultra Sharp)</span>
+                    <span>45° (Standard)</span>
+                    <span>85° (Soft Organic)</span>
+                  </div>
+                </div>
+
+                {/* High-Resolution Normal Baking Toggle */}
+                <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div>
+                    <span className="text-xs font-semibold text-zinc-200 block">High-Resolution Normal Baking</span>
+                    <span className="text-[9.5px] text-zinc-500 block">Bakes high-frequency tangent-space micro-relief into normal maps</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isPostprocessOff}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      setGenerationSettings(p => ({
+                        ...p,
+                        highResolutionNormalBaking: p.highResolutionNormalBaking === false ? true : false,
+                      }));
+                    }}
+                    className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
+                      (generationSettings.highResolutionNormalBaking ?? true) ? 'bg-primary' : 'bg-zinc-700'
+                    } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                      (generationSettings.highResolutionNormalBaking ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* Texture Fidelity Preset */}
+                <div className="space-y-1.5 p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-300 text-[11px] font-medium">Texture Fidelity Preset</span>
+                    <span className="font-mono text-primary font-bold text-[10px] uppercase">
+                      {generationSettings.textureFidelityPreset || 'high'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      { id: 'ultra', label: 'Ultra 4K', sub: 'Lossless' },
+                      { id: 'high', label: 'High 2K', sub: 'Studio PBR' },
+                      { id: 'balanced', label: '1K Crisp', sub: 'Optimized' },
+                      { id: 'compressed', label: 'Compact', sub: 'Mobile' },
+                    ].map((tf) => {
+                      const isSel = (generationSettings.textureFidelityPreset || 'high') === tf.id;
+                      return (
+                        <button
+                          key={tf.id}
+                          type="button"
+                          disabled={isPostprocessOff}
+                          onClick={() => {
+                            if (isPostprocessOff) return;
+                            setGenerationSettings(p => ({ ...p, textureFidelityPreset: tf.id as any }));
+                          }}
+                          className={`py-1.5 px-1 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                            isPostprocessOff
+                              ? 'bg-[hsl(var(--surface-2))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                              : isSel
+                              ? 'bg-primary text-black font-black shadow-sm'
+                              : 'bg-[hsl(var(--surface-2))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
+                          }`}
+                        >
+                          <span className="text-[10px] font-bold leading-tight">{tf.label}</span>
+                          <span className={`text-[7.5px] ${isSel ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{tf.sub}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Quality & Geometry Telemetry Indicators */}
+                <div className="grid grid-cols-3 gap-1 pt-1 font-mono text-[9px]">
+                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
+                    <span className="text-zinc-500 block text-[8px]">DENSITY CLASS</span>
+                    <span className="text-zinc-200 font-bold">
+                      {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) >= 100000
+                        ? 'Cinema Grade'
+                        : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) >= 50000
+                        ? 'Studio High'
+                        : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) > 0
+                        ? 'Game Ready'
+                        : 'Raw Native'}
+                    </span>
+                  </div>
+                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
+                    <span className="text-zinc-500 block text-[8px]">FEATURE PRESERVE</span>
+                    <span className={(generationSettings.sharpFeaturePreservation ?? true) ? "text-[hsl(var(--neon-green))] font-bold" : "text-zinc-400 font-bold"}>
+                      {(generationSettings.sharpFeaturePreservation ?? true) ? 'Active (Hard)' : 'Standard'}
+                    </span>
+                  </div>
+                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
+                    <span className="text-zinc-500 block text-[8px]">NORMAL PRECISION</span>
+                    <span className="text-primary font-bold">
+                      {(generationSettings.highResolutionNormalBaking ?? true) ? '16-bit Tangent' : '8-bit Standard'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {isPostprocessOff && (
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
                   <span>🔒 Mesh post-processing (decimation, quad retopology, baking) is blocked when Post-Processing is OFF.</span>
@@ -2306,6 +2460,13 @@ export const GeneratePanel: React.FC = () => {
                   if (!hasImage) {
                     setNoticeMessage('Upload or select an image to queue.');
                     setTimeout(() => setNoticeMessage(null), 4000);
+                    return;
+                  }
+                  if (approvalStatus === 'failed' || (approvalStatus === 'needs_review' && !approvalAcknowledged)) {
+                    setNoticeMessage(approvalStatus === 'failed'
+                      ? approvalWarning || 'Backend validation failed. Choose another image before queuing.'
+                      : 'Review and confirm the backend upload warning before queuing.');
+                    setTimeout(() => setNoticeMessage(null), 5000);
                     return;
                   }
                   setNoticeMessage('Submitting next generation job to background queue...');
