@@ -183,8 +183,29 @@ def fix_torch_load_weights_only():
         return False
 
 
+def fix_huggingface_repo_redirects():
+    """
+    Redirect renamed Hugging Face repositories (e.g., lambdalabs -> lambda).
+    Lambda Labs renamed their org on Hugging Face, causing legacy checkpoints to 404.
+    """
+    try:
+        import huggingface_hub.file_download as fd
+        _orig_download = getattr(fd, "hf_hub_download", None)
+        if _orig_download is not None and not getattr(_orig_download, "_repo_redirect_patched", False):
+            def _redirected_hf_hub_download(repo_id, *args, **kwargs):
+                if isinstance(repo_id, str) and repo_id.startswith("lambdalabs/"):
+                    repo_id = "lambda/" + repo_id[len("lambdalabs/"):]
+                return _orig_download(repo_id, *args, **kwargs)
+
+            _redirected_hf_hub_download._repo_redirect_patched = True
+            fd.hf_hub_download = _redirected_hf_hub_download
+    except Exception:
+        pass
+    return True
+
+
 def apply_fix():
-    """Apply the compatibility fixes (torchvision, transformers, and torch.load)."""
+    """Apply the compatibility fixes (torchvision, transformers, torch.load, and hf redirects)."""
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")
@@ -193,6 +214,7 @@ def apply_fix():
         fix_torchvision_functional_tensor()
     fix_transformers_cache()
     fix_torch_load_weights_only()
+    fix_huggingface_repo_redirects()
     return True
 
 
