@@ -21,6 +21,9 @@ from core.models.mesh_models import ImageToMeshModel
 from core.utils.file_utils import OutputPathGenerator
 from core.utils.mesh_utils import MeshProcessor
 
+# Prevent CUDA memory fragmentation
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 logger = logging.getLogger(__name__)
 
 
@@ -224,6 +227,37 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             except Exception as e:
                 logger.warning(f"Could not load super-resolution model: {e}")
 
+            # Enable attention & VAE slicing if available to reduce peak activation memory with ZERO quality loss
+            for pipe in [self.mvimg_pipeline, self.normal_pipeline]:
+                if pipe is not None:
+                    if hasattr(pipe, "enable_attention_slicing"):
+                        try:
+                            pipe.enable_attention_slicing()
+                        except Exception:
+                            pass
+                    if hasattr(pipe, "enable_vae_slicing"):
+                        try:
+                            pipe.enable_vae_slicing()
+                        except Exception:
+                            pass
+
+            # Dynamic VRAM detection:
+            # If GPU has < 24GB VRAM (e.g. Colab T4 15GB, RTX 3080/4080, etc.),
+            # use sequential stage offloading so only one diffusion model occupies VRAM at a time.
+            total_vram_gb = 0.0
+            if torch.cuda.is_available():
+                total_vram_gb = torch.cuda.get_device_properties(self.gpu_id or 0).total_memory / (1024**3)
+            self.low_vram_mode = total_vram_gb < 24.0
+            logger.info(f"Unique3D detected GPU VRAM: {total_vram_gb:.2f} GB (low_vram_mode={self.low_vram_mode})")
+
+            if self.low_vram_mode and self.normal_pipeline is not None:
+                # Keep normal pipeline on CPU initially until multiview prediction finishes
+                try:
+                    self.normal_pipeline.to("cpu")
+                    torch.cuda.empty_cache()
+                except Exception as e:
+                    logger.debug(f"Could not offload normal pipeline to CPU: {e}")
+
             logger.info("Unique3D models loaded successfully")
             return loaded_models
 
@@ -337,6 +371,12 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         
         
         cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+        if self.mvimg_pipeline is not None:
+            try:
+                self.mvimg_pipeline.to(cuda_dev)
+            except Exception:
+                pass
+
         generator = torch.Generator(device=cuda_dev).manual_seed(int(seed)) if seed >= 0 else None
         
         # Simple preprocessing
@@ -369,6 +409,20 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         do_rotate: bool = True
     ) -> List[Image.Image]:
         """Run normal prediction on multiview images."""
+        cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+        if getattr(self, "low_vram_mode", False) and self.mvimg_pipeline is not None:
+            try:
+                self.mvimg_pipeline.to("cpu")
+            except Exception:
+                pass
+            torch.cuda.empty_cache()
+
+        if self.normal_pipeline is not None:
+            try:
+                self.normal_pipeline.to(cuda_dev)
+            except Exception:
+                pass
+
         if self.normal_trainer is not None and self.normal_pipeline is not None:
             from app.utils import rgba_to_rgb, simple_remove
             from scripts.utils import rotate_normals_torch
@@ -495,21 +549,47 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 seed=seed
             )
 
-            # Step 3: Normal prediction
-            logger.info("Running normal prediction...")
-            normal_pils = self._run_normal_prediction(rgb_pils)
+            # Move multiview pipeline to CPU to free VRAM for normal prediction & mesh reconstruction
+            cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            if getattr(self, "low_vram_mode", False):
+                if self.mvimg_pipeline is not None:
+                    try:
+                        self.mvimg_pipeline.to("cpu")
+                    except Exception:
+                        pass
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
 
-            # Step 4: Geometry reconstruction and refinement
+            # Ensure normal prediction pipeline is loaded onto GPU
+            if self.normal_pipeline is not None:
+                try:
+                    self.normal_pipeline.to(cuda_dev)
+                except Exception:
+                    pass
+
+            # Step 3: Geometry reconstruction and refinement (including high-res normal prediction)
             logger.info("Running geometry reconstruction and refinement...")
             new_meshes = self._run_geo_reconstruct(
                 rgb_pils=rgb_pils,
-                normal_pils=normal_pils,
+                normal_pils=None,
                 front_pil=front_pil,
                 do_refine=do_refine,
                 predict_normal=True,
                 expansion_weight=expansion_weight,
                 init_type=init_type
             )
+
+            # Cleanup normal pipeline to CPU to free VRAM after reconstruction
+            if getattr(self, "low_vram_mode", False):
+                if self.normal_pipeline is not None:
+                    try:
+                        self.normal_pipeline.to("cpu")
+                    except Exception:
+                        pass
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
 
             # Process mesh: adjust vertices for correct orientation
             from pytorch3d.structures import Meshes
@@ -580,7 +660,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                     "super_resolution_backend": super_resolution_backend,
                     "super_resolution_fallback_reason": super_resolution_diagnostics.get("fallback_reason"),
                     "predicted_view_count": len(rgb_pils),
-                    "predicted_normal_count": len(normal_pils),
+                    "predicted_normal_count": len(rgb_pils),
                     "input_processing": input_processing,
                     "do_refine": do_refine,
                     "expansion_weight": expansion_weight,
