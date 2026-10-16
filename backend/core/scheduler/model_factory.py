@@ -254,9 +254,17 @@ class ModelFactory:
 
             logger.info(f"Creating model {model_id} from {module_name}.{class_name}")
 
+            # Apply runtime compatibility fixes before model import
+            try:
+                from utils.torchvision_fix import apply_fix
+                apply_fix()
+            except Exception as fix_err:
+                logger.debug(f"Compatibility fix skipped: {fix_err}")
+
             # Dynamic import
             try:
                 module = importlib.import_module(module_name)
+
                 model_class = getattr(module, class_name)
             except ImportError as e:
                 logger.error(f"Failed to import {module_name}: {e}")

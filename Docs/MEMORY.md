@@ -1,4 +1,11 @@
+## 2026-10-16 — Unique3D & TripoSG Transformers v5 Compatibility Fix
+
+- **Transformers v5 HybridCache Compatibility (DEP-06)**: Resolved `cannot import name 'HybridCache' from 'transformers'` breaking model worker loads in `Unique3D` and `TripoSG`. In Transformers v5, `HybridCache` was deprecated/refactored, but `diffusers` (via `diffusers.loaders.peft` -> `peft.peft_model`) still attempts to import `HybridCache` from `transformers`. Implemented `fix_transformers_cache()` in [`backend/utils/torchvision_fix.py`](file:///workspaces/ForMash3D/backend/utils/torchvision_fix.py#L123-L150) providing a seamless, backward-compatible fallback subclassing `DynamicCache`/`Cache`.
+- **Worker & Adapter Integration (LOAD-04)**: Hooked `apply_fix()` into `ModelFactory.create_model_from_config` before adapter dynamic import, and into [`backend/adapters/triposg_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/triposg_adapter.py) and [`backend/adapters/unique3d_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/unique3d_adapter.py), ensuring all subprocess workers apply the shim before loading neural pipelines.
+- **Contract Verification (DEP-07)**: Added `test_transformers_cache_compatibility_shim` to `backend/tests/test_generation_dependency_contract.py` (5/5 passing) and verified all frontend/backend unit test suites pass (26/26 passing in `bun test`).
+
 ## 2026-10-16 — End-to-End Pipeline Quality: Uncapped Geometry, glTF Tangents & PBR Normal Baking
+
 
 - **Uncapped Polycount Ingestion & API Precedence (PIPE-01 & PIPE-02)**: Removed the arbitrary `< 200,000` clamp in `features/workspace/utils/buildGenerationParameters.ts::shouldAutoOptimize()`, restored `target_polycount` string serialization in the generation payload, and updated `backend/api/routers/mesh_generation.py::_resolve_target_polycount_precedence()` so explicit top-level targets (including `0` for Native/Raw mesh passthrough) strictly take precedence over presets and nested defaults.
 - **Production Face Budget (PIPE-03)**: Increased `MAX_PRODUCTION_FACES` in `backend/postprocess/pipeline.py` from 200,000 to 2,000,000 to support high-density sculpting, visual effects, and cinematic models.

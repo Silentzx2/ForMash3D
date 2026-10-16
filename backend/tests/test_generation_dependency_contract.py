@@ -81,3 +81,24 @@ def test_hunyuan_model_loaders_use_their_vendored_package_roots():
     assert "logger.exception(" in mini
     assert 'error=f"{err_msg}\\n{tb}"' not in scheduler
     assert 'WorkerResponse("init", False, error=err_msg)' in scheduler
+
+
+def test_transformers_cache_compatibility_shim():
+    import sys
+    import types
+    from utils.torchvision_fix import fix_transformers_cache
+
+    fake_tf = types.ModuleType("transformers")
+    fake_tf.Cache = object
+    fake_tf.DynamicCache = object
+    fake_cache_utils = types.ModuleType("transformers.cache_utils")
+    fake_tf.cache_utils = fake_cache_utils
+    sys.modules["transformers"] = fake_tf
+    sys.modules["transformers.cache_utils"] = fake_cache_utils
+
+    assert not hasattr(fake_tf, "HybridCache")
+    success = fix_transformers_cache()
+    assert success is True
+    assert hasattr(fake_tf, "HybridCache")
+    assert hasattr(fake_cache_utils, "HybridCache")
+

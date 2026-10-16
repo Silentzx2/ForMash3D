@@ -5,7 +5,11 @@
 
 import sys
 
-import torchvision
+try:
+    import torchvision
+except ImportError:
+    torchvision = None
+
 
 
 def fix_torchvision_functional_tensor():
@@ -120,11 +124,44 @@ def fix_torchvision_functional_tensor():
             return False
 
 
+def fix_transformers_cache():
+    """
+    Ensure transformers exports HybridCache for peft/diffusers compatibility.
+    In Transformers v5, HybridCache was refactored/removed while peft and diffusers
+    importers expect `from transformers import ..., HybridCache, ...`.
+    """
+    try:
+        import transformers
+        if not hasattr(transformers, "HybridCache"):
+            cache_base = getattr(transformers, "DynamicCache", getattr(transformers, "Cache", object))
+            class HybridCache(cache_base):
+                """Compatibility fallback for HybridCache in Transformers v5."""
+                pass
+
+            setattr(transformers, "HybridCache", HybridCache)
+            if hasattr(transformers, "cache_utils") and not hasattr(transformers.cache_utils, "HybridCache"):
+                setattr(transformers.cache_utils, "HybridCache", HybridCache)
+            print("Applied compatibility fix: created transformers.HybridCache shim")
+        return True
+    except ImportError:
+        return False
+    except Exception as e:
+        print(f"Failed to apply transformers cache fix: {e}")
+        return False
+
+
 def apply_fix():
-    """Apply the torchvision compatibility fix"""
-    print(f"Torchvision version: {torchvision.__version__}")
-    return fix_torchvision_functional_tensor()
+    """Apply the compatibility fixes (torchvision and transformers)."""
+    if torchvision is not None:
+        try:
+            print(f"Torchvision version: {torchvision.__version__}")
+        except Exception:
+            pass
+        fix_torchvision_functional_tensor()
+    fix_transformers_cache()
+    return True
 
 
 if __name__ == "__main__":
     apply_fix()
+

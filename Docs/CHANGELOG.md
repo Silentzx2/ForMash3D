@@ -1,8 +1,10 @@
-## 2026-10-16 — Unique3D Model Pipeline Loader & Torchvision Compatibility Fix
+## 2026-10-16 — Unique3D & TripoSG Transformers v5 Compatibility Fix
 
 - **LOAD-01**: Fixed `NameError: name 'load_pipeline' is not defined` in [`backend/adapters/unique3d_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/unique3d_adapter.py#L132-L145): imported `load_pipeline` from `app.custom_models.utils` directly after `self._ensure_unique3d_in_path()` adds Unique3D directories to `sys.path`.
 - **LOAD-02**: Fixed `torchvision_fix not applied: No module named 'utils.torchvision_fix'` warning in [`backend/adapters/unique3d_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/unique3d_adapter.py#L120-L135): resolved `backend/utils/torchvision_fix.py` dynamically via `importlib.util.spec_from_file_location` to prevent namespace collisions with Unique3D's internal `app/utils`.
-- **TEST-01**: Verified TypeScript type contracts (`bun run test`), workspace node test suite (24/24 passing), and generation dependency contract suite (`pytest backend/tests/test_generation_dependency_contract.py`).
+- **LOAD-03**: Fixed `cannot import name 'HybridCache' from 'transformers'` breaking `diffusers` & `peft` imports in `Unique3D` and `TripoSG`: added `fix_transformers_cache()` shim in [`backend/utils/torchvision_fix.py`](file:///workspaces/ForMash3D/backend/utils/torchvision_fix.py) dynamically creating `transformers.HybridCache` fallback for Transformers v5 environments, hooked into `ModelFactory.create_model_from_config` and `triposg_adapter.py`.
+- **TEST-01**: Verified TypeScript type contracts (`bun run test`), workspace node test suite (26/26 passing), and generation dependency contract suite (`pytest backend/tests/test_generation_dependency_contract.py`, 5/5 passing).
+
 
 ## 2026-10-16 — Topology Wireframe Crash Fix, Mini Turbo Volume Decoding Acceleration & Immediate Viewport Loading
 
