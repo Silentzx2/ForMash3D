@@ -291,7 +291,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         # Use the adapter's already-loaded pipeline directly. The upstream wrapper imports
         # Gradio and eagerly initializes a duplicate module-level pipeline.
         from rembg import remove as rembg_remove
-        from app.utils import session as rembg_session
+        from scripts.utils import session as rembg_session
         
         if remove_bg and (image.mode == "RGB" or np.array(image)[..., -1].mean() == 255.):
             image = rembg_remove(image, session=rembg_session)
@@ -301,7 +301,8 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         generator = torch.Generator(device=cuda_dev).manual_seed(int(seed)) if seed >= 0 else None
         
         # Simple preprocessing
-        from app.utils import simple_preprocess, change_rgba_bg
+        from app.utils import change_rgba_bg
+        from scripts.utils import simple_preprocess
         if image.mode != "RGBA":
             image = image.convert("RGBA")
         image = change_rgba_bg(image, "white")
