@@ -120,8 +120,17 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             
             # Apply torchvision fix if available
             try:
-                from utils.torchvision_fix import apply_fix
-                apply_fix()
+                import importlib.util as _ilu
+                _tv_fix_path = Path(__file__).resolve().parent.parent / "utils" / "torchvision_fix.py"
+                if _tv_fix_path.exists():
+                    _spec = _ilu.spec_from_file_location("torchvision_fix", str(_tv_fix_path))
+                    if _spec and _spec.loader:
+                        _tv_mod = _ilu.module_from_spec(_spec)
+                        _spec.loader.exec_module(_tv_mod)
+                        _tv_mod.apply_fix()
+                else:
+                    from utils.torchvision_fix import apply_fix
+                    apply_fix()
             except (ImportError, Exception) as e:
                 logger.warning(f"torchvision_fix not applied: {e}")
 
@@ -133,6 +142,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # Load multiview prediction pipeline (img2mvimg)
             logger.info("Loading multiview prediction pipeline (img2mvimg)...")
             self._ensure_unique3d_in_path()
+            from app.custom_models.utils import load_pipeline
                 
             # Use official load_pipeline which expects .pth format
             # The checkpoints are safetensors from HF - load_pipeline handles conversion via strict=False

@@ -1,3 +1,9 @@
+## 2026-10-16 — Unique3D Model Pipeline Loader & Torchvision Compatibility Fix
+
+- **LOAD-01**: Fixed `NameError: name 'load_pipeline' is not defined` in [`backend/adapters/unique3d_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/unique3d_adapter.py#L132-L145): imported `load_pipeline` from `app.custom_models.utils` directly after `self._ensure_unique3d_in_path()` adds Unique3D directories to `sys.path`.
+- **LOAD-02**: Fixed `torchvision_fix not applied: No module named 'utils.torchvision_fix'` warning in [`backend/adapters/unique3d_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/unique3d_adapter.py#L120-L135): resolved `backend/utils/torchvision_fix.py` dynamically via `importlib.util.spec_from_file_location` to prevent namespace collisions with Unique3D's internal `app/utils`.
+- **TEST-01**: Verified TypeScript type contracts (`bun run test`), workspace node test suite (24/24 passing), and generation dependency contract suite (`pytest backend/tests/test_generation_dependency_contract.py`).
+
 ## 2026-10-16 — Topology Wireframe Crash Fix, Mini Turbo Volume Decoding Acceleration & Immediate Viewport Loading
 
 - **VIEW-06**: Fixed shader switching and topology wireframe renderer crash in `MeshViewer.tsx`. Added `child.userData?.isWireframeOverlay` guard to prevent recursive `group.traverse` duplication and material overwrites. Added full support for `THREE.SkinnedMesh` wireframe overlays (binding `skeleton` and `bindMatrix`) and wrapped the WebGL animation render loop in safe exception handling to prevent any unhandled error boundary crashes.
@@ -14,10 +20,3 @@
 - **VIEW-04**: Fixed camera direction snapping and forced resetting while orbiting: `frameCamera` now preserves manual user orbit angles (`camera.position - controls.target` vector) rather than forcing direction to `(1, 0.4, 1)`. Added user interaction guards (`start`/`end` OrbitControls listeners) and guarded `animCameraPreset` sync against unsolicited resets.
 - **VIEW-05**: Fixed pyrender EGL headless context cleanup error `GLError(err = 12289, baseOperation = eglDestroyContext)` in `backend/core/utils/thumbnail_utils.py` by adding thread synchronization (`_RENDER_LOCK`), safe `try...finally` renderer cleanup, and a reliable 2.5D isometric projected dark studio thumbnail generator that guarantees thumbnail endpoints never fail or return HTTP 404.
 
-## 2026-10-16 — Unified Dependency Architecture & Model Downgrade Prevention
-
-- **DEP-01**: Centrally locked unified baseline in `backend/requirements.txt`: `transformers==5.10.1`, `diffusers==0.38.0`, `huggingface_hub>=1.5.0,<2.0`, `datasets==3.6.0`, `fastapi>=0.109.0`, and `uvicorn[standard]>=0.27.0`.
-- **DEP-02**: Removed conflicting standalone `huggingface_hub` installation block from `backend/scripts/install.sh`, allowing `backend/requirements.txt` to act as the authoritative single source of truth.
-- **DEP-03**: Cleaned thirdparty requirement files across `Unique3D`, `hunyuan3d-shape-v2-1`, `hunyuan3d-paint-v2-1`, `hunyuan-requirements.txt`, and `Pixal3D` in `Silentzx2/ForMash3D-ThirdParty` to eliminate conflicting downgrade pins (`transformers`, `fastapi`, `gradio`, `datasets==2.14.5`).
-- **DEP-04**: Fixed syntax & flow bugs in `backend/scripts/install.sh`: closed missing `fi` on TripoSG block, corrected natten wheel installation check, and fixed relative `requirements.txt` path at line 744.
-- **DEP-05**: Updated `backend/tests/test_generation_dependency_contract.py` to assert new unified baseline versions; 100% test pass rate achieved across all 50 pytest tests.
