@@ -621,6 +621,10 @@ download_unique3d() {
         return 1
     fi
 
+    # Symlink ckpt to project root and Unique3D thirdparty dir for runtime compatibility
+    ln -sfn "$model_dir/ckpt" "$PROJECT_ROOT/ckpt" 2>/dev/null || true
+    ln -sfn "$model_dir/ckpt" "$THIRDPARTY_DIR/Unique3D/ckpt" 2>/dev/null || true
+
     print_success "Unique3D model downloaded successfully"
 }
 

@@ -97,8 +97,31 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         
         # Add paths to sys.path
         self._ensure_unique3d_in_path()
+        self._ensure_ckpt_symlinks()
 
         logger.info(f"Initialized Unique3D adapter with root: {unique3d_root}")
+
+    def _ensure_ckpt_symlinks(self):
+        """Ensure ckpt symlinks exist so Unique3D relative './ckpt/...' paths resolve to pretrained weights."""
+        ckpt_src = (Path(self.model_path) / "ckpt").resolve()
+        if not ckpt_src.exists():
+            alt_src = (self.unique3d_root / "ckpt").resolve()
+            if alt_src.exists() and not alt_src.is_symlink():
+                ckpt_src = alt_src
+
+        if ckpt_src.exists():
+            for target in [Path("ckpt"), self.unique3d_root / "ckpt", Path("backend") / "ckpt"]:
+                try:
+                    if target.is_symlink():
+                        if target.resolve() != ckpt_src:
+                            target.unlink()
+                            target.symlink_to(ckpt_src)
+                            logger.info(f"Updated ckpt symlink: {target} -> {ckpt_src}")
+                    elif not target.exists():
+                        target.symlink_to(ckpt_src)
+                        logger.info(f"Created ckpt symlink: {target} -> {ckpt_src}")
+                except Exception as e:
+                    logger.debug(f"Could not symlink {target} -> {ckpt_src}: {e}")
 
     def _ensure_unique3d_in_path(self):
         """Add Unique3D directories to sys.path for imports."""
@@ -117,6 +140,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         """Load Unique3D pipelines: multiview prediction, normal prediction, and super-resolution."""
         try:
             logger.info("Loading Unique3D models...")
+            self._ensure_ckpt_symlinks()
             
             # Apply torchvision fix if available
             try:
