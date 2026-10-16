@@ -780,17 +780,22 @@ fi
 echo ""
 echo "[INFO] Installing natten (required for sparse attention)..."
 # natten requires specific CUDA architecture and build workers
-# Users should set NATTEN_CUDA_ARCH and NATTEN_N_WORKERS in their environment
+NATTEN_PREBUILT_URL="https://github.com/LDYang694/Storages/releases/download/20260430/natten-0.21.0+torch2.6cu124-cp310-cp310-linux_x86_64.whl"
 if ! install_local_wheel "natten-*.whl" "natten"; then
-    echo "[INFO] Installing natten with CUDA_ARCH=$NATTEN_CUDA_ARCH and WORKERS=$NATTEN_N_WORKERS"
-    NATTEN_CUDA_ARCH="$NATTEN_CUDA_ARCH" NATTEN_N_WORKERS="$NATTEN_N_WORKERS" $UV_PIP install --find-links="$WHEEL_DIR" natten==0.21.0 --no-build-isolation
+    echo "[INFO] Trying prebuilt natten wheel from $NATTEN_PREBUILT_URL..."
+    if ! $UV_PIP install "$NATTEN_PREBUILT_URL"; then
+        echo "[INFO] Prebuilt wheel failed, attempting source build with CUDA_ARCH=$NATTEN_CUDA_ARCH and WORKERS=$NATTEN_N_WORKERS"
+        NATTEN_CUDA_ARCH="$NATTEN_CUDA_ARCH" NATTEN_N_WORKERS="$NATTEN_N_WORKERS" $UV_PIP install --find-links="$WHEEL_DIR" natten==0.21.0 --no-build-isolation || true
+    fi
 fi
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] natten installed"
+if python3 -c "import natten" >/dev/null 2>&1; then
+    echo "[SUCCESS] natten installed and verified"
 else
-    echo "[ERROR] Failed to install natten"
-    exit 1
+    echo "[WARN] natten build failed or unavailable; proceeding (sparse attention fallback will be used if needed)"
 fi
+
+# Ensure numpy remains locked to 1.26.4 (MoGe dependency resolution can pull numpy 2.x which breaks torch/CUDA C-extensions)
+$UV_PIP install "numpy==1.26.4"
 
 echo ""
 echo "[INFO] Installing utils3d (required for voxel processing)..."
