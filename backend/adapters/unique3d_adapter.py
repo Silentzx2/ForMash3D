@@ -123,6 +123,20 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 except Exception as e:
                     logger.debug(f"Could not symlink {target} -> {ckpt_src}: {e}")
 
+        # Ensure app symlink exists for any relative app/... lookups
+        app_src = (self.unique3d_root / "app").resolve()
+        if app_src.exists():
+            for target in [Path("app"), Path("backend") / "app"]:
+                try:
+                    if target.is_symlink():
+                        if target.resolve() != app_src:
+                            target.unlink()
+                            target.symlink_to(app_src)
+                    elif not target.exists():
+                        target.symlink_to(app_src)
+                except Exception as e:
+                    logger.debug(f"Could not symlink {target} -> {app_src}: {e}")
+
     def _ensure_unique3d_in_path(self):
         """Add Unique3D directories to sys.path for imports."""
         paths_to_add = [
@@ -176,6 +190,12 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # self.mvimg_pipeline.enable_model_cpu_offload()
             loaded_models["mvimg_pipeline"] = self.mvimg_pipeline
             loaded_models["mvimg_trainer"] = self.mvimg_trainer
+            try:
+                import app.custom_models.mvimg_prediction as mvimg_pred_mod
+                mvimg_pred_mod.trainer = self.mvimg_trainer
+                mvimg_pred_mod.pipeline = self.mvimg_pipeline
+            except Exception as e:
+                logger.debug(f"Failed to inject mvimg pipeline into mvimg_prediction module: {e}")
 
             # Load normal prediction pipeline (image2normal)
             logger.info("Loading normal prediction pipeline (image2normal)...")
@@ -185,6 +205,12 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # self.normal_pipeline.enable_model_cpu_offload()
             loaded_models["normal_pipeline"] = self.normal_pipeline
             loaded_models["normal_trainer"] = self.normal_trainer
+            try:
+                import app.custom_models.normal_prediction as normal_pred_mod
+                normal_pred_mod.trainer = self.normal_trainer
+                normal_pred_mod.pipeline = self.normal_pipeline
+            except Exception as e:
+                logger.debug(f"Failed to inject normal pipeline into normal_prediction module: {e}")
 
             # Load super-resolution model (realesrgan)
             logger.info("Loading super-resolution model...")
@@ -210,6 +236,19 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
     def _unload_model(self):
         """Unload Unique3D models."""
         try:
+            try:
+                import app.custom_models.mvimg_prediction as mvimg_pred_mod
+                mvimg_pred_mod.trainer = None
+                mvimg_pred_mod.pipeline = None
+            except Exception:
+                pass
+            try:
+                import app.custom_models.normal_prediction as normal_pred_mod
+                normal_pred_mod.trainer = None
+                normal_pred_mod.pipeline = None
+            except Exception:
+                pass
+
             if self.mvimg_pipeline is not None:
                 del self.mvimg_pipeline
                 self.mvimg_pipeline = None
@@ -330,6 +369,22 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         do_rotate: bool = True
     ) -> List[Image.Image]:
         """Run normal prediction on multiview images."""
+        if self.normal_trainer is not None and self.normal_pipeline is not None:
+            from app.utils import rgba_to_rgb, simple_remove
+            from scripts.utils import rotate_normals_torch
+            img_list = images if isinstance(images, list) else [images]
+            img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
+            predicted = self.normal_trainer.pipeline_forward(
+                pipeline=self.normal_pipeline,
+                image=img_list,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+            ).images
+            predicted = simple_remove(predicted)
+            if do_rotate and len(predicted) > 1:
+                predicted = rotate_normals_torch(predicted, return_types='pil')
+            return predicted
+
         from app.custom_models.normal_prediction import predict_normals
         return predict_normals(
             images, 
