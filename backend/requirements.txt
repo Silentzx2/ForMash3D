@@ -9,7 +9,7 @@
 
 
 # Shared backend/TripoSG/Hunyuan/TRELLIS/Paint3D unified runtime versions
-transformers==5.10.1
+transformers==4.44.2
 diffusers==0.38.0
 huggingface_hub>=1.5.0,<2.0
 # Unique3D imports datasets while registering inference trainers
