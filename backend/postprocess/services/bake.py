@@ -69,7 +69,7 @@ def bake_high_to_low_pure_python(
     low_glb: bytes,
     high_glb: bytes,
     opts: BakeOptions,
-    progress,
+    progress: Optional[Callable[[str, float, str], None]] = None,
     cancel_checker: CancelChecker = None,
 ) -> tuple[dict[str, bytes], dict]:
     """Pure-Python high-to-low normal map and texture baker using UV rasterization,
@@ -78,7 +78,8 @@ def bake_high_to_low_pure_python(
     and gutter dilation with neutral normal fallback (128, 128, 255).
     """
     _check_cancelled(cancel_checker)
-    progress("load", 0.05, "Loading low and high meshes…")
+    _progress = progress or (lambda *_: None)
+    _progress("load", 0.05, "Loading low and high meshes…")
 
     low_loaded = trimesh.load(io.BytesIO(low_glb), file_type="glb", process=False)
     if isinstance(low_loaded, trimesh.Scene):
@@ -97,7 +98,7 @@ def bake_high_to_low_pure_python(
         raise RuntimeError("The low-poly mesh has no UVs. Run Auto UV before baking.")
 
     _check_cancelled(cancel_checker)
-    progress("normals", 0.15, "Computing angle-weighted normals…")
+    _progress("normals", 0.15, "Computing angle-weighted normals…")
 
     from core.mesh_processor import compute_angle_weighted_normals
     high_mesh = compute_angle_weighted_normals(high_mesh, crease_angle_deg=35.0)
@@ -145,7 +146,7 @@ def bake_high_to_low_pure_python(
     bitangents = cross_nt * sign[:, None]
 
     _check_cancelled(cancel_checker)
-    progress("spatial", 0.30, "Indexing high-poly surface…")
+    _progress("spatial", 0.30, "Indexing high-poly surface…")
 
     high_v = np.asarray(high_mesh.vertices, dtype=np.float64)
     high_vn = np.asarray(high_mesh.vertex_normals, dtype=np.float64)
@@ -161,7 +162,7 @@ def bake_high_to_low_pure_python(
     max_ray = float(opts.max_ray_distance) if float(opts.max_ray_distance) > 0.0 else max(0.001, cage * 2.5)
 
     res = int(opts.resolution)
-    progress("rasterize", 0.45, f"Rasterizing UV layout ({res}x{res})…")
+    _progress("rasterize", 0.45, f"Rasterizing UV layout ({res}x{res})…")
 
     img_tri = Image.new("I", (res, res), 0)
     draw = ImageDraw.Draw(img_tri)
@@ -178,7 +179,7 @@ def bake_high_to_low_pure_python(
     gutter_mask = ~hit_mask
 
     _check_cancelled(cancel_checker)
-    progress("project", 0.60, "Projecting surface normals…")
+    _progress("project", 0.60, "Projecting surface normals…")
 
     y_idx, x_idx = np.where(hit_mask)
     face_indices = tri_map[y_idx, x_idx] - 1
@@ -260,7 +261,7 @@ def bake_high_to_low_pure_python(
     normal_arr[y_idx, x_idx, 3] = 255
 
     _check_cancelled(cancel_checker)
-    progress("dilate", 0.85, "Dilating borders and filling gutters…")
+    _progress("dilate", 0.85, "Dilating borders and filling gutters…")
 
     source = _erode(hit_mask.copy(), 1)
     if not source.any():
@@ -313,7 +314,7 @@ def bake_high_to_low_pure_python(
             images["orm"] = _save_png(orm_arr, "RGB")
             maps_info["orm"] = "orm.png"
 
-    progress("done", 1.0, "Texture bake completed.")
+    _progress("done", 1.0, "Texture bake completed.")
     stats = {
         "engine": "pure_python_mikktspace",
         "resolution": res,
@@ -418,6 +419,7 @@ def run_flatten(mesh_glb: bytes, opts: FlattenOptions,
 
 
 def _run_worker(worker: Path, worker_args: list[str], progress, cancel_checker: CancelChecker = None) -> dict:
+    _progress = progress or (lambda *_: None)
     proc = subprocess.Popen(
         blender_worker_argv(worker or _WORKER, worker_args),
         stdout=subprocess.PIPE,
@@ -456,7 +458,7 @@ def _run_worker(worker: Path, worker_args: list[str], progress, cancel_checker: 
             except json.JSONDecodeError:
                 continue
             if event.get("type") == "progress":
-                progress(event.get("stage", "bake"), event.get("frac", 0.0), event.get("message", ""))
+                _progress(event.get("stage", "bake"), event.get("frac", 0.0), event.get("message", ""))
             elif event.get("type") == "result":
                 result = event
         proc.wait()
