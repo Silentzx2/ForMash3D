@@ -150,8 +150,41 @@ def fix_transformers_cache():
         return False
 
 
+def fix_torch_load_weights_only():
+    """
+    Ensure torch.load falls back to weights_only=False in PyTorch 2.6+.
+    PyTorch 2.6 flipped the default weights_only to True, which raises UnpicklingError
+    on legacy pickled checkpoints used by third-party model weights.
+    """
+    try:
+        import torch
+        if hasattr(torch, "load"):
+            _orig_load = torch.load
+            if getattr(_orig_load, "_weights_only_patched", False):
+                return True
+
+            def _compat_torch_load(*args, **kwargs):
+                if "weights_only" not in kwargs:
+                    try:
+                        return _orig_load(*args, **kwargs)
+                    except Exception as err:
+                        err_str = str(err)
+                        if "weights_only" in err_str or "WeightsUnpickler" in err_str or "UnpicklingError" in type(err).__name__:
+                            return _orig_load(*args, weights_only=False, **kwargs)
+                        raise
+                return _orig_load(*args, **kwargs)
+
+            _compat_torch_load._weights_only_patched = True
+            torch.load = _compat_torch_load
+            print("Applied compatibility fix: patched torch.load fallback for weights_only in PyTorch 2.6+")
+        return True
+    except Exception as e:
+        print(f"Failed to apply torch.load compatibility fix: {e}")
+        return False
+
+
 def apply_fix():
-    """Apply the compatibility fixes (torchvision and transformers)."""
+    """Apply the compatibility fixes (torchvision, transformers, and torch.load)."""
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")
@@ -159,6 +192,7 @@ def apply_fix():
             pass
         fix_torchvision_functional_tensor()
     fix_transformers_cache()
+    fix_torch_load_weights_only()
     return True
 
 
