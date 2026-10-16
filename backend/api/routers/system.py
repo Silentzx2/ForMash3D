@@ -9,7 +9,10 @@ import platform
 import shutil
 import tempfile
 import time
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +25,7 @@ from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
+from core.utils.artifact_utils import first_result_path, resolve_declared_artifact
 from core.utils.file_utils import encode_file_to_base64, get_file_size_mb, get_storage_base_dir
 
 DEFAULT_MESH_THUMBNAIL_SVG = (
@@ -1108,18 +1112,7 @@ async def get_job_status(job_id: str, request: Request):
             result = job_status["result"]
 
             # Convert mesh file path to URL
-            mesh_path = None
-            possible_mesh_keys = [
-                "output_mesh_path",
-                "mesh_path",
-                "output_path",
-                "file_path",
-            ]
-
-            for key in possible_mesh_keys:
-                if key in result and result[key]:
-                    mesh_path = result[key]
-                    break
+            mesh_path = first_result_path(result)
 
             if mesh_path and os.path.exists(mesh_path):
                 # Create URL for mesh file
@@ -1368,31 +1361,164 @@ async def download_job_result(
         # Canonical postprocessed artifacts are resolved from the job workspace.
         # Client input is a whitelist key, never a filesystem path.
         output_path = None
-        canonical_format = (artifact_format or "glb").strip().lower()
+        canonical_format = artifact_format.strip().lower() if isinstance(artifact_format, str) else "glb"
         asset_root = result.get("asset_root")
         asset_name = result.get("asset_name")
 
-        if canonical_format == "fbx" and result.get("output_fbx_path"):
-            output_path = Path(result["output_fbx_path"]).resolve()
-            preview_path = result.get("output_mesh_path")
-            models_root = (get_storage_base_dir() / "models").resolve()
-            if output_path.suffix.lower() != ".fbx":
+        models_root = (get_storage_base_dir() / "models").resolve()
+        asset_root_path = Path(asset_root).resolve() if asset_root else None
+        if asset_root_path and (asset_root_path == models_root or models_root not in asset_root_path.parents):
+            raise HTTPException(status_code=400, detail="Invalid asset workspace")
+
+        if canonical_format == "fbx":
+            fbx_candidate = (
+                result.get("output_fbx_path")
+                or (result.get("rigging", {}).get("fbx_path") if isinstance(result.get("rigging"), dict) else None)
+                or (result.get("artifacts", {}).get("rigged_fbx", {}).get("path") if isinstance(result.get("artifacts"), dict) else None)
+                or (result.get("artifacts", {}).get("fbx", {}).get("path") if isinstance(result.get("artifacts"), dict) else None)
+            )
+            if not fbx_candidate and asset_root_path:
+                job_manifest = asset_root_path / "metadata" / "jobs" / f"{job_id}.json"
+                if job_manifest.is_file():
+                    try:
+                        m_data = json.loads(job_manifest.read_text(encoding="utf-8"))
+                        fbx_candidate = (
+                            m_data.get("artifacts", {}).get("fbx", {}).get("path")
+                            or m_data.get("artifacts", {}).get("rigged_fbx", {}).get("path")
+                        )
+                        if fbx_candidate and not Path(fbx_candidate).is_absolute():
+                            fbx_candidate = str(asset_root_path / fbx_candidate)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                if not fbx_candidate and (asset_root_path / "game_ready").is_dir():
+                    pre_exported = list((asset_root_path / "game_ready").glob("*.fbx"))
+                    if pre_exported:
+                        fbx_candidate = str(pre_exported[0])
+
+            if not fbx_candidate:
+                preview_path = result.get("output_mesh_path")
+                if preview_path and Path(preview_path).suffix.lower() == ".fbx":
+                    fbx_candidate = preview_path
+
+            if not fbx_candidate:
+                raise HTTPException(
+                    status_code=422,
+                    detail="FBX export requires rigging (UniRig) or a pre-exported FBX; this asset has no FBX artifact. Use GLB/OBJ, or rig this model first.",
+                )
+            resolved_fbx = Path(fbx_candidate).resolve()
+            if resolved_fbx.suffix.lower() != ".fbx" or not resolved_fbx.is_file():
                 raise HTTPException(status_code=422, detail="The job has no native FBX artifact.")
-            if preview_path and output_path.parent != Path(preview_path).resolve().parent:
-                raise HTTPException(status_code=400, detail="Invalid rigged FBX artifact path")
             try:
-                output_path.relative_to(models_root)
+                resolved_fbx.relative_to(models_root)
+                if asset_root_path:
+                    resolved_fbx.relative_to(asset_root_path)
             except ValueError:
                 raise HTTPException(status_code=400, detail="Invalid rigged FBX artifact path")
-        elif asset_root:
-            asset_root_path = Path(asset_root).resolve()
-            models_root = (get_storage_base_dir() / "models").resolve()
-            if asset_root_path == models_root or models_root not in asset_root_path.parents:
-                raise HTTPException(status_code=400, detail="Invalid asset workspace")
+            output_path = resolved_fbx
 
-            if canonical_format == "master":
-                output_path = asset_root_path / "master" / "source.glb"
-            elif canonical_format in {"glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj"}:
+        elif canonical_format == "rigged":
+            rigged_candidate = (
+                (result.get("artifacts", {}).get("rigged", {}).get("path") if isinstance(result.get("artifacts"), dict) else None)
+                or (result.get("rigging", {}).get("artifact_path") if isinstance(result.get("rigging"), dict) else None)
+            )
+            if not rigged_candidate and asset_root_path:
+                job_manifest = asset_root_path / "metadata" / "jobs" / f"{job_id}.json"
+                if job_manifest.is_file():
+                    try:
+                        m_data = json.loads(job_manifest.read_text(encoding="utf-8"))
+                        rigged_candidate = m_data.get("artifacts", {}).get("rigged", {}).get("path")
+                        if rigged_candidate and not Path(rigged_candidate).is_absolute():
+                            rigged_candidate = str(asset_root_path / rigged_candidate)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                if not rigged_candidate:
+                    default_rigged = asset_root_path / "rigging" / job_id / "rigged.glb"
+                    legacy_rigged = asset_root_path / "rigging" / "game_ready_rigged.glb"
+                    if default_rigged.is_file():
+                        rigged_candidate = str(default_rigged)
+                    elif legacy_rigged.is_file():
+                        rigged_candidate = str(legacy_rigged)
+                    else:
+                        matches = list((asset_root_path / "rigging").glob("*/rigged.glb"))
+                        if matches:
+                            rigged_candidate = str(matches[0])
+            if not rigged_candidate:
+                raise HTTPException(status_code=404, detail="Rigged model artifact not found")
+            resolved_rigged = Path(rigged_candidate).resolve()
+            if resolved_rigged.suffix.lower() != ".glb" or not resolved_rigged.is_file():
+                raise HTTPException(status_code=404, detail="Rigged model artifact not found")
+            try:
+                resolved_rigged.relative_to(models_root)
+                if asset_root_path:
+                    resolved_rigged.relative_to(asset_root_path)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid rigged artifact path")
+            output_path = resolved_rigged
+
+        elif canonical_format == "master":
+            master_candidate = (
+                (result.get("artifacts", {}).get("master", {}).get("path") if isinstance(result.get("artifacts"), dict) else None)
+                or result.get("source_model_path")
+            )
+            if not master_candidate and asset_root_path:
+                job_manifest = asset_root_path / "metadata" / "jobs" / f"{job_id}.json"
+                if job_manifest.is_file():
+                    try:
+                        m_data = json.loads(job_manifest.read_text(encoding="utf-8"))
+                        master_rel = m_data.get("master_path")
+                        if master_rel:
+                            master_candidate = str(asset_root_path / master_rel)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                if not master_candidate:
+                    if (asset_root_path / "master" / "source.glb").is_file():
+                        master_candidate = str(asset_root_path / "master" / "source.glb")
+                    elif (asset_root_path / "master").is_dir():
+                        matches = list((asset_root_path / "master").glob("source.*"))
+                        if matches:
+                            master_candidate = str(matches[0])
+            if not master_candidate:
+                raise HTTPException(status_code=404, detail="Master source artifact not found")
+            resolved_master = Path(master_candidate).resolve()
+            if not resolved_master.is_file():
+                raise HTTPException(status_code=404, detail="Master source artifact not found")
+            try:
+                resolved_master.relative_to(models_root)
+                if asset_root_path:
+                    resolved_master.relative_to(asset_root_path)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid master artifact path")
+            output_path = resolved_master
+
+        elif canonical_format == "derived":
+            derived_candidate = (
+                (result.get("artifacts", {}).get("derived", {}).get("path") if isinstance(result.get("artifacts"), dict) else None)
+            )
+            if not derived_candidate and asset_root_path:
+                job_manifest = asset_root_path / "metadata" / "jobs" / f"{job_id}.json"
+                if job_manifest.is_file():
+                    try:
+                        m_data = json.loads(job_manifest.read_text(encoding="utf-8"))
+                        derived_rel = m_data.get("artifacts", {}).get("derived", {}).get("path")
+                        if derived_rel:
+                            derived_candidate = str(asset_root_path / derived_rel)
+                    except (OSError, json.JSONDecodeError):
+                        pass
+            if not derived_candidate:
+                raise HTTPException(status_code=404, detail="Derived artifact not found")
+            resolved_derived = Path(derived_candidate).resolve()
+            if not resolved_derived.is_file():
+                raise HTTPException(status_code=404, detail="Derived artifact not found")
+            try:
+                resolved_derived.relative_to(models_root)
+                if asset_root_path:
+                    resolved_derived.relative_to(asset_root_path)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid derived artifact path")
+            output_path = resolved_derived
+
+        elif asset_root_path:
+            if canonical_format in {"glb", "gltf", "obj", "stl", "ply", "quad_obj"} and (asset_root_path / "game_ready").is_dir():
                 target_ext = "obj" if canonical_format == "quad_obj" else canonical_format
                 candidate = asset_root_path / "game_ready" / f"{asset_root_path.name}.{target_ext}"
                 if not candidate.exists() and asset_name:
@@ -1403,11 +1529,6 @@ async def download_job_result(
                     matches = list((asset_root_path / "game_ready").glob(f"*.{target_ext}"))
                     if matches:
                         candidate = matches[0]
-                if not candidate.exists() and target_ext == "fbx":
-                    raise HTTPException(
-                        status_code=422,
-                        detail="FBX export requires rigging (UniRig) or a pre-exported FBX; this asset has no FBX artifact. Use GLB/OBJ, or rig this model first.",
-                    )
                 if not candidate.exists():
                     # On-demand conversion from game-ready GLB
                     glb_matches = list((asset_root_path / "game_ready").glob("*.glb"))
@@ -1430,6 +1551,20 @@ async def download_job_result(
                         except Exception as conv_err:
                             logger.warning(f"On-demand conversion to {canonical_format} failed: {conv_err}")
                 output_path = candidate
+            elif canonical_format in {"glb", "gltf", "obj", "stl", "ply", "quad_obj"}:
+                target_ext = "obj" if canonical_format == "quad_obj" else canonical_format
+                candidates = [
+                    (result.get("artifacts", {}).get("rigged", {}).get("path") if isinstance(result.get("artifacts"), dict) else None),
+                    (result.get("artifacts", {}).get("derived", {}).get("path") if isinstance(result.get("artifacts"), dict) else None),
+                    result.get("output_mesh_path"),
+                    first_result_path(result),
+                ]
+                for cand in candidates:
+                    if cand:
+                        p = Path(cand).resolve()
+                        if p.is_file() and p.suffix.lower() == f".{target_ext}":
+                            output_path = p
+                            break
             elif canonical_format in {"lod0", "lod1", "lod2", "lod3"}:
                 output_path = asset_root_path / "lods" / f"{canonical_format}.glb"
             elif canonical_format == "textured":
@@ -1442,8 +1577,6 @@ async def download_job_result(
                     matches = list((asset_root_path / "textures").glob("*_textured.glb"))
                     if matches:
                         output_path = matches[0]
-            elif canonical_format == "rigged":
-                output_path = asset_root_path / "rigging" / "game_ready_rigged.glb"
             elif canonical_format == "collision":
                 output_path = asset_root_path / "collision" / "collision.glb"
             elif canonical_format == "thumbnail":
@@ -1484,28 +1617,7 @@ async def download_job_result(
             else:
                 raise HTTPException(status_code=400, detail=f"Unsupported artifact format: {canonical_format}")
         else:
-            if canonical_format == "fbx":
-                fbx_path = result.get("output_fbx_path")
-                preview_path = result.get("output_mesh_path")
-                if not fbx_path and preview_path and Path(preview_path).suffix.lower() == ".fbx":
-                    fbx_path = preview_path
-                if not fbx_path:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="FBX export requires a rigged job with a native FBX artifact. Use GLB/OBJ, or rig this model first.",
-                    )
-                resolved_fbx = Path(fbx_path).resolve()
-                if resolved_fbx.suffix.lower() != ".fbx":
-                    raise HTTPException(status_code=422, detail="The job has no native FBX artifact.")
-                if preview_path and resolved_fbx.parent != Path(preview_path).resolve().parent:
-                    raise HTTPException(status_code=400, detail="Invalid rigged FBX artifact path")
-                output_path = resolved_fbx
-            else:
-                possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-                for key in possible_keys:
-                    if key in result and result[key]:
-                        output_path = result[key]
-                    break
+            output_path = first_result_path(result)
 
         if not output_path:
             raise HTTPException(status_code=404, detail="No output file path found in job result")
@@ -1520,7 +1632,7 @@ async def download_job_result(
             raise HTTPException(status_code=404, detail=f"Output file not found: {output_path}")
 
         # Determine the response format
-        response_format = format or "file"
+        response_format = format.strip().lower() if isinstance(format, str) else "file"
 
         if response_format == "base64":
             # Return base64 encoded data
@@ -1532,7 +1644,7 @@ async def download_job_result(
                 return JSONResponse(
                     {
                         "job_id": job_id,
-                        "filename": filename or os.path.basename(output_path),
+                        "filename": filename if isinstance(filename, str) and filename.strip() else os.path.basename(output_path),
                         "content_type": get_content_type_for_file(output_path),
                         "file_size_mb": file_size_mb,
                         "base64_data": base64_data,
@@ -1548,7 +1660,9 @@ async def download_job_result(
         else:
             # Return file download
             download_filename = (
-                filename or f"result_{job_id}_{os.path.basename(output_path)}"
+                filename
+                if isinstance(filename, str) and filename.strip()
+                else f"result_{job_id}_{os.path.basename(output_path)}"
             )
             content_type = get_content_type_for_file(output_path)
 
@@ -1903,13 +2017,7 @@ async def get_job_result_info(job_id: str, request: Request):
             }
 
         # Get file information
-        output_path = None
-        possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-
-        for key in possible_keys:
-            if key in result and result[key]:
-                output_path = result[key]
-                break
+        output_path = first_result_path(result)
 
         file_info = {}
         if output_path and os.path.exists(output_path):
@@ -2164,13 +2272,7 @@ async def delete_job_result(
             }
 
         # Find and delete the output file
-        output_path = None
-        possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-
-        for key in possible_keys:
-            if key in result and result[key]:
-                output_path = result[key]
-                break
+        output_path = first_result_path(result)
 
         if not output_path:
             return {

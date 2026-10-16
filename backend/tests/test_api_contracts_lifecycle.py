@@ -142,24 +142,32 @@ async def test_bug012_enhancement_preserves_reference_image(monkeypatch, tmp_pat
         req_raw = ImageToRawMeshRequest(
             image_path=str(orig_img),
             preprocessing_artifact_id="art-456",
+            preprocessing_review_override=True,
             enhancement_enabled=True,
         )
         await image_to_raw_mesh(req_raw, scheduler=mock_scheduler)
+        assert mock_load.call_args.kwargs["allow_review"] is True
         assert captured_raw.inputs["image_path"] == str(enhanced_img)
         assert captured_raw.inputs["reference_image_path"] == str(orig_img)
+        assert captured_raw.inputs["preprocessing_review_override"] is True
         assert captured_raw.metadata["reference_image_path"] == str(orig_img)
+        assert captured_raw.metadata["preprocessing_review_override"] is True
 
         # Test image-to-textured-mesh
         mock_scheduler.schedule_job = AsyncMock(side_effect=fake_schedule_tex)
         req_tex = ImageToTexturedMeshRequest(
             image_path=str(orig_img),
             preprocessing_artifact_id="art-456",
+            preprocessing_review_override=True,
             enhancement_enabled=True,
         )
         await image_to_textured_mesh(req_tex, scheduler=mock_scheduler)
+        assert mock_load.call_args.kwargs["allow_review"] is True
         assert captured_textured.inputs["image_path"] == str(enhanced_img)
         assert captured_textured.inputs["reference_image_path"] == str(orig_img)
+        assert captured_textured.inputs["preprocessing_review_override"] is True
         assert captured_textured.metadata["reference_image_path"] == str(orig_img)
+        assert captured_textured.metadata["preprocessing_review_override"] is True
 
 
 def test_bug012_resolve_reference_image_precedence(tmp_path):

@@ -6,6 +6,7 @@ decimation, smoothing, marching cubes, and LOD generation operations.
 from __future__ import annotations
 
 import copy
+import heapq
 import json
 import logging
 import os
@@ -131,6 +132,421 @@ def smooth_mesh(
         return mesh
 
 
+def compute_angle_weighted_normals(
+    mesh: trimesh.Trimesh,
+    crease_angle_deg: Optional[float] = 35.0,
+) -> trimesh.Trimesh:
+    """Compute Nelson Max angle-weighted vertex normals with dihedral crease splitting.
+
+    Prevents melted shading over sharp corners by splitting vertices on edges with
+    dihedral angle exceeding crease_angle_deg (typically 35°-45° for hard surface/props).
+    If crease_angle_deg is None or >= 180, computes angle-weighted smooth normals without splitting.
+    """
+    if not isinstance(mesh, trimesh.Trimesh) or len(mesh.faces) == 0:
+        return mesh
+
+    V = np.asarray(mesh.vertices, dtype=np.float64)
+    F = np.asarray(mesh.faces, dtype=np.int64)
+    num_verts = len(V)
+    num_faces = len(F)
+
+    # 1. Compute face normals and edge vectors
+    p0 = V[F[:, 0]]
+    p1 = V[F[:, 1]]
+    p2 = V[F[:, 2]]
+
+    e0 = p1 - p0
+    e1 = p2 - p1
+    e2 = p0 - p2
+
+    face_cross = np.cross(e0, -e2)
+    face_areas = np.linalg.norm(face_cross, axis=1)
+    valid_face = face_areas > 1e-12
+    face_normals = np.zeros_like(face_cross)
+    face_normals[valid_face] = face_cross[valid_face] / face_areas[valid_face, None]
+
+    def normalize_vecs(vecs: np.ndarray) -> np.ndarray:
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        return np.where(norms > 1e-12, vecs / np.maximum(norms, 1e-12), 0.0)
+
+    u0a, u0b = normalize_vecs(e0), normalize_vecs(-e2)
+    u1a, u1b = normalize_vecs(e1), normalize_vecs(-e0)
+    u2a, u2b = normalize_vecs(e2), normalize_vecs(-e1)
+
+    # Nelson Max corner angles (in radians)
+    dot0 = np.clip(np.sum(u0a * u0b, axis=1), -1.0, 1.0)
+    dot1 = np.clip(np.sum(u1a * u1b, axis=1), -1.0, 1.0)
+    dot2 = np.clip(np.sum(u2a * u2b, axis=1), -1.0, 1.0)
+    alpha0 = np.arccos(dot0)
+    alpha1 = np.arccos(dot1)
+    alpha2 = np.arccos(dot2)
+
+    do_crease_split = crease_angle_deg is not None and 0.0 < crease_angle_deg < 180.0
+    sharp_edges = set()
+    if do_crease_split:
+        cos_threshold = np.cos(np.radians(crease_angle_deg))
+        edge_to_faces: Dict[Tuple[int, int], List[int]] = {}
+        for fi in range(num_faces):
+            v0, v1, v2 = F[fi]
+            for u, v in ((v0, v1), (v1, v2), (v2, v0)):
+                edge = (u, v) if u < v else (v, u)
+                edge_to_faces.setdefault(edge, []).append(fi)
+
+        for edge, incident in edge_to_faces.items():
+            if len(incident) == 2:
+                fA, fB = incident
+                if np.dot(face_normals[fA], face_normals[fB]) < cos_threshold:
+                    sharp_edges.add(edge)
+            elif len(incident) > 2:
+                sharp_edges.add(edge)
+
+    vert_to_fc: List[List[Tuple[int, int]]] = [[] for _ in range(num_verts)]
+    for fi in range(num_faces):
+        v0, v1, v2 = F[fi]
+        vert_to_fc[v0].append((fi, 0))
+        vert_to_fc[v1].append((fi, 1))
+        vert_to_fc[v2].append((fi, 2))
+
+    new_vertices = list(V)
+    new_faces = np.copy(F)
+    vertex_normals_list = [np.zeros(3, dtype=np.float64) for _ in range(num_verts)]
+    alphas = [alpha0, alpha1, alpha2]
+
+    uv = getattr(getattr(mesh, "visual", None), "uv", None)
+    has_uv = uv is not None and len(uv) == num_verts
+    new_uv = list(uv) if has_uv else None
+
+    vc = getattr(getattr(mesh, "visual", None), "vertex_colors", None)
+    has_vc = vc is not None and len(vc) == num_verts
+    new_vc = list(vc) if has_vc else None
+
+    for vi in range(num_verts):
+        fc_list = vert_to_fc[vi]
+        if not fc_list:
+            continue
+        if len(fc_list) == 1:
+            fi, c_idx = fc_list[0]
+            vertex_normals_list[vi] = face_normals[fi].copy()
+            continue
+
+        if not do_crease_split or not sharp_edges:
+            cluster_norm = np.zeros(3, dtype=np.float64)
+            for fi, corner in fc_list:
+                w = alphas[corner][fi]
+                cluster_norm += w * face_normals[fi]
+            norm_len = np.linalg.norm(cluster_norm)
+            if norm_len > 1e-12:
+                cluster_norm /= norm_len
+            else:
+                cluster_norm = face_normals[fc_list[0][0]]
+            vertex_normals_list[vi] = cluster_norm
+            continue
+
+        local_edge_map: Dict[Tuple[int, int], List[int]] = {}
+        for k, (fi, c) in enumerate(fc_list):
+            tri = F[fi]
+            u1, v1 = vi, tri[(c + 1) % 3]
+            e1 = (u1, v1) if u1 < v1 else (v1, u1)
+            u2, v2 = vi, tri[(c + 2) % 3]
+            e2 = (u2, v2) if u2 < v2 else (v2, u2)
+
+            if e1 not in sharp_edges:
+                local_edge_map.setdefault(e1, []).append(k)
+            if e2 not in sharp_edges:
+                local_edge_map.setdefault(e2, []).append(k)
+
+        adj: List[List[int]] = [[] for _ in range(len(fc_list))]
+        for edge, corners in local_edge_map.items():
+            if len(corners) == 2:
+                adj[corners[0]].append(corners[1])
+                adj[corners[1]].append(corners[0])
+
+        visited = set()
+        clusters = []
+        for k in range(len(fc_list)):
+            if k in visited:
+                continue
+            cluster = [k]
+            visited.add(k)
+            queue = [k]
+            while queue:
+                curr = queue.pop()
+                for nbr in adj[curr]:
+                    if nbr not in visited:
+                        visited.add(nbr)
+                        cluster.append(nbr)
+                        queue.append(nbr)
+            clusters.append(cluster)
+
+        for c_idx, cluster in enumerate(clusters):
+            target_v = vi if c_idx == 0 else len(new_vertices)
+            if c_idx > 0:
+                new_vertices.append(V[vi].copy())
+                vertex_normals_list.append(np.zeros(3, dtype=np.float64))
+                if has_uv and uv is not None:
+                    new_uv.append(uv[vi].copy())
+                if has_vc and vc is not None:
+                    new_vc.append(vc[vi].copy())
+
+            cluster_norm = np.zeros(3, dtype=np.float64)
+            for item_idx in cluster:
+                fi, corner = fc_list[item_idx]
+                w = alphas[corner][fi]
+                cluster_norm += w * face_normals[fi]
+                if c_idx > 0:
+                    new_faces[fi, corner] = target_v
+
+            norm_len = np.linalg.norm(cluster_norm)
+            if norm_len > 1e-12:
+                cluster_norm /= norm_len
+            elif len(cluster) > 0:
+                cluster_norm = face_normals[fc_list[cluster[0]][0]]
+            vertex_normals_list[target_v] = cluster_norm
+
+    result = trimesh.Trimesh(
+        vertices=np.asarray(new_vertices, dtype=np.float64),
+        faces=np.asarray(new_faces, dtype=np.int64),
+        vertex_normals=np.asarray(vertex_normals_list, dtype=np.float64),
+        process=False,
+    )
+    if has_uv and new_uv is not None:
+        source_visual = getattr(mesh, "visual", None)
+        source_material = getattr(source_visual, "material", None)
+        source_image = getattr(source_visual, "image", None)
+        if source_material is not None:
+            result.visual = trimesh.visual.TextureVisuals(
+                uv=np.asarray(new_uv, dtype=np.float64),
+                material=copy.copy(source_material),
+                image=source_image if source_image is not None else getattr(source_material, "image", None),
+            )
+        elif source_image is not None:
+            result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64), image=source_image)
+        else:
+            result.visual = trimesh.visual.TextureVisuals(uv=np.asarray(new_uv, dtype=np.float64))
+    elif has_vc and new_vc is not None:
+        result.visual.vertex_colors = np.asarray(new_vc)
+
+    if hasattr(result, "vertex_normals"):
+        _ = result.vertex_normals
+    return result
+
+
+def feature_preserving_decimate(
+    mesh: trimesh.Trimesh,
+    target_faces: int,
+    crease_angle_deg: float = 35.0,
+    max_deviation_deg: float = 45.0,
+) -> trimesh.Trimesh:
+    """Feature-preserving decimation using Quadric Error Metrics (QEM).
+
+    Protects fine geometry features by:
+    1. Heavily weighting boundary edges (prevents silhouette shrinking).
+    2. Adding crease plane constraints to edges with dihedral angle > crease_angle_deg (prevents chamfer/ridge collapse).
+    3. Normal deviation check: rejects any collapse that causes incident face normals to flip or rotate by > max_deviation_deg.
+    4. Transfers UV coordinates and vertex colors if present.
+    5. Reconstructs optimal angle-weighted vertex normals on the decimated output.
+    """
+    if not isinstance(mesh, trimesh.Trimesh) or len(mesh.faces) <= target_faces or len(mesh.faces) == 0:
+        return mesh
+
+    V = np.asarray(mesh.vertices, dtype=np.float64)
+    F = np.asarray(mesh.faces, dtype=np.int64)
+    num_verts = len(V)
+
+    p0 = V[F[:, 0]]
+    p1 = V[F[:, 1]]
+    p2 = V[F[:, 2]]
+    cross = np.cross(p1 - p0, p2 - p0)
+    areas = np.linalg.norm(cross, axis=1) * 0.5
+    valid = areas > 1e-12
+    normals = np.zeros_like(cross)
+    normals[valid] = cross[valid] / (2.0 * areas[valid, None])
+    d = -np.sum(normals * p0, axis=1)
+    planes = np.column_stack([normals, d])
+
+    Q = [np.zeros((4, 4), dtype=np.float64) for _ in range(num_verts)]
+    for fi in range(len(F)):
+        if not valid[fi]:
+            continue
+        p = planes[fi]
+        Kp = np.outer(p, p) * areas[fi]
+        for v in F[fi]:
+            Q[v] += Kp
+
+    cos_crease = np.cos(np.radians(crease_angle_deg))
+    cos_dev = np.cos(np.radians(max_deviation_deg))
+
+    edge_to_faces: Dict[Tuple[int, int], List[int]] = {}
+    for fi, tri in enumerate(F):
+        for u, v in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            edge = (u, v) if u < v else (v, u)
+            edge_to_faces.setdefault(edge, []).append(fi)
+
+    for (u, v), incident in edge_to_faces.items():
+        edge_vec = V[v] - V[u]
+        edge_len = np.linalg.norm(edge_vec)
+        if edge_len < 1e-12:
+            continue
+        if len(incident) == 1:
+            fi = incident[0]
+            b_norm = np.cross(normals[fi], edge_vec / edge_len)
+            b_norm_len = np.linalg.norm(b_norm)
+            if b_norm_len > 1e-12:
+                b_norm /= b_norm_len
+                b_d = -np.dot(b_norm, V[u])
+                b_plane = np.array([b_norm[0], b_norm[1], b_norm[2], b_d])
+                b_quad = np.outer(b_plane, b_plane) * (edge_len * 200.0)
+                Q[u] += b_quad
+                Q[v] += b_quad
+        elif len(incident) == 2:
+            fA, fB = incident
+            if np.dot(normals[fA], normals[fB]) < cos_crease:
+                c_norm = (normals[fA] + normals[fB]) * 0.5
+                c_norm_len = np.linalg.norm(c_norm)
+                if c_norm_len > 1e-12:
+                    c_norm /= c_norm_len
+                    c_d = -np.dot(c_norm, V[u])
+                    c_plane = np.array([c_norm[0], c_norm[1], c_norm[2], c_d])
+                    c_quad = np.outer(c_plane, c_plane) * (edge_len * 100.0)
+                    Q[u] += c_quad
+                    Q[v] += c_quad
+
+    v_pos = np.copy(V)
+    active_verts = set(range(num_verts))
+    vert_faces: List[set[int]] = [set() for _ in range(num_verts)]
+    for fi, tri in enumerate(F):
+        for v in tri:
+            vert_faces[v].add(fi)
+
+    current_faces = np.copy(F)
+    face_alive = np.ones(len(F), dtype=bool)
+    current_face_count = len(F)
+
+    def eval_edge(u: int, v: int) -> Tuple[float, np.ndarray]:
+        Q_sum = Q[u] + Q[v]
+        p_mid = 0.5 * (v_pos[u] + v_pos[v])
+        v_h = np.append(p_mid, 1.0)
+        cost = float(v_h @ Q_sum @ v_h)
+        return cost, p_mid
+
+    heap: List[Tuple[float, int, int, int]] = []
+    edge_versions: Dict[Tuple[int, int], int] = {}
+    for (u, v) in edge_to_faces:
+        cost, _ = eval_edge(u, v)
+        heapq.heappush(heap, (cost, u, v, 0))
+        edge_versions[(u, v)] = 0
+
+    uv = getattr(getattr(mesh, "visual", None), "uv", None)
+    has_uv = uv is not None and len(uv) == num_verts
+    uv_data = np.copy(uv) if has_uv else None
+
+    vc = getattr(getattr(mesh, "visual", None), "vertex_colors", None)
+    has_vc = vc is not None and len(vc) == num_verts
+    vc_data = np.copy(vc) if has_vc else None
+
+    max_collapses = max(0, current_face_count - target_faces) * 3
+    collapses_tried = 0
+
+    while heap and current_face_count > target_faces and collapses_tried < max_collapses:
+        collapses_tried += 1
+        cost, u, v, ver = heapq.heappop(heap)
+        edge_key = (u, v) if u < v else (v, u)
+        if edge_versions.get(edge_key, -1) != ver:
+            continue
+        if u not in active_verts or v not in active_verts:
+            continue
+
+        p_new = 0.5 * (v_pos[u] + v_pos[v])
+
+        shared_faces = vert_faces[u].intersection(vert_faces[v])
+        test_faces = (vert_faces[u].union(vert_faces[v])) - shared_faces
+
+        valid_collapse = True
+        for fi in test_faces:
+            if not face_alive[fi]:
+                continue
+            tri = current_faces[fi]
+            p_tri = [p_new if (x == u or x == v) else v_pos[x] for x in tri]
+            c_new = np.cross(p_tri[1] - p_tri[0], p_tri[2] - p_tri[0])
+            area_new = np.linalg.norm(c_new) * 0.5
+            if area_new < 1e-12:
+                valid_collapse = False
+                break
+            n_new = c_new / (2.0 * area_new)
+            if np.dot(n_new, normals[fi]) < cos_dev:
+                valid_collapse = False
+                break
+
+        if not valid_collapse:
+            continue
+
+        v_pos[u] = p_new
+        Q[u] += Q[v]
+        if has_uv and uv_data is not None:
+            uv_data[u] = 0.5 * (uv_data[u] + uv_data[v])
+        if has_vc and vc_data is not None:
+            vc_data[u] = 0.5 * (vc_data[u] + vc_data[v])
+
+        for fi in shared_faces:
+            if face_alive[fi]:
+                face_alive[fi] = False
+                current_face_count -= 1
+                for x in current_faces[fi]:
+                    vert_faces[x].discard(fi)
+
+        for fi in list(vert_faces[v]):
+            if not face_alive[fi]:
+                continue
+            for corner in range(3):
+                if current_faces[fi, corner] == v:
+                    current_faces[fi, corner] = u
+            vert_faces[u].add(fi)
+
+        active_verts.discard(v)
+        vert_faces[v].clear()
+
+        neighbors = set()
+        for fi in vert_faces[u]:
+            if face_alive[fi]:
+                for x in current_faces[fi]:
+                    if x != u and x in active_verts:
+                        neighbors.add(x)
+
+        for nbr in neighbors:
+            edge = (u, nbr) if u < nbr else (nbr, u)
+            v_ver = edge_versions.get(edge, 0) + 1
+            edge_versions[edge] = v_ver
+            c_edge, _ = eval_edge(edge[0], edge[1])
+            heapq.heappush(heap, (c_edge, edge[0], edge[1], v_ver))
+
+    alive_face_indices = np.where(face_alive)[0]
+    final_faces = current_faces[alive_face_indices]
+    used_verts = np.unique(final_faces)
+    vert_map = {old: new for new, old in enumerate(used_verts)}
+    new_V = v_pos[used_verts]
+    new_F = np.vectorize(vert_map.get)(final_faces)
+
+    res = trimesh.Trimesh(vertices=new_V, faces=new_F, process=False)
+    if has_uv and uv_data is not None:
+        source_visual = getattr(mesh, "visual", None)
+        source_material = getattr(source_visual, "material", None)
+        source_image = getattr(source_visual, "image", None)
+        if source_material is not None:
+            res.visual = trimesh.visual.TextureVisuals(
+                uv=uv_data[used_verts],
+                material=copy.copy(source_material),
+                image=source_image if source_image is not None else getattr(source_material, "image", None),
+            )
+        elif source_image is not None:
+            res.visual = trimesh.visual.TextureVisuals(uv=uv_data[used_verts], image=source_image)
+        else:
+            res.visual = trimesh.visual.TextureVisuals(uv=uv_data[used_verts])
+    elif has_vc and vc_data is not None:
+        res.visual.vertex_colors = vc_data[used_verts]
+
+    return compute_angle_weighted_normals(res, crease_angle_deg=crease_angle_deg)
+
+
 def decimate_mesh(
     mesh: Union[trimesh.Trimesh, trimesh.Scene],
     target_faces: int,
@@ -151,7 +567,7 @@ class MeshProcessor:
             raise FileNotFoundError(f"Mesh file not found: {mesh_path}")
 
         try:
-            mesh = trimesh.load(mesh_path)
+            mesh = trimesh.load(mesh_path, process=False)
             if isinstance(mesh, trimesh.Scene):
                 mesh = mesh.to_geometry()
 
@@ -194,14 +610,17 @@ class MeshProcessor:
         output_path: Union[str, Path],
         format: str = "glb",
         do_normalise: bool = True,
+        crease_angle_deg: Optional[float] = 35.0,
     ) -> Path:
-        """Save a mesh to file."""
+        """Save a mesh to file with optimal angle-weighted normals and sharp edge preservation."""
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
             if do_normalise:
                 mesh = MeshProcessor.normalise_mesh(mesh)
+            if crease_angle_deg is not None and isinstance(mesh, trimesh.Trimesh) and len(mesh.faces) > 0:
+                mesh = compute_angle_weighted_normals(mesh, crease_angle_deg=crease_angle_deg)
             mesh.export(output_path)
             logger.info(f"Saved mesh to {output_path}")
             return output_path
@@ -388,10 +807,15 @@ class MeshProcessor:
             except Exception as fs_err:
                 logger.debug("fast_simplification fallback: %s", fs_err)
 
-            # Fallback to trimesh quadric decimation with full threads configured
-            simplified = mesh.simplify_quadric_decimation(target_faces)
+            # Fallback to feature-preserving QEM edge collapse decimation
+            try:
+                simplified = feature_preserving_decimate(mesh, target_faces=target_faces)
+            except Exception as dec_err:
+                logger.debug("feature_preserving_decimate fallback: %s", dec_err)
+                simplified = mesh.simplify_quadric_decimation(target_faces)
+            simplified = compute_angle_weighted_normals(simplified, crease_angle_deg=35.0)
             logger.info(
-                f"Simplified mesh from {len(mesh.faces)} to {len(simplified.faces)} faces"
+                f"Simplified mesh (feature-preserving QEM) from {len(mesh.faces)} to {len(simplified.faces)} faces"
             )
             return simplified
 
@@ -455,3 +879,26 @@ class MeshProcessor:
         logger.info("Converting triangles to quads and save in-place...")
         mesh.quadrangulate()
         mesh.export(mesh_path)
+
+    @staticmethod
+    def compute_angle_weighted_normals(
+        mesh: trimesh.Trimesh,
+        crease_angle_deg: Optional[float] = 35.0,
+    ) -> trimesh.Trimesh:
+        """Compute Nelson Max angle-weighted vertex normals with dihedral crease splitting."""
+        return compute_angle_weighted_normals(mesh, crease_angle_deg=crease_angle_deg)
+
+    @staticmethod
+    def feature_preserving_decimate(
+        mesh: trimesh.Trimesh,
+        target_faces: int,
+        crease_angle_deg: float = 35.0,
+        max_deviation_deg: float = 45.0,
+    ) -> trimesh.Trimesh:
+        """Feature-preserving decimation using Quadric Error Metrics (QEM)."""
+        return feature_preserving_decimate(
+            mesh,
+            target_faces=target_faces,
+            crease_angle_deg=crease_angle_deg,
+            max_deviation_deg=max_deviation_deg,
+        )

@@ -244,9 +244,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     )
                     octree_res = 380
 
-            num_chunks = inputs.get("num_chunks", 20000)
+            num_chunks = inputs.get("num_chunks", 80000)
             if num_chunks is None:
-                num_chunks = 20000
+                num_chunks = 80000
             else:
                 num_chunks = int(num_chunks)
 
@@ -302,9 +302,8 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "source_quality": inputs.get("source_quality", "max"),
                     "geometry_extractor": "Hunyuan3D-DiT-v2-mini-Turbo VanillaVolumeDecoder + MCSurfaceExtractor",
                     "requested_geometry_resolution": octree_res,
-                    "geometry_extraction_grid_resolution": octree_res + 1,
-                    "effective_geometry_resolution": octree_res,
-                    "effective_geometry_resolution_status": "native dense decoder evaluates octree_resolution + 1 samples per axis",
+                    "effective_geometry_resolution": None,
+                    "effective_geometry_resolution_status": "upstream exposes configured octree_resolution, not scalar achieved resolution",
                     "geometry_resolution_source": "verified VanillaVolumeDecoder + MCSurfaceExtractor; mc_algo=mc",
                     "voxel_size": 2.02 / octree_res,
                     "mc_algo": "mc",

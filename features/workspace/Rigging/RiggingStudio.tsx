@@ -4,7 +4,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { uploadMeshAsset, withRiggedModel } from '../types';
+import { withRiggedModel } from '../types';
+import { useMeshAssetUpload } from '@/hooks/useMeshAssetUpload';
+import { MeshUploadStatus } from '../Panels/MeshUploadStatus';
 import { useRiggingStore } from '@/stores/useRiggingStore';
 import { useViewerStore } from '@/stores/useViewerStore';
 
@@ -20,13 +22,15 @@ import {
 import { MeshViewer } from '../Viewport/MeshViewer';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { toast } from 'sonner';
+import { downloadArtifact } from '../lib/artifactDownload';
 
 export const RiggingStudio: React.FC = () => {
   const router = useRouter();
   const { currentAsset, addAsset, setCurrentAsset, updateAssetProperties } = useWorkspace();
   const viewerStore = useViewerStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingMesh, setIsUploadingMesh] = useState(false);
+  const { state: meshUploadState, upload: uploadMesh } = useMeshAssetUpload();
+  const isUploadingMesh = meshUploadState.status === 'uploading' || meshUploadState.status === 'verifying';
 
   // Rigging Store (metadata, UniRig AI pipeline, character stats)
   const {
@@ -142,14 +146,12 @@ export const RiggingStudio: React.FC = () => {
     const input = event.currentTarget;
     const file = input.files?.[0];
     if (!file) return;
-    setIsUploadingMesh(true);
-    cancelRigPolling();
     try {
-      const asset = await uploadMeshAsset(file);
+      const asset = await uploadMesh(file);
+      if (!asset) return;
+      cancelRigPolling();
       useRiggingStore.setState({ riggedModelUrl: null, riggedFbxUrl: null, jobId: null, generationStatus: 'idle', generationProgress: 0, generationError: null });
       useAnimationStore.getState().setRigStatus('not_rigged');
-      addAsset(asset);
-      setCurrentAsset(asset);
       setCharacterInfo({
         name: asset.name,
         vertices: asset.statsAvailable ? asset.vertices : 0,
@@ -158,28 +160,25 @@ export const RiggingStudio: React.FC = () => {
       });
       if (asset.source?.fileId ?? asset.fileId) {
         toast.success('Mesh uploaded', { description: 'The mesh is ready for UniRig.' });
-      } else {
-        toast.error('Mesh upload failed', { description: 'A server file reference was not created. Retry the upload before rigging.' });
       }
-    } catch (error) {
-      toast.error('Mesh upload failed', { description: error instanceof Error ? error.message : 'Could not upload the mesh.' });
     } finally {
-      setIsUploadingMesh(false);
       input.value = '';
     }
   };
 
-  const handleExportRig = () => {
+  const handleExportRig = async () => {
     const url = currentAsset?.artifacts?.riggedFbx;
     if (!url) {
       toast.error('Generate a rig before exporting.');
       return;
     }
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${currentAsset.name || characterName}.fbx`;
-    link.rel = 'noopener';
-    link.click();
+    try {
+      await downloadArtifact(url, `${currentAsset.name || characterName}.fbx`, 'fbx');
+    } catch (error) {
+      toast.error('FBX export failed', {
+        description: error instanceof Error ? error.message : 'The FBX artifact could not be downloaded. Retry the export.',
+      });
+    }
   };
 
   // Selected bone object
@@ -336,7 +335,7 @@ export const RiggingStudio: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".glb,.gltf,.obj,.fbx"
+        accept=".glb,.gltf,.obj,.fbx,.stl,.ply"
         hidden
         onChange={handleMeshUpload}
       />
@@ -430,6 +429,8 @@ export const RiggingStudio: React.FC = () => {
               </button>
             </div>
           </div>
+
+          <MeshUploadStatus state={meshUploadState} />
 
           {/* EXACTLY 2 RIGGING METHODS */}
           <div className="space-y-2">

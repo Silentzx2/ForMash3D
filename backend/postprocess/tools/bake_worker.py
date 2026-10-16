@@ -604,9 +604,18 @@ def fill_gutters(low, outdir, written: dict, layout=None):
                     arr = np.asarray(image).copy()
             except Exception:  # noqa: BLE001 — skip anything unreadable
                 continue
-            if arr.ndim != 3 or arr.shape[:2] != (height, width):
+            if arr.ndim not in (2, 3) or arr.shape[:2] != (height, width):
                 continue
+            if name == "normal" and arr.ndim == 3:
+                # Ensure missed / transparent pixels carry neutral tangent normal (128, 128, 255)
+                # before dilation so no black border or black seam can bleed into the model
+                if arr.shape[2] == 4:
+                    miss = arr[:, :, 3] == 0
+                    arr[miss, :3] = [128, 128, 255]
             arr[gutter] = arr[iy[gutter], ix[gutter]]
+            if name == "normal" and arr.ndim == 3 and arr.shape[2] == 4:
+                # Fully opaque dilated normals
+                arr[gutter, 3] = 255
             Image.fromarray(arr, mode=mode).save(path)
             filled[name] = round(float(gutter.mean()), 4)
         return filled
@@ -782,12 +791,26 @@ def main() -> None:
         diagonal = max(low.dimensions.x, 1e-6) ** 2 + low.dimensions.y ** 2 + low.dimensions.z ** 2
         cage = 0.02 * (diagonal ** 0.5)
         emit("scene", 0.22, f"Auto cage extrusion: {cage:.4f}m")
-    bake.cage_extrusion = cage
-    bake.max_ray_distance = float(options.get("max_ray_distance", 0.0))
+    max_ray = float(options.get("max_ray_distance", 0.0))
+    if max_ray <= 0.0:
+        max_ray = max(0.001, cage * 2.5)
+    bake.max_ray_distance = max_ray
     # Margin dilates the baked islands outward so mip-mapping and bilinear
     # filtering cannot sample the empty gutter and bleed seams into the surface.
     bake.margin = int(options.get("margin", 8))
     bake.use_clear = True
+    bake.normal_space = "TANGENT"
+    bake.normal_r = "POS_X"
+    bake.normal_g = "POS_Y"
+    if hasattr(bake, "normal_b"):
+        bake.normal_b = "POS_Z"
+    elif hasattr(bake, "normal_z"):
+        bake.normal_z = "POS_Z"
+
+    try:
+        low.data.calc_tangents()
+    except Exception:
+        pass
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)

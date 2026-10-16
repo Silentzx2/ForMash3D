@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Archive, Cancel, DownloadIcon, FileBoxIcon, LoaderCircle, ShieldCheckIcon, TriangleAlertIcon } from '@hugeicons/core-free-icons';
+import { downloadArtifact } from '../lib/artifactDownload';
 export const ExportModal: React.FC = () => {
   const { isExportModalOpen, setIsExportModalOpen, currentAsset } = useWorkspace();
   const [isExporting, setIsExporting] = useState(false);
@@ -38,7 +39,7 @@ export const ExportModal: React.FC = () => {
   const handleExport = async () => {
     const artifacts = currentAsset?.artifacts;
     const zipUrl = artifacts?.zipUrl;
-    const sourceArtifact = artifacts?.source;
+    const sourceArtifact = artifacts?.source || currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl;
     const selectedUrl =
       packageZip || variant === 'lod_package'
         ? zipUrl
@@ -57,23 +58,29 @@ export const ExportModal: React.FC = () => {
       return;
     }
 
+    const sourceFormat = (
+      currentAsset?.format?.toLowerCase() ||
+      currentAsset?.source?.filename?.split('.').pop()?.toLowerCase() ||
+      currentAsset?.name?.split('.').pop()?.toLowerCase() ||
+      'glb'
+    ) as 'glb' | 'gltf' | 'fbx' | 'obj' | 'stl' | 'ply';
+
     const downloadExtension =
       packageZip || variant === 'lod_package'
         ? 'zip'
         : variant === 'source'
-        ? 'glb'
+        ? (['glb', 'gltf', 'fbx', 'obj', 'stl', 'ply'].includes(sourceFormat) ? sourceFormat : 'glb')
         : exportFormat;
 
     setIsExporting(true);
     setError(null);
 
     try {
-      const link = document.createElement('a');
-      link.href = selectedUrl;
-      link.download = `${assetBaseName}.${downloadExtension}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      await downloadArtifact(
+        selectedUrl,
+        `${assetBaseName}.${downloadExtension}`,
+        downloadExtension,
+      );
       setIsExportModalOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Export failed.');

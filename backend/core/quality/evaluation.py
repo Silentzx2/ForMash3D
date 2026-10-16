@@ -33,9 +33,9 @@ def sample_surface(mesh: trimesh.Trimesh, count: int = 4096, seed: int = 0) -> n
     previous = np.random.get_state()
     try:
         np.random.seed(seed)
-        points, _ = trimesh.sample.sample_surface_even(mesh, count)
+        points, _ = trimesh.sample.sample_surface_even(mesh, count, seed=seed)
         if len(points) < count:
-            points = trimesh.sample.sample_surface(mesh, count)[0]
+            points = trimesh.sample.sample_surface(mesh, count, seed=seed)[0]
         return np.asarray(points, dtype=np.float32)
     finally:
         np.random.set_state(previous)
@@ -89,7 +89,7 @@ def compare_meshes(
     seed: int = 0,
 ) -> dict[str, Any]:
     reference_points = sample_surface(reference, sample_count, seed)
-    candidate_points = sample_surface(candidate, sample_count, seed)
+    candidate_points = reference_points if candidate is reference else sample_surface(candidate, sample_count, seed)
     diagonal = float(np.linalg.norm(reference.bounds[1] - reference.bounds[0]))
     threshold = float(fscore_threshold if fscore_threshold is not None else max(diagonal * 0.005, 1e-5))
     cd = chamfer_distance(reference_points, candidate_points)

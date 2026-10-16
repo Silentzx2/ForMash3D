@@ -200,8 +200,16 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             dtype = torch.float16
 
+            # Apply runtime compatibility fix (torchvision and transformers cache)
+            try:
+                from utils.torchvision_fix import apply_fix
+                apply_fix()
+            except Exception as fix_err:
+                logger.debug(f"Compatibility fix skipped: {fix_err}")
+
             # 1. Background remover (required: prepare_image calls it unconditionally)
             rmbg_source = self._resolve_rmbg_source()
+
             try:
                 from briarmbg import BriaRMBG
                 self.rmbg_net = BriaRMBG.from_pretrained(rmbg_source).to(device)
@@ -395,7 +403,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             )
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            mesh.export(str(output_path))
+            self.mesh_processor.save_mesh(mesh, output_path, crease_angle_deg=35.0)
 
             # Validate output mesh file
             if not output_path.exists() or output_path.stat().st_size == 0:

@@ -14,7 +14,8 @@ import {
   GrabBrushIcon,
 } from '@/components/icons/BrushIcons';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { uploadMeshAsset } from '../types';
+import { useMeshAssetUpload } from '@/hooks/useMeshAssetUpload';
+import { MeshUploadStatus } from './MeshUploadStatus';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { toast } from 'sonner';
 import { useFeatureAvailability } from '@/hooks/useFeatureAvailability';
@@ -86,6 +87,8 @@ export const MeshEditPanel: React.FC = () => {
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
+  const { state: meshUploadState, upload: uploadMesh } = useMeshAssetUpload();
+  const uploadActive = meshUploadState.status === 'uploading' || meshUploadState.status === 'verifying';
 
   const isRunning = isExecuting && (activeTask?.type === 'edit');
   const hasTargetMesh = Boolean(currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.source?.fileId);
@@ -156,9 +159,10 @@ export const MeshEditPanel: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleUploadNewMesh = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadNewMesh = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setCurrentAsset(await uploadMeshAsset(file));
+    if (file) void uploadMesh(file);
+    e.currentTarget.value = '';
   };
 
   const canExecute = editingModelAvailable && (inputTab === 'text'
@@ -205,6 +209,7 @@ export const MeshEditPanel: React.FC = () => {
 
       {/* Main Scrollable Body */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden px-2.5 py-2.5 space-y-2.5 scrollbar-none pr-1.5">
+        <MeshUploadStatus state={meshUploadState} />
         {/* 1. Target Input Mesh */}
         <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
           <div className="flex items-center justify-between">
@@ -224,14 +229,16 @@ export const MeshEditPanel: React.FC = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".glb,.gltf,.obj,.ply,.stl"
+                accept=".glb,.gltf,.obj,.fbx,.stl,.ply"
                 onChange={handleUploadNewMesh}
                 className="hidden"
+                disabled={uploadActive}
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                disabled={uploadActive}
+                className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
               >
                 <HugeiconsIcon icon={UploadIcon} size={16} className="w-3 h-3 text-primary" />
                 <span>Upload</span>

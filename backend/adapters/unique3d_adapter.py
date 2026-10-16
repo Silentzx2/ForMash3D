@@ -21,6 +21,9 @@ from core.models.mesh_models import ImageToMeshModel
 from core.utils.file_utils import OutputPathGenerator
 from core.utils.mesh_utils import MeshProcessor
 
+# Prevent CUDA memory fragmentation
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 logger = logging.getLogger(__name__)
 
 
@@ -97,8 +100,45 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         
         # Add paths to sys.path
         self._ensure_unique3d_in_path()
+        self._ensure_ckpt_symlinks()
 
         logger.info(f"Initialized Unique3D adapter with root: {unique3d_root}")
+
+    def _ensure_ckpt_symlinks(self):
+        """Ensure ckpt symlinks exist so Unique3D relative './ckpt/...' paths resolve to pretrained weights."""
+        ckpt_src = (Path(self.model_path) / "ckpt").resolve()
+        if not ckpt_src.exists():
+            alt_src = (self.unique3d_root / "ckpt").resolve()
+            if alt_src.exists() and not alt_src.is_symlink():
+                ckpt_src = alt_src
+
+        if ckpt_src.exists():
+            for target in [Path("ckpt"), self.unique3d_root / "ckpt", Path("backend") / "ckpt"]:
+                try:
+                    if target.is_symlink():
+                        if target.resolve() != ckpt_src:
+                            target.unlink()
+                            target.symlink_to(ckpt_src)
+                            logger.info(f"Updated ckpt symlink: {target} -> {ckpt_src}")
+                    elif not target.exists():
+                        target.symlink_to(ckpt_src)
+                        logger.info(f"Created ckpt symlink: {target} -> {ckpt_src}")
+                except Exception as e:
+                    logger.debug(f"Could not symlink {target} -> {ckpt_src}: {e}")
+
+        # Ensure app symlink exists for any relative app/... lookups
+        app_src = (self.unique3d_root / "app").resolve()
+        if app_src.exists():
+            for target in [Path("app"), Path("backend") / "app"]:
+                try:
+                    if target.is_symlink():
+                        if target.resolve() != app_src:
+                            target.unlink()
+                            target.symlink_to(app_src)
+                    elif not target.exists():
+                        target.symlink_to(app_src)
+                except Exception as e:
+                    logger.debug(f"Could not symlink {target} -> {app_src}: {e}")
 
     def _ensure_unique3d_in_path(self):
         """Add Unique3D directories to sys.path for imports."""
@@ -117,11 +157,21 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         """Load Unique3D pipelines: multiview prediction, normal prediction, and super-resolution."""
         try:
             logger.info("Loading Unique3D models...")
+            self._ensure_ckpt_symlinks()
             
             # Apply torchvision fix if available
             try:
-                from utils.torchvision_fix import apply_fix
-                apply_fix()
+                import importlib.util as _ilu
+                _tv_fix_path = Path(__file__).resolve().parent.parent / "utils" / "torchvision_fix.py"
+                if _tv_fix_path.exists():
+                    _spec = _ilu.spec_from_file_location("torchvision_fix", str(_tv_fix_path))
+                    if _spec and _spec.loader:
+                        _tv_mod = _ilu.module_from_spec(_spec)
+                        _spec.loader.exec_module(_tv_mod)
+                        _tv_mod.apply_fix()
+                else:
+                    from utils.torchvision_fix import apply_fix
+                    apply_fix()
             except (ImportError, Exception) as e:
                 logger.warning(f"torchvision_fix not applied: {e}")
 
@@ -133,6 +183,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # Load multiview prediction pipeline (img2mvimg)
             logger.info("Loading multiview prediction pipeline (img2mvimg)...")
             self._ensure_unique3d_in_path()
+            from app.custom_models.utils import load_pipeline
                 
             # Use official load_pipeline which expects .pth format
             # The checkpoints are safetensors from HF - load_pipeline handles conversion via strict=False
@@ -142,6 +193,12 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # self.mvimg_pipeline.enable_model_cpu_offload()
             loaded_models["mvimg_pipeline"] = self.mvimg_pipeline
             loaded_models["mvimg_trainer"] = self.mvimg_trainer
+            try:
+                import app.custom_models.mvimg_prediction as mvimg_pred_mod
+                mvimg_pred_mod.trainer = self.mvimg_trainer
+                mvimg_pred_mod.pipeline = self.mvimg_pipeline
+            except Exception as e:
+                logger.debug(f"Failed to inject mvimg pipeline into mvimg_prediction module: {e}")
 
             # Load normal prediction pipeline (image2normal)
             logger.info("Loading normal prediction pipeline (image2normal)...")
@@ -151,6 +208,12 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # self.normal_pipeline.enable_model_cpu_offload()
             loaded_models["normal_pipeline"] = self.normal_pipeline
             loaded_models["normal_trainer"] = self.normal_trainer
+            try:
+                import app.custom_models.normal_prediction as normal_pred_mod
+                normal_pred_mod.trainer = self.normal_trainer
+                normal_pred_mod.pipeline = self.normal_pipeline
+            except Exception as e:
+                logger.debug(f"Failed to inject normal pipeline into normal_prediction module: {e}")
 
             # Load super-resolution model (realesrgan)
             logger.info("Loading super-resolution model...")
@@ -164,6 +227,37 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             except Exception as e:
                 logger.warning(f"Could not load super-resolution model: {e}")
 
+            # Enable attention & VAE slicing if available to reduce peak activation memory with ZERO quality loss
+            for pipe in [self.mvimg_pipeline, self.normal_pipeline]:
+                if pipe is not None:
+                    if hasattr(pipe, "enable_attention_slicing"):
+                        try:
+                            pipe.enable_attention_slicing()
+                        except Exception:
+                            pass
+                    if hasattr(pipe, "enable_vae_slicing"):
+                        try:
+                            pipe.enable_vae_slicing()
+                        except Exception:
+                            pass
+
+            # Dynamic VRAM detection:
+            # If GPU has < 24GB VRAM (e.g. Colab T4 15GB, RTX 3080/4080, etc.),
+            # use sequential stage offloading so only one diffusion model occupies VRAM at a time.
+            total_vram_gb = 0.0
+            if torch.cuda.is_available():
+                total_vram_gb = torch.cuda.get_device_properties(self.gpu_id or 0).total_memory / (1024**3)
+            self.low_vram_mode = total_vram_gb < 24.0
+            logger.info(f"Unique3D detected GPU VRAM: {total_vram_gb:.2f} GB (low_vram_mode={self.low_vram_mode})")
+
+            if self.low_vram_mode and self.normal_pipeline is not None:
+                # Keep normal pipeline on CPU initially until multiview prediction finishes
+                try:
+                    self.normal_pipeline.to("cpu")
+                    torch.cuda.empty_cache()
+                except Exception as e:
+                    logger.debug(f"Could not offload normal pipeline to CPU: {e}")
+
             logger.info("Unique3D models loaded successfully")
             return loaded_models
 
@@ -176,6 +270,19 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
     def _unload_model(self):
         """Unload Unique3D models."""
         try:
+            try:
+                import app.custom_models.mvimg_prediction as mvimg_pred_mod
+                mvimg_pred_mod.trainer = None
+                mvimg_pred_mod.pipeline = None
+            except Exception:
+                pass
+            try:
+                import app.custom_models.normal_prediction as normal_pred_mod
+                normal_pred_mod.trainer = None
+                normal_pred_mod.pipeline = None
+            except Exception:
+                pass
+
             if self.mvimg_pipeline is not None:
                 del self.mvimg_pipeline
                 self.mvimg_pipeline = None
@@ -257,17 +364,24 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         # Use the adapter's already-loaded pipeline directly. The upstream wrapper imports
         # Gradio and eagerly initializes a duplicate module-level pipeline.
         from rembg import remove as rembg_remove
-        from app.utils import session as rembg_session
+        from scripts.utils import session as rembg_session
         
         if remove_bg and (image.mode == "RGB" or np.array(image)[..., -1].mean() == 255.):
             image = rembg_remove(image, session=rembg_session)
         
         
         cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+        if self.mvimg_pipeline is not None:
+            try:
+                self.mvimg_pipeline.to(cuda_dev)
+            except Exception:
+                pass
+
         generator = torch.Generator(device=cuda_dev).manual_seed(int(seed)) if seed >= 0 else None
         
         # Simple preprocessing
-        from app.utils import simple_preprocess, change_rgba_bg
+        from app.utils import change_rgba_bg
+        from scripts.utils import simple_preprocess
         if image.mode != "RGBA":
             image = image.convert("RGBA")
         image = change_rgba_bg(image, "white")
@@ -295,6 +409,36 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
         do_rotate: bool = True
     ) -> List[Image.Image]:
         """Run normal prediction on multiview images."""
+        cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+        if getattr(self, "low_vram_mode", False) and self.mvimg_pipeline is not None:
+            try:
+                self.mvimg_pipeline.to("cpu")
+            except Exception:
+                pass
+            torch.cuda.empty_cache()
+
+        if self.normal_pipeline is not None:
+            try:
+                self.normal_pipeline.to(cuda_dev)
+            except Exception:
+                pass
+
+        if self.normal_trainer is not None and self.normal_pipeline is not None:
+            from app.utils import rgba_to_rgb, simple_remove
+            from scripts.utils import rotate_normals_torch
+            img_list = images if isinstance(images, list) else [images]
+            img_list = [rgba_to_rgb(i) if i.mode == 'RGBA' else i for i in img_list]
+            predicted = self.normal_trainer.pipeline_forward(
+                pipeline=self.normal_pipeline,
+                image=img_list,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+            ).images
+            predicted = simple_remove(predicted)
+            if do_rotate and len(predicted) > 1:
+                predicted = rotate_normals_torch(predicted, return_types='pil')
+            return predicted
+
         from app.custom_models.normal_prediction import predict_normals
         return predict_normals(
             images, 
@@ -405,21 +549,47 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 seed=seed
             )
 
-            # Step 3: Normal prediction
-            logger.info("Running normal prediction...")
-            normal_pils = self._run_normal_prediction(rgb_pils)
+            # Move multiview pipeline to CPU to free VRAM for normal prediction & mesh reconstruction
+            cuda_dev = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            if getattr(self, "low_vram_mode", False):
+                if self.mvimg_pipeline is not None:
+                    try:
+                        self.mvimg_pipeline.to("cpu")
+                    except Exception:
+                        pass
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
 
-            # Step 4: Geometry reconstruction and refinement
+            # Ensure normal prediction pipeline is loaded onto GPU
+            if self.normal_pipeline is not None:
+                try:
+                    self.normal_pipeline.to(cuda_dev)
+                except Exception:
+                    pass
+
+            # Step 3: Geometry reconstruction and refinement (including high-res normal prediction)
             logger.info("Running geometry reconstruction and refinement...")
             new_meshes = self._run_geo_reconstruct(
                 rgb_pils=rgb_pils,
-                normal_pils=normal_pils,
+                normal_pils=None,
                 front_pil=front_pil,
                 do_refine=do_refine,
                 predict_normal=True,
                 expansion_weight=expansion_weight,
                 init_type=init_type
             )
+
+            # Cleanup normal pipeline to CPU to free VRAM after reconstruction
+            if getattr(self, "low_vram_mode", False):
+                if self.normal_pipeline is not None:
+                    try:
+                        self.normal_pipeline.to("cpu")
+                    except Exception:
+                        pass
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
 
             # Process mesh: adjust vertices for correct orientation
             from pytorch3d.structures import Meshes
@@ -490,7 +660,7 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                     "super_resolution_backend": super_resolution_backend,
                     "super_resolution_fallback_reason": super_resolution_diagnostics.get("fallback_reason"),
                     "predicted_view_count": len(rgb_pils),
-                    "predicted_normal_count": len(normal_pils),
+                    "predicted_normal_count": len(rgb_pils),
                     "input_processing": input_processing,
                     "do_refine": do_refine,
                     "expansion_weight": expansion_weight,

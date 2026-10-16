@@ -30,9 +30,12 @@ def _preview_result(result):
     result["preview_url"] = (
         f"/api/v1/image-enhancement/artifacts/{result['artifact_id']}?variant=preview"
     )
-    result["approved_url"] = (
-        f"/api/v1/image-enhancement/artifacts/{result['artifact_id']}?variant=approved"
-    )
+    if result.get("approval_status") == "approved":
+        result["approved_url"] = (
+            f"/api/v1/image-enhancement/artifacts/{result['artifact_id']}?variant=approved"
+        )
+    else:
+        result["approved_url"] = None
     return result
 
 
@@ -75,8 +78,11 @@ async def artifact(artifact_id: str, variant: str = "approved"):
             headers={
                 "Cache-Control": "public, max-age=86400, immutable",
                 "X-Preprocess-Artifact-ID": artifact_id,
-                "X-Approved-SHA256": metadata["approved_sha256"],
+                "X-Preprocess-Status": metadata.get("approval_status", "legacy_unvalidated"),
+                "X-Processed-SHA256": metadata.get("approved_sha256") or metadata.get("preview_sha256", ""),
             },
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=404, detail=f"Preprocessed artifact not found: {exc}") from exc

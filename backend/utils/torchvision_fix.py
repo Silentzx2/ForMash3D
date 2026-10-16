@@ -5,7 +5,11 @@
 
 import sys
 
-import torchvision
+try:
+    import torchvision
+except ImportError:
+    torchvision = None
+
 
 
 def fix_torchvision_functional_tensor():
@@ -120,11 +124,100 @@ def fix_torchvision_functional_tensor():
             return False
 
 
+def fix_transformers_cache():
+    """
+    Ensure transformers exports HybridCache for peft/diffusers compatibility.
+    In Transformers v5, HybridCache was refactored/removed while peft and diffusers
+    importers expect `from transformers import ..., HybridCache, ...`.
+    """
+    try:
+        import transformers
+        if not hasattr(transformers, "HybridCache"):
+            cache_base = getattr(transformers, "DynamicCache", getattr(transformers, "Cache", object))
+            class HybridCache(cache_base):
+                """Compatibility fallback for HybridCache in Transformers v5."""
+                pass
+
+            setattr(transformers, "HybridCache", HybridCache)
+            if hasattr(transformers, "cache_utils") and not hasattr(transformers.cache_utils, "HybridCache"):
+                setattr(transformers.cache_utils, "HybridCache", HybridCache)
+            print("Applied compatibility fix: created transformers.HybridCache shim")
+        return True
+    except ImportError:
+        return False
+    except Exception as e:
+        print(f"Failed to apply transformers cache fix: {e}")
+        return False
+
+
+def fix_torch_load_weights_only():
+    """
+    Ensure torch.load falls back to weights_only=False in PyTorch 2.6+.
+    PyTorch 2.6 flipped the default weights_only to True, which raises UnpicklingError
+    on legacy pickled checkpoints used by third-party model weights.
+    """
+    try:
+        import torch
+        if hasattr(torch, "load"):
+            _orig_load = torch.load
+            if getattr(_orig_load, "_weights_only_patched", False):
+                return True
+
+            def _compat_torch_load(*args, **kwargs):
+                if "weights_only" not in kwargs:
+                    try:
+                        return _orig_load(*args, **kwargs)
+                    except Exception as err:
+                        err_str = str(err)
+                        if "weights_only" in err_str or "WeightsUnpickler" in err_str or "UnpicklingError" in type(err).__name__:
+                            return _orig_load(*args, weights_only=False, **kwargs)
+                        raise
+                return _orig_load(*args, **kwargs)
+
+            _compat_torch_load._weights_only_patched = True
+            torch.load = _compat_torch_load
+            print("Applied compatibility fix: patched torch.load fallback for weights_only in PyTorch 2.6+")
+        return True
+    except Exception as e:
+        print(f"Failed to apply torch.load compatibility fix: {e}")
+        return False
+
+
+def fix_huggingface_repo_redirects():
+    """
+    Redirect renamed Hugging Face repositories (e.g., lambdalabs -> lambda).
+    Lambda Labs renamed their org on Hugging Face, causing legacy checkpoints to 404.
+    """
+    try:
+        import huggingface_hub.file_download as fd
+        _orig_download = getattr(fd, "hf_hub_download", None)
+        if _orig_download is not None and not getattr(_orig_download, "_repo_redirect_patched", False):
+            def _redirected_hf_hub_download(repo_id, *args, **kwargs):
+                if isinstance(repo_id, str) and repo_id.startswith("lambdalabs/"):
+                    repo_id = "lambda/" + repo_id[len("lambdalabs/"):]
+                return _orig_download(repo_id, *args, **kwargs)
+
+            _redirected_hf_hub_download._repo_redirect_patched = True
+            fd.hf_hub_download = _redirected_hf_hub_download
+    except Exception:
+        pass
+    return True
+
+
 def apply_fix():
-    """Apply the torchvision compatibility fix"""
-    print(f"Torchvision version: {torchvision.__version__}")
-    return fix_torchvision_functional_tensor()
+    """Apply the compatibility fixes (torchvision, transformers, torch.load, and hf redirects)."""
+    if torchvision is not None:
+        try:
+            print(f"Torchvision version: {torchvision.__version__}")
+        except Exception:
+            pass
+        fix_torchvision_functional_tensor()
+    fix_transformers_cache()
+    fix_torch_load_weights_only()
+    fix_huggingface_repo_redirects()
+    return True
 
 
 if __name__ == "__main__":
     apply_fix()
+

@@ -29,7 +29,7 @@ from core.utils.log_formatters import format_banner, format_box, format_bytes
 from core.quality.evaluation import compare_meshes, quality_gate
 from core.scheduler.resource_planner import configure_cpu_runtime, cpu_count
 from .config import blender_expr_argv, blender_runtime_available
-from .meshio import load_mesh, load_mesh_vertex_normals, mesh_stats
+from .meshio import apply_angle_weighted_normals, load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
 from .services.auto_retopo import run_auto_retopo
 from .services.auto_uv import run_auto_uv
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 GenerationProgress = Optional[Callable[[float, str, str], None]]
 CancelChecker = Optional[Callable[[], bool]]
 
-MAX_PRODUCTION_FACES = 200_000
+MAX_PRODUCTION_FACES = 2_000_000
 _FORMATS = ("glb", "fbx")
 
 
@@ -461,6 +461,153 @@ def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tupl
     return True, source_sha256
 
 
+def prepare_asset_job_workspace(source_path: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Reuse the selected asset workspace or snapshot an external source into one."""
+    source = Path(source_path).resolve(strict=True)
+    if not source.is_file():
+        raise FileNotFoundError(f"Source mesh is missing: {source}")
+
+    meshes_root = _storage_root().resolve()
+    asset_root = None
+    for parent in source.parents:
+        if parent.parent == meshes_root and any(
+            (parent / "metadata" / name).is_file()
+            for name in ("job.json", "asset.json")
+        ):
+            asset_root = parent.resolve(strict=True)
+            break
+
+    if asset_root is None:
+        asset_root = meshes_root / f"{_safe_name(source.stem)}_{_safe_name(job_id)}"
+        asset_root.mkdir(parents=True, exist_ok=False)
+
+    asset_root.relative_to(meshes_root)
+    master_dir = asset_root / "master"
+    master_dir.mkdir(parents=True, exist_ok=True)
+    source_candidates = list(master_dir.glob("source.*"))
+    if source_candidates:
+        matching = [candidate for candidate in source_candidates if candidate.suffix.lower() == source.suffix.lower()]
+        if len(matching) == 1:
+            master_path = matching[0]
+        elif len(source_candidates) == 1:
+            master_path = source_candidates[0]
+        elif master_dir / "source.glb" in source_candidates:
+            master_path = master_dir / "source.glb"
+        else:
+            raise RuntimeError(f"Ambiguous immutable master in asset workspace: {asset_root}")
+    else:
+        master_path = master_dir / f"source{source.suffix.lower() or '.glb'}"
+        if source != master_path.resolve():
+            shutil.copy2(source, master_path)
+
+    return asset_root, master_path
+
+
+def register_asset_job_manifest(
+    asset_root: Path | str,
+    job_id: str,
+    source_path: Path | str,
+    master_path: Path | str,
+    artifacts: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Path:
+    """Persist a per-job artifact declaration without replacing the asset manifest."""
+    root = Path(asset_root).resolve(strict=True)
+    root.relative_to(_storage_root().resolve())
+    master = Path(master_path).resolve(strict=True)
+    master.relative_to(root)
+    source = Path(source_path).resolve(strict=True)
+    try:
+        source_ref = source.relative_to(root).as_posix()
+    except ValueError:
+        source_ref = master.relative_to(root).as_posix()
+
+    declared = {}
+    for name, artifact in (artifacts or {}).items():
+        path = Path(artifact["path"]).resolve(strict=True)
+        path.relative_to(root)
+        declared[name] = {
+            **{key: value for key, value in artifact.items() if key != "path"},
+            "path": path.relative_to(root).as_posix(),
+        }
+
+    metadata_dir = root / "metadata" / "jobs"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = metadata_dir / f"{_safe_name(job_id)}.json"
+    temporary_path = manifest_path.with_suffix(".tmp")
+    _write_json(
+        temporary_path,
+        {
+            "manifest_version": "1",
+            "job_id": job_id,
+            "asset_root": str(root),
+            "source_path": source_ref,
+            "master_path": master.relative_to(root).as_posix(),
+            "artifacts": declared,
+        },
+    )
+    temporary_path.replace(manifest_path)
+    return manifest_path
+
+
+def persist_manual_mesh_result(
+    job_id: str,
+    result: Dict[str, Any],
+    job_inputs: Dict[str, Any],
+    job_metadata: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Save a mesh-tool result as a derivative of its selected immutable source."""
+    source = Path(job_inputs["mesh_path"]).resolve(strict=True)
+    expected_source_hash = job_metadata.get("source_sha256")
+    source_hash = _sha256_file(source)
+    if expected_source_hash and source_hash != expected_source_hash:
+        raise RuntimeError("Selected source mesh changed while the mesh tool was running.")
+
+    output_path = next(
+        (result.get(key) for key in ("output_mesh_path", "mesh_path", "output_path", "file_path") if result.get(key)),
+        None,
+    )
+    if not output_path:
+        raise FileNotFoundError("Mesh tool completed without a declared output path.")
+    output = Path(output_path).resolve(strict=True)
+    if not output.is_file() or output == source:
+        raise RuntimeError("Mesh tool output must be a separate file from its source.")
+
+    asset_root, master_path = prepare_asset_job_workspace(source, job_id)
+    derivative = asset_root / "derived" / _safe_name(job_id) / f"result{output.suffix.lower()}"
+    derivative.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(output, derivative)
+    if _sha256_file(source) != source_hash:
+        derivative.unlink(missing_ok=True)
+        raise RuntimeError("Selected source mesh changed while saving the tool derivative.")
+
+    artifact = {
+        "status": "ready",
+        "path": str(derivative),
+        "format": output.suffix.lower().lstrip("."),
+        "source_path": str(source),
+    }
+    artifacts = dict(result.get("artifacts") or {})
+    artifacts["derived"] = artifact
+    artifacts["master"] = {
+        "status": "ready",
+        "path": str(master_path),
+        "format": master_path.suffix.lower().lstrip("."),
+    }
+    register_asset_job_manifest(asset_root, job_id, source, master_path, artifacts)
+
+    final_result = dict(result)
+    final_result["output_mesh_path"] = str(derivative)
+    final_result["asset_root"] = str(asset_root)
+    final_result["artifacts"] = artifacts
+    final_result["source_lineage"] = {
+        "source_path": str(source),
+        "master_path": str(master_path),
+        "source_sha256": source_hash,
+        "derivative_path": str(derivative),
+    }
+    return final_result
+
+
 def _resolve_target_polycount(value: Any) -> int:
     """Missing/nonpositive budgets mean Native/Raw; positive values opt into a derivative budget."""
     if value is None:
@@ -590,8 +737,66 @@ def _export_quad_obj(mesh: trimesh.Trimesh, quad_faces: Any) -> bytes:
     return "".join(lines).encode("utf-8")
 
 
+def compute_mesh_tangents(mesh: trimesh.Trimesh) -> Optional[np.ndarray]:
+    """Compute standard glTF 4-component tangent vectors (xyz + bitangent sign w)."""
+    if not hasattr(mesh.visual, "uv") or mesh.visual.uv is None:
+        return None
+    uvs = np.asarray(mesh.visual.uv, dtype=np.float32)
+    verts = np.asarray(mesh.vertices, dtype=np.float32)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    if len(uvs) != len(verts) or len(faces) == 0:
+        return None
+    normals = np.asarray(mesh.vertex_normals, dtype=np.float32)
+    v0, v1, v2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
+    uv0, uv1, uv2 = uvs[faces[:, 0]], uvs[faces[:, 1]], uvs[faces[:, 2]]
+    delta_pos1 = v1 - v0
+    delta_pos2 = v2 - v0
+    delta_uv1 = uv1 - uv0
+    delta_uv2 = uv2 - uv0
+    r = (delta_uv1[:, 0] * delta_uv2[:, 1] - delta_uv1[:, 1] * delta_uv2[:, 0])
+    valid = np.abs(r) > 1e-12
+    inv_r = np.zeros_like(r)
+    inv_r[valid] = 1.0 / r[valid]
+    face_tangents = (delta_pos1 * delta_uv2[:, 1:2] - delta_pos2 * delta_uv1[:, 1:2]) * inv_r[:, np.newaxis]
+    face_bitangents = (delta_pos2 * delta_uv1[:, 0:1] - delta_pos1 * delta_uv2[:, 0:1]) * inv_r[:, np.newaxis]
+    tangents = np.zeros_like(verts)
+    bitangents = np.zeros_like(verts)
+    for i in range(3):
+        np.add.at(tangents, faces[:, i], face_tangents)
+        np.add.at(bitangents, faces[:, i], face_bitangents)
+    dot_nt = np.sum(normals * tangents, axis=1, keepdims=True)
+    ortho_tangents = tangents - normals * dot_nt
+    norm_t = np.linalg.norm(ortho_tangents, axis=1, keepdims=True)
+    norm_t[norm_t < 1e-8] = 1.0
+    ortho_tangents /= norm_t
+    cross_nt = np.cross(normals, ortho_tangents)
+    dot_cb = np.sum(cross_nt * bitangents, axis=1)
+    w = np.where(dot_cb < 0.0, -1.0, 1.0).astype(np.float32)
+    result = np.zeros((len(verts), 4), dtype=np.float32)
+    result[:, :3] = ortho_tangents
+    result[:, 3] = w
+    return result
+
+
 def _export_glb(mesh: trimesh.Trimesh) -> bytes:
-    payload = mesh.export(file_type="glb")
+    if hasattr(mesh, "vertex_normals"):
+        _ = mesh.vertex_normals
+    tree_postprocessor = None
+    mat = getattr(getattr(mesh, "visual", None), "material", None)
+    has_normal_tex = mat is not None and getattr(mat, "normalTexture", None) is not None
+    if has_normal_tex and hasattr(mesh.visual, "uv") and mesh.visual.uv is not None:
+        tangents = compute_mesh_tangents(mesh)
+        if tangents is not None:
+            mesh.vertex_attributes["TANGENT"] = tangents
+            def _postprocess_tree(tree):
+                for m in tree.get("meshes", []):
+                    for p in m.get("primitives", []):
+                        attrs = p.get("attributes", {})
+                        if "_TANGENT" in attrs:
+                            attrs["TANGENT"] = attrs.pop("_TANGENT")
+            tree_postprocessor = _postprocess_tree
+
+    payload = mesh.export(file_type="glb", tree_postprocessor=tree_postprocessor)
     if isinstance(payload, bytes):
         return payload
     if isinstance(payload, bytearray):
@@ -1957,18 +2162,36 @@ def run_postprocess_job(
         _clear_gpu_cache()
 
     # Determine game-ready mesh for downstream production exports (GLB, FBX, LOD chain)
+    is_raw_native_passthrough = (
+        resolved_target_polycount == 0
+        and not auto_optimize
+        and not is_quad_requested
+        and texture_stage_info.get("status") != "completed"
+    )
+
     if texture_stage_info.get("status") == "completed" and texture_stage_info.get("textured_glb"):
         textured_glb_path = Path(texture_stage_info["textured_glb"])
         if textured_glb_path.exists():
             game_ready_mesh = load_mesh(textured_glb_path.read_bytes(), textured_glb_path.name)
         else:
             game_ready_mesh = uv_mesh
+    elif is_raw_native_passthrough:
+        logger.info(
+            "[RAW PASSTHROUGH] Native resolution preserved byte-for-byte from master/source.glb with optimal normals (no decimation)."
+        )
+        if master_path.exists() and str(master_path).lower().endswith(".glb") and master_path.stat().st_size > 0:
+            game_ready_glb_bytes = master_path.read_bytes()
+            game_ready_mesh = load_mesh(game_ready_glb_bytes, master_path.name)
+        else:
+            game_ready_mesh = apply_angle_weighted_normals(repaired if repaired is not None else mesh, crease_angle_deg=35.0)
+            game_ready_glb_bytes = _export_glb(game_ready_mesh)
     else:
         game_ready_mesh = uv_mesh
 
     _check_cancelled(cancel_checker)
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
-    game_ready_glb_bytes = _export_glb(game_ready_mesh)
+    if not is_raw_native_passthrough:
+        game_ready_glb_bytes = _export_glb(game_ready_mesh)
     _save_file(glb_path, game_ready_glb_bytes)
     game_ready["glb"] = str(glb_path)
 

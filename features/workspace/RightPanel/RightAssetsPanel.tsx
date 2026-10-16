@@ -1,15 +1,13 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { getApiClient } from '@/services/apiClient';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { ModelAsset, normalizeModelAsset } from '../types';
-import { useUploadProgress } from '@/hooks/useUploadProgress';
+import { useMeshAssetUpload } from '@/hooks/useMeshAssetUpload';
+import { MeshUploadStatus } from '../Panels/MeshUploadStatus';
 import { UploadDiagnosticModal } from '../Modals/UploadDiagnosticModal';
-import { validate3DFile } from '../lib/fileValidation';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { AlertCircle, Box, CheckIcon, ChevronLeft, ChevronRight, Copy, FilterIcon, FolderOpenIcon, GridIcon, LoaderCircle, MoreVerticalIcon, StarIcon, Trash2, ZoomInIcon } from '@hugeicons/core-free-icons';
+import { Box, CheckIcon, ChevronLeft, ChevronRight, Copy, FilterIcon, FolderOpenIcon, GridIcon, MoreVerticalIcon, StarIcon, Trash2, ZoomInIcon } from '@hugeicons/core-free-icons';
 export const RightAssetsPanel: React.FC = () => {
   const { 
     assets, 
@@ -19,7 +17,6 @@ export const RightAssetsPanel: React.FC = () => {
     setAssetFilter,
     duplicateAsset,
     deleteAsset,
-    addAsset,
     setActiveTool
   } = useWorkspace();
 
@@ -30,12 +27,11 @@ export const RightAssetsPanel: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const { progress: uploadProgress, readFileWithProgress, startUpload, updateProgress, finishUpload, failUpload } = useUploadProgress();
+  const { state: meshUploadState, upload: uploadMesh } = useMeshAssetUpload();
+  const uploadActive = meshUploadState.status === 'uploading' || meshUploadState.status === 'verifying';
   const [isDiagnosticOpen, setIsDiagnosticOpen] = useState(false);
   const [diagnosticFile, setDiagnosticFile] = useState<File | null>(null);
 
-  const ACCEPTED_MODEL_EXTS = ['glb', 'gltf', 'obj', 'fbx', 'stl', 'ply'];
   const ITEMS_PER_PAGE = 8;
 
   useEffect(() => {
@@ -67,92 +63,8 @@ export const RightAssetsPanel: React.FC = () => {
   }, [activeMenuAssetId]);
 
   const processModelFile = useCallback(async (file: File) => {
-    setUploadError(null);
-
-    // Validate file structure before upload (extension, MIME, size, magic bytes)
-    const validation = await validate3DFile(file, 'upload');
-    if (!validation.valid) {
-      setUploadError(validation.error || 'Invalid file');
-      return;
-    }
-
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    if (!ext || !ACCEPTED_MODEL_EXTS.includes(ext)) {
-      setUploadError('Invalid file type. Use GLB, GLTF, OBJ, FBX, STL, or PLY.');
-      return;
-    }
-
-    if (file.size === 0) {
-      setUploadError('File is empty.');
-      return;
-    }
-
-    // Show progress while uploading
-    startUpload(file.name, file.size);
-
-    try {
-      // Upload file to backend with real-time progress
-      const formData = new FormData();
-      formData.append('file', file);
-      const result = await getApiClient().post<{
-        url: string;
-        file_id?: string;
-        thumbnail_url?: string;
-        id?: string;
-        filename: string;
-        stored_filename?: string;
-        size: number;
-        mesh_stats?: { polygon_count: number; vertex_count: number };
-      }>('/api/v1/file-upload/mesh', formData, {
-        onUploadProgress: (progressEvent) => {
-          updateProgress(progressEvent.loaded);
-        },
-      });
-
-      finishUpload();
-
-      const downloadUrl = result?.url || (result?.file_id ? `/api/v1/file-upload/download/${result.file_id}` : '');
-      const thumbnailUrl = result?.thumbnail_url || '';
-      const meshStats = result?.mesh_stats as any;
-      const newAsset = normalizeModelAsset({
-        id: result?.file_id || result?.id || result?.stored_filename || `user-upload-${Date.now()}`,
-        fileId: result?.file_id,
-        name: file.name.replace(/\.[^/.]+$/, ""),
-        category: 'mesh',
-        meshType: 'custom',
-        thumbnail: thumbnailUrl,
-        polygon_count: meshStats?.polygon_count,
-        vertex_count: meshStats?.vertex_count,
-        faces: meshStats?.polygon_count || 0,
-        vertices: meshStats?.vertex_count || 0,
-        triangles: meshStats?.polygon_count || 0,
-        statsAvailable: !!(meshStats && ((meshStats.polygon_count ?? 0) > 0 || (meshStats.vertex_count ?? 0) > 0)),
-        source: { filename: result?.filename || file.name, subfolder: 'models', type: 'upload', viewUrl: downloadUrl },
-        topology: meshStats?.topology || 'Triangle',
-        format: (() => {
-          if (ext === 'obj') return 'OBJ';
-          if (ext === 'ply') return 'PLY';
-          if (ext === 'glb' || ext === 'gltf') return 'GLB';
-          if (ext === 'fbx') return 'FBX';
-          if (ext === 'stl') return 'STL';
-          return 'GLB';
-        })(),
-        dimensions: meshStats?.dimensions,
-        boundingBox: meshStats?.bounding_box,
-        objectCount: meshStats?.object_count,
-        componentCount: meshStats?.component_count,
-        materialCount: meshStats?.material_count,
-        meshDetails: meshStats?.mesh_details,
-        dateCreated: '',
-        tags: ['Custom', 'UserIcon-UploadIcon', 'Mesh']
-      });
-      addAsset(newAsset);
-      setCurrentAsset(newAsset);
-    } catch (err) {
-      failUpload();
-      setUploadError(err instanceof Error ? err.message : 'Failed to upload file.');
-    }
-  }, [addAsset, setCurrentAsset, startUpload, updateProgress, finishUpload, failUpload]);
+    await uploadMesh(file);
+  }, [uploadMesh]);
 
   const handleModelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -201,6 +113,7 @@ export const RightAssetsPanel: React.FC = () => {
         type="file"
         accept=".glb,.gltf,.obj,.fbx,.stl,.ply"
         className="hidden"
+        disabled={uploadActive}
         onChange={handleModelUpload}
       />
 
@@ -282,8 +195,9 @@ export const RightAssetsPanel: React.FC = () => {
           {/* Import Button */}
           <div className="flex items-center gap-1">
             <button
-              onClick={() => fileInputRef.current?.click()}
-              className="px-2.5 py-1 rounded-lg text-xs font-bold text-zinc-200 hover:text-primary hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] transition-colors cursor-pointer flex items-center gap-1"
+              onClick={() => !uploadActive && fileInputRef.current?.click()}
+              disabled={uploadActive}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold text-zinc-200 hover:text-primary hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] transition-colors cursor-pointer disabled:opacity-50 flex items-center gap-1"
             >
               <span>Import</span>
             </button>
@@ -293,55 +207,35 @@ export const RightAssetsPanel: React.FC = () => {
 
       {/* Main Asset GridIcon Body */}
       <div className="flex-1 overflow-y-auto p-2.5 space-y-2.5 no-scrollbar">
+        <MeshUploadStatus state={meshUploadState} />
         {/* UploadIcon 3D Model Card - Centered Dropzone */}
         <div
           id="btn-upload-3d-model-card"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`group relative w-full rounded-xl border border-dashed cursor-pointer p-3 flex flex-col items-center justify-center text-center transition-all ${
+          onClick={() => !uploadActive && fileInputRef.current?.click()}
+          aria-disabled={uploadActive}
+          className={`group relative w-full rounded-xl border border-dashed ${uploadActive ? 'cursor-wait opacity-60' : 'cursor-pointer'} p-3 flex flex-col items-center justify-center text-center transition-all ${
             isDragOver
               ? 'border-primary bg-primary/15 shadow-[0_0_16px_rgba(255,204,0,0.25)]'
               : 'border-white/[0.12] hover:border-primary/70 bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-1))]'
           }`}
         >
-          {uploadProgress.active ? (
-            <div className="flex flex-col items-center justify-center space-y-1.5 w-full px-2">
-              <HugeiconsIcon icon={LoaderCircle} size={16} className="w-5 h-5 animate-spin text-primary" />
-              <div className="w-full bg-[hsl(var(--surface-2))] rounded-full h-1.5 overflow-hidden">
-                <div
-                  className="bg-primary h-full rounded-full transition-all duration-200"
-                  style={{ width: `${uploadProgress.percent}%` }}
-                />
-              </div>
-              <span className="text-[10px] font-mono text-zinc-400">
-                {uploadProgress.percent}%
-              </span>
+          <div className="flex flex-col items-center justify-center">
+            <div className={`w-9 h-9 rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center transition-all mb-1.5 ${
+              isDragOver ? 'text-primary border-primary' : 'text-zinc-400 group-hover:text-primary group-hover:border-primary/40'
+            }`}>
+              <HugeiconsIcon icon={Box} size={16} className="w-4 h-4" />
             </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center">
-              <div className={`w-9 h-9 rounded-full bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center transition-all mb-1.5 ${
-                isDragOver ? 'text-primary border-primary' : 'text-zinc-400 group-hover:text-primary group-hover:border-primary/40'
-              }`}>
-                <HugeiconsIcon icon={Box} size={16} className="w-4 h-4" />
-              </div>
-              <span className="text-xs font-bold text-white leading-tight">
-                {isDragOver ? 'Drop 3D Model Here' : 'Import 3D Model'}
-              </span>
-              <span className="text-[10px] text-zinc-400 mt-0.5 font-medium">
-                GLB, GLTF, OBJ, FBX, STL, PLY
-              </span>
-            </div>
-          )}
-        </div>
-
-        {uploadError && (
-          <div className="flex items-center gap-1.5 text-[10px] text-rose-400 px-2 py-1.5 bg-rose-500/10 rounded-lg border border-rose-500/20">
-            <HugeiconsIcon icon={AlertCircle} size={16} className="w-3.5 h-3.5 flex-shrink-0" />
-            <span>{uploadError}</span>
+            <span className="text-xs font-bold text-white leading-tight">
+              {isDragOver ? 'Drop 3D Model Here' : 'Import 3D Model'}
+            </span>
+            <span className="text-[10px] text-zinc-400 mt-0.5 font-medium">
+              GLB, GLTF, OBJ, FBX, STL, PLY
+            </span>
           </div>
-        )}
+        </div>
 
         {filteredAssets.length === 0 ? (
           <div className="py-6 px-2 text-center text-zinc-400">

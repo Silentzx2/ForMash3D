@@ -733,22 +733,6 @@ if [ -f "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" ]; then
 fi
 ### Paint3D end ###
 
-cd "$PROJECT_ROOT/backend"
-
-echo ""
-echo "========================================"
-echo "Installing Project Dependencies"
-echo "========================================"
-### for this project (fastapi / uvicorn relevant etc.)  ###
-echo "[INFO] Installing main project requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] Main project requirements installed"
-else
-    echo "[ERROR] Failed to install main project requirements"
-    exit 1
-fi
-
 python "$PROJECT_ROOT/backend/scripts/verify_postprocess_runtime.py"
 
 # Keep TripoSG's declared requirements installed after the shared backend baseline.
@@ -760,6 +744,7 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
         exit 1
     fi
     echo "[SUCCESS] TripoSG model-specific dependency versions restored"
+fi
 
 echo ""
 echo "========================================"
@@ -779,17 +764,22 @@ fi
 echo ""
 echo "[INFO] Installing natten (required for sparse attention)..."
 # natten requires specific CUDA architecture and build workers
-# Users should set NATTEN_CUDA_ARCH and NATTEN_N_WORKERS in their environment
-else
-    echo "[INFO] Installing natten with CUDA_ARCH=$NATTEN_CUDA_ARCH and WORKERS=$NATTEN_N_WORKERS"
-    NATTEN_CUDA_ARCH="$NATTEN_CUDA_ARCH" NATTEN_N_WORKERS="$NATTEN_N_WORKERS" $UV_PIP install --find-links="$WHEEL_DIR" natten==0.21.0 --no-build-isolation
+NATTEN_PREBUILT_URL="https://github.com/LDYang694/Storages/releases/download/20260430/natten-0.21.0+torch2.6cu124-cp310-cp310-linux_x86_64.whl"
+if ! install_local_wheel "natten-*.whl" "natten"; then
+    echo "[INFO] Trying prebuilt natten wheel from $NATTEN_PREBUILT_URL..."
+    if ! $UV_PIP install "$NATTEN_PREBUILT_URL"; then
+        echo "[INFO] Prebuilt wheel failed, attempting source build with CUDA_ARCH=$NATTEN_CUDA_ARCH and WORKERS=$NATTEN_N_WORKERS"
+        NATTEN_CUDA_ARCH="$NATTEN_CUDA_ARCH" NATTEN_N_WORKERS="$NATTEN_N_WORKERS" $UV_PIP install --find-links="$WHEEL_DIR" natten==0.21.0 --no-build-isolation || true
+    fi
 fi
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] natten installed"
+if python3 -c "import natten" >/dev/null 2>&1; then
+    echo "[SUCCESS] natten installed and verified"
 else
-    echo "[ERROR] Failed to install natten"
-    exit 1
+    echo "[WARN] natten build failed or unavailable; proceeding (sparse attention fallback will be used if needed)"
 fi
+
+# Ensure numpy remains locked to 1.26.4 (MoGe dependency resolution can pull numpy 2.x which breaks torch/CUDA C-extensions)
+$UV_PIP install "numpy==1.26.4"
 
 echo ""
 echo "[INFO] Installing utils3d (required for voxel processing)..."
@@ -807,15 +797,7 @@ else
     exit 1
 fi
 
-echo "[INFO] Installing huggingface_hub for model downloading..."
-# Keep the final hub version inside both the backend and TripoSG ranges.
-$UV_PIP install --find-links="$WHEEL_DIR" "huggingface_hub>=0.25.0,<0.26.0"
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] huggingface_hub installed"
-else
-    echo "[ERROR] Failed to install huggingface_hub"
-    exit 1
-fi
+# huggingface_hub is managed centrally by backend/requirements.txt.
 
 # Older installer runs installed Gradio only for Unique3D's standalone demo.
 # ForMash3D uses FastAPI/Next.js and does not need these packages in its shared Hub 0.25 env.

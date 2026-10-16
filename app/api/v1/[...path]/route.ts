@@ -168,7 +168,7 @@ export async function POST(
     const contentType = request.headers.get('content-type') || '';
     
     let body: BodyInit | undefined;
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     
     // Forward authorization header if present
     const auth = request.headers.get('authorization');
@@ -176,10 +176,10 @@ export async function POST(
     
     const isMultipart = contentType.includes('multipart/form-data');
     if (isMultipart) {
-      const arrayBuf = await request.arrayBuffer();
-      body = Buffer.from(arrayBuf);
+      body = request.body || undefined;
       headers['content-type'] = contentType;
-      headers['content-length'] = arrayBuf.byteLength.toString();
+      const contentLength = request.headers.get('content-length');
+      if (contentLength) headers['content-length'] = contentLength;
     } else {
       body = await request.text();
       if (contentType) headers['content-type'] = contentType;
@@ -189,8 +189,8 @@ export async function POST(
       method: 'POST',
       headers,
       body: body || undefined,
-      duplex: isMultipart ? undefined : undefined,
-      signal: AbortSignal.timeout(600000), // 10 minutes for generation/uploads
+      duplex: isMultipart ? 'half' : undefined,
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(600000)]), // 10 minutes for generation/uploads
     });
     
     return await createProxyResponse(response, request);

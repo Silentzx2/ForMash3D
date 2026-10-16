@@ -8,7 +8,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { CameraViewPreset, ModelAsset, normalizeModelAsset } from '../types';
+import { CameraViewPreset, ModelAsset, normalizeModelAsset, uploadMeshAsset } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
 import { useAnimationStore, BoneItem, mapRetargetBones } from '@/stores/useAnimationStore';
@@ -16,6 +16,8 @@ import { loadModelInViewer, useViewerStore } from '@/stores/useViewerStore';
 import { useAppStore } from '@/stores/useAppStore';
 
 import { validate3DFile } from '../lib/fileValidation';
+import { requireUploadFileId } from '../lib/uploadResponse';
+import { getUploadPercent } from '../lib/uploadProgress';
 import { createPointCloudFromImage, disposePointCloud } from './ImagePointCloud';
 import { GenerationLoadingPreview } from './GenerationLoadingPreview';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -23,6 +25,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
+import { analyzeGeometryTelemetry, prepareMeshTangentsAndNormals } from '../lib/meshTelemetry';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
@@ -485,6 +488,7 @@ export interface EnvironmentPreset {
     fillLightIntensity: number;
     rimLightIntensity: number;
     exposure: number;
+    toneMapping?: 'neutral' | 'aces';
     lightTone: LightTone;
     backgroundColor: string;
     gridVisible: boolean;
@@ -519,6 +523,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.1,
       rimLightIntensity: 1.5,
       exposure: 1.05,
+      toneMapping: 'neutral',
       lightTone: 'studio',
       backgroundColor: 'transparent',
       gridVisible: false,
@@ -535,6 +540,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 0.7,
       rimLightIntensity: 2.2,
       exposure: 1.1,
+      toneMapping: 'aces',
       lightTone: 'cool',
       backgroundColor: '#14151a',
       gridVisible: false,
@@ -551,6 +557,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.2,
       rimLightIntensity: 1.2,
       exposure: 1.2,
+      toneMapping: 'neutral',
       lightTone: 'neutral',
       backgroundColor: '#32353f',
       gridVisible: false,
@@ -567,6 +574,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.2,
       rimLightIntensity: 1.8,
       exposure: 1.15,
+      toneMapping: 'aces',
       lightTone: 'warm',
       backgroundColor: 'transparent',
       gridVisible: false,
@@ -583,6 +591,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.3,
       rimLightIntensity: 1.2,
       exposure: 1.2,
+      toneMapping: 'neutral',
       lightTone: 'neutral',
       backgroundColor: '#e8e9ed',
       gridVisible: false,
@@ -729,6 +738,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     fillLightIntensity: 1.1,
     rimLightIntensity: 1.5,
     exposure: 1.05,
+    toneMapping: 'neutral' as 'neutral' | 'aces',
     lightTone: 'studio' as LightTone,
     backgroundColor: 'transparent',
     gridVisible: false,
@@ -748,7 +758,17 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [dropToastMessage, setDropToastMessage] = useState<string | null>(null);
   const [dropToastIsHtmlError, setDropToastIsHtmlError] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>('studio');
-  const [meshStats, setMeshStats] = useState<{ faces: number; vertices: number; triangles: number; dimensions?: { x: number; y: number; z: number } } | null>(null);
+  const [meshStats, setMeshStats] = useState<{
+    faces: number;
+    vertices: number;
+    triangles: number;
+    dimensions?: { x: number; y: number; z: number };
+    surfaceArea?: number;
+    volume?: number;
+    isManifold?: boolean;
+    nonManifoldEdges?: number;
+    uvCharts?: number;
+  } | null>(null);
   const [debugBlueprint, setDebugBlueprint] = useState(false);
   const physicsRuntimeRef = useRef<PhysicsRuntime | null>(null);
   const [physicsModeOpen, setPhysicsModeOpen] = useState(false);
@@ -765,6 +785,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const reflectionPeekTweenRef = useRef<number | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
   const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
+  const [meshUploadProgress, setMeshUploadProgress] = useState<{
+    isUploading: boolean;
+    percent: number;
+    filename: string;
+    isComplete: boolean;
+    error: string | null;
+  } | null>(null);
+
+  const hasUserOrbitedRef = useRef(false);
+  const isUserInteractingRef = useRef(false);
+  const lastFramedAssetIdRef = useRef<string | null>(null);
+  const currentLoadedSourceUrlRef = useRef<string | null>(null);
   const physicsViewerReady = Boolean(physicsStatus?.toLowerCase().includes('ready'));
 
   // Close menus on outside click or Escape key
@@ -842,6 +874,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
   const computeMeshStats = useCallback((object: THREE.Object3D) => {
     let f = 0, v = 0;
+
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         const geom = child.geometry;
@@ -876,8 +909,31 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       z: Number(size.z.toFixed(2)),
     };
 
-    setMeshStats({ faces, vertices: verts, triangles, dimensions });
-    useViewerStore.getState().setModelStats({ vertices: verts, triangles, dimensions });
+    // Dynamically calibrate key light shadow camera frustum to model scale for crisp contact shadows
+    if (keyLightRef.current) {
+      const maxDim = Math.max(size.x, size.y, size.z, 0.6);
+      keyLightRef.current.shadow.camera.left = -maxDim * 1.5;
+      keyLightRef.current.shadow.camera.right = maxDim * 1.5;
+      keyLightRef.current.shadow.camera.top = maxDim * 1.5;
+      keyLightRef.current.shadow.camera.bottom = -maxDim * 1.5;
+      keyLightRef.current.shadow.camera.near = 0.1;
+      keyLightRef.current.shadow.camera.far = Math.max(30, maxDim * 10);
+      keyLightRef.current.shadow.camera.updateProjectionMatrix();
+      keyLightRef.current.shadow.needsUpdate = true;
+    }
+
+    // Set fast basic stats immediately (< 1ms instant display, 0ms main-thread freeze)
+    setMeshStats({
+      faces,
+      vertices: verts,
+      triangles,
+      dimensions,
+    });
+    useViewerStore.getState().setModelStats({
+      vertices: verts,
+      triangles,
+      dimensions,
+    });
 
     const renderer = rendererRef.current;
     if (renderer) {
@@ -891,8 +947,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
 
     if (currentAsset) {
-      // Authoritative contract: final canonical artifact analysis is authoritative;
-      // viewer-side Three.js runtime inspection is validation / fallback only.
+      // Authoritative contract: immediate primary stats update
       const hasAuthoritative = currentAsset.statsAvailable && currentAsset.faces > 0;
       if (!hasAuthoritative) {
         updateAssetProperties(currentAsset.id, {
@@ -904,10 +959,71 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         });
       } else if (!currentAsset.dimensions) {
         updateAssetProperties(currentAsset.id, {
-          dimensions,
+          dimensions: currentAsset.dimensions || dimensions,
         });
       }
     }
+
+    // Defer comprehensive surface area, volume, and manifold telemetry to background idle loop
+    const scheduleIdle = typeof window !== 'undefined' && 'requestIdleCallback' in window
+      ? (window as any).requestIdleCallback
+      : (cb: () => void) => setTimeout(cb, 16);
+
+    scheduleIdle(() => {
+      let totalSurfaceArea = 0;
+      let totalVolume = 0;
+      let isManifold = true;
+      let totalNonManifoldEdges = 0;
+      let maxUvCharts = 0;
+
+      object.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          prepareMeshTangentsAndNormals(child);
+          const geom = child.geometry;
+          if (geom) {
+            const tele = analyzeGeometryTelemetry(geom);
+            totalSurfaceArea += tele.surfaceArea;
+            totalVolume += tele.volume;
+            if (!tele.isManifold) isManifold = false;
+            totalNonManifoldEdges += tele.nonManifoldEdges;
+            maxUvCharts = Math.max(maxUvCharts, tele.uvCharts);
+          }
+        }
+      });
+
+      const surfaceArea = Number(totalSurfaceArea.toFixed(4));
+      const volume = Number(totalVolume.toFixed(4));
+
+      setMeshStats((prev) => prev ? {
+        ...prev,
+        surfaceArea,
+        volume,
+        isManifold,
+        nonManifoldEdges: totalNonManifoldEdges,
+        uvCharts: maxUvCharts,
+      } : null);
+
+      useViewerStore.getState().setModelStats({
+        vertices: verts,
+        triangles,
+        dimensions,
+        surfaceArea,
+        volume,
+        isManifold,
+        nonManifoldEdges: totalNonManifoldEdges,
+        uvCharts: maxUvCharts,
+      });
+
+      if (currentAsset) {
+        updateAssetProperties(currentAsset.id, {
+          surfaceArea,
+          volume,
+          isManifold,
+          nonManifoldEdges: totalNonManifoldEdges,
+          uvCharts: maxUvCharts,
+        });
+      }
+    });
   }, [currentAsset, updateAssetProperties]);
 
   // Internal Three.js references
@@ -1537,7 +1653,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       scene.background = new THREE.Color(environmentSettings.backgroundColor);
     }
 
-    // 2. Update tone mapping exposure
+    // 2. Update tone mapping operator & exposure
+    renderer.toneMapping = environmentSettings.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.NeutralToneMapping;
     renderer.toneMappingExposure = environmentSettings.exposure;
 
     // 3. Update grid visibility
@@ -1621,7 +1740,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     // ponytail: cap pixel ratio at 1.25 for buttery smooth rendering FPS without GPU fill-rate throttling
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     renderer.info.autoReset = false;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMapping = environmentSettings.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.NeutralToneMapping;
     renderer.toneMappingExposure = environmentSettings.exposure;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -1653,6 +1774,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     controls.minDistance = 0.05;   // Decreased from 0.8 — allow much closer zoom in
     controls.zoomSpeed = 1.4;     // Increased scroll-wheel zoom speed
     controls.target.set(0, 0.4, 0);
+    controls.addEventListener('start', () => {
+      hasUserOrbitedRef.current = true;
+      isUserInteractingRef.current = true;
+    });
+    controls.addEventListener('end', () => {
+      isUserInteractingRef.current = false;
+    });
     controlsRef.current = controls;
 
     // 4b. Studio IBL Environment Map (360° PBR specular sheen and balanced indirect illumination)
@@ -2317,7 +2445,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         } else {
           idleFrames++;
         }
-        renderer.render(scene, camera);
+        try {
+          renderer.render(scene, camera);
+        } catch (renderError) {
+          console.warn('[MeshViewer] Frame render caught exception:', renderError);
+        }
       }
     };
     renderer.setAnimationLoop(animate);
@@ -2519,12 +2651,30 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   // Load the real selected asset into the persistent viewport.
   useEffect(() => {
     if (!sceneRef.current || !currentMeshGroupRef.current) return;
+    const sourceUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl;
+    // Fast path: if the exact same model source is already rendered, do not purge and re-parse!
+    if (
+      sourceUrl &&
+      currentLoadedSourceUrlRef.current === sourceUrl &&
+      currentMeshGroupRef.current.children.length > 0
+    ) {
+      setLoadedAssetId(currentAsset?.id ?? null);
+      setIsLoading(false);
+      return;
+    }
+    currentLoadedSourceUrlRef.current = sourceUrl || null;
     useAnimationStore.getState().setLoadedSkeletonBoneNames(null);
     const group = currentMeshGroupRef.current;
     while (group.children.length > 0) {
       const obj = group.children[0];
       group.remove(obj);
       obj.traverse((child) => {
+        if (child.userData?.isWireframeOverlay) {
+          if (child instanceof THREE.Mesh && child.material) {
+            disposeMaterial(child.material);
+          }
+          return;
+        }
         if (child instanceof THREE.Mesh) {
           child.geometry?.dispose();
           const orig = child.userData?.originalMaterial;
@@ -2629,7 +2779,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 }
               }
             });
-            frameCamera(gltf.scene);
+            const shouldResetAngle = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(gltf.scene, { forceResetAngle: shouldResetAngle });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(gltf.scene);
 
             // If GLTF contains animation clips, start AnimationMixer
@@ -2662,15 +2814,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               skeletonHelperRef.current = helper;
             }
 
-            // Asynchronously compile shaders and upload GPU buffers to eliminate render freeze
-            if (rendererRef.current && cameraRef.current) {
-              try {
-                await rendererRef.current.compileAsync(gltf.scene, cameraRef.current);
-              } catch {}
-            }
             if (!cancelled) {
               setLoadedAssetId(currentAsset.id);
               setModelLoadVersion((version) => version + 1);
+              setIsLoading(false);
+            }
+
+            // Asynchronously pre-compile shaders in background without blocking immediate display
+            if (rendererRef.current && cameraRef.current) {
+              rendererRef.current.compileAsync(gltf.scene, cameraRef.current).catch(() => {});
             }
           } else {
             gltf.scene.traverse((child) => {
@@ -2708,7 +2860,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             }
           });
           group.add(fbx);
-          frameCamera(fbx);
+          const shouldResetAngleFbx = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+          frameCamera(fbx, { forceResetAngle: shouldResetAngleFbx });
+          lastFramedAssetIdRef.current = currentAsset.id;
           computeMeshStats(fbx);
           if (fbx.animations.length) {
             const mixer = new THREE.AnimationMixer(fbx);
@@ -2766,7 +2920,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               }
             });
             group.add(object);
-            frameCamera(object);
+            const shouldResetAngleObj = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(object, { forceResetAngle: shouldResetAngleObj });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(object);
             if (!cancelled) {
               setLoadedAssetId(currentAsset.id);
@@ -2805,7 +2961,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           mesh.receiveShadow = true;
           if (!cancelled) {
             group.add(mesh);
-            frameCamera(mesh);
+            const shouldResetAnglePly = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(mesh, { forceResetAngle: shouldResetAnglePly });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
             setLoadedAssetId(currentAsset.id);
             setModelLoadVersion((version) => version + 1);
@@ -2831,7 +2989,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           mesh.receiveShadow = true;
           if (!cancelled) {
             group.add(mesh);
-            frameCamera(mesh);
+            const shouldResetAngleStl = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(mesh, { forceResetAngle: shouldResetAngleStl });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
             setLoadedAssetId(currentAsset.id);
             setModelLoadVersion((version) => version + 1);
@@ -2887,139 +3047,191 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     if (!currentMeshGroupRef.current) return;
     const group = currentMeshGroupRef.current;
 
-    group.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        if (!child.userData.originalMaterial) {
-          child.userData.originalMaterial = child.material;
-        }
+    try {
+      group.traverse((child) => {
+        // Essential guard: skip wireframe overlays to prevent recursive traverse and geometry/material corruption
+        if (child.userData?.isWireframeOverlay) return;
 
-        const orig = child.userData.originalMaterial;
-        if (!child.userData.cachedShadingMaterials) {
-          child.userData.cachedShadingMaterials = {};
-        }
-        const cache = child.userData.cachedShadingMaterials;
-        const isWire = Boolean(showWireframe) || shadingMode === 'wireframe';
+        if (child instanceof THREE.Mesh) {
+          if (!child.userData.originalMaterial) {
+            child.userData.originalMaterial = child.material;
+          }
 
-        const mode = shadingMode?.toLowerCase?.() || 'default';
-        let targetMat: THREE.Material | THREE.Material[] = orig;
+          const orig = child.userData.originalMaterial;
+          if (!child.userData.cachedShadingMaterials) {
+            child.userData.cachedShadingMaterials = {};
+          }
+          const cache = child.userData.cachedShadingMaterials;
+          const isWireOnly = shadingMode === 'wireframe';
+          const mode = shadingMode?.toLowerCase?.() || 'default';
+          let targetMat: THREE.Material | THREE.Material[] = orig;
 
-        switch (mode) {
-          case 'wireframe':
-            if (!cache.wireframe) {
-              cache.wireframe = new THREE.MeshStandardMaterial({
-                color: 0x00ff88,
-                wireframe: true,
-                roughness: 0.6,
-                metalness: 0.1,
-              });
-            }
-            targetMat = cache.wireframe;
-            break;
+          switch (mode) {
+            case 'wireframe':
+              if (!cache.wireframe) {
+                cache.wireframe = new THREE.MeshStandardMaterial({
+                  color: 0x00ff88,
+                  wireframe: true,
+                  roughness: 0.6,
+                  metalness: 0.1,
+                });
+              }
+              targetMat = cache.wireframe;
+              break;
 
-          case 'clay':
-            if (!cache.clay) {
-              cache.clay = new THREE.MeshStandardMaterial({
-                color: 0xd6d9df,
-                roughness: 0.75,
-                metalness: 0.05,
-              });
-            }
-            cache.clay.wireframe = isWire;
-            targetMat = cache.clay;
-            break;
+            case 'clay':
+              if (!cache.clay) {
+                cache.clay = new THREE.MeshPhysicalMaterial({
+                  color: 0xcdc7c2,
+                  roughness: 0.68,
+                  metalness: 0.02,
+                  clearcoat: 0.15,
+                  clearcoatRoughness: 0.45,
+                });
+              }
+              cache.clay.wireframe = false;
+              targetMat = cache.clay;
+              break;
 
-          case 'matcap':
-          case 'matcap-ceramic':
-            if (!cache.ceramic) {
-              cache.ceramic = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                roughness: 0.12,
-                metalness: 0.05,
-              });
-            }
-            cache.ceramic.wireframe = isWire;
-            targetMat = cache.ceramic;
-            break;
+            case 'matcap':
+            case 'matcap-ceramic':
+              if (!cache.ceramic) {
+                cache.ceramic = new THREE.MeshPhysicalMaterial({
+                  color: 0xfcfcfc,
+                  roughness: 0.28,
+                  metalness: 0.02,
+                  clearcoat: 0.85,
+                  clearcoatRoughness: 0.12,
+                });
+              }
+              cache.ceramic.wireframe = false;
+              targetMat = cache.ceramic;
+              break;
 
-          case 'metallic':
-          case 'matcap-chrome':
-            if (!cache.chrome) {
-              cache.chrome = new THREE.MeshStandardMaterial({
-                color: 0xf0f3f8,
-                roughness: 0.04,
-                metalness: 0.95,
-              });
-            }
-            cache.chrome.wireframe = isWire;
-            targetMat = cache.chrome;
-            break;
+            case 'metallic':
+            case 'matcap-chrome':
+              if (!cache.chrome) {
+                cache.chrome = new THREE.MeshPhysicalMaterial({
+                  color: 0xf8f9fa,
+                  roughness: 0.03,
+                  metalness: 1.0,
+                  clearcoat: 0.5,
+                });
+              }
+              cache.chrome.wireframe = false;
+              targetMat = cache.chrome;
+              break;
 
-          case 'gold':
-          case 'matcap-gold':
-            if (!cache.gold) {
-              cache.gold = new THREE.MeshStandardMaterial({
-                color: 0xf9cf00,
-                roughness: 0.22,
-                metalness: 0.88,
-              });
-            }
-            cache.gold.wireframe = isWire;
-            targetMat = cache.gold;
-            break;
+            case 'gold':
+            case 'matcap-gold':
+              if (!cache.gold) {
+                cache.gold = new THREE.MeshPhysicalMaterial({
+                  color: 0xf5c342,
+                  roughness: 0.18,
+                  metalness: 0.95,
+                  clearcoat: 0.35,
+                });
+              }
+              cache.gold.wireframe = false;
+              targetMat = cache.gold;
+              break;
 
-          case 'normal':
-          case 'normals':
-          case 'matcap-normal':
-            if (!cache.normals) {
-              cache.normals = new THREE.MeshNormalMaterial();
-            }
-            cache.normals.wireframe = isWire;
-            targetMat = cache.normals;
-            break;
+            case 'normal':
+            case 'normals':
+            case 'matcap-normal':
+              if (!cache.normals) {
+                cache.normals = new THREE.MeshNormalMaterial();
+              }
+              cache.normals.wireframe = false;
+              targetMat = cache.normals;
+              break;
 
-          case 'xray':
-            if (!cache.xray) {
-              cache.xray = new THREE.MeshBasicMaterial({
-                color: 0x3b82f6,
+            case 'xray':
+              if (!cache.xray) {
+                cache.xray = new THREE.MeshBasicMaterial({
+                  color: 0x3b82f6,
+                  wireframe: true,
+                  transparent: true,
+                  opacity: 0.75,
+                });
+              }
+              targetMat = cache.xray;
+              break;
+
+            case 'matcap-turquoise':
+              if (!cache.turquoise) {
+                cache.turquoise = new THREE.MeshStandardMaterial({
+                  color: 0x06b6d4,
+                  roughness: 0.3,
+                  metalness: 0.4,
+                });
+              }
+              cache.turquoise.wireframe = false;
+              targetMat = cache.turquoise;
+              break;
+
+            case 'default':
+            case 'textured':
+            default:
+              targetMat = orig;
+              if (Array.isArray(targetMat)) {
+                targetMat.forEach((m) => {
+                  if ('wireframe' in m) {
+                    (m as THREE.MeshStandardMaterial).wireframe = false;
+                  }
+                });
+              } else if (targetMat && 'wireframe' in targetMat) {
+                (targetMat as THREE.MeshStandardMaterial).wireframe = false;
+              }
+              break;
+          }
+
+          child.material = targetMat;
+
+          // Pro Studio Wireframe on Shaded:
+          // Renders crisp topology wire lines cleanly overlaid onto the solid lit geometry
+          let wireOverlay = child.children.find((c) => c.userData?.isWireframeOverlay) as THREE.Mesh | undefined;
+          if (showWireframe && !isWireOnly) {
+            if (!wireOverlay) {
+              const wireMat = new THREE.MeshBasicMaterial({
+                color: 0x00f5a0,
                 wireframe: true,
                 transparent: true,
-                opacity: 0.75,
+                opacity: 0.55,
+                depthTest: true,
+                polygonOffset: true,
+                polygonOffsetFactor: -1,
+                polygonOffsetUnits: -1,
               });
-            }
-            targetMat = cache.xray;
-            break;
-
-          case 'matcap-turquoise':
-            if (!cache.turquoise) {
-              cache.turquoise = new THREE.MeshStandardMaterial({
-                color: 0x06b6d4,
-                roughness: 0.3,
-                metalness: 0.4,
-              });
-            }
-            cache.turquoise.wireframe = isWire;
-            targetMat = cache.turquoise;
-            break;
-
-          case 'default':
-          case 'textured':
-          default:
-            targetMat = orig;
-            if (Array.isArray(targetMat)) {
-              targetMat.forEach((m) => {
-                if ('wireframe' in m) {
-                  (m as THREE.MeshStandardMaterial).wireframe = isWire;
+              if (child instanceof THREE.SkinnedMesh) {
+                const skinnedOverlay = new THREE.SkinnedMesh(child.geometry, wireMat);
+                if (child.skeleton) {
+                  skinnedOverlay.bind(child.skeleton, child.bindMatrix);
                 }
-              });
-            } else if (targetMat && 'wireframe' in targetMat) {
-              (targetMat as THREE.MeshStandardMaterial).wireframe = isWire;
+                wireOverlay = skinnedOverlay;
+              } else {
+                wireOverlay = new THREE.Mesh(child.geometry, wireMat);
+              }
+              wireOverlay.userData.isWireframeOverlay = true;
+              wireOverlay.renderOrder = (child.renderOrder || 0) + 1;
+              child.add(wireOverlay);
+            } else {
+              if (wireOverlay.geometry !== child.geometry) {
+                wireOverlay.geometry = child.geometry;
+                if (child instanceof THREE.SkinnedMesh && wireOverlay instanceof THREE.SkinnedMesh && child.skeleton) {
+                  wireOverlay.bind(child.skeleton, child.bindMatrix);
+                }
+              }
             }
-            break;
+            wireOverlay.visible = true;
+          } else if (wireOverlay) {
+            wireOverlay.visible = false;
+          }
         }
-
-        child.material = targetMat;
-      }
-    });
+      });
+    } catch (err) {
+      console.warn('[MeshViewer] Shading switcher encountered an issue:', err);
+    }
   }, [shadingMode, showWireframe]);
 
   // Synchronize material PBR properties (roughness, metalness, normalScale) in real time
@@ -3256,6 +3468,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   }, []);
 
   const resetCamera = useCallback(() => {
+    hasUserOrbitedRef.current = false;
     applyCameraPreset('perspective');
   }, [applyCameraPreset]);
 
@@ -3295,13 +3508,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   }, []);
 
-  const frameCamera = useCallback((object: THREE.Object3D) => {
+  const frameCamera = useCallback((object: THREE.Object3D, options?: { forceResetAngle?: boolean }) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
-
-    controls.target.set(0, 0, 0);
-    controls.update();
 
     const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
@@ -3325,11 +3535,17 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       Math.min(controls.maxDistance * 0.9, distance)
     );
 
-    const dir = new THREE.Vector3(1, 0.4, 1).normalize();
+    // If user has manually orbited or existing camera has a valid viewing direction, preserve that angle!
+    const currentDir = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const hasAngle = currentDir.lengthSq() > 0.001;
+    const dir = (hasAngle && !options?.forceResetAngle)
+      ? currentDir.normalize()
+      : new THREE.Vector3(1, 0.4, 1).normalize();
+
     camera.position.copy(center).add(dir.multiplyScalar(clampedDistance));
 
     camera.near = Math.max(0.01, clampedDistance / 100);
-    camera.far = clampedDistance * 100;
+    camera.far = Math.max(100, clampedDistance * 100);
     camera.updateProjectionMatrix();
 
     controls.target.copy(center);
@@ -3409,10 +3625,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   };
 
   // Sync external camera preset and viewport snapshot triggers
+  const lastAnimCameraPresetRef = useRef<string | null>(null);
   useEffect(() => {
-    if (animCameraPreset) {
+    if (animCameraPreset && lastAnimCameraPresetRef.current !== null && lastAnimCameraPresetRef.current !== animCameraPreset) {
       applyCameraPreset(animCameraPreset);
     }
+    lastAnimCameraPresetRef.current = animCameraPreset;
   }, [animCameraPreset, applyCameraPreset]);
 
   useEffect(() => {
@@ -3494,28 +3712,27 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       const ext = file.name.split('.').pop()?.toUpperCase() || '';
-      const ALLOWED_EXTENSIONS = ['GLB', 'GLTF', 'OBJ', 'PLY', 'STL'];
+      const ALLOWED_EXTENSIONS = ['GLB', 'GLTF', 'OBJ', 'PLY', 'STL', 'FBX'];
       const IMAGE_EXTENSIONS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'BMP', 'TIFF', 'AVIF'];
 
       if (IMAGE_EXTENSIONS.includes(ext) || file.type.startsWith('image/')) {
-        const previewUrl = URL.createObjectURL(file);
         const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
 
         setDropToastMessage(`Uploading "${file.name}" as 3D reference image...`);
 
-        const formData = new FormData();
-        formData.append('file', file);
-        getApiClient().post<{ file_id: string; filename?: string }>(
-          '/api/v1/file-upload/image',
-          formData,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
-        ).then(res => {
-          const serverUrl = res?.file_id ? `/api/v1/file-upload/download/${res.file_id}` : previewUrl;
+        getApiClient().uploadImageFile(file, (loadedBytes, totalBytes) => {
+          const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
+          if (percent !== null) {
+            setDropToastMessage(`Uploading "${file.name}" (${percent}%)...`);
+          }
+        }).then(res => {
+          const fileId = requireUploadFileId(res?.file_id, 'image');
+          const serverUrl = `/api/v1/file-upload/download/${encodeURIComponent(fileId)}`;
           setGenerationSettings(prev => ({
             ...prev,
             mode: 'image-to-3d',
             image: serverUrl,
-            imageFileId: res?.file_id || '',
+            imageFileId: fileId,
             prompt: cleanPrompt,
             imageName: cleanPrompt,
           }));
@@ -3523,17 +3740,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           setDropToastMessage(`Reference image "${file.name}" ready for 3D generation`);
           setTimeout(() => setDropToastMessage(null), 3000);
         }).catch(err => {
-          console.warn('Backend image upload fallback to local preview:', err);
-          setGenerationSettings(prev => ({
-            ...prev,
-            mode: 'image-to-3d',
-            image: previewUrl,
-            prompt: cleanPrompt,
-            imageName: cleanPrompt,
-          }));
-          navigateToTool('model');
-          setDropToastMessage(`Set "${file.name}" as reference image`);
-          setTimeout(() => setDropToastMessage(null), 3000);
+          console.error('Backend image upload failed:', err);
+          setDropToastMessage(err instanceof Error ? err.message : `Failed to upload reference image "${file.name}"`);
+          setTimeout(() => setDropToastMessage(null), 3500);
         });
         return;
       }
@@ -3544,21 +3753,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         return;
       }
 
-      // Validate file structure before creating blob URL
-      const validation = await validate3DFile(file, 'preview');
-      if (!validation.valid) {
-        setDropToastMessage(validation.error || 'Invalid file');
-        setTimeout(() => setDropToastMessage(null), 3500);
-        return;
-      }
-
-      const cleanName = file.name.replace(/\.[^/.]+$/, "");
-      const localBlobUrl = URL.createObjectURL(file);
-
-      // Create immediate preview asset
-      const tempId = `dropped-${Date.now()}`;
-      const tempAsset: ModelAsset = {
-        id: tempId,
+      // 1. Immediately create optimistic local preview URL for instant 3D viewport rendering
+      const localUrl = URL.createObjectURL(file);
+      const optimisticId = `upload_${Date.now()}`;
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      const optimisticAsset: ModelAsset = {
+        id: optimisticId,
+        fileId: optimisticId,
         name: cleanName,
         category: 'mesh',
         meshType: 'custom',
@@ -3567,60 +3768,81 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         vertices: 0,
         triangles: 0,
         statsAvailable: false,
-        topology: 'Quad',
-        format: ext === 'OBJ' ? 'OBJ' : ext === 'PLY' ? 'PLY' : ext === 'STL' ? 'STL' : 'GLB',
+        format: ext as any,
+        fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
+        source: {
+          filename: file.name,
+          subfolder: 'uploads',
+          type: 'upload',
+          viewUrl: localUrl,
+          localUrl: localUrl,
+          fileId: optimisticId,
+        },
+        topology: 'Triangle',
         dateCreated: new Date().toISOString().split('T')[0],
-        tags: ['Local Import', '3D Model', ext],
-        source: { filename: file.name, subfolder: 'models', type: 'upload', viewUrl: localBlobUrl }
+        tags: ['Uploaded', ext],
       };
 
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-      }
-      blobUrlRef.current = localBlobUrl;
+      // Reset camera orbit lock for the brand-new model so it frames automatically once
+      hasUserOrbitedRef.current = false;
+      lastFramedAssetIdRef.current = null;
+      addAsset(optimisticAsset);
+      setCurrentAsset(optimisticAsset);
 
-      // Load immediately into viewport for smooth UX
-      addAsset(tempAsset);
-      setCurrentAsset(tempAsset);
-      setDropToastMessage(`Saving "${cleanName}" to backend storage...`);
+      // 2. Open live upload progress bar UI
+      setMeshUploadProgress({
+        isUploading: true,
+        percent: 0,
+        filename: file.name,
+        isComplete: false,
+        error: null,
+      });
 
-      // Persist to backend storage (/backend/storage/models)
-      try {
-        const uploadFormData = new FormData();
-        uploadFormData.append('file', file);
-        const uploadRes = await getApiClient().post<{
-          url: string;
-          file_id?: string;
-          id?: string;
-          filename: string;
-          stored_filename?: string;
-          size: number;
-        }>('/api/v1/file-upload/mesh', uploadFormData);
+      // 3. Upload to backend in background while user immediately interacts with model
+      uploadMeshAsset(file, {
+        onProgress: (loadedBytes, totalBytes) => {
+          const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
+          if (percent !== null) {
+            setMeshUploadProgress((prev) => prev ? { ...prev, percent } : null);
+          }
+        },
+      }).then((canonicalAsset) => {
+        // Complete progress
+        setMeshUploadProgress((prev) => prev ? { ...prev, percent: 100, isComplete: true } : null);
 
-        const serverUrl = uploadRes?.url || (uploadRes?.file_id ? `/api/v1/file-upload/download/${uploadRes.file_id}` : uploadRes?.id ? `/api/v1/file-upload/download/${uploadRes.id}` : '');
-        const finalAsset: ModelAsset = {
-          ...tempAsset,
-          id: uploadRes?.file_id || uploadRes?.stored_filename || uploadRes?.id || tempId,
-          fileId: uploadRes?.file_id,
-          tags: ['Saved to Storage', '3D Model', ext],
+        // Retain localUrl so the 3D scene does not re-fetch from backend or flicker
+        const mergedAsset: ModelAsset = {
+          ...canonicalAsset,
           source: {
-            filename: uploadRes?.stored_filename || file.name,
-            subfolder: 'models',
-            type: 'upload',
-            viewUrl: serverUrl,
-            fileId: uploadRes?.file_id,
+            filename: canonicalAsset.source?.filename || file.name,
+            subfolder: canonicalAsset.source?.subfolder || 'uploads',
+            type: canonicalAsset.source?.type || 'upload',
+            viewUrl: canonicalAsset.source?.viewUrl,
+            fileId: canonicalAsset.fileId || canonicalAsset.id,
+            localUrl: localUrl,
           },
         };
-        // Update temp asset in place to avoid duplicate cards in the workspace
-        updateAssetProperties(tempId, finalAsset);
-        setCurrentAsset(finalAsset);
-        setDropToastMessage(`Saved to storage and loaded "${cleanName}"`);
-        setTimeout(() => setDropToastMessage(null), 3000);
-      } catch (uploadErr) {
-        console.warn('Backend storage upload failed, keeping local preview:', uploadErr);
-        setDropToastMessage(`Loaded "${cleanName}" (Local preview)`);
-        setTimeout(() => setDropToastMessage(null), 3500);
-      }
+
+        lastFramedAssetIdRef.current = canonicalAsset.id;
+        addAsset(mergedAsset);
+        setCurrentAsset(mergedAsset);
+
+        // Auto-dismiss progress overlay after 2.2 seconds
+        setTimeout(() => {
+          setMeshUploadProgress(null);
+        }, 2200);
+      }).catch((uploadErr) => {
+        console.error('Backend mesh upload failed:', uploadErr);
+        const errMsg = uploadErr instanceof Error ? uploadErr.message : `Failed to upload "${file.name}"`;
+        setMeshUploadProgress((prev) => prev ? {
+          ...prev,
+          isUploading: false,
+          error: errMsg,
+        } : null);
+        setTimeout(() => {
+          setMeshUploadProgress(null);
+        }, 4000);
+      });
     }
   };
 
@@ -3769,6 +3991,70 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         </div>
       )}
 
+      {/* Mesh Upload & Cloud Save Live Progress Overlay */}
+      {meshUploadProgress && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 py-3 rounded-2xl bg-[#14151ae6] backdrop-blur-xl border border-primary/40 shadow-2xl flex flex-col gap-2 text-xs text-white animate-in fade-in slide-in-from-top-3 duration-300 pointer-events-auto">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`p-1.5 rounded-lg flex items-center justify-center ${
+                meshUploadProgress.error
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : meshUploadProgress.isComplete
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-primary/20 text-primary'
+              }`}>
+                {meshUploadProgress.error ? (
+                  <HugeiconsIcon icon={Cancel01Icon} size={16} />
+                ) : meshUploadProgress.isComplete ? (
+                  <HugeiconsIcon icon={CheckIcon} size={16} />
+                ) : (
+                  <HugeiconsIcon icon={CloudUpload} size={16} className="animate-pulse" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-white truncate max-w-[210px]">
+                  {meshUploadProgress.filename}
+                </p>
+                <p className="text-[10px] text-zinc-400">
+                  {meshUploadProgress.error
+                    ? meshUploadProgress.error
+                    : meshUploadProgress.isComplete
+                    ? '100% saved in cloud storage'
+                    : 'Preview loaded · Saving to server...'}
+                </p>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <span className={`text-xs font-mono font-bold ${
+                meshUploadProgress.error
+                  ? 'text-rose-400'
+                  : meshUploadProgress.isComplete
+                  ? 'text-emerald-400'
+                  : 'text-primary'
+              }`}>
+                {meshUploadProgress.error
+                  ? 'Failed'
+                  : `${Math.round(meshUploadProgress.percent)}%`}
+              </span>
+            </div>
+          </div>
+
+          {/* Animated Progress Bar */}
+          <div className="w-full h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-200 ease-out ${
+                meshUploadProgress.error
+                  ? 'bg-rose-500'
+                  : meshUploadProgress.isComplete
+                  ? 'bg-emerald-400'
+                  : 'bg-gradient-to-r from-cyan-400 to-primary'
+              }`}
+              style={{ width: `${Math.max(5, Math.min(100, meshUploadProgress.percent))}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Drop Notification Toast */}
       {dropToastMessage && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-[#141414] border border-primary/50 shadow-2xl flex items-center gap-2 text-xs font-semibold text-white animate-in fade-in slide-in-from-top-2 duration-300 max-w-md">
@@ -3817,7 +4103,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             </div>
             <span className="text-xs font-bold text-zinc-100 tracking-wide block mb-1">
               {loadProgress && loadProgress.percent === 100
-                ? 'Processing & GPU UploadIcon...'
+                ? 'Processing & GPU Upload...'
                 : 'Loading 3D Model...'}
             </span>
             {loadProgress && loadProgress.total > 0 ? (
@@ -4421,6 +4707,36 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 </div>
               </div>
 
+              {/* Tone Mapping Pipeline */}
+              <div className="space-y-1.5 border-t border-white/[0.06] pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Tone Mapping</span>
+                  <span className="text-[9px] text-primary font-mono font-bold uppercase">{environmentSettings.toneMapping || 'neutral'}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => patchEnv({ toneMapping: 'neutral' })}
+                    className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+                      environmentSettings.toneMapping !== 'aces'
+                        ? 'bg-primary text-black font-extrabold shadow-sm'
+                        : 'bg-[hsl(var(--surface-2))] text-zinc-400 border border-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    Khronos Neutral
+                  </button>
+                  <button
+                    onClick={() => patchEnv({ toneMapping: 'aces' })}
+                    className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+                      environmentSettings.toneMapping === 'aces'
+                        ? 'bg-primary text-black font-extrabold shadow-sm'
+                        : 'bg-[hsl(var(--surface-2))] text-zinc-400 border border-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    ACES Filmic
+                  </button>
+                </div>
+              </div>
+
               {/* Stage & Floor Section */}
               <div className="space-y-2 border-t border-white/[0.06] pt-2">
                 <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Stage & Floor</span>
@@ -4472,6 +4788,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     fillLightIntensity: 1.1,
                     rimLightIntensity: 1.5,
                     exposure: 1.05,
+                    toneMapping: 'neutral',
                     lightTone: 'studio',
                     backgroundColor: 'transparent',
                     gridVisible: false,
@@ -4779,7 +5096,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   <div className={`w-2.5 h-2.5 rounded-full ${
                     shadingMode === 'textured' ? 'bg-primary' :
                     shadingMode === 'clay' ? 'bg-zinc-400' :
-                    shadingMode === 'wireframe' ? 'bg-[hsl(var(--neon-green))]' : 'bg-sky-400'
+                    shadingMode === 'wireframe' ? 'bg-[hsl(var(--neon-green))]' :
+                    shadingMode === 'matcap-gold' ? 'bg-amber-400' :
+                    shadingMode === 'matcap-ceramic' ? 'bg-white' :
+                    shadingMode === 'matcap-chrome' ? 'bg-zinc-300' : 'bg-sky-400'
                   }`} />
                   <span className="capitalize">{shadingMode.replace('matcap-', '')}</span>
                   <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 text-zinc-400 transition-transform ${shadingMenuOpen ? 'rotate-180 text-primary' : ''}`} />
@@ -4793,10 +5113,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     {[
                       { id: 'textured', label: 'PBR Textured', dot: 'bg-primary' },
                       { id: 'clay', label: 'Matte Clay', dot: 'bg-zinc-400' },
-                      { id: 'wireframe', label: 'Topology Wireframe', dot: 'bg-[hsl(var(--neon-green))]' },
-                      { id: 'matcap-normal', label: 'Tangent Normals', dot: 'bg-sky-400' },
+                      { id: 'matcap-gold', label: 'Metallic Gold', dot: 'bg-amber-400' },
+                      { id: 'matcap-chrome', label: 'Chrome Mirror', dot: 'bg-zinc-300' },
                       { id: 'matcap-ceramic', label: 'Ceramic Gloss', dot: 'bg-white' },
-                      { id: 'matcap-chrome', label: 'Chrome Metallic', dot: 'bg-zinc-300' },
+                      { id: 'matcap-normal', label: 'Tangent Normals', dot: 'bg-sky-400' },
+                      { id: 'wireframe', label: 'Topology Wireframe', dot: 'bg-[hsl(var(--neon-green))]' },
                     ].map((s) => (
                       <button
                         key={s.id}
