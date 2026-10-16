@@ -281,6 +281,21 @@ export interface FileUploadResponse {
   upload_time: string;
   expires_at: string;
   url?: string;
+  thumbnail_url?: string;
+  mesh_stats?: {
+    polygon_count?: number;
+    vertex_count?: number;
+    topology?: 'Triangle' | 'Quad' | 'Adaptive';
+    dimensions?: { x: number; y: number; z: number };
+    bounding_box?: { min: number[]; max: number[]; extent?: number[]; diagonal?: number };
+    object_count?: number;
+    component_count?: number;
+    material_count?: number;
+    mesh_details?: Record<string, unknown>;
+  };
+  approval_status?: 'approved' | 'needs_review' | 'failed';
+  warning?: string;
+  validation?: unknown;
 }
 
 export interface FileMetadata {
@@ -303,6 +318,7 @@ export interface ImageToMeshRequest {
   model_parameters?: Record<string, any>;
   intent?: 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'mobile';
   preprocessing_artifact_id?: string;
+  preprocessing_review_override?: boolean;
   enhancement_enabled?: boolean;
   enable_printability_check?: boolean;
   enable_auto_repair?: boolean;
@@ -324,6 +340,7 @@ export interface ImageToTexturedMeshRequest {
   model_parameters?: Record<string, any>;
   intent?: 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'mobile';
   preprocessing_artifact_id?: string;
+  preprocessing_review_override?: boolean;
   enhancement_enabled?: boolean;
   enable_printability_check?: boolean;
   enable_auto_repair?: boolean;

@@ -127,7 +127,7 @@ The immutable master/source.glb is never overwritten by post-processing.
 
 Server filesystem paths supplied by generation APIs are no longer treated as arbitrary host paths. resolve_server_file_path() accepts only configured roots (outputs/ and uploads/ by default), with explicit ALLOWED_INPUT_ROOTS / ALLOW_LOCAL_SERVER_PATH_INPUTS overrides for self-hosted deployments that need wider access.
 
-Multipart uploads enforce the byte limit while streaming rather than after the full file has been written. Base64 payloads are rejected using their encoded-size ceiling before allocating the decoded byte buffer.
+Multipart uploads enforce the byte limit while streaming rather than after the full file has been written. Mesh segmentation base64 input is capped at 200 MiB decoded; the shared validator checks encoded length and projected decoded size before allocating the decoded byte buffer, then validates the decoded result. Textual `.gltf` uploads are single-file only: every buffer must use an embedded data URI, and images must use an embedded data URI or a valid embedded buffer view. Relative, remote, and missing dependencies are rejected; clients never fetch or guess sidecars.
 
 ## Review Audit — Final Boundary Hardening
 
@@ -142,6 +142,12 @@ The final non-testing audit pass tightened the security boundary around operatio
 
 Artifact naming uses UUIDs for mesh, segmentation, and rigged outputs to reduce collision and overwrite risk. Model readiness is derived from manifest paths and actual local checkpoint payloads rather than optimistic model identifiers. The scheduler does not expose an in-progress SQLite write through status reads, and background post-processing errors are retained as job-level metadata instead of being silently converted into false success.
 
+## Durable Upload Intake — 2026-10-16
+
+Uploaded assets are retained until explicitly deleted. Mesh uploads keep their original bytes and extension at `models/meshes/upload_<file-id>/master/source.<ext>`; the adjacent asset manifest records the exact source path, byte length, SHA-256, original filename, and format. Both manifest creation and file-store registration must succeed before an upload is reported as successful. The manifest is the durable record; Redis or the single-worker in-memory store is an index/cache. Exact UUID manifests restore metadata, file listing, counts, and download resolution after restart, while legacy lookup remains limited to the prior exact UUID filename layout.
+
+Multipart limits are 50 MiB for images and 200 MiB for meshes (the API also reports exact byte counts). Mesh validation separately caps vertices and faces at 210,000 each; these limits are returned by the supported-formats endpoint. Geometry parsing runs in an AnyIO worker thread with at most two concurrent parsers, preserves cancellation cleanup, and rejects non-finite or empty geometry. `.gltf` is a supported single-file format only when buffers and images are embedded as data URIs; external, relative, and remote dependencies are rejected rather than fetched or guessed. Deletion removes only the registered source, its manifest, and the matching thumbnail after validating their storage paths; retries are idempotent and generated job workspaces are not deleted through the upload endpoint.
+
 ## Resource and Model Integrity — 2026-10-08
 
 Resource planning must fail closed for unsupported multi-GPU strategies. Do not treat combined VRAM as proof that an arbitrary model can be split. Model/weight selection must remain restricted to registered open-weight assets and existing trusted model-management paths. User-provided paths remain validated before processing, and quality diagnostics must never mutate the immutable master.
@@ -149,3 +155,7 @@ Resource planning must fail closed for unsupported multi-GPU strategies. Do not 
 ## Resource Admission Integrity — 2026-10-08
 
 Aggregate VRAM is considered only for model adapters that explicitly declare a supported multi-GPU strategy. Unsupported pipelines fail closed instead of receiving a fabricated device split. CPU worker/thread policies are bounded by the host logical-core count, with optional FORMSH3D_CPU_WORKERS and FORMSH3D_CPU_THREADS overrides.
+
+## Image Foreground Approval — 2026-10-16
+
+Image preprocessing must verify actual alpha transparency and preserve the mask through crop/upscale before exposing an approved artifact. Foreground occupancy, crop bounds, border coverage, connected regions, and mask survival are recorded. Provider failure never produces an approved artifact or inference input. A suspicious preview is available for inspection but is accepted by generation only when the caller explicitly sets `preprocessing_review_override`; failed artifacts remain blocked even with that flag. Selecting the original image remains a separate explicit path.

@@ -114,6 +114,7 @@ export function buildGenerationParameters(
       model_preference: settings.aiModel || undefined,
       intent: enablePostprocess ? settings.intent : undefined,
       preprocessing_artifact_id: settings.preprocessingArtifactId || undefined,
+      preprocessing_review_override: Boolean(settings.preprocessingReviewOverride),
       enhancement_enabled: Boolean(settings.enhancementEnabled),
       enable_printability_check: enablePostprocess && Boolean(settings.enablePrintabilityCheck),
       enable_auto_repair: enablePostprocess && Boolean(settings.enableAutoRepair),

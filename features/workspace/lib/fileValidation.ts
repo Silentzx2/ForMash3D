@@ -34,6 +34,11 @@ function readFileText(file: File, start: number, end: number): Promise<string> {
   return file.slice(start, end).text();
 }
 
+function isEmbeddedDataUri(uri: string): boolean {
+  const separator = uri.indexOf(',');
+  return uri.slice(0, separator).toLowerCase().startsWith('data:') && separator > 4 && separator < uri.length - 1;
+}
+
 async function validateGlbStructure(file: File): Promise<Pick<ValidationResult, 'error' | 'warnings'>> {
   const warnings: string[] = [];
   const header = await readFileBytes(file, 0, 12);
@@ -65,17 +70,43 @@ async function validateGlbStructure(file: File): Promise<Pick<ValidationResult, 
 }
 
 async function validateGltfStructure(file: File): Promise<Pick<ValidationResult, 'error' | 'warnings'>> {
-  const preview = await readFileText(file, 0, 200);
-  const trimmed = preview.trim();
-
-  // GLTF must start with { for JSON
-  if (!trimmed.startsWith('{')) {
-    return { error: 'Invalid GLTF file: does not contain valid JSON structure.' };
+  let gltf: { asset?: unknown; buffers?: Array<{ uri?: unknown }>; images?: Array<{ uri?: unknown; bufferView?: unknown }> };
+  try {
+    gltf = JSON.parse(await readFileText(file, 0, file.size));
+  } catch {
+    return { error: 'Invalid GLTF file: does not contain valid JSON.' };
   }
 
-  // Check for required "asset" field (GLTF spec requirement)
-  if (!trimmed.includes('"asset"')) {
+  if (!gltf || typeof gltf !== 'object' || !gltf.asset) {
     return { error: 'Invalid GLTF file: missing required "asset" field.' };
+  }
+
+  const externalResources: string[] = [];
+  const missingResources: string[] = [];
+  gltf.buffers?.forEach((buffer, index) => {
+    if (typeof buffer.uri !== 'string' || !buffer.uri.trim()) {
+      missingResources.push(`buffer ${index + 1}`);
+    } else if (!isEmbeddedDataUri(buffer.uri.trim())) {
+      externalResources.push(buffer.uri);
+    }
+  });
+  gltf.images?.forEach((image, index) => {
+    if (typeof image.uri === 'string' && image.uri.trim()) {
+      if (!isEmbeddedDataUri(image.uri.trim())) externalResources.push(image.uri);
+    } else if (image.bufferView == null) {
+      missingResources.push(`image ${index + 1}`);
+    }
+  });
+
+  if (externalResources.length > 0) {
+    return {
+      error: `This GLTF references external or invalid embedded resources: ${[...new Set(externalResources)].join(', ')}. Upload a self-contained GLB or embed the resources as data URIs before uploading.`,
+    };
+  }
+  if (missingResources.length > 0) {
+    return {
+      error: `This GLTF is missing data for ${missingResources.join(', ')}. Include the resources in the file or upload a self-contained GLB.`,
+    };
   }
 
   return {};

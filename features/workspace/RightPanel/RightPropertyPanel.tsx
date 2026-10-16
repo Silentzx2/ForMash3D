@@ -3,6 +3,7 @@ import { useWorkspace } from '../store/WorkspaceContext';
 import { ShadingMode } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { toast } from 'sonner';
+import { downloadArtifact } from '../lib/artifactDownload';
 import { MeshDiffViewer } from '../Viewport/MeshDiffViewer';
 import { ModelComparisonViewer } from '../Viewport/ModelComparisonViewer';
 import { ModelAsset } from '../types';
@@ -99,12 +100,7 @@ export const RightPropertyPanel: React.FC = () => {
     const assetBaseName = currentAsset.name.replace(/\.[^.]+$/, '');
     setIsExporting(true);
     try {
-      const link = document.createElement('a');
-      link.href = sourceUrl;
-      link.download = `${assetBaseName}.${exportFormat}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      await downloadArtifact(sourceUrl, `${assetBaseName}.${exportFormat}`, exportFormat);
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 3000);
     } catch (error) {

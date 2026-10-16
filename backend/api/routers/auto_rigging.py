@@ -5,9 +5,11 @@ Provides endpoints for automatically adding bone structures to 3D meshes.
 """
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from api.dependencies import get_current_user_or_none, get_file_store, get_scheduler
@@ -182,6 +184,21 @@ async def generate_rig(
             metadata={"feature_type": "auto_rig"},
             user_id=user_id,
         )
+
+        from postprocess.pipeline import _sha256_file, prepare_asset_job_workspace
+
+        asset_root, master_path = await run_in_threadpool(
+            prepare_asset_job_workspace, mesh_file_path, job_request.job_id
+        )
+        job_request.inputs["output_dir"] = str(
+            asset_root / "rigging" / job_request.job_id
+        )
+        job_request.metadata.update({
+            "asset_root": str(asset_root),
+            "source_path": str(Path(mesh_file_path).resolve()),
+            "source_master_path": str(master_path),
+            "source_sha256": await run_in_threadpool(_sha256_file, mesh_file_path),
+        })
 
         job_id = await scheduler.schedule_job(job_request)
 

@@ -213,6 +213,7 @@ class ImageToRawMeshRequest(BaseModel):
     )
     intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
+    preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
     enable_printability_check: bool = Field(False, description="Run final printability QA")
     enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
@@ -295,6 +296,7 @@ class ImageToTexturedMeshRequest(BaseModel):
     )
     intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
+    preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
     enable_printability_check: bool = Field(False, description="Run final printability QA")
     enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
@@ -702,6 +704,13 @@ async def image_to_raw_mesh(
                 status_code=400,
                 detail="enhancement_enabled requires an approved preprocessing_artifact_id",
             )
+        if mesh_request.preprocessing_artifact_id and not mesh_request.enhancement_enabled:
+            raise HTTPException(
+                status_code=400,
+                detail="Choose the preprocessing artifact or disable enhancement and use the original image",
+            )
+        if mesh_request.preprocessing_review_override and not mesh_request.preprocessing_artifact_id:
+            raise HTTPException(status_code=400, detail="A review override requires a preprocessing artifact")
 
         original_image_path = await process_file_input(
             file_path=mesh_request.image_path,
@@ -715,10 +724,14 @@ async def image_to_raw_mesh(
         image_file_path = original_image_path
         preprocessing_metadata = {}
         if mesh_request.preprocessing_artifact_id:
-            image_file_path, preprocessing_metadata = load_preprocessed_artifact(
-                mesh_request.preprocessing_artifact_id,
-                "approved",
-            )
+            try:
+                image_file_path, preprocessing_metadata = load_preprocessed_artifact(
+                    mesh_request.preprocessing_artifact_id,
+                    "approved",
+                    allow_review=mesh_request.preprocessing_review_override,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
         elif mesh_request.enhancement_enabled:
             model_config = getattr(scheduler, "model_registry", {}).get(model_id, {})
             capabilities = (
@@ -838,6 +851,7 @@ async def image_to_raw_mesh(
                 "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
+                "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
                 "preprocessing_metadata": preprocessing_metadata,
                 "target_polycount": target_polycount,
@@ -874,6 +888,7 @@ async def image_to_raw_mesh(
                 "intent": mesh_request.intent,
                 **preset_metadata,
                 "preprocessing": preprocessing_metadata,
+                "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
                 "target_polycount": target_polycount,
                 "generateLOD": lod_enabled,
@@ -943,6 +958,13 @@ async def image_to_textured_mesh(
                 status_code=400,
                 detail="enhancement_enabled requires an approved preprocessing_artifact_id",
             )
+        if mesh_request.preprocessing_artifact_id and not mesh_request.enhancement_enabled:
+            raise HTTPException(
+                status_code=400,
+                detail="Choose the preprocessing artifact or disable enhancement and use the original image",
+            )
+        if mesh_request.preprocessing_review_override and not mesh_request.preprocessing_artifact_id:
+            raise HTTPException(status_code=400, detail="A review override requires a preprocessing artifact")
 
         original_image_path = await process_file_input(
             file_path=mesh_request.image_path,
@@ -956,10 +978,14 @@ async def image_to_textured_mesh(
         image_file_path = original_image_path
         preprocessing_metadata = {}
         if mesh_request.preprocessing_artifact_id:
-            image_file_path, preprocessing_metadata = load_preprocessed_artifact(
-                mesh_request.preprocessing_artifact_id,
-                "approved",
-            )
+            try:
+                image_file_path, preprocessing_metadata = load_preprocessed_artifact(
+                    mesh_request.preprocessing_artifact_id,
+                    "approved",
+                    allow_review=mesh_request.preprocessing_review_override,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
         elif mesh_request.enhancement_enabled:
             model_config = getattr(scheduler, "model_registry", {}).get(model_id, {})
             capabilities = (
@@ -1105,6 +1131,7 @@ async def image_to_textured_mesh(
                 "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
+                "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
                 "preprocessing_metadata": preprocessing_metadata,
                 "target_polycount": target_polycount,
@@ -1141,6 +1168,7 @@ async def image_to_textured_mesh(
                 "intent": mesh_request.intent,
                 **preset_metadata,
                 "preprocessing": preprocessing_metadata,
+                "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
                 "target_polycount": target_polycount,
                 "generateLOD": lod_enabled,

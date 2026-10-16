@@ -1,5 +1,7 @@
 import type { JobDiagnostic } from '@/lib/jobDiagnostics';
 import { getApiClient } from '@/services/apiClient';
+import { validate3DFile } from './lib/fileValidation';
+import { requireUploadFileId } from './lib/uploadResponse';
 
 export type ToolType =
   | 'model'
@@ -74,10 +76,10 @@ export interface ModelAsset {
   triangles: number;
   statsAvailable?: boolean;
   topology: 'Triangle' | 'Quad' | 'Adaptive';
-  format: 'GLB' | 'OBJ' | 'PLY' | 'FBX' | 'STL' | 'IMAGE' | 'FILE';
+  format: 'GLB' | 'GLTF' | 'OBJ' | 'PLY' | 'FBX' | 'STL' | 'IMAGE' | 'FILE';
   fileSize?: string;
   dimensions?: { x: number; y: number; z: number };
-  boundingBox?: { min: number[]; max: number[]; extent: number[]; diagonal: number };
+  boundingBox?: { min: number[]; max: number[]; extent?: number[]; diagonal?: number };
   objectCount?: number;
   componentCount?: number;
   materialCount?: number;
@@ -240,61 +242,65 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
   };
 }
 
-export function createUploadedMeshAsset(file: File): ModelAsset {
-  const url = URL.createObjectURL(file);
-  return normalizeModelAsset({
-    id: `asset-upload-${Date.now()}`,
-    name: file.name,
-    category: 'mesh',
-    meshType: 'custom',
-    format: (file.name.split('.').pop()?.toUpperCase() || 'GLB') as any,
-    fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
-    source: { filename: file.name, subfolder: 'uploads', type: 'upload', localUrl: url, viewUrl: url },
-    vertices: 0,
-    faces: 0,
-    statsAvailable: false,
-  });
-}
-
 /**
  * Upload a mesh through the same backend endpoint as the Assets panel and
  * return an asset that carries a resolvable backend `fileId` (top-level and in
  * `source`) so mesh tools (remesh, texture, segment, UV, edit) can run on it.
- * Falls back to a local blob asset when the upload fails.
  */
-export async function uploadMeshAsset(file: File): Promise<ModelAsset> {
-  try {
-    const result = await getApiClient().uploadMeshFile(file);
-    const fileId = result?.file_id || (result as any)?.id;
-    const serverUrl = result?.url || (fileId ? `/api/v1/file-upload/download/${encodeURIComponent(fileId)}` : '');
-    const meshStats = (result as any)?.mesh_stats as { polygon_count: number; vertex_count: number } | undefined;
-    return normalizeModelAsset({
-      id: fileId || (result as any)?.stored_filename || `user-upload-${Date.now()}`,
+export type MeshUploadStage = 'uploading' | 'verifying';
+
+export interface MeshUploadCallbacks {
+  onProgress?: (loadedBytes: number, totalBytes?: number) => void;
+  onStage?: (stage: MeshUploadStage) => void;
+}
+
+export async function uploadMeshAsset(file: File, callbacks: MeshUploadCallbacks = {}): Promise<ModelAsset> {
+  callbacks.onStage?.('verifying');
+  const validation = await validate3DFile(file, 'upload');
+  if (!validation.valid) throw new Error(validation.error || 'Invalid mesh file.');
+  if (file.size === 0) throw new Error('File is empty.');
+
+  callbacks.onStage?.('uploading');
+  const result = await getApiClient().uploadMeshFile(file, callbacks.onProgress);
+  callbacks.onStage?.('verifying');
+  const fileId = requireUploadFileId(result?.file_id, 'mesh');
+
+  const extension = file.name.split('.').pop()?.toLowerCase() || 'glb';
+  const formats: Record<string, ModelAsset['format']> = {
+    glb: 'GLB', gltf: 'GLTF', obj: 'OBJ', ply: 'PLY', fbx: 'FBX', stl: 'STL',
+  };
+  const serverUrl = result.url || `/api/v1/file-upload/download/${encodeURIComponent(fileId)}`;
+  const meshStats = result.mesh_stats;
+  return normalizeModelAsset({
+    id: fileId,
+    fileId,
+    name: file.name.replace(/\.[^/.]+$/, ''),
+    category: 'mesh',
+    meshType: 'custom',
+    thumbnail: result.thumbnail_url || '',
+    faces: meshStats?.polygon_count || 0,
+    vertices: meshStats?.vertex_count || 0,
+    triangles: meshStats?.polygon_count || 0,
+    statsAvailable: Boolean((meshStats?.polygon_count ?? 0) > 0 || (meshStats?.vertex_count ?? 0) > 0),
+    format: formats[extension] || 'GLB',
+    fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
+    source: {
+      filename: result.filename || file.name,
+      subfolder: 'models',
+      type: 'upload',
+      viewUrl: serverUrl,
       fileId,
-      name: file.name.replace(/\.[^/.]+$/, ''),
-      category: 'mesh',
-      meshType: 'custom',
-      thumbnail: (result as any)?.thumbnail_url || '',
-      faces: meshStats?.polygon_count || 0,
-      vertices: meshStats?.vertex_count || 0,
-      triangles: meshStats?.polygon_count || 0,
-      statsAvailable: Boolean((meshStats?.polygon_count ?? 0) > 0 || (meshStats?.vertex_count ?? 0) > 0),
-      format: (file.name.split('.').pop()?.toUpperCase() || 'GLB') as any,
-      fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
-      source: {
-        filename: result?.filename || file.name,
-        subfolder: 'models',
-        type: 'upload',
-        viewUrl: serverUrl,
-        fileId,
-      },
-      topology: 'Triangle',
-      dateCreated: '',
-      tags: ['Custom', 'User-Upload', 'Mesh'],
-    });
-  } catch {
-    return createUploadedMeshAsset(file);
-  }
+    },
+    topology: meshStats?.topology || 'Triangle',
+    dimensions: meshStats?.dimensions,
+    boundingBox: meshStats?.bounding_box,
+    objectCount: meshStats?.object_count,
+    componentCount: meshStats?.component_count,
+    materialCount: meshStats?.material_count,
+    meshDetails: meshStats?.mesh_details,
+    dateCreated: '',
+    tags: ['Custom', 'User-Upload', 'Mesh'],
+  });
 }
 
 export function withRiggedModel(asset: ModelAsset, riggedUrl: string, riggedFbxUrl?: string): ModelAsset {
@@ -472,6 +478,7 @@ export interface GenerationSettings {
   paintResolution?: 512 | 768;
   intent?: string;
   preprocessingArtifactId?: string | null;
+  preprocessingReviewOverride?: boolean;
   preprocessingPreviewUrl?: string | null;
   preprocessingMetadata?: any;
   enhancementEnabled?: boolean;

@@ -148,10 +148,15 @@ Located at `backend/api/`:
 ### 2.4 Storage Layer
 
 Located at `backend/storage/`:
-- **Uploads** (`uploads/`): User-uploaded reference images (`.png`, `.jpg`, `.webp`).
+- **Uploads** (`uploads/`): User-uploaded reference images, image manifests, and matching mesh thumbnails.
+- **Uploaded Mesh Workspaces** (`models/meshes/upload_<file-id>/`): Immutable original source at `master/source.<ext>` and its durable `metadata/asset.json` manifest. The manifest records source identity, original name/format, byte size, SHA-256, and upload time; Redis or the single-worker in-memory store is an index/cache.
 - **Models** (`models/meshes/<asset_name>_<job_id>/`): Canonical per-generation mesh asset workspaces.
 - **Asset workspace**: `master/` (`source.glb` immutable master), `game_ready/` (engine-optimized final output), `lods/` (LOD0..3), `collision/` (CoACD convex decomposition derived from final `game_ready.glb`), `textures/`, `previews/`, and `metadata/` (`quality_report.json`, `asset.json`, `physics.json`). Directory creation is deferred until writing begins.
 - **ZIP delivery**: Generated on demand from the canonical workspace; no persistent `exports/` tree is required.
+
+Upload manifests restore file-ID resolution, listing, and counts after restart. Mesh uploads are limited to 200 MiB, 210,000 vertices, and 210,000 faces; geometry parsing runs in at most two AnyIO worker threads. `.gltf` uploads must contain buffers and images as data URIs; external dependencies are not fetched. Upload deletion owns only its source, manifest, and matching thumbnail, not generated job workspaces.
+
+Image-to-3D preprocessing tests for real transparency rather than alpha-channel presence, preserves the foreground alpha through RealESRGAN or Pillow resizing, and records mask occupancy, crop bounds, border coverage, connected components, and resize survival. Only a validated foreground receives an approved artifact. Failed removal is blocked; suspicious or unvalidated previews require an explicit review override at the generation API, and the override is retained in job provenance. The original image remains unchanged.
 
 ### 2.5 Local Wheelhouse
 

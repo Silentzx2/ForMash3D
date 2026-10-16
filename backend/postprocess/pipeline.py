@@ -461,6 +461,153 @@ def _ensure_master_source(raw_path: Path | str, master_path: Path | str) -> tupl
     return True, source_sha256
 
 
+def prepare_asset_job_workspace(source_path: Path | str, job_id: str) -> tuple[Path, Path]:
+    """Reuse the selected asset workspace or snapshot an external source into one."""
+    source = Path(source_path).resolve(strict=True)
+    if not source.is_file():
+        raise FileNotFoundError(f"Source mesh is missing: {source}")
+
+    meshes_root = _storage_root().resolve()
+    asset_root = None
+    for parent in source.parents:
+        if parent.parent == meshes_root and any(
+            (parent / "metadata" / name).is_file()
+            for name in ("job.json", "asset.json")
+        ):
+            asset_root = parent.resolve(strict=True)
+            break
+
+    if asset_root is None:
+        asset_root = meshes_root / f"{_safe_name(source.stem)}_{_safe_name(job_id)}"
+        asset_root.mkdir(parents=True, exist_ok=False)
+
+    asset_root.relative_to(meshes_root)
+    master_dir = asset_root / "master"
+    master_dir.mkdir(parents=True, exist_ok=True)
+    source_candidates = list(master_dir.glob("source.*"))
+    if source_candidates:
+        matching = [candidate for candidate in source_candidates if candidate.suffix.lower() == source.suffix.lower()]
+        if len(matching) == 1:
+            master_path = matching[0]
+        elif len(source_candidates) == 1:
+            master_path = source_candidates[0]
+        elif master_dir / "source.glb" in source_candidates:
+            master_path = master_dir / "source.glb"
+        else:
+            raise RuntimeError(f"Ambiguous immutable master in asset workspace: {asset_root}")
+    else:
+        master_path = master_dir / f"source{source.suffix.lower() or '.glb'}"
+        if source != master_path.resolve():
+            shutil.copy2(source, master_path)
+
+    return asset_root, master_path
+
+
+def register_asset_job_manifest(
+    asset_root: Path | str,
+    job_id: str,
+    source_path: Path | str,
+    master_path: Path | str,
+    artifacts: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Path:
+    """Persist a per-job artifact declaration without replacing the asset manifest."""
+    root = Path(asset_root).resolve(strict=True)
+    root.relative_to(_storage_root().resolve())
+    master = Path(master_path).resolve(strict=True)
+    master.relative_to(root)
+    source = Path(source_path).resolve(strict=True)
+    try:
+        source_ref = source.relative_to(root).as_posix()
+    except ValueError:
+        source_ref = master.relative_to(root).as_posix()
+
+    declared = {}
+    for name, artifact in (artifacts or {}).items():
+        path = Path(artifact["path"]).resolve(strict=True)
+        path.relative_to(root)
+        declared[name] = {
+            **{key: value for key, value in artifact.items() if key != "path"},
+            "path": path.relative_to(root).as_posix(),
+        }
+
+    metadata_dir = root / "metadata" / "jobs"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = metadata_dir / f"{_safe_name(job_id)}.json"
+    temporary_path = manifest_path.with_suffix(".tmp")
+    _write_json(
+        temporary_path,
+        {
+            "manifest_version": "1",
+            "job_id": job_id,
+            "asset_root": str(root),
+            "source_path": source_ref,
+            "master_path": master.relative_to(root).as_posix(),
+            "artifacts": declared,
+        },
+    )
+    temporary_path.replace(manifest_path)
+    return manifest_path
+
+
+def persist_manual_mesh_result(
+    job_id: str,
+    result: Dict[str, Any],
+    job_inputs: Dict[str, Any],
+    job_metadata: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Save a mesh-tool result as a derivative of its selected immutable source."""
+    source = Path(job_inputs["mesh_path"]).resolve(strict=True)
+    expected_source_hash = job_metadata.get("source_sha256")
+    source_hash = _sha256_file(source)
+    if expected_source_hash and source_hash != expected_source_hash:
+        raise RuntimeError("Selected source mesh changed while the mesh tool was running.")
+
+    output_path = next(
+        (result.get(key) for key in ("output_mesh_path", "mesh_path", "output_path", "file_path") if result.get(key)),
+        None,
+    )
+    if not output_path:
+        raise FileNotFoundError("Mesh tool completed without a declared output path.")
+    output = Path(output_path).resolve(strict=True)
+    if not output.is_file() or output == source:
+        raise RuntimeError("Mesh tool output must be a separate file from its source.")
+
+    asset_root, master_path = prepare_asset_job_workspace(source, job_id)
+    derivative = asset_root / "derived" / _safe_name(job_id) / f"result{output.suffix.lower()}"
+    derivative.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(output, derivative)
+    if _sha256_file(source) != source_hash:
+        derivative.unlink(missing_ok=True)
+        raise RuntimeError("Selected source mesh changed while saving the tool derivative.")
+
+    artifact = {
+        "status": "ready",
+        "path": str(derivative),
+        "format": output.suffix.lower().lstrip("."),
+        "source_path": str(source),
+    }
+    artifacts = dict(result.get("artifacts") or {})
+    artifacts["derived"] = artifact
+    artifacts["master"] = {
+        "status": "ready",
+        "path": str(master_path),
+        "format": master_path.suffix.lower().lstrip("."),
+    }
+    register_asset_job_manifest(asset_root, job_id, source, master_path, artifacts)
+
+    final_result = dict(result)
+    final_result["output_mesh_path"] = str(derivative)
+    final_result["asset_root"] = str(asset_root)
+    final_result["artifacts"] = artifacts
+    final_result["source_lineage"] = {
+        "source_path": str(source),
+        "master_path": str(master_path),
+        "source_sha256": source_hash,
+        "derivative_path": str(derivative),
+    }
+    return final_result
+
+
 def _resolve_target_polycount(value: Any) -> int:
     """Missing/nonpositive budgets mean Native/Raw; positive values opt into a derivative budget."""
     if value is None:

@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { uploadMeshAsset } from '../types';
+import { useMeshAssetUpload } from '@/hooks/useMeshAssetUpload';
+import { MeshUploadStatus } from './MeshUploadStatus';
 import { toast } from 'sonner';
 import { useFeatureAvailability } from '@/hooks/useFeatureAvailability';
 
@@ -50,6 +51,8 @@ export const MeshSegmentPanel: React.FC = () => {
   const [symmetryDetection, setSymmetryDetection] = useState(true);
   const [autoWatertightRepair, setAutoWatertightRepair] = useState(true);
   const [convexDecomposition, setConvexDecomposition] = useState(false);
+  const { state: meshUploadState, upload: uploadMesh } = useMeshAssetUpload();
+  const uploadActive = meshUploadState.status === 'uploading' || meshUploadState.status === 'verifying';
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const isRunning = isExecuting && (activeTask?.type === 'segment');
@@ -88,9 +91,10 @@ export const MeshSegmentPanel: React.FC = () => {
     toast.info('Settings restored to defaults');
   };
 
-  const handleUploadNew = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadNew = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) setCurrentAsset(await uploadMeshAsset(file));
+    if (file) void uploadMesh(file);
+    e.currentTarget.value = '';
   };
 
   return (
@@ -117,6 +121,7 @@ export const MeshSegmentPanel: React.FC = () => {
       </div>
 
       <div className="p-3 space-y-4 flex-1">
+        <MeshUploadStatus state={meshUploadState} />
         {/* ========================================================================= */}
         {/* TAB 1: SEGMENT (Input, Model, Parts Slider, Method, Format)               */}
         {/* ========================================================================= */}
@@ -179,11 +184,13 @@ export const MeshSegmentPanel: React.FC = () => {
                   accept=".glb,.gltf,.obj,.ply,.stl"
                   onChange={handleUploadNew}
                   className="hidden"
+                  disabled={uploadActive}
                 />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  disabled={uploadActive}
+                  className="py-2 px-2.5 rounded-xl bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-zinc-300 hover:text-white text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
                 >
                   <HugeiconsIcon icon={UploadIcon} size={16} className="w-3.5 h-3.5 text-primary" />
                   <span>Upload New</span>

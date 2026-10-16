@@ -22,6 +22,7 @@ from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
+from core.utils.artifact_utils import first_result_path
 from core.utils.file_utils import encode_file_to_base64, get_file_size_mb, get_storage_base_dir
 
 DEFAULT_MESH_THUMBNAIL_SVG = (
@@ -1501,11 +1502,7 @@ async def download_job_result(
                     raise HTTPException(status_code=400, detail="Invalid rigged FBX artifact path")
                 output_path = resolved_fbx
             else:
-                possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-                for key in possible_keys:
-                    if key in result and result[key]:
-                        output_path = result[key]
-                    break
+                output_path = first_result_path(result)
 
         if not output_path:
             raise HTTPException(status_code=404, detail="No output file path found in job result")
@@ -1903,13 +1900,7 @@ async def get_job_result_info(job_id: str, request: Request):
             }
 
         # Get file information
-        output_path = None
-        possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-
-        for key in possible_keys:
-            if key in result and result[key]:
-                output_path = result[key]
-                break
+        output_path = first_result_path(result)
 
         file_info = {}
         if output_path and os.path.exists(output_path):
@@ -2164,13 +2155,7 @@ async def delete_job_result(
             }
 
         # Find and delete the output file
-        output_path = None
-        possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-
-        for key in possible_keys:
-            if key in result and result[key]:
-                output_path = result[key]
-                break
+        output_path = first_result_path(result)
 
         if not output_path:
             return {

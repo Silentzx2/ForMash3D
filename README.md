@@ -506,7 +506,7 @@ Mesh tools are part of the main FastAPI runtime at `/api/v1/mesh-tools/*`. The d
 
 ForMash3D's normal Image → 3D workflow now includes optional production automation without a second pipeline:
 
-- Generation Preview with reusable preprocessing artifacts, adaptive low-resolution enhancement, and provenance.
+- Generation Preview with reusable preprocessing artifacts, adaptive low-resolution enhancement, and provenance. Foreground masks are validated and preserved through upscaling; failed previews cannot enter inference, and suspicious previews require explicit review.
 - Smart Intent presets for Game Ready, Cinematic, Animation, 3D Print, and Mobile with deterministic backend model selection.
 - Printability QA with optional auto-repair inside the existing post-processing path.
 - Auto-Rig through the existing UniRig adapter after final production processing, with explicit success/degraded state.

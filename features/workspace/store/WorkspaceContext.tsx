@@ -563,6 +563,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       lodCount: 4,
       intent: undefined,
       preprocessingArtifactId: null,
+      preprocessingReviewOverride: false,
       preprocessingPreviewUrl: null,
       preprocessingMetadata: null,
       enhancementEnabled: false,

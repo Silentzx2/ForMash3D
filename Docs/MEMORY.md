@@ -1,3 +1,11 @@
+## 2026-10-16 — Mesh Upload Truth, Progress, and Workspace Selection
+
+- **Shared upload contract**: Assets, Rigging, UV, Remesh, Segmentation, and Mesh Edit use `uploadMeshAsset()` through `useMeshAssetUpload()`. Upload failures (including missing backend file IDs) remain errors and do not add or select an asset; successful assets are added before selection.
+- **Transfer status**: All six entrypoints display the same accessible status card with filename, transport loaded/total bytes, percentage only when the transport reports a total, verification/saving state, and explicit success or failure. Duplicate submissions are blocked while a transfer is active. Assets retains backend mesh statistics through the shared response type.
+- **Validation**: Frontend upload helper tests passed (5/5), and VS Code reported no TypeScript errors in touched frontend modules. ESLint could not be reliably run because the terminal runner returned stale backend-session output.
+- **Image preprocessing**: Source transparency is distinguished from an opaque alpha channel, and alpha is reapplied at the upscaler's output dimensions. Foreground validation records occupancy, bbox/crop improvement, border coverage, connected components, and mask survival. Only validated previews are written as approved artifacts; failed removal is blocked, while flagged previews need an explicit review override propagated into generation job provenance.
+- **Regression status**: The isolated preprocessing approval-gate tests pass (3/3). Full backend API tests require the project's PyTorch/SciPy environment; frontend typecheck still reports pre-existing errors in upload batching and the optional `ModelAsset.boundingBox` fields.
+
 ## 2026-10-14 — Rigging / Animation End-to-End Integrity Pass
 
 - **UniRig installer**: the `bpy==4.0` wheel install no longer masks failures with `|| true`; a nonzero install status exits with platform/glibc troubleshooting guidance.

@@ -1,6 +1,7 @@
 """File handling utilities"""
 
 import base64
+import json
 try:
     import imghdr
 except ImportError:
@@ -144,7 +145,9 @@ def detect_file_type_from_content(file_path: str) -> str:
 
 
 def validate_image_file(
-    file_path: str, max_resolution: Tuple[int, int] = (8192, 8192)
+    file_path: str,
+    max_resolution: Tuple[int, int] = (8192, 8192),
+    optimize_large: bool = True,
 ) -> Dict:
     """Validate and get info about an image file, auto-optimizing large camera photos if needed."""
     try:
@@ -160,7 +163,7 @@ def validate_image_file(
                     )
 
                 TARGET_MAX = 2048
-                if width > TARGET_MAX or height > TARGET_MAX:
+                if optimize_large and (width > TARGET_MAX or height > TARGET_MAX):
                     img_copy = img.copy()
                     img_copy.thumbnail((TARGET_MAX, TARGET_MAX), Image.Resampling.LANCZOS)
                     save_kwargs = {}
@@ -205,6 +208,57 @@ def validate_mesh_file(
 ) -> Dict:
     """Validate and get info about a mesh file"""
     try:
+        if Path(file_path).suffix.lower() == ".gltf":
+            try:
+                with open(file_path, "r", encoding="utf-8") as handle:
+                    gltf_data = json.load(handle)
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ValueError(f"Invalid GLTF JSON: {exc}") from exc
+
+            if not isinstance(gltf_data, dict) or not isinstance(gltf_data.get("asset"), dict):
+                raise ValueError('Invalid GLTF JSON: missing required "asset" object.')
+
+            buffers = gltf_data.get("buffers", [])
+            images = gltf_data.get("images", [])
+            buffer_views = gltf_data.get("bufferViews", [])
+            if not isinstance(buffers, list) or not isinstance(images, list) or not isinstance(buffer_views, list):
+                raise ValueError("Invalid GLTF JSON: buffers, images, and bufferViews must be arrays.")
+
+            for index, resource in enumerate(buffers):
+                uri = resource.get("uri") if isinstance(resource, dict) else None
+                if (
+                    not isinstance(uri, str)
+                    or not uri.strip().lower().startswith("data:")
+                    or "," not in uri
+                    or not uri.rsplit(",", 1)[1].strip()
+                ):
+                    raise ValueError(
+                        f"GLTF buffer {index + 1} must be embedded as a data URI. "
+                        "External GLTF dependencies are not supported; embed all resources or upload a self-contained GLB."
+                    )
+
+            for index, image in enumerate(images):
+                if not isinstance(image, dict):
+                    raise ValueError(f"Invalid GLTF JSON: image {index + 1} must be an object.")
+                uri = image.get("uri")
+                if isinstance(uri, str) and uri.strip():
+                    if (
+                        not uri.strip().lower().startswith("data:")
+                        or "," not in uri
+                        or not uri.rsplit(",", 1)[1].strip()
+                    ):
+                        raise ValueError(
+                            "External GLTF dependencies are not supported. "
+                            "Embed buffers and textures as data URIs or upload a self-contained GLB."
+                        )
+                else:
+                    view_index = image.get("bufferView")
+                    if isinstance(view_index, bool) or not isinstance(view_index, int) or not 0 <= view_index < len(buffer_views):
+                        raise ValueError(
+                            f"GLTF image {index + 1} must use an embedded data URI or a valid bufferView."
+                        )
+
+        import numpy as np
         import trimesh
 
         # Load mesh using trimesh
@@ -224,6 +278,9 @@ def validate_mesh_file(
         # Get mesh statistics
         vertex_count = len(mesh.vertices)
         face_count = len(mesh.faces)
+
+        if not np.isfinite(mesh.vertices).all():
+            raise ValueError("Mesh contains non-finite vertex coordinates")
 
         # Check vertex count
         if vertex_count > max_vertices:
@@ -261,28 +318,38 @@ def validate_base64_data(
     try:
         # Check if it has data URL prefix
         content_type = None
-        if base64_data.startswith("data:"):
+        if base64_data[:5].lower() == "data:":
             if "," not in base64_data:
                 return False, None, None
             header, base64_data = base64_data.split(",", 1)
 
             # Extract content type from header
-            if ";" in header:
-                content_type = header.split(";")[0].replace("data:", "")
+            content_type = header.split(":", 1)[1].split(";", 1)[0].strip().lower()
 
         if len(base64_data) > ((max_bytes + 2) // 3) * 4:
             return False, None, None
+        missing_padding = (-len(base64_data)) % 4
+        if len(base64_data) % 4 == 1:
+            return False, None, None
+        existing_padding = len(base64_data) - len(base64_data.rstrip("="))
+        total_padding = existing_padding + missing_padding
+        if total_padding > 2:
+            return False, None, None
+        decoded_size = ((len(base64_data) + missing_padding) // 4) * 3 - total_padding
+        if decoded_size > max_bytes:
+            return False, None, None
         try:
             # Handle missing base64 padding
-            missing_padding = len(base64_data) % 4
             if missing_padding:
                 base64_data += "=" * (4 - missing_padding)
-            decoded_data = base64.b64decode(base64_data)
+            decoded_data = base64.b64decode(base64_data, validate=True)
         except Exception:
             return False, None, None
 
         # Validate it's not empty
         if len(decoded_data) == 0:
+            return False, None, None
+        if len(decoded_data) > max_bytes:
             return False, None, None
 
         return True, content_type, decoded_data
@@ -626,15 +693,11 @@ def get_file_type_from_extension(filename: str) -> str:
     """Get file type based on extension"""
     ext = Path(filename).suffix.lower()
 
-    image_exts = [".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"]
-    mesh_exts = [".glb", ".obj", ".fbx", ".ply", ".stl"]
-    texture_exts = [".jpg", ".jpeg", ".png", ".tga", ".exr", ".hdr"]
-
-    if ext in image_exts:
+    if ext in SUPPORTED_IMAGE_FORMATS:
         return "image"
-    elif ext in mesh_exts:
+    elif ext in SUPPORTED_MESH_FORMATS:
         return "mesh"
-    elif ext in texture_exts:
+    elif ext in SUPPORTED_TEXTURE_FORMATS:
         return "texture"
     else:
         return "unknown"

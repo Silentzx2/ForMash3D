@@ -14,6 +14,13 @@ def allow_tmp_roots(monkeypatch):
     monkeypatch.setenv("ALLOW_LOCAL_SERVER_PATH_INPUTS", "true")
 
 
+@pytest.fixture
+def preprocess_workspace(tmp_path, monkeypatch):
+    monkeypatch.setattr(enhancement, "_storage_root", lambda: tmp_path / "preprocessed")
+    monkeypatch.setattr(enhancement, "_resolve_input", lambda value: Path(value))
+    return tmp_path
+
+
 def test_preprocessing_rgb_and_low_resolution(tmp_path, monkeypatch):
     root = tmp_path / "preprocessed"
     monkeypatch.setattr(enhancement, "_storage_root", lambda: root)
@@ -43,6 +50,127 @@ def test_preprocessing_rgb_and_low_resolution(tmp_path, monkeypatch):
     assert Path(result["approved_path"]).is_file()
     assert result["metadata"]["original_sha256"]
     assert result["metadata"]["approved_sha256"]
+
+
+def test_opaque_rgba_is_not_treated_as_a_useful_alpha_mask(preprocess_workspace, monkeypatch):
+    source = preprocess_workspace / "opaque.png"
+    Image.new("RGBA", (80, 60), (30, 50, 70, 255)).save(source)
+    original_bytes = source.read_bytes()
+    remover_calls = []
+
+    def remove_background(image):
+        remover_calls.append(image.mode)
+        return image, True, None, "test-remover"
+
+    monkeypatch.setattr(enhancement, "_rmbg", remove_background)
+    result = enhancement.preprocess_image(
+        str(source), remove_background=True, auto_crop=True, upscale=False
+    )
+
+    assert remover_calls == ["RGBA"]
+    assert result["metadata"]["source_alpha"]["channel_present"] is True
+    assert result["metadata"]["source_alpha"]["has_transparency"] is False
+    assert result["metadata"]["crop_box"] is None
+    assert source.read_bytes() == original_bytes
+
+
+def test_true_and_soft_alpha_are_preserved_in_approved_image(preprocess_workspace, monkeypatch):
+    source = preprocess_workspace / "soft-alpha.png"
+    image = Image.new("RGBA", (64, 48), (100, 120, 140, 0))
+    alpha = Image.new("L", image.size)
+    for x in range(image.width):
+        alpha.paste(int(x * 255 / (image.width - 1)), (x, 0, x + 1, image.height))
+    image.putalpha(alpha)
+    image.save(source)
+    monkeypatch.setattr(
+        enhancement,
+        "_rmbg",
+        lambda *_: (_ for _ in ()).throw(AssertionError("valid alpha must skip RMBG")),
+    )
+
+    result = enhancement.preprocess_image(
+        str(source), remove_background=True, auto_crop=False, upscale=False
+    )
+
+    with Image.open(result["approved_path"]) as approved:
+        assert approved.mode == "RGBA"
+        assert approved.getchannel("A").tobytes() == alpha.tobytes()
+    assert result["metadata"]["source_alpha"]["has_transparency"] is True
+    assert result["metadata"]["source_alpha"]["soft_pixels"] > 0
+    assert result["metadata"]["mask"]["source"] == "source_alpha"
+
+
+def test_crop_ignores_isolated_alpha_speck_and_pads_non_square_subject(preprocess_workspace):
+    source = preprocess_workspace / "subject-with-speck.png"
+    image = Image.new("RGBA", (400, 300), (0, 0, 0, 0))
+    image.paste((200, 80, 30, 255), (100, 75, 300, 225))
+    image.putpixel((0, 0), (255, 255, 255, 255))
+    image.save(source)
+
+    result = enhancement.preprocess_image(
+        str(source), remove_background=False, auto_crop=True, upscale=False
+    )
+
+    assert result["metadata"]["mask"]["bounds"] == [100, 75, 300, 225]
+    assert result["metadata"]["crop_box"] == {
+        "left": 84,
+        "top": 63,
+        "right": 316,
+        "bottom": 237,
+    }
+    assert result["metadata"]["approved_dimensions"] == [232, 232]
+
+
+def test_realesrgan_output_reapplies_aligned_alpha(preprocess_workspace, monkeypatch):
+    source = preprocess_workspace / "upscale.png"
+    image = Image.new("RGBA", (64, 48), (20, 30, 40, 0))
+    alpha = Image.new("L", image.size)
+    for x in range(image.width):
+        alpha.paste(int(x * 255 / (image.width - 1)), (x, 0, x + 1, image.height))
+    image.putalpha(alpha)
+    image.save(source)
+    monkeypatch.setattr(
+        enhancement,
+        "_realesrgan",
+        lambda *_: (Image.new("RGB", (128, 96), (40, 50, 60)), True, None, "test-realesrgan"),
+    )
+
+    result = enhancement.preprocess_image(
+        str(source), remove_background=False, auto_crop=False, upscale=True
+    )
+
+    expected_alpha = alpha.resize((128, 96), Image.Resampling.LANCZOS)
+    with Image.open(result["approved_path"]) as approved:
+        assert approved.mode == "RGBA"
+        assert approved.getchannel("A").tobytes() == expected_alpha.tobytes()
+    assert result["metadata"]["upscale_method"] == "test-realesrgan"
+
+
+def test_pillow_fallback_resizes_alpha_alongside_rgb(preprocess_workspace, monkeypatch):
+    source = preprocess_workspace / "fallback.png"
+    image = Image.new("RGBA", (64, 48), (20, 30, 40, 0))
+    alpha = Image.new("L", image.size)
+    for x in range(image.width):
+        alpha.paste(int(x * 255 / (image.width - 1)), (x, 0, x + 1, image.height))
+    image.putalpha(alpha)
+    image.save(source)
+    monkeypatch.setattr(
+        enhancement,
+        "_realesrgan",
+        lambda image, *_: (image.convert("RGB"), False, "checkpoint unavailable", "none"),
+    )
+
+    result = enhancement.preprocess_image(
+        str(source), remove_background=False, auto_crop=False, upscale=True
+    )
+
+    with Image.open(result["approved_path"]) as approved:
+        output_alpha = approved.getchannel("A")
+        assert approved.mode == "RGBA"
+        assert approved.size == (1024, 768)
+        assert output_alpha.getextrema() == (0, 255)
+        assert len(set(output_alpha.tobytes())) > 2
+    assert result["metadata"]["upscale_method"] == "pillow_lanczos_fallback"
 
 
 def test_preprocessing_rgba_and_high_resolution_are_preserved(tmp_path, monkeypatch):

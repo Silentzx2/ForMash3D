@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { uploadMeshAsset } from '../types';
+import { useMeshAssetUpload } from '@/hooks/useMeshAssetUpload';
+import { MeshUploadStatus } from './MeshUploadStatus';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -23,6 +24,8 @@ export const RemeshPanel: React.FC = () => {
   } = useWorkspace();
 
   const [meshDropdownOpen, setMeshDropdownOpen] = useState(false);
+  const { state: meshUploadState, upload: uploadMesh } = useMeshAssetUpload();
+  const uploadActive = meshUploadState.status === 'uploading' || meshUploadState.status === 'verifying';
 
   const remeshProgress = activeTask?.progress ?? 0;
   const isRemeshActive = isExecuting && activeTask?.type === 'remesh';
@@ -43,9 +46,10 @@ export const RemeshPanel: React.FC = () => {
   const handleUploadNew = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setCurrentAsset(await uploadMeshAsset(file));
-      setMeshDropdownOpen(false);
+      const asset = await uploadMesh(file);
+      if (asset) setMeshDropdownOpen(false);
     }
+    e.currentTarget.value = '';
   };
 
   const handleVariantClick = (variant: 'V1K' | 'V4K') => {
@@ -75,6 +79,7 @@ export const RemeshPanel: React.FC = () => {
       {/* Main Body */}
       <div className="flex-1 overflow-y-auto px-2 py-2 pb-2 space-y-2 scrollbar-none pr-1">
         <div className="space-y-2">
+          <MeshUploadStatus state={meshUploadState} />
             {/* Target 3D Mesh Selector Card */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2 space-y-1.5">
               <div className="flex items-center justify-between">
@@ -89,11 +94,13 @@ export const RemeshPanel: React.FC = () => {
                     accept=".glb,.gltf,.obj,.ply,.stl"
                     onChange={handleUploadNew}
                     className="hidden"
+                    disabled={uploadActive}
                   />
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[9px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                    disabled={uploadActive}
+                    className="px-1.5 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 text-[9px] font-semibold flex items-center gap-1 cursor-pointer transition-colors disabled:opacity-50"
                   >
                     <HugeiconsIcon icon={UploadIcon} size={16} className="w-2.5 h-2.5 text-primary" />
                     <span>Upload</span>

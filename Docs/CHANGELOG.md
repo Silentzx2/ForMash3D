@@ -1,3 +1,10 @@
+## 2026-10-16 — Image Foreground Validation and Approval
+
+- Detect useful source alpha from pixel transparency rather than channel presence, and preserve the mask through RealESRGAN and Pillow resizing.
+- Record foreground occupancy, bounds, crop improvement, border coverage, connected components, and resize survival before approval.
+- Write approved artifacts only for validated results. Failed removal is blocked, and suspicious previews require an explicit generation override that is preserved in job provenance.
+- Added preprocessing and generation-contract regression coverage; GPU/model and browser validation remain runtime-gated.
+
 ## 2026-10-14 — Rigging / Animation Reliability and Native Export
 
 - Fixed UniRig install false-success handling, real mesh-file references, Import/Replace/Export actions, stale mesh-stat carryover, and fabricated rig/mesh status. Manual armature saves now persist the editor bones without claiming they create skin weights.

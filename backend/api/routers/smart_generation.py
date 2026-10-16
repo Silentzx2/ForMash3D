@@ -37,6 +37,7 @@ class SmartGenerationRequest(BaseModel):
     intent: str = Field(..., min_length=1)
     model: str | None = Field(None, description="Optional explicit model override")
     preprocessing_artifact_id: str | None = None
+    preprocessing_review_override: bool = False
     enhancement_enabled: bool = False
     enable_printability_check: bool | None = None
     enable_auto_repair: bool | None = None
@@ -125,6 +126,7 @@ def _build_smart_request(request: SmartGenerationRequest, resolved: Dict[str, An
         "model_preference": model_id,
         "intent": request.intent,
         "preprocessing_artifact_id": request.preprocessing_artifact_id,
+        "preprocessing_review_override": request.preprocessing_review_override,
         "enhancement_enabled": request.enhancement_enabled,
         "enable_printability_check": printability,
         "enable_auto_repair": auto_repair,

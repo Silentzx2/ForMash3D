@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Archive, Cancel, DownloadIcon, FileBoxIcon, LoaderCircle, ShieldCheckIcon, TriangleAlertIcon } from '@hugeicons/core-free-icons';
+import { downloadArtifact } from '../lib/artifactDownload';
 export const ExportModal: React.FC = () => {
   const { isExportModalOpen, setIsExportModalOpen, currentAsset } = useWorkspace();
   const [isExporting, setIsExporting] = useState(false);
@@ -68,12 +69,11 @@ export const ExportModal: React.FC = () => {
     setError(null);
 
     try {
-      const link = document.createElement('a');
-      link.href = selectedUrl;
-      link.download = `${assetBaseName}.${downloadExtension}`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      await downloadArtifact(
+        selectedUrl,
+        `${assetBaseName}.${downloadExtension}`,
+        downloadExtension,
+      );
       setIsExportModalOpen(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Export failed.');
