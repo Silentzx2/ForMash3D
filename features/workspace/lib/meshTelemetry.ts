@@ -36,49 +36,67 @@ export function analyzeGeometryTelemetry(geometry: THREE.BufferGeometry): MeshTe
   let totalArea = 0;
   let signedVolume = 0;
 
-  const pA = new THREE.Vector3();
-  const pB = new THREE.Vector3();
-  const pC = new THREE.Vector3();
-  const cb = new THREE.Vector3();
-  const ab = new THREE.Vector3();
-  const cross = new THREE.Vector3();
-
-  // Edge count map for manifold check: key -> frequency
-  const edgeMap = new Map<string, number>();
+  // High-performance typed array direct access: eliminates millions of Vector3 GC allocations
+  const posArray = pos.array as Float32Array;
+  const indexArray = index ? (index.array as Uint16Array | Uint32Array) : null;
 
   for (let i = 0; i < triCount; i++) {
-    const a = index ? index.getX(i * 3) : i * 3;
-    const b = index ? index.getX(i * 3 + 1) : i * 3 + 1;
-    const c = index ? index.getX(i * 3 + 2) : i * 3 + 2;
+    const i3 = i * 3;
+    const a = indexArray ? indexArray[i3] : i3;
+    const b = indexArray ? indexArray[i3 + 1] : i3 + 1;
+    const c = indexArray ? indexArray[i3 + 2] : i3 + 2;
 
-    pA.fromBufferAttribute(pos, a);
-    pB.fromBufferAttribute(pos, b);
-    pC.fromBufferAttribute(pos, c);
+    const a3 = a * 3;
+    const b3 = b * 3;
+    const c3 = c * 3;
 
-    // Triangle surface area = 0.5 * |(C - B) x (A - B)|
-    cb.subVectors(pC, pB);
-    ab.subVectors(pA, pB);
-    cross.crossVectors(cb, ab);
-    totalArea += cross.length() * 0.5;
+    const ax = posArray[a3], ay = posArray[a3 + 1], az = posArray[a3 + 2];
+    const bx = posArray[b3], by = posArray[b3 + 1], bz = posArray[b3 + 2];
+    const cx = posArray[c3], cy = posArray[c3 + 1], cz = posArray[c3 + 2];
 
-    // Signed tetrahedron volume = (A · (B x C)) / 6
-    signedVolume += pA.dot(cross) / 6.0;
+    // cb = C - B
+    const cbx = cx - bx, cby = cy - by, cbz = cz - bz;
+    // ab = A - B
+    const abx = ax - bx, aby = ay - by, abz = az - bz;
 
-    // Fast undirected edge recording
-    const e1 = a < b ? `${a}_${b}` : `${b}_${a}`;
-    const e2 = b < c ? `${b}_${c}` : `${c}_${b}`;
-    const e3 = c < a ? `${c}_${a}` : `${a}_${c}`;
+    // cross = cb x ab
+    const crossX = cby * abz - cbz * aby;
+    const crossY = cbz * abx - cbx * abz;
+    const crossZ = cbx * aby - cby * abx;
 
-    edgeMap.set(e1, (edgeMap.get(e1) || 0) + 1);
-    edgeMap.set(e2, (edgeMap.get(e2) || 0) + 1);
-    edgeMap.set(e3, (edgeMap.get(e3) || 0) + 1);
+    totalArea += Math.sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ) * 0.5;
+    signedVolume += (ax * crossX + ay * crossY + az * crossZ) / 6.0;
   }
 
   let nonManifoldEdges = 0;
   let boundaryEdges = 0;
-  for (const count of edgeMap.values()) {
-    if (count > 2) nonManifoldEdges++;
-    else if (count === 1) boundaryEdges++;
+
+  // Topological edge evaluation:
+  // For interactive 60fps responsiveness, execute on meshes <= 50,000 triangles.
+  // Beyond 50k, dense meshes avoid massive string/map heap allocations on the UI thread.
+  if (triCount <= 50000) {
+    const isSmallIndex = pos.count < 65536;
+    const edgeMap = new Map<number | string, number>();
+
+    for (let i = 0; i < triCount; i++) {
+      const i3 = i * 3;
+      const a = indexArray ? indexArray[i3] : i3;
+      const b = indexArray ? indexArray[i3 + 1] : i3 + 1;
+      const c = indexArray ? indexArray[i3 + 2] : i3 + 2;
+
+      const e1 = isSmallIndex ? (a < b ? a * 65536 + b : b * 65536 + a) : (a < b ? `${a}_${b}` : `${b}_${a}`);
+      const e2 = isSmallIndex ? (b < c ? b * 65536 + c : c * 65536 + b) : (b < c ? `${b}_${c}` : `${c}_${b}`);
+      const e3 = isSmallIndex ? (c < a ? c * 65536 + a : a * 65536 + c) : (c < a ? `${c}_${a}` : `${a}_${c}`);
+
+      edgeMap.set(e1, (edgeMap.get(e1) || 0) + 1);
+      edgeMap.set(e2, (edgeMap.get(e2) || 0) + 1);
+      edgeMap.set(e3, (edgeMap.get(e3) || 0) + 1);
+    }
+
+    for (const count of edgeMap.values()) {
+      if (count > 2) nonManifoldEdges++;
+      else if (count === 1) boundaryEdges++;
+    }
   }
 
   const uvCharts = countUVCharts(geometry, triCount);
@@ -106,8 +124,8 @@ export function countUVCharts(geometry: THREE.BufferGeometry, maxTriangles?: num
 
   const triCount = maxTriangles ?? (index ? index.count / 3 : pos.count / 3);
   if (triCount === 0) return 0;
-  // Performance safeguard for dense high-poly meshes (>40k triangles)
-  if (triCount > 40000) return 1;
+  // Performance safeguard for dense high-poly meshes (>25k triangles)
+  if (triCount > 25000) return 1;
 
   const parent = new Int32Array(triCount);
   for (let i = 0; i < triCount; i++) parent[i] = i;
@@ -175,7 +193,9 @@ export function prepareMeshTangentsAndNormals(mesh: THREE.Mesh): void {
     geom.computeVertexNormals();
   }
 
-  if (geom.attributes.uv && !geom.attributes.tangent) {
+  // Only run computeTangents on client if explicitly needed and mesh is within reasonable complexity (<= 60,000 vertices)
+  // Very dense meshes cause UI freeze if tangents are computed synchronously on the CPU; Three.js computes tangent space on GPU via derivatives automatically.
+  if (geom.attributes.uv && !geom.attributes.tangent && (geom.attributes.position.count || 0) <= 60000) {
     try {
       if (!geom.index) {
         const count = geom.attributes.position.count;
