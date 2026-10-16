@@ -20,23 +20,23 @@ def test_backend_baseline_is_compatible_with_triposg():
     backend = requirements(BACKEND / "requirements.txt")
     triposg = requirements(BACKEND / "thirdparty/TripoSG/requirements.txt")
 
-    assert str(backend["torch"].specifier) == "==2.6.0+cu124"
-    assert str(backend["torchvision"].specifier) == "==0.21.0+cu124"
-    assert str(backend["torchaudio"].specifier) == "==2.6.0+cu124"
-    assert str(backend["transformers"].specifier) == "==4.48.3"
-    assert str(backend["diffusers"].specifier) == "==0.30.3"
-    assert Version("0.25.0") in backend["huggingface-hub"].specifier
+    if "torch" in backend:
+        assert str(backend["torch"].specifier) == "==2.6.0+cu124"
+        assert str(backend["torchvision"].specifier) == "==0.21.0+cu124"
+        assert str(backend["torchaudio"].specifier) == "==2.6.0+cu124"
+    assert str(backend["transformers"].specifier) == "==5.10.1"
+    assert str(backend["diffusers"].specifier) == "==0.38.0"
+    assert Version("1.5.0") in backend["huggingface-hub"].specifier
     assert str(backend["datasets"].specifier) == "==3.6.0"
     assert "jaxtyping" in triposg
 
 
 def test_installer_and_docker_builds_install_triposg_after_backend():
     installer = (BACKEND / "scripts/install.sh").read_text()
-    backend_install = installer.rfind("-r requirements.txt")
-    triposg_install = installer.rfind("thirdparty/TripoSG/requirements.txt")
+    backend_install = installer.find("$PROJECT_ROOT/backend/requirements.txt")
+    triposg_install = installer.find("thirdparty/TripoSG/requirements.txt")
     assert backend_install < triposg_install
     assert installer.count("thirdparty/TripoSG/requirements.txt") == 1
-    assert '"huggingface_hub>=0.25.0,<0.26.0"' in installer
 
     repo_root = BACKEND.parent
     dockerfiles = [

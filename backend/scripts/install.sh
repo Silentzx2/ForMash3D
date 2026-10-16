@@ -741,7 +741,7 @@ echo "Installing Project Dependencies"
 echo "========================================"
 ### for this project (fastapi / uvicorn relevant etc.)  ###
 echo "[INFO] Installing main project requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt
+$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt"
 if [ $? -eq 0 ]; then
     echo "[SUCCESS] Main project requirements installed"
 else
@@ -760,6 +760,7 @@ if [ -d "$PROJECT_ROOT/backend/thirdparty/TripoSG" ]; then
         exit 1
     fi
     echo "[SUCCESS] TripoSG model-specific dependency versions restored"
+fi
 
 echo ""
 echo "========================================"
@@ -780,7 +781,7 @@ echo ""
 echo "[INFO] Installing natten (required for sparse attention)..."
 # natten requires specific CUDA architecture and build workers
 # Users should set NATTEN_CUDA_ARCH and NATTEN_N_WORKERS in their environment
-else
+if ! install_local_wheel "natten-*.whl" "natten"; then
     echo "[INFO] Installing natten with CUDA_ARCH=$NATTEN_CUDA_ARCH and WORKERS=$NATTEN_N_WORKERS"
     NATTEN_CUDA_ARCH="$NATTEN_CUDA_ARCH" NATTEN_N_WORKERS="$NATTEN_N_WORKERS" $UV_PIP install --find-links="$WHEEL_DIR" natten==0.21.0 --no-build-isolation
 fi
@@ -807,15 +808,7 @@ else
     exit 1
 fi
 
-echo "[INFO] Installing huggingface_hub for model downloading..."
-# Keep the final hub version inside both the backend and TripoSG ranges.
-$UV_PIP install --find-links="$WHEEL_DIR" "huggingface_hub>=0.25.0,<0.26.0"
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] huggingface_hub installed"
-else
-    echo "[ERROR] Failed to install huggingface_hub"
-    exit 1
-fi
+# huggingface_hub is managed centrally by backend/requirements.txt.
 
 # Older installer runs installed Gradio only for Unique3D's standalone demo.
 # ForMash3D uses FastAPI/Next.js and does not need these packages in its shared Hub 0.25 env.
