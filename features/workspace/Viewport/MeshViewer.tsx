@@ -785,6 +785,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const reflectionPeekTweenRef = useRef<number | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
   const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
+  const [meshUploadProgress, setMeshUploadProgress] = useState<{
+    isUploading: boolean;
+    percent: number;
+    filename: string;
+    isComplete: boolean;
+    error: string | null;
+  } | null>(null);
+
+  const hasUserOrbitedRef = useRef(false);
+  const isUserInteractingRef = useRef(false);
+  const lastFramedAssetIdRef = useRef<string | null>(null);
+  const currentLoadedSourceUrlRef = useRef<string | null>(null);
   const physicsViewerReady = Boolean(physicsStatus?.toLowerCase().includes('ready'));
 
   // Close menus on outside click or Escape key
@@ -1762,6 +1774,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     controls.minDistance = 0.05;   // Decreased from 0.8 — allow much closer zoom in
     controls.zoomSpeed = 1.4;     // Increased scroll-wheel zoom speed
     controls.target.set(0, 0.4, 0);
+    controls.addEventListener('start', () => {
+      hasUserOrbitedRef.current = true;
+      isUserInteractingRef.current = true;
+    });
+    controls.addEventListener('end', () => {
+      isUserInteractingRef.current = false;
+    });
     controlsRef.current = controls;
 
     // 4b. Studio IBL Environment Map (360° PBR specular sheen and balanced indirect illumination)
@@ -2628,6 +2647,18 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   // Load the real selected asset into the persistent viewport.
   useEffect(() => {
     if (!sceneRef.current || !currentMeshGroupRef.current) return;
+    const sourceUrl = currentAsset?.source?.localUrl || currentAsset?.source?.viewUrl;
+    // Fast path: if the exact same model source is already rendered, do not purge and re-parse!
+    if (
+      sourceUrl &&
+      currentLoadedSourceUrlRef.current === sourceUrl &&
+      currentMeshGroupRef.current.children.length > 0
+    ) {
+      setLoadedAssetId(currentAsset?.id ?? null);
+      setIsLoading(false);
+      return;
+    }
+    currentLoadedSourceUrlRef.current = sourceUrl || null;
     useAnimationStore.getState().setLoadedSkeletonBoneNames(null);
     const group = currentMeshGroupRef.current;
     while (group.children.length > 0) {
@@ -2738,7 +2769,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 }
               }
             });
-            frameCamera(gltf.scene);
+            const shouldResetAngle = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(gltf.scene, { forceResetAngle: shouldResetAngle });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(gltf.scene);
 
             // If GLTF contains animation clips, start AnimationMixer
@@ -2817,7 +2850,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             }
           });
           group.add(fbx);
-          frameCamera(fbx);
+          const shouldResetAngleFbx = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+          frameCamera(fbx, { forceResetAngle: shouldResetAngleFbx });
+          lastFramedAssetIdRef.current = currentAsset.id;
           computeMeshStats(fbx);
           if (fbx.animations.length) {
             const mixer = new THREE.AnimationMixer(fbx);
@@ -2875,7 +2910,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               }
             });
             group.add(object);
-            frameCamera(object);
+            const shouldResetAngleObj = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(object, { forceResetAngle: shouldResetAngleObj });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(object);
             if (!cancelled) {
               setLoadedAssetId(currentAsset.id);
@@ -2914,7 +2951,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           mesh.receiveShadow = true;
           if (!cancelled) {
             group.add(mesh);
-            frameCamera(mesh);
+            const shouldResetAnglePly = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(mesh, { forceResetAngle: shouldResetAnglePly });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
             setLoadedAssetId(currentAsset.id);
             setModelLoadVersion((version) => version + 1);
@@ -2940,7 +2979,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           mesh.receiveShadow = true;
           if (!cancelled) {
             group.add(mesh);
-            frameCamera(mesh);
+            const shouldResetAngleStl = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
+            frameCamera(mesh, { forceResetAngle: shouldResetAngleStl });
+            lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
             setLoadedAssetId(currentAsset.id);
             setModelLoadVersion((version) => version + 1);
@@ -3397,6 +3438,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   }, []);
 
   const resetCamera = useCallback(() => {
+    hasUserOrbitedRef.current = false;
     applyCameraPreset('perspective');
   }, [applyCameraPreset]);
 
@@ -3436,13 +3478,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   }, []);
 
-  const frameCamera = useCallback((object: THREE.Object3D) => {
+  const frameCamera = useCallback((object: THREE.Object3D, options?: { forceResetAngle?: boolean }) => {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     if (!camera || !controls) return;
-
-    controls.target.set(0, 0, 0);
-    controls.update();
 
     const box = new THREE.Box3().setFromObject(object);
     const center = box.getCenter(new THREE.Vector3());
@@ -3466,11 +3505,17 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       Math.min(controls.maxDistance * 0.9, distance)
     );
 
-    const dir = new THREE.Vector3(1, 0.4, 1).normalize();
+    // If user has manually orbited or existing camera has a valid viewing direction, preserve that angle!
+    const currentDir = new THREE.Vector3().subVectors(camera.position, controls.target);
+    const hasAngle = currentDir.lengthSq() > 0.001;
+    const dir = (hasAngle && !options?.forceResetAngle)
+      ? currentDir.normalize()
+      : new THREE.Vector3(1, 0.4, 1).normalize();
+
     camera.position.copy(center).add(dir.multiplyScalar(clampedDistance));
 
     camera.near = Math.max(0.01, clampedDistance / 100);
-    camera.far = clampedDistance * 100;
+    camera.far = Math.max(100, clampedDistance * 100);
     camera.updateProjectionMatrix();
 
     controls.target.copy(center);
@@ -3550,10 +3595,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   };
 
   // Sync external camera preset and viewport snapshot triggers
+  const lastAnimCameraPresetRef = useRef<string | null>(null);
   useEffect(() => {
-    if (animCameraPreset) {
+    if (animCameraPreset && lastAnimCameraPresetRef.current !== null && lastAnimCameraPresetRef.current !== animCameraPreset) {
       applyCameraPreset(animCameraPreset);
     }
+    lastAnimCameraPresetRef.current = animCameraPreset;
   }, [animCameraPreset, applyCameraPreset]);
 
   useEffect(() => {
@@ -3676,25 +3723,96 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         return;
       }
 
-      setDropToastMessage(`Uploading "${file.name}" to backend storage...`);
-      try {
-        const asset = await uploadMeshAsset(file, {
-          onProgress: (loadedBytes, totalBytes) => {
-            const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
-            if (percent !== null) {
-              setDropToastMessage(`Uploading "${file.name}" (${percent}%)...`);
-            }
+      // 1. Immediately create optimistic local preview URL for instant 3D viewport rendering
+      const localUrl = URL.createObjectURL(file);
+      const optimisticId = `upload_${Date.now()}`;
+      const cleanName = file.name.replace(/\.[^/.]+$/, '');
+      const optimisticAsset: ModelAsset = {
+        id: optimisticId,
+        fileId: optimisticId,
+        name: cleanName,
+        category: 'mesh',
+        meshType: 'custom',
+        thumbnail: '',
+        faces: 0,
+        vertices: 0,
+        triangles: 0,
+        statsAvailable: false,
+        format: ext as any,
+        fileSize: `${(file.size / 1048576).toFixed(1)} MB`,
+        source: {
+          filename: file.name,
+          subfolder: 'uploads',
+          type: 'upload',
+          viewUrl: localUrl,
+          localUrl: localUrl,
+          fileId: optimisticId,
+        },
+        topology: 'Triangle',
+        dateCreated: new Date().toISOString().split('T')[0],
+        tags: ['Uploaded', ext],
+      };
+
+      // Reset camera orbit lock for the brand-new model so it frames automatically once
+      hasUserOrbitedRef.current = false;
+      lastFramedAssetIdRef.current = null;
+      addAsset(optimisticAsset);
+      setCurrentAsset(optimisticAsset);
+
+      // 2. Open live upload progress bar UI
+      setMeshUploadProgress({
+        isUploading: true,
+        percent: 0,
+        filename: file.name,
+        isComplete: false,
+        error: null,
+      });
+
+      // 3. Upload to backend in background while user immediately interacts with model
+      uploadMeshAsset(file, {
+        onProgress: (loadedBytes, totalBytes) => {
+          const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
+          if (percent !== null) {
+            setMeshUploadProgress((prev) => prev ? { ...prev, percent } : null);
+          }
+        },
+      }).then((canonicalAsset) => {
+        // Complete progress
+        setMeshUploadProgress((prev) => prev ? { ...prev, percent: 100, isComplete: true } : null);
+
+        // Retain localUrl so the 3D scene does not re-fetch from backend or flicker
+        const mergedAsset: ModelAsset = {
+          ...canonicalAsset,
+          source: {
+            filename: canonicalAsset.source?.filename || file.name,
+            subfolder: canonicalAsset.source?.subfolder || 'uploads',
+            type: canonicalAsset.source?.type || 'upload',
+            viewUrl: canonicalAsset.source?.viewUrl,
+            fileId: canonicalAsset.fileId || canonicalAsset.id,
+            localUrl: localUrl,
           },
-        });
-        addAsset(asset);
-        setCurrentAsset(asset);
-        setDropToastMessage(`Saved to storage and loaded "${asset.name}"`);
-        setTimeout(() => setDropToastMessage(null), 3000);
-      } catch (uploadErr) {
+        };
+
+        lastFramedAssetIdRef.current = canonicalAsset.id;
+        addAsset(mergedAsset);
+        setCurrentAsset(mergedAsset);
+
+        // Auto-dismiss progress overlay after 2.2 seconds
+        setTimeout(() => {
+          setMeshUploadProgress(null);
+        }, 2200);
+      }).catch((uploadErr) => {
         console.error('Backend mesh upload failed:', uploadErr);
-        setDropToastMessage(uploadErr instanceof Error ? uploadErr.message : `Failed to upload "${file.name}"`);
-        setTimeout(() => setDropToastMessage(null), 3500);
-      }
+        const errMsg = uploadErr instanceof Error ? uploadErr.message : `Failed to upload "${file.name}"`;
+        setMeshUploadProgress((prev) => prev ? {
+          ...prev,
+          isUploading: false,
+          error: errMsg,
+        } : null);
+        setTimeout(() => {
+          setMeshUploadProgress(null);
+        }, 4000);
+      });
     }
   };
 
@@ -3840,6 +3958,70 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           <span className="text-xs text-zinc-400 mt-1">
             Loads geometry, textures, topology & material configs instantly
           </span>
+        </div>
+      )}
+
+      {/* Mesh Upload & Cloud Save Live Progress Overlay */}
+      {meshUploadProgress && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-sm px-4 py-3 rounded-2xl bg-[#14151ae6] backdrop-blur-xl border border-primary/40 shadow-2xl flex flex-col gap-2 text-xs text-white animate-in fade-in slide-in-from-top-3 duration-300 pointer-events-auto">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className={`p-1.5 rounded-lg flex items-center justify-center ${
+                meshUploadProgress.error
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : meshUploadProgress.isComplete
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-primary/20 text-primary'
+              }`}>
+                {meshUploadProgress.error ? (
+                  <HugeiconsIcon icon={Cancel01Icon} size={16} />
+                ) : meshUploadProgress.isComplete ? (
+                  <HugeiconsIcon icon={CheckIcon} size={16} />
+                ) : (
+                  <HugeiconsIcon icon={CloudUpload} size={16} className="animate-pulse" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="font-semibold text-white truncate max-w-[210px]">
+                  {meshUploadProgress.filename}
+                </p>
+                <p className="text-[10px] text-zinc-400">
+                  {meshUploadProgress.error
+                    ? meshUploadProgress.error
+                    : meshUploadProgress.isComplete
+                    ? '100% saved in cloud storage'
+                    : 'Preview loaded · Saving to server...'}
+                </p>
+              </div>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <span className={`text-xs font-mono font-bold ${
+                meshUploadProgress.error
+                  ? 'text-rose-400'
+                  : meshUploadProgress.isComplete
+                  ? 'text-emerald-400'
+                  : 'text-primary'
+              }`}>
+                {meshUploadProgress.error
+                  ? 'Failed'
+                  : `${Math.round(meshUploadProgress.percent)}%`}
+              </span>
+            </div>
+          </div>
+
+          {/* Animated Progress Bar */}
+          <div className="w-full h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-200 ease-out ${
+                meshUploadProgress.error
+                  ? 'bg-rose-500'
+                  : meshUploadProgress.isComplete
+                  ? 'bg-emerald-400'
+                  : 'bg-gradient-to-r from-cyan-400 to-primary'
+              }`}
+              style={{ width: `${Math.max(5, Math.min(100, meshUploadProgress.percent))}%` }}
+            />
+          </div>
         </div>
       )}
 

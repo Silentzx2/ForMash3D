@@ -1,3 +1,11 @@
+## 2026-10-16 — Instant Mesh Drag-and-Drop Preview, Live Progress HUD & Camera Stability
+
+- **VIEW-01**: Implemented instant optimistic 3D preview on drag-and-drop: dropping a 3D mesh (`GLB`, `GLTF`, `OBJ`, `PLY`, `STL`, `FBX`) in `MeshViewer` immediately generates a local object URL and renders the geometry in milliseconds without waiting for server network upload.
+- **VIEW-02**: Added prominent floating live upload progress bar UI overlay in the viewport tracking cloud storage saving from 0% to 100%, completing with an emerald confirmation badge before smooth auto-dismissal.
+- **VIEW-03**: Seamless backend asset handoff: upon backend upload completion, canonical asset metadata is merged while preserving `localUrl` and scene references, completely eliminating redundant re-downloads, re-parsing, and viewport flickering.
+- **VIEW-04**: Fixed camera direction snapping and forced resetting while orbiting: `frameCamera` now preserves manual user orbit angles (`camera.position - controls.target` vector) rather than forcing direction to `(1, 0.4, 1)`. Added user interaction guards (`start`/`end` OrbitControls listeners) and guarded `animCameraPreset` sync against unsolicited resets.
+- **VIEW-05**: Fixed pyrender EGL headless context cleanup error `GLError(err = 12289, baseOperation = eglDestroyContext)` in `backend/core/utils/thumbnail_utils.py` by adding thread synchronization (`_RENDER_LOCK`), safe `try...finally` renderer cleanup, and a reliable 2.5D isometric projected dark studio thumbnail generator that guarantees thumbnail endpoints never fail or return HTTP 404.
+
 ## 2026-10-16 — Unified Dependency Architecture & Model Downgrade Prevention
 
 - **DEP-01**: Centrally locked unified baseline in `backend/requirements.txt`: `transformers==5.10.1`, `diffusers==0.38.0`, `huggingface_hub>=1.5.0,<2.0`, `datasets==3.6.0`, `fastapi>=0.109.0`, and `uvicorn[standard]>=0.27.0`.
@@ -17,15 +25,4 @@
   - In `bake.py`: implemented `bake_high_to_low_pure_python` fallback using UV rasterization, MikkTSpace-compatible tangent basis generation, cKDTree high-poly surface projection, and Euclidean distance transform gutter dilation when headless Blender is unavailable.
 - **RAW-06**: Implemented non-destructive raw native passthrough in `backend/postprocess/pipeline.py`: when `resolved_target_polycount == 0` and not `auto_optimize`, master raw GLB bytes are preserved byte-for-byte with optimal normals, bypassing destructive re-tessellation.
 - **RAW-07**: Added comprehensive test suite `backend/tests/test_raw_mesh_quality_preservation.py` verifying cube and cylinder crease splitting, feature-preserving decimation, MikkTSpace normal baking, and raw byte-for-byte passthrough.
-
-## 2026-10-16 — End-to-End Pipeline Quality: Uncapped Geometry, glTF Tangents & PBR Normal Baking
-
-- **PIPE-01**: Eliminated artificial `< 200,000` face clamp in `buildGenerationParameters.ts::shouldAutoOptimize()` and restored contract string `target_polycount`, enabling high-fidelity production budgets without silently disabling auto-optimize or falling back to preset defaults.
-- **PIPE-02**: Corrected `_resolve_target_polycount_precedence()` in `mesh_generation.py` to give top-level explicit polycount targets (including `0` for Native/Raw) strict precedence over preset defaults.
-- **PIPE-03**: Raised `MAX_PRODUCTION_FACES` in `postprocess/pipeline.py` to 2,000,000 faces, supporting high-density sculpting, VFX, and cinematic assets.
-- **PIPE-04**: Ensured deterministic `NORMAL` attribute export in glTF GLBs by evaluating and caching `mesh.vertex_normals` across all model adapters (`trellis_adapter`, `triposg_adapter`), `simplify.py`, and `compute_angle_weighted_normals()` when `process=False` is used.
-- **PIPE-05**: Added standard glTF 4-component tangent space generation (`compute_mesh_tangents`) and wired `TANGENT` vertex accessors into `_export_glb` via `tree_postprocessor` to eliminate UV seam shading artifacts in standard PBR viewers.
-- **PIPE-06**: Explicitly configured OpenGL tangent space (`POS_X`, `POS_Y`, `POS_Z`) for normal map baking in `bake_worker.py` matching glTF 2.0 specifications.
-- **PIPE-07**: Fixed UV gutter dilation bug in `bake_worker.py::fill_gutters()` for 2D grayscale textures (ambient occlusion, roughness, metallic), eliminating dark boundary seams around UV islands.
-- **PIPE-08**: Verified 100% pass rate across TypeScript type checks (`bun run test`) and official model parity contracts (`pytest`).
 

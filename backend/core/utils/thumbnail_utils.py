@@ -7,6 +7,7 @@ using Trimesh and pyrender for off-screen rendering.
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -15,6 +16,9 @@ import trimesh
 from PIL import Image
 
 logger = logging.getLogger(__name__)
+
+# Protect headless EGL context creation/deletion across concurrent worker threads
+_RENDER_LOCK = threading.Lock()
 
 # Try to import pyrender, fall back to basic rendering if not available
 try:
@@ -79,18 +83,34 @@ class MeshThumbnailGenerator:
             True if thumbnail was generated successfully, False otherwise
         """
         try:
+            # Check if thumbnail already exists and is non-empty
+            target = Path(output_path)
+            if target.exists() and target.stat().st_size > 0:
+                return True
+
             # Load the mesh
             mesh = self._load_mesh(mesh_path)
             if mesh is None:
                 return False
 
-            # Generate thumbnail
+            # Try pyrender rendering under thread lock to avoid headless EGL display conflicts
+            success = False
             if PYRENDER_AVAILABLE:
-                return self._generate_with_pyrender(
-                    mesh, output_path, camera_distance, elevation_angle, azimuth_angle
-                )
-            else:
-                return self._generate_fallback(mesh, output_path)
+                try:
+                    with _RENDER_LOCK:
+                        success = self._generate_with_pyrender(
+                            mesh, output_path, camera_distance, elevation_angle, azimuth_angle
+                        )
+                except Exception as pyrender_err:
+                    logger.warning(f"Pyrender execution failed for {mesh_path}: {pyrender_err}")
+                    success = False
+
+            # If pyrender failed or produced missing/empty file, always run fallback
+            if not success or not target.exists() or target.stat().st_size == 0:
+                logger.info(f"Using reliable fallback thumbnail generation for {mesh_path}")
+                success = self._generate_fallback(mesh, output_path)
+
+            return success
 
         except Exception as e:
             logger.error(f"Failed to generate thumbnail for {mesh_path}: {str(e)}")
@@ -139,6 +159,7 @@ class MeshThumbnailGenerator:
         azimuth_angle: float,
     ) -> bool:
         """Generate thumbnail using pyrender for high-quality rendering."""
+        renderer = None
         try:
             # Create pyrender scene
             scene = pyrender.Scene(
@@ -146,13 +167,12 @@ class MeshThumbnailGenerator:
             )
 
             # Add mesh to scene
-            mesh_color = [0.7, 0.7, 0.9, 1.0]  # Light blue color
             pyrender_mesh = pyrender.Mesh.from_trimesh(mesh, smooth=True)
-            mesh_node = scene.add(pyrender_mesh)
+            scene.add(pyrender_mesh)
 
             # Setup lighting
             light = pyrender.DirectionalLight(color=[1.0, 1.0, 1.0], intensity=2.0)
-            light_node = scene.add(light, pose=self._get_light_pose())
+            scene.add(light, pose=self._get_light_pose())
 
             # Add fill light
             fill_light = pyrender.PointLight(color=[1.0, 1.0, 1.0], intensity=1.0)
@@ -167,7 +187,7 @@ class MeshThumbnailGenerator:
             )
 
             camera = pyrender.PerspectiveCamera(yfov=np.pi / 4.0)
-            camera_node = scene.add(camera, pose=camera_pose)
+            scene.add(camera, pose=camera_pose)
 
             # Render. Prefer EGL for headless Linux/Colab runtimes.
             if not os.environ.get("PYOPENGL_PLATFORM"):
@@ -178,55 +198,86 @@ class MeshThumbnailGenerator:
             if self.use_antialiasing:
                 flags |= pyrender.RenderFlags.VERTEX_NORMALS
 
-            color, depth = renderer.render(scene, flags=flags)
+            color, _ = renderer.render(scene, flags=flags)
 
-            # Save image
+            # Save image first before cleanup
             image = Image.fromarray(color)
-            os.makedirs(Path(output_path).parent, exist_ok=True)
+            out_target = Path(output_path)
+            out_target.parent.mkdir(parents=True, exist_ok=True)
             image.save(output_path, "PNG")
-
-            # Cleanup
-            renderer.delete()
 
             logger.info(f"Generated thumbnail: {output_path}")
             return True
 
         except Exception as e:
             logger.error(f"Failed to generate thumbnail with pyrender: {str(e)}")
+            # If the image was saved successfully before any error (e.g. cleanup), treat as success
+            out_target = Path(output_path)
+            if out_target.exists() and out_target.stat().st_size > 0:
+                return True
             return False
+        finally:
+            # Safe EGL context cleanup that never propagates GLError or crashes the worker
+            if renderer is not None:
+                try:
+                    renderer.delete()
+                except Exception as cleanup_err:
+                    logger.debug(f"Non-fatal EGL context cleanup notice: {cleanup_err}")
 
     def _generate_fallback(self, mesh: trimesh.Trimesh, output_path: str) -> bool:
-        """Generate basic thumbnail without pyrender (fallback method)."""
+        """Generate reliable studio thumbnail without pyrender (fallback method)."""
         try:
-            # Use trimesh's built-in visualization
-            # This is a very basic fallback that just saves mesh info as text overlay on white image
             from PIL import Image, ImageDraw, ImageFont
 
-            # Create white background image
-            image = Image.new("RGBA", self.thumbnail_size, (255, 255, 255, 255))
+            width, height = self.thumbnail_size
+            # Create sleek dark studio background image
+            image = Image.new("RGBA", (width, height), (20, 22, 28, 255))
             draw = ImageDraw.Draw(image)
 
-            # Draw basic mesh info
+            # Project vertices to 2.5D isometric view to render mesh silhouette/points
+            try:
+                verts = np.asarray(mesh.vertices)
+                if len(verts) > 0:
+                    min_b = verts.min(axis=0)
+                    max_b = verts.max(axis=0)
+                    extent = np.maximum(max_b - min_b, 1e-6)
+                    max_span = np.max(extent)
+                    norm_verts = (verts - (min_b + max_b) * 0.5) / max_span
+
+                    # Isometric projection angles
+                    angle_y = np.radians(45.0)
+                    angle_x = np.radians(28.0)
+                    cos_y, sin_y = np.cos(angle_y), np.sin(angle_y)
+                    cos_x, sin_x = np.cos(angle_x), np.sin(angle_x)
+
+                    x1 = norm_verts[:, 0] * cos_y + norm_verts[:, 2] * sin_y
+                    z1 = -norm_verts[:, 0] * sin_y + norm_verts[:, 2] * cos_y
+                    y1 = norm_verts[:, 1] * cos_x - z1 * sin_x
+
+                    scale = min(width, height) * 0.70
+                    px = (width * 0.5 + x1 * scale).astype(int)
+                    py = (height * 0.5 - y1 * scale).astype(int)
+
+                    step = max(1, len(px) // 4000)
+                    for i in range(0, len(px), step):
+                        draw.point((int(px[i]), int(py[i])), fill=(0, 245, 212, 160))
+            except Exception as proj_err:
+                logger.debug(f"Silhouette projection skipped: {proj_err}")
+
+            # Draw basic mesh info badge at bottom
             try:
                 font = ImageFont.load_default()
             except Exception:
                 font = None
 
-            text_lines = [
-                "3D Mesh Preview",
-                f"Vertices: {len(mesh.vertices)}",
-                f"Faces: {len(mesh.faces)}",
-                f"Bounds: {mesh.bounds}",
-                "(Preview requires pyrender)",
-            ]
-
-            y_offset = 50
-            for line in text_lines:
-                draw.text((20, y_offset), line, fill=(0, 0, 0, 255), font=font)
-                y_offset += 30
+            v_count = f"{len(mesh.vertices):,}"
+            f_count = f"{len(mesh.faces):,}"
+            draw.text((24, height - 48), "3D MESH PREVIEW", fill=(0, 245, 212, 255), font=font)
+            draw.text((24, height - 30), f"Vertices: {v_count} | Faces: {f_count}", fill=(200, 205, 215, 220), font=font)
 
             # Save image
-            os.makedirs(Path(output_path).parent, exist_ok=True)
+            out_target = Path(output_path)
+            out_target.parent.mkdir(parents=True, exist_ok=True)
             image.save(output_path, "PNG")
 
             logger.info(f"Generated fallback thumbnail: {output_path}")

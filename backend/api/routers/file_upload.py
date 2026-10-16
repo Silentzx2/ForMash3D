@@ -1016,9 +1016,9 @@ async def get_thumbnail(
     ):
         raise HTTPException(status_code=404, detail="File not found on disk")
 
-    # Look for thumbnail
+    # Look for existing thumbnail
     thumbnail_path = _THUMBNAIL_DIR / f"{file_id}.png"
-    if thumbnail_path.exists():
+    if thumbnail_path.exists() and thumbnail_path.stat().st_size > 0:
         return FileResponse(
             path=str(thumbnail_path),
             media_type="image/png",
@@ -1028,7 +1028,7 @@ async def get_thumbnail(
     # Generate thumbnail on-demand
     try:
         thumbnail_path_str = _generate_thumbnail_for_mesh(file_path, file_id)
-        if thumbnail_path_str and os.path.exists(thumbnail_path_str):
+        if thumbnail_path_str and os.path.exists(thumbnail_path_str) and os.path.getsize(thumbnail_path_str) > 0:
             return FileResponse(
                 path=thumbnail_path_str,
                 media_type="image/png",
@@ -1036,6 +1036,14 @@ async def get_thumbnail(
             )
     except Exception as exc:
         logger.warning(f"Thumbnail generation failed for {file_id}: {exc}")
+
+    # Re-check disk in case generated concurrently by background task
+    if thumbnail_path.exists() and thumbnail_path.stat().st_size > 0:
+        return FileResponse(
+            path=str(thumbnail_path),
+            media_type="image/png",
+            filename=f"{file_id}_thumb.png",
+        )
 
     raise HTTPException(status_code=404, detail="Thumbnail not available")
 
