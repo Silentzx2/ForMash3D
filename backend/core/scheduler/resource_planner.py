@@ -7,7 +7,10 @@ import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 logger = logging.getLogger(__name__)
 
@@ -43,14 +46,15 @@ def configure_cpu_runtime(threads: Optional[int] = None, optimize_for_throughput
     os.environ["OPENBLAS_NUM_THREADS"] = threads_str
     os.environ["NUMEXPR_NUM_THREADS"] = threads_str
     os.environ["VECLIB_MAXIMUM_THREADS"] = threads_str
-    try:
-        torch.set_num_threads(threads)
-    except Exception:
-        logger.debug("Unable to set torch CPU thread count", exc_info=True)
-    try:
-        torch.set_num_interop_threads(max(1, min(4, threads)))
-    except RuntimeError:
-        pass
+    if torch is not None:
+        try:
+            torch.set_num_threads(threads)
+        except Exception:
+            logger.debug("Unable to set torch CPU thread count", exc_info=True)
+        try:
+            torch.set_num_interop_threads(max(1, min(4, threads)))
+        except RuntimeError:
+            pass
     return threads
 
 

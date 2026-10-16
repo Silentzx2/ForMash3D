@@ -71,8 +71,8 @@ def _resolve_target_polycount_precedence(
     preset_target: Optional[int],
 ) -> Optional[int]:
     """Resolve a generation budget without allowing a nested default to mask explicit API input."""
-    if top_level_target is not None and top_level_target > 0:
-        return top_level_target
+    if top_level_target is not None:
+        return top_level_target if top_level_target > 0 else 0
     if nested_target is not None and nested_target > 0:
         return nested_target
     return preset_target

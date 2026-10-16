@@ -7,9 +7,20 @@ try:
 except ImportError:
     GPUtil = None
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 logger = logging.getLogger(__name__)
+
+
+def _cuda_available() -> bool:
+    return bool(torch is not None and torch.cuda.is_available())
+
+
+def _cuda_device_count() -> int:
+    return torch.cuda.device_count() if _cuda_available() else 0
 
 
 class GPUMonitor:
@@ -32,13 +43,13 @@ class GPUMonitor:
 
     def _update_gpu_list(self):
         """Update list of available GPUs"""
-        if torch.cuda.is_available() and torch.cuda.device_count() > 0 and self._has_gputil and GPUtil:
+        if _cuda_available() and torch.cuda.device_count() > 0 and self._has_gputil and GPUtil:
             try:
                 self.gpus = GPUtil.getGPUs()
             except Exception as e:
                 logger.warning(f"Failed to get GPU list with GPUtil: {e}")
                 self.gpus = []
-        elif torch.cuda.is_available() and torch.cuda.device_count() > 0:
+        elif _cuda_available() and torch.cuda.device_count() > 0:
             # Fallback to torch-only implementation
             gpu_count = torch.cuda.device_count()
             self.gpus = []
@@ -64,7 +75,7 @@ class GPUMonitor:
         self.allocated_vram_per_gpu.clear()
         self.gpu_total_vram.clear()
 
-        if torch.cuda.is_available():
+        if _cuda_available():
             for gpu_info in self.gpus:
                 if isinstance(gpu_info, dict):
                     gpu_id = gpu_info["id"]
@@ -146,7 +157,7 @@ class GPUMonitor:
         Returns:
             Available VRAM in MB (accounting for buffer and allocated VRAM in tracking mode)
         """
-        if not torch.cuda.is_available():
+        if not _cuda_available():
             return 0
 
         if self.tracking_mode:
@@ -169,7 +180,7 @@ class GPUMonitor:
         self._update_gpu_list()
         status = []
 
-        if self._has_gputil and torch.cuda.is_available() and torch.cuda.device_count() > 0:
+        if self._has_gputil and _cuda_available() and torch.cuda.device_count() > 0:
             # Use GPUtil for detailed stats
             for gpu in self.gpus:
                 gpu_status = {
@@ -193,7 +204,7 @@ class GPUMonitor:
                     )
 
                 status.append(gpu_status)
-        elif torch.cuda.is_available() and torch.cuda.device_count() > 0:
+        elif _cuda_available() and torch.cuda.device_count() > 0:
             # Use torch for basic memory info
             for gpu in self.gpus:
                 gpu_id = gpu["id"]
@@ -232,7 +243,7 @@ class GPUMonitor:
         """Find GPU with enough free memory"""
         self._update_gpu_list()
 
-        if not torch.cuda.is_available():
+        if not _cuda_available():
             return None
 
         best_gpu = None
@@ -259,7 +270,7 @@ class GPUMonitor:
 
     def get_gpu_memory_usage(self, gpu_id: int) -> Dict:
         """Get memory usage for specific GPU"""
-        if not torch.cuda.is_available():
+        if not _cuda_available():
             raise ValueError("CUDA not available")
 
         if gpu_id >= torch.cuda.device_count():

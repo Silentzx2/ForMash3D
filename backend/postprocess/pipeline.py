@@ -29,7 +29,7 @@ from core.utils.log_formatters import format_banner, format_box, format_bytes
 from core.quality.evaluation import compare_meshes, quality_gate
 from core.scheduler.resource_planner import configure_cpu_runtime, cpu_count
 from .config import blender_expr_argv, blender_runtime_available
-from .meshio import load_mesh, load_mesh_vertex_normals, mesh_stats
+from .meshio import apply_angle_weighted_normals, load_mesh, load_mesh_vertex_normals, mesh_stats
 from .physics import build_physics_metadata, collision_options_for_quality, normalize_physics_config
 from .services.auto_retopo import run_auto_retopo
 from .services.auto_uv import run_auto_uv
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 GenerationProgress = Optional[Callable[[float, str, str], None]]
 CancelChecker = Optional[Callable[[], bool]]
 
-MAX_PRODUCTION_FACES = 200_000
+MAX_PRODUCTION_FACES = 2_000_000
 _FORMATS = ("glb", "fbx")
 
 
@@ -737,8 +737,66 @@ def _export_quad_obj(mesh: trimesh.Trimesh, quad_faces: Any) -> bytes:
     return "".join(lines).encode("utf-8")
 
 
+def compute_mesh_tangents(mesh: trimesh.Trimesh) -> Optional[np.ndarray]:
+    """Compute standard glTF 4-component tangent vectors (xyz + bitangent sign w)."""
+    if not hasattr(mesh.visual, "uv") or mesh.visual.uv is None:
+        return None
+    uvs = np.asarray(mesh.visual.uv, dtype=np.float32)
+    verts = np.asarray(mesh.vertices, dtype=np.float32)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    if len(uvs) != len(verts) or len(faces) == 0:
+        return None
+    normals = np.asarray(mesh.vertex_normals, dtype=np.float32)
+    v0, v1, v2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
+    uv0, uv1, uv2 = uvs[faces[:, 0]], uvs[faces[:, 1]], uvs[faces[:, 2]]
+    delta_pos1 = v1 - v0
+    delta_pos2 = v2 - v0
+    delta_uv1 = uv1 - uv0
+    delta_uv2 = uv2 - uv0
+    r = (delta_uv1[:, 0] * delta_uv2[:, 1] - delta_uv1[:, 1] * delta_uv2[:, 0])
+    valid = np.abs(r) > 1e-12
+    inv_r = np.zeros_like(r)
+    inv_r[valid] = 1.0 / r[valid]
+    face_tangents = (delta_pos1 * delta_uv2[:, 1:2] - delta_pos2 * delta_uv1[:, 1:2]) * inv_r[:, np.newaxis]
+    face_bitangents = (delta_pos2 * delta_uv1[:, 0:1] - delta_pos1 * delta_uv2[:, 0:1]) * inv_r[:, np.newaxis]
+    tangents = np.zeros_like(verts)
+    bitangents = np.zeros_like(verts)
+    for i in range(3):
+        np.add.at(tangents, faces[:, i], face_tangents)
+        np.add.at(bitangents, faces[:, i], face_bitangents)
+    dot_nt = np.sum(normals * tangents, axis=1, keepdims=True)
+    ortho_tangents = tangents - normals * dot_nt
+    norm_t = np.linalg.norm(ortho_tangents, axis=1, keepdims=True)
+    norm_t[norm_t < 1e-8] = 1.0
+    ortho_tangents /= norm_t
+    cross_nt = np.cross(normals, ortho_tangents)
+    dot_cb = np.sum(cross_nt * bitangents, axis=1)
+    w = np.where(dot_cb < 0.0, -1.0, 1.0).astype(np.float32)
+    result = np.zeros((len(verts), 4), dtype=np.float32)
+    result[:, :3] = ortho_tangents
+    result[:, 3] = w
+    return result
+
+
 def _export_glb(mesh: trimesh.Trimesh) -> bytes:
-    payload = mesh.export(file_type="glb")
+    if hasattr(mesh, "vertex_normals"):
+        _ = mesh.vertex_normals
+    tree_postprocessor = None
+    mat = getattr(getattr(mesh, "visual", None), "material", None)
+    has_normal_tex = mat is not None and getattr(mat, "normalTexture", None) is not None
+    if has_normal_tex and hasattr(mesh.visual, "uv") and mesh.visual.uv is not None:
+        tangents = compute_mesh_tangents(mesh)
+        if tangents is not None:
+            mesh.vertex_attributes["TANGENT"] = tangents
+            def _postprocess_tree(tree):
+                for m in tree.get("meshes", []):
+                    for p in m.get("primitives", []):
+                        attrs = p.get("attributes", {})
+                        if "_TANGENT" in attrs:
+                            attrs["TANGENT"] = attrs.pop("_TANGENT")
+            tree_postprocessor = _postprocess_tree
+
+    payload = mesh.export(file_type="glb", tree_postprocessor=tree_postprocessor)
     if isinstance(payload, bytes):
         return payload
     if isinstance(payload, bytearray):
@@ -2104,18 +2162,36 @@ def run_postprocess_job(
         _clear_gpu_cache()
 
     # Determine game-ready mesh for downstream production exports (GLB, FBX, LOD chain)
+    is_raw_native_passthrough = (
+        resolved_target_polycount == 0
+        and not auto_optimize
+        and not is_quad_requested
+        and texture_stage_info.get("status") != "completed"
+    )
+
     if texture_stage_info.get("status") == "completed" and texture_stage_info.get("textured_glb"):
         textured_glb_path = Path(texture_stage_info["textured_glb"])
         if textured_glb_path.exists():
             game_ready_mesh = load_mesh(textured_glb_path.read_bytes(), textured_glb_path.name)
         else:
             game_ready_mesh = uv_mesh
+    elif is_raw_native_passthrough:
+        logger.info(
+            "[RAW PASSTHROUGH] Native resolution preserved byte-for-byte from master/source.glb with optimal normals (no decimation)."
+        )
+        if master_path.exists() and str(master_path).lower().endswith(".glb") and master_path.stat().st_size > 0:
+            game_ready_glb_bytes = master_path.read_bytes()
+            game_ready_mesh = load_mesh(game_ready_glb_bytes, master_path.name)
+        else:
+            game_ready_mesh = apply_angle_weighted_normals(repaired if repaired is not None else mesh, crease_angle_deg=35.0)
+            game_ready_glb_bytes = _export_glb(game_ready_mesh)
     else:
         game_ready_mesh = uv_mesh
 
     _check_cancelled(cancel_checker)
     _emit(progress, 0.62, "game_ready", "Writing game-ready formats.")
-    game_ready_glb_bytes = _export_glb(game_ready_mesh)
+    if not is_raw_native_passthrough:
+        game_ready_glb_bytes = _export_glb(game_ready_mesh)
     _save_file(glb_path, game_ready_glb_bytes)
     game_ready["glb"] = str(glb_path)
 

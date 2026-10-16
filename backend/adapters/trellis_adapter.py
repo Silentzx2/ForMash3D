@@ -196,7 +196,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
 
             # Different Conditions
             if mesh_path:
-                input_mesh = trimesh.load(mesh_path, force="mesh")
+                input_mesh = trimesh.load(mesh_path, force="mesh", process=False)
                 # Notice that the input is assumed to be Y-UP, but trellis mesh painting requires it to be Z-UP
                 # Convert mesh from y-up to z-up coordinate system
                 # Transformation matrix: [[1,0,0,0], [0,0,1,0], [0,-1,0,0], [0,0,0,1]]
@@ -593,7 +593,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             if is_mesh_painting:
                 # Mesh painting path: load existing mesh and bake texture
                 if mesh_path:
-                    input_mesh = trimesh.load(mesh_path, force="mesh")
+                    input_mesh = trimesh.load(mesh_path, force="mesh", process=False)
                     # Notice that the input is assumed to be Y-UP, but trellis mesh painting requires it to be Z-UP
                     transform = np.array([
                         [1, 0, 0, 0],
@@ -676,6 +676,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 # Rotate from TRELLIS z-up to standard y-up coordinates (x'=x, y'=z, z'=-y)
                 vertices = vertices @ np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])
                 mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+                if hasattr(mesh, "vertex_normals"):
+                    _ = mesh.vertex_normals
                 has_texture = False
 
             # Save mesh in requested format

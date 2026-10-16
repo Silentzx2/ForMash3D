@@ -8,7 +8,8 @@ import { MeshDiffViewer } from '../Viewport/MeshDiffViewer';
 import { ModelComparisonViewer } from '../Viewport/ModelComparisonViewer';
 import { ModelAsset } from '../types';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Cancel, CheckIcon, DownloadIcon, EyeIcon, HexagonIcon, Lock, MoveIcon, PaletteIcon, Plus, RefreshCw, ShieldCheckIcon, SlidersHorizontalIcon, SparklesIcon, Unlock, ZapIcon } from '@hugeicons/core-free-icons';
+import { Box, Cancel, CheckIcon, DownloadIcon, EyeIcon, HexagonIcon, Lock, MoveIcon, PaletteIcon, Plus, RefreshCw, ShieldCheckIcon, SlidersHorizontalIcon, SparklesIcon, TriangleAlertIcon, Unlock, ZapIcon } from '@hugeicons/core-free-icons';
+import { useViewerStore } from '@/stores/useViewerStore';
 
 
 export const RightPropertyPanel: React.FC = () => {
@@ -26,6 +27,8 @@ export const RightPropertyPanel: React.FC = () => {
     updateMaterialConfig,
     assets
   } = useWorkspace();
+
+  const modelStats = useViewerStore((s) => s.modelStats);
 
   const [exportFormat, setExportFormat] = useState<'glb' | 'gltf' | 'fbx' | 'obj' | 'stl' | 'ply'>('glb');
   const [embedTextures, setEmbedTextures] = useState(true);
@@ -292,64 +295,110 @@ export const RightPropertyPanel: React.FC = () => {
         </div>
 
         {/* 2. Geometry Statistics & Topology Health */}
-        <div className="p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] space-y-2.5">
-          <div className="flex items-center justify-between text-[hsl(var(--foreground))] font-semibold">
-            <span className="flex items-center gap-1.5 text-xs font-bold">
-              <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
-              Geometry Topology
-            </span>
-            <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--neon-green))] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--neon-green))]/10 border border-[hsl(var(--neon-green))]/30">
-              <HugeiconsIcon icon={ShieldCheckIcon} size={16} className="w-3 h-3" />
-              Manifold OK
-            </span>
-          </div>
+        {(() => {
+          const verticesDisplay = currentAsset?.vertices
+            ? currentAsset.vertices.toLocaleString()
+            : modelStats?.vertices
+            ? modelStats.vertices.toLocaleString()
+            : '—';
 
-          <div className="grid grid-cols-3 gap-1.5 font-mono text-xs">
-            <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
-              <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Vertices</span>
-              <span className="font-bold text-[hsl(var(--foreground))]">{currentAsset.statsAvailable ? currentAsset.vertices.toLocaleString() : '—'}</span>
-            </div>
-            <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
-              <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Polygons</span>
-              <span className="font-bold text-primary">{currentAsset.statsAvailable ? currentAsset.faces.toLocaleString() : '—'}</span>
-            </div>
-            <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
-              <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Topology</span>
-              <span className="font-bold text-[hsl(var(--neon-blue))] truncate block">{currentAsset.topology}</span>
-            </div>
-          </div>
+          const facesDisplay = currentAsset?.faces
+            ? currentAsset.faces.toLocaleString()
+            : modelStats?.triangles
+            ? modelStats.triangles.toLocaleString()
+            : '—';
 
-          <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
-            <span>UV Channels</span>
-            <span className="font-mono text-[hsl(var(--foreground))]">2 (UV0: Diffuse, UV1: Lightmap)</span>
-          </div>
-          {currentAsset.dimensions && (
-            <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
-              <span>Dimensions (X×Y×Z)</span>
-              <span className="font-mono text-[hsl(var(--foreground))]">{currentAsset.dimensions.x} × {currentAsset.dimensions.y} × {currentAsset.dimensions.z} m</span>
+          const isManifold = currentAsset?.isManifold ?? modelStats?.isManifold ?? true;
+          const nonManifoldEdges = currentAsset?.nonManifoldEdges ?? modelStats?.nonManifoldEdges ?? 0;
+          const surfaceArea = currentAsset?.surfaceArea ?? modelStats?.surfaceArea;
+          const volume = currentAsset?.volume ?? modelStats?.volume;
+          const uvCharts = currentAsset?.uvCharts ?? modelStats?.uvCharts;
+
+          return (
+            <div className="p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-[hsl(var(--border))] space-y-2.5">
+              <div className="flex items-center justify-between text-[hsl(var(--foreground))] font-semibold">
+                <span className="flex items-center gap-1.5 text-xs font-bold">
+                  <HugeiconsIcon icon={Box} size={16} className="w-3.5 h-3.5 text-primary" />
+                  Geometry & Topology
+                </span>
+                {isManifold && nonManifoldEdges === 0 ? (
+                  <span className="flex items-center gap-1 text-[10px] text-[hsl(var(--neon-green))] font-mono px-1.5 py-0.5 rounded bg-[hsl(var(--neon-green))]/10 border border-[hsl(var(--neon-green))]/30">
+                    <HugeiconsIcon icon={ShieldCheckIcon} size={16} className="w-3 h-3" />
+                    Manifold (Watertight)
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[10px] text-amber-400 font-mono px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+                    <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-3 h-3" />
+                    Non-Manifold ({nonManifoldEdges} edges)
+                  </span>
+                )}
+              </div>
+
+              {/* Counts & Flow */}
+              <div className="grid grid-cols-3 gap-1.5 font-mono text-xs">
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                  <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Vertices</span>
+                  <span className="font-bold text-[hsl(var(--foreground))]">{verticesDisplay}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                  <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Polygons</span>
+                  <span className="font-bold text-primary">{facesDisplay}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                  <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Topology</span>
+                  <span className="font-bold text-[hsl(var(--neon-blue))] truncate block">{currentAsset.topology || 'Triangle'}</span>
+                </div>
+              </div>
+
+              {/* Physical Telemetry: Surface Area, Volume, UV Charts */}
+              <div className="grid grid-cols-3 gap-1.5 font-mono text-xs">
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                  <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Surface Area</span>
+                  <span className="font-bold text-[hsl(var(--foreground))]">{surfaceArea !== undefined ? `${surfaceArea} m²` : '—'}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                  <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">Volume</span>
+                  <span className="font-bold text-primary">{volume !== undefined ? `${volume} m³` : '—'}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-[hsl(var(--surface-2))] border border-[hsl(var(--border))]">
+                  <span className="text-[hsl(var(--muted-foreground))] block text-[10px]">UV Islands</span>
+                  <span className="font-bold text-[hsl(var(--neon-green))]">{uvCharts !== undefined && uvCharts > 0 ? `${uvCharts} charts` : '1 chart'}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
+                <span>UV Channels</span>
+                <span className="font-mono text-[hsl(var(--foreground))]">2 (UV0: Diffuse, UV1: Lightmap)</span>
+              </div>
+              {currentAsset.dimensions && (
+                <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
+                  <span>Dimensions (X×Y×Z)</span>
+                  <span className="font-mono text-[hsl(var(--foreground))]">{currentAsset.dimensions.x} × {currentAsset.dimensions.y} × {currentAsset.dimensions.z} m</span>
+                </div>
+              )}
+              {currentAsset.componentCount !== undefined && (
+                <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
+                  <span>Components / Parts</span>
+                  <span className="font-mono text-[hsl(var(--foreground))]">{currentAsset.componentCount > 0 ? `${currentAsset.componentCount} connected parts` : '1 part'}</span>
+                </div>
+              )}
+              {currentAsset.meshDetails && (
+                <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
+                  <span>Semantic Details</span>
+                  <span className="font-mono text-[hsl(var(--foreground))]">
+                    {Array.isArray((currentAsset.meshDetails as any)?.semantic_parts)
+                      ? ((currentAsset.meshDetails as any).semantic_parts.length > 0
+                        ? (currentAsset.meshDetails as any).semantic_parts.join(', ')
+                        : 'Not analyzed / monolithic')
+                      : typeof (currentAsset.meshDetails as any)?.semantic_parts === 'string'
+                        ? (currentAsset.meshDetails as any).semantic_parts
+                        : 'Unsupported'}
+                  </span>
+                </div>
+              )}
             </div>
-          )}
-          {currentAsset.componentCount !== undefined && (
-            <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
-              <span>Components / Parts</span>
-              <span className="font-mono text-[hsl(var(--foreground))]">{currentAsset.componentCount > 0 ? `${currentAsset.componentCount} connected parts` : '1 part'}</span>
-            </div>
-          )}
-          {currentAsset.meshDetails && (
-            <div className="flex items-center justify-between text-xs text-[hsl(var(--muted-foreground))] pt-1 border-t border-[hsl(var(--border))]">
-              <span>Semantic Details</span>
-              <span className="font-mono text-[hsl(var(--foreground))]">
-                {Array.isArray((currentAsset.meshDetails as any)?.semantic_parts)
-                  ? ((currentAsset.meshDetails as any).semantic_parts.length > 0
-                    ? (currentAsset.meshDetails as any).semantic_parts.join(', ')
-                    : 'Not analyzed / monolithic')
-                  : typeof (currentAsset.meshDetails as any)?.semantic_parts === 'string'
-                    ? (currentAsset.meshDetails as any).semantic_parts
-                    : 'Unsupported'}
-              </span>
-            </div>
-          )}
-        </div>
+          );
+        })()}
 
         {/* 3. Dynamic Context-Aware Inspector Sections based on activeTool */}
         {/* 3. Dynamic Context-Aware Inspector Sections based on activeTool */}
@@ -546,10 +595,10 @@ export const RightPropertyPanel: React.FC = () => {
             Viewport Shading
           </span>
 
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-4 gap-1.5">
             <button
               onClick={() => setShadingMode('textured')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
                 shadingMode === 'textured'
                   ? 'bg-primary text-[hsl(var(--primary-foreground))] font-bold shadow'
                   : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
@@ -559,21 +608,54 @@ export const RightPropertyPanel: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setShadingMode('wireframe')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
-                shadingMode === 'wireframe'
+              onClick={() => setShadingMode('clay')}
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
+                shadingMode === 'clay'
                   ? 'bg-primary text-[hsl(var(--primary-foreground))] font-bold shadow'
                   : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
               }`}
             >
-              Wireframe
+              Clay
+            </button>
+
+            <button
+              onClick={() => setShadingMode('matcap-gold')}
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
+                shadingMode === 'matcap-gold'
+                  ? 'bg-amber-400 text-black font-bold shadow'
+                  : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
+              }`}
+            >
+              Gold
+            </button>
+
+            <button
+              onClick={() => setShadingMode('matcap-chrome')}
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
+                shadingMode === 'matcap-chrome'
+                  ? 'bg-zinc-200 text-black font-bold shadow'
+                  : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
+              }`}
+            >
+              Chrome
+            </button>
+
+            <button
+              onClick={() => setShadingMode('matcap-ceramic')}
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
+                shadingMode === 'matcap-ceramic' || shadingMode === 'matcap'
+                  ? 'bg-primary text-[hsl(var(--primary-foreground))] font-bold shadow'
+                  : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
+              }`}
+            >
+              Ceramic
             </button>
 
             <button
               onClick={() => setShadingMode('matcap-normal')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
                 shadingMode === 'matcap-normal' || shadingMode === 'normals'
-                  ? 'bg-primary text-[hsl(var(--primary-foreground))] font-bold shadow'
+                  ? 'bg-sky-400 text-black font-bold shadow'
                   : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
               }`}
             >
@@ -581,36 +663,25 @@ export const RightPropertyPanel: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setShadingMode('matcap-ceramic')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
-                shadingMode === 'matcap-ceramic' || shadingMode === 'matcap'
+              onClick={() => setShadingMode('wireframe')}
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
+                shadingMode === 'wireframe'
                   ? 'bg-primary text-[hsl(var(--primary-foreground))] font-bold shadow'
                   : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
               }`}
             >
-              MatCap
-            </button>
-
-            <button
-              onClick={() => setShadingMode('textured')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
-                shadingMode === 'textured'
-                  ? 'bg-primary text-[hsl(var(--primary-foreground))] font-bold shadow'
-                  : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
-              }`}
-            >
-              Albedo
+              Wire Solo
             </button>
 
             <button
               onClick={() => setShowWireframe(!showWireframe)}
-              className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+              className={`py-1.5 px-1.5 rounded-lg text-xs font-semibold transition-all text-center truncate ${
                 showWireframe
-                  ? 'bg-[hsl(var(--accent))] text-white font-bold'
+                  ? 'bg-[hsl(var(--neon-green))]/20 text-[hsl(var(--neon-green))] font-bold border border-[hsl(var(--neon-green))]/40'
                   : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] border border-[hsl(var(--border))]'
               }`}
             >
-              + Wire Overlay
+              + Overlay
             </button>
           </div>
         </div>

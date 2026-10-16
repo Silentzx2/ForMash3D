@@ -395,7 +395,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             )
             output_path = Path(output_path)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            mesh.export(str(output_path))
+            self.mesh_processor.save_mesh(mesh, output_path, crease_angle_deg=35.0)
 
             # Validate output mesh file
             if not output_path.exists() or output_path.stat().st_size == 0:

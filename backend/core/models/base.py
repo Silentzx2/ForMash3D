@@ -5,7 +5,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-import torch
+try:
+    import torch
+except ImportError:
+    torch = None
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +70,7 @@ class BaseModel(ABC):
             self.gpu_ids = [int(x) for x in self.resource_plan.get("gpu_ids", [gpu_id])]
 
             # Set CUDA device
-            if torch.cuda.is_available():
+            if (torch is not None and torch.cuda.is_available()):
                 torch.cuda.set_device(gpu_id)
 
             # Load model
@@ -75,7 +78,7 @@ class BaseModel(ABC):
             self.status = ModelStatus.LOADED
             elapsed = time.time() - start_time
             memory = ""
-            if torch.cuda.is_available():
+            if (torch is not None and torch.cuda.is_available()):
                 try:
                     allocated = torch.cuda.memory_allocated(gpu_id) / (1024 ** 2)
                     reserved = torch.cuda.memory_reserved(gpu_id) / (1024 ** 2)
@@ -107,12 +110,12 @@ class BaseModel(ABC):
             self.status = ModelStatus.UNLOADED
 
             # Clear GPU cache before capturing final memory state.
-            if torch.cuda.is_available():
+            if (torch is not None and torch.cuda.is_available()):
                 torch.cuda.empty_cache()
 
             elapsed = time.time() - start_time
             memory = ""
-            if torch.cuda.is_available() and previous_gpu_ids:
+            if (torch is not None and torch.cuda.is_available()) and previous_gpu_ids:
                 try:
                     samples = []
                     for gpu_id in previous_gpu_ids:
@@ -157,7 +160,7 @@ class BaseModel(ABC):
             result = self._process_request(inputs)
             elapsed = time.time() - start_time
             memory = ""
-            if torch.cuda.is_available() and self.gpu_id is not None:
+            if (torch is not None and torch.cuda.is_available()) and self.gpu_id is not None:
                 try:
                     allocated = torch.cuda.memory_allocated(self.gpu_id) / (1024 ** 2)
                     reserved = torch.cuda.memory_reserved(self.gpu_id) / (1024 ** 2)

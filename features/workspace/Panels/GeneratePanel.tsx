@@ -2200,6 +2200,171 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               </div>
 
+              {/* 3. Pro Studio Fidelity & Surface Crease Controls */}
+              <div className="space-y-2.5 pt-2 border-t border-white/[0.04]">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-200 font-medium flex items-center gap-1.5">
+                    <HugeiconsIcon icon={SparklesIcon} size={14} className="text-primary" />
+                    Pro Studio Fidelity & Creases
+                  </span>
+                  <span className="text-[10px] text-zinc-400 font-mono">Tripo / Meshy Grade</span>
+                </div>
+
+                {/* Sharp Feature Preservation Toggle */}
+                <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div>
+                    <span className="text-xs font-semibold text-zinc-200 block">Sharp Feature Preservation</span>
+                    <span className="text-[9.5px] text-zinc-500 block">Protects mechanical edges, vehicle creases, and hard organic silhouettes</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isPostprocessOff}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      setGenerationSettings(p => ({
+                        ...p,
+                        sharpFeaturePreservation: p.sharpFeaturePreservation === false ? true : false,
+                      }));
+                    }}
+                    className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
+                      (generationSettings.sharpFeaturePreservation ?? true) ? 'bg-primary' : 'bg-zinc-700'
+                    } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                      (generationSettings.sharpFeaturePreservation ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* Angle Crease Threshold Slider */}
+                <div className="space-y-1.5 p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-300 text-[11px] font-medium">Angle Crease Threshold</span>
+                    <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
+                      {generationSettings.angleCreaseThreshold ?? 45}°
+                    </span>
+                  </div>
+                  <p className="text-[9.5px] text-zinc-500">
+                    Normals split boundary angle. Surface creases sharper than this value remain crisp rather than smoothed.
+                  </p>
+                  <input
+                    type="range"
+                    min={30}
+                    max={85}
+                    step={1}
+                    disabled={isPostprocessOff}
+                    value={generationSettings.angleCreaseThreshold ?? 45}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setGenerationSettings(p => ({ ...p, angleCreaseThreshold: val }));
+                    }}
+                    className={`w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary ${
+                      isPostprocessOff ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
+                    }`}
+                  />
+                  <div className="flex justify-between text-[8px] text-zinc-600 font-mono">
+                    <span>30° (Ultra Sharp)</span>
+                    <span>45° (Standard)</span>
+                    <span>85° (Soft Organic)</span>
+                  </div>
+                </div>
+
+                {/* High-Resolution Normal Baking Toggle */}
+                <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div>
+                    <span className="text-xs font-semibold text-zinc-200 block">High-Resolution Normal Baking</span>
+                    <span className="text-[9.5px] text-zinc-500 block">Bakes high-frequency tangent-space micro-relief into normal maps</span>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isPostprocessOff}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      setGenerationSettings(p => ({
+                        ...p,
+                        highResolutionNormalBaking: p.highResolutionNormalBaking === false ? true : false,
+                      }));
+                    }}
+                    className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
+                      (generationSettings.highResolutionNormalBaking ?? true) ? 'bg-primary' : 'bg-zinc-700'
+                    } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  >
+                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                      (generationSettings.highResolutionNormalBaking ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+                    }`} />
+                  </button>
+                </div>
+
+                {/* Texture Fidelity Preset */}
+                <div className="space-y-1.5 p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-300 text-[11px] font-medium">Texture Fidelity Preset</span>
+                    <span className="font-mono text-primary font-bold text-[10px] uppercase">
+                      {generationSettings.textureFidelityPreset || 'high'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {[
+                      { id: 'ultra', label: 'Ultra 4K', sub: 'Lossless' },
+                      { id: 'high', label: 'High 2K', sub: 'Studio PBR' },
+                      { id: 'balanced', label: '1K Crisp', sub: 'Optimized' },
+                      { id: 'compressed', label: 'Compact', sub: 'Mobile' },
+                    ].map((tf) => {
+                      const isSel = (generationSettings.textureFidelityPreset || 'high') === tf.id;
+                      return (
+                        <button
+                          key={tf.id}
+                          type="button"
+                          disabled={isPostprocessOff}
+                          onClick={() => {
+                            if (isPostprocessOff) return;
+                            setGenerationSettings(p => ({ ...p, textureFidelityPreset: tf.id as any }));
+                          }}
+                          className={`py-1.5 px-1 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                            isPostprocessOff
+                              ? 'bg-[hsl(var(--surface-2))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                              : isSel
+                              ? 'bg-primary text-black font-black shadow-sm'
+                              : 'bg-[hsl(var(--surface-2))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
+                          }`}
+                        >
+                          <span className="text-[10px] font-bold leading-tight">{tf.label}</span>
+                          <span className={`text-[7.5px] ${isSel ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{tf.sub}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Quality & Geometry Telemetry Indicators */}
+                <div className="grid grid-cols-3 gap-1 pt-1 font-mono text-[9px]">
+                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
+                    <span className="text-zinc-500 block text-[8px]">DENSITY CLASS</span>
+                    <span className="text-zinc-200 font-bold">
+                      {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) >= 100000
+                        ? 'Cinema Grade'
+                        : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) >= 50000
+                        ? 'Studio High'
+                        : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) > 0
+                        ? 'Game Ready'
+                        : 'Raw Native'}
+                    </span>
+                  </div>
+                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
+                    <span className="text-zinc-500 block text-[8px]">FEATURE PRESERVE</span>
+                    <span className={(generationSettings.sharpFeaturePreservation ?? true) ? "text-[hsl(var(--neon-green))] font-bold" : "text-zinc-400 font-bold"}>
+                      {(generationSettings.sharpFeaturePreservation ?? true) ? 'Active (Hard)' : 'Standard'}
+                    </span>
+                  </div>
+                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
+                    <span className="text-zinc-500 block text-[8px]">NORMAL PRECISION</span>
+                    <span className="text-primary font-bold">
+                      {(generationSettings.highResolutionNormalBaking ?? true) ? '16-bit Tangent' : '8-bit Standard'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
               {isPostprocessOff && (
                 <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
                   <span>🔒 Mesh post-processing (decimation, quad retopology, baking) is blocked when Post-Processing is OFF.</span>

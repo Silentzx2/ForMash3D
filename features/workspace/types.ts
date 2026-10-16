@@ -79,6 +79,11 @@ export interface ModelAsset {
   format: 'GLB' | 'GLTF' | 'OBJ' | 'PLY' | 'FBX' | 'STL' | 'IMAGE' | 'FILE';
   fileSize?: string;
   dimensions?: { x: number; y: number; z: number };
+  surfaceArea?: number;
+  volume?: number;
+  isManifold?: boolean;
+  nonManifoldEdges?: number;
+  uvCharts?: number;
   boundingBox?: { min: number[]; max: number[]; extent?: number[]; diagonal?: number };
   objectCount?: number;
   componentCount?: number;
@@ -454,6 +459,10 @@ export interface GenerationSettings {
   lowVram?: boolean;
   vramMode?: 'auto' | 'normal' | 'low';
   autoOptimizeSettings: AutoOptimizeSettings;
+  sharpFeaturePreservation?: boolean;
+  angleCreaseThreshold?: number;
+  highResolutionNormalBaking?: boolean;
+  textureFidelityPreset?: 'ultra' | 'high' | 'balanced' | 'compressed';
   generateTexture?: boolean;
   texture_enabled?: boolean;
   textureEnabled?: boolean;

@@ -32,8 +32,8 @@ SUPPORTED_TEXTURE_FORMATS = [".jpg", ".jpeg", ".png", ".tga", ".exr", ".hdr"]
 
 # Validation limits
 MAX_IMAGE_RESOLUTION = (8192, 8192)  # Maximum accepted upload image resolution
-MAX_MESH_VERTICES = 210000  # Maximum number of vertices
-MAX_MESH_FACES = 210000  # Maximum number of faces
+MAX_MESH_VERTICES = int(os.environ.get("FORMASH_MAX_MESH_VERTICES", 10_000_000))  # Maximum number of vertices
+MAX_MESH_FACES = int(os.environ.get("FORMASH_MAX_MESH_FACES", 10_000_000))  # Maximum number of faces
 
 # MIME type mappings
 MIME_TYPE_MAPPING = {
@@ -261,8 +261,8 @@ def validate_mesh_file(
         import numpy as np
         import trimesh
 
-        # Load mesh using trimesh
-        mesh = trimesh.load(file_path)
+        # Load mesh using trimesh with process=False to preserve sharp edges and normals
+        mesh = trimesh.load(file_path, process=False)
 
         # Handle scene objects
         if isinstance(mesh, trimesh.Scene):

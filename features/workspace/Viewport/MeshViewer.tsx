@@ -25,6 +25,7 @@ import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
+import { analyzeGeometryTelemetry, prepareMeshTangentsAndNormals } from '../lib/meshTelemetry';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
@@ -487,6 +488,7 @@ export interface EnvironmentPreset {
     fillLightIntensity: number;
     rimLightIntensity: number;
     exposure: number;
+    toneMapping?: 'neutral' | 'aces';
     lightTone: LightTone;
     backgroundColor: string;
     gridVisible: boolean;
@@ -521,6 +523,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.1,
       rimLightIntensity: 1.5,
       exposure: 1.05,
+      toneMapping: 'neutral',
       lightTone: 'studio',
       backgroundColor: 'transparent',
       gridVisible: false,
@@ -537,6 +540,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 0.7,
       rimLightIntensity: 2.2,
       exposure: 1.1,
+      toneMapping: 'aces',
       lightTone: 'cool',
       backgroundColor: '#14151a',
       gridVisible: false,
@@ -553,6 +557,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.2,
       rimLightIntensity: 1.2,
       exposure: 1.2,
+      toneMapping: 'neutral',
       lightTone: 'neutral',
       backgroundColor: '#32353f',
       gridVisible: false,
@@ -569,6 +574,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.2,
       rimLightIntensity: 1.8,
       exposure: 1.15,
+      toneMapping: 'aces',
       lightTone: 'warm',
       backgroundColor: 'transparent',
       gridVisible: false,
@@ -585,6 +591,7 @@ export const ENVIRONMENT_PRESETS: EnvironmentPreset[] = [
       fillLightIntensity: 1.3,
       rimLightIntensity: 1.2,
       exposure: 1.2,
+      toneMapping: 'neutral',
       lightTone: 'neutral',
       backgroundColor: '#e8e9ed',
       gridVisible: false,
@@ -731,6 +738,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     fillLightIntensity: 1.1,
     rimLightIntensity: 1.5,
     exposure: 1.05,
+    toneMapping: 'neutral' as 'neutral' | 'aces',
     lightTone: 'studio' as LightTone,
     backgroundColor: 'transparent',
     gridVisible: false,
@@ -750,7 +758,17 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const [dropToastMessage, setDropToastMessage] = useState<string | null>(null);
   const [dropToastIsHtmlError, setDropToastIsHtmlError] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string | null>('studio');
-  const [meshStats, setMeshStats] = useState<{ faces: number; vertices: number; triangles: number; dimensions?: { x: number; y: number; z: number } } | null>(null);
+  const [meshStats, setMeshStats] = useState<{
+    faces: number;
+    vertices: number;
+    triangles: number;
+    dimensions?: { x: number; y: number; z: number };
+    surfaceArea?: number;
+    volume?: number;
+    isManifold?: boolean;
+    nonManifoldEdges?: number;
+    uvCharts?: number;
+  } | null>(null);
   const [debugBlueprint, setDebugBlueprint] = useState(false);
   const physicsRuntimeRef = useRef<PhysicsRuntime | null>(null);
   const [physicsModeOpen, setPhysicsModeOpen] = useState(false);
@@ -844,8 +862,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
   const computeMeshStats = useCallback((object: THREE.Object3D) => {
     let f = 0, v = 0;
+    let totalSurfaceArea = 0;
+    let totalVolume = 0;
+    let isManifold = true;
+    let totalNonManifoldEdges = 0;
+    let maxUvCharts = 0;
+
     object.traverse((child) => {
       if (child instanceof THREE.Mesh) {
+        prepareMeshTangentsAndNormals(child);
         const geom = child.geometry;
         if (geom) {
           if (geom.index) {
@@ -856,6 +881,13 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           if (geom.attributes?.position) {
             v += geom.attributes.position.count;
           }
+
+          const tele = analyzeGeometryTelemetry(geom);
+          totalSurfaceArea += tele.surfaceArea;
+          totalVolume += tele.volume;
+          if (!tele.isManifold) isManifold = false;
+          totalNonManifoldEdges += tele.nonManifoldEdges;
+          maxUvCharts = Math.max(maxUvCharts, tele.uvCharts);
         }
       }
     });
@@ -878,8 +910,43 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       z: Number(size.z.toFixed(2)),
     };
 
-    setMeshStats({ faces, vertices: verts, triangles, dimensions });
-    useViewerStore.getState().setModelStats({ vertices: verts, triangles, dimensions });
+    const surfaceArea = Number(totalSurfaceArea.toFixed(4));
+    const volume = Number(totalVolume.toFixed(4));
+
+    // Dynamically calibrate key light shadow camera frustum to model scale for crisp contact shadows
+    if (keyLightRef.current) {
+      const maxDim = Math.max(size.x, size.y, size.z, 0.6);
+      keyLightRef.current.shadow.camera.left = -maxDim * 1.5;
+      keyLightRef.current.shadow.camera.right = maxDim * 1.5;
+      keyLightRef.current.shadow.camera.top = maxDim * 1.5;
+      keyLightRef.current.shadow.camera.bottom = -maxDim * 1.5;
+      keyLightRef.current.shadow.camera.near = 0.1;
+      keyLightRef.current.shadow.camera.far = Math.max(30, maxDim * 10);
+      keyLightRef.current.shadow.camera.updateProjectionMatrix();
+      keyLightRef.current.shadow.needsUpdate = true;
+    }
+
+    setMeshStats({
+      faces,
+      vertices: verts,
+      triangles,
+      dimensions,
+      surfaceArea,
+      volume,
+      isManifold,
+      nonManifoldEdges: totalNonManifoldEdges,
+      uvCharts: maxUvCharts,
+    });
+    useViewerStore.getState().setModelStats({
+      vertices: verts,
+      triangles,
+      dimensions,
+      surfaceArea,
+      volume,
+      isManifold,
+      nonManifoldEdges: totalNonManifoldEdges,
+      uvCharts: maxUvCharts,
+    });
 
     const renderer = rendererRef.current;
     if (renderer) {
@@ -903,10 +970,20 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           triangles,
           statsAvailable: true,
           dimensions: currentAsset.dimensions || dimensions,
+          surfaceArea,
+          volume,
+          isManifold,
+          nonManifoldEdges: totalNonManifoldEdges,
+          uvCharts: maxUvCharts,
         });
-      } else if (!currentAsset.dimensions) {
+      } else if (!currentAsset.dimensions || currentAsset.surfaceArea === undefined) {
         updateAssetProperties(currentAsset.id, {
-          dimensions,
+          dimensions: currentAsset.dimensions || dimensions,
+          surfaceArea: currentAsset.surfaceArea ?? surfaceArea,
+          volume: currentAsset.volume ?? volume,
+          isManifold: currentAsset.isManifold ?? isManifold,
+          nonManifoldEdges: currentAsset.nonManifoldEdges ?? totalNonManifoldEdges,
+          uvCharts: currentAsset.uvCharts ?? maxUvCharts,
         });
       }
     }
@@ -1539,7 +1616,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       scene.background = new THREE.Color(environmentSettings.backgroundColor);
     }
 
-    // 2. Update tone mapping exposure
+    // 2. Update tone mapping operator & exposure
+    renderer.toneMapping = environmentSettings.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.NeutralToneMapping;
     renderer.toneMappingExposure = environmentSettings.exposure;
 
     // 3. Update grid visibility
@@ -1623,7 +1703,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     // ponytail: cap pixel ratio at 1.25 for buttery smooth rendering FPS without GPU fill-rate throttling
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
     renderer.info.autoReset = false;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMapping = environmentSettings.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.NeutralToneMapping;
     renderer.toneMappingExposure = environmentSettings.exposure;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -2900,8 +2982,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           child.userData.cachedShadingMaterials = {};
         }
         const cache = child.userData.cachedShadingMaterials;
-        const isWire = Boolean(showWireframe) || shadingMode === 'wireframe';
-
+        const isWireOnly = shadingMode === 'wireframe';
         const mode = shadingMode?.toLowerCase?.() || 'default';
         let targetMat: THREE.Material | THREE.Material[] = orig;
 
@@ -2920,52 +3001,58 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
           case 'clay':
             if (!cache.clay) {
-              cache.clay = new THREE.MeshStandardMaterial({
-                color: 0xd6d9df,
-                roughness: 0.75,
-                metalness: 0.05,
+              cache.clay = new THREE.MeshPhysicalMaterial({
+                color: 0xcdc7c2,
+                roughness: 0.68,
+                metalness: 0.02,
+                clearcoat: 0.15,
+                clearcoatRoughness: 0.45,
               });
             }
-            cache.clay.wireframe = isWire;
+            cache.clay.wireframe = false;
             targetMat = cache.clay;
             break;
 
           case 'matcap':
           case 'matcap-ceramic':
             if (!cache.ceramic) {
-              cache.ceramic = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                roughness: 0.12,
-                metalness: 0.05,
+              cache.ceramic = new THREE.MeshPhysicalMaterial({
+                color: 0xfcfcfc,
+                roughness: 0.28,
+                metalness: 0.02,
+                clearcoat: 0.85,
+                clearcoatRoughness: 0.12,
               });
             }
-            cache.ceramic.wireframe = isWire;
+            cache.ceramic.wireframe = false;
             targetMat = cache.ceramic;
             break;
 
           case 'metallic':
           case 'matcap-chrome':
             if (!cache.chrome) {
-              cache.chrome = new THREE.MeshStandardMaterial({
-                color: 0xf0f3f8,
-                roughness: 0.04,
-                metalness: 0.95,
+              cache.chrome = new THREE.MeshPhysicalMaterial({
+                color: 0xf8f9fa,
+                roughness: 0.03,
+                metalness: 1.0,
+                clearcoat: 0.5,
               });
             }
-            cache.chrome.wireframe = isWire;
+            cache.chrome.wireframe = false;
             targetMat = cache.chrome;
             break;
 
           case 'gold':
           case 'matcap-gold':
             if (!cache.gold) {
-              cache.gold = new THREE.MeshStandardMaterial({
-                color: 0xf9cf00,
-                roughness: 0.22,
-                metalness: 0.88,
+              cache.gold = new THREE.MeshPhysicalMaterial({
+                color: 0xf5c342,
+                roughness: 0.18,
+                metalness: 0.95,
+                clearcoat: 0.35,
               });
             }
-            cache.gold.wireframe = isWire;
+            cache.gold.wireframe = false;
             targetMat = cache.gold;
             break;
 
@@ -2975,7 +3062,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             if (!cache.normals) {
               cache.normals = new THREE.MeshNormalMaterial();
             }
-            cache.normals.wireframe = isWire;
+            cache.normals.wireframe = false;
             targetMat = cache.normals;
             break;
 
@@ -2999,7 +3086,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 metalness: 0.4,
               });
             }
-            cache.turquoise.wireframe = isWire;
+            cache.turquoise.wireframe = false;
             targetMat = cache.turquoise;
             break;
 
@@ -3010,16 +3097,43 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             if (Array.isArray(targetMat)) {
               targetMat.forEach((m) => {
                 if ('wireframe' in m) {
-                  (m as THREE.MeshStandardMaterial).wireframe = isWire;
+                  (m as THREE.MeshStandardMaterial).wireframe = false;
                 }
               });
             } else if (targetMat && 'wireframe' in targetMat) {
-              (targetMat as THREE.MeshStandardMaterial).wireframe = isWire;
+              (targetMat as THREE.MeshStandardMaterial).wireframe = false;
             }
             break;
         }
 
         child.material = targetMat;
+
+        // Pro Studio Wireframe on Shaded:
+        // Renders crisp topology wire lines cleanly overlaid onto the solid lit geometry
+        let wireOverlay = child.children.find((c) => c.userData?.isWireframeOverlay) as THREE.Mesh | undefined;
+        if (showWireframe && !isWireOnly) {
+          if (!wireOverlay) {
+            const wireMat = new THREE.MeshBasicMaterial({
+              color: 0x111317,
+              wireframe: true,
+              transparent: true,
+              opacity: 0.38,
+              depthTest: true,
+              polygonOffset: true,
+              polygonOffsetFactor: -1,
+              polygonOffsetUnits: -1,
+            });
+            wireOverlay = new THREE.Mesh(child.geometry, wireMat);
+            wireOverlay.userData.isWireframeOverlay = true;
+            wireOverlay.renderOrder = (child.renderOrder || 0) + 1;
+            child.add(wireOverlay);
+          } else if (wireOverlay.geometry !== child.geometry) {
+            wireOverlay.geometry = child.geometry;
+          }
+          wireOverlay.visible = true;
+        } else if (wireOverlay) {
+          wireOverlay.visible = false;
+        }
       }
     });
   }, [shadingMode, showWireframe]);
@@ -4356,6 +4470,36 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 </div>
               </div>
 
+              {/* Tone Mapping Pipeline */}
+              <div className="space-y-1.5 border-t border-white/[0.06] pt-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Tone Mapping</span>
+                  <span className="text-[9px] text-primary font-mono font-bold uppercase">{environmentSettings.toneMapping || 'neutral'}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    onClick={() => patchEnv({ toneMapping: 'neutral' })}
+                    className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+                      environmentSettings.toneMapping !== 'aces'
+                        ? 'bg-primary text-black font-extrabold shadow-sm'
+                        : 'bg-[hsl(var(--surface-2))] text-zinc-400 border border-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    Khronos Neutral
+                  </button>
+                  <button
+                    onClick={() => patchEnv({ toneMapping: 'aces' })}
+                    className={`px-2 py-1.5 rounded-lg text-[10px] font-bold transition-all text-center ${
+                      environmentSettings.toneMapping === 'aces'
+                        ? 'bg-primary text-black font-extrabold shadow-sm'
+                        : 'bg-[hsl(var(--surface-2))] text-zinc-400 border border-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    ACES Filmic
+                  </button>
+                </div>
+              </div>
+
               {/* Stage & Floor Section */}
               <div className="space-y-2 border-t border-white/[0.06] pt-2">
                 <span className="text-[9px] font-semibold text-zinc-400 uppercase tracking-wider">Stage & Floor</span>
@@ -4407,6 +4551,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     fillLightIntensity: 1.1,
                     rimLightIntensity: 1.5,
                     exposure: 1.05,
+                    toneMapping: 'neutral',
                     lightTone: 'studio',
                     backgroundColor: 'transparent',
                     gridVisible: false,
@@ -4714,7 +4859,10 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   <div className={`w-2.5 h-2.5 rounded-full ${
                     shadingMode === 'textured' ? 'bg-primary' :
                     shadingMode === 'clay' ? 'bg-zinc-400' :
-                    shadingMode === 'wireframe' ? 'bg-[hsl(var(--neon-green))]' : 'bg-sky-400'
+                    shadingMode === 'wireframe' ? 'bg-[hsl(var(--neon-green))]' :
+                    shadingMode === 'matcap-gold' ? 'bg-amber-400' :
+                    shadingMode === 'matcap-ceramic' ? 'bg-white' :
+                    shadingMode === 'matcap-chrome' ? 'bg-zinc-300' : 'bg-sky-400'
                   }`} />
                   <span className="capitalize">{shadingMode.replace('matcap-', '')}</span>
                   <HugeiconsIcon icon={ChevronDown} size={16} className={`w-3 h-3 text-zinc-400 transition-transform ${shadingMenuOpen ? 'rotate-180 text-primary' : ''}`} />
@@ -4728,10 +4876,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                     {[
                       { id: 'textured', label: 'PBR Textured', dot: 'bg-primary' },
                       { id: 'clay', label: 'Matte Clay', dot: 'bg-zinc-400' },
-                      { id: 'wireframe', label: 'Topology Wireframe', dot: 'bg-[hsl(var(--neon-green))]' },
-                      { id: 'matcap-normal', label: 'Tangent Normals', dot: 'bg-sky-400' },
+                      { id: 'matcap-gold', label: 'Metallic Gold', dot: 'bg-amber-400' },
+                      { id: 'matcap-chrome', label: 'Chrome Mirror', dot: 'bg-zinc-300' },
                       { id: 'matcap-ceramic', label: 'Ceramic Gloss', dot: 'bg-white' },
-                      { id: 'matcap-chrome', label: 'Chrome Metallic', dot: 'bg-zinc-300' },
+                      { id: 'matcap-normal', label: 'Tangent Normals', dot: 'bg-sky-400' },
+                      { id: 'wireframe', label: 'Topology Wireframe', dot: 'bg-[hsl(var(--neon-green))]' },
                     ].map((s) => (
                       <button
                         key={s.id}
