@@ -2445,7 +2445,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         } else {
           idleFrames++;
         }
-        renderer.render(scene, camera);
+        try {
+          renderer.render(scene, camera);
+        } catch (renderError) {
+          console.warn('[MeshViewer] Frame render caught exception:', renderError);
+        }
       }
     };
     renderer.setAnimationLoop(animate);
@@ -2665,6 +2669,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const obj = group.children[0];
       group.remove(obj);
       obj.traverse((child) => {
+        if (child.userData?.isWireframeOverlay) {
+          if (child instanceof THREE.Mesh && child.material) {
+            disposeMaterial(child.material);
+          }
+          return;
+        }
         if (child instanceof THREE.Mesh) {
           child.geometry?.dispose();
           const orig = child.userData?.originalMaterial;
@@ -3037,171 +3047,191 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     if (!currentMeshGroupRef.current) return;
     const group = currentMeshGroupRef.current;
 
-    group.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        if (!child.userData.originalMaterial) {
-          child.userData.originalMaterial = child.material;
-        }
+    try {
+      group.traverse((child) => {
+        // Essential guard: skip wireframe overlays to prevent recursive traverse and geometry/material corruption
+        if (child.userData?.isWireframeOverlay) return;
 
-        const orig = child.userData.originalMaterial;
-        if (!child.userData.cachedShadingMaterials) {
-          child.userData.cachedShadingMaterials = {};
-        }
-        const cache = child.userData.cachedShadingMaterials;
-        const isWireOnly = shadingMode === 'wireframe';
-        const mode = shadingMode?.toLowerCase?.() || 'default';
-        let targetMat: THREE.Material | THREE.Material[] = orig;
+        if (child instanceof THREE.Mesh) {
+          if (!child.userData.originalMaterial) {
+            child.userData.originalMaterial = child.material;
+          }
 
-        switch (mode) {
-          case 'wireframe':
-            if (!cache.wireframe) {
-              cache.wireframe = new THREE.MeshStandardMaterial({
-                color: 0x00ff88,
-                wireframe: true,
-                roughness: 0.6,
-                metalness: 0.1,
-              });
-            }
-            targetMat = cache.wireframe;
-            break;
+          const orig = child.userData.originalMaterial;
+          if (!child.userData.cachedShadingMaterials) {
+            child.userData.cachedShadingMaterials = {};
+          }
+          const cache = child.userData.cachedShadingMaterials;
+          const isWireOnly = shadingMode === 'wireframe';
+          const mode = shadingMode?.toLowerCase?.() || 'default';
+          let targetMat: THREE.Material | THREE.Material[] = orig;
 
-          case 'clay':
-            if (!cache.clay) {
-              cache.clay = new THREE.MeshPhysicalMaterial({
-                color: 0xcdc7c2,
-                roughness: 0.68,
-                metalness: 0.02,
-                clearcoat: 0.15,
-                clearcoatRoughness: 0.45,
-              });
-            }
-            cache.clay.wireframe = false;
-            targetMat = cache.clay;
-            break;
+          switch (mode) {
+            case 'wireframe':
+              if (!cache.wireframe) {
+                cache.wireframe = new THREE.MeshStandardMaterial({
+                  color: 0x00ff88,
+                  wireframe: true,
+                  roughness: 0.6,
+                  metalness: 0.1,
+                });
+              }
+              targetMat = cache.wireframe;
+              break;
 
-          case 'matcap':
-          case 'matcap-ceramic':
-            if (!cache.ceramic) {
-              cache.ceramic = new THREE.MeshPhysicalMaterial({
-                color: 0xfcfcfc,
-                roughness: 0.28,
-                metalness: 0.02,
-                clearcoat: 0.85,
-                clearcoatRoughness: 0.12,
-              });
-            }
-            cache.ceramic.wireframe = false;
-            targetMat = cache.ceramic;
-            break;
+            case 'clay':
+              if (!cache.clay) {
+                cache.clay = new THREE.MeshPhysicalMaterial({
+                  color: 0xcdc7c2,
+                  roughness: 0.68,
+                  metalness: 0.02,
+                  clearcoat: 0.15,
+                  clearcoatRoughness: 0.45,
+                });
+              }
+              cache.clay.wireframe = false;
+              targetMat = cache.clay;
+              break;
 
-          case 'metallic':
-          case 'matcap-chrome':
-            if (!cache.chrome) {
-              cache.chrome = new THREE.MeshPhysicalMaterial({
-                color: 0xf8f9fa,
-                roughness: 0.03,
-                metalness: 1.0,
-                clearcoat: 0.5,
-              });
-            }
-            cache.chrome.wireframe = false;
-            targetMat = cache.chrome;
-            break;
+            case 'matcap':
+            case 'matcap-ceramic':
+              if (!cache.ceramic) {
+                cache.ceramic = new THREE.MeshPhysicalMaterial({
+                  color: 0xfcfcfc,
+                  roughness: 0.28,
+                  metalness: 0.02,
+                  clearcoat: 0.85,
+                  clearcoatRoughness: 0.12,
+                });
+              }
+              cache.ceramic.wireframe = false;
+              targetMat = cache.ceramic;
+              break;
 
-          case 'gold':
-          case 'matcap-gold':
-            if (!cache.gold) {
-              cache.gold = new THREE.MeshPhysicalMaterial({
-                color: 0xf5c342,
-                roughness: 0.18,
-                metalness: 0.95,
-                clearcoat: 0.35,
-              });
-            }
-            cache.gold.wireframe = false;
-            targetMat = cache.gold;
-            break;
+            case 'metallic':
+            case 'matcap-chrome':
+              if (!cache.chrome) {
+                cache.chrome = new THREE.MeshPhysicalMaterial({
+                  color: 0xf8f9fa,
+                  roughness: 0.03,
+                  metalness: 1.0,
+                  clearcoat: 0.5,
+                });
+              }
+              cache.chrome.wireframe = false;
+              targetMat = cache.chrome;
+              break;
 
-          case 'normal':
-          case 'normals':
-          case 'matcap-normal':
-            if (!cache.normals) {
-              cache.normals = new THREE.MeshNormalMaterial();
-            }
-            cache.normals.wireframe = false;
-            targetMat = cache.normals;
-            break;
+            case 'gold':
+            case 'matcap-gold':
+              if (!cache.gold) {
+                cache.gold = new THREE.MeshPhysicalMaterial({
+                  color: 0xf5c342,
+                  roughness: 0.18,
+                  metalness: 0.95,
+                  clearcoat: 0.35,
+                });
+              }
+              cache.gold.wireframe = false;
+              targetMat = cache.gold;
+              break;
 
-          case 'xray':
-            if (!cache.xray) {
-              cache.xray = new THREE.MeshBasicMaterial({
-                color: 0x3b82f6,
+            case 'normal':
+            case 'normals':
+            case 'matcap-normal':
+              if (!cache.normals) {
+                cache.normals = new THREE.MeshNormalMaterial();
+              }
+              cache.normals.wireframe = false;
+              targetMat = cache.normals;
+              break;
+
+            case 'xray':
+              if (!cache.xray) {
+                cache.xray = new THREE.MeshBasicMaterial({
+                  color: 0x3b82f6,
+                  wireframe: true,
+                  transparent: true,
+                  opacity: 0.75,
+                });
+              }
+              targetMat = cache.xray;
+              break;
+
+            case 'matcap-turquoise':
+              if (!cache.turquoise) {
+                cache.turquoise = new THREE.MeshStandardMaterial({
+                  color: 0x06b6d4,
+                  roughness: 0.3,
+                  metalness: 0.4,
+                });
+              }
+              cache.turquoise.wireframe = false;
+              targetMat = cache.turquoise;
+              break;
+
+            case 'default':
+            case 'textured':
+            default:
+              targetMat = orig;
+              if (Array.isArray(targetMat)) {
+                targetMat.forEach((m) => {
+                  if ('wireframe' in m) {
+                    (m as THREE.MeshStandardMaterial).wireframe = false;
+                  }
+                });
+              } else if (targetMat && 'wireframe' in targetMat) {
+                (targetMat as THREE.MeshStandardMaterial).wireframe = false;
+              }
+              break;
+          }
+
+          child.material = targetMat;
+
+          // Pro Studio Wireframe on Shaded:
+          // Renders crisp topology wire lines cleanly overlaid onto the solid lit geometry
+          let wireOverlay = child.children.find((c) => c.userData?.isWireframeOverlay) as THREE.Mesh | undefined;
+          if (showWireframe && !isWireOnly) {
+            if (!wireOverlay) {
+              const wireMat = new THREE.MeshBasicMaterial({
+                color: 0x00f5a0,
                 wireframe: true,
                 transparent: true,
-                opacity: 0.75,
+                opacity: 0.55,
+                depthTest: true,
+                polygonOffset: true,
+                polygonOffsetFactor: -1,
+                polygonOffsetUnits: -1,
               });
-            }
-            targetMat = cache.xray;
-            break;
-
-          case 'matcap-turquoise':
-            if (!cache.turquoise) {
-              cache.turquoise = new THREE.MeshStandardMaterial({
-                color: 0x06b6d4,
-                roughness: 0.3,
-                metalness: 0.4,
-              });
-            }
-            cache.turquoise.wireframe = false;
-            targetMat = cache.turquoise;
-            break;
-
-          case 'default':
-          case 'textured':
-          default:
-            targetMat = orig;
-            if (Array.isArray(targetMat)) {
-              targetMat.forEach((m) => {
-                if ('wireframe' in m) {
-                  (m as THREE.MeshStandardMaterial).wireframe = false;
+              if (child instanceof THREE.SkinnedMesh) {
+                const skinnedOverlay = new THREE.SkinnedMesh(child.geometry, wireMat);
+                if (child.skeleton) {
+                  skinnedOverlay.bind(child.skeleton, child.bindMatrix);
                 }
-              });
-            } else if (targetMat && 'wireframe' in targetMat) {
-              (targetMat as THREE.MeshStandardMaterial).wireframe = false;
+                wireOverlay = skinnedOverlay;
+              } else {
+                wireOverlay = new THREE.Mesh(child.geometry, wireMat);
+              }
+              wireOverlay.userData.isWireframeOverlay = true;
+              wireOverlay.renderOrder = (child.renderOrder || 0) + 1;
+              child.add(wireOverlay);
+            } else {
+              if (wireOverlay.geometry !== child.geometry) {
+                wireOverlay.geometry = child.geometry;
+                if (child instanceof THREE.SkinnedMesh && wireOverlay instanceof THREE.SkinnedMesh && child.skeleton) {
+                  wireOverlay.bind(child.skeleton, child.bindMatrix);
+                }
+              }
             }
-            break;
-        }
-
-        child.material = targetMat;
-
-        // Pro Studio Wireframe on Shaded:
-        // Renders crisp topology wire lines cleanly overlaid onto the solid lit geometry
-        let wireOverlay = child.children.find((c) => c.userData?.isWireframeOverlay) as THREE.Mesh | undefined;
-        if (showWireframe && !isWireOnly) {
-          if (!wireOverlay) {
-            const wireMat = new THREE.MeshBasicMaterial({
-              color: 0x111317,
-              wireframe: true,
-              transparent: true,
-              opacity: 0.38,
-              depthTest: true,
-              polygonOffset: true,
-              polygonOffsetFactor: -1,
-              polygonOffsetUnits: -1,
-            });
-            wireOverlay = new THREE.Mesh(child.geometry, wireMat);
-            wireOverlay.userData.isWireframeOverlay = true;
-            wireOverlay.renderOrder = (child.renderOrder || 0) + 1;
-            child.add(wireOverlay);
-          } else if (wireOverlay.geometry !== child.geometry) {
-            wireOverlay.geometry = child.geometry;
+            wireOverlay.visible = true;
+          } else if (wireOverlay) {
+            wireOverlay.visible = false;
           }
-          wireOverlay.visible = true;
-        } else if (wireOverlay) {
-          wireOverlay.visible = false;
         }
-      }
-    });
+      });
+    } catch (err) {
+      console.warn('[MeshViewer] Shading switcher encountered an issue:', err);
+    }
   }, [shadingMode, showWireframe]);
 
   // Synchronize material PBR properties (roughness, metalness, normalScale) in real time
@@ -4073,7 +4103,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             </div>
             <span className="text-xs font-bold text-zinc-100 tracking-wide block mb-1">
               {loadProgress && loadProgress.percent === 100
-                ? 'Processing & GPU UploadIcon...'
+                ? 'Processing & GPU Upload...'
                 : 'Loading 3D Model...'}
             </span>
             {loadProgress && loadProgress.total > 0 ? (

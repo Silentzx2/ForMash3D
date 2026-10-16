@@ -1131,7 +1131,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                     artifacts: result.artifacts,
                   });
                   addAsset(outputAsset);
-                  if (activeTaskRef.current?.id === jobId) {
+                  if (!activeTaskRef.current || activeTaskRef.current.id === jobId || !selectedAssetId) {
                     setSelectedAssetId(outputAsset.id);
                     setViewportResetTrigger(prev => prev + 1);
                     loadModelInViewer(modelUrl, cleanName, outputAsset as any);

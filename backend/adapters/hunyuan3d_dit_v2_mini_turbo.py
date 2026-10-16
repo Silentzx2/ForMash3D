@@ -244,9 +244,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     )
                     octree_res = 380
 
-            num_chunks = inputs.get("num_chunks", 20000)
+            num_chunks = inputs.get("num_chunks", 80000)
             if num_chunks is None:
-                num_chunks = 20000
+                num_chunks = 80000
             else:
                 num_chunks = int(num_chunks)
 

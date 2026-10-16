@@ -3,7 +3,7 @@
  * Pure function - no React dependencies, fully testable.
  */
 
-import { GenerationSettings } from '../types';
+import type { GenerationSettings } from '../types.ts';
 
 export interface ModelCapabilities {
   raw_mesh?: boolean;
@@ -153,27 +153,28 @@ export function buildGenerationParameters(
 function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> = {}): number {
   // Model-specific maximum-fidelity source settings; downstream budgets never change these.
   // Prefer backend-provided schema defaults; fall back to known official schedules.
+  const normId = (modelId || '').toLowerCase().replace(/-/g, '_');
   const schemaSteps = Number(
     paramDefaults.num_inference_steps ??
     paramDefaults.ss_sampling_steps ??
     -1
   );
   // Ignore schema defaults for models with a fixed maximum-fidelity source profile.
-  if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) return 5;
-  if (modelId.includes('trellis')) return 50;
-  if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21') ||
-      modelId.includes('triposg')) return 50;
-  if (modelId.includes('pixal3d')) return 36; // 12 + 12 + 12
+  if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) return 5;
+  if (normId.includes('trellis')) return 50;
+  if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21') ||
+      normId.includes('triposg')) return 50;
+  if (normId.includes('pixal3d')) return 36; // 12 + 12 + 12
   if (schemaSteps >= 1) return schemaSteps;
 
   let infSteps = 50;
-  if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
+  if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) {
     infSteps = 5;
-  } else if (modelId.includes('triposg')) {
+  } else if (normId.includes('triposg')) {
     infSteps = 50;
-  } else if (modelId.includes('hunyuan3d_shape_v21') || modelId.includes('hunyuan3dv21')) {
+  } else if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21')) {
     infSteps = 50;
-  } else if (modelId.includes('pixal3d')) {
+  } else if (normId.includes('pixal3d')) {
     infSteps = 36;
   }
 
@@ -199,43 +200,47 @@ function applyModelSpecificParams(
   // Source geometry and source textures always use maximum-fidelity generation settings.
   // UI poly/quality budgets apply only to downstream production artifacts.
   // When the backend provides parameter defaults, prefer them over hardcoded values.
+  const normId = (modelId || '').toLowerCase().replace(/-/g, '_');
   
-  if (modelId.includes('triposg')) {
+  if (normId.includes('triposg')) {
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
     modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
     modelParameters.use_flash_decoder = false;
     modelParameters.dense_octree_depth = 9;
     modelParameters.hierarchical_octree_depth = 10;
-  } else if (modelId.includes('trellis2')) {
+  } else if (normId.includes('trellis2')) {
     modelParameters.decimation_target = -1;
     modelParameters.remesh = false;
     modelParameters.pipeline_type = '1536_cascade';
     modelParameters.max_num_tokens = 262144;
     modelParameters.sparse_structure_sampler_params = { steps: 50 };
     modelParameters.shape_slat_sampler_params = { steps: 50 };
-  } else if (modelId.includes('trellis')) {
+  } else if (normId.includes('trellis')) {
     modelParameters.simplify = 0.0;
     modelParameters.ss_sampling_steps = 50;
     modelParameters.slat_sampling_steps = 50;
-  } else if (modelId.includes('hunyuan3d_dit_v2_mini_turbo')) {
+  } else if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) {
     // Official Mini Turbo uses octree_resolution=380; 512 exceeds trained range and degrades quality
     modelParameters.octree_resolution = 380;
     modelParameters.num_inference_steps = 5;
+    modelParameters.num_chunks = 80000;
     modelParameters.low_vram_mode = false;
     modelParameters.low_vram = false;
     modelParameters.enable_flashvdm = false;
     modelParameters.mc_algo = 'mc';
-  } else if (modelId.startsWith('hunyuan3d_shape_v21')) {
+  } else if (normId.startsWith('hunyuan3d_shape_v21')) {
     modelParameters.octree_resolution = 512;
     modelParameters.num_inference_steps = 50;
     modelParameters.guidance_scale = 7.5;
+    modelParameters.num_chunks = 80000;
     modelParameters.low_vram = false;
     modelParameters.mc_algo = 'mc';
-  } else if (modelId.includes('hunyuan')) {
+  } else if (normId.includes('hunyuan')) {
     modelParameters.octree_resolution = 512;
     modelParameters.num_inference_steps = 50;
+    modelParameters.num_chunks = 80000;
     modelParameters.low_vram = false;
-} else if (modelId.includes('pixal3d')) {
+  } else if (normId.includes('pixal3d')) {
     modelParameters.low_vram = false;
     modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 42;
     modelParameters.manual_fov = paramDefaults.manual_fov ?? null;
@@ -244,5 +249,5 @@ function applyModelSpecificParams(
     modelParameters.low_vram_mode = paramDefaults.low_vram ?? settings.lowVram ?? false;
     modelParameters.init_type = paramDefaults.init_type ?? 'std';
     modelParameters.native_pbr = true;
-}
+  }
 }
