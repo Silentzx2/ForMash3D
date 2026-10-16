@@ -733,22 +733,6 @@ if [ -f "$PROJECT_ROOT/backend/thirdparty/Paint3D/requirement.txt" ]; then
 fi
 ### Paint3D end ###
 
-cd "$PROJECT_ROOT/backend"
-
-echo ""
-echo "========================================"
-echo "Installing Project Dependencies"
-echo "========================================"
-### for this project (fastapi / uvicorn relevant etc.)  ###
-echo "[INFO] Installing main project requirements..."
-$UV_PIP install --find-links="$WHEEL_DIR" -r "$PROJECT_ROOT/backend/requirements.txt"
-if [ $? -eq 0 ]; then
-    echo "[SUCCESS] Main project requirements installed"
-else
-    echo "[ERROR] Failed to install main project requirements"
-    exit 1
-fi
-
 python "$PROJECT_ROOT/backend/scripts/verify_postprocess_runtime.py"
 
 # Keep TripoSG's declared requirements installed after the shared backend baseline.
