@@ -1,3 +1,11 @@
+## 2026-10-16 — Unified Dependency Architecture & Model Downgrade Prevention
+
+- **DEP-01**: Centrally locked unified baseline in `backend/requirements.txt`: `transformers==5.10.1`, `diffusers==0.38.0`, `huggingface_hub>=1.5.0,<2.0`, `datasets==3.6.0`, `fastapi>=0.109.0`, and `uvicorn[standard]>=0.27.0`.
+- **DEP-02**: Removed conflicting standalone `huggingface_hub` installation block from `backend/scripts/install.sh`, allowing `backend/requirements.txt` to act as the authoritative single source of truth.
+- **DEP-03**: Cleaned thirdparty requirement files across `Unique3D`, `hunyuan3d-shape-v2-1`, `hunyuan3d-paint-v2-1`, `hunyuan-requirements.txt`, and `Pixal3D` in `Silentzx2/ForMash3D-ThirdParty` to eliminate conflicting downgrade pins (`transformers`, `fastapi`, `gradio`, `datasets==2.14.5`).
+- **DEP-04**: Fixed syntax & flow bugs in `backend/scripts/install.sh`: closed missing `fi` on TripoSG block, corrected natten wheel installation check, and fixed relative `requirements.txt` path at line 744.
+- **DEP-05**: Updated `backend/tests/test_generation_dependency_contract.py` to assert new unified baseline versions; 100% test pass rate achieved across all 50 pytest tests.
+
 ## 2026-10-16 — Raw Mesh Quality, Nelson Max Crease Splitting & High-to-Low Normal Baking
 
 - **RAW-01**: Implemented Nelson Max (1999) corner-angle-weighted vertex normal computation and dihedral crease splitting (`compute_angle_weighted_normals`, `apply_angle_weighted_normals`) across `core/mesh_processor.py`, `postprocess/meshio.py`, and extraction adapters (`triposg_adapter.py`, `trellis_adapter.py`). Dihedral angles > 35° split vertices to guarantee crisp orthogonal shading across sharp edges, while continuous curved surfaces (spheres, cylinder mantles) remain smooth.
@@ -20,13 +28,4 @@
 - **PIPE-06**: Explicitly configured OpenGL tangent space (`POS_X`, `POS_Y`, `POS_Z`) for normal map baking in `bake_worker.py` matching glTF 2.0 specifications.
 - **PIPE-07**: Fixed UV gutter dilation bug in `bake_worker.py::fill_gutters()` for 2D grayscale textures (ambient occlusion, roughness, metallic), eliminating dark boundary seams around UV islands.
 - **PIPE-08**: Verified 100% pass rate across TypeScript type checks (`bun run test`) and official model parity contracts (`pytest`).
-
-## 2026-10-16 — Quality Rendering, Three.js PBR Pipeline & Pro Studio UI/UX
-
-- **PBR-01**: Enhanced Three.js PBR rendering pipeline with configurable tone mapping (Khronos Neutral for color fidelity & ACES Filmic for high-contrast film curves), balanced exposure calibration, studio three-point lighting, and dynamic key light shadow camera frustum scaling for crisp 2048x2048 contact shadows.
-- **PBR-02**: Integrated automatic tangent space computation (`computeTangents()`) and vertex normal verification in `meshTelemetry.ts` for all GLTF, FBX, OBJ, PLY, and STL assets, ensuring artifact-free micro-relief normal and bump mapping.
-- **PBR-03**: Polished studio material shading presets (Studio Matte Clay with clearcoat, Porcelain Ceramic Gloss, 24K Metallic Gold, Chrome Mirror, High-Contrast Tangent Normals) and introduced authentic non-destructive Wireframe on Shaded overlay with polygonOffset depth calibration.
-- **UI-04**: Added Pro Studio Fidelity & Crease Preservation controls to `GeneratePanel.tsx`: Sharp Feature Preservation toggle, Angle Crease Threshold slider (30° - 85°), High-Resolution Normal Baking, Texture Fidelity Presets (Ultra 4K to Compact 512), and live density/precision indicators.
-- **UI-05**: Built real-time geometry & topology telemetry into `RightPropertyPanel.tsx`, `ViewportToolOverlay.tsx`, and `MeshViewer.tsx`: manifold edge verification (watertight vs non-manifold edge counts), vertex/polygon counts, disjoint UV chart counting, surface area ($m^2$), and signed enclosed volume ($m^3$).
-- **TEST-06**: Added unit test suite `features/workspace/lib/meshTelemetry.test.mjs` verifying surface area, volume, non-manifold edge detection, and tangent generation across 24 passing tests.
 
