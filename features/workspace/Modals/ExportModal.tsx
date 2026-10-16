@@ -39,7 +39,7 @@ export const ExportModal: React.FC = () => {
   const handleExport = async () => {
     const artifacts = currentAsset?.artifacts;
     const zipUrl = artifacts?.zipUrl;
-    const sourceArtifact = artifacts?.source;
+    const sourceArtifact = artifacts?.source || currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl;
     const selectedUrl =
       packageZip || variant === 'lod_package'
         ? zipUrl
@@ -58,11 +58,18 @@ export const ExportModal: React.FC = () => {
       return;
     }
 
+    const sourceFormat = (
+      currentAsset?.format?.toLowerCase() ||
+      currentAsset?.source?.filename?.split('.').pop()?.toLowerCase() ||
+      currentAsset?.name?.split('.').pop()?.toLowerCase() ||
+      'glb'
+    ) as 'glb' | 'gltf' | 'fbx' | 'obj' | 'stl' | 'ply';
+
     const downloadExtension =
       packageZip || variant === 'lod_package'
         ? 'zip'
         : variant === 'source'
-        ? 'glb'
+        ? (['glb', 'gltf', 'fbx', 'obj', 'stl', 'ply'].includes(sourceFormat) ? sourceFormat : 'glb')
         : exportFormat;
 
     setIsExporting(true);

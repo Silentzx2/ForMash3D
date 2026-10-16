@@ -8,7 +8,7 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js';
 import { useWorkspace } from '../store/WorkspaceContext';
-import { CameraViewPreset, ModelAsset, normalizeModelAsset } from '../types';
+import { CameraViewPreset, ModelAsset, normalizeModelAsset, uploadMeshAsset } from '../types';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { getApiClient } from '@/services/apiClient';
 import { useAnimationStore, BoneItem, mapRetargetBones } from '@/stores/useAnimationStore';
@@ -16,6 +16,8 @@ import { loadModelInViewer, useViewerStore } from '@/stores/useViewerStore';
 import { useAppStore } from '@/stores/useAppStore';
 
 import { validate3DFile } from '../lib/fileValidation';
+import { requireUploadFileId } from '../lib/uploadResponse';
+import { getUploadPercent } from '../lib/uploadProgress';
 import { createPointCloudFromImage, disposePointCloud } from './ImagePointCloud';
 import { GenerationLoadingPreview } from './GenerationLoadingPreview';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -3494,28 +3496,27 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const file = e.dataTransfer.files[0];
       const ext = file.name.split('.').pop()?.toUpperCase() || '';
-      const ALLOWED_EXTENSIONS = ['GLB', 'GLTF', 'OBJ', 'PLY', 'STL'];
+      const ALLOWED_EXTENSIONS = ['GLB', 'GLTF', 'OBJ', 'PLY', 'STL', 'FBX'];
       const IMAGE_EXTENSIONS = ['JPG', 'JPEG', 'PNG', 'WEBP', 'BMP', 'TIFF', 'AVIF'];
 
       if (IMAGE_EXTENSIONS.includes(ext) || file.type.startsWith('image/')) {
-        const previewUrl = URL.createObjectURL(file);
         const cleanPrompt = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
 
         setDropToastMessage(`Uploading "${file.name}" as 3D reference image...`);
 
-        const formData = new FormData();
-        formData.append('file', file);
-        getApiClient().post<{ file_id: string; filename?: string }>(
-          '/api/v1/file-upload/image',
-          formData,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
-        ).then(res => {
-          const serverUrl = res?.file_id ? `/api/v1/file-upload/download/${res.file_id}` : previewUrl;
+        getApiClient().uploadImageFile(file, (loadedBytes, totalBytes) => {
+          const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
+          if (percent !== null) {
+            setDropToastMessage(`Uploading "${file.name}" (${percent}%)...`);
+          }
+        }).then(res => {
+          const fileId = requireUploadFileId(res?.file_id, 'image');
+          const serverUrl = `/api/v1/file-upload/download/${encodeURIComponent(fileId)}`;
           setGenerationSettings(prev => ({
             ...prev,
             mode: 'image-to-3d',
             image: serverUrl,
-            imageFileId: res?.file_id || '',
+            imageFileId: fileId,
             prompt: cleanPrompt,
             imageName: cleanPrompt,
           }));
@@ -3523,17 +3524,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           setDropToastMessage(`Reference image "${file.name}" ready for 3D generation`);
           setTimeout(() => setDropToastMessage(null), 3000);
         }).catch(err => {
-          console.warn('Backend image upload fallback to local preview:', err);
-          setGenerationSettings(prev => ({
-            ...prev,
-            mode: 'image-to-3d',
-            image: previewUrl,
-            prompt: cleanPrompt,
-            imageName: cleanPrompt,
-          }));
-          navigateToTool('model');
-          setDropToastMessage(`Set "${file.name}" as reference image`);
-          setTimeout(() => setDropToastMessage(null), 3000);
+          console.error('Backend image upload failed:', err);
+          setDropToastMessage(err instanceof Error ? err.message : `Failed to upload reference image "${file.name}"`);
+          setTimeout(() => setDropToastMessage(null), 3500);
         });
         return;
       }
@@ -3544,81 +3537,23 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         return;
       }
 
-      // Validate file structure before creating blob URL
-      const validation = await validate3DFile(file, 'preview');
-      if (!validation.valid) {
-        setDropToastMessage(validation.error || 'Invalid file');
-        setTimeout(() => setDropToastMessage(null), 3500);
-        return;
-      }
-
-      const cleanName = file.name.replace(/\.[^/.]+$/, "");
-      const localBlobUrl = URL.createObjectURL(file);
-
-      // Create immediate preview asset
-      const tempId = `dropped-${Date.now()}`;
-      const tempAsset: ModelAsset = {
-        id: tempId,
-        name: cleanName,
-        category: 'mesh',
-        meshType: 'custom',
-        thumbnail: '',
-        faces: 0,
-        vertices: 0,
-        triangles: 0,
-        statsAvailable: false,
-        topology: 'Quad',
-        format: ext === 'OBJ' ? 'OBJ' : ext === 'PLY' ? 'PLY' : ext === 'STL' ? 'STL' : 'GLB',
-        dateCreated: new Date().toISOString().split('T')[0],
-        tags: ['Local Import', '3D Model', ext],
-        source: { filename: file.name, subfolder: 'models', type: 'upload', viewUrl: localBlobUrl }
-      };
-
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-      }
-      blobUrlRef.current = localBlobUrl;
-
-      // Load immediately into viewport for smooth UX
-      addAsset(tempAsset);
-      setCurrentAsset(tempAsset);
-      setDropToastMessage(`Saving "${cleanName}" to backend storage...`);
-
-      // Persist to backend storage (/backend/storage/models)
+      setDropToastMessage(`Uploading "${file.name}" to backend storage...`);
       try {
-        const uploadFormData = new FormData();
-        uploadFormData.append('file', file);
-        const uploadRes = await getApiClient().post<{
-          url: string;
-          file_id?: string;
-          id?: string;
-          filename: string;
-          stored_filename?: string;
-          size: number;
-        }>('/api/v1/file-upload/mesh', uploadFormData);
-
-        const serverUrl = uploadRes?.url || (uploadRes?.file_id ? `/api/v1/file-upload/download/${uploadRes.file_id}` : uploadRes?.id ? `/api/v1/file-upload/download/${uploadRes.id}` : '');
-        const finalAsset: ModelAsset = {
-          ...tempAsset,
-          id: uploadRes?.file_id || uploadRes?.stored_filename || uploadRes?.id || tempId,
-          fileId: uploadRes?.file_id,
-          tags: ['Saved to Storage', '3D Model', ext],
-          source: {
-            filename: uploadRes?.stored_filename || file.name,
-            subfolder: 'models',
-            type: 'upload',
-            viewUrl: serverUrl,
-            fileId: uploadRes?.file_id,
+        const asset = await uploadMeshAsset(file, {
+          onProgress: (loadedBytes, totalBytes) => {
+            const percent = getUploadPercent(loadedBytes, totalBytes ?? null);
+            if (percent !== null) {
+              setDropToastMessage(`Uploading "${file.name}" (${percent}%)...`);
+            }
           },
-        };
-        // Update temp asset in place to avoid duplicate cards in the workspace
-        updateAssetProperties(tempId, finalAsset);
-        setCurrentAsset(finalAsset);
-        setDropToastMessage(`Saved to storage and loaded "${cleanName}"`);
+        });
+        addAsset(asset);
+        setCurrentAsset(asset);
+        setDropToastMessage(`Saved to storage and loaded "${asset.name}"`);
         setTimeout(() => setDropToastMessage(null), 3000);
       } catch (uploadErr) {
-        console.warn('Backend storage upload failed, keeping local preview:', uploadErr);
-        setDropToastMessage(`Loaded "${cleanName}" (Local preview)`);
+        console.error('Backend mesh upload failed:', uploadErr);
+        setDropToastMessage(uploadErr instanceof Error ? uploadErr.message : `Failed to upload "${file.name}"`);
         setTimeout(() => setDropToastMessage(null), 3500);
       }
     }

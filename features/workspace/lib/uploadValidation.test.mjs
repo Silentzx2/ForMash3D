@@ -63,3 +63,21 @@ test('rejects empty or malformed embedded GLTF data URIs', async () => {
   assert.equal(result.valid, false);
   assert.match(result.error, /external or invalid embedded resources/);
 });
+
+test('accepts FBX files and validates within 200MB limit', async () => {
+  const validFbx = new File([new Uint8Array(1024)], 'model.fbx', { type: 'application/octet-stream' });
+  const result = await validate3DFile(validFbx, 'upload');
+  assert.equal(result.valid, true);
+
+  // Exceeding 200MB
+  const overLimit = {
+    name: 'giant.fbx',
+    size: 201 * 1024 * 1024,
+    type: 'application/octet-stream',
+    slice: () => ({ arrayBuffer: async () => new ArrayBuffer(0), text: async () => '' }),
+  };
+  const overResult = await validate3DFile(overLimit, 'upload');
+  assert.equal(overResult.valid, false);
+  assert.match(overResult.error, /File too large/);
+  assert.match(overResult.error, /200MB/);
+});

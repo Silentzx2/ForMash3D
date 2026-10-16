@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { getApiClient } from '@/services/apiClient';
 import { getSymmetricBoneName } from '@/stores/useAnimationStore';
 import type { AutoRiggingRequest } from '@/types/api';
+import { computeRigProgress, computeRigStatusText } from '@/features/workspace/lib/riggingProgress';
 
 export interface RigBoneNode {
   name: string;
@@ -166,14 +167,14 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
 
       if (statusRes.status === 'processing' || statusRes.status === 'queued') {
         set({
-          generationProgress: Math.min(90, get().generationProgress + (statusRes.status === 'processing' ? 2 : 1)),
-          generationStatus: statusRes.status === 'queued' ? 'Waiting for GPU scheduler…' : 'Fitting skeleton & skinning weights…',
+          generationProgress: computeRigProgress(statusRes),
+          generationStatus: computeRigStatusText(statusRes),
         });
       } else if (statusRes.status === 'completed') {
         set({
           isGenerating: false,
-          generationProgress: 100,
-          generationStatus: 'Rig generated successfully!',
+          generationProgress: computeRigProgress(statusRes),
+          generationStatus: computeRigStatusText(statusRes),
           riggedModelUrl: `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download`,
           riggedFbxUrl: `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download?artifact_format=fbx`,
         });
@@ -282,7 +283,7 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
     }
     set({
       isGenerating: true,
-      generationProgress: 10,
+      generationProgress: 0,
       generationStatus: 'Initializing auto-rigging pipeline...',
       generationError: null,
       riggedModelUrl: null,
@@ -307,7 +308,7 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
 
       const response = await client.generateRig(payload);
       if (!response.job_id) throw new Error('Backend did not return a job ID');
-      set({ jobId: response.job_id, generationProgress: 25, generationStatus: 'Queued on GPU...' });
+      set({ jobId: response.job_id, generationProgress: 0, generationStatus: 'Queued on GPU...' });
       return await pollRigJob(response.job_id);
     } catch (err) {
       return failRigJob(err);

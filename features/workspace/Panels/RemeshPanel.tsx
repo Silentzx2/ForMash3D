@@ -91,7 +91,7 @@ export const RemeshPanel: React.FC = () => {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".glb,.gltf,.obj,.ply,.stl"
+                    accept=".glb,.gltf,.obj,.fbx,.stl,.ply"
                     onChange={handleUploadNew}
                     className="hidden"
                     disabled={uploadActive}

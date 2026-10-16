@@ -251,7 +251,9 @@ def test_rmbg_unavailable_is_explicit(tmp_path, monkeypatch):
 
     assert result["metadata"]["rmbg_used"] is False
     assert "unavailable" in result["metadata"]["rmbg_error"].lower()
-    assert result["metadata"]["approved_sha256"]
+    assert result["metadata"]["preview_sha256"]
+    assert result["approval_status"] == "failed"
+    assert result["approved_path"] is None
 
 
 def test_smart_presets_are_complete_and_unique():

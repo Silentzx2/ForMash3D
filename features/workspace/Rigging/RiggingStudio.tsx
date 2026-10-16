@@ -335,7 +335,7 @@ export const RiggingStudio: React.FC = () => {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".glb,.gltf,.obj,.fbx"
+        accept=".glb,.gltf,.obj,.fbx,.stl,.ply"
         hidden
         onChange={handleMeshUpload}
       />

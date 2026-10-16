@@ -85,7 +85,7 @@ interface WorkspaceContextType {
   setRightPanelOpen: (open: boolean) => void;
   environmentSettings: EnvironmentSettings;
   setEnvironmentSettings: React.Dispatch<React.SetStateAction<EnvironmentSettings>>;
-  setCurrentAsset: (asset: ModelAsset) => void;
+  setCurrentAsset: (asset: ModelAsset | null) => void;
   assetFilter: string;
   setAssetFilter: (filter: string) => void;
   duplicateAsset: (id: string) => void;
@@ -1242,7 +1242,14 @@ function dataURLtoFile(dataURL: string, filename: string): File {
     setViewportResetTrigger(prev => prev + 1);
   }, [assets]);
 
-  const setCurrentAsset = useCallback((asset: ModelAsset) => selectAsset(asset.id), [selectAsset]);
+  const setCurrentAsset = useCallback((asset: ModelAsset | null) => {
+    if (!asset) {
+      setSelectedAssetId(null);
+      return;
+    }
+    addAsset(asset);
+    selectAsset(asset.id);
+  }, [addAsset, selectAsset]);
 
   const duplicateAsset = useCallback((id: string) => {
     const existing = assets.find(a => a.id === id);

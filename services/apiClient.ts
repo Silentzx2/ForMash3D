@@ -435,7 +435,7 @@ class ApiClient {
   }
 
   // NEW File Upload Endpoints
-  async uploadImageFile(file: File, onProgress?: (loadedBytes: number) => void): Promise<FileUploadResponse> {
+  async uploadImageFile(file: File, onProgress?: (loadedBytes: number, totalBytes?: number) => void): Promise<FileUploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
 
@@ -447,7 +447,7 @@ class ApiClient {
           'Content-Type': 'multipart/form-data'
         },
         onUploadProgress: (progressEvent) => {
-          if (onProgress) onProgress(progressEvent.loaded);
+          if (onProgress) onProgress(progressEvent.loaded, progressEvent.total);
         }
       }
     );

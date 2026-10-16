@@ -68,6 +68,7 @@ class FileUploadResponse(BaseModel):
     expires_at: Optional[datetime] = Field(None, description="File expiration time")
     url: Optional[str] = Field(None, description="Direct download/view URL for the uploaded file")
     thumbnail_url: Optional[str] = Field(None, description="URL to the generated thumbnail image (meshes only)")
+    mesh_stats: Optional[Dict] = Field(None, description="Mesh statistics (vertices, faces, etc.)")
 
 
 class FileMetadataResponse(BaseModel):
@@ -467,8 +468,13 @@ def _find_job_workspace(job_id: str, raw_id: str, metadata: Optional[Dict]) -> O
         safe_path = _storage_path(metadata_path) if metadata_path else None
         if safe_path:
             for parent in safe_path.parents:
-                manifest = parent / "metadata" / "job.json"
-                if manifest.is_file():
+                manifest_files = (
+                    parent / "metadata" / "job.json",
+                    parent / "metadata" / "asset.json",
+                    parent / "metadata" / "jobs" / f"{job_id}.json",
+                    parent / "metadata" / "jobs" / f"{raw_id}.json",
+                )
+                if any(m.is_file() for m in manifest_files):
                     possible_roots.append(parent)
                     break
 
@@ -486,9 +492,24 @@ def _find_job_workspace(job_id: str, raw_id: str, metadata: Optional[Dict]) -> O
         try:
             resolved_root = root.resolve(strict=True)
             resolved_root.relative_to(models_root)
-            manifest = json.loads((resolved_root / "metadata" / "job.json").read_text(encoding="utf-8"))
-            if manifest.get("job_id") in {job_id, raw_id}:
+            if any(
+                (resolved_root / "metadata" / "jobs" / f"{id_val}.json").is_file()
+                for id_val in (job_id, raw_id)
+            ):
                 matching_roots.append(resolved_root)
+                continue
+            manifest_file = resolved_root / "metadata" / "job.json"
+            if manifest_file.is_file():
+                manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+                if manifest.get("job_id") in {job_id, raw_id}:
+                    matching_roots.append(resolved_root)
+                    continue
+            asset_manifest = resolved_root / "metadata" / "asset.json"
+            if asset_manifest.is_file():
+                manifest = json.loads(asset_manifest.read_text(encoding="utf-8"))
+                if manifest.get("asset_id") in {job_id, raw_id} or manifest.get("file_id") in {job_id, raw_id}:
+                    matching_roots.append(resolved_root)
+                    continue
         except (OSError, ValueError, json.JSONDecodeError):
             continue
     return matching_roots[0] if len(set(matching_roots)) == 1 else None
@@ -498,6 +519,32 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
     selector = (artifact_format or "").strip().lower()
     if selector not in _JOB_ARTIFACT_FORMATS:
         return None
+
+    # Check job-specific manifest first
+    job_manifest_path = workspace / "metadata" / "jobs" / f"{job_id}.json"
+    if not job_manifest_path.is_file():
+        job_manifest_path = workspace / "metadata" / "job.json"
+
+    if job_manifest_path.is_file():
+        try:
+            manifest_data = json.loads(job_manifest_path.read_text(encoding="utf-8"))
+            declared = manifest_data.get("artifacts") or {}
+            if selector in declared:
+                resolved = resolve_declared_artifact(workspace, declared, selector)
+                if resolved:
+                    return resolved
+            if selector == "fbx" and "rigged_fbx" in declared:
+                resolved = resolve_declared_artifact(workspace, declared, "rigged_fbx")
+                if resolved:
+                    return resolved
+            if selector == "master" and manifest_data.get("master_path"):
+                cand = workspace / manifest_data["master_path"]
+                safe = _storage_path(cand)
+                if safe:
+                    return safe
+        except (OSError, json.JSONDecodeError):
+            pass
+
     try:
         manifest = json.loads((workspace / "metadata" / "job.json").read_text(encoding="utf-8"))
         asset_name = manifest.get("asset_id")
@@ -506,10 +553,23 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
 
     if selector == "master":
         candidates = [workspace / "master" / "source.glb"]
+        if (workspace / "master").is_dir():
+            candidates.extend(sorted((workspace / "master").glob("source.*")))
     elif selector in {"glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj"}:
         extension = "obj" if selector == "quad_obj" else selector
         stems = list(dict.fromkeys(stem for stem in (asset_name, workspace.name) if stem))
         candidates = [workspace / "game_ready" / f"{stem}.{extension}" for stem in stems]
+        if selector == "fbx":
+            candidates.extend([
+                workspace / "rigging" / job_id / "rigged.fbx",
+                workspace / "rigging" / "game_ready_rigged.fbx",
+            ])
+            candidates.extend(sorted((workspace / "rigging").glob("*/rigged.fbx")))
+        elif selector == "glb":
+            candidates.extend([
+                workspace / "rigging" / job_id / "rigged.glb",
+                workspace / "derived" / job_id / "result.glb",
+            ])
     elif selector.startswith("lod"):
         candidates = [workspace / "lods" / f"{selector}.glb"]
     elif selector == "textured":
@@ -517,9 +577,11 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
         if asset_name:
             names.append(f"{asset_name}_textured.glb")
         candidates = [workspace / "textures" / name for name in names]
+    elif selector == "derived":
+        candidates = sorted((workspace / "derived" / job_id).glob("result.*")) if (workspace / "derived" / job_id).is_dir() else []
     else:
         fixed_paths = {
-            "rigged": workspace / "rigging" / "game_ready_rigged.glb",
+            "rigged": workspace / "rigging" / job_id / "rigged.glb",
             "collision": workspace / "collision" / "collision.glb",
             "thumbnail": workspace / "previews" / "thumbnail.png",
             "qa_report": workspace / "metadata" / "quality_report.json",
@@ -529,6 +591,12 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
         }
         if selector.startswith("texture_"):
             candidates = [workspace / "textures" / f"{selector.removeprefix('texture_')}.png"]
+        elif selector == "rigged":
+            candidates = [
+                workspace / "rigging" / job_id / "rigged.glb",
+                workspace / "rigging" / "game_ready_rigged.glb",
+            ]
+            candidates.extend(sorted((workspace / "rigging").glob("*/rigged.glb")))
         else:
             candidates = [fixed_paths[selector]]
     for candidate in candidates:
@@ -675,6 +743,14 @@ async def upload_file_with_validation(
 
         logger.info(f"Uploaded {file_type} file {file_id}: {file.filename}")
 
+        mesh_stats = None
+        if file_type == "mesh" and validation_info:
+            mesh_stats = {
+                "vertex_count": validation_info.get("vertex_count", 0),
+                "polygon_count": validation_info.get("face_count", 0),
+                "is_watertight": validation_info.get("is_watertight", False),
+            }
+
         return {
             "file_id": file_id,
             "file_path": str(file_path),
@@ -684,6 +760,7 @@ async def upload_file_with_validation(
             "upload_time": datetime.now(),
             "expires_at": None,
             "url": f"/api/v1/file-upload/download/{file_id}",
+            "mesh_stats": mesh_stats,
         }
     except HTTPException:
         raise

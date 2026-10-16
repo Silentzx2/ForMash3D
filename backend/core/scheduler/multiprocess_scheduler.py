@@ -1727,6 +1727,7 @@ class MultiprocessModelScheduler:
                     f"/api/v1/system/jobs/{parent_job_id}/download"
                     f"?artifact_format=rigged"
                 )
+                result["output_fbx_path"] = str(rig_fbx_path) if rig_fbx_path else None
                 result["rigging"] = {
                     "status": "completed",
                     "provider": "unirig_auto_rig",

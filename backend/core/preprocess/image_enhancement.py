@@ -228,6 +228,7 @@ def _validate_foreground_mask(
     *,
     initial_bbox_fraction: Optional[float],
     mask_survived_resize: bool,
+    require_transparency: bool = True,
 ) -> Dict[str, Any]:
     alpha_stats = _alpha_stats(image)
     if alpha_stats["channel_present"]:
@@ -271,20 +272,21 @@ def _validate_foreground_mask(
         else None
     )
     reasons = []
-    if not component_analysis_available:
-        reasons.append("Connected-component validation is unavailable in this backend runtime.")
-    if not alpha_stats["has_transparency"] or foreground_pixels == 0:
-        reasons.append("No usable transparent foreground mask was detected.")
-    if foreground_fraction < 0.005:
-        reasons.append("The detected foreground is nearly empty.")
-    if bbox_fraction > 0.98 and alpha_stats["minimum"] is not None and alpha_stats["minimum"] >= 253:
-        reasons.append("The foreground fills almost the entire image.")
-    if border_coverage > 0.20:
-        reasons.append("Foreground mask coverage at the image border is high.")
-    if small_component_fraction is not None and small_component_fraction > 0.25:
-        reasons.append("The mask contains a high proportion of small disconnected regions.")
-    if not mask_survived_resize:
-        reasons.append("The foreground mask did not survive resizing.")
+    if require_transparency:
+        if not component_analysis_available:
+            reasons.append("Connected-component validation is unavailable in this backend runtime.")
+        if not alpha_stats["has_transparency"] or foreground_pixels == 0:
+            reasons.append("No usable transparent foreground mask was detected.")
+        if foreground_fraction < 0.005:
+            reasons.append("The detected foreground is nearly empty.")
+        if bbox_fraction > 0.98 and alpha_stats["minimum"] is not None and alpha_stats["minimum"] >= 253:
+            reasons.append("The foreground fills almost the entire image.")
+        if border_coverage > 0.80:
+            reasons.append("Foreground mask coverage at the image border is high.")
+        if small_component_fraction is not None and small_component_fraction > 0.25:
+            reasons.append("The mask contains a high proportion of small disconnected regions.")
+        if not mask_survived_resize:
+            reasons.append("The foreground mask did not survive resizing.")
 
     return {
         "valid": not reasons,
@@ -301,6 +303,10 @@ def _validate_foreground_mask(
         "component_analysis_available": component_analysis_available,
         "mask_survived_resize": bool(mask_survived_resize),
     }
+
+
+inspect_foreground_mask = _validate_foreground_mask
+validate_preprocessed_image = _validate_foreground_mask
 
 
 def _resize_with_alpha(image: Image.Image, size: tuple[int, int]) -> Image.Image:
@@ -427,16 +433,17 @@ def preprocess_image(
     if image.mode != "RGBA" and (source_alpha_stats["channel_present"] or rmbg_used):
         image = image.convert("RGBA")
 
-    foreground_validation = _validate_foreground_mask(
-        image,
-        initial_bbox_fraction=initial_bbox_fraction,
-        mask_survived_resize=mask_survived_resize,
-    )
     foreground_status = (
         "already_transparent" if has_useful_alpha
         else "removed" if rmbg_used
         else "disabled" if not remove_background
         else "failed"
+    )
+    foreground_validation = _validate_foreground_mask(
+        image,
+        initial_bbox_fraction=initial_bbox_fraction,
+        mask_survived_resize=mask_survived_resize,
+        require_transparency=(foreground_status != "disabled"),
     )
     if remove_background and not has_useful_alpha and not rmbg_used:
         approval_status = "failed"
