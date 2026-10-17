@@ -166,7 +166,24 @@ class Trellis2Runner:
             self.image_to_3d_pipeline = Trellis2ImageTo3DPipeline.from_pretrained(
                 pretrained_path
             )
-            if len(self.resource_plan.get("gpu_ids", [])) > 1:
+
+            # Auto-detect low-VRAM mode when single GPU has < 20GB VRAM
+            low_vram_needed = False
+            if torch.cuda.is_available():
+                try:
+                    dev_idx = int(self.device.split(":")[-1]) if ":" in str(self.device) else (torch.cuda.current_device() if str(self.device).startswith("cuda") else 0)
+                    total_mb = torch.cuda.get_device_properties(dev_idx).total_memory / (1024 * 1024)
+                    strategy = self.resource_plan.get("strategy", "")
+                    if total_mb < 20480 or strategy == "single_gpu_low_vram":
+                        low_vram_needed = True
+                except Exception:
+                    pass
+
+            if low_vram_needed and len(self.resource_plan.get("gpu_ids", [])) <= 1:
+                self.image_to_3d_pipeline.low_vram = True
+                self.image_to_3d_pipeline._device = self.device
+                logger.info(f"TRELLIS.2 enabled low-VRAM mode (sequential offload) on {self.device} while preserving full fidelity")
+            elif len(self.resource_plan.get("gpu_ids", [])) > 1:
                 from core.scheduler.resource_planner import ResourcePlan, dispatch_pipeline_across_gpus
                 dispatch_pipeline_across_gpus(
                     self.image_to_3d_pipeline,
@@ -284,6 +301,7 @@ class Trellis2Runner:
         max_num_tokens: int = 262144,
         sparse_structure_sampler_params: Optional[Dict[str, Any]] = None,
         shape_slat_sampler_params: Optional[Dict[str, Any]] = None,
+        tex_slat_sampler_params: Optional[Dict[str, Any]] = None,
     ) -> trimesh.Trimesh:
         """
         Generate 3D mesh from image using TRELLIS.2.
@@ -302,6 +320,7 @@ class Trellis2Runner:
             max_num_tokens: Token budget that controls when the cascade falls back to lower resolution.
             sparse_structure_sampler_params: Model sampler overrides for sparse structure.
             shape_slat_sampler_params: Model sampler overrides for geometry latents.
+            tex_slat_sampler_params: Model sampler overrides for texture latents.
         
         Returns:
             Generated trimesh.Trimesh object
@@ -329,6 +348,7 @@ class Trellis2Runner:
             max_num_tokens=int(max_num_tokens),
             sparse_structure_sampler_params=dict(sparse_structure_sampler_params or {"steps": 50}),
             shape_slat_sampler_params=dict(shape_slat_sampler_params or {"steps": 50}),
+            tex_slat_sampler_params=dict(tex_slat_sampler_params or shape_slat_sampler_params or {"steps": 50}),
             return_latent=True,
         )
         mesh, effective_resolution, voxel_size, resolution_source = (

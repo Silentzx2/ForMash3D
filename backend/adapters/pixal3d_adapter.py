@@ -325,27 +325,47 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             )["distance_from_x"]
             return {"camera_angle_x": camera_angle_x, "distance": distance, "mesh_scale": 1.0}
 
-        # Use MoGe for camera estimation
-        logger.info("Loading MoGe model for camera estimation...")
+        # Use MoGe for camera estimation with safe fallback
         dev = self.device if hasattr(self, "device") and self.device else "cuda"
-        self.moge_model = load_moge_model(device=dev)
+        try:
+            logger.info("Loading MoGe model for camera estimation...")
+            self.moge_model = load_moge_model(device=dev)
 
-        logger.info("Estimating camera parameters...")
-        camera_params = get_camera_params_wild_moge(
-            image_path, self.moge_model, device=dev, mesh_scale=1.0, extend_pixel=0, image_resolution=512
-        )
+            logger.info("Estimating camera parameters...")
+            camera_params = get_camera_params_wild_moge(
+                image_path, self.moge_model, device=dev, mesh_scale=1.0, extend_pixel=0, image_resolution=512
+            )
 
-        # Free MoGe VRAM
-        self.moge_model.cpu()
-        del self.moge_model
-        self.moge_model = None
-        torch.cuda.empty_cache()
+            # Free MoGe VRAM
+            self.moge_model.cpu()
+            del self.moge_model
+            self.moge_model = None
+            torch.cuda.empty_cache()
 
-        logger.info(
-            f"Estimated camera: camera_angle_x={camera_params['camera_angle_x']:.4f}, "
-            f"distance={camera_params['distance']:.4f}"
-        )
-        return camera_params
+            logger.info(
+                f"Estimated camera: camera_angle_x={camera_params['camera_angle_x']:.4f}, "
+                f"distance={camera_params['distance']:.4f}"
+            )
+            return camera_params
+        except Exception as moge_err:
+            logger.warning("MoGe camera estimation failed (%s); falling back to default FOV (49.13°)", moge_err)
+            if self.moge_model is not None:
+                try:
+                    self.moge_model.cpu()
+                    del self.moge_model
+                except Exception:
+                    pass
+                self.moge_model = None
+            camera_angle_x = 0.8575560450553894
+            grid_point = torch.tensor([-1.0, 0.0, 0.0])
+            distance = distance_from_fov(
+                camera_angle_x,
+                grid_point,
+                torch.tensor([0, 511]),
+                1.0,
+                512,
+            )["distance_from_x"]
+            return {"camera_angle_x": camera_angle_x, "distance": distance, "mesh_scale": 1.0}
 
     def _run_inference(
         self,

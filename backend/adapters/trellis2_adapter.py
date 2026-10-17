@@ -185,12 +185,15 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             seed = inputs.get("seed", None)
             pipeline_type = str(inputs.get("pipeline_type") or "1536_cascade")
             max_num_tokens = int(inputs.get("max_num_tokens", 262144))
-            sparse_structure_sampler_params = inputs.get("sparse_structure_sampler_params") or {"steps": 50}
-            shape_slat_sampler_params = inputs.get("shape_slat_sampler_params") or {"steps": 50}
+            steps = inputs.get("steps") or inputs.get("num_inference_steps")
+            default_sampler_params = {"steps": int(steps)} if steps else {"steps": 50}
+            sparse_structure_sampler_params = inputs.get("sparse_structure_sampler_params") or default_sampler_params
+            shape_slat_sampler_params = inputs.get("shape_slat_sampler_params") or default_sampler_params
+            tex_slat_sampler_params = inputs.get("tex_slat_sampler_params") or default_sampler_params
             
             logger.info(
-                "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s)",
-                pipeline_type, max_num_tokens,
+                "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s, steps=%s)",
+                pipeline_type, max_num_tokens, default_sampler_params.get("steps", 50),
             )
             
             # Generate untextured raw 3D mesh
@@ -208,6 +211,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 max_num_tokens=max_num_tokens,
                 sparse_structure_sampler_params=sparse_structure_sampler_params,
                 shape_slat_sampler_params=shape_slat_sampler_params,
+                tex_slat_sampler_params=tex_slat_sampler_params,
             )
             
             mesh_metadata = dict(getattr(mesh, "metadata", {}) or {})
