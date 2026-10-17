@@ -131,6 +131,14 @@ class Trellis2Runner:
         # Set environment variables
         os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+        if torch.cuda.is_available():
+            try:
+                dev_idx = int(self.device.split(":")[-1]) if ":" in str(self.device) else (torch.cuda.current_device() if str(self.device).startswith("cuda") else 0)
+                if torch.cuda.get_device_capability(dev_idx)[0] < 8:
+                    os.environ["ATTN_BACKEND"] = "sdpa"
+                    os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
+            except Exception:
+                pass
         
         # Pipelines (lazy loaded)
         self.image_to_3d_pipeline = None

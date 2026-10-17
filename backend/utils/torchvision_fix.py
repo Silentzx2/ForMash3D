@@ -458,8 +458,39 @@ def get_grid_sample_3d():
             return grid_sample_3d
 
 
+def fix_flash_attention_hardware():
+    """
+    Ensure attention backends gracefully fall back to PyTorch SDPA on pre-Ampere GPUs (Turing/Volta/Pascal, e.g. T4/V100).
+    FlashAttention strictly requires compute capability >= 8.0 (Ampere+).
+    If compute capability < 8.0 or flash_attn is unavailable/incompatible, set ATTN_BACKEND='sdpa'.
+    """
+    import os
+    try:
+        import torch
+        if torch.cuda.is_available():
+            min_major = 99
+            for i in range(torch.cuda.device_count()):
+                try:
+                    cap = torch.cuda.get_device_capability(i)
+                    if cap[0] < min_major:
+                        min_major = cap[0]
+                except Exception:
+                    pass
+            if min_major < 8:
+                # Pre-Ampere GPU detected (e.g. Tesla T4 is 7.5, V100 is 7.0)
+                # FlashAttention will crash with "FlashAttention only supports Ampere GPUs or newer"
+                if os.environ.get("ATTN_BACKEND") in (None, "", "flash_attn", "flash_attn_3", "flash_attn_4"):
+                    os.environ["ATTN_BACKEND"] = "sdpa"
+                if os.environ.get("SPARSE_ATTN_BACKEND") in (None, "", "flash_attn"):
+                    os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
+                print(f"Pre-Ampere GPU detected (compute capability < 8.0). Defaulted ATTN_BACKEND and SPARSE_ATTN_BACKEND to 'sdpa'.")
+    except Exception:
+        pass
+    return True
+
+
 def apply_fix():
-    """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, and flex_gemm)."""
+    """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, flex_gemm, and flash_attn)."""
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")
@@ -473,9 +504,11 @@ def apply_fix():
     fix_huggingface_repo_redirects()
     fix_gated_huggingface_repos()
     fix_numba_caching()
+    fix_flash_attention_hardware()
     return True
 
 
 if __name__ == "__main__":
     apply_fix()
+
 

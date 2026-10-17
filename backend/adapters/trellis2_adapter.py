@@ -92,6 +92,17 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
             device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
 
+            # Auto-route to SDPA on pre-Ampere GPUs (e.g. Tesla T4 SM 7.5, V100 SM 7.0)
+            target_gpu = self.gpu_id if self.gpu_id is not None else 0
+            try:
+                cap = torch.cuda.get_device_capability(target_gpu)
+                if cap[0] < 8:
+                    os.environ["ATTN_BACKEND"] = "sdpa"
+                    os.environ["SPARSE_ATTN_BACKEND"] = "sdpa"
+                    logger.info(f"GPU {target_gpu} compute capability {cap[0]}.{cap[1]} < 8.0 (pre-Ampere, e.g. T4/V100). Defaulted ATTN_BACKEND to 'sdpa'.")
+            except Exception:
+                pass
+
             # Initialize TRELLIS.2 runner
             from utils.trellis2_utils import Trellis2Runner
             self.runner = Trellis2Runner(
