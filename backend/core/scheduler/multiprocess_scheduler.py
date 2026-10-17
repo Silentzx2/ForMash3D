@@ -305,6 +305,7 @@ def model_worker_process(
                 logger.error(f"[GPU LOAD FAILED] ❌ {err_msg}")
                 try:
                     control_response_queue.put(WorkerResponse("init", False, error=err_msg))
+                    time.sleep(0.5)
                 except Exception:
                     pass
                 return  # Exit worker if model loading fails
@@ -315,6 +316,7 @@ def model_worker_process(
             logger.error(f"❌ {err_msg}\n{tb}")
             try:
                 control_response_queue.put(WorkerResponse("init", False, error=err_msg))
+                time.sleep(0.5)
             except Exception:
                 pass
             return  # Exit worker if model loading fails
@@ -2585,9 +2587,7 @@ class MultiprocessModelScheduler:
             max_load_timeout = 180.0
 
             while time.time() - start_wait < max_load_timeout:
-                if not worker_process.is_alive():
-                    worker_process.join(timeout=1.0)
-                    break
+                # 1. Check response queue first before process status
                 try:
                     init_resp = control_response_queue.get(block=False)
                     if isinstance(init_resp, WorkerResponse) and init_resp.msg_id == "init":
@@ -2597,8 +2597,29 @@ class MultiprocessModelScheduler:
                             error_reason = init_resp.error or error_reason
                         break
                 except queue.Empty:
-                    await asyncio.sleep(0.2)
-                    continue
+                    pass
+
+                # 2. Check if worker process terminated
+                if not worker_process.is_alive():
+                    worker_process.join(timeout=1.0)
+                    # Check queue one final time after process exit in case response was buffered
+                    try:
+                        init_resp = control_response_queue.get(timeout=0.5)
+                        if isinstance(init_resp, WorkerResponse) and init_resp.msg_id == "init":
+                            if init_resp.success:
+                                init_success = True
+                            else:
+                                error_reason = init_resp.error or error_reason
+                    except Exception:
+                        pass
+
+                    # If still generic message, report the process exitcode
+                    if not init_success and "terminated unexpectedly" in error_reason:
+                        exit_code = worker_process.exitcode
+                        error_reason = f"Worker {worker_id} terminated unexpectedly (exitcode={exit_code}) during model initialization"
+                    break
+
+                await asyncio.sleep(0.2)
 
             if not init_success:
                 logger.error(

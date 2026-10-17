@@ -204,6 +204,40 @@ def fix_huggingface_repo_redirects():
     return True
 
 
+def fix_gated_huggingface_repos():
+    """
+    Handle gated Hugging Face repositories gracefully.
+    - 'briaai/RMBG-2.0' is gated and returns 401 if unapproved. Fallback to 'ZhengPeng7/BiRefNet' or 'briaai/RMBG-1.4'.
+    - 'facebook/dinov3-vitl16-pretrain-lvd1689m' is gated. Fallback to 'camenduru/dinov3-vitl16-pretrain-lvd1689m'.
+    """
+    try:
+        import transformers
+        if hasattr(transformers, "AutoModelForImageSegmentation"):
+            cls = transformers.AutoModelForImageSegmentation
+            orig_from_pretrained = getattr(cls, "from_pretrained", None)
+            if orig_from_pretrained is not None and not getattr(orig_from_pretrained, "_gated_fallback_patched", False):
+                def _patched_from_pretrained(pretrained_model_name_or_path, *args, **kwargs):
+                    try:
+                        return orig_from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+                    except Exception as e:
+                        err_str = str(e)
+                        if "gated repo" in err_str.lower() or "restricted" in err_str.lower() or "401" in err_str or "403" in err_str:
+                            if pretrained_model_name_or_path == "briaai/RMBG-2.0":
+                                for fb in ("ZhengPeng7/BiRefNet", "briaai/RMBG-1.4"):
+                                    try:
+                                        print(f"Retrying image segmentation with ungated fallback: {fb}")
+                                        return orig_from_pretrained(fb, *args, **kwargs)
+                                    except Exception:
+                                        continue
+                        raise
+
+                _patched_from_pretrained._gated_fallback_patched = True
+                cls.from_pretrained = classmethod(_patched_from_pretrained)
+    except Exception:
+        pass
+    return True
+
+
 def fix_numba_caching():
     """
     Disable Numba caching to prevent RuntimeError: cannot cache function ...: no locator available.
@@ -437,6 +471,7 @@ def apply_fix():
     fix_flex_gemm()
     fix_torch_load_weights_only()
     fix_huggingface_repo_redirects()
+    fix_gated_huggingface_repos()
     fix_numba_caching()
     return True
 

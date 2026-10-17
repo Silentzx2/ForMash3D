@@ -147,8 +147,9 @@ class Trellis2Runner:
             logger.info("Loading TRELLIS.2 image-to-3D pipeline...")
             from trellis2.pipelines import Trellis2ImageTo3DPipeline
             
+            pretrained_path = str(self.model_cache_dir) if (self.model_cache_dir / "pipeline.json").exists() else "microsoft/TRELLIS.2-4B"
             self.image_to_3d_pipeline = Trellis2ImageTo3DPipeline.from_pretrained(
-                "microsoft/TRELLIS.2-4B"
+                pretrained_path
             )
             if len(self.resource_plan.get("gpu_ids", [])) > 1:
                 from core.scheduler.resource_planner import ResourcePlan, dispatch_pipeline_across_gpus
@@ -165,8 +166,8 @@ class Trellis2Runner:
                         reason=str(self.resource_plan.get("reason", "scheduler resource plan")),
                     ),
                 )
-            elif self.device == "cuda":
-                self.image_to_3d_pipeline.cuda()
+            elif str(self.device).startswith("cuda"):
+                self.image_to_3d_pipeline.to(self.device)
             
             logger.info("TRELLIS.2 image-to-3D pipeline loaded successfully")
             
@@ -202,8 +203,8 @@ class Trellis2Runner:
                         reason=str(self.resource_plan.get("reason", "scheduler resource plan")),
                     ),
                 )
-            elif self.device == "cuda":
-                self.texturing_pipeline.cuda()
+            elif str(self.device).startswith("cuda"):
+                self.texturing_pipeline.to(self.device)
             
             logger.info("TRELLIS.2 texturing pipeline loaded successfully")
             
