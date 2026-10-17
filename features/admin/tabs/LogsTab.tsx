@@ -165,6 +165,37 @@ export function LogsTab() {
     };
   }, [live, streamEpoch]);
 
+  const fetchLatestLogs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/v1/system/logs/files/master.log?lines=2000", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (typeof data?.content === "string" && outputRef.current) {
+        if (data.content.length > 0) {
+          if (outputRef.current.textContent !== data.content) {
+            outputRef.current.textContent = data.content;
+            outputTextRef.current = null;
+            hasReceivedContentRef.current = true;
+            setHasReceivedContent(true);
+            if (autoScrollRef.current && terminalRef.current) {
+              terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore background poll errors
+    }
+  }, []);
+
+  // Poll every 3 seconds so logs auto-refresh continuously
+  useEffect(() => {
+    if (!live) return;
+    fetchLatestLogs();
+    const interval = setInterval(fetchLatestLogs, 3000);
+    return () => clearInterval(interval);
+  }, [live, fetchLatestLogs]);
+
   const handleScroll = useCallback(() => {
     const terminal = terminalRef.current;
     if (!terminal) return;
@@ -210,7 +241,7 @@ export function LogsTab() {
             </span>
             <span className="text-[#555555] truncate">logs/master.log</span>
             <span className="text-[#888888] whitespace-nowrap">
-              raw text stream
+              raw text stream (auto-refresh 3s)
             </span>
             {status === "ERROR" && (
               <span className="text-[#F44336] text-[11px]">
@@ -219,6 +250,13 @@ export function LogsTab() {
             )}
           </div>
           <div className="flex items-center gap-4 text-[#888888]">
+            <button
+              onClick={() => fetchLatestLogs()}
+              className="hover:text-white transition-colors"
+              title="Refresh logs immediately"
+            >
+              Refresh
+            </button>
             <button
               onClick={() => setLive((current) => !current)}
               className="hover:text-white transition-colors"

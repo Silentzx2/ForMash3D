@@ -29,7 +29,16 @@ fi
 
 # Export runtime environment defaults for workers and scheduler
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
-export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+if [[ -z "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+  if command -v nvidia-smi >/dev/null 2>&1; then
+    NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
+    if [[ "$NUM_GPUS" -gt 1 ]]; then
+      export CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_GPUS - 1)))
+    elif [[ "$NUM_GPUS" -eq 1 ]]; then
+      export CUDA_VISIBLE_DEVICES="0"
+    fi
+  fi
+fi
 [[ -n "${HF_TOKEN:-}" ]] && export HF_TOKEN
 [[ -n "${HUGGINGFACE_TOKEN:-}" ]] && export HUGGINGFACE_TOKEN
 
