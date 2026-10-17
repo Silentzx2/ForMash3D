@@ -141,7 +141,10 @@ test('forwards live SSE chunks immediately with proxy buffering disabled', async
   process.env.BACKEND_URL = 'http://127.0.0.1:7842';
   const encoder = new TextEncoder();
   let releaseSecondChunk;
-  globalThis.fetch = async () => new Response(
+  let forwardedLastEventId = null;
+  globalThis.fetch = async (_input, init) => {
+    forwardedLastEventId = new Headers(init?.headers).get('last-event-id');
+    return new Response(
     new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode('data: first\n\n'));
@@ -153,8 +156,11 @@ test('forwards live SSE chunks immediately with proxy buffering disabled', async
     }),
     { headers: { 'content-type': 'text/event-stream' } },
   );
+  };
 
-  const request = new NextRequest('http://localhost/api/v1/system/logs/stream');
+  const request = new NextRequest('http://localhost/api/v1/system/logs/stream', {
+    headers: { 'last-event-id': '128' },
+  });
   const response = await GET(request, {
     params: Promise.resolve({ path: ['system', 'logs', 'stream'] }),
   });
@@ -163,6 +169,7 @@ test('forwards live SSE chunks immediately with proxy buffering disabled', async
   assert.equal(response.headers.get('content-type'), 'text/event-stream');
   assert.equal(response.headers.get('cache-control'), 'no-cache');
   assert.equal(response.headers.get('x-accel-buffering'), 'no');
+  assert.equal(forwardedLastEventId, '128');
 
   const reader = response.body.getReader();
   try {

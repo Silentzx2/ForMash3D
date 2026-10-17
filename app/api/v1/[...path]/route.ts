@@ -386,13 +386,18 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
   request.signal?.addEventListener('abort', onDisconnect);
   
   try {
+    const sseHeaders: Record<string, string> = {
+      accept: 'text/event-stream',
+      'cache-control': 'no-cache',
+    };
+    const authorization = request.headers.get('authorization');
+    const lastEventId = request.headers.get('last-event-id');
+    if (authorization) sseHeaders.authorization = authorization;
+    if (lastEventId) sseHeaders['last-event-id'] = lastEventId;
+
     const response = await fetchWithBackendFallback(targetUrl, {
       method: 'GET',
-      headers: {
-        'accept': 'text/event-stream',
-        'cache-control': 'no-cache',
-        ...getAuthHeader(request),
-      },
+      headers: sseHeaders,
       signal: controller.signal,
     });
     

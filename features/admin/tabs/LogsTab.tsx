@@ -1,325 +1,271 @@
 "use client";
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
-import { getApiClient } from '@/services/apiClient';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getApiClient } from "@/services/apiClient";
 import { toast } from "sonner";
 
-interface LogLine {
-  id: string;
-  timestamp: string;
-  level: string;
-  source: string;
-  message: string;
-}
-
-type ConnStatus = 'CONNECTING' | 'CONNECTED' | 'ERROR' | 'PAUSED';
-
-const LEVEL_COLOR: Record<string, string> = {
-  ERROR: '#F44336', FATAL: '#F44336', CRITICAL: '#F44336',
-  WARN: '#FFC107', WARNING: '#FFC107',
-  INFO: '#4CAF50',
-  DEBUG: '#2196F3',
-};
-
-// Parse a plain-text log line from Python logging
-// Format: "2026-10-09 04:00:00 - module.name - INFO - message"
-function parseLine(raw: string): LogLine {
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-  // Primary: %(asctime)s - %(name)s - %(levelname)s - %(message)s
-  const m1 = raw.match(/^([\d-]+ [\d:,]+)\s+-\s+(.*?)\s+-\s+(INFO|DEBUG|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\s+-\s+(.*)$/i);
-  if (m1) {
-    const lvl = m1[3].toUpperCase().replace('WARNING', 'WARN');
-    return { id, timestamp: m1[1], source: m1[2], level: lvl, message: m1[4] };
-  }
-
-  // Fallback: just detect level keyword
-  const lvlMatch = raw.match(/\b(INFO|DEBUG|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\b/i);
-  const lvl = lvlMatch ? lvlMatch[1].toUpperCase().replace('WARNING', 'WARN') : 'INFO';
-  return { id, timestamp: '', source: 'sys', level: lvl, message: raw };
-}
-
-function logKey(line: LogLine): string {
-  return [line.timestamp, line.level, line.source, line.message].join('\u0000');
-}
-
-function countLogLines(lines: LogLine[]): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const line of lines) {
-    const key = logKey(line);
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  }
-  return counts;
-}
-
-function isReplayDuplicate(line: LogLine, counts: Map<string, number>): boolean {
-  const key = logKey(line);
-  const remaining = counts.get(key) ?? 0;
-  if (remaining <= 0) return false;
-  if (remaining === 1) counts.delete(key);
-  else counts.set(key, remaining - 1);
-  return true;
-}
-
-function capLogLines(lines: LogLine[]): LogLine[] {
-  return lines.length > 3000 ? lines.slice(-2500) : lines;
-}
+type ConnStatus = "CONNECTING" | "CONNECTED" | "ERROR" | "PAUSED";
 
 export function LogsTab() {
-  const [logs, setLogs] = useState<LogLine[]>([]);
   const [live, setLive] = useState(true);
-  const [status, setStatus] = useState<ConnStatus>('CONNECTING');
+  const [status, setStatus] = useState<ConnStatus>("CONNECTING");
   const [autoScroll, setAutoScroll] = useState(true);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [historyError, setHistoryError] = useState(false);
+  const [hasReceivedContent, setHasReceivedContent] = useState(false);
+  const [streamEpoch, setStreamEpoch] = useState(0);
   const terminalRef = useRef<HTMLDivElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const outputRef = useRef<HTMLPreElement>(null);
+  const outputTextRef = useRef<Text | null>(null);
+  const hasReceivedContentRef = useRef(false);
   const autoScrollRef = useRef(true);
-  const logsRef = useRef<LogLine[]>([]);
-  const initialSnapshotLoadedRef = useRef(false);
+  const streamOffsetRef = useRef(0);
+  const streamIdentityRef = useRef<string | null>(null);
+  const resetOnRestartRef = useRef(false);
 
   useEffect(() => {
     autoScrollRef.current = autoScroll;
   }, [autoScroll]);
 
   useEffect(() => {
-    logsRef.current = logs;
-  }, [logs]);
+    if (resetOnRestartRef.current) {
+      if (outputRef.current) outputRef.current.textContent = "";
+      outputTextRef.current = null;
+      streamOffsetRef.current = 0;
+      streamIdentityRef.current = null;
+      hasReceivedContentRef.current = false;
+      setHasReceivedContent(false);
+      resetOnRestartRef.current = false;
+    }
 
-  // Load the current master.log snapshot as well as subscribing to live writes.
-  // The stream replays recent lines, so a counted overlap removes only replayed
-  // occurrences while preserving genuinely repeated log messages.
-  useEffect(() => {
     if (!live) {
-      setStatus('PAUSED');
+      setStatus("PAUSED");
       return;
     }
 
     let disposed = false;
-    let snapshotReady = initialSnapshotLoadedRef.current;
-    let replayCounts = snapshotReady ? countLogLines(logsRef.current) : new Map<string, number>();
-    const bufferedStreamLines: LogLine[] = [];
-    const pendingLiveLines: LogLine[] = [];
     let flushFrame: number | null = null;
+    const pendingText: string[] = [];
 
-    const enqueueLiveLine = (line: LogLine) => {
-      pendingLiveLines.push(line);
-      // Keep hidden-tab bursts bounded; the terminal itself is a rolling window.
-      if (pendingLiveLines.length > 3000) {
-        pendingLiveLines.splice(0, pendingLiveLines.length - 3000);
-      }
-      if (flushFrame !== null) return;
-      flushFrame = window.requestAnimationFrame(() => {
+    const flushPending = () => {
+      if (flushFrame !== null) {
+        window.cancelAnimationFrame(flushFrame);
         flushFrame = null;
-        const batch = pendingLiveLines.splice(0);
-        if (!disposed && batch.length) {
-          setLogs(prev => capLogLines([...prev, ...batch]));
+      }
+      if (pendingText.length === 0) return;
+
+      const text = pendingText.join("");
+      pendingText.length = 0;
+      if (text.length > 0) {
+        let outputText = outputTextRef.current;
+        if (!outputText && outputRef.current) {
+          outputText = document.createTextNode("");
+          outputRef.current.appendChild(outputText);
+          outputTextRef.current = outputText;
         }
-      });
+        outputText?.appendData(text);
+        if (!hasReceivedContentRef.current) {
+          hasReceivedContentRef.current = true;
+          setHasReceivedContent(true);
+        }
+      }
+
+      const terminal = terminalRef.current;
+      if (autoScrollRef.current && terminal) {
+        terminal.scrollTop = terminal.scrollHeight;
+      }
     };
 
-    setStatus('CONNECTING');
-    setHistoryError(false);
-
-    const es = new EventSource('/api/v1/system/logs/stream?last_n=500');
-
-    es.onopen = () => {
-      if (!disposed) setStatus('CONNECTED');
+    const enqueueText = (text: string) => {
+      // Never drop or cap pending chunks; flush them together once per frame.
+      pendingText.push(text);
+      if (flushFrame === null) {
+        flushFrame = window.requestAnimationFrame(() => {
+          flushFrame = null;
+          flushPending();
+        });
+      }
     };
 
-    const appendLiveLine = (line: LogLine) => {
+    setStatus("CONNECTING");
+    let streamUrl =
+      "/api/v1/system/logs/stream?offset=" + String(streamOffsetRef.current);
+    if (streamIdentityRef.current) {
+      streamUrl += "&identity=" + encodeURIComponent(streamIdentityRef.current);
+    }
+    const source = new EventSource(streamUrl);
+
+    source.onopen = () => {
+      if (!disposed) setStatus("CONNECTED");
+    };
+
+    source.onmessage = (event) => {
       if (disposed) return;
-      if (!snapshotReady) {
-        bufferedStreamLines.push(line);
-        if (bufferedStreamLines.length > 3000) {
-          bufferedStreamLines.splice(0, bufferedStreamLines.length - 3000);
-        }
+      let payload: { offset?: unknown; identity?: unknown; chunk?: unknown };
+      try {
+        payload = JSON.parse(event.data) as {
+          offset?: unknown;
+          identity?: unknown;
+          chunk?: unknown;
+        };
+      } catch {
+        setStatus("ERROR");
         return;
       }
-      if (isReplayDuplicate(line, replayCounts)) return;
-      enqueueLiveLine(line);
+
+      const nextOffset = Number(payload.offset);
+      if (
+        typeof payload.chunk !== "string" ||
+        typeof payload.identity !== "string" ||
+        !/^\d+:\d+$/.test(payload.identity) ||
+        !Number.isSafeInteger(nextOffset) ||
+        nextOffset < 0
+      ) {
+        setStatus("ERROR");
+        return;
+      }
+
+      streamOffsetRef.current = nextOffset;
+      streamIdentityRef.current = payload.identity;
+      enqueueText(payload.chunk);
     };
 
-    es.onmessage = (e) => {
-      const raw = e.data as string;
-      // Skip empty, whitespace-only, or SSE comment lines (heartbeats).
-      if (!raw || !raw.trim() || raw.startsWith(':')) return;
-      appendLiveLine(parseLine(raw));
+    source.addEventListener("reset", (event) => {
+      if (disposed) return;
+      pendingText.length = 0;
+      if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
+      flushFrame = null;
+      if (outputRef.current) outputRef.current.textContent = "";
+      outputTextRef.current = null;
+      hasReceivedContentRef.current = false;
+      const resetEventId = (event as MessageEvent).lastEventId || "";
+      const resetParts = resetEventId.split(":");
+      streamIdentityRef.current =
+        resetParts.length === 3 && resetParts.every((part) => /^\d+$/.test(part))
+          ? resetParts.slice(0, 2).join(":")
+          : null;
+      streamOffsetRef.current = 0;
+      setHasReceivedContent(false);
+      const terminal = terminalRef.current;
+      if (terminal) terminal.scrollTop = 0;
+    });
+
+    source.onerror = () => {
+      if (!disposed) setStatus("ERROR");
     };
-
-    es.onerror = () => {
-      if (!disposed) setStatus('ERROR');
-    };
-
-    if (!snapshotReady) {
-      setHistoryLoaded(false);
-      void getApiClient().get<any>('/api/v1/system/logs', { params: { lines: 500 } })
-        .then((response) => {
-          if (disposed) return;
-
-          const entries = Array.isArray(response?.logs) ? response.logs : [];
-          // The API returns newest-first; reverse it for terminal chronology.
-          const history: LogLine[] = entries.slice().reverse().map((entry: any, index: number) => {
-            if (typeof entry?.raw === 'string' && entry.raw.length > 0) {
-              return parseLine(entry.raw);
-            }
-            const level = String(entry?.level || 'INFO').toUpperCase().replace('WARNING', 'WARN');
-            return {
-              id: String(entry?.id ?? `history-${index}-${entry?.timestamp ?? ''}`),
-              timestamp: String(entry?.timestamp ?? ''),
-              level,
-              source: String(entry?.source || entry?.logger || 'sys'),
-              message: String(entry?.message ?? ''),
-            };
-          });
-
-          replayCounts = countLogLines(history);
-          snapshotReady = true;
-          initialSnapshotLoadedRef.current = true;
-
-          // The SSE subscription may have replayed these same lines while the
-          // history request was in flight. Drop only matching occurrences.
-          const liveOnly = bufferedStreamLines.splice(0).filter(
-            line => !isReplayDuplicate(line, replayCounts)
-          );
-          setLogs(capLogLines([...history, ...liveOnly]));
-          setHistoryLoaded(true);
-          setHistoryError(false);
-        })
-        .catch(() => {
-          if (disposed) return;
-          snapshotReady = true;
-          const buffered = bufferedStreamLines.splice(0);
-          setLogs(prev => capLogLines([...prev, ...buffered]));
-          setHistoryLoaded(true);
-          setHistoryError(true);
-        });
-    } else {
-      setHistoryLoaded(true);
-    }
 
     return () => {
       if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
       flushFrame = null;
-      if (pendingLiveLines.length) {
-        const pending = pendingLiveLines.splice(0);
-        setLogs(prev => capLogLines([...prev, ...pending]));
+      if (resetOnRestartRef.current) {
+        pendingText.length = 0;
+      } else {
+        flushPending();
       }
       disposed = true;
-      es.close();
+      source.close();
     };
-  }, [live]);
-
-  // Follow the latest entry without animating every incoming log line.
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    if (autoScrollRef.current && terminal) {
-      terminal.scrollTop = terminal.scrollHeight;
-    }
-  }, [logs]);
+  }, [live, streamEpoch]);
 
   const handleScroll = useCallback(() => {
-    const el = terminalRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
-    setAutoScroll(atBottom);
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    setAutoScroll(
+      terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight < 60,
+    );
   }, []);
 
   const handleClear = async () => {
     try {
       await getApiClient().clearLogs();
-      setLogs([]);
+      resetOnRestartRef.current = true;
+      setStreamEpoch((current) => current + 1);
       toast.success("Logs cleared");
     } catch {
       toast.error("Failed to clear logs");
     }
   };
 
-  const statusColor = status === 'CONNECTED' ? '#4CAF50'
-    : status === 'ERROR' ? '#F44336'
-    : status === 'PAUSED' ? '#888888'
-    : '#FFC107';
+  const statusColor =
+    status === "CONNECTED"
+      ? "#4CAF50"
+      : status === "ERROR"
+        ? "#F44336"
+        : status === "PAUSED"
+          ? "#888888"
+          : "#FFC107";
 
   return (
     <div className="relative h-full w-full min-h-[500px]">
       <div
         className="flex flex-col absolute inset-0"
-        style={{ backgroundColor: '#1e1e1e', color: '#cccccc', fontFamily: 'Consolas, "Courier New", monospace' }}
+        style={{
+          backgroundColor: "#1e1e1e",
+          color: "#cccccc",
+          fontFamily: 'Consolas, "Courier New", monospace',
+        }}
       >
-        {/* Header bar */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-[#2d2d2d] text-xs flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <span style={{ color: statusColor }} className="font-bold">● {status}</span>
-            <span className="text-[#555555]">logs/master.log</span>
-            {status === 'ERROR' && (
-              <span className="text-[#F44336] text-[11px]">— backend offline or unreachable</span>
-            )}
-            {historyError && (
-              <span className="text-[#FFC107] text-[11px]">— could not load existing log history</span>
+          <div className="flex items-center gap-3 min-w-0">
+            <span style={{ color: statusColor }} className="font-bold whitespace-nowrap">
+              ● {status}
+            </span>
+            <span className="text-[#555555] truncate">logs/master.log</span>
+            <span className="text-[#888888] whitespace-nowrap">
+              raw text stream
+            </span>
+            {status === "ERROR" && (
+              <span className="text-[#F44336] text-[11px]">
+                — backend offline or stream interrupted; reconnecting
+              </span>
             )}
           </div>
           <div className="flex items-center gap-4 text-[#888888]">
-            <span>{logs.length} lines</span>
             <button
-              onClick={() => setLive(v => !v)}
+              onClick={() => setLive((current) => !current)}
               className="hover:text-white transition-colors"
             >
-              {live ? 'Pause' : 'Resume'}
+              {live ? "Pause" : "Resume"}
             </button>
-            <button onClick={handleClear} className="hover:text-[#F44336] transition-colors">
+            <button
+              onClick={handleClear}
+              className="hover:text-[#F44336] transition-colors"
+            >
               Clear
             </button>
           </div>
         </div>
 
-        {/* Log output */}
         <div
           ref={terminalRef}
           onScroll={handleScroll}
           className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-3 pb-6 text-[12.5px] leading-5"
-
+          style={{ overflowAnchor: "none" }}
         >
-          {logs.length === 0 ? (
+          {!hasReceivedContent && (
             <div className="text-[#555555] mt-2">
-              {status === 'CONNECTING' && '⏳ Connecting to log stream...'}
-              {status === 'CONNECTED' && !historyLoaded && '⏳ Loading recent entries from master.log...'}
-              {status === 'CONNECTED' && historyLoaded && historyError && '⚠ Could not load log history; waiting for live entries...'}
-              {status === 'CONNECTED' && historyLoaded && !historyError && '⏳ No entries found in master.log yet — waiting for new log entries...'}
-              {status === 'ERROR' && '✗  Cannot reach backend. Start the backend and refresh.'}
-              {status === 'PAUSED' && '⏸  Stream paused. Click Resume to reconnect.'}
+              {status === "CONNECTING" && "⏳ Connecting to master.log stream..."}
+              {status === "CONNECTED" &&
+                "⏳ Reading master.log from the beginning and waiting for new writes..."}
+              {status === "ERROR" && "✗ Cannot reach backend. The stream will retry automatically."}
+              {status === "PAUSED" && "⏸ Stream paused. Click Resume to continue from the last received byte."}
             </div>
-          ) : (
-            logs.map(l => {
-              const col = LEVEL_COLOR[l.level] || '#cccccc';
-              const isErr = l.level === 'ERROR' || l.level === 'FATAL' || l.level === 'CRITICAL';
-              return (
-                <div key={l.id} className="whitespace-pre-wrap break-all hover:bg-[#252526] py-px">
-                  {l.timestamp && (
-                    <span className="text-[#555555] mr-2 select-none">
-                      {l.timestamp.split(' ')[1] ?? l.timestamp}
-                    </span>
-                  )}
-                  <span style={{ color: col, minWidth: '3.5rem', display: 'inline-block' }} className="font-semibold mr-2 select-none">
-                    {l.level}
-                  </span>
-                  {l.source && l.source !== 'sys' && (
-                    <span className="text-[#569cd6] mr-2">[{l.source}]</span>
-                  )}
-                  <span style={{ color: isErr ? '#F44336' : '#d4d4d4' }}>{l.message}</span>
-                </div>
-              );
-            })
           )}
-          <div ref={endRef} />
+          <pre
+            ref={outputRef}
+            className="m-0 whitespace-pre-wrap break-all"
+            style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", font: "inherit" }}
+          />
         </div>
 
-        {/* Jump to bottom pill */}
-        {!autoScroll && logs.length > 0 && (
+        {!autoScroll && hasReceivedContent && (
           <div className="absolute bottom-8 right-6">
             <button
-              onClick={() => { setAutoScroll(true); endRef.current?.scrollIntoView({ behavior: 'smooth' }); }}
+              onClick={() => {
+                setAutoScroll(true);
+                const terminal = terminalRef.current;
+                if (terminal) terminal.scrollTop = terminal.scrollHeight;
+              }}
               className="px-3 py-1 rounded-full text-[11px] font-bold"
-              style={{ backgroundColor: '#569cd6', color: '#1e1e1e' }}
+              style={{ backgroundColor: "#569cd6", color: "#1e1e1e" }}
             >
               ↓ Jump to latest
             </button>

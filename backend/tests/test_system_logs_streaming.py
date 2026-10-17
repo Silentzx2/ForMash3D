@@ -1,29 +1,37 @@
-"""Regression tests for realtime master.log stream framing."""
-from api.routers.system import _pop_complete_log_lines
+"""Regression tests for lossless master.log stream framing."""
+
+import json
+
+from api.routers.system import _complete_utf8_prefix, _format_log_chunk
 
 
-def test_log_stream_emits_carriage_return_progress_and_crlf_lines():
-    pending = bytearray(
-        b"sampling 1%\rsampling 10%\r\n"
-        b"2026-10-17 12:00:00,000 - scheduler - INFO - Model loaded"
-    )
+def test_stream_preserves_control_characters_blank_lines_and_unicode():
+    text = "sampling 1%\rsampling 10%\r\n\nModel loaded: café\n"
+    raw = text.encode("utf-8")
+    identity = "1:2"
 
-    assert _pop_complete_log_lines(pending) == ["sampling 1%", "sampling 10%"]
-    assert pending == bytearray(
-        b"2026-10-17 12:00:00,000 - scheduler - INFO - Model loaded"
-    )
+    event, next_offset = _format_log_chunk(raw, 19, identity)
 
-    pending.extend(b" successfully\n")
-    assert _pop_complete_log_lines(pending) == [
-        "2026-10-17 12:00:00,000 - scheduler - INFO - Model loaded successfully"
-    ]
-    assert pending == bytearray()
+    assert event.startswith(f"id: {identity}:{19 + len(raw)}\ndata: ")
+    assert event.endswith("\n\n")
+    data_line = next(line for line in event.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line[len("data: "):])
+    assert payload == {"offset": 19 + len(raw), "identity": identity, "chunk": text}
+    assert next_offset == 19 + len(raw)
 
 
-def test_log_stream_retains_partial_multibyte_lines_until_delimiter():
-    pending = bytearray(b"Loading model: caf\xc3")
-    assert _pop_complete_log_lines(pending) == []
+def test_stream_holds_only_incomplete_utf8_suffix_and_reassembles_it():
+    first, pending = _complete_utf8_prefix(b"prefix caf\xc3")
+    assert first == b"prefix caf"
+    assert pending == b"\xc3"
 
-    pending.extend(b"\xa9\n")
-    assert _pop_complete_log_lines(pending) == ["Loading model: café"]
-    assert pending == bytearray()
+    second, pending = _complete_utf8_prefix(pending + b"\xa9\r\n\n")
+    assert second == "é\r\n\n".encode("utf-8")
+    assert pending == b""
+
+
+def test_stream_does_not_wait_for_line_delimiters():
+    raw = b"partial progress output without a newline"
+    complete, pending = _complete_utf8_prefix(raw)
+    assert complete == raw
+    assert pending == b""

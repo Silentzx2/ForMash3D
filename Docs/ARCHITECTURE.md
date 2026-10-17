@@ -132,6 +132,10 @@ Located at `backend/api/`:
 - **Static File Server**: Optimized binary streaming for 3D formats (`.glb`, `.gltf`, `.fbx`, `.obj`, `.stl`) with cache headers.
 - **Auth Service** (`backend/core/auth/`): Optional Redis-based authentication controlled by `P3D_USER_AUTH_ENABLED`.
 
+### Admin master.log streaming contract
+
+The Admin Logs tab treats `logs/master.log` as the canonical source and streams the complete file plus appended writes through SSE. Data is transported as UTF-8 chunks with file-identity and byte-offset event IDs, so blank lines, whitespace, CR/CRLF control characters, partial lines, and Unicode are not line-parsed or filtered. The proxy forwards `Last-Event-ID` for gap-free reconnects; pause/resume continues from the last consumed offset. Truncation or rotation emits a reset event. UI batches only DOM updates, not log retention.
+
 ### 2.3 Model Execution Layer
 
 | Component | Path | Description |

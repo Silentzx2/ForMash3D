@@ -609,35 +609,41 @@ async def get_logs(
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
 
 
-def _pop_complete_log_lines(buffer: bytearray) -> List[str]:
-    """Return complete LF/CR-delimited lines, retaining partial output across reads."""
-    lines = []
-    while True:
-        newline = buffer.find(b"\n")
-        carriage = buffer.find(b"\r")
-        if newline < 0 and carriage < 0:
-            break
-        if carriage >= 0 and (newline < 0 or carriage < newline):
-            boundary, separator = carriage, 13
-        else:
-            boundary, separator = newline, 10
-
-        line = bytes(buffer[:boundary]).decode("utf-8", errors="replace")
-        del buffer[:boundary + 1]
-        if separator == 13 and buffer[:1] == b"\n":
-            del buffer[:1]
-        if line.strip():
-            lines.append(line)
-    return lines
+def _complete_utf8_prefix(data: bytes) -> tuple[bytes, bytes]:
+    """Split off an incomplete UTF-8 suffix without losing bytes between reads."""
+    try:
+        data.decode("utf-8")
+        return data, b""
+    except UnicodeDecodeError as exc:
+        if exc.reason == "unexpected end of data" and exc.end == len(data):
+            return data[:exc.start], data[exc.start:]
+        # Log files are text; replace malformed byte sequences rather than stall
+        # the stream forever on a file containing invalid UTF-8.
+        return data, b""
 
 
-@router.get("/logs/stream", summary="Stream logs via SSE")
+def _format_log_chunk(data: bytes, offset: int, identity: str) -> tuple[str, int]:
+    """Encode a raw text chunk as one safe SSE event while preserving control chars."""
+    next_offset = offset + len(data)
+    payload = json.dumps(
+        {
+            "offset": next_offset,
+            "identity": identity,
+            "chunk": data.decode("utf-8", errors="replace"),
+        },
+        ensure_ascii=False,
+    )
+    return f"id: {identity}:{next_offset}\ndata: {payload}\n\n", next_offset
+
+
+@router.get("/logs/stream", summary="Stream the complete master.log via SSE")
 async def stream_logs(
-    last_n: int = Query(200, ge=1, le=3000, description="Number of recent lines to include initially"),
+    request: Request,
+    offset: Optional[int] = Query(None, ge=0, description="Byte offset used to resume a stream"),
+    identity: Optional[str] = Query(None, description="Log-file identity used to resume a stream"),
     _: bool = Depends(verify_api_key),
 ):
-    """Stream the canonical master.log over SSE with 15-second heartbeats."""
-    import asyncio
+    """Stream master.log from its beginning, then forward every appended byte in order."""
     from fastapi.responses import StreamingResponse
 
     project_root = Path(__file__).resolve().parents[3]
@@ -645,48 +651,99 @@ async def stream_logs(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.touch(exist_ok=True)
 
+    last_event_id = request.headers.get("last-event-id")
+
     async def event_generator():
-        process = await asyncio.create_subprocess_exec(
-            "tail", "-n", str(last_n), "-f", str(log_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        pending = bytearray()
+        log_file = log_path.open("rb")
         try:
-            while True:
-                try:
-                    chunk = await asyncio.wait_for(process.stdout.read(4096), timeout=15.0)
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
+            path_stat = log_path.stat()
+            file_stat = os.fstat(log_file.fileno())
+            current_identity = f"{file_stat.st_dev}:{file_stat.st_ino}"
+            cursor = 0
+            reset_required = False
+
+            # IDs include both inode identity and byte offset. This lets a
+            # reconnect detect log rotation even when the new file is larger.
+            if last_event_id:
+                parts = last_event_id.split(":")
+                if len(parts) == 3 and all(part.isdigit() for part in parts):
+                    previous_identity = f"{parts[0]}:{parts[1]}"
+                    previous_offset = int(parts[2])
+                    if previous_identity == current_identity:
+                        cursor = previous_offset
+                    else:
+                        reset_required = True
+                elif last_event_id.isdigit():
+                    # Compatibility with a numeric ID from an older client.
+                    cursor = int(last_event_id)
+            elif offset is not None:
+                if identity and identity != current_identity:
+                    reset_required = True
+                else:
+                    cursor = offset
+
+            if cursor > path_stat.st_size:
+                cursor = 0
+                reset_required = True
+
+            if reset_required:
+                cursor = 0
+                yield f"id: {current_identity}:0\nevent: reset\ndata: {{}}\n\n"
+
+            log_file.seek(cursor)
+            emitted_offset = cursor
+            pending = b""
+            loop = asyncio.get_running_loop()
+            last_heartbeat = loop.time()
+
+            while not await request.is_disconnected():
+                chunk = log_file.read(16 * 1024)
+                if chunk:
+                    complete, pending = _complete_utf8_prefix(pending + chunk)
+                    if complete:
+                        frame, emitted_offset = _format_log_chunk(
+                            complete, emitted_offset, current_identity
+                        )
+                        yield frame
                     continue
 
-                if not chunk:
-                    if pending:
-                        final_line = pending.decode("utf-8", errors="replace")
-                        if final_line.strip():
-                            yield f"data: {final_line}\n\n"
-                    break
+                # Follow the current canonical path if the log is rotated or
+                # truncated. A reset event tells the UI to discard the old file.
+                try:
+                    path_stat = log_path.stat()
+                    file_stat = os.fstat(log_file.fileno())
+                    replaced = (
+                        path_stat.st_dev != file_stat.st_dev
+                        or path_stat.st_ino != file_stat.st_ino
+                    )
+                    truncated = path_stat.st_size < log_file.tell()
+                    if replaced or truncated:
+                        replacement_file = log_path.open("rb")
+                        log_file.close()
+                        log_file = replacement_file
+                        file_stat = os.fstat(log_file.fileno())
+                        current_identity = f"{file_stat.st_dev}:{file_stat.st_ino}"
+                        pending = b""
+                        emitted_offset = 0
+                        yield f"id: {current_identity}:0\nevent: reset\ndata: {{}}\n\n"
+                        last_heartbeat = loop.time()
+                        continue
+                except FileNotFoundError:
+                    await asyncio.sleep(0.1)
+                    continue
 
-                pending.extend(chunk)
-                for line in _pop_complete_log_lines(pending):
-                    yield f"data: {line}\n\n"
+                if loop.time() - last_heartbeat >= 15:
+                    yield ": heartbeat\n\n"
+                    last_heartbeat = loop.time()
+                await asyncio.sleep(0.1)
         finally:
-            if process.returncode is None:
-                try:
-                    process.terminate()
-                except ProcessLookupError:
-                    pass
-                try:
-                    await asyncio.wait_for(process.wait(), timeout=1.0)
-                except asyncio.TimeoutError:
-                    process.kill()
-                    await process.wait()
+            log_file.close()
 
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },

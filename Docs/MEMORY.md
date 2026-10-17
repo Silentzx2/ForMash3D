@@ -1,8 +1,8 @@
-## 2026-10-17 — Real-Time Master Log Streaming
+## 2026-10-17 — Lossless Master Log Streaming
 
-- **Root cause**: stream_logs() awaited stdout.readline(), which only completes on LF and delayed carriage-return progress bars such as model sampling. The Admin Logs view also appended each event separately and used smooth scroll for every render.
-- **Implementation**: The stream reads byte chunks, frames both LF and CR output, retains partial lines across chunks, sends heartbeats, validates the initial replay size, and reaps its tail child on disconnect. The Next.js proxy disables intermediary buffering. The UI batches live entries per animation frame, caps pending lines, and auto-follows without animated scroll on every line.
-- **Regression coverage**: Added backend framing tests and an SSE proxy chunk-forwarding test. Execution results should be recorded after running the repository test commands.
+- **Canonical source and framing**: `logs/master.log` is streamed as ordered UTF-8 text chunks, rather than parsed log rows. The transport preserves LF, CR, CRLF, blank lines, leading/trailing whitespace, partial lines, and carriage-return progress updates.
+- **Reconnect and file lifecycle**: SSE event IDs store file identity plus emitted byte offset. The Next.js proxy forwards `Last-Event-ID`; pause/resume resumes from the latest consumed offset. Log rotation or truncation resets the viewer to the new canonical file.
+- **Frontend behavior**: Chunks are batched to the browser DOM per animation frame, without artificial line or pending-queue caps. No automated test execution is claimed unless run in an environment with the repository dependencies installed.
 
 ## 2026-10-16 — Unique3D & TripoSG Transformers v5 Compatibility Fix
 

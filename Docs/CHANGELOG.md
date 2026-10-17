@@ -1,8 +1,8 @@
-## 2026-10-17 — Real-Time Master Log Streaming
+## 2026-10-17 — Lossless, Offset-Resumable Master Log Streaming
 
-- **Realtime progress output**: The backend stream now reads output in chunks and emits both LF- and carriage-return-delimited entries, fixing progress output held behind readline; initial replay is bounded and disconnected tail processes are reaped.
-- **Smooth, bounded Logs UI**: Live entries are batched once per animation frame, pending buffers are capped, and auto-follow scrolls directly to the bottom instead of animating every line.
-- **Proxy and regression coverage**: The Next.js SSE proxy explicitly disables intermediary buffering. Added regression checks for CR/CRLF framing and immediate SSE chunk forwarding.
+- **Canonical raw text stream**: The admin Logs view reads the complete `logs/master.log` as ordered UTF-8 text chunks, preserving blank lines, CR/CRLF characters, partial lines, whitespace, and progress output without parsing or filtering entries.
+- **Reconnect without replay or gaps**: Each SSE event carries its ending byte offset plus the current file identity; the proxy forwards `Last-Event-ID`, and pause/resume continues at the last received offset. Rotation/truncation emits a reset event so the view follows the current canonical file.
+- **UI delivery**: Chunks are appended in animation-frame batches without a line cap or silent pending-queue drops. SSE proxy buffering is disabled and regression tests cover control characters, Unicode chunk boundaries, and immediate upstream forwarding.
 
 ## 2026-10-17 — Studio UI/UX & Pipeline Expansion (Tasks T-01 to T-20)
 
