@@ -204,8 +204,113 @@ def fix_huggingface_repo_redirects():
     return True
 
 
+def fix_numba_caching():
+    """
+    Disable Numba caching to prevent RuntimeError: cannot cache function ...: no locator available.
+    In environments like Kaggle and conda/miniconda where Python libraries are installed
+    in system/read-only directories or non-standard paths, numba fails when compiling @jit(cache=True).
+    Specifically, rembg imports pymatting.util.kdtree, which decorates _make_tree with @jit(cache=True).
+    """
+    import os
+
+    # 1. Set environment variables
+    os.environ["NUMBA_DISABLE_CACHING"] = "1"
+    os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
+    try:
+        os.makedirs(os.environ["NUMBA_CACHE_DIR"], exist_ok=True)
+    except Exception:
+        pass
+
+    # 2. Update numba runtime config if already imported
+    try:
+        import numba.config
+        numba.config.DISABLE_CACHING = 1
+        numba.config.CACHE_DIR = os.environ.get("NUMBA_CACHE_DIR", "/tmp/numba_cache")
+    except Exception:
+        pass
+
+    # 3. Monkeypatch numba.jit and numba.njit if numba is installed
+    try:
+        import numba
+
+        def _wrap_jit(orig_func):
+            if getattr(orig_func, "_numba_caching_patched", False):
+                return orig_func
+
+            import functools
+
+            @functools.wraps(orig_func)
+            def _patched_jit(*args, **kwargs):
+                # Force cache=False to prevent locator errors in conda/kaggle envs
+                if kwargs.get("cache") is True:
+                    kwargs["cache"] = False
+
+                try:
+                    result = orig_func(*args, **kwargs)
+                except RuntimeError as e:
+                    if "cannot cache function" in str(e) or "no locator available" in str(e):
+                        kwargs["cache"] = False
+                        result = orig_func(*args, **kwargs)
+                    else:
+                        raise
+
+                if callable(result):
+                    @functools.wraps(result)
+                    def _wrapped_target(fn):
+                        try:
+                            return result(fn)
+                        except RuntimeError as e:
+                            if "cannot cache function" in str(e) or "no locator available" in str(e):
+                                kwargs["cache"] = False
+                                retry_decorator = orig_func(*args, **kwargs)
+                                return retry_decorator(fn)
+                            raise
+                    return _wrapped_target
+                return result
+
+            _patched_jit._numba_caching_patched = True
+            return _patched_jit
+
+        if hasattr(numba, "jit"):
+            numba.jit = _wrap_jit(numba.jit)
+        if hasattr(numba, "njit"):
+            numba.njit = _wrap_jit(numba.njit)
+
+        # Also patch internal decorator module references if loaded
+        for mod_name in ("numba.core.decorators", "numba.decorators"):
+            mod = sys.modules.get(mod_name)
+            if mod:
+                if hasattr(mod, "jit"):
+                    mod.jit = _wrap_jit(mod.jit)
+                if hasattr(mod, "njit"):
+                    mod.njit = _wrap_jit(mod.njit)
+
+        print("Applied compatibility fix: numba caching disabled and @jit/@njit monkeypatched")
+        return True
+    except ImportError:
+        return True
+    except Exception as e:
+        print(f"Failed to apply numba caching fix: {e}")
+        return False
+
+
+class SafeBackgroundRemoverFallback:
+    """Safe fallback background remover when rembg or pymatting fails."""
+    def __init__(self, session=None):
+        self.session = session
+
+    def __call__(self, image):
+        if self.session is not None:
+            try:
+                import rembg
+                return rembg.remove(image, session=self.session, bgcolor=[255, 255, 255, 0])
+            except Exception:
+                pass
+        return image.convert("RGBA") if hasattr(image, "convert") else image
+
+
 def apply_fix():
-    """Apply the compatibility fixes (torchvision, transformers, torch.load, and hf redirects)."""
+    """Apply the compatibility fixes (torchvision, transformers, torch.load, hf redirects, and numba)."""
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")
@@ -215,6 +320,7 @@ def apply_fix():
     fix_transformers_cache()
     fix_torch_load_weights_only()
     fix_huggingface_repo_redirects()
+    fix_numba_caching()
     return True
 
 

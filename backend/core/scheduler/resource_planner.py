@@ -119,8 +119,26 @@ class ResourcePlanner:
         if max_total >= required:
             return False
         caps = model_config.get("capabilities") or {}
+        aggregate_total = sum(g["total_mb"] for g in snapshot)
+
+        # Multi-GPU check: if multi_gpu is supported and aggregate GPU memory is sufficient
+        if bool(caps.get("multi_gpu")) or bool(caps.get("multi_gpu_strategy")):
+            if aggregate_total >= required:
+                return False
+
+        # Low-VRAM / offload mode check: if supported and single GPU or aggregate memory meets low-VRAM requirement
+        low_vram_supported = (
+            bool(caps.get("low_vram_supported"))
+            or bool(caps.get("cpu_offload"))
+            or "low_vram_requirement" in model_config
+        )
+        if low_vram_supported:
+            low_vram_req = int(model_config.get("low_vram_requirement") or 10240)
+            if max_total >= low_vram_req or aggregate_total >= low_vram_req:
+                return False
+
         if bool(caps.get("multi_gpu")):
-            return sum(g["total_mb"] for g in snapshot) < required
+            return aggregate_total < required
         return True
 
     def plan(self, model_config: Dict[str, Any], active_workers: int = 1) -> Optional[ResourcePlan]:
@@ -149,47 +167,74 @@ class ResourcePlanner:
                     reason="Model fits on one GPU.",
                 )
 
-        if not bool(caps.get("multi_gpu")):
-            return None
+        supports_multi_gpu = bool(caps.get("multi_gpu")) or bool(caps.get("multi_gpu_strategy"))
+        if supports_multi_gpu:
+            aggregate = sum(g["available_mb"] for g in snapshot)
+            if aggregate >= required:
+                selected = []
+                remaining = required
+                for gpu in snapshot:
+                    if remaining <= 0:
+                        break
+                    take = min(int(gpu["available_mb"]), remaining)
+                    if take > 0:
+                        selected.append((gpu, take))
+                        remaining -= take
 
-        aggregate = sum(g["available_mb"] for g in snapshot)
-        if aggregate < required:
-            return None
+                if remaining <= 0 and len(selected) >= 2:
+                    reservation = {int(gpu["id"]): int(take) for gpu, take in selected}
+                    max_memory = {str(gpu["id"]): int(take) for gpu, take in selected}
 
-        selected = []
-        remaining = required
-        for gpu in snapshot:
-            if remaining <= 0:
-                break
-            take = min(int(gpu["available_mb"]), remaining)
-            if take > 0:
-                selected.append((gpu, take))
-                remaining -= take
+                    try:
+                        import psutil
+                        cpu_memory = max(4096, int(psutil.virtual_memory().available / (1024 * 1024) * 0.8))
+                    except Exception:
+                        cpu_memory = 4096
+                    max_memory["cpu"] = _env_int("FORMSH3D_CPU_OFFLOAD_MB", cpu_memory)
 
-        if remaining > 0 or len(selected) < 2:
-            return None
+                    gpu_ids = tuple(int(gpu["id"]) for gpu, _ in selected)
+                    return ResourcePlan(
+                        kind="multi_gpu",
+                        gpu_ids=gpu_ids,
+                        primary_gpu=gpu_ids[0],
+                        reservation_mb=reservation,
+                        max_memory_mb=max_memory,
+                        cpu_threads=threads,
+                        strategy=str(caps.get("multi_gpu_strategy") or "accelerate_component_dispatch"),
+                        reason="Single-GPU placement unavailable; using declared multi-GPU strategy.",
+                    )
 
-        reservation = {int(gpu["id"]): int(take) for gpu, take in selected}
-        max_memory = {str(gpu["id"]): int(take) for gpu, take in selected}
-
-        try:
-            import psutil
-            cpu_memory = max(4096, int(psutil.virtual_memory().available / (1024 * 1024) * 0.8))
-        except Exception:
-            cpu_memory = 4096
-        max_memory["cpu"] = _env_int("FORMSH3D_CPU_OFFLOAD_MB", cpu_memory)
-
-        gpu_ids = tuple(int(gpu["id"]) for gpu, _ in selected)
-        return ResourcePlan(
-            kind="multi_gpu",
-            gpu_ids=gpu_ids,
-            primary_gpu=gpu_ids[0],
-            reservation_mb=reservation,
-            max_memory_mb=max_memory,
-            cpu_threads=threads,
-            strategy=str(caps.get("multi_gpu_strategy") or "accelerate_component_dispatch"),
-            reason="Single-GPU placement unavailable; using declared multi-GPU strategy.",
+        # Low-VRAM / offload mode on single GPU
+        low_vram_supported = (
+            bool(caps.get("low_vram_supported"))
+            or bool(caps.get("cpu_offload"))
+            or "low_vram_requirement" in model_config
         )
+        if low_vram_supported:
+            low_vram_req = int(model_config.get("low_vram_requirement") or 10240)
+            for gpu in snapshot:
+                if gpu["available_mb"] >= low_vram_req:
+                    try:
+                        import psutil
+                        cpu_memory = max(4096, int(psutil.virtual_memory().available / (1024 * 1024) * 0.8))
+                    except Exception:
+                        cpu_memory = 4096
+                    max_mem = {
+                        str(gpu["id"]): gpu["available_mb"],
+                        "cpu": _env_int("FORMSH3D_CPU_OFFLOAD_MB", cpu_memory),
+                    }
+                    return ResourcePlan(
+                        kind="single_gpu",
+                        gpu_ids=(gpu["id"],),
+                        primary_gpu=gpu["id"],
+                        reservation_mb={gpu["id"]: low_vram_req},
+                        max_memory_mb=max_mem,
+                        cpu_threads=threads,
+                        strategy="single_gpu_low_vram",
+                        reason="Model fits on one GPU using low-VRAM/offload mode.",
+                    )
+
+        return None
 
 
     @staticmethod
@@ -244,8 +289,54 @@ class ResourcePlanner:
 
 
 def dispatch_pipeline_across_gpus(pipeline: Any, resource_plan: ResourcePlan, offload_dir: Optional[str] = None) -> Dict[str, Any]:
-    if not resource_plan.is_multi_gpu: return {"applied": False, "reason": "single_gpu_plan"}
-    from accelerate import dispatch_model, infer_auto_device_map
-    device_map = infer_auto_device_map(pipeline)
-    dispatch_model(pipeline, device_map=device_map)
-    return {"applied": True, "strategy": "accelerate_native", "device_map": str(device_map)}
+    if not resource_plan.is_multi_gpu:
+        return {"applied": False, "reason": "single_gpu_plan"}
+
+    # Attempt accelerate native dispatch if available
+    try:
+        from accelerate import dispatch_model, infer_auto_device_map
+        if hasattr(pipeline, "named_parameters"):
+            device_map = infer_auto_device_map(pipeline)
+            dispatch_model(pipeline, device_map=device_map)
+            return {"applied": True, "strategy": "accelerate_native", "device_map": str(device_map)}
+    except ImportError:
+        logger.debug("accelerate is not installed; falling back to component dispatch")
+    except Exception as e:
+        logger.warning("accelerate auto-dispatch failed (%s); falling back to component dispatch", e)
+
+    # Component-level dispatch across GPUs for modular pipelines (e.g. TRELLIS, Pixal3D)
+    gpu_ids = list(resource_plan.gpu_ids)
+    if not gpu_ids:
+        return {"applied": False, "reason": "no_gpu_ids"}
+
+    device_map = {}
+    models_dict = getattr(pipeline, "models", None)
+    if isinstance(models_dict, dict) and models_dict:
+        for idx, (name, model) in enumerate(models_dict.items()):
+            target_gpu = gpu_ids[idx % len(gpu_ids)]
+            target_device = f"cuda:{target_gpu}"
+            try:
+                if hasattr(model, "to"):
+                    model.to(target_device)
+                device_map[name] = target_device
+            except Exception as m_err:
+                logger.warning("Could not dispatch pipeline submodel %s to %s: %s", name, target_device, m_err)
+        return {"applied": True, "strategy": "accelerate_component_dispatch", "device_map": str(device_map)}
+
+    if hasattr(pipeline, "children"):
+        try:
+            children = list(pipeline.named_children())
+            if children:
+                for idx, (name, child) in enumerate(children):
+                    target_gpu = gpu_ids[idx % len(gpu_ids)]
+                    target_device = f"cuda:{target_gpu}"
+                    try:
+                        child.to(target_device)
+                        device_map[name] = target_device
+                    except Exception as m_err:
+                        logger.warning("Could not dispatch child module %s to %s: %s", name, target_device, m_err)
+                return {"applied": True, "strategy": "accelerate_component_dispatch", "device_map": str(device_map)}
+        except Exception as e:
+            logger.warning("Could not dispatch children of pipeline: %s", e)
+
+    return {"applied": False, "reason": "no_dispatchable_components"}

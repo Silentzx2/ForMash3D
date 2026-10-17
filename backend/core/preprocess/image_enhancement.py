@@ -61,6 +61,13 @@ def _rmbg(image: Image.Image):
     if hunyuan_root.is_dir() and str(hunyuan_root) not in sys.path:
         sys.path.append(str(hunyuan_root))
 
+    os.environ["NUMBA_DISABLE_CACHING"] = "1"
+    try:
+        from utils.torchvision_fix import fix_numba_caching
+        fix_numba_caching()
+    except Exception:
+        pass
+
     try:
         from hy3dshape.rembg import BackgroundRemover
 

@@ -163,6 +163,117 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                 **image_cond_configs["tex_1024"]
             )
 
+            # Determine primary device
+            device = getattr(self, "device", None)
+            if device is None or device.startswith("cpu"):
+                device = f"cuda:{self.gpu_id}" if getattr(self, "gpu_id", None) is not None else "cuda:0"
+            self.device = device
+
+            # Determine if low-VRAM mode should be activated
+            strategy = (getattr(self, "resource_plan", None) or {}).get("strategy", "")
+            use_low_vram = strategy == "single_gpu_low_vram"
+
+            gpu_ids = getattr(self, "gpu_ids", [])
+            is_multi_gpu = len(gpu_ids) > 1
+
+            if not is_multi_gpu and not use_low_vram:
+                try:
+                    gpu_idx = self.gpu_id if getattr(self, "gpu_id", None) is not None else 0
+                    props = torch.cuda.get_device_properties(gpu_idx)
+                    total_vram_mb = props.total_memory / (1024 * 1024)
+                    if total_vram_mb < 18432:
+                        logger.info(
+                            "Single GPU %s VRAM (%.0fMB) is less than 18GB; enabling low-VRAM mode",
+                            gpu_idx,
+                            total_vram_mb,
+                        )
+                        use_low_vram = True
+                except Exception as ex:
+                    logger.debug("Could not query GPU properties: %s", ex)
+
+            self.low_vram_mode = use_low_vram
+
+            if is_multi_gpu:
+                from core.scheduler.resource_planner import ResourcePlan, dispatch_pipeline_across_gpus
+                rp = getattr(self, "resource_plan", None) or {}
+                self.pipeline.low_vram = False
+                self.pipeline._device = torch.device(device)
+                dispatch_pipeline_across_gpus(
+                    self.pipeline,
+                    ResourcePlan(
+                        kind="multi_gpu",
+                        gpu_ids=tuple(self.gpu_ids),
+                        primary_gpu=self.gpu_ids[0],
+                        reservation_mb={int(k): int(v) for k, v in rp.get("reservation_mb", {}).items()},
+                        max_memory_mb={str(k): int(v) for k, v in rp.get("max_memory_mb", {}).items()},
+                        cpu_threads=int(rp.get("cpu_threads", 1)),
+                        strategy=str(rp.get("strategy", "accelerate_component_dispatch")),
+                        reason=str(rp.get("reason", "scheduler resource plan")),
+                    ),
+                )
+                sec_gpus = [g for g in self.gpu_ids if g != self.gpu_ids[0]] or list(self.gpu_ids)
+                cond_models = [
+                    self.pipeline.image_cond_model_ss,
+                    self.pipeline.image_cond_model_shape_512,
+                    self.pipeline.image_cond_model_shape_1024,
+                    self.pipeline.image_cond_model_tex_1024,
+                ]
+                for idx, cm in enumerate(cond_models):
+                    if cm is not None and hasattr(cm, "to"):
+                        target_dev = f"cuda:{sec_gpus[idx % len(sec_gpus)]}"
+                        try:
+                            cm.to(target_dev)
+                        except Exception as ex:
+                            logger.debug("Failed moving cond model %s to %s: %s", idx, target_dev, ex)
+                for attr in [
+                    "image_cond_model_ss",
+                    "image_cond_model_shape_512",
+                    "image_cond_model_shape_1024",
+                    "image_cond_model_tex_1024",
+                ]:
+                    m = getattr(self.pipeline, attr, None)
+                    if m is not None and getattr(m, "use_naf_upsample", False) and hasattr(m, "_load_naf"):
+                        try:
+                            m._load_naf()
+                        except Exception as e:
+                            logger.debug("Could not pre-load NAF upsampler: %s", e)
+                logger.info("Pixal3D pipeline dispatched across GPUs %s", self.gpu_ids)
+            elif use_low_vram:
+                self.pipeline._device = torch.device(device)
+                self.pipeline.low_vram = True
+                for attr in [
+                    "image_cond_model_ss",
+                    "image_cond_model_shape_512",
+                    "image_cond_model_shape_1024",
+                    "image_cond_model_tex_1024",
+                ]:
+                    m = getattr(self.pipeline, attr, None)
+                    if m is not None and getattr(m, "use_naf_upsample", False) and hasattr(m, "_load_naf"):
+                        try:
+                            m._load_naf()
+                        except Exception as e:
+                            logger.debug("Could not load NAF on CPU: %s", e)
+                logger.info("Pixal3D loaded in low-VRAM mode on %s (peak VRAM ~10-12GB)", device)
+            else:
+                self.pipeline.low_vram = False
+                self.pipeline.to(torch.device(device))
+                for attr in [
+                    "image_cond_model_ss",
+                    "image_cond_model_shape_512",
+                    "image_cond_model_shape_1024",
+                    "image_cond_model_tex_1024",
+                ]:
+                    m = getattr(self.pipeline, attr, None)
+                    if m is not None:
+                        if hasattr(m, "to"):
+                            m.to(torch.device(device))
+                        if getattr(m, "use_naf_upsample", False) and hasattr(m, "_load_naf"):
+                            try:
+                                m._load_naf()
+                            except Exception as e:
+                                logger.debug("Could not load NAF: %s", e)
+                logger.info("Pixal3D loaded in standard mode on %s", device)
+
             logger.info("Pixal3D models loaded successfully")
             return {"pipeline": self.pipeline}
 
@@ -216,11 +327,12 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
 
         # Use MoGe for camera estimation
         logger.info("Loading MoGe model for camera estimation...")
-        self.moge_model = load_moge_model(device="cuda")
+        dev = self.device if hasattr(self, "device") and self.device else "cuda"
+        self.moge_model = load_moge_model(device=dev)
 
         logger.info("Estimating camera parameters...")
         camera_params = get_camera_params_wild_moge(
-            image_path, self.moge_model, device="cuda", mesh_scale=1.0, extend_pixel=0, image_resolution=512
+            image_path, self.moge_model, device=dev, mesh_scale=1.0, extend_pixel=0, image_resolution=512
         )
 
         # Free MoGe VRAM
@@ -244,12 +356,16 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         resolution: int = 1024,
         sampler_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         camera_params: Optional[Dict[str, float]] = None,
+        low_vram: Optional[bool] = None,
     ) -> str:
         """Run Pixal3D pipeline inference and return GLB path."""
         import o_voxel
 
         if camera_params is None:
             raise ValueError("camera_params is required")
+
+        if low_vram is not None and hasattr(self.pipeline, "low_vram"):
+            self.pipeline.low_vram = bool(low_vram)
 
         sampler_overrides = sampler_overrides or {}
         ss_override = {
@@ -287,7 +403,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             tex_slat_sampler_params=tex_override,
             preprocess_image=False,
             pipeline_type=pipeline_type,
-                resolution=resolution,
+            resolution=resolution,
             max_num_tokens=max_num_tokens,
         )
 
@@ -317,7 +433,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             attr_volume=mesh.attrs,
             coords=mesh.coords,
             attr_layout=self.pipeline.pbr_attr_layout,
-            grid_size=res,
+            grid_size=resolution,
             aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
             decimation_target=1000000,
             texture_size=4096,
@@ -374,7 +490,12 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             manual_fov = inputs.get("manual_fov", None)
             resolution = inputs.get("resolution", 1024)
             pipeline_type = inputs.get("pipeline_type", "1024_cascade")
-            low_vram = inputs.get("low_vram", False)
+            low_vram_input = inputs.get("low_vram")
+            low_vram = (
+                bool(low_vram_input)
+                if low_vram_input is not None
+                else getattr(self, "low_vram_mode", False)
+            )
             sampler_overrides = inputs.get("sampler_overrides", {})
 
             logger.info(f"Generating mesh with Pixal3D from image: {image_path}")
@@ -399,6 +520,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                 pipeline_type=pipeline_type,
                 resolution=resolution,
                 sampler_overrides=sampler_overrides,
+                low_vram=low_vram,
             )
 
             # Convert format if needed

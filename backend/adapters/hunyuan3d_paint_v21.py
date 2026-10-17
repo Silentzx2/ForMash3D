@@ -98,17 +98,41 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
             logger.info("Loading Hunyuan3D-Paint-v2-1 pipeline")
 
+            os.environ["NUMBA_DISABLE_CACHING"] = "1"
+            os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
             try:
-                from torchvision_fix import apply_fix
+                try:
+                    from utils.torchvision_fix import apply_fix, fix_numba_caching
+                except ImportError:
+                    from torchvision_fix import apply_fix, fix_numba_caching
                 apply_fix()
+                fix_numba_caching()
             except (ImportError, Exception) as e:
-                logger.warning(f"torchvision_fix not applied: {e}")
+                logger.warning(f"torchvision_fix / numba_fix not applied: {e}")
 
             from hy3dpaint.textureGenPipeline import (
                 Hunyuan3DPaintConfig,
                 Hunyuan3DPaintPipeline,
             )
-            from hy3dshape.hy3dshape.rembg import BackgroundRemover
+            try:
+                from hy3dshape.hy3dshape.rembg import BackgroundRemover
+            except RuntimeError as err:
+                if "cannot cache function" in str(err) or "no locator available" in str(err):
+                    logger.warning("Caught Numba cache error importing BackgroundRemover in paint: %s; retrying...", err)
+                    try:
+                        try:
+                            from utils.torchvision_fix import fix_numba_caching
+                        except ImportError:
+                            from torchvision_fix import fix_numba_caching
+                        fix_numba_caching()
+                    except Exception:
+                        pass
+                    for mod in list(sys.modules):
+                        if "pymatting" in mod or "hy3dshape.hy3dshape.rembg" in mod or "rembg" in mod:
+                            sys.modules.pop(mod, None)
+                    from hy3dshape.hy3dshape.rembg import BackgroundRemover
+                else:
+                    raise
 
             max_num_view = 6
             resolution = 512
@@ -126,7 +150,55 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             )
             conf.realesrgan_ckpt_path = self._resolve_realesrgan_path()
 
-            self.bg_remover = BackgroundRemover()
+            try:
+                self.bg_remover = BackgroundRemover()
+            except RuntimeError as err:
+                if "cannot cache function" in str(err) or "no locator available" in str(err):
+                    logger.warning("Caught Numba caching RuntimeError initializing BackgroundRemover in paint: %s. Retrying...", err)
+                    try:
+                        try:
+                            from utils.torchvision_fix import fix_numba_caching
+                        except ImportError:
+                            from torchvision_fix import fix_numba_caching
+                        fix_numba_caching()
+                    except Exception:
+                        pass
+                    for mod in list(sys.modules):
+                        if "pymatting" in mod or "rembg" in mod:
+                            sys.modules.pop(mod, None)
+                    try:
+                        self.bg_remover = BackgroundRemover()
+                    except Exception as retry_err:
+                        logger.warning("BackgroundRemover retry failed (%s). Using safe fallback.", retry_err)
+                        try:
+                            from utils.torchvision_fix import SafeBackgroundRemoverFallback
+                            self.bg_remover = SafeBackgroundRemoverFallback()
+                        except Exception:
+                            class _SafeFallback:
+                                def __call__(self, img):
+                                    return img.convert("RGBA") if hasattr(img, "convert") else img
+                            self.bg_remover = _SafeFallback()
+                else:
+                    logger.warning("Failed to initialize BackgroundRemover in paint (%s). Using safe fallback.", err)
+                    try:
+                        from utils.torchvision_fix import SafeBackgroundRemoverFallback
+                        self.bg_remover = SafeBackgroundRemoverFallback()
+                    except Exception:
+                        class _SafeFallback:
+                            def __call__(self, img):
+                                return img.convert("RGBA") if hasattr(img, "convert") else img
+                        self.bg_remover = _SafeFallback()
+            except Exception as bg_err:
+                logger.warning("Failed to initialize BackgroundRemover in paint (%s). Using safe fallback.", bg_err)
+                try:
+                    from utils.torchvision_fix import SafeBackgroundRemoverFallback
+                    self.bg_remover = SafeBackgroundRemoverFallback()
+                except Exception:
+                    class _SafeFallback:
+                        def __call__(self, img):
+                            return img.convert("RGBA") if hasattr(img, "convert") else img
+                    self.bg_remover = _SafeFallback()
+
             self.paint_pipeline = Hunyuan3DPaintPipeline(conf)
 
             logger.info("Hunyuan3D-Paint-v2-1 loaded successfully")

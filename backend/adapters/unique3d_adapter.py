@@ -7,7 +7,10 @@ Uses the official inference flow: input -> super-res -> multiview -> normal -> m
 
 import logging
 import os
+import re
+import shutil
 import sys
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -104,16 +107,206 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
 
         logger.info(f"Initialized Unique3D adapter with root: {unique3d_root}")
 
+    @staticmethod
+    def _sanitize_hf_tokens():
+        """Sanitize HF_TOKEN, HUGGINGFACE_TOKEN, GITHUB_TOKEN to avoid 401 Unauthorized on public models."""
+        for token_key in ["HF_TOKEN", "HUGGINGFACE_TOKEN"]:
+            val = os.environ.get(token_key)
+            if val is not None:
+                val_clean = val.strip()
+                is_invalid = (
+                    not val_clean
+                    or val_clean.lower() in ("none", "null", "false", "undefined", "dummy")
+                    or val_clean.startswith("ghp_")
+                    or val_clean.startswith("gho_")
+                    or val_clean.startswith("github_pat_")
+                )
+                github_token = os.environ.get("GITHUB_TOKEN", "").strip()
+                if is_invalid or (github_token and val_clean == github_token):
+                    logger.info(f"Removing invalid/unauthorized {token_key} from environment")
+                    os.environ.pop(token_key, None)
+
+    def _find_local_img2mvimg(self) -> Optional[Path]:
+        """Find local img2mvimg directory containing base SD weights."""
+        candidates = [
+            Path(self.model_path) / "ckpt" / "img2mvimg",
+            self.unique3d_root / "ckpt" / "img2mvimg",
+            Path("ckpt") / "img2mvimg",
+            Path("./ckpt/img2mvimg"),
+            Path("backend/ckpt") / "img2mvimg",
+            Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt" / "img2mvimg",
+        ]
+        for candidate in candidates:
+            try:
+                resolved = candidate.resolve()
+                if resolved.exists() and resolved.is_dir():
+                    return resolved
+            except Exception:
+                continue
+        return None
+
+    def _create_normal_config_override(self, base_model: str) -> str:
+        """Create a runtime image2normal YAML config overriding the base model path."""
+        src_path = Path(self.normal_config)
+        content = ""
+        if src_path.exists():
+            try:
+                content = src_path.read_text(encoding="utf-8")
+            except Exception:
+                pass
+
+        if not content:
+            content = f"""pretrained_model_name_or_path: "{base_model}"
+mixed_precision: "bf16"
+
+init_config:
+  enable_cross_attn_lora: False
+  enable_cross_attn_ip: False
+  enable_self_attn_lora: False
+  enable_self_attn_ref: True
+  enable_multiview_attn: False
+  init_cross_attn_lora: False
+  init_cross_attn_ip: False
+  cross_attn_lora_rank: 512
+  cross_attn_lora_only_kv: False
+  ipadapter_pretrained_name: "h94/IP-Adapter"
+  ipadapter_subfolder_name: "models"
+  ipadapter_weight_name: "ip-adapter_sd15.safetensors"
+  ipadapter_effect_on: "all"
+  init_self_attn_lora: False
+  self_attn_lora_rank: 512
+  self_attn_lora_only_kv: False
+  init_self_attn_ref: True
+  self_attn_ref_position: "attn1"
+  self_attn_ref_other_model_name: "${{pretrained_model_name_or_path}}"
+  self_attn_ref_pixel_wise_crosspond: True
+  self_attn_ref_effect_on: "all"
+  init_unet_path: "${{pretrained_model_name_or_path}}"
+  init_num_cls_label: 0
+  cls_labels: []
+
+trainers:
+  - trainer_type: "image2image_trainer"
+    trainer:
+        pretrained_model_name_or_path: "${{pretrained_model_name_or_path}}"
+        attn_config:
+          cls_labels: []
+          enable_cross_attn_lora: False
+          enable_cross_attn_ip: False
+          enable_self_attn_lora: False
+          enable_self_attn_ref: True
+          enable_multiview_attn: False
+        resolution: "512"
+        condition_image_resolution: "512"
+        condition_image_column_name: "conditioning_image"
+        image_column_name: "image"
+"""
+        else:
+            # Replace pretrained_model_name_or_path at root level
+            content = re.sub(
+                r'^(pretrained_model_name_or_path:\s*).*$',
+                f'\\1"{base_model}"',
+                content,
+                flags=re.MULTILINE,
+            )
+            # Ensure self_attn_ref_other_model_name points to ${pretrained_model_name_or_path}
+            content = re.sub(
+                r'(\bself_attn_ref_other_model_name:\s*).*$',
+                '\\1"${pretrained_model_name_or_path}"',
+                content,
+                flags=re.MULTILINE,
+            )
+            # Ensure init_unet_path points to ${pretrained_model_name_or_path}
+            content = re.sub(
+                r'(\binit_unet_path:\s*).*$',
+                '\\1"${pretrained_model_name_or_path}"',
+                content,
+                flags=re.MULTILINE,
+            )
+
+        candidate_paths = [
+            self.unique3d_root / "app" / "custom_models" / "image2normal_runtime.yaml",
+            Path("ckpt") / "image2normal_runtime.yaml",
+            Path(tempfile.gettempdir()) / "image2normal_runtime.yaml",
+        ]
+        for dest in candidate_paths:
+            try:
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(content, encoding="utf-8")
+                return str(dest)
+            except Exception as e:
+                logger.debug(f"Could not write runtime config to {dest}: {e}")
+
+        # Fallback to NamedTemporaryFile
+        with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False, encoding="utf-8") as tf:
+            tf.write(content)
+            return tf.name
+
+    def _resolve_normal_config(self) -> str:
+        """
+        Dynamically resolve normal pipeline config.
+        If local checkpoint img2mvimg exists, uses local path as the base.
+        If loading from HuggingFace, sanitizes tokens and ensures valid repo name.
+        """
+        local_img2mvimg = self._find_local_img2mvimg()
+        
+        normal_cfg_path = Path(self.normal_config)
+        cfg_content = ""
+        if normal_cfg_path.exists():
+            try:
+                cfg_content = normal_cfg_path.read_text(encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Could not read normal config {normal_cfg_path}: {e}")
+
+        if local_img2mvimg is not None:
+            relative_valid = (Path("ckpt") / "img2mvimg").exists() or Path("./ckpt/img2mvimg").exists()
+            target_path = "./ckpt/img2mvimg" if relative_valid else str(local_img2mvimg.resolve())
+
+            # Check if normal_config already has target_path and ${pretrained_model_name_or_path} for ref
+            if (
+                f'pretrained_model_name_or_path: "{target_path}"' in cfg_content
+                or f"pretrained_model_name_or_path: '{target_path}'" in cfg_content
+                or f"pretrained_model_name_or_path: {target_path}" in cfg_content
+            ) and (
+                'self_attn_ref_other_model_name: "${pretrained_model_name_or_path}"' in cfg_content
+                or f'self_attn_ref_other_model_name: "{target_path}"' in cfg_content
+            ):
+                return str(normal_cfg_path)
+
+            logger.info(f"Dynamically resolving normal_config to use local base weights: {target_path}")
+            return self._create_normal_config_override(base_model=target_path)
+
+        # Local img2mvimg does NOT exist: will load from HuggingFace
+        self._sanitize_hf_tokens()
+        
+        if "./ckpt/img2mvimg" in cfg_content and local_img2mvimg is None:
+            logger.info("Local img2mvimg base not found. Falling back to HuggingFace base model.")
+            return self._create_normal_config_override(base_model="lambdalabs/sd-image-variations-diffusers")
+
+        return str(normal_cfg_path)
+
     def _ensure_ckpt_symlinks(self):
         """Ensure ckpt symlinks exist so Unique3D relative './ckpt/...' paths resolve to pretrained weights."""
-        ckpt_src = (Path(self.model_path) / "ckpt").resolve()
-        if not ckpt_src.exists():
-            alt_src = (self.unique3d_root / "ckpt").resolve()
-            if alt_src.exists() and not alt_src.is_symlink():
-                ckpt_src = alt_src
+        ckpt_sources = [
+            (Path(self.model_path) / "ckpt").resolve(),
+            (self.unique3d_root / "ckpt").resolve(),
+            Path("ckpt").resolve(),
+            Path("backend/ckpt").resolve(),
+            (Path(__file__).resolve().parents[1] / "pretrained" / "Unique3D" / "ckpt").resolve(),
+        ]
+        ckpt_src = next((p for p in ckpt_sources if p.exists() and not p.is_symlink()), None)
+        if not ckpt_src:
+            ckpt_src = next((p for p in ckpt_sources if p.exists()), None)
 
-        if ckpt_src.exists():
-            for target in [Path("ckpt"), self.unique3d_root / "ckpt", Path("backend") / "ckpt"]:
+        if ckpt_src and ckpt_src.exists():
+            targets = [self.unique3d_root / "ckpt"]
+            # Only add backend/ckpt if inside backend directory or backend exists
+            if Path("backend").is_dir() and not Path("package.json").exists():
+                targets.append(Path("backend") / "ckpt")
+            elif Path("core").is_dir() and Path("adapters").is_dir():
+                targets.append(Path("ckpt"))
+
+            for target in targets:
                 try:
                     if target.is_symlink():
                         if target.resolve() != ckpt_src:
@@ -126,10 +319,27 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                 except Exception as e:
                     logger.debug(f"Could not symlink {target} -> {ckpt_src}: {e}")
 
-        # Ensure app symlink exists for any relative app/... lookups
+        # Clean up any rogue/empty lambda directories that confuse diffusers into thinking it's a local repo
+        for bogus_dir in [
+            Path("lambda/sd-image-variations-diffusers"),
+            self.unique3d_root / "lambda" / "sd-image-variations-diffusers",
+            Path("backend/lambda/sd-image-variations-diffusers"),
+        ]:
+            if bogus_dir.exists() and bogus_dir.is_dir():
+                if not (bogus_dir / "config.json").exists() and not (bogus_dir / "model_index.json").exists():
+                    try:
+                        logger.warning(f"Removing empty/invalid local directory {bogus_dir} causing diffusers collision.")
+                        shutil.rmtree(bogus_dir)
+                    except Exception as e:
+                        logger.debug(f"Could not remove {bogus_dir}: {e}")
+
+        # Ensure app symlink exists for any relative app/... lookups inside Unique3D
         app_src = (self.unique3d_root / "app").resolve()
         if app_src.exists():
-            for target in [Path("app"), Path("backend") / "app"]:
+            targets = []
+            if Path("core").is_dir() and Path("adapters").is_dir():
+                targets.append(Path("app"))
+            for target in targets:
                 try:
                     if target.is_symlink():
                         if target.resolve() != app_src:
@@ -139,6 +349,13 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
                         target.symlink_to(app_src)
                 except Exception as e:
                     logger.debug(f"Could not symlink {target} -> {app_src}: {e}")
+
+        # Check and resolve normal_config if local img2mvimg exists
+        if hasattr(self, "normal_config") and self.normal_config:
+            try:
+                self.normal_config = self._resolve_normal_config()
+            except Exception as e:
+                logger.debug(f"Could not dynamically pre-resolve normal_config in symlink setup: {e}")
 
     def _ensure_unique3d_in_path(self):
         """Add Unique3D directories to sys.path for imports."""
@@ -202,9 +419,47 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
 
             # Load normal prediction pipeline (image2normal)
             logger.info("Loading normal prediction pipeline (image2normal)...")
-            self.normal_trainer, self.normal_pipeline = load_pipeline(
-                self.normal_config, self.normal_checkpoint
-            )
+            resolved_normal_config = self._resolve_normal_config()
+            try:
+                self.normal_trainer, self.normal_pipeline = load_pipeline(
+                    resolved_normal_config, self.normal_checkpoint
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to load normal pipeline with config '{resolved_normal_config}': {e}. "
+                    "Attempting fallback to local img2mvimg base pipeline or alternate HuggingFace repo..."
+                )
+                loaded = False
+                local_img2mvimg = self._find_local_img2mvimg()
+                if local_img2mvimg is not None:
+                    try:
+                        rel_valid = (Path("ckpt") / "img2mvimg").exists() or Path("./ckpt/img2mvimg").exists()
+                        target_path = "./ckpt/img2mvimg" if rel_valid else str(local_img2mvimg.resolve())
+                        fallback_cfg = self._create_normal_config_override(base_model=target_path)
+                        logger.info(f"Retrying load_pipeline for normal prediction using local base: {target_path}")
+                        self.normal_trainer, self.normal_pipeline = load_pipeline(
+                            fallback_cfg, self.normal_checkpoint
+                        )
+                        loaded = True
+                    except Exception as local_e:
+                        logger.warning(f"Local img2mvimg base fallback failed: {local_e}")
+
+                if not loaded:
+                    self._sanitize_hf_tokens()
+                    for hf_repo in ["lambdalabs/sd-image-variations-diffusers", "lambda/sd-image-variations-diffusers"]:
+                        try:
+                            fallback_cfg = self._create_normal_config_override(base_model=hf_repo)
+                            logger.info(f"Retrying load_pipeline for normal prediction using HF repo: {hf_repo}")
+                            self.normal_trainer, self.normal_pipeline = load_pipeline(
+                                fallback_cfg, self.normal_checkpoint
+                            )
+                            loaded = True
+                            break
+                        except Exception as hf_e:
+                            logger.warning(f"Fallback to '{hf_repo}' failed: {hf_e}")
+
+                if not loaded:
+                    raise
             # self.normal_pipeline.enable_model_cpu_offload()
             loaded_models["normal_pipeline"] = self.normal_pipeline
             loaded_models["normal_trainer"] = self.normal_trainer
@@ -246,7 +501,10 @@ class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
             # use sequential stage offloading so only one diffusion model occupies VRAM at a time.
             total_vram_gb = 0.0
             if torch.cuda.is_available():
-                total_vram_gb = torch.cuda.get_device_properties(self.gpu_id or 0).total_memory / (1024**3)
+                try:
+                    total_vram_gb = torch.cuda.get_device_properties(self.gpu_id or 0).total_memory / (1024**3)
+                except Exception:
+                    total_vram_gb = 0.0
             self.low_vram_mode = total_vram_gb < 24.0
             logger.info(f"Unique3D detected GPU VRAM: {total_vram_gb:.2f} GB (low_vram_mode={self.low_vram_mode})")
 

@@ -42,6 +42,86 @@ class ResourcePlannerTests(unittest.TestCase):
         self.assertTrue(plan.is_multi_gpu)
         self.assertEqual(sum(plan.reservation_mb.values()), 20000)
 
+    def test_pixal3d_multi_gpu_load_sharing(self):
+        monitor = FakeMonitor([
+            {"id": 0, "name": "GPU0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 1, "name": "GPU1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+        ])
+        planner = ResourcePlanner(monitor, safety_margin_mb=512)
+        model_cfg = {
+            "vram_requirement": 18432,
+            "capabilities": {
+                "multi_gpu": True,
+                "multi_gpu_strategy": "accelerate_component_dispatch",
+                "low_vram_supported": True,
+            },
+            "low_vram_requirement": 10240,
+        }
+        self.assertFalse(planner.model_is_impossible(model_cfg))
+        plan = planner.plan(model_cfg)
+        self.assertIsNotNone(plan)
+        self.assertTrue(plan.is_multi_gpu)
+        self.assertEqual(plan.gpu_ids, (0, 1))
+        self.assertEqual(sum(plan.reservation_mb.values()), 18432)
+
+    def test_pixal3d_single_gpu_low_vram(self):
+        monitor = FakeMonitor([
+            {"id": 0, "name": "GPU0", "memory_total": 15360, "memory_free": 14000, "available_mb": 14000},
+        ])
+        planner = ResourcePlanner(monitor, safety_margin_mb=512)
+        model_cfg = {
+            "vram_requirement": 18432,
+            "capabilities": {
+                "multi_gpu": True,
+                "multi_gpu_strategy": "accelerate_component_dispatch",
+                "low_vram_supported": True,
+            },
+            "low_vram_requirement": 10240,
+        }
+        self.assertFalse(planner.model_is_impossible(model_cfg))
+        plan = planner.plan(model_cfg)
+        self.assertIsNotNone(plan)
+        self.assertFalse(plan.is_multi_gpu)
+        self.assertEqual(plan.strategy, "single_gpu_low_vram")
+        self.assertEqual(plan.reservation_mb, {0: 10240})
+
+    def test_fastmesh_multi_gpu(self):
+        monitor = FakeMonitor([
+            {"id": 0, "name": "GPU0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 1, "name": "GPU1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+        ])
+        planner = ResourcePlanner(monitor, safety_margin_mb=512)
+        model_cfg = {
+            "vram_requirement": 24500,
+            "capabilities": {
+                "retopology": True,
+                "target_variant": "V4K",
+                "multi_gpu": True,
+                "multi_gpu_strategy": "accelerate_component_dispatch",
+            },
+        }
+        self.assertFalse(planner.model_is_impossible(model_cfg))
+        plan = planner.plan(model_cfg)
+        self.assertIsNotNone(plan)
+        self.assertTrue(plan.is_multi_gpu)
+        self.assertEqual(sum(plan.reservation_mb.values()), 24500)
+
+    def test_impossible_model_exceeds_all_capacity(self):
+        monitor = FakeMonitor([
+            {"id": 0, "name": "GPU0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 1, "name": "GPU1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+        ])
+        planner = ResourcePlanner(monitor, safety_margin_mb=512)
+        model_cfg = {
+            "vram_requirement": 40000,
+            "capabilities": {
+                "multi_gpu": True,
+                "multi_gpu_strategy": "accelerate_component_dispatch",
+            },
+        }
+        self.assertTrue(planner.model_is_impossible(model_cfg))
+        self.assertIsNone(planner.plan(model_cfg))
+
     def test_quality_router_prefers_quality_model_when_available(self):
         registry = {
             "fast": {
