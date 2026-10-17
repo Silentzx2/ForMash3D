@@ -159,7 +159,35 @@ image_to_raw_mesh:
     max_workers: 1
 
   pixal3d_image_to_3d:
-    alias_of: "pixal3d_image_to_raw_mesh"
+    capabilities:
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      native_pbr: false
+      high_fidelity_geometry: true
+      vertex_color: false
+      mesh_quality_characteristics: [sharp_features, complex_topology]
+      preferred_preprocessing: native_detail
+      preferred_extraction: marching_cubes
+      preferred_resolution: 512
+      preferred_face_budget: high
+      recommended_postprocess_profile: high_fidelity
+      latency_class: quality
+      quality_priority: 95
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_component_dispatch
+      low_vram_supported: true
+      max_images: 1
+      paint_autochain: false
+    vram_requirement: 18432  # MB (~18GB standard, ~10-12GB low-vram mode)
+    low_vram_requirement: 10240
+    supported_inputs: ["image"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/Pixal3D"
+    enabled: true
+    max_workers: 1
 
   trellis_image_to_3d:
     capabilities:

@@ -286,6 +286,18 @@ def load_models_config(models_config_path: str) -> Dict[str, Dict[str, ModelConf
         for feature, models in models_data.items():
             parsed_models[feature] = {}
             for model_id, config in models.items():
+                if isinstance(config, dict) and "alias_of" in config:
+                    target_id = config["alias_of"]
+                    target_cfg = models.get(target_id)
+                    if not target_cfg:
+                        for other_f, other_m in models_data.items():
+                            if isinstance(other_m, dict) and target_id in other_m:
+                                target_cfg = other_m[target_id]
+                                break
+                    if isinstance(target_cfg, dict):
+                        merged = dict(target_cfg)
+                        merged.update(config)
+                        config = merged
                 parsed_models[feature][model_id] = normalize_model_capabilities(
                     feature,
                     model_id,
