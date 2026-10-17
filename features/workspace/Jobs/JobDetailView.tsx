@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
+import { useUIStore } from '@/stores/useUIStore';
 import { getApiClient } from '@/services/apiClient';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
@@ -39,7 +40,16 @@ interface RealJobItem {
 }
 
 export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, onBack }) => {
-  const { currentAsset, activeTask, setCurrentAsset, navigateToTool } = useWorkspace();
+  const {
+    currentAsset,
+    activeTask,
+    setCurrentAsset,
+    navigateToTool,
+    setGenerationSettings,
+    setRemeshSettings,
+    setTextureSettings,
+    assets,
+  } = useWorkspace();
 
   const [jobsList, setJobsList] = useState<RealJobItem[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>(propJobId || activeTask?.id || '');
@@ -173,6 +183,56 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
     } finally {
       setRetryingPostprocess(false);
     }
+  };
+
+  const handleCloneAndEdit = () => {
+    if (!selectedJob) return;
+    const feat = String(selectedJob.feature || (selectedJob as any).type || '').toLowerCase();
+    const params = (selectedJob.parameters || selectedJob.inputs || {}) as Record<string, any>;
+
+    let targetTool: 'model' | 'remesh' | 'texture' | 'uv' | 'segment' | 'edit' | 'rigging' | 'animation' = 'model';
+    if (feat.includes('remesh')) targetTool = 'remesh';
+    else if (feat.includes('texture') || feat.includes('paint')) targetTool = 'texture';
+    else if (feat.includes('uv')) targetTool = 'uv';
+    else if (feat.includes('segment')) targetTool = 'segment';
+    else if (feat.includes('edit')) targetTool = 'edit';
+    else if (feat.includes('rig')) targetTool = 'rigging';
+    else if (feat.includes('anim') || feat.includes('motion')) targetTool = 'animation';
+    else targetTool = 'model';
+
+    if (targetTool === 'model') {
+      setGenerationSettings((prev) => ({
+        ...prev,
+        aiModel: selectedJob.model_preference || params.aiModel || prev.aiModel,
+        meshQuality: params.quality || params.meshQuality || prev.meshQuality,
+        seed: typeof params.seed === 'number' ? params.seed : (Number(params.seed) || prev.seed),
+        guidanceScale: typeof params.guidance_scale === 'number' ? params.guidance_scale : prev.guidanceScale,
+      }));
+    } else if (targetTool === 'remesh') {
+      setRemeshSettings((prev) => ({
+        ...prev,
+        targetPolycount: params.targetPolyCount || params.target_poly_count || prev.targetPolycount,
+      }));
+    } else if (targetTool === 'texture') {
+      setTextureSettings((prev) => ({
+        ...prev,
+        prompt: params.prompt || prev.prompt,
+        resolution: params.resolution || prev.resolution,
+      }));
+    }
+
+    const sourceAssetId = params.source_asset_id || params.asset_id || (selectedJob as any).asset_id;
+    if (sourceAssetId) {
+      const match = assets.find((a) => a.id === sourceAssetId || a.fileId === sourceAssetId);
+      if (match) setCurrentAsset(match);
+    }
+
+    useUIStore.getState().setClonedJobId(selectedJob.id);
+    navigateToTool(targetTool);
+    toast.success(`Cloned parameters into ${targetTool.toUpperCase()} tool`, {
+      description: 'Original job and lineage preserved. Submit from tool panel to run a new job.',
+    });
+    if (onBack) onBack();
   };
 
   const handleLoadResultToViewport = () => {
@@ -410,6 +470,14 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                   )}
 
                   <button
+                    onClick={handleCloneAndEdit}
+                    className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-primary/20 text-zinc-400 hover:text-primary border border-white/[0.06] transition-colors cursor-pointer"
+                    title="Clone & Edit Parameters"
+                  >
+                    <HugeiconsIcon icon={Copy} size={16} className="w-4 h-4" />
+                  </button>
+
+                  <button
                     onClick={handleCancelOrDeleteJob}
                     className="p-1.5 rounded-lg bg-[hsl(var(--surface-0))] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/[0.06] transition-colors cursor-pointer"
                     title={selectedJobIsRunning ? 'Cancel Job' : 'Delete Job'}
@@ -486,10 +554,16 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                     <div className="text-xs font-bold text-amber-200">Production processing failed</div>
                     <div className="text-[10px] text-amber-100/70 mt-0.5">The immutable master is preserved, so production processing can be retried without rerunning AI inference.</div>
                   </div>
-                  <button type="button" onClick={() => void handleRetryPostprocess()} disabled={retryingPostprocess} className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[10px] font-bold text-black disabled:opacity-50">
-                    <HugeiconsIcon icon={RefreshCw} size={16} className={retryingPostprocess ? 'animate-spin' : ''} />
-                    {retryingPostprocess ? 'Retrying…' : 'Retry Production Processing'}
-                  </button>
+                  <div className="shrink-0 flex items-center gap-2">
+                    <button type="button" onClick={() => void handleRetryPostprocess()} disabled={retryingPostprocess} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-[10px] font-bold text-black disabled:opacity-50 cursor-pointer">
+                      <HugeiconsIcon icon={RefreshCw} size={16} className={retryingPostprocess ? 'animate-spin' : ''} />
+                      {retryingPostprocess ? 'Retrying…' : 'Retry Production Processing'}
+                    </button>
+                    <button type="button" onClick={handleCloneAndEdit} className="inline-flex items-center gap-1.5 rounded-lg bg-[hsl(var(--surface-2))] hover:bg-white/[0.08] border border-white/[0.1] px-3 py-2 text-[10px] font-bold text-white transition-colors cursor-pointer">
+                      <HugeiconsIcon icon={Copy} size={14} className="w-3.5 h-3.5 text-primary" />
+                      <span>Clone &amp; Edit</span>
+                    </button>
+                  </div>
                 </div>
               )}
 

@@ -94,3 +94,35 @@ export function measureImage(dataURL, maxDimension = 720) {
     img.src = dataURL
   })
 }
+
+// Export current board selection or drawing as a Data URL for Generate panel bridge (T-10)
+export async function captureBoardSelectionOrCanvas(api, selectedImageRef) {
+  if (api) {
+    const appState = api.getAppState ? api.getAppState() : null
+    const elements = api.getSceneElements ? api.getSceneElements() : []
+    const files = api.getFiles ? api.getFiles() : {}
+    const selectedIds = appState?.selectedElementIds || {}
+
+    const selectedImg = elements.find(
+      (el) => el.type === 'image' && !el.isDeleted && selectedIds[el.id] && el.fileId
+    )
+    if (selectedImg && files[selectedImg.fileId]?.dataURL) {
+      return files[selectedImg.fileId].dataURL
+    }
+  }
+
+  const sel = typeof selectedImageRef === 'function' ? selectedImageRef() : selectedImageRef
+  if (sel?.filename) {
+    return await urlToDataURL(sel.filename.startsWith('http') ? sel.filename : `/data/assets/${sel.filename}`)
+  }
+
+  if (typeof document !== 'undefined') {
+    const canvas = document.querySelector('.excalidraw__canvas') || document.querySelector('.excalidraw canvas')
+    if (canvas && typeof canvas.toDataURL === 'function') {
+      return canvas.toDataURL('image/png')
+    }
+  }
+
+  return null
+}
+

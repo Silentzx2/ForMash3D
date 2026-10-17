@@ -68,6 +68,7 @@ export const AnimationLeftPanel: React.FC = () => {
     addAnimation,
     setCurrentAnimationId,
     setInspectorTab,
+    applyPresetClip,
   } = useAnimationStore();
 
   const [isSectionOpen, setIsSectionOpen] = useState(true);
@@ -558,6 +559,57 @@ export const AnimationLeftPanel: React.FC = () => {
           ) : (
             /* 4. DEFAULT TEXT TO MOTION GENERATION MODE */
             <div className="space-y-4">
+            {/* Quick-Apply Animation Preset Library */}
+            <div className="space-y-2 p-3 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span className="text-primary text-xs">⚡</span>
+                  <span>Quick Presets</span>
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400">UniRig Ready</span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'anim-1', label: 'Idle', sub: '2.4s', icon: '🧍' },
+                  { id: 'anim-4', label: 'Walk', sub: '1.8s', icon: '🚶' },
+                  { id: 'anim-6', label: 'Run', sub: '1.2s', icon: '🏃' },
+                  { id: 'anim-8', label: 'Jump', sub: '1.5s', icon: '🦘' },
+                  { id: 'anim-10', label: 'Wave', sub: '2.5s', icon: '👋' },
+                  { id: 'anim-11', label: 'Punch', sub: '1.6s', icon: '🥊' },
+                ].map((p) => {
+                  const isCurrent = currentAnimationId === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => {
+                        const ok = applyPresetClip(p.id);
+                        if (ok) {
+                          toast.success(`Quick-applied "${p.label}" preset`, {
+                            description: 'Loaded onto Dual-Track Timeline with viewport playback.',
+                          });
+                        }
+                      }}
+                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex flex-col gap-1 active:scale-95 ${
+                        isCurrent
+                          ? 'bg-primary/15 border-primary text-white shadow-xs'
+                          : 'bg-[hsl(var(--surface-2))] border-white/[0.06] hover:border-primary/50 text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm">{p.icon}</span>
+                        <span className="text-[9px] font-mono text-zinc-400">{p.sub}</span>
+                      </div>
+                      <div className="text-[11px] font-bold truncate">{p.label}</div>
+                      <span className="text-[9px] text-primary font-semibold hover:underline">
+                        {isCurrent ? 'Playing' : 'Quick Apply'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Motion Prompt */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">

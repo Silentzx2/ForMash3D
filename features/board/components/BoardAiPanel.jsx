@@ -43,7 +43,7 @@ function collectImageWorkflows(workflows = []) {
   )
 }
 
-export default function BoardAiPanel({ projectId, projectName, boardId, onImageGenerated, getSelectedBoardImage }) {
+export default function BoardAiPanel({ projectId, projectName, boardId, onImageGenerated, getSelectedBoardImage, onSendToGenerate }) {
   const { getComfyWorkflows, runComfyWorkflow, generateImage, resolveAssetSourceReference } = useProjects()
   const { settings } = useSettings()
   const { addNotification } = useNotifications()
@@ -469,6 +469,29 @@ export default function BoardAiPanel({ projectId, projectName, boardId, onImageG
               {running ? 'Working…' : 'Generate image'}
             </button>
           </>
+        )}
+
+        {onSendToGenerate && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+            <button
+              type="button"
+              onClick={onSendToGenerate}
+              className="board-ai-panel__run"
+              style={{
+                backgroundColor: 'rgba(255,204,0,0.15)',
+                color: '#FFCC00',
+                border: '1px solid rgba(255,204,0,0.4)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px'
+              }}
+              title="Preload board drawing or selected image into 3D Generate panel"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: '16px' }}>view_in_ar</span>
+              <span>Send to 3D Generate</span>
+            </button>
+          </div>
         )}
 
         {status && (

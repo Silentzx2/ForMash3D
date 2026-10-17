@@ -77,6 +77,7 @@ export function buildGenerationParameters(
     texture_enabled: textureEnabled,
     generate_texture: textureEnabled,
     enable_postprocess: enablePostprocess,
+    candidate_count: settings.candidateCount ? Math.max(1, Math.min(4, Number(settings.candidateCount))) : 1,
   };
   
   // Model-specific parameters
@@ -108,6 +109,7 @@ export function buildGenerationParameters(
     
     body = {
       ...imageInput,
+      candidate_count: settings.candidateCount ? Math.max(1, Math.min(4, Number(settings.candidateCount))) : 1,
       asset_name: cleanStem,
       image_name: cleanStem,
       output_format: 'glb',

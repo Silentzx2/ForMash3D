@@ -98,44 +98,221 @@ export function NotificationsSection({ onSaveRegister }: { onSaveRegister?: (sav
   );
 }
 
+import { settingsPersistence, DEFAULT_WORKSPACE_SHORTCUTS, ShortcutDefinition } from '@/services/settingsPersistence';
+
 export function ShortcutsSection() {
+  const [customShortcuts, setCustomShortcuts] = useState<Record<string, string>>(() => {
+    return settingsPersistence.loadCustomShortcuts();
+  });
+  const [recordingId, setRecordingId] = useState<string | null>(null);
+  const [conflictWarning, setConflictWarning] = useState<{
+    id: string;
+    conflictingName: string;
+    keyCombo: string;
+  } | null>(null);
+
+  // Key recording listener
+  useEffect(() => {
+    if (!recordingId) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Escape cancels recording
+      if (e.key === 'Escape') {
+        setRecordingId(null);
+        setConflictWarning(null);
+        return;
+      }
+
+      // Ignore pure modifier presses
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) {
+        return;
+      }
+
+      // Format combo string
+      const parts: string[] = [];
+      if (e.ctrlKey || e.metaKey) parts.push('Ctrl/Cmd');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
+
+      let mainKey = e.key;
+      if (mainKey === ' ') mainKey = 'Space';
+      else if (mainKey.length === 1) mainKey = mainKey.toUpperCase();
+
+      parts.push(mainKey);
+      const combo = parts.join(' + ');
+
+      // Conflict detection against other shortcuts
+      const conflicting = DEFAULT_WORKSPACE_SHORTCUTS.find((other) => {
+        if (other.id === recordingId) return false;
+        const otherCombo = customShortcuts[other.id] || other.defaultKey;
+        return otherCombo.toLowerCase() === combo.toLowerCase();
+      });
+
+      if (conflicting) {
+        setConflictWarning({
+          id: recordingId,
+          conflictingName: conflicting.name,
+          keyCombo: combo,
+        });
+        return;
+      }
+
+      // No conflict: save and exit recording
+      settingsPersistence.saveCustomShortcut(recordingId, combo);
+      setCustomShortcuts(settingsPersistence.loadCustomShortcuts());
+      setRecordingId(null);
+      setConflictWarning(null);
+      toast.success(`Shortcut updated: ${combo}`);
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [recordingId, customShortcuts]);
+
+  const handleResetSingle = (id: string) => {
+    settingsPersistence.resetCustomShortcut(id);
+    setCustomShortcuts(settingsPersistence.loadCustomShortcuts());
+    toast.success('Shortcut reset to default');
+  };
+
+  const handleResetAll = () => {
+    settingsPersistence.resetAllShortcuts();
+    setCustomShortcuts({});
+    setConflictWarning(null);
+    setRecordingId(null);
+    toast.success('All shortcuts reset to defaults');
+  };
+
+  const hasAnyOverrides = Object.keys(customShortcuts).length > 0;
+
+  const categories: { key: ShortcutDefinition['category']; label: string }[] = [
+    { key: 'tools', label: 'Tool Switching' },
+    { key: 'navigation', label: 'Navigation & Screens' },
+    { key: 'viewport', label: '3D Viewport Controls' },
+    { key: 'general', label: 'General & Actions' },
+  ];
+
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Keyboard Shortcuts</h1>
-        <p className="text-muted-foreground mt-2">Customize your keyboard shortcuts for faster workflow.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-[hsl(var(--foreground))]">Keyboard Shortcuts</h1>
+          <p className="text-muted-foreground mt-2 text-sm">
+            Click any shortcut badge to record a new key combination. Remapped keys persist across sessions.
+          </p>
+        </div>
+        {hasAnyOverrides && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResetAll}
+            className="flex items-center gap-1.5 border-[hsl(var(--border))] text-xs cursor-pointer hover:bg-[hsl(var(--surface-2))]"
+          >
+            <HugeiconsIcon icon={RotateCcwIcon} size={14} />
+            <span>Reset All to Defaults</span>
+          </Button>
+        )}
       </div>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <HugeiconsIcon icon={KeyboardIcon} size={16} className="w-5 h-5" />
-            Active Shortcuts
-          </CardTitle>
-          <CardDescription>Default keyboard shortcuts available in the workspace.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4">
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Open Command Palette</span>
-              <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">Ctrl/Cmd + K</kbd>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Toggle Fullscreen Viewer</span>
-              <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">F</kbd>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Focus Prompt Input</span>
-              <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">/</kbd>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-muted/50 rounded-md">
-              <span>Quick Save</span>
-              <kbd className="px-2 py-1 bg-background border border-border rounded text-xs font-mono">Ctrl/Cmd + S</kbd>
-            </div>
+
+      {conflictWarning && (
+        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-between text-xs text-amber-300">
+          <div className="flex items-center gap-2">
+            <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="text-amber-400 shrink-0" />
+            <span>
+              <strong>Key Conflict:</strong> <kbd className="px-1.5 py-0.5 rounded bg-black/40 font-mono text-amber-200">{conflictWarning.keyCombo}</kbd> is already bound to <strong>{conflictWarning.conflictingName}</strong>. Choose another combination.
+            </span>
           </div>
-          <p className="text-xs text-muted-foreground mt-6 text-center">Custom keybinding support is coming in a future update.</p>
-        </CardContent>
-      </Card>
+          <button
+            onClick={() => setConflictWarning(null)}
+            className="text-amber-400 hover:text-white text-xs underline cursor-pointer ml-3"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {categories.map(({ key, label }) => {
+        const items = DEFAULT_WORKSPACE_SHORTCUTS.filter((s) => s.category === key);
+        if (items.length === 0) return null;
+
+        return (
+          <Card key={key} className="bg-[hsl(var(--surface-1))] border-[hsl(var(--border))]">
+            <CardHeader className="py-3 px-4 border-b border-[hsl(var(--border))]">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2 text-[hsl(var(--foreground))]">
+                <HugeiconsIcon icon={KeyboardIcon} size={16} className="w-4 h-4 text-primary" />
+                {label}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 divide-y divide-[hsl(var(--border))]/50">
+              {items.map((shortcut) => {
+                const isCustomized = Boolean(customShortcuts[shortcut.id]);
+                const effectiveKey = customShortcuts[shortcut.id] || shortcut.defaultKey;
+                const isRecording = recordingId === shortcut.id;
+
+                return (
+                  <div
+                    key={shortcut.id}
+                    className="flex items-center justify-between py-2.5 px-2 hover:bg-[hsl(var(--surface-2))]/40 rounded-md transition-colors"
+                  >
+                    <div className="min-w-0 pr-4">
+                      <div className="text-xs font-medium text-[hsl(var(--foreground))] flex items-center gap-2">
+                        <span>{shortcut.name}</span>
+                        {isCustomized && (
+                          <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-primary/20 text-primary border border-primary/30">
+                            Custom
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-[hsl(var(--muted-foreground))] truncate">
+                        {shortcut.description}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isRecording) {
+                            setRecordingId(null);
+                            setConflictWarning(null);
+                          } else {
+                            setRecordingId(shortcut.id);
+                            setConflictWarning(null);
+                          }
+                        }}
+                        className={`px-2.5 py-1 rounded text-xs font-mono font-semibold transition-all cursor-pointer ${
+                          isRecording
+                            ? 'bg-primary text-black ring-2 ring-primary ring-offset-2 ring-offset-[hsl(var(--surface-1))] animate-pulse font-bold'
+                            : isCustomized
+                            ? 'bg-[hsl(var(--surface-3))] text-primary border border-primary/40 hover:border-primary'
+                            : 'bg-[hsl(var(--surface-2))] text-[hsl(var(--foreground))] border border-[hsl(var(--border))] hover:bg-[hsl(var(--surface-3))]'
+                        }`}
+                        title="Click to record new key combination"
+                      >
+                        {isRecording ? 'Press keys (Esc to cancel)...' : effectiveKey}
+                      </button>
+
+                      {isCustomized && (
+                        <button
+                          type="button"
+                          onClick={() => handleResetSingle(shortcut.id)}
+                          className="p-1 rounded text-[hsl(var(--muted-foreground))] hover:text-white hover:bg-[hsl(var(--surface-3))] transition-colors"
+                          title="Reset to default key"
+                        >
+                          <HugeiconsIcon icon={RotateCcwIcon} size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }

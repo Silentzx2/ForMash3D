@@ -484,6 +484,34 @@ class JobQueue:
                 return True
             return False
 
+    async def reorder_queued_jobs(self, ordered_job_ids: List[str]) -> bool:
+        """Manually reorder pending queued jobs. Active processing job remains untouched."""
+        async with self._cache_lock:
+            job_map = {job.job_id: job for job in self._queue_cache}
+            new_queue = deque()
+            seen = set()
+
+            total = len(ordered_job_ids)
+            for idx, jid in enumerate(ordered_job_ids):
+                if jid in job_map and jid not in seen:
+                    job = job_map[jid]
+                    job.priority = 1000 + (total - idx)
+                    new_queue.append(job)
+                    seen.add(jid)
+                    if hasattr(self, "db_manager") and self.db_manager:
+                        try:
+                            await asyncio.to_thread(self.db_manager.save_job, job)
+                        except Exception as e:
+                            logger.debug("Failed to persist updated priority for %s: %s", jid, e)
+
+            for job in self._queue_cache:
+                if job.job_id not in seen:
+                    new_queue.append(job)
+
+            self._queue_cache = new_queue
+            logger.info("Reordered queue cache to %s jobs", len(self._queue_cache))
+            return True
+
     async def dequeue(self) -> Optional[JobRequest]:
         """Get next job from queue"""
         async with self._cache_lock:

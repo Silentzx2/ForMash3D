@@ -33,6 +33,7 @@ export interface AppState {
   // ── Batch Generation ──
   batchGenerationEnabled: boolean;
   batchQueue: BatchQueueItem[];
+  pendingBoardImage: File | null;
 
   // ── UI ──
   leftSidebarCollapsed: boolean;
@@ -46,6 +47,18 @@ export interface AppState {
   bottomDockTab: string;
   creativeLayoutMode: boolean;
   capabilities: Record<string, boolean>;
+  rightPanelSections: Record<string, boolean>;
+  isCommandPaletteOpen: boolean;
+  setRightPanelSections: (sections: Record<string, boolean>) => void;
+  setRightPanelSectionExpanded: (sectionId: string, expanded: boolean) => void;
+  toggleRightPanelSection: (sectionId: string) => void;
+  setCommandPaletteOpen: (open: boolean) => void;
+  toggleCommandPalette: () => void;
+  clonedJobId: string | null;
+  setClonedJobId: (id: string | null) => void;
+  assetCollections: string[];
+  addAssetCollection: (name: string) => void;
+  removeAssetCollection: (name: string) => void;
 
   // ── Tasks ──
   tasks: Record<string, {
@@ -131,6 +144,7 @@ export interface AppState {
     removeFromBatchQueue: (id: string) => void;
     clearBatchQueue: () => void;
     updateBatchItem: (id: string, updates: Partial<BatchQueueItem>) => void;
+    setPendingBoardImage: (file: File | null) => void;
 
   setLeftSidebarCollapsed: (v: boolean) => void;
   setRightSidebarCollapsed: (v: boolean) => void;
@@ -244,6 +258,7 @@ const DEFAULT_STATE: AppStateData = {
     enableAutoRepair: false,
     enableAutoRig: false,
     autoRigMode: 'full',
+    candidateCount: 1,
   },
 
   hdMode: 'hd',
@@ -251,6 +266,7 @@ const DEFAULT_STATE: AppStateData = {
 
   batchGenerationEnabled: false,
   batchQueue: [],
+  pendingBoardImage: null,
 
   leftSidebarCollapsed: false,
   rightSidebarCollapsed: false,
@@ -263,6 +279,18 @@ const DEFAULT_STATE: AppStateData = {
   bottomDockTab: 'recent',
   creativeLayoutMode: true,
   capabilities: { threeDGen: true, remesh: true, textureGen: true },
+  rightPanelSections: {
+    transform: true,
+    geometry: true,
+    context: true,
+    shading: true,
+    meshDiff: false,
+    modelComparison: false,
+    export: true,
+  },
+  isCommandPaletteOpen: false,
+  clonedJobId: null,
+  assetCollections: ['Characters', 'Props', 'Environments'],
 
   tasks: {},
   downloads: {},
@@ -416,6 +444,8 @@ export const useAppStore = create<AppState>()(
           ),
         })),
 
+      setPendingBoardImage: (pendingBoardImage) => set({ pendingBoardImage }),
+
       // ── UI Actions ──
       setLeftSidebarCollapsed: (leftSidebarCollapsed) => set({ leftSidebarCollapsed }),
       setRightSidebarCollapsed: (rightSidebarCollapsed) => set({ rightSidebarCollapsed }),
@@ -434,6 +464,31 @@ export const useAppStore = create<AppState>()(
       toggleCreativeLayoutMode: () => set((s) => ({ creativeLayoutMode: !s.creativeLayoutMode })),
       setCapability: (cap, enabled) =>
         set((s) => ({ capabilities: { ...s.capabilities, [cap]: enabled } })),
+      setRightPanelSections: (rightPanelSections) => set({ rightPanelSections }),
+      setRightPanelSectionExpanded: (sectionId, expanded) =>
+        set((s) => ({
+          rightPanelSections: { ...s.rightPanelSections, [sectionId]: expanded },
+        })),
+      toggleRightPanelSection: (sectionId) =>
+        set((s) => ({
+          rightPanelSections: {
+            ...s.rightPanelSections,
+            [sectionId]: !s.rightPanelSections[sectionId],
+          },
+        })),
+      setCommandPaletteOpen: (isCommandPaletteOpen) => set({ isCommandPaletteOpen }),
+      toggleCommandPalette: () => set((s) => ({ isCommandPaletteOpen: !s.isCommandPaletteOpen })),
+      setClonedJobId: (clonedJobId) => set({ clonedJobId }),
+      addAssetCollection: (name) =>
+        set((s) => {
+          const trimmed = name.trim();
+          if (!trimmed || s.assetCollections.includes(trimmed)) return s;
+          return { assetCollections: [...s.assetCollections, trimmed] };
+        }),
+      removeAssetCollection: (name) =>
+        set((s) => ({
+          assetCollections: s.assetCollections.filter((c) => c !== name),
+        })),
 
       // ── Task Actions ──
       setTask: (task) =>
@@ -618,6 +673,7 @@ export const useAppStore = create<AppState>()(
         bottomDockTab: state.bottomDockTab,
         creativeLayoutMode: state.creativeLayoutMode,
         capabilities: state.capabilities,
+        rightPanelSections: state.rightPanelSections,
         // Tasks
         tasks: state.tasks,
         // Downloads
@@ -643,6 +699,7 @@ export const useAppStore = create<AppState>()(
           ...p,
           viewer: { ...defaults.viewer, ...(p.viewer as Record<string, unknown> ?? {}) },
           capabilities: { ...defaults.capabilities, ...(p.capabilities as Record<string, unknown> ?? {}) },
+          rightPanelSections: { ...defaults.rightPanelSections, ...(p.rightPanelSections as Record<string, boolean> ?? {}) },
           tasks: (p.tasks as Record<string, unknown>) ?? {},
           downloads: (p.downloads as Record<string, unknown>) ?? {},
           installProgress: (p.installProgress as Record<string, unknown>) ?? {},

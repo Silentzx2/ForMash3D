@@ -63,7 +63,7 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
   showControls = true,
   modelIds = [] 
 }) => {
-  const { currentAsset } = useWorkspace();
+  const { currentAsset, assets = [] } = useWorkspace();
   const [models, setModels] = useState<(THREE.Group | null)[]>([]);
   const [modelStats, setModelStats] = useState<ModelStats[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -149,22 +149,21 @@ export const ModelComparisonViewer: React.FC<ModelComparisonViewerProps> = ({
         // Load all models
         const loadedModels = await Promise.all(
           modelIds.map(async (modelId) => {
-            // In a real implementation, we would fetch the model URL from the asset or job results
-            // For now, we'll use a placeholder or try to get it from currentAsset if it's the same
-            // This is a simplified implementation - in reality, we'd need to get the actual model URLs
-            // from the comparison group results or job metadata
             try {
-              // For demonstration, we'll use the current asset if available and it matches one of the modelIds
-              // In a real implementation, we'd have proper model URLs from the comparison results
-              if (currentAsset && modelIds.includes(currentAsset.id)) {
-                const url = currentAsset.artifacts?.gameReady || currentAsset.source?.viewUrl || currentAsset.source?.localUrl;
-                if (url) {
-                  return await loadModelFromUrl(url);
+              let url: string | undefined;
+              if (modelId.startsWith('http://') || modelId.startsWith('https://') || modelId.startsWith('/') || modelId.startsWith('blob:')) {
+                url = modelId;
+              } else if (currentAsset && modelId === currentAsset.id) {
+                url = currentAsset.artifacts?.gameReady || currentAsset.source?.viewUrl || currentAsset.source?.localUrl;
+              } else {
+                const asset = assets.find((a: ModelAsset) => a.id === modelId);
+                if (asset) {
+                  url = asset.artifacts?.gameReady || asset.source?.viewUrl || asset.source?.localUrl;
                 }
               }
-              
-              // If we can't load a specific model, return null for now
-              // In a real implementation, we'd fetch the actual model URLs from job results
+              if (url) {
+                return await loadModelFromUrl(url);
+              }
               return null;
             } catch (error) {
               console.warn(`Failed to load model ${modelId}:`, error);

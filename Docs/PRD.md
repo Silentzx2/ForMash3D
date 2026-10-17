@@ -375,6 +375,9 @@ The canonical workspace contains master/, game_ready/, lods/, collision/, textur
 
 Normal downloads target game_ready/. ZIP export is an on-demand snapshot of the entire workspace.
 
+### Production Export & Quick-Profiles
+The studio provides 1-click Quick-Profiles ("GLB Game-Ready", "Unity Mobile", "Unreal High-Poly", "Blender Raw") and custom profile saving in `ExportModal.tsx`. Profiles preserve combinations of format, target LODs (LOD0-LOD3/All), collision geometry, and texture resolutions. Profiles strictly pre-fill configuration without bypassing the single canonical export pipeline.
+
 ## Physics capability
 The product now supports an optional Physics Ready generation intent. Users can enable physics preparation before generation and adjust body behaviour, mass mode, collision quality, friction, restitution, damping, and gravity. Physics-ready assets expose collision and physics metadata and can be interactively tested in the existing model viewer. The first production scope is rigid-body simulation; deformable/jiggle behaviour remains capability-gated rather than being faked. Physics preparation reuses the existing collision pipeline and does not add an AI model.
 

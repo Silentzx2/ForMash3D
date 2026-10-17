@@ -7,7 +7,7 @@ import { motion, LayoutGroup } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { BoneIcon, Box, CircleDashedIcon, FilmIcon, FolderOpenIcon, GridIcon, LayersIcon, LayoutDashboardIcon, ListOrderedIcon, ScissorsIcon, SparklesIcon, ScrollTextIcon } from '@hugeicons/core-free-icons';
+import { BoneIcon, Box, CircleDashedIcon, FilmIcon, FolderOpenIcon, GridIcon, LayersIcon, LayoutDashboardIcon, ListOrderedIcon, ScissorsIcon, SparklesIcon, ScrollTextIcon, SettingsIcon } from '@hugeicons/core-free-icons';
 interface LeftNavigationProps {
   /** When true, renders as a wide drawer with full labels instead of icon rail */
   isMobileDrawer?: boolean;
@@ -292,6 +292,26 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
               ))}
             </div>
           </div>
+          <div className="h-px bg-white/[0.08] mx-2" />
+
+          {/* Section: Admin & Settings */}
+          <div className="space-y-1">
+            <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+              System
+            </div>
+            <div className="grid grid-cols-1 gap-1">
+              <MobileNavItem
+                id="mobile-nav-admin"
+                icon={<HugeiconsIcon icon={SettingsIcon} size={16} className="w-4 h-4" />}
+                label="Admin & Settings"
+                active={pathname === '/admin' || pathname?.startsWith('/admin')}
+                onClick={() => {
+                  router.push('/admin');
+                  onToolSelect?.();
+                }}
+              />
+            </div>
+          </div>
         </div>
       </nav>
     );
@@ -323,6 +343,44 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
           <div className="w-full flex flex-col items-center gap-1">
             {workspaceViews.map(renderDesktopNavButton)}
           </div>
+        </div>
+
+        {/* Bottom Section: Admin & Settings */}
+        <div className="w-full flex flex-col items-center gap-1 pt-2 border-t border-white/[0.08] mt-auto px-1 flex-shrink-0">
+          <SimpleTooltip side="right" label="Admin & Settings (/admin)" className="w-full flex justify-center">
+            <motion.button
+              id="tool-btn-admin-bottom"
+              onClick={() => router.push('/admin')}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 0.1 }}
+              className={`group relative w-[48px] h-[40px] flex flex-col items-center justify-center rounded-xl cursor-pointer flex-shrink-0 select-none transition-colors duration-150 ${
+                pathname === '/admin' || pathname?.startsWith('/admin')
+                  ? 'text-primary bg-primary/10 border border-primary/30 shadow-[0_0_12px_rgba(255,204,0,0.15)]'
+                  : 'text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-transparent'
+              }`}
+              aria-label="Admin and Settings"
+            >
+              <HugeiconsIcon
+                icon={SettingsIcon}
+                size={16}
+                className={`w-4 h-4 mb-0.5 transition-colors duration-150 ${
+                  pathname === '/admin' || pathname?.startsWith('/admin')
+                    ? 'text-primary'
+                    : 'text-zinc-400 group-hover:text-white'
+                }`}
+              />
+              <span
+                className={`text-[8.5px] font-medium leading-none tracking-tight ${
+                  pathname === '/admin' || pathname?.startsWith('/admin')
+                    ? 'text-primary font-bold'
+                    : 'text-zinc-400 group-hover:text-zinc-200'
+                }`}
+              >
+                Admin
+              </span>
+            </motion.button>
+          </SimpleTooltip>
         </div>
       </motion.nav>
     </LayoutGroup>

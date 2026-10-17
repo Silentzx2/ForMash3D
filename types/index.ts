@@ -256,13 +256,16 @@ export interface AdminJob {
   id: string;
   status: string;
   type: string;
+  feature?: string;
   progress: number;
   created_at: string;
+  started_at?: string;
   completed_at?: string;
   error?: string;
   mode?: string;
   error_message?: string;
   provider?: string;
+  model_preference?: string;
 }
 
 export interface AdminModel {

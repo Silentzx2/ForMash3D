@@ -4,19 +4,75 @@ import { motion, AnimatePresence } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Archive, Cancel, DownloadIcon, FileBoxIcon, LoaderCircle, ShieldCheckIcon, TriangleAlertIcon } from '@hugeicons/core-free-icons';
+import { Archive, BookmarkIcon, Cancel, CheckIcon, DownloadIcon, FileBoxIcon, LoaderCircle, Plus, ShieldCheckIcon, Trash2, TriangleAlertIcon } from '@hugeicons/core-free-icons';
 import { downloadArtifact } from '../lib/artifactDownload';
+import { settingsPersistence, type ExportQuickProfile } from '@/services/settingsPersistence';
+
 export const ExportModal: React.FC = () => {
   const { isExportModalOpen, setIsExportModalOpen, currentAsset } = useWorkspace();
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Quick Profiles
+  const [profiles, setProfiles] = useState<ExportQuickProfile[]>(() => settingsPersistence.getExportProfiles());
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('default-glb');
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+
   // Variant & Format states
   const [variant, setVariant] = useState<'source' | 'game_ready' | 'lod_package'>('game_ready');
   const [exportFormat, setExportFormat] = useState<'glb' | 'gltf' | 'fbx' | 'obj' | 'stl' | 'ply'>('glb');
 
-  // Packaging toggles
+  // Packaging toggles & Engine Options
   const [packageZip, setPackageZip] = useState(false);
+  const [lodSelection, setLodSelection] = useState<string>('lod0');
+  const [includeCollision, setIncludeCollision] = useState<boolean>(false);
+  const [textureResolution, setTextureResolution] = useState<string>('2048');
+
+  // Load profiles on mount
+  useEffect(() => {
+    setProfiles(settingsPersistence.getExportProfiles());
+  }, [isExportModalOpen]);
+
+  const handleApplyProfile = (profileId: string) => {
+    setSelectedProfileId(profileId);
+    const profile = profiles.find(p => p.id === profileId);
+    if (!profile) return;
+    setVariant(profile.variant);
+    setExportFormat(profile.exportFormat);
+    setPackageZip(profile.packageZip);
+    if (profile.lodSelection) setLodSelection(profile.lodSelection);
+    if (profile.includeCollision !== undefined) setIncludeCollision(profile.includeCollision);
+    if (profile.textureResolution) setTextureResolution(profile.textureResolution);
+  };
+
+  const handleSaveCurrentAsProfile = () => {
+    const trimmed = newProfileName.trim();
+    if (!trimmed) return;
+    const saved = settingsPersistence.saveExportProfile({
+      name: trimmed,
+      variant,
+      exportFormat,
+      packageZip,
+      lodSelection,
+      includeCollision,
+      textureResolution,
+    });
+    const refreshed = settingsPersistence.getExportProfiles();
+    setProfiles(refreshed);
+    setSelectedProfileId(saved.id);
+    setNewProfileName('');
+    setIsCreatingProfile(false);
+  };
+
+  const handleDeleteProfile = (profileId: string) => {
+    settingsPersistence.deleteExportProfile(profileId);
+    const refreshed = settingsPersistence.getExportProfiles();
+    setProfiles(refreshed);
+    if (refreshed.length > 0) {
+      handleApplyProfile(refreshed[0].id);
+    }
+  };
 
   // Dismiss on Escape
   useEffect(() => {
@@ -144,6 +200,80 @@ export const ExportModal: React.FC = () => {
             </div>
           )}
 
+          {/* Quick-Profile Selector */}
+          <div className="space-y-2 p-3 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-2))]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <HugeiconsIcon icon={BookmarkIcon} size={16} className="w-4 h-4 text-primary" />
+                <span className="text-xs font-bold text-white">Export Quick-Profile</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {!isCreatingProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingProfile(true)}
+                    className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                  >
+                    <HugeiconsIcon icon={Plus} size={14} className="w-3 h-3 text-primary" />
+                    <span>Save Current</span>
+                  </button>
+                ) : null}
+                {profiles.find(p => p.id === selectedProfileId && !p.isBuiltIn) && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteProfile(selectedProfileId)}
+                    className="p-1 rounded-lg text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                    title="Delete profile"
+                  >
+                    <HugeiconsIcon icon={Trash2} size={14} className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {isCreatingProfile ? (
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="text"
+                  placeholder="Profile Name (e.g. Unity Mobile)"
+                  value={newProfileName}
+                  onChange={e => setNewProfileName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSaveCurrentAsProfile(); if (e.key === 'Escape') setIsCreatingProfile(false); }}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.15] text-xs text-white outline-none focus:border-primary"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveCurrentAsProfile}
+                  className="px-2.5 py-1.5 rounded-lg bg-primary text-black font-bold text-xs hover:brightness-105 cursor-pointer"
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingProfile(false)}
+                  className="p-1.5 text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <HugeiconsIcon icon={Cancel} size={14} className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedProfileId}
+                  onChange={e => handleApplyProfile(e.target.value)}
+                  className="flex-1 px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.1] text-xs text-zinc-200 outline-none focus:border-primary cursor-pointer"
+                >
+                  {profiles.map(p => (
+                    <option key={p.id} value={p.id} className="bg-[hsl(var(--surface-1))] text-white">
+                      {p.name} {p.isBuiltIn ? '(Preset)' : '(Custom)'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
           {/* Section 1: Asset Variant */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Asset Variant</label>
@@ -202,7 +332,54 @@ export const ExportModal: React.FC = () => {
             </div>
           </div>
 
-          {/* Section 3: Packaging Options */}
+          {/* Section 3: Engine Options (LOD, Collision, Texture Res) */}
+          <div className="space-y-2.5 p-3.5 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-2))]">
+            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">
+              Engine &amp; Asset Optimization
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">LOD Selection</label>
+                <select
+                  value={lodSelection}
+                  onChange={e => setLodSelection(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.1] text-xs text-zinc-200 outline-none focus:border-primary cursor-pointer"
+                >
+                  <option value="lod0" className="bg-[hsl(var(--surface-1))]">LOD 0 (Full Quality)</option>
+                  <option value="lod1" className="bg-[hsl(var(--surface-1))]">LOD 1 (Medium - 50%)</option>
+                  <option value="lod2" className="bg-[hsl(var(--surface-1))]">LOD 2 (Low - 25%)</option>
+                  <option value="lod3" className="bg-[hsl(var(--surface-1))]">LOD 3 (Billboard/Proxy - 10%)</option>
+                  <option value="all" className="bg-[hsl(var(--surface-1))]">All LOD Levels (0-3)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-zinc-400 block mb-1">Texture Resolution</label>
+                <select
+                  value={textureResolution}
+                  onChange={e => setTextureResolution(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.1] text-xs text-zinc-200 outline-none focus:border-primary cursor-pointer"
+                >
+                  <option value="original" className="bg-[hsl(var(--surface-1))]">Original Size</option>
+                  <option value="1024" className="bg-[hsl(var(--surface-1))]">1024 x 1024 (Mobile)</option>
+                  <option value="2048" className="bg-[hsl(var(--surface-1))]">2048 x 2048 (Standard)</option>
+                  <option value="4096" className="bg-[hsl(var(--surface-1))]">4096 x 4096 (High-Res 4K)</option>
+                </select>
+              </div>
+            </div>
+
+            <label className="flex items-center justify-between text-zinc-300 cursor-pointer pt-1 border-t border-white/[0.06]">
+              <span className="text-xs">Include Simplified Collision Mesh</span>
+              <input
+                type="checkbox"
+                checked={includeCollision}
+                onChange={e => setIncludeCollision(e.target.checked)}
+                className="rounded accent-primary cursor-pointer"
+              />
+            </label>
+          </div>
+
+          {/* Section 4: Packaging Options */}
           <div className="space-y-2 p-3.5 rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-2))]">
             <div className="flex items-center gap-2">
               <HugeiconsIcon icon={Archive} size={16} className="w-4 h-4 text-primary" />

@@ -792,8 +792,50 @@ def _process_job_in_worker(
         # Reset after model load so these peaks cover this inference call, not model initialization.
         _reset_cuda_peak_memory_stats(resource_plan, gpu_id)
         inference_start_time = time.time()
-        with torch.no_grad():
-            result = loaded_model.process(model_inputs)
+
+        candidate_count = min(max(int(request_inputs.get("candidate_count") or 1), 1), 4)
+        base_seed = int(model_inputs.get("seed") or 42891)
+
+        if candidate_count > 1:
+            candidates_list = []
+            first_result = None
+            for c_idx in range(candidate_count):
+                c_seed = base_seed + (c_idx * 1337)
+                c_inputs = dict(model_inputs)
+                c_inputs["seed"] = c_seed
+                logger.info(f"[CANDIDATE GENERATION] Running candidate {c_idx + 1}/{candidate_count} with seed {c_seed}")
+                with torch.no_grad():
+                    c_res = loaded_model.process(c_inputs)
+                if not isinstance(c_res, dict) or not c_res.get("success", True):
+                    continue
+                c_mesh = (
+                    c_res.get("output_mesh_path")
+                    or c_res.get("mesh_path")
+                    or c_res.get("output_path")
+                    or c_res.get("file_path")
+                )
+                if c_mesh and os.path.isfile(str(c_mesh)):
+                    c_path = Path(c_mesh)
+                    cand_dest = c_path.parent / f"{c_path.stem}_cand_{c_idx}{c_path.suffix}"
+                    try:
+                        shutil.copy2(c_path, cand_dest)
+                        saved_path = str(cand_dest)
+                    except Exception:
+                        saved_path = str(c_mesh)
+                    candidates_list.append({
+                        "candidate_id": c_idx,
+                        "seed": c_seed,
+                        "mesh_path": saved_path,
+                        "selected": (c_idx == 0),
+                    })
+                if first_result is None:
+                    first_result = c_res
+            result = first_result or loaded_model.process(model_inputs)
+            if candidates_list:
+                result["candidates"] = candidates_list
+        else:
+            with torch.no_grad():
+                result = loaded_model.process(model_inputs)
 
         inference_seconds = time.time() - inference_start_time
         if isinstance(result, dict) and result.get("success", True):
@@ -1156,6 +1198,12 @@ class MultiprocessModelScheduler:
 
         self._cleanup_temporary_inputs(job)
         return True
+
+    async def reorder_queued_jobs(self, ordered_job_ids: List[str]) -> bool:
+        """Reorder pending jobs in the queue without touching active processing jobs."""
+        if hasattr(self.job_queue, "reorder_queued_jobs"):
+            return await self.job_queue.reorder_queued_jobs(ordered_job_ids)
+        return False
 
     async def start(self):
         """Start the scheduler - no workers created initially"""
@@ -2117,6 +2165,9 @@ class MultiprocessModelScheduler:
                         final_result["polygon_count"] = gen_info.get("face_count") or gen_info.get("native_face_count") or 0
                     if "vertex_count" not in final_result:
                         final_result["vertex_count"] = gen_info.get("vertex_count") or gen_info.get("native_vertex_count") or 0
+
+                if isinstance(result, dict) and "candidates" in result and "candidates" not in final_result:
+                    final_result["candidates"] = result["candidates"]
 
                 await self.job_queue.complete_job(job_id, final_result)
                 logger.info(f"[JOB COMPLETE] job_id={job_id} status=success")

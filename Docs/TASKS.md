@@ -1,481 +1,367 @@
-# ForMash3D — Dev-Branch Upload, Image Preprocessing, Rigging & Export Audit
+# ForMash3D — New Feature & UI/UX Backlog (TASKS.md)
 
-**Target repository:** `Silentzx2/ForMash3D`  
-**Target branch:** `dev`  
-**Audit date:** 2026-10-15  
-**Purpose:** An implementation backlog for fixing upload truthfulness, durable raw-mesh storage, source/artifact identity, FBX export failure reporting, and image-to-mesh background-removal/crop defects that can introduce background geometry. This file is intentionally separate from the existing `Docs/TASKS.md`; do not overwrite that existing task document.
+**Target repository:** `Silentzx2/ForMash3D`
+**Target branch:** `main` (verify against current `Dev` HEAD before starting — branches may have diverged)
+**Scope:** New UI/UX functions, workflow upgrades, and finishing real in-code stubs. This is **not** a bug list.
+**Naming heads-up:** The repo already has `Docs/TASKS.md` (an existing upload/preprocessing/export bug-audit backlog). Do not overwrite it — place this file somewhere distinct (e.g. `Docs/FEATURE-TASKS.md`) when you merge it in, even though it's named `TASKS.md` here.
+**Project nature:** Personal, self-hosted, single-GPU studio — not a commercial SaaS. Every task below must stay YAGNI, avoid subscription/multi-tenant/paywall-shaped UI, and avoid generic "AI wrapper" visual language (no stock gradients-on-cards, no fake loading-skeleton theater, no made-up usage counters). Match the existing glassmorphism / `surface-0..3` token system already defined in `Docs/DESIGN.md` §1 and §10.
 
----
+## How this backlog was built
+Read `RULES.md`, `Docs/PRD.md`, `Docs/DESIGN.md`, `Docs/CHANGELOG.md`, and actually opened the code in `features/workspace/`, `features/admin/`, `features/settings/`, `features/board/`, `components/ui/`, `hooks/`, `services/` on `main` — not just directory names. Every task is anchored to something real found in that code: an unused primitive, a literal "coming in a future update" stub, a missing persistence layer, or a workflow with no bridge between two features that already exist separately. Cross-checked current (2026) Tripo Studio / Meshy 6 / Hyper3D workflows for functional ideas only — never for UI copying.
 
-## 1. Executive summary
-
-This review extends the earlier upload/storage/rigging audit to the actual `dev` branch image-preprocessing and export code. Three source-grounded issues deserve immediate attention alongside the original defects.
-
-**Image-to-mesh preprocessing has no reliable “approved foreground” gate.** `backend/core/preprocess/image_enhancement.py::preprocess_image()` treats the mere presence of an alpha channel as proof that background removal is unnecessary. An RGBA image whose alpha is fully opaque is therefore skipped by the shared remover; its alpha bounding box can span the whole photograph, so `auto_crop` does not isolate the subject. In addition, `_realesrgan()` converts the image to RGB and returns RGB, discarding any subject alpha mask; converting it back to RGBA later only creates an opaque alpha channel, it does not restore transparency. The approved image can then reach a model adapter with the background still present or trigger another model-specific remover. These paths plausibly explain side slabs/rectangles around a centred subject, but the reported visual symptom was **not** reproduced in a running model during this source audit.
-
-**The preview UI can mark a failed background-removal result as approved.** `_rmbg()` returns the original image with `rmbg_used=False` and an error when both providers fail, but `preprocess_image()` still writes an `approved.png` artifact and returns its ID. `GeneratePanel.tsx::previewEnhancement()` sets `enhancementEnabled=true` and stores the artifact ID even when `result.warning` is present; the UI then labels the state “Approved”. Crop/foreground statistics are recorded but are not enforced as a quality gate before inference. Model adapters also retain separate background-removal logic, creating unclear ownership and potential repeated processing.
-
-**Export error handling is misleading at the UI boundary.** `features/workspace/Modals/ExportModal.tsx::handleExport()` creates an `<a>` for `selectedUrl`, clicks it, and closes the modal without reading an HTTP response. The `try/catch` cannot detect an HTTP 4xx/5xx from that navigation. A missing/expired artifact or a backend “native FBX unavailable” response can therefore look like a successful export, or the browser may save an error response using the chosen `.fbx` filename. The dedicated Blender conversion worker itself has timeout/cancellation and FBX re-import validation; this audit did not establish a separate intrinsic conversion-worker defect. The already documented rigging/output-path defects still affect which artifact is available and where it resolves.
-
-### Highest-risk findings
-
-1. **P0 — Silent upload fallback:** failed backend uploads become local blob assets, masking the original failure.
-2. **P1 — Foreground mask can be lost or falsely trusted:** alpha-channel presence, rather than actual transparency, controls removal; upscaling drops alpha; the preview can still be marked approved after removal failure.
-3. **P1 — Export UI does not verify HTTP success:** a missing/unavailable artifact can be treated as exported because the anchor-click path never checks a response.
-4. **P1 — Buffered proxy + misleading progress boundary:** the frontend finishes sending to Next.js before the proxy begins backend transfer.
-5. **P1 — Non-canonical rigging output / missing native FBX:** standalone UniRig output is written to shared `models/rigged`, and generated auto-rig does not persist the native child FBX in the parent workspace.
-6. **P1 — Source/derivative confusion and fallback resolver defects:** requested master paths can resolve to derivatives, and a `system.py` fallback loop can ignore all path keys after the first.
-7. **P1 — Metadata persistence failures can still return upload success:** the file may exist on disk while its returned `file_id` cannot be resolved later.
-
-## 2. Audit scope, repository rules and constraints
-
-The earlier repository review enumerated 747 tracked file entries. This extension re-checked the exact current `dev` HEAD and traced the existing upload/storage/rigging paths plus `features/workspace/Panels/GeneratePanel.tsx`, `features/workspace/utils/buildGenerationParameters.ts`, `backend/api/routers/image_enhancement.py`, `backend/core/preprocess/image_enhancement.py`, the Hunyuan3D and Unique3D image adapters, `backend/api/routers/mesh_generation.py`, `features/workspace/Modals/ExportModal.tsx`, `features/mesh-extras/ExportMeshDialog.jsx`, `features/utils/meshExport.js`, `backend/api/routers/mesh_tools.py`, `backend/postprocess/services/convert_fbx.py`, `backend/postprocess/tools/fbx_worker.py`, and the `system.py` artifact-download route. Relevant repo rules/docs and existing test foundations were also checked. Findings distinguish source-proven control-flow issues from likely explanations of the visual symptom. No local application run, browser reproduction, model inference, GPU test, or Blender export test was performed; none is claimed.
-
-This is a deep, end-to-end audit of the **reported asset workflow and adjacent mesh-input paths**, not a claim that every unrelated module in the 747-entry repository was line-by-line audited. Implementation agents must still read all directly relevant caller code and current files again before changing them, because line numbers and branch state can move.
-
-### Mandatory implementation constraints
-
-- Follow `RULES.md` / Ponytail: understand the real flow first, fix root causes, reuse existing helpers, make the smallest correct diff, avoid speculative abstractions and dependencies.
-- Preserve `master/source.glb` immutability for generated assets. Manual mesh operations must preserve the selected input as the master/source lineage and write their results as derivatives.
-- Keep upload byte limits, file/format validation, root-constrained path resolution, and cancellation/cleanup protections. Do not “fix” oversized meshes by removing validation wholesale.
-- In image preprocessing, distinguish an actual alpha mask from an alpha channel; preserve the mask through resize/upscale and validate the resulting foreground before marking an artifact approved. Preserve the original image and never mutate it in place.
-- Establish one explicit background-removal ownership/status contract. Do not silently feed an unprocessed image to inference after removal failed, label a warned artifact “Approved”, or blindly delete all disconnected foreground components (some can be legitimate).
-- For exports, verify the server response before claiming success. Keep native FBX and viewport GLB distinct; never rename an error response or a non-FBX file to `.fbx`.
-- Do not change unrelated generation model behaviour or introduce a separate storage framework if existing `get_storage_base_dir()`, `OutputPathGenerator`, `FileStore`, `uploadMeshFile()`, and canonical post-process workspace helpers can be reused.
-- Update the affected documentation required by `RULES.md`: at minimum `Docs/ARCHITECTURE.md`, `Docs/api-documentation.md`, `Docs/SECURITY.md`, `Docs/MEMORY.md`, `Docs/CHANGELOG.md`, and `README.md` as warranted by the final implementation. Do not use this audit as a reason to rewrite unrelated documentation.
-- Existing `Docs/TASKS.md` is a separate Pixal3D implementation task and must remain untouched by this work.
+**20 tasks, grouped into 4 batches of 5.** Feed one task at a time to a coding agent — never the whole batch in one turn. Finish and doc-sync a batch before starting the next; each batch is ordered low-risk-first.
 
 ---
 
-## 3. Desired end-state contract
+# BATCH 1 — Core Workspace UX
+*Daily-use, lowest-risk, highest-payoff. Do this batch first.*
 
-The implementation batches must converge on one observable contract:
+## T-01 — Properties Panel Reorganization & Power-User UX
 
-1. A mesh is not marked as **uploaded/available for backend processing** until its bytes have been fully received, written, validated, and its durable file identity has been registered successfully.
-2. Upload progress measures actual transport bytes (`loadedBytes / totalBytes`) and is labelled honestly. A completed browser-to-proxy transfer is not reported as a completed backend save; the UI reaches **Saved** only after the backend responds with a verified file ID and the stored byte size.
-3. The uploaded original is retained unchanged in a stable, unique asset workspace under `storage/models/meshes/`. Its manifest records asset/file ID, original name, exact format, byte size, content hash, and canonical source path. Keep compatibility with existing `/api/v1/file-upload/download/{file_id}` IDs/routes while migrating storage.
-4. Every tool receives an explicit, resolvable source identity. It must never infer a file from an arbitrary `storage/rigged` directory or rely on a browser-only blob URL for backend processing.
-5. Direct and generated rigging both persist the native FBX (when actually produced) and a separate GLB viewport preview in the same canonical asset/job lineage. `artifact_format=fbx` and `artifact_format=rigged` resolve to their declared artifacts, never to a different file chosen by a broad glob.
-6. The original source is never renamed to `.glb` unless a real conversion took place. Manual UV/retopology/segmentation/edit operations preserve the user-selected original source and record outputs as derivatives.
-7. Invalid, oversized, failed, or interrupted uploads surface an explicit error and leave no fake success asset, orphan partial file, invalid metadata, or unrelated prior asset selected.
-8. Image preprocessing validates actual alpha/transparency, crop bounds, foreground occupancy and likely background leakage. A failed/suspicious mask cannot be marked “Approved” or enter inference without a clear review/override path. Upscaling preserves the approved alpha mask; provider status and image provenance are recorded.
-9. Background removal runs under a documented single-owner policy: known-good approved masks are not removed again by downstream adapters. If a model requires its own remover, that fallback is explicit, logged, and only used under a defined policy.
-10. Export success is reported only after a successful response and valid artifact bytes. Native FBX is independently resolved and validated; an error payload must never be downloaded under an `.fbx` name.
-
-### Suggested canonical layout
-
-Keep the generated-asset layout already used by `backend/postprocess/pipeline.py`; extend it minimally for direct uploads and rigging:
-
-```text
-backend/storage/
-  uploads/                         # optional temporary/compatibility ingress during migration
-  models/meshes/<safe_asset>_<id>/  # one durable workspace per uploaded/generated asset
-    master/
-      source.<original-ext>         # immutable exact original for uploads (preserve its real format)
-      source.glb                    # only when the source is GLB or a real GLB conversion was made
-    rigging/
-      <job-id>.fbx                  # native output, only if truly produced
-      <job-id>.glb                  # separate viewport preview
-    metadata/
-      asset.json                    # file ID, size bytes, SHA-256, original format, lineage and artifacts
-    previews/
-      thumbnail.png
-    ...derived folders as applicable...
-```
-
-This is a target contract, not a mandate to duplicate files. Prefer a single durable copy plus manifest references when the existing file-ID/download path can safely point to it. For generated jobs, preserve the existing `master/source.glb` contract. For uploaded `.obj`, `.ply`, `.fbx`, or `.gltf`, retain the original extension and bytes; do not write those bytes into a `.glb` file.
+**1. Role:** Frontend Panel/Information-Architecture Engineer (React + Radix UI, existing `surface-0..3` tokens).
+**2. Startup verification:** Confirm the panel still renders correctly for every `activeTool` state (Texture/PBR, Retopo/Remesh, Generation/Model, no-asset-selected) before restructuring — the dynamic Case A/B/D branches must keep working.
+**3. Context-reading rules:** Read only `features/workspace/RightPanel/RightPropertyPanel.tsx` (all ~812 lines), `components/ui/accordion.tsx`, `components/ui/collapsible.tsx`, `stores/useUIStore.ts`, `Docs/DESIGN.md` §1/§2/§10.
+**4. To-do:**
+1. Convert the 7 flat always-rendered sections (Transform, Geometry Stats, Dynamic Context Inspector, Shading Overrides, Mesh Diff Viewer, Model Comparison Viewer, Production Export) into collapsible groups using the already-installed `components/ui/accordion.tsx` or `collapsible.tsx` — do not build a new primitive.
+2. Persist collapsed/expanded state per section in `stores/useUIStore.ts`.
+3. Auto-expand the section matching the current `activeTool`; manual toggle always overrides auto behavior afterward.
+4. Add a client-side text filter at the top that filters visible property rows/sections by label.
+5. Keep every data binding byte-identical — layout change only, not a logic change.
+**5. Output rules:** Zero filler. Diffs only, exact paths. Root-cause ≤ 2 sentences. No reprinting unchanged code.
+**6. Doc sync:** `Docs/DESIGN.md` §4 and §6, `Docs/CHANGELOG.md` (keep only last 3 entries).
 
 ---
 
-# Batch 1 — Upload truth, byte transfer and durable intake
+## T-02 — Command Palette (⌘K)
 
-**Batch objective:** Eliminate fake upload success and fix image-preprocessing trust/alpha handling before model inference. Do not start path migrations until UI entrypoints reliably distinguish a server-persisted asset from a local preview.
-
-## UP-01 — Stop converting upload failure into a successful local-only asset
-
-**Priority:** P0 · **Primary root cause**  
-**Evidence:** `features/workspace/types.ts` — `createUploadedMeshAsset()` (~243–264) and `uploadMeshAsset()` (~265–296). `uploadMeshAsset()` catches every error and returns `createUploadedMeshAsset(file)`, which creates a `blob:` URL and has no backend `fileId`. Callers receive an apparently valid `ModelAsset`. `RiggingStudio.tsx` later refuses to rig it because no backend file ID exists, but the local mesh may already be visible in the viewport.
-
-**Required fix:** Remove the silent fallback from the backend-upload contract. A failed upload must reject with the meaningful error (or return an explicit discriminated failure that every caller handles); it must not masquerade as a persisted server asset. If local-only preview is intentionally retained as a separate UX mode, keep it clearly marked as local/unuploaded, do not add it to the backend-asset catalogue as uploaded, and disable backend tools until a real upload succeeds. Reuse the existing helper instead of implementing per-panel fallback logic.
-
-**Acceptance criteria:**
-- A backend 400/413/500, network disconnect, missing file ID, or metadata persistence failure shows an error and creates no server-ready asset.
-- The selected asset is not switched to an unuploaded blob asset on failure.
-- Rigging, retopo, UV, segmentation and mesh-edit endpoints cannot be invoked with a local blob URL as a successful backend source.
-- Successful upload returns an asset with a non-empty `fileId` and resolvable server URL.
-
-**Regression coverage:** Mock the upload API to reject, to return no `file_id`, and to succeed. Verify failure is visible and no fake asset is inserted/selected; verify success yields a backend ID.
-
-## UP-02 — Stream multipart uploads through the Next.js proxy instead of buffering them in RAM
-
-**Priority:** P1  
-**Evidence:** `app/api/v1/[...path]/route.ts`, `POST()` (~156–205). For `multipart/form-data`, the proxy calls `await request.arrayBuffer()` and wraps the entire body in a `Buffer` before starting the upstream `fetch`. A 40–200 MB model is therefore fully buffered by the Node process; concurrent uploads multiply memory pressure. The browser's upload progress measures bytes sent to the proxy, not bytes already received/written by FastAPI.
-
-**Required fix:** Use a request-body streaming pass-through supported by the deployed Next.js/Node runtime, including the required `duplex: 'half'` behaviour for a streamed Node fetch body when applicable. Preserve the multipart `Content-Type` including its boundary, authorization forwarding, safe timeout/cancellation semantics, and configured request-size protections. Do not parse and rebuild `FormData` in the proxy. Confirm actual runtime support before choosing the smallest compatible implementation.
-
-**Acceptance criteria:**
-- Proxy memory use does not scale by allocating an entire extra upload-sized buffer for each request.
-- The upstream request starts consuming bytes while the browser is still transmitting them.
-- Multipart boundary/content headers remain valid, and cancellation closes upstream work and removes partial backend files.
-- JSON requests and existing API routes continue to work.
-
-**Regression coverage:** Proxy integration test with a streamed multipart body; test an interrupted stream and a large body under bounded memory. Verify upload success/failure status is forwarded correctly.
-
-## UP-03 — Unify real mesh upload progress and units across every entrypoint
-
-**Priority:** P1  
-**Evidence:** `services/apiClient.ts` already supports `uploadMeshFile(file, onProgress?)`, but `features/workspace/types.ts::uploadMeshAsset()` does not forward progress and its callers show no upload progress. The Assets panel (`features/workspace/RightPanel/RightAssetsPanel.tsx`, `processModelFile()` around 81–147) passes `progressEvent.loaded` into `useUploadProgress()`, which expects **bytes**. Some `GeneratePanel.tsx` handlers pass a percentage into `updateProgress()`, which then divides it by `file.size` again; `useUploadProgress()` is shared but its caller contract is inconsistent. `finishUpload()` hides the active indicator immediately after the request resolves and sets 100%, without separately representing backend validation/registration. `readFileWithProgress()` reports local `FileReader` bytes, not network upload bytes.
-
-**Required fix:** Define and use one progress unit. Prefer byte callbacks for byte-based state, or expose a percentage callback and never mix the two. Wire `uploadMeshAsset(file, onProgress)` through the existing `apiClient.uploadMeshFile()` callback and through the Assets/Rigging/UV/Remesh/Segmentation/Mesh Edit upload controls. Present a compact, accessible upload card with filename, actual `loaded / total` bytes, percentage, transfer state and error. Distinguish **Uploading** from **Verifying/Saving** and **Saved**; only server confirmation ends the operation. Keep `FileReader` progress labelled as local file reading where it is still used.
-
-**Acceptance criteria:**
-- A 40+ MB fixture increments loaded bytes from 0 to the actual total; percentage is monotonic and never based on a mismatched unit.
-- Every mesh-upload control displays the same truthful status pattern.
-- A cache hit in the 3D viewer cannot mark an upload complete; viewer load progress and upload progress remain independent.
-- Failure/cancel resets or marks the card as failed, without stale 100% progress or a false success toast.
-
-**Regression coverage:** Unit tests for byte-to-percent calculation and concurrent/repeated upload state; component tests for the main Assets and Rigging upload cards; test both known and missing transport totals.
-
-## UP-04 — Persist uploads in a canonical per-asset workspace without losing the original bytes
-
-**Priority:** P1  
-**Evidence:** `backend/api/routers/file_upload.py::upload_file_with_validation()` (~254–350) writes to `storage/uploads/<file-type>/<id-prefix>/upload_<file-id>.<ext>`. This is a usable upload ingress path, but it is separate from `backend/postprocess/pipeline.py::canonical_asset_workspace()` (~394–425), which places durable generated assets under `storage/models/meshes/<asset>_<job-id>/` and snapshots the master to `master/source.glb` in `run_postprocess_job()` (~1217–1218). Uploaded meshes currently do not have an equivalent per-asset workspace/manifest before the user enters Rigging or other mesh tools.
-
-**Required fix:** Reuse `get_storage_base_dir()`, the current file-ID generator, and canonical workspace conventions to assign an uploaded mesh a stable unique asset workspace. Record the exact original file name/format, actual byte size and SHA-256; preserve bytes and original extension. Avoid duplicate full-size copies where a manifest/path reference suffices. Keep the upload ID and download endpoint compatible with existing clients. The workspace root and all paths must remain within the configured storage root.
-
-**Acceptance criteria:**
-- A successful upload of GLB/OBJ/PLY/FBX (and supported GLTF policy) has one stable asset ID and canonical workspace that survives a backend restart according to the metadata policy in UP-05.
-- The stored source has the same byte length and SHA-256 as the uploaded file.
-- Re-uploading the same filename creates a distinct asset; no collisions or accidental overwrite.
-- No processing derivative overwrites the uploaded master/source.
-
-**Regression coverage:** Upload representative formats to a temporary storage root; compare stored hash/byte length; test duplicate names and path containment; test reading the source through the normal file-ID API.
-
-## UP-05 — Make file metadata registration/durability part of upload success
-
-**Priority:** P1  
-**Evidence:** `backend/api/routers/file_upload.py::upload_file_with_validation()` (~328–333) calls `await store_file_metadata_impl(...)` but ignores whether the store succeeded. `backend/core/file_store.py::FileStore.store_file_metadata()` returns `False` when Redis registration fails. The upload handler can nevertheless return HTTP success and a `file_id` that the download endpoint cannot resolve. In single-worker mode, `backend/api/main_singleworker.py` creates an in-memory metadata store: uploaded bytes survive on disk, but the ID mapping is lost after a process restart. Expiration policy also conflicts: upload responses/metadata advertise expiry after 24 hours, while `backend/core/file_store.py` defaults its Redis TTL to zero unless `FILE_METADATA_TTL_SECONDS` is configured, and file list/download paths do not consistently enforce `expires_at`.
-
-**Required fix:** Define whether uploaded user assets are durable or temporary. For the requested durable mesh library, persist the authoritative asset/file manifest on disk (or in the existing durable database layer) and use Redis/in-memory state only as a cache/index, not the only record of where bytes live. If the intended policy is temporary, enforce one explicit TTL and cleanup policy. Treat `store_file_metadata_impl`/metadata-manifest registration failure as upload failure and remove the newly written file/partial metadata atomically. Keep absolute server filesystem paths internal—`upload_file_with_validation()` currently includes `file_path` in its returned payload even though the browser can use the file ID and download URL. Do not introduce a new storage platform unless the existing manifest/job database cannot meet this contract.
-
-**Acceptance criteria:**
-- Upload success implies the returned file ID resolves to an existing file after the request and after process restart.
-- A metadata-write failure returns a non-success response and leaves no orphaned successful-looking file.
-- `expires_at`, Redis TTL, file list, metadata endpoint and delete/cleanup behaviour agree.
-- Existing legacy uploads remain resolvable during migration, with explicit fallback—not broad, ambiguous asset guessing.
-
-**Regression coverage:** Force metadata-store failure; restart/recreate the app state then download by ID; test expiration boundary and cleanup idempotency in single- and multi-worker configurations.
-
-## UP-06 — Align size limits with mesh complexity limits and move heavy validation off the event loop
-
-**Priority:** P1  
-**Evidence:** Upload endpoint allows meshes up to 200 MB (`backend/api/routers/file_upload.py`, `upload_mesh()` ~375–399) but `backend/core/utils/file_utils.py` limits `MAX_MESH_VERTICES` and `MAX_MESH_FACES` to 210,000 (~34–35) and `validate_mesh_file()` (~201 onward) calls `trimesh.load(file_path)` synchronously. Consequently, a valid large/high-poly model can be rejected after transfer because of polygon count, and synchronous geometry parsing can block FastAPI's event loop. Since UP-01 currently masks a failed upload as a local blob asset, these limits can look like a successful upload followed by path errors.
-
-**Required fix:** Keep hard byte, format and geometry/resource safeguards, but make their user-facing contract coherent. Document separate byte and geometry ceilings and return a precise validation error with the configured limit. Make complexity policy configurable only if the existing config pattern supports it; choose safe defaults based on measured memory/runtime, not intuition. Run expensive parsing in the existing bounded worker/thread/process mechanism (or FastAPI's threadpool) with sensible limits/timeouts, while preserving cancellation and cleanup. Do not allow malformed or resource-exhaustion files through just to make big uploads work.
-
-**Acceptance criteria:**
-- A valid file within the configured byte/complexity limits is not rejected by an undocumented stricter limit.
-- A mesh exceeding a limit fails explicitly before it is made selectable; no silent fallback.
-- Invalid/non-finite/empty geometry still fails safely.
-- Concurrent uploads do not stall lightweight health/status endpoints during geometry inspection.
-
-**Regression coverage:** Boundary tests at and just over byte/vertex/face limits; malformed mesh; async responsiveness with a mocked slow validator; cleanup after rejection.
-
-## UP-07 — Treat `.gltf` consistently in backend format validation
-
-**Priority:** P1  
-**Evidence:** The mesh upload route's supported formats include `.gltf` (`backend/api/routers/file_upload.py`, `upload_mesh()` around 375–399), and `backend/core/utils/file_utils.py::MIME_TYPE_MAPPING` includes `model/gltf+json`/`.gltf` (~30–45), but `get_file_type_from_extension()` (~625–640) lists `.glb`, `.obj`, `.fbx`, `.ply`, and `.stl` while omitting `.gltf`. Therefore an uploaded `.gltf` passes the endpoint extension allowlist but is classified as `unknown`, skipping the mesh validation branch in `upload_file_with_validation()`.
-
-**Required fix:** Use the existing central extension/type map as the source of truth for route allowlists, file type classification and frontend format labels. Add `.gltf` to mesh classification if the app supports it, and ensure frontend `ModelAsset.format` preserves `GLTF` rather than relabelling it `GLB`.
-
-**Acceptance criteria:** `.gltf` cannot bypass mesh validation solely because the type classifier forgot the extension; each supported extension maps consistently through upload metadata, validation and asset display.
-
-**Regression coverage:** Table-driven tests comparing supported mesh extensions, inferred type and frontend display format.
-
-## IMG-21 — Preserve real foreground alpha across crop and upscaling
-
-**Priority:** P1 · **Likely contributor to the reported side-rectangle geometry**  
-**Evidence:** `backend/core/preprocess/image_enhancement.py::preprocess_image()` uses `had_alpha = "A" in image.getbands()` and only runs `_rmbg()` when `not had_alpha`. This tests the image mode, not whether the alpha channel contains useful transparency: an RGBA PNG with alpha=255 everywhere bypasses removal. `_alpha_bounds()` treats every alpha value above 8 as foreground; a faint edge/background speck can expand the crop back to almost the full image. Most importantly, `_realesrgan()` converts its input to RGB and returns an RGB image, dropping the alpha mask; the later `convert("RGBA")` only creates an opaque alpha channel and cannot restore the old mask. Hunyuan adapters inspect alpha minimum to decide whether to run their own background remover, while Unique3D also has adapter-level removal logic. Together these paths can deliver residual rectangular background pixels to image-to-3D inference or trigger a second removal pass. This is a code-supported failure path, not a claim that every reported artifact has the same cause.
-
-**Required fix:** Add a shared helper that determines whether alpha has meaningful transparent/foreground pixels, not merely whether the mode includes `A`. Preserve a trusted alpha mask through resize/upscale (upscale RGB and alpha separately or reapply a geometrically aligned mask after the upscaler). Compute the subject bbox from a validated/binarized mask with configurable thresholds and sensible padding; handle non-square input without treating the entire opaque frame as a cutout. Record input dimensions/mode, real-alpha status, mask statistics, crop box, and whether the alpha mask survived every preprocessing operation. Preserve the original uploaded image and hash. Do not solve this by always re-removing an already-clean transparent subject or by deleting arbitrary mesh components.
-
-**Acceptance criteria:**
-- Opaque RGBA behaves like an opaque RGB/JPEG image and is not treated as an already-cut-out subject.
-- A clean transparent PNG remains transparently cut out after crop and both RealESRGAN and Pillow fallback resizing.
-- A non-square opaque RGBA photo cannot become “transparent subject approved” merely because square padding adds transparent pixels outside the original opaque rectangle.
-- Crop bounds and mask area are derived from the verified subject mask, not a few weak alpha pixels at the edge.
-- The model receives the verified preprocessed artifact with mask preserved; original source bytes/hash remain unchanged.
-
-**Regression coverage:** Fixtures for RGB/JPEG, opaque RGBA, clean transparent RGBA, soft/antialiased alpha, alpha with a tiny edge speck, and a non-square image. Mock RealESRGAN success and fallback; assert the output mask geometry and alpha statistics are preserved. Include a case where the original alpha is fully opaque but the crop canvas gains transparent padding.
-
-## IMG-22 — Validate background-removal and crop quality before approving inference input
-
-**Priority:** P1 · **Input-quality gate**  
-**Evidence:** In `backend/core/preprocess/image_enhancement.py`, `_rmbg()` returns the original image with `rmbg_used=False` and an error if the integrated and direct providers fail, but `preprocess_image()` still writes both `preview.png` and `approved.png` and returns an `artifact_id`. The result only exposes the removal error as a warning. In `features/workspace/Panels/GeneratePanel.tsx::previewEnhancement()` (~826–862), the returned artifact ID is assigned and `enhancementEnabled` is set to `true` even when `result.warning` is present; the panel derives its “Approved” label from `enhancementEnabled`. `subject_area_fraction`, `crop_box`, `rmbg_used`, and `rmbg_error` are recorded, but `backend/api/routers/mesh_generation.py` accepts the approved artifact without enforcing a foreground-quality decision. Downstream adapters have their own removal logic, so “approved” does not reliably mean the background was removed once and checked.
-
-**Required fix:** Add/reuse a deterministic `inspect_foreground_mask` / `validate_preprocessed_image` helper in the existing preprocessing module. Have it calculate and record at least: whether alpha is genuinely transparent; transparent-pixel fraction; foreground bounding box and occupancy; crop improvement relative to original; mask coverage at image borders; connected foreground components/small-component ratio; and whether the mask/subject survives resizing. Set a structured state such as `already_transparent`, `removed`, `disabled`, `failed`, or `needs_review`, along with the provider, warning and validation reasons. Use conservative thresholds and surface borderline results for review rather than claiming that every disconnected component is noise. On provider failure, do not label the original image an approved background-removed artifact. Keep the existing explicit UI action to disable enhancement/use original, and require successful validation or an explicit user override before inference. Once a validated artifact is approved, pass its status/provenance through `JobRequest` and ensure downstream adapters do not re-run background removal by default; any required adapter fallback must be explicit and logged.
-
-**Acceptance criteria:**
-- If all removal providers fail, the UI never says “Approved”; the user sees a clear error/review state and can deliberately choose the documented original-input path.
-- `enhancementEnabled=true` is not enough by itself: the API checks artifact status and refuses an unvalidated/failed artifact absent an explicit override.
-- The preview surfaces crop/mask warnings before expensive model inference, with original and processed previews available for comparison.
-- Logs/job metadata explain whether removal happened, was skipped because the mask was already valid, failed, or was intentionally bypassed.
-- No automatic deletion of all disconnected foreground components; low-confidence masks are flagged for review.
-
-**Regression coverage:** Mock both remover providers failing, returning invalid images, and succeeding with/without useful alpha. Test all-opaque alpha, near-full-frame bbox, tiny disconnected specks, border leakage, near-empty mask, and valid transparent cutout. Assert preview API status, UI approval state, generation endpoint rejection/override, and downstream no-double-removal contract.
+**1. Role:** Frontend Interaction/Navigation Engineer — `components/ui/command.tsx` already exists and is unused; use it.
+**2. Startup verification:** Confirm `Docs/DESIGN.md` §9's shortcut table (⌘1/⌘2/⌘3/⌘,/G/R/T/A/K/S) still matches the live keybinding handler before wiring the palette.
+**3. Context-reading rules:** Read only `components/ui/command.tsx`, the global keybinding handler, `stores/useUIStore.ts`, `Docs/DESIGN.md` §9.
+**4. To-do:**
+1. Wire the existing `command.tsx` primitive into a global overlay.
+2. Index: tool shortcuts (existing table), recent/favorite assets (reuse `RightAssetsPanel` data), and T-08/T-16 presets once shipped.
+3. Bind ⌘K / Ctrl+K, Esc to close, must not steal focus from active text inputs.
+4. No telemetry/analytics logging of palette queries.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §9, `Docs/CHANGELOG.md`.
 
 ---
 
-# Batch 2 — Canonical source identity, artifact resolution and rigging output
+## T-03 — Finish the Model Comparison Viewer (Real Picker + QA Score Diff)
 
-**Batch objective:** Once upload IDs and bytes are trustworthy, route every mesh operation to the exact selected source and persist all outputs in that asset's canonical workspace.
-
-## ASSET-08 — Preserve `artifact_format` when resolving job/source URLs
-
-**Priority:** P1  
-**Evidence:** `backend/api/routers/file_upload.py::resolve_input_reference_async()` (~644–695) strips the query string (`path_str = path_str.split("?", 1)[0]` around 678), so a URL such as `/api/v1/system/jobs/{job_id}/download?artifact_format=master` loses the `artifact_format=master` selector before resolution. Its fallback `get_file_path_impl()` (~171 onward) searches a workspace and returns `game_ready/*.glb` before `master/*.glb` (~190–208), so on metadata loss or ID/path fallback the resolved source may be an optimized derivative, not the requested master. Broad glob fallback also risks selecting an arbitrary matching asset when names overlap.
-
-**Required fix:** Parse URL path and query separately. Route job artifact URLs through the existing job/artifact resolver using the explicit allowlisted `artifact_format` parameter. If only a raw file ID is supplied, resolve only that upload's recorded original. Replace ambiguous “first glob match” behaviour for canonical assets with manifest/ID-based deterministic resolution, retaining safe backward compatibility for legacy assets.
-
-**Acceptance criteria:** `artifact_format=master` resolves only to the immutable master/source artifact; `glb` resolves to the declared GLB artifact; an unknown/missing artifact fails clearly instead of silently choosing a different one. Paths still pass storage-root validation.
-
-**Regression coverage:** Test relative and absolute URLs, query strings, URL-encoded IDs, metadata missing, and workspaces containing both `master/source.glb` and `game_ready/*.glb`.
-
-## ASSET-09 — Separate generation post-processing from manual mesh-tool lineage
-
-**Priority:** P1 · **Source-integrity risk**  
-**Evidence:** `backend/core/scheduler/multiprocess_scheduler.py::_handle_job_result()` (~1835 onward) runs the production post-process path for successful jobs with `output_mesh_path` when `postprocess_mode == "production_mesh"`. Several manual mesh APIs set this metadata, including `backend/api/routers/mesh_retopology.py` (~217), `mesh_uv_unwrapping.py` (~209), `mesh_segmentation.py` (~213) and `mesh_editing.py` (~276, ~385). `backend/postprocess/pipeline.py::canonical_asset_workspace()` (~394–425) chooses the job result's `output_mesh_path` as its raw candidate. `run_postprocess_job()` then snapshots it to `master/source.glb` (~1217–1218) and later loads that file as GLB (~1325 onward). Thus a manual tool's derivative may be promoted as the “source”, and OBJ/PLY bytes can be copied into a file ending in `.glb` without conversion, followed by an attempted GLB parse.
-
-**Required fix:** Trace each manual endpoint's true input path and output contract. Distinguish “raw generation output to promote to master” from “operation applied to an existing uploaded/generated asset”. For manual operations, keep the requested input as immutable source/master (preserving its actual extension or performing a real explicit conversion); record the tool output in a named derived-artifact location. Do not funnel every `output_mesh_path` through the generation-specific source-snapshot logic. Reuse current `JobRequest` metadata, `canonical_asset_workspace()` and manifest structure; add only the minimal lineage signal needed to distinguish these workflows.
-
-**Acceptance criteria:**
-- A retopo/UV/segment/edit job never replaces the original user's source with the tool's output.
-- `.obj` and `.ply` output is never written byte-for-byte to a path called `.glb`.
-- All successful tool outputs are registered as derived artifacts with their real format and path.
-- Generation jobs continue preserving their raw model output exactly and existing immutable-master parity tests remain valid.
-
-**Regression coverage:** End-to-end-or-contract tests for manual OBJ/PLY input, GLB input, and generated raw output; assert master hash is unchanged and derived artifacts are separate.
-
-## RIG-10 — Write standalone UniRig artifacts under the selected asset's canonical workspace
-
-**Priority:** P1 · **Primary rigging path defect**  
-**Evidence:** `backend/adapters/unirig_adapter.py::__init__()` (~63) uses `OutputPathGenerator(base_output_dir="outputs")`. In `backend/core/utils/file_utils.py`, `OutputPathGenerator` converts that to `<storage_base>/models`, and `generate_rigged_path()` (~704 onward) defaults to `subdirectory="rigged"`, producing shared `storage/models/rigged/<model-id>_<source-stem>_<timestamp-seconds>.<format>`. This is not the per-asset workspace under `storage/models/meshes/<asset>_<job-id>/`. The filename uses second-resolution time, so simultaneous jobs with the same model ID/source stem can collide.
-
-**Required fix:** Have the standalone rig job carry a validated canonical source asset/workspace identity (from the uploaded asset manifest/file ID or the selected generated job). Create a unique rig job output directory under that asset's canonical workspace, e.g. `rigging/<rig-job-id>/`, and write both native FBX and GLB preview there. Prefer a unique job ID over timestamp-only uniqueness. Keep the existing adapter API contract by passing the resolved source path plus minimal output/workspace metadata; do not add a parallel storage abstraction. Ensure a source snapshot/reference exists before rigging and is never mutated.
-
-**Acceptance criteria:**
-- Rigging a just-uploaded mesh works directly from its actual stored source path.
-- Outputs live under the same asset lineage, not a shared `storage/models/rigged` bucket.
-- Two concurrent rig jobs on the same basename cannot overwrite each other.
-- Original source hash is unchanged; GLB preview and native FBX are separate declared artifacts.
-
-**Regression coverage:** Adapter/scheduler tests with a temp storage root; assert output paths remain under the workspace and two job IDs produce unique files.
-
-## RIG-11 — Preserve the native FBX when generated assets use the auto-rig child workflow
-
-**Priority:** P1  
-**Evidence:** `backend/core/scheduler/multiprocess_scheduler.py::_watch_auto_rig()` (~1645–1780) obtains `child_result`, checks `child_result["output_mesh_path"]`, and copies that path into `asset_root/rigging/game_ready_rigged.glb` (~1697–1710). The function does not read/copy `child_result["output_fbx_path"]` (verified against the function body). `UniRigAdapter._process_request()` returns both `output_mesh_path` (converted GLB preview) and `output_fbx_path` (native FBX) (~225–250). As a result, the generated parent job records a rigged GLB but loses the native FBX within its workspace/manifest.
-
-**Required fix:** Copy/validate the child FBX to a unique path in the parent asset's `rigging/` directory, register that FBX path and format in the parent result/manifest, and keep the GLB preview separate. If a child did not truly produce a native FBX, mark it unavailable/failed rather than fabricating one or converting with an unsupported generic converter.
-
-**Acceptance criteria:** A parent auto-rig job that completes with UniRig has both a real preview GLB and a real FBX in the canonical asset workspace; `artifact_format=fbx` returns the native FBX. Missing FBX is reported honestly without corrupting the preview.
-
-**Regression coverage:** Mock child result containing both files; assert both are copied, recorded and independently downloadable. Also test missing/malformed FBX.
-
-## RIG-12 — Use one canonical artifact manifest/resolver for direct and generated rig jobs
-
-**Priority:** P1  
-**Evidence:** Generated jobs with `asset_root` use `backend/api/routers/system.py`'s canonical artifact selectors; for `artifact_format=rigged`, it looks for `asset_root/rigging/game_ready_rigged.glb` (~1445). Standalone rig jobs without an `asset_root` instead rely on `result["output_fbx_path"]` and `result["output_mesh_path"]` (~1490 onward), whose paths currently point to global `models/rigged`. These two flows deliver the same feature through different lookup rules and folder layouts; generated-job FBX selection does not resolve the rigging folder in the same way as its GLB counterpart.
-
-**Required fix:** Declare the direct-rig workspace/artifacts in the same job result manifest contract as generated assets. Teach existing allowlisted artifact selection to find `rigging/<job-id>.fbx` and `rigging/<job-id>.glb` using explicit manifest paths. Continue to validate resolved paths under the configured storage root/workspace. Do not trust client-supplied absolute paths or fall back to arbitrary globbing. Keep legacy flat output references resolvable only through an explicit compatibility path.
-
-**Acceptance criteria:** The same download selectors behave consistently for direct rigging and generation-followed-by-rigging; `glb`, `rigged`, and `fbx` each map to the correct declared artifact; unknown or absent formats return clear 4xx errors.
-
-**Regression coverage:** Contract test both job shapes through the real system download route, including root containment and missing-file cases.
-
-## RIG-13 — Fix the system download fallback loop so all declared path keys are checked
-
-**Priority:** P1  
-**Evidence:** `backend/api/routers/system.py` (~1504–1508) has:
-
-```python
-possible_keys = ["output_mesh_path", "mesh_path", "output_path", "file_path"]
-for key in possible_keys:
-    if key in result and result[key]:
-        output_path = result[key]
-    break
-```
-
-The `break` is indented inside the loop but outside the `if`, so only `output_mesh_path` is ever examined. Jobs that have a valid file only under `mesh_path`, `output_path`, or `file_path` incorrectly hit “No output file path found”. The same key-list/loop pattern occurs elsewhere in `backend/api/routers/system.py` (~1907 and ~2168) and must be checked, not patched at only one call site.
-
-**Required fix:** Correct the loop/control-flow once at the shared helper if an existing common path can be reused; otherwise correct all equivalent instances. Keep path validation/containment after selection.
-
-**Acceptance criteria:** Each supported result key resolves when it is the only available key; a later key is never ignored because an earlier one is absent. Existing preferred-key precedence stays intact.
-
-**Regression coverage:** Parameterized tests with each of the four keys used individually plus an empty result and a path outside the allowed root.
-
-## RIG-14 — Remove synthetic rig-generation progress increments
-
-**Priority:** P2  
-**Evidence:** `stores/useRiggingStore.ts::pollRigJob()` (~145–185) increments `generationProgress` by 1 or 2 on each poll while a job is queued/processing, capping at 90. It does not derive these values from backend progress. It can imply progress even if the job is stalled, making a second progress indicator dishonest.
-
-**Required fix:** Use the real `statusRes.progress` / stage data if the API returns it. If the backend does not provide a reliable percentage, use an indeterminate spinner and honest phase/status text rather than synthesizing percentage. Do not modify real job polling/retry/resume behaviour unnecessarily.
-
-**Acceptance criteria:** A stalled job does not accrue progress; completed jobs reach 100 only on completion; queued/processing state remains visible and accurate.
-
-**Regression coverage:** Poll responses with fixed, changing, absent and failed progress values; assert the UI never invents percentage.
+**1. Role:** Viewport/Diagnostics Engineer.
+**2. Startup verification:** Confirm the stub is still present at `RightPropertyPanel.tsx`, "6. Model Comparison Viewer (UX-02)" — its "Select Model to Compare" handler currently just does `assets.find(a => a.id !== currentAsset.id)` instead of opening a real picker.
+**3. Context-reading rules:** Read only that block in `RightPropertyPanel.tsx`, the `ModelComparisonViewer`/`MeshDiffViewer` component files, the QA scoring module under `backend/postprocess/`, `Docs/PRD.md` §6.
+**4. To-do:**
+1. Replace the stub with a real picker — reuse `features/mesh-extras/AssetSelectorModal.jsx`, which already exists for this exact purpose elsewhere; do not build a second picker.
+2. Allow comparing two artifacts from the same job lineage (e.g. `master/source.glb` vs. a chosen LOD/retopo stage), not only two top-level assets.
+3. Surface the real QA score delta and which sub-scores changed (Topology/UV/Budget per `Docs/PRD.md` §6) from backend QA output — never estimate client-side, per `Docs/DESIGN.md`'s "Workspace Data Integrity" rule.
+4. Keep reusing the existing viewer components; this is a wiring fix, not a rebuild.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` (Component Interaction Flow / Viewport Inspect UX), `Docs/PRD.md` §6, `Docs/CHANGELOG.md`.
 
 ---
 
-# Batch 3 — Mesh-tool entrypoints, format edge cases, safety and regression closure
+## T-04 — Custom Keyboard Shortcut Remapping
 
-**Batch objective:** Make every tool entrypoint use the same upload contract, close secondary input-validation gaps, and lock the entire workflow with regression tests and current docs.
-
-## TOOL-15 — Ensure uploaded meshes are inserted into the workspace before selecting them
-
-**Priority:** P1  
-**Evidence:** `features/workspace/store/WorkspaceContext.tsx::setCurrentAsset()` (~1244) delegates to `selectAsset(asset.id)` and only selects an ID; it does not add a new object to `assets`. These panel handlers call `setCurrentAsset(await uploadMeshAsset(file))` without first adding the returned asset:
-
-- `features/workspace/Panels/UVUnwrapPanel.tsx` (~42–44)
-- `features/workspace/Panels/RemeshPanel.tsx` (~43–47)
-- `features/workspace/Panels/MeshSegmentPanel.tsx` (~91–94)
-- `features/workspace/Panels/MeshEditPanel.tsx` (~159–162)
-
-Unlike `RightAssetsPanel.tsx` and `RiggingStudio.tsx`, these routes can select an ID that is not yet in the workspace list/current selection derivation, leaving a stale/no asset or relying on a later uploaded-assets query refresh.
-
-**Required fix:** Reuse the existing `addAsset()` + `setCurrentAsset()` flow in these four handlers or add the minimal shared import action to `WorkspaceContext` if that reduces duplication. Only add after upload success. Do not duplicate upload/storage logic in each panel.
-
-**Acceptance criteria:** Immediately after upload, the same asset appears in the Assets list, becomes the actual current asset, displays its backend ID/source URL, and can be passed to the tool request without waiting for background refetch.
-
-**Regression coverage:** Component/context tests for each panel's upload path; ensure failed upload does not add/select an asset and a previous selection is not accidentally submitted.
-
-## TOOL-16 — Define safe single-file `.gltf` handling or support its external dependencies
-
-**Priority:** P1  
-**Evidence:** `RightAssetsPanel.tsx` accepts `.gltf` as a single file (~85 onward) and builds a download URL for only that uploaded file (~110–147). `features/workspace/types.ts` / upload UI map `.gltf` to `GLB`. A textual glTF file commonly references external `.bin` buffers and texture files by relative URI; uploading only the `.gltf` JSON does not include those dependencies, so later loading/rigging may fail despite a successful HTTP upload. UP-07 covers backend type validation; this task covers runtime packaging and truthful format support.
-
-**Required fix:** Choose an explicit supported policy: either support `.gltf` as a package/folder/ZIP with every referenced resource validated, stored together and safely resolved, or reject external-resource `.gltf` with a clear message and support only self-contained glTF/GLB assets. Do not silently rewrite arbitrary references or mislabel GLTF as GLB. Preserve security checks against path traversal and remote URI fetches.
-
-**Acceptance criteria:** Self-contained supported files load correctly. A `.gltf` that references missing/external sidecars either loads all validated bundled dependencies or fails before being marked as a usable asset with an actionable error.
-
-**Regression coverage:** Fixtures for GLB, self-contained glTF, glTF with relative `.bin`/texture files, missing sidecar, and malicious `../` reference.
-
-## SEC-17 — Bound mesh base64 decoding before allocating decoded bytes
-
-**Priority:** P1 · **Security/resource guard**  
-**Evidence:** `backend/api/routers/mesh_segmentation.py` (~155 onward) calls `base64.b64decode(request.mesh_base64)` then writes the decoded content to a temp file. There is no encoded-size ceiling in that path before decoding. `Docs/SECURITY.md` explicitly requires base64 upload payloads to be rejected using their encoded-size ceiling before allocating the decoded byte buffer. Other shared helper code in `backend/core/utils/file_utils.py::validate_base64_data()` already accepts a `max_bytes` argument, so reuse the existing validation approach.
-
-**Required fix:** Enforce the encoded-size ceiling before decoding, validate the decoded payload and extension/format contract, and use the existing shared base64 validator/helper where compatible. Preserve temp cleanup for all terminal states. Avoid duplicating a new decoder.
-
-**Acceptance criteria:** Oversized encoded payloads fail before allocating the full decoded mesh; malformed base64 is rejected; valid payloads still work; temporary inputs are cleaned on failure/cancellation as appropriate.
-
-**Regression coverage:** Exact-boundary and over-limit tests, malformed base64, valid GLB and invalid mesh bytes. Add a test that verifies rejection occurs before `b64decode` for a clearly oversized string.
-
-## PERF-18 — Keep mesh parsing/validation from blocking the async API event loop
-
-**Priority:** P1  
-**Evidence:** `backend/api/routers/file_upload.py::upload_file_with_validation()` awaits the byte-by-byte file write and then calls `validate_mesh_file()` synchronously (~305–315). `backend/core/utils/file_utils.py::validate_mesh_file()` (~201 onward) imports and calls `trimesh.load(file_path)`, may concatenate a scene, computes statistics and enforces complexity limits—all potentially expensive CPU/RAM work. In an async FastAPI handler this synchronous parse can block other work on the same event loop.
-
-**Required fix:** Reuse FastAPI/AnyIO's existing threadpool or the project's bounded worker mechanism for CPU-heavy validation. Keep the byte-size limit before parse, use bounded concurrency/timeouts where available, and avoid duplicate copies of the mesh in memory. Make validation cancellation/error cleanup predictable; do not shift unbounded heavy parsing into uncontrolled background tasks.
-
-**Acceptance criteria:** Large but valid supported files can be validated without freezing health/status/other upload responses; concurrent parser count remains bounded; invalid files still return explicit errors and release temporary files/resources.
-
-**Regression coverage:** Async test with a deliberately slow/mocked parser while a lightweight route is served; test validator exception, cancellation and byte-limit failure cleanup.
-
-## STORAGE-19 — Clean up uploaded thumbnails with the corresponding file
-
-**Priority:** P2  
-**Evidence:** `backend/api/routers/file_upload.py::upload_mesh()` schedules thumbnail creation at `_THUMBNAIL_DIR / f"{file_id}.png"`; the delete route (`DELETE /file-upload/{file_id}`, ~445–480) removes the uploaded file and metadata but does not remove the corresponding thumbnail. Repeated upload/delete cycles leave orphaned PNGs under upload storage.
-
-**Required fix:** Extend the existing delete/cleanup path to remove only the matching thumbnail and any manifest-owned workspace/artifacts that the delete contract explicitly owns. Validate every resolved path under the storage root and keep shared/parent job assets safe. Make repeated deletes/cleanup idempotent; do not recursively delete a workspace merely because a filename contains the same ID.
-
-**Acceptance criteria:** Deleting an uploaded asset removes its associated thumbnail and registered upload source; it does not delete unrelated files or a parent generated job's artifacts. Failed cleanup is logged and reported in a controlled way.
-
-**Regression coverage:** Delete twice; thumbnail present/missing cases; malicious IDs/root containment; verify unrelated sibling assets survive.
-
-## EXP-21 — Report export failures from the actual HTTP response
-
-**Priority:** P1  
-**Evidence:** `features/workspace/Modals/ExportModal.tsx::handleExport()` resolves a URL from `currentAsset.artifacts`, creates an anchor, clicks it, and closes the modal. Its `try/catch` only catches synchronous DOM/download-trigger errors; it never reads the HTTP response or validates `response.ok`. An expired/missing artifact or a backend HTTP 4xx/5xx (including the documented “native FBX artifact unavailable” response from `backend/api/routers/system.py`) therefore does not set the UI error, and can be downloaded as an error body under the selected `.fbx`/other extension. This is separate from the known artifact-path issues tracked by RIG-10 through RIG-13.
-
-**Required fix:** Use a response-aware download path for these artifact URLs: fetch the resource, check `response.ok` and content type before creating a Blob/download, parse the backend error detail for a useful UI message, and only close the modal after a successful response has been accepted for download. Preserve the intended filename/content-disposition behaviour; revoke temporary object URLs; respect authentication and existing same-origin/proxy semantics. Never rename or retry an error response as an FBX. Keep native FBX availability errors distinct from generic conversion failures. Audit similar anchor-only export actions such as the rigging export button if they use the same API-backed URL contract.
-
-**Acceptance criteria:**
-- A successful GLB/OBJ/FBX/ZIP response starts a download with the correct extension and closes the modal only after success is confirmed.
-- HTTP 404/422/500, JSON error bodies, network disconnects and invalid content types show an actionable error and do not save a file bearing the requested mesh extension.
-- Missing native FBX is shown as “FBX unavailable / rig required” rather than an apparent success.
-- Download requests do not bypass required credentials, and temporary object URLs are cleaned up.
-
-**Regression coverage:** Mock success and error status responses for source, game-ready and FBX artifacts; verify file extension/content type, modal state, displayed error and no fake download. Add a route-level test for unavailable `artifact_format=fbx` and a UI contract test that checks `response.ok` before the download begins.
-
-## QA-20 — Add one cross-layer regression suite and update workflow documentation
-
-**Priority:** P1 · **Exit gate for all batches**  
-**Evidence:** Existing test foundations include `backend/tests/test_filestore_thumbnail.py`, `backend/tests/test_dev_deep_contract.py` (canonical workspace and artifact-manifest contract tests), `backend/tests/test_api_contracts_lifecycle.py`, `backend/tests/test_review_audit.py`, `backend/tests/test_official_model_parity_contract.py`, and `scripts/verify_contracts.py`. Existing tests cover portions of storage, model parity and canonical post-processing, but the identified failure modes must be connected end-to-end: original image → foreground mask/remove/crop/upscale validation → approved artifact → image-to-mesh inference → mesh quality review, as well as browser upload → stored file ID/path → workspace selection → tool/rigging request → correct artifact download/export.
-
-**Required fix:** Extend the existing tests instead of creating an unrelated duplicate test framework. Tests must cover: upload failure does not fall back to a server-ready blob; byte count/hash match for a large mesh; proxy progress versus backend persistence; metadata write failure/restart; GLTF type/dependency policy; exact selected source resolution; manual operation source immutability; direct rig output workspace; generated auto-rig FBX+GLB manifests; all system download fallback keys; HTTP-aware export failure handling; native FBX worker/result validation; all tool upload handlers inserting/selecting the asset; malformed/oversized base64; and safe cleanup. For preprocessing, test RGB versus opaque RGBA versus real transparent PNG; alpha-mask survival through RealESRGAN and fallback resize; provider failure must not yield an “Approved” artifact; bbox/mask/border/component heuristics are recorded and gated; and a validated mask is not silently reprocessed by model adapters. Update only affected architecture/API/security/changelog/current-state docs. Do not claim GPU E2E success from unit/source-contract tests.
-
-**Required local checks before marking complete** (run from the repository in the actual project environment):
-
-```bash
-bun run test
-bun run lint
-bun run build
-python3 -m compileall -q backend/
-python3 scripts/verify_contracts.py
-bash -n backend/scripts/*.sh scripts/*.sh
-```
-
-Also run focused upload/storage/rigging, preprocessing/mask, and export tests while iterating. Use `agent-browser` to verify upload status, the Generation Preview approval/error state, and export error handling. Use a valid mesh over 40 MB and a file intentionally beyond configured limits. Test a transparent cutout, opaque RGBA photo, soft edge, failed remover, and upscaler mask preservation. Exercise the FBX conversion with a supported Blender runtime and re-import check where available. GPU-dependent model inference and real Blender export must be separately labelled “not run” unless actually tested in those environments.
-
-**Acceptance criteria:** All listed checks have actual recorded outcomes (pass/fail/skipped with reason); there is no success claim for unavailable GPU/browser checks; docs explain the final path contract; no unrelated files or `Docs/TASKS.md` are modified.
+**1. Role:** Frontend Settings/Keybinding Engineer.
+**2. Startup verification:** Confirm `features/settings/PreferencesSections.tsx` still shows the literal text *"Custom keybinding support is coming in a future update"* (`ShortcutsSection`, ~line 136) before starting — this task replaces that exact placeholder.
+**3. Context-reading rules:** Read only `features/settings/PreferencesSections.tsx` (`ShortcutsSection`), the global keybinding handler used by T-02, `services/settingsPersistence.ts`.
+**4. To-do:**
+1. Make each listed shortcut's key combo editable in place (click-to-record new combo), with conflict detection against other active bindings.
+2. Persist custom bindings via the existing `services/settingsPersistence.ts` pattern — no new storage mechanism.
+3. Add a "Reset to Defaults" action per-shortcut and for the whole set.
+4. Keep the existing default table as the fallback when no override is stored.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §9, `Docs/CHANGELOG.md`.
 
 ---
 
-## Export audit note — confirmed path/UI issues versus converter implementation
+## T-05 — Workspace Session Snapshots
 
-The current `dev` implementation of `backend/postprocess/services/convert_fbx.py` isolates Blender in a subprocess, serializes conversion through a semaphore, supports a timeout/cancellation check, and verifies the worker result and output file. `backend/postprocess/tools/fbx_worker.py` imports the GLB with the “Temperance” bone heuristic, removes bone-widget scene objects, exports the FBX, and re-imports it to validate mesh/armature/animation take counts. Static source review did **not** prove another intrinsic defect in that isolated converter. The actionable export findings are the existing path/manifest issues (RIG-10 through RIG-13) plus **EXP-21**, where the UI closes on an anchor click without checking whether the requested artifact endpoint actually returned a file. Regression tests must still execute Blender in a supported environment to establish runtime correctness.
+**1. Role:** Frontend State Persistence Engineer.
+**2. Startup verification:** Read `services/taskPersistence.ts` and `services/settingsPersistence.ts` to confirm the existing local-persistence pattern before adding a new persisted slice.
+**3. Context-reading rules:** Read only those two services, `stores/useUIStore.ts`, `stores/useViewerStore.ts`, `Docs/DESIGN.md` §6.
+**4. To-do:**
+1. Add "Save Workspace Snapshot": captures selected asset ID, active tool/panel, T-01's per-section collapsed state, and current viewport camera position/target.
+2. Persist via the existing service pattern, named by the user, listed/restorable from a small dropdown (Header or Dashboard).
+3. Restoring re-selects the asset (handle gracefully if deleted), reopens the tool/panel, reapplies panel state, reframes the camera.
+4. Explicit save only — no auto-snapshotting on every change.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §6, `Docs/CHANGELOG.md`.
 
 ---
 
-## 4. Implementation order and dependencies
+# BATCH 2 — Generation & Texturing Pipeline
+*Touches the generation/texture core — start once Batch 1 is merged and stable.*
 
-1. **Complete UP-01 through UP-03 first.** Without truthful upload status and consistent progress, later fixes cannot be verified reliably.
-2. Complete UP-04 through UP-07 and IMG-21/IMG-22 before relying on model inference from processed images. The preprocessing contract must distinguish opaque images, already-transparent cutouts, successful removal, failure and review-needed masks.
-3. Complete ASSET-08 and ASSET-09 before RIG-10 through RIG-13, establishing the selected source and derivative lineage.
-4. Complete RIG-10 through RIG-14, TOOL-15 and TOOL-16; verify direct rig and generation-followed-by-rig paths separately.
-5. Complete EXP-21 so the UI tells the truth about artifact download failures; then complete SEC-17, PERF-18 and STORAGE-19.
-6. Run QA-20 across the combined image → mesh → rig/export paths. Do not mark a batch done based only on source inspection; use regression checks and separately record GPU/Blender/browser checks that could not run.
+## T-06 — Pick-Best-of-N Candidate Generation
 
-## 5. End-to-end manual verification checklist
+**1. Role:** Next.js/FastAPI 3D Generation Pipeline Engineer.
+**2. Startup verification:** Read `scripts/start.sh`, `manager.sh`, and the job-submission entrypoint in `backend/core/scheduler/multiprocess_scheduler.py`; confirm sibling-job output isn't already supported. Do not break the single-GPU mutual-exclusion lock.
+**3. Context-reading rules:** Read only `features/workspace/Panels/GeneratePanel.tsx` (batch queue logic, ~lines 270-840), `stores/useAppStore.ts` (batch slice), `backend/core/scheduler/multiprocess_scheduler.py`, the generation section of `Docs/ARCHITECTURE.md`.
+**4. To-do:**
+1. Add an optional `candidate_count` (2–4, default 1) param — same input, varied seed per candidate.
+2. Scheduler runs candidates as one logical job with N sub-results; still one job at a time on the GPU.
+3. Lightbox/grid in the Generation Preview showing N thumbnails with "Use this one".
+4. On selection, promote the chosen candidate through the existing `master/source.glb` checkpoint path; garbage-collect unselected candidates — no orphan job directories.
+5. Keep the existing `<image name>_<job id>` storage convention.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md` §4, `Docs/CHANGELOG.md`, `README.md` capability map if it changes.
 
-- [ ] Preprocess the same subject as RGB/JPEG, opaque RGBA, clean transparent PNG and soft-alpha PNG. Compare original and approved preview, foreground bbox/occupancy, border mask and warnings.
-- [ ] Force RealESRGAN success and Pillow fallback on an image with a real alpha cutout; verify the subject mask survives both paths and no opaque rectangle is introduced around transparent padding.
-- [ ] Force both background-removal providers to fail. Confirm the artifact is failed/needs-review, not “Approved”, and generation is blocked unless the user deliberately chooses the documented override/original-input path.
-- [ ] Use an input with a small alpha speck or residual border. Confirm crop/mask validation flags the suspicious result; do not automatically delete every disconnected subject part.
-- [ ] For a validated transparent input, confirm downstream model adapters do not run a second background-removal pass unless explicitly required by their declared capability and recorded in job metadata.
-- [ ] Run FBX export through `ExportModal` and the Mesh Tools conversion flow. On success verify a real FBX file; on 404/422/500 verify an actionable error, no fake `.fbx` download, and no modal-close success state.
-- [ ] For direct rigging and generated auto-rig, verify `artifact_format=fbx` downloads a real native FBX, GLB preview remains separate, and the exported FBX re-imports with the expected mesh, armature and animation takes in a supported Blender environment.
+---
 
-- [ ] Upload a valid GLB larger than 40 MB from Assets. Observe monotonic byte progress; do not load/mark ready before backend success; compare browser file size/hash with backend manifest and download.
-- [ ] Repeat through Rigging, Remesh, UV Unwrap, Segmentation and Mesh Edit upload controls. Confirm the same backend file ID is selected and no panel shows a stale asset.
-- [ ] Simulate backend rejection and network interruption. Confirm a visible error, no fake local-only “uploaded” asset and no partial server file/metadata.
-- [ ] Restart the backend after a successful upload; confirm the ID resolves according to the documented retention policy.
-- [ ] Select an uploaded raw mesh and open Rigging. Confirm the request reads the exact selected source path, creates a unique per-asset rig job directory, and leaves the source hash unchanged.
-- [ ] For direct and generation-followed-by-rigging jobs, confirm native FBX and GLB preview are stored separately and each `artifact_format` downloads the correct file.
-- [ ] Select a generated asset's master/raw source. Confirm a request for `artifact_format=master` never returns `game_ready` and a manual tool never replaces master/source with its derivative.
-- [ ] Exercise GLB/GLTF/OBJ/PLY/FBX/STL support per the final allowlist, including missing GLTF sidecars and an oversized/high-complexity file.
-- [ ] Confirm job progress comes from backend state or stays indeterminate when a real percentage is unavailable; no timer-based/synthetic increase.
-- [ ] Delete an uploaded mesh and confirm its thumbnail is cleaned up while adjacent and parent-job artifacts remain intact.
+## T-07 — Region-Masked Texture Repaint ("Spot Retexture")
 
-## 6. Out of scope / non-goals
+**1. Role:** Three.js Viewport Interaction Engineer + PBR Texture Pipeline Integrator (Paint3D / Hunyuan3D-Paint-v2.1).
+**2. Startup verification:** Confirm in `backend/adapters/` whether Paint3D or Hunyuan3D-Paint actually expose a **masked/inpainting** entrypoint vs. full-mesh-only repaint. If neither supports a mask, stop the backend-wiring half and say so explicitly — do not fake partial repaint by silently re-running full texturing.
+**3. Context-reading rules:** Read only `features/workspace/Panels/TexturePanel.tsx`, `backend/adapters/` files with `paint`/`hunyuan` in the filename, `Docs/PRD.md` §2.
+**4. To-do:**
+1. Add a UV-space or screen-space paint-mask tool to the viewport (brush size, feather, erase) reusing existing gizmo/controls infra.
+2. Serialize the mask aligned to the mesh's existing `xatlas` UV layout — do not re-unwrap.
+3. Wire mask + localized prompt to the adapter's masked-repaint call if confirmed in step 2; otherwise ship the UI + mask capture only, with an honestly labeled stub.
+4. Non-destructive: write to `textures/<name>_textured_v{n}.glb`, never overwrite a prior pass.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §5/§6, `Docs/PRD.md` §2, `Docs/CHANGELOG.md`, `Docs/api-documentation.md` if routes change.
 
-- Do not refactor all storage or rewrite the full generation/post-processing pipeline.
-- Do not disable mesh geometry validation, path allowlists, byte limits or file-ID checks to make a problematic upload appear to work.
-- Do not turn a browser `blob:` URL into a fake backend path or place uploaded sources under `storage/models/rigged/`.
-- Do not attempt unsupported FBX conversion just to make the download button return a file.
-- Do not change the existing model generation fidelity settings to compensate for bad foreground input. Fix the image/mask contract first.
-- Do not run background removal blindly twice, discard all disconnected mask components, or mark an unverified preprocessing result approved just to continue generation.
-- Do not claim a successful export from an anchor click alone or save an HTTP error payload with a mesh extension.
-- Do not overwrite the repository's `Docs/TASKS.md`; this root-level `TASKS.md` is the new audit backlog artifact.
+---
+
+## T-08 — Quick Material Preset Swatches
+
+**1. Role:** Frontend Texture/Material UX Engineer (full-mesh, no-mask — distinct from T-07).
+**2. Startup verification:** Confirm the existing `TexturePanel.tsx` full-mesh texture-generation request contract before adding a shortcut on top of it.
+**3. Context-reading rules:** Read only `features/workspace/Panels/TexturePanel.tsx`, `Docs/PRD.md` §2, `constants/models.ts` (for the declaration pattern to follow).
+**4. To-do:**
+1. Define 6–10 curated material prompt presets (brushed metal, weathered wood, matte plastic, rough stone, fabric, chrome) as swatch chips above the free-text prompt field.
+2. Clicking a swatch pre-fills (still editable) the prompt — one single code path into the existing texture call, no parallel "preset mode" request type.
+3. Store the preset list as a plain constant following `constants/models.ts` conventions.
+4. Swatches use a small rendered/CSS thumbnail, not an externally fetched photo.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §4, `Docs/PRD.md` §2, `Docs/CHANGELOG.md`.
+
+---
+
+## T-09 — Physics Material Quick Presets
+
+**1. Role:** Frontend Physics UX Engineer — `GeneratePanel.tsx` already has raw `friction`/`restitution` sliders (~lines 1966-1967) in the Physics Preparation drawer; this adds presets on top, it does not add physics from scratch.
+**2. Startup verification:** Confirm the existing slider ranges/defaults (`friction: 0.5`, `restitution: 0.1`, friction range 0-2, restitution range 0-1) before adding preset buttons that set them.
+**3. Context-reading rules:** Read only the Physics Preparation block in `features/workspace/Panels/GeneratePanel.tsx` (~lines 455-465 and ~1960-1975), `features/workspace/physics/PhysicsRuntime.ts`.
+**4. To-do:**
+1. Add named preset buttons (Rubber, Stone, Wood, Ice, Metal, Default) above the existing sliders, each setting a friction+restitution pair.
+2. Clicking a preset updates the same two existing sliders — do not add a separate physics-parameter code path.
+3. Selecting a preset is non-exclusive: the user can still fine-tune the sliders afterward (preset = starting point, not a lock).
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` (Physics UX section), `Docs/CHANGELOG.md`.
+
+---
+
+## T-10 — Board-to-Generate Bridge
+
+**1. Role:** Frontend Cross-Feature Integration Engineer (Excalidraw board + Generate panel).
+**2. Startup verification:** Confirm `features/board/pages/BoardPage.jsx`'s current export/asset path (`uploadAsset`, `toServedAssetPath` in `boardHelpers.js`) before adding a shortcut on top of it.
+**3. Context-reading rules:** Read only `features/board/pages/BoardPage.jsx`, `features/board/utils/boardHelpers.js`, `features/board/components/BoardAiPanel.jsx`, `features/workspace/Panels/GeneratePanel.tsx` (image-intake entrypoint only).
+**4. To-do:**
+1. Add a "Send to Generate" action on a selected region/element of the Excalidraw board.
+2. Export that selection through the existing `urlToDataURL`/`dataURLToFile` helpers already in `boardHelpers.js` — do not write a new image-export path.
+3. Hand the resulting file to `GeneratePanel.tsx`'s existing single-image upload intake exactly as a manually uploaded image would be handled — no special-cased "board image" type in the backend contract.
+4. Switch the workspace view to the Generate panel with the image pre-loaded; do not auto-trigger generation.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §8 (route map) if any route changes, `Docs/CHANGELOG.md`.
+
+---
+
+# BATCH 3 — Animation, Jobs & Asset Management
+*Independent of Batch 2; can start once Batch 1 is stable.*
+
+## T-11 — Quick-Apply Animation Preset Library
+
+**1. Role:** Rigging/Animation Pipeline Engineer (UniRig skeleton + `AnimationLeftPanel.tsx`).
+**2. Startup verification:** Confirm the current ARDY text-to-motion `motion.json` format and the UniRig bone-naming convention in `backend/core/` rigging code before adding retargeting.
+**3. Context-reading rules:** Read only `features/workspace/Animation/AnimationLeftPanel.tsx`, `stores/useAnimationStore.ts`, `stores/useRiggingStore.ts`, the UniRig-related files under `backend/core/`, `Docs/DESIGN.md` §10 (Dual-Track Timeline, X-Mirror bone-naming guard).
+**4. To-do:**
+1. Curate 5–10 local generic humanoid clips (idle, walk, run, wave, jump) in the existing `motion.json` schema — only license-compatible/self-authored data.
+2. Reuse the existing X-Mirror bone-naming guard to retarget a clip onto any asset's UniRig skeleton — no second bone-mapping table.
+3. Add a thumbnail/preview strip in `AnimationLeftPanel.tsx`; "Quick Apply" drops a preset onto the existing Dual-Track Timeline, alongside ARDY generation, not replacing it.
+4. Preset playback uses the existing Three.js animation mixer/viewer.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §10, `Docs/PRD.md` §8, `Docs/CHANGELOG.md`.
+
+---
+
+## T-12 — Clone & Re-run Job With Edited Parameters
+
+**1. Role:** Jobs/Scheduler Frontend Engineer — `JobDetailView.tsx` already has `handleRetryPostprocess` (~line 163); this adds an edit-before-rerun path, not blind retry.
+**2. Startup verification:** Confirm `handleRetryPostprocess` and `getApiClient().retryPostprocess(selectedJobId)` still work as-is before adding a second, parameter-editable entrypoint next to it.
+**3. Context-reading rules:** Read only `features/workspace/Jobs/JobDetailView.tsx`, `services/apiClient.ts` (job-submission and retry methods only), `stores/useAppStore.ts` (job state slice).
+**4. To-do:**
+1. Add "Clone & Edit" next to the existing "Retry Production Processing" button: opens the clicked job's original parameters pre-filled in the relevant panel (Generate/Remesh/UV/etc., based on job type).
+2. Submitting creates a **new** job referencing the same source lineage — never mutates or re-labels the original job/artifacts.
+3. Reuse the existing per-tool panels' submission code paths; do not build a generic "edit any job" form.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` (Pipeline Execution UX section), `Docs/CHANGELOG.md`.
+
+---
+
+## T-13 — Notification / Activity Center
+
+**1. Role:** Frontend Notifications Architecture Engineer — the project has ephemeral `use-toast.ts` and a per-job `ProgressOverlay.tsx`, but no persistent history; this adds the missing persistent layer.
+**2. Startup verification:** Confirm `hooks/use-toast.ts` and `features/workspace/Notifications/ProgressOverlay.tsx` current behavior before adding a history layer that listens alongside them.
+**3. Context-reading rules:** Read only those two files, `services/taskPersistence.ts` (persistence pattern to reuse), `Docs/DESIGN.md` (Header/Resource-Status Header UI section).
+**4. To-do:**
+1. Add a bell-icon entrypoint in the Header opening a dropdown/panel listing completed jobs, failures, and exports — each item links to its asset/job.
+2. Persist entries via the existing `services/taskPersistence.ts` pattern; cap history length (e.g. last 100) rather than growing unbounded.
+3. Existing ephemeral toasts still fire for immediate feedback; the center is the durable record, not a replacement for toasts.
+4. Unread-count badge on the bell; mark-all-read action.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` (Header/Resource-Status section), `Docs/CHANGELOG.md`.
+
+---
+
+## T-14 — Asset Collections (Folders/Grouping)
+
+**1. Role:** Frontend Asset Management Engineer — `RightAssetsPanel.tsx` already has tags and favorites; this adds grouping on top, not a new asset system.
+**2. Startup verification:** Confirm the current `assetFilter`/`isFavorite`/`tags` data shape in `RightAssetsPanel.tsx` (~lines 16-104) before adding a `collectionId`-style field next to it.
+**3. Context-reading rules:** Read only `features/workspace/RightPanel/RightAssetsPanel.tsx`, `stores/useAppStore.ts` (asset state), `types/state.ts`.
+**4. To-do:**
+1. Add an optional collection/group field to the existing asset record shape (e.g. "all variants of this character") — reuse the existing tag-storage mechanism if it already supports arbitrary string grouping, rather than adding a parallel system.
+2. Add "New Collection" / "Add to Collection" actions in the asset grid's existing context menu.
+3. Add a collection filter alongside the existing `all`/`models`/`textures` filter buttons — same filter-bar pattern, not a new UI region.
+4. Deleting a collection ungroups its assets; it never deletes the assets themselves.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §4, `Docs/CHANGELOG.md`.
+
+---
+
+## T-15 — Viewport Turntable Capture (GIF/Video/Image Sequence)
+
+**1. Role:** Three.js Viewport/Media Export Engineer — turntable rotation already exists in `MeshViewer.tsx` (`isTurntable`), this adds capture, not rotation.
+**2. Startup verification:** Confirm the current turntable render-loop logic (`isTurntableRef`, ~lines 1048/2378-2443 in `MeshViewer.tsx`) runs smoothly before hooking a frame-capture pass onto it.
+**3. Context-reading rules:** Read only the turntable-related blocks in `features/workspace/Viewport/MeshViewer.tsx`, `Docs/DESIGN.md` (Viewport Inspect UX section).
+**4. To-do:**
+1. Add a "Capture Turntable" action that, while `isTurntable` is active, records a fixed number of frames over one full rotation to an offscreen canvas.
+2. Export as an animated GIF or short MP4 (pick whichever has a lighter in-browser dependency footprint — check `package.json` for anything already installed before adding a new encoding library) or, as a zero-dependency fallback, a numbered PNG sequence ZIP.
+3. Respect the viewport's current shading/lighting/background settings exactly as shown — no separate "render settings" for capture.
+4. This is for quick sharing/preview, not a production render pipeline — keep it simple and client-side only.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` (Viewport Inspect UX section), `Docs/CHANGELOG.md`.
+
+---
+
+# BATCH 4 — Export, Admin & In-App Help
+*Lower urgency polish; do last.*
+
+## T-16 — Export Quick-Profiles (Saved Export Combos)
+
+**1. Role:** Export Pipeline UX Engineer — builds on the existing format/LOD/collision toggle set in `ExportModal.tsx`/`GameReadyPanel.jsx`, does not add a new export mechanism.
+**2. Startup verification:** Confirm the current toggle/format option set in `ExportModal.tsx` before adding a "save this combo" layer on top.
+**3. Context-reading rules:** Read only `features/workspace/Modals/ExportModal.tsx`, `features/mesh-extras/GameReadyPanel.jsx`, `services/settingsPersistence.ts`.
+**4. To-do:**
+1. Add "Save as Quick-Profile" capturing the currently selected format + LOD + collision + texture-resolution toggles under a user-given name (e.g. "Unity Bundle", "Blender Review").
+2. Persist via the existing `services/settingsPersistence.ts` pattern.
+3. Add a one-click profile dropdown in `ExportModal.tsx` that applies a saved combo instantly, still editable before confirming export.
+4. Reuse the single existing export code path — profiles only pre-fill toggles, they never bypass validation.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/PRD.md` §7, `Docs/DESIGN.md` (Production Asset Delivery UI section), `Docs/CHANGELOG.md`.
+
+---
+
+## T-17 — Storage Usage Breakdown & Cleanup (Outputs Page)
+
+**1. Role:** Frontend Dashboard Engineer + Storage API Integrator — `OutputsPage.tsx` currently has no visible storage/usage breakdown.
+**2. Startup verification:** Confirm whether the backend already exposes a per-asset or per-category byte-size endpoint (check `backend/api/routers/` for anything storage-stats related) before adding a new one.
+**3. Context-reading rules:** Read only `features/workspace/Dashboard/OutputsPage.tsx`, the relevant `backend/api/routers/` file if a storage-stats endpoint exists, `hooks/useBackendData.ts`.
+**4. To-do:**
+1. Add a storage breakdown view (by category: `master/`, `game_ready/`, `textures/`, `lods/`, `rigging/`) using real backend byte counts — never an estimated/client-guessed size, consistent with the project's "Workspace Data Integrity" rule.
+2. If no backend endpoint exists yet, add the smallest possible one reusing the existing `get_storage_base_dir()` helper referenced elsewhere in the codebase — do not introduce a second storage-scanning mechanism.
+3. Add a "Clean up old jobs" action listing jobs older than a user-chosen threshold with their sizes, requiring explicit per-item or batch confirmation before delete.
+4. Never delete anything referenced by a current asset's lineage without an explicit warning.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/ARCHITECTURE.md` (storage section), `Docs/DESIGN.md`, `Docs/CHANGELOG.md`.
+
+---
+
+## T-18 — Admin Queue Tab: Cancel & Manual Reorder
+
+**1. Role:** Admin Panel / Job Queue Engineer.
+**2. Startup verification:** Open `features/admin/tabs/QueueTab.tsx` and `backend/core/scheduler/multiprocess_scheduler.py` first and confirm what queue control actually exists today — this task's scope depends entirely on that finding; do not assume cancel/reorder are missing, verify it.
+**3. Context-reading rules:** Read only `features/admin/tabs/QueueTab.tsx`, the scheduler's queue-management functions in `backend/core/scheduler/multiprocess_scheduler.py`.
+**4. To-do:**
+1. If cancel-a-queued-job is missing: add it, calling into the scheduler's existing job-state machine — do not bypass it with a direct process kill.
+2. If manual reorder is missing: add drag-to-reorder for **queued** (not yet running) jobs only; the currently running job and the single-GPU lock are never affected by reorder.
+3. Reflect queue position/estimated start live from backend state, per the project's existing "no synthetic progress" rule in `Docs/DESIGN.md`.
+4. If this audit finds cancel/reorder already fully implemented, stop and report that instead of adding duplicate UI.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/ARCHITECTURE.md` (scheduler section), `Docs/CHANGELOG.md`.
+
+---
+
+## T-19 — Contextual In-App Help (Tool-Aware Wiki)
+
+**1. Role:** Frontend Docs Integration Engineer — `features/wiki/` already contains a full in-app wiki (content + pages + components); this wires it contextually, it does not author new documentation content.
+**2. Startup verification:** Open `features/wiki/pages/` and `features/wiki/components/` first to see how wiki articles are currently addressed/routed before adding a lookup layer on top.
+**3. Context-reading rules:** Read only `features/wiki/pages/`, `features/wiki/components/` (routing/addressing files only, not content files), the panel-registration code that defines `activeTool` (already read for T-01).
+**4. To-do:**
+1. Add a small "?" affordance in each major panel (Generate, Retopo, UV, Texture, Rigging, Segmentation) that opens the matching existing wiki article in a side drawer/popover — map by `activeTool`, reusing whatever addressing scheme the wiki already uses (slug/id), not a new one.
+2. If a matching article doesn't exist for a given tool, show a graceful "no article yet" state — do not auto-generate placeholder content.
+3. Keep the wiki's own existing rendering components; this task only adds the contextual entrypoint.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §4, `Docs/CHANGELOG.md`.
+
+---
+
+## T-20 — DCC Bridge Quick-Send (Right-Click, Skip the Modal)
+
+**1. Role:** Frontend DCC Integration Engineer — `DccBridgeModal.tsx` already has working one-click "Send to {DCC}" per preset; this adds a shortcut entrypoint, not new bridge logic.
+**2. Startup verification:** Confirm the existing `isSending`/"Send to {preset}" flow (~line 354 in `DccBridgeModal.tsx`) still works end-to-end locally before adding a second entrypoint into it.
+**3. Context-reading rules:** Read only `features/workspace/Modals/DccBridgeModal.tsx`, `features/workspace/RightPanel/RightAssetsPanel.tsx` (context-menu definition only).
+**4. To-do:**
+1. Add "Send to {last-used DCC}" directly in an asset's existing right-click context menu in `RightAssetsPanel.tsx`.
+2. Call the exact same send function `DccBridgeModal.tsx` already uses — do not duplicate the transmit logic.
+3. Remember the last-used DCC target (reuse `services/settingsPersistence.ts`) so the quick-send has something sensible to default to; first-time use with no prior target still opens the full modal.
+4. The full `DccBridgeModal.tsx` remains available for preset switching/configuration — this is an accelerator, not a replacement.
+**5. Output rules:** Same as T-01.
+**6. Doc sync:** `Docs/DESIGN.md` §11 (DCC Live Bridge section), `Docs/CHANGELOG.md`.
+
+---
+
+## Suggested execution order
+Batch 1 → Batch 2 → Batch 3 → Batch 4, in that order, finishing and doc-syncing each batch before starting the next. Within Batch 2, budget for T-07's backend-adapter check possibly coming back negative. Within Batch 4, T-18 explicitly may turn out to need zero new code — verify before building.
+
+## Hard constraints for every task in every batch
+- Follow `RULES.md` (Ponytail) exactly: reuse before building, smallest correct diff, no speculative abstractions, no new dependency if avoidable.
+- Never mutate `master/source.glb` lineage; every new feature writes derivatives.
+- No feature here may introduce subscription gating, usage credits, multi-user auth tiers, or any other SaaS-shaped UI — this is a single-user local tool.
+- Update documentation per `RULES.md` "Documentation" section after every task, every time, no exceptions.
+
+---
+
+## T-21 — Workspace UI Organization & Final UX Polish
+
+**1. Role:** Workspace UI/UX and Information-Architecture Engineer. This is the final, small polish task for organizing the existing workspace—not a redesign or a feature-expansion project.
+
+**2. Startup verification:** Confirm the current `dev` branch HEAD first and inspect the live workspace implementation before changing anything. Use this uploaded feature backlog as the task source. Do **not** replace, merge, or take tasks from the repository's already-completed `Docs/TASKS.md`; do not edit that file as part of this task. Follow `RULES.md` (Ponytail) and the current `Docs/DESIGN.md` conventions.
+
+**3. Context to inspect:** Read only the parts needed from `features/workspace/WorkspaceShell.tsx`, `features/workspace/Navigation/LeftNavigation.tsx`, `features/workspace/Header/TopHeader.tsx`, `features/workspace/RightPanel/RightWorkspacePanel.tsx`, the relevant existing workspace panels and their action handlers, the applicable primitives under `components/ui/` (especially `button.tsx`, `accordion.tsx`, `collapsible.tsx`, `drawer.tsx`, `sheet.tsx`, `dropdown-menu.tsx`, `context-menu.tsx`, `tabs.tsx`, and `simple-tooltip.tsx`), plus `RULES.md` and the relevant sections of `Docs/DESIGN.md`. Confirm each path and component still exists on `dev`; do not rely on stale line numbers or this task's assumptions.
+
+**4. To-do:**
+1. Audit the actual workspace's buttons, tool actions, navigation entries, tabs, sections, drawers, overflow menus, and repeated controls. Identify clutter, confusing groupings, duplicate entry points, and actions shown when they are not relevant to the active tool before editing.
+2. Organize existing controls around the real workflow and context: keep the active tool's main action(s) easy to find; group related settings into clearly named sections; place secondary or infrequent actions in an existing drawer, dropdown, context menu, or collapsible section when that is more appropriate. Keep important actions discoverable, avoid excessive nesting, and do not hide routine actions behind multiple clicks.
+3. Reuse the project's existing buttons, drawers/sheets, accordion/collapsible sections, tabs, tooltips, navigation, stores, and handlers. Prefer improving or moving an existing control over creating a duplicate component, new state layer, new service, or new UI pattern. Add a new primitive or dependency only if inspection proves the existing options cannot meet the requirement.
+4. Give related actions a consistent location and naming across workspace tools without forcing every tool to show irrelevant controls. Preserve the existing distinction between the viewport, left navigation/tool area, and right-side assets/properties/execution panels. Do not remove a feature merely because its current placement is inconvenient.
+5. Keep the existing design language: reuse the current `surface-0..4` tokens, established spacing/type/icon patterns, and motion conventions from `Docs/DESIGN.md`. Avoid a new visual system, decorative cards, generic gradient styling, unnecessary labels, and ornamental UI that does not improve a workflow.
+6. Preserve the current responsive behavior: desktop's docked workspace layout, tablet's overlay behavior, and mutually exclusive mobile panels/drawers. Check that controls remain usable without covering essential viewport actions or creating clipped/overlapping panels.
+7. Preserve all existing behavior and contracts: `activeTool`, navigation, panel mode/open state, keyboard shortcuts, action callbacks, asset selection, job submission/state, progress reporting, backend/API payloads, and export paths. Do not fake progress, invent values, duplicate business logic, or mutate `master/source.glb` lineage. Keep destructive actions clearly separated and retain any existing confirmation safeguards.
+8. Check interaction details: every button must perform its advertised action; icon-only buttons need accessible names and appropriate tooltips; drawer/sheet close and Escape/focus behavior must remain correct; keyboard shortcuts must not steal input from text fields. Reuse established accessibility patterns.
+9. Verify the changes on the relevant desktop, tablet, and mobile layouts using the project's existing checks and `agent-browser` as required by `RULES.md`. Run the relevant lint/typecheck/tests/build scripts that are available, and fix regressions introduced by this task. Store any browser screenshots only under `/tmp/agent-browser-screenshots/` or another scratch directory—never in the project root.
+
+**5. Guardrails / output rules:** Smallest correct diff; no unrelated cleanup and no rewrites of working panels. Do not mark a control as implemented unless its existing or updated handler works. If inspection shows an area is already well organized, leave it alone and report that rather than manufacturing changes. Report exact changed paths, checks actually run and their results, plus any verified blocker; do not claim tests or branch changes that did not happen.
+
+**6. Acceptance criteria:**
+- Existing workspace features and actions remain available and functional; no working feature is silently deleted.
+- Buttons, tool actions, settings sections, drawers, and menus have clearer grouping, fewer confusing duplicates, and context-appropriate visibility.
+- Existing components and design tokens are reused wherever practical; no parallel implementation of an existing interaction is introduced.
+- Desktop/tablet/mobile layouts remain usable, with no broken panel, keyboard, focus, or viewport interactions.
+- Relevant documentation is updated to match the shipped behavior.
+
+**7. Doc sync:** Update the relevant workspace/layout and component-usage sections of `Docs/DESIGN.md`, and add a concise entry to `Docs/CHANGELOG.md` while retaining its last-three-entry convention. Update `README.md` or other documentation only if the actual user-facing workflow or documented capability map changes. Follow the documentation rules in `RULES.md` and do not modify the completed `Docs/TASKS.md`.
 

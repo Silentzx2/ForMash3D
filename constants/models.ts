@@ -388,3 +388,99 @@ export function supportsTextInput(id: string): boolean {
 export function supportsImageInput(id: string): boolean {
   return getSupportedInputs(id).includes('image');
 }
+
+export interface MaterialPreset {
+  id: string;
+  name: string;
+  prompt: string;
+  description: string;
+  cssStyle: {
+    background: string;
+    border?: string;
+    boxShadow?: string;
+  };
+}
+
+export const MATERIAL_PRESETS: MaterialPreset[] = [
+  {
+    id: 'brushed_metal',
+    name: 'Brushed Metal',
+    prompt: 'brushed metal, polished aluminum, subtle directional grain, high reflectivity, metallic finish',
+    description: 'Anodized aluminum with linear brushing and specular highlights',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #a1a1aa 0%, #e4e4e7 50%, #71717a 100%)',
+      border: '1px solid #d4d4d8',
+    },
+  },
+  {
+    id: 'weathered_wood',
+    name: 'Weathered Wood',
+    prompt: 'weathered wood, aged rustic timber, visible wood grain, matte natural finish, organic cracks',
+    description: 'Aged rustic timber with deep organic grain and matte patina',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #78350f 0%, #92400e 50%, #451a03 100%)',
+      border: '1px solid #b45309',
+    },
+  },
+  {
+    id: 'matte_plastic',
+    name: 'Matte Plastic',
+    prompt: 'matte plastic, clean smooth polymer, low specularity, vibrant diffuse color, industrial grade',
+    description: 'Smooth injection-molded polymer with even diffuse shading',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 50%, #1d4ed8 100%)',
+      border: '1px solid #60a5fa',
+    },
+  },
+  {
+    id: 'rough_stone',
+    name: 'Rough Stone',
+    prompt: 'rough stone, natural granite rock, porous texture, coarse mineral surface, realistic bump',
+    description: 'Coarse granite rock with porous surface and mineral specks',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #52525b 0%, #71717a 50%, #3f3f46 100%)',
+      border: '1px solid #a1a1aa',
+    },
+  },
+  {
+    id: 'fabric',
+    name: 'Fabric',
+    prompt: 'woven fabric, detailed textile cloth, soft cotton linen weave, subtle micro-texture',
+    description: 'Tactile woven textile with visible thread cross-hatch',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #0d9488 0%, #14b8a6 50%, #0f766e 100%)',
+      border: '1px solid #2dd4bf',
+    },
+  },
+  {
+    id: 'chrome',
+    name: 'Chrome',
+    prompt: 'chrome, mirror finish, ultra reflective polished metallic surface, high specularity',
+    description: 'Mirror-polished chrome with maximum specular reflection',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #f4f4f5 0%, #a1a1aa 25%, #ffffff 50%, #71717a 75%, #e4e4e7 100%)',
+      border: '1px solid #ffffff',
+    },
+  },
+  {
+    id: 'carbon_fiber',
+    name: 'Carbon Fiber',
+    prompt: 'carbon fiber, distinct twill weave pattern, high tech composite, semi-gloss clearcoat',
+    description: 'High-tech composite with diagonal twill weave under clearcoat',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #18181b 0%, #27272a 50%, #09090b 100%)',
+      border: '1px solid #3f3f46',
+    },
+  },
+  {
+    id: 'gold',
+    name: 'Gold',
+    prompt: 'pure polished gold, warm metallic specular reflections, luxurious smooth finish',
+    description: 'Luxurious 24k polished gold with warm metallic sheen',
+    cssStyle: {
+      background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%)',
+      border: '1px solid #fde68a',
+    },
+  },
+];
+

@@ -10,6 +10,7 @@ import { useFeatureAvailability } from '@/hooks/useFeatureAvailability';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, CheckIcon, ChevronDown, ExternalLinkIcon, FolderOpenIcon, RotateCcwIcon, Settings2, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
+import { ToolContextHelp } from '@/features/wiki/components/ToolContextHelp';
 export const MeshSegmentPanel: React.FC = () => {
   const {
     currentAsset,
@@ -101,22 +102,25 @@ export const MeshSegmentPanel: React.FC = () => {
     <div id="panel-mesh-segment" className="flex flex-col h-full bg-[hsl(var(--surface-1))] text-white overflow-y-auto scrollbar-thin select-none">
       {/* Top Header Pill Tabs: Segment / SettingsIcon */}
       <div className="p-3 border-b border-white/[0.08] bg-[hsl(var(--surface-1))] flex-shrink-0">
-        <div className="flex gap-1 p-1 bg-[hsl(var(--surface-0))] rounded-xl border border-white/[0.08]">
-          {(['segment', 'settings'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              id={`tab-segment-${tab}`}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-extrabold capitalize transition-all cursor-pointer ${
-                activeTab === tab
-                  ? 'bg-primary text-black shadow-sm'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
-              }`}
-            >
-              {tab === 'segment' ? 'Segmentation' : 'Post-Processing'}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 flex gap-1 p-1 bg-[hsl(var(--surface-0))] rounded-xl border border-white/[0.08]">
+            {(['segment', 'settings'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                id={`tab-segment-${tab}`}
+                onClick={() => setActiveTab(tab)}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-extrabold capitalize transition-all cursor-pointer ${
+                  activeTab === tab
+                    ? 'bg-primary text-black shadow-sm'
+                    : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+                }`}
+              >
+                {tab === 'segment' ? 'Segmentation' : 'Post-Processing'}
+              </button>
+            ))}
+          </div>
+          <ToolContextHelp tool="segment" label="Segmentation Help" />
         </div>
       </div>
 

@@ -361,6 +361,57 @@ class ApiClient {
     return response.data;
   }
 
+  async getStorageBreakdown(): Promise<{
+    success: boolean;
+    data: {
+      root_path: string;
+      total_bytes: number;
+      total_mb: number;
+      total_gb: number;
+      categories: Record<
+        'master' | 'game_ready' | 'textures' | 'lods' | 'rigging' | 'temp',
+        { bytes: number; count: number; percent: number; size_mb: number; size_gb: number }
+      >;
+    };
+  }> {
+    const response = await this.retry(() =>
+      this.client.get('/api/v1/system/storage-breakdown')
+    );
+    return response.data;
+  }
+
+  async cleanupStorage(daysOld: number = 7, dryRun: boolean = false): Promise<{
+    success: boolean;
+    dry_run: boolean;
+    days_old: number;
+    files_affected: number;
+    freed_bytes: number;
+    freed_mb: number;
+    message: string;
+  }> {
+    const response = await this.client.post(
+      '/api/v1/system/storage-cleanup',
+      null,
+      { params: { days_old: daysOld, dry_run: dryRun } }
+    );
+    return response.data;
+  }
+
+  async reorderQueue(jobIds: string[]): Promise<{ success: boolean; reordered_count: number }> {
+    const response = await this.client.post(
+      '/api/v1/system/jobs/queue/reorder',
+      { job_ids: jobIds }
+    );
+    return response.data;
+  }
+
+  async cancelJob(jobId: string): Promise<{ success: boolean; job_id: string; status: string }> {
+    const response = await this.client.post(
+      `/api/v1/system/jobs/${encodeURIComponent(jobId)}/cancel`
+    );
+    return response.data;
+  }
+
   // Database Administration Endpoints (/api/v1/system/database)
   async getDatabaseStats(): Promise<any> {
     const response = await this.retry(() =>

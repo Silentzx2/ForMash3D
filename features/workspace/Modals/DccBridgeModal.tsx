@@ -5,9 +5,11 @@ import { motion, AnimatePresence } from 'motion/react';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { CableIcon, Cancel, CheckIcon, CheckmarkCircle02Icon, Copy, RefreshCw, SendIcon, TerminalIcon } from '@hugeicons/core-free-icons';
-type DccApp = 'blender' | 'unreal' | 'maya' | 'unity';
+import { settingsPersistence } from '@/services/settingsPersistence';
 
-interface DccPreset {
+export type DccApp = 'blender' | 'unreal' | 'maya' | 'unity';
+
+export interface DccPreset {
   id: DccApp;
   name: string;
   defaultPort: number;
@@ -16,7 +18,7 @@ interface DccPreset {
   format: string;
 }
 
-const DCC_PRESETS: DccPreset[] = [
+export const DCC_PRESETS: DccPreset[] = [
   {
     id: 'blender',
     name: 'Blender 4.x / 5.x',
@@ -53,7 +55,13 @@ const DCC_PRESETS: DccPreset[] = [
 
 export const DccBridgeModal: React.FC = () => {
   const { isDccBridgeOpen, setIsDccBridgeOpen, currentAsset } = useWorkspace();
-  const [selectedApp, setSelectedApp] = useState<DccApp>('blender');
+  const [selectedApp, setSelectedApp] = useState<DccApp>(() => {
+    const last = settingsPersistence.getLastDccTarget();
+    if (last === 'blender' || last === 'unreal' || last === 'maya' || last === 'unity') {
+      return last;
+    }
+    return 'blender';
+  });
   const [port, setPort] = useState(9876);
   const [host, setHost] = useState('127.0.0.1');
   const [isPinging, setIsPinging] = useState(false);
@@ -129,6 +137,7 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
 
   const handleSendToDcc = () => {
     setIsSending(true);
+    settingsPersistence.setLastDccTarget(selectedApp);
     setTimeout(() => {
       setIsSending(false);
       setSendSuccess(true);
@@ -190,7 +199,10 @@ print(f"[ForMash3D UE5] Syncing to {destination_path}...")
                   return (
                     <button
                       key={preset.id}
-                      onClick={() => setSelectedApp(preset.id)}
+                      onClick={() => {
+                        setSelectedApp(preset.id);
+                        settingsPersistence.setLastDccTarget(preset.id);
+                      }}
                       className={`flex flex-col items-start p-3 rounded-xl border text-left transition-all ${
                         isSelected
                           ? 'bg-primary/10 border-primary shadow-sm shadow-primary/20'

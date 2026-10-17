@@ -16,6 +16,7 @@ import {
   SparklesIcon,
   UserIcon,
 } from '@hugeicons/core-free-icons';
+import { ToolContextHelp } from '@/features/wiki/components/ToolContextHelp';
 
 export const RiggingLeftPanel: React.FC = () => {
   const { currentAsset, navigateToTool, addAsset, setCurrentAsset, updateAssetProperties } = useWorkspace();
@@ -84,6 +85,15 @@ export const RiggingLeftPanel: React.FC = () => {
 
   return (
     <div id="rigging-left-panel" className="flex flex-col h-full overflow-y-auto p-3 space-y-3.5 text-xs select-none bg-[hsl(var(--surface-1))] custom-scrollbar">
+      {/* Panel Header */}
+      <div className="flex items-center justify-between pb-2 border-b border-white/[0.08] flex-shrink-0">
+        <span className="font-bold text-xs text-white flex items-center gap-1.5">
+          <HugeiconsIcon icon={BoneIcon} size={16} className="w-3.5 h-3.5 text-primary" />
+          <span>Auto Rigging</span>
+        </span>
+        <ToolContextHelp tool="rigging" label="Auto Rig Help" />
+      </div>
+
       {/* Target Character Card */}
       <div className="space-y-1.5">
         <label className="text-[11px] font-bold text-zinc-300 uppercase tracking-wide">Target Character</label>

@@ -7,6 +7,7 @@ import { MeshUploadStatus } from './MeshUploadStatus';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { ActivityIcon, ArrowUpRightIcon, Box, CheckIcon, CheckmarkCircle02Icon, ChevronDown, LoaderCircle, Shield01Icon, SlidersHorizontalIcon, TerminalIcon, UploadIcon } from '@hugeicons/core-free-icons';
+import { ToolContextHelp } from '@/features/wiki/components/ToolContextHelp';
 export const RemeshPanel: React.FC = () => {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -69,9 +70,12 @@ export const RemeshPanel: React.FC = () => {
             <HugeiconsIcon icon={SlidersHorizontalIcon} size={16} className="w-3.5 h-3.5 text-primary" />
             <span>Quad Remesh &amp; Retopo</span>
           </span>
-          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-            {remeshSettings.variant} · {remeshSettings.polyType.toUpperCase()}
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
+              {remeshSettings.variant} · {remeshSettings.polyType.toUpperCase()}
+            </span>
+            <ToolContextHelp tool="remesh" label="Auto Retopo Help" />
+          </div>
         </div>
 
       </div>

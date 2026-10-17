@@ -37,6 +37,7 @@ const TYPE_CONFIG = {
   brush: {
     libraryKey: 'brushes', title: 'Brush', plural: 'brushes', emptyIcon: 'brush',
     preview: 'image', childBadge: 'EDIT'
+  },
   image: {
     libraryKey: 'images', title: 'Image', plural: 'images', emptyIcon: 'image_not_supported',
     preview: 'image', childBadge: 'EDIT'

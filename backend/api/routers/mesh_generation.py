@@ -228,6 +228,7 @@ class ImageToRawMeshRequest(BaseModel):
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
+    candidate_count: int = Field(1, ge=1, le=4, description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
 
@@ -311,6 +312,7 @@ class ImageToTexturedMeshRequest(BaseModel):
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
+    candidate_count: int = Field(1, ge=1, le=4, description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
 
@@ -869,6 +871,7 @@ async def image_to_raw_mesh(
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "enable_postprocess": mesh_request.enable_postprocess,
+                "candidate_count": int(mesh_request.candidate_count or 1),
                 **params,
             },
             model_preference=model_id,
@@ -876,6 +879,7 @@ async def image_to_raw_mesh(
             metadata={
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
+                "candidate_count": int(mesh_request.candidate_count or 1),
                 "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
@@ -1149,6 +1153,7 @@ async def image_to_textured_mesh(
                 "topology_mode": mesh_request.topology_mode or ("quad" if mesh_request.quad_topology else "triangle"),
                 "quad_topology": bool(mesh_request.quad_topology or mesh_request.topology_mode == "quad"),
                 "enable_postprocess": mesh_request.enable_postprocess,
+                "candidate_count": int(mesh_request.candidate_count or 1),
                 **params,
             },
             model_preference=model_id,
@@ -1156,6 +1161,7 @@ async def image_to_textured_mesh(
             metadata={
                 "asset_name": chosen_stem,
                 "image_name": chosen_stem,
+                "candidate_count": int(mesh_request.candidate_count or 1),
                 "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,

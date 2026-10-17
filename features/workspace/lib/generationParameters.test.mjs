@@ -31,3 +31,32 @@ test('buildGenerationParameters configures Hunyuan3D-DiT-v2-mini-Turbo with 380 
   assert.equal(result.modelParameters.num_inference_steps, 5);
   assert.equal(result.modelParameters.num_chunks, 80000);
 });
+
+test('buildGenerationParameters propagates candidate_count (clamped between 1 and 4)', () => {
+  const settingsDefault = {
+    imageFileId: 'file-test-cand-1',
+    meshQuality: 'high',
+    enablePostprocess: false,
+  };
+  const resDefault = buildGenerationParameters(settingsDefault, { raw_mesh: true });
+  assert.equal(resDefault.body.candidate_count, 1);
+
+  const settingsFour = {
+    imageFileId: 'file-test-cand-4',
+    candidateCount: 4,
+    meshQuality: 'high',
+    enablePostprocess: false,
+  };
+  const resFour = buildGenerationParameters(settingsFour, { raw_mesh: true });
+  assert.equal(resFour.body.candidate_count, 4);
+  assert.equal(resFour.modelParameters.candidate_count, 4);
+
+  const settingsClamped = {
+    imageFileId: 'file-test-cand-clamped',
+    candidateCount: 99,
+    meshQuality: 'high',
+    enablePostprocess: false,
+  };
+  const resClamped = buildGenerationParameters(settingsClamped, { raw_mesh: true });
+  assert.equal(resClamped.body.candidate_count, 4);
+});

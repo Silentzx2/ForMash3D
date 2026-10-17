@@ -204,6 +204,33 @@ Universal motion specifications compatible with `motion/react`:
 - Source-generation controls output raw geometry; texturing runs as a separate, optional, non-destructive stage preserving `master/source.glb`.
 - `systemStats`: Real-time GPU/VRAM telemetry in texture panel
 
+### Generation & Texture Power Tools (Batch 2)
+- `GeneratePanel.tsx` (Pick-Best-of-N Candidate Generation): Multi-variation count selector (1 to 4) stepping seeds deterministically. Interactive Candidate Comparison Grid rendered on completion with individual candidate seed display, 3D viewport previewing (`loadModelInViewer`), and one-click promotion to `master/source.glb` with unselected candidate file garbage collection.
+- `TexturePanel.tsx` (Spot Retexture / UV Region Mask): Sub-tool toggle between Surface Color Paint and Spot Retexture Mask. Interactive 3D surface painting generating a binary/grayscale UV mask aligned to the mesh's existing xatlas UV layout without re-unwrapping. Localized prompt input, brush dynamics, mask thumbnail preview, PNG mask export, and versioned non-destructive output reservation (`textures/<name>_textured_v{n}.glb`) with clear labeling of backend adapter limitations.
+- `constants/models.ts` & `TexturePanel.tsx` (Material Prompt Presets): 8 curated material presets (Brushed Metal, Weathered Wood, Matte Plastic, Rough Stone, Fabric, Chrome, Carbon Fiber, Gold) with CSS gradient previews, pre-filling editable prompt guidance without parallel preset code paths.
+- `GeneratePanel.tsx` (Physics Material Quick Presets): 6 friction/restitution preset chips (Default, Rubber, Stone, Wood, Ice, Metal) setting sliders non-destructively in the Physics Preparation drawer.
+- `BoardPage.jsx`, `BoardAiPanel.jsx` & `boardHelpers.js` (Board-to-Generate Bridge): "Send to 3D Generate" action exporting canvas or selection to File and preloading it into GeneratePanel via `useAppStore.pendingBoardImage` without auto-triggering generation.
+
+### Workspace UX & Inspector Components (Batch 1)
+- `RightPropertyPanel.tsx`: 7 collapsible groups (Transform, Geometry Stats, Dynamic Context Inspector, Shading Overrides, Mesh Diff Viewer, Model Comparison Viewer, Production Export) implemented via `components/ui/collapsible.tsx`, state persisted in `useUIStore.rightPanelSections`, auto-expanding active tool with manual toggle overrides, and client-side label filtering.
+- `CommandPalette.tsx`: Global command overlay via `components/ui/command.tsx` bound to `⌘K` / `Ctrl+K`. Indexes all tools, navigation routes, recent & favorite assets without telemetry or focus hijacking.
+- `ModelComparisonViewer.tsx` & `AssetSelectorModal.jsx`: Full model comparison workflow replacing legacy stubs. Enables comparing two distinct assets or job lineage artifacts (`source.glb` vs `lod0.glb` / `game_ready.glb`), surfacing authoritative backend QA score deltas (Topology, UV, Budget) without client-side estimation.
+- `SnapshotMenu.tsx`: Workspace session snapshot controller in header, managing named state snapshots (asset ID, active tool, collapsible sections, camera position/target) via `services/taskPersistence.ts`.
+
+### Workspace & Studio Components (Batch 3)
+- `AnimationLeftPanel.tsx` & `useAnimationStore.ts`: Quick-Apply Animation Preset Library with 1-click apply, bilateral symmetry X-mirror mapping (`getSymmetricBoneName`, `mapRetargetBones`), and clip timeline synchronizer for humanoid clips.
+- `JobDetailView.tsx`: "Clone & Edit" action extracting source parameters and routing to the corresponding tool panel (`model`, `remesh`, `texture`, `uv`, etc.) with populated inputs and lineage continuity without mutating the original job.
+- `NotificationCenter.tsx`: Durable Activity Center in the header tracking job completions, failures, and exports up to 100 entries via `services/taskPersistence.ts`, with unread count badge, links to job/asset, and clear/mark-all actions.
+- `RightAssetsPanel.tsx`: Asset Collections (Folders/Grouping) system enabling custom user collections, collection filtering alongside type filters, and asset assignment/removal without destructive file deletions.
+- `MeshViewer.tsx`: Viewport Turntable Capture leveraging native `MediaRecorder` + `canvas.captureStream(30)` over a fixed 90-frame full rotation loop with exact shading/lighting reproduction, `.webm`/`.mp4` download, snapshot PNG fallback, and activity center notification.
+
+### Workspace & In-App Help Components (Batch 4)
+- `ToolContextHelp.tsx` & `app/api/wiki/[id]/route.ts`: Tool-aware in-app contextual documentation drawer mapping `activeTool` (`model`, `remesh`, `uv`, `texture`, `rigging`, `segment`) directly to official wiki markdown articles in an accessible slide-over popover with graceful fallback for unmapped content.
+- `ExportModal.tsx` & `services/settingsPersistence.ts`: Export Quick-Profiles with default presets ("GLB Game-Ready", "Unity Mobile", "Unreal High-Poly", "Blender Raw"), custom user combo saving/deletion, and full LOD level (LOD0-LOD3/All), collision mesh, and texture resolution toggles.
+- `OutputsPage.tsx` & `/api/v1/system/storage-breakdown`: Interactive storage breakdown visualizer with authentic backend byte counts across `master/`, `game_ready/`, `textures/`, `lods/`, `rigging/`, and `temp/`, alongside safe intermediate cleanup with age threshold selection.
+- `QueueTab.tsx` & `backend/core/scheduler/job_queue.py`: Scheduler administration interface supporting queue cancellation and live queued-job priority reordering (`Move Up`, `Move Down`) with dedicated Active Job single-GPU execution lock monitoring.
+- `RightAssetsPanel.tsx`: DCC Bridge Quick-Send via asset 3-dots menu item "Send to {last-used DCC}", persisting DCC target in `settingsPersistence` and bypassing the full modal for configured endpoints with direct toast feedback.
+
 ---
 
 ## 5. Centralized Texture Pipeline Flow (Paint3D & Hunyuan3D-Paint)
@@ -275,6 +302,10 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 - **Tablet (768–1023px)**: Left nav rail stays; right panel collapses to overlay.
 - **Mobile (<768px)**: Both panels become slide-over overlays; bottom dock provides toggle buttons. Panels are mutually exclusive.
 
+### Workspace Session Snapshots
+- **Explicit Snapshot Persistence**: User can save named snapshots capturing the active asset ID, active tool, right property panel section collapsed states, and current viewport camera transform (position and target vectors).
+- **Graceful Restoration**: Restoring re-selects the asset (safely notifying if deleted), switches tool tabs, synchronizes collapsed accordion sections, and dispatches camera re-centering without reload.
+
 ---
 
 ## 7. Rendering Performance & SSR Architecture
@@ -303,20 +334,27 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 
 ---
 
-## 9. Keyboard Shortcuts
+## 9. Keyboard Shortcuts & Remapping
 
-| Shortcut | Action |
-|---|---|
-| ⌘1 | Navigate to Dashboard |
-| ⌘2 | Navigate to Assets |
-| ⌘3 | Navigate to System |
-| ⌘, | Navigate to Settings |
-| G | Generate tool |
-| R | Remesh tool |
-| T | Texture tool |
-| A | Animation tool |
-| K | Rigging tool |
-| S | Segment tool |
+| Shortcut (Default) | Action | Key ID |
+|---|---|---|
+| ⌘1 | Navigate to Dashboard | `nav_dashboard` |
+| ⌘2 | Navigate to Assets | `nav_assets` |
+| ⌘3 | Navigate to System | `nav_system` |
+| ⌘, | Navigate to Settings | `nav_settings` |
+| ⌘K / Ctrl+K | Command Palette | `cmd_palette` |
+| G | Generate tool | `tool_generate` |
+| R | Remesh tool | `tool_remesh` |
+| T | Texture tool | `tool_texture` |
+| A | Animation tool | `tool_animation` |
+| K | Rigging tool | `tool_rigging` |
+| S | Segment tool | `tool_segment` |
+
+### Custom Keybinding Architecture
+- **In-Place Recording**: Key combinations are editable in `Settings -> Shortcuts` (`PreferencesSections.tsx`). Clicking a shortcut records the next key combo press.
+- **Conflict Detection**: Real-time warning is displayed if a desired key binding conflicts with another active action.
+- **Persistence & Fallback**: Custom shortcuts persist in local storage via `services/settingsPersistence.ts`. Users can reset individual shortcuts or all bindings back to default with one click.
+- **Dynamic Evaluation**: `WorkspaceShell.tsx` evaluates active shortcuts dynamically via `getEffectiveShortcuts()`, applying custom keybindings instantly without application reload.
 
 ---
 
@@ -352,9 +390,10 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
 - **Studio Environment Engine**:
   - Real-time Three.js scene environment customization with 6 backdrop color presets, 5 lighting atmospheres, and 4 chromatic light tones (Studio, Warm Gold, Cyber Cool, Neutral).
   - Fully dynamic directional lighting calculation (Key, Fill, Rim, Ambient) and contact shadow intensity.
-- **DCC Live Bridge (`DccBridgeModal.tsx`)**:
+- **DCC Live Bridge (`DccBridgeModal.tsx`) & Quick-Send (`RightAssetsPanel.tsx`)**:
   - Out-of-the-box bridge support for Blender 4.x/5.x, Unreal Engine 5 (Remote Control API), Unity Editor, and Autodesk Maya.
   - Features local daemon health checking, custom port binding, pipeline toggle flags, and 1-click Python ingestion scripts.
+  - Quick-Send from asset 3-dots menu ("Send to {last-used DCC}") bypasses the full modal when a target application has been used, testing/dispatching directly to configured local ports with real-time toast feedback and fallback to modal configuration when unconfigured.
 
 ---
 
@@ -401,16 +440,24 @@ The ZIP option snapshots the complete canonical workspace; it is not a selective
 
 Post-processing stage and progress reuse the existing job status model rather than introducing a second progress subsystem.
 
+Export Quick-Profiles (`ExportModal.tsx`) enable 1-click loading and custom creation of format/LOD/collision combinations (e.g. "GLB Game-Ready", "Unity Mobile", "Unreal High-Poly", "Blender Raw") persisted in `services/settingsPersistence.ts`. Profiles only pre-fill validated toggles and reuse the single canonical export execution pipeline.
+
+Storage Breakdown & Safe Cleanup (`OutputsPage.tsx`, `/api/v1/system/storage-breakdown`, `/api/v1/system/storage-cleanup`) provides an authentic byte-level overview across `master/`, `game_ready/`, `textures/`, `lods/`, `rigging/`, and `temp/` using canonical server filesystem sizes. The safe cleanup action removes obsolete intermediate processing artifacts older than a user-specified day threshold while strictly preserving `master/source.glb` lineage and primary game-ready files.
+
 ## Physics UX
 The Generate panel keeps Physics Preparation behind a compact Advanced Generation drawer so the primary workflow stays short and scroll-light. The viewer exposes a top-level Test Physics action. On Physics Ready assets it uses the canonical collision runtime; on ordinary loaded meshes it falls back to a lightweight bounds-based rigid-body smoke test without mutating the asset or running post-processing. The viewer still provides Play, Pause, Step, Reset, collider debug, Drop, Bounce, Slide, and Spin controls. Deformable/jiggle simulation remains capability-gated and is not faked.
 
 ## Viewport Inspect UX
 The viewport keeps frequent actions in the center-view rail: camera, shading, wireframe, turntable, Test Physics, and Mirror/Reflection Peek. Reflection Peek is an event-driven viewport snapshot that provides a real-time thumbnail preview of the mesh and lighting. Rather than running an unthrottled timer loop, snapshot capture executes once on initial mesh load and then listens to OrbitControls `'end'` events debounced at 250ms. Previous object URLs are revoked upon each capture to prevent memory bloat, and the capture loop is completely halted when the scene is static or unmounted.
 
+Turntable 360° capture (`MeshViewer.tsx`) enables client-side recording of a complete 360° rotation directly from the canvas via native `MediaRecorder` and `canvas.captureStream(30)`. Capture executes over a deterministic 90-frame rotation loop (3.0s at 30fps) with synchronized shadow map updates, leaving scene materials, lighting, and shading identical to viewport inspection. Outputs standard `.webm` or `.mp4` video with fallback to PNG snapshot for unsupported browsers, and logs an export activity record.
+
 ## Pipeline Execution UX — 2026-09-29
 The live execution panel is a telemetry surface, not a simulated progress animation. It renders the backend stage/message stream, global progress, completed-stage count, elapsed time, estimated remaining time, worker log timeline, and artifact readiness from the actual job result. Hidden browser tabs reduce polling activity, and log auto-scroll preserves manual inspection when the user scrolls upward.
 
 Jobs & Execution follows the same rule: active jobs refresh frequently, idle history refreshes less often, and no UI fallback invents a non-zero progress percentage.
+
+Job Clone & Edit (`JobDetailView.tsx`) allows users to clone completed or historical jobs and re-run them with modified parameters. Clicking "Clone & Edit" reads the job's original parameter payload, navigates to the relevant studio tool panel (`model`, `remesh`, `texture`, `uv`, etc.), pre-populates parameter inputs, and maintains source asset lineage without mutating the historical job or its artifacts.
 
 ## Workspace Data Integrity
 Mesh statistics, segmentation part counts, and result metadata are rendered only when supplied by the backend. Client-side sample numbers are not treated as factual asset statistics.
@@ -434,6 +481,7 @@ Frontend pattern:
 - Poll `/api/v1/system/stats` every 5 seconds from the workspace header.
 - Hide or degrade gracefully when `gpu_name` is `"Unknown"` or GPU fields are `0.0`.
 - Do not run heavy polling while the workspace tab is hidden.
+- Notification / Activity Center (`NotificationCenter.tsx`) provides persistent tracking of job completions, failures, and exports. Backed by `taskPersistence.ts` with a 100-item FIFO cap, the bell icon in `TopHeader.tsx` displays an unread count badge and opens a glassmorphic dropdown with direct links to view the generated job or select the target asset.
 
 ## Model Parameter Contract — 2026-10-04
 

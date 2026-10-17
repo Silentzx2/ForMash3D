@@ -27,6 +27,7 @@ import { shadingModeToPreset, presetToShadingMode } from '@/lib/storeAdapter';
 import { diagnoseJobError } from '@/lib/jobDiagnostics';
 import { useRouter, usePathname } from 'next/navigation';
 import { buildGenerationParameters } from '../utils/buildGenerationParameters';
+import { taskPersistence } from '@/services/taskPersistence';
 
 interface ComparisonGroup {
   id: string;
@@ -1093,6 +1094,14 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                    });
                  }
 
+                 taskPersistence.addNotification({
+                   title: task.title ? `${task.title} Completed` : '3D Generation Completed',
+                   description,
+                   status: productionStatus === 'failed' ? 'failed' : 'completed',
+                   jobId,
+                   assetId: jobId,
+                 });
+
                 if (result?.model_url || result?.active_model_url || result?.textured_model_url || result?.source_model_url) {
                   const modelUrl = preferredGenerationPreviewUrl(result) as string;
                   const previewStats = preferredPreviewStats(result);
@@ -1129,6 +1138,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
                     qa_report: result.qa_report,
                     quality_trace: result.quality_trace,
                     artifacts: result.artifacts,
+                    candidates: result.candidates,
                   });
                   addAsset(outputAsset);
                   if (!activeTaskRef.current || activeTaskRef.current.id === jobId || !selectedAssetId) {
@@ -1140,6 +1150,12 @@ function dataURLtoFile(dataURL: string, filename: string): File {
               } else if ((data.status === 'failed' || data.status === 'cancelled') && task.status !== 'failed' && task.status !== 'interrupted') {
                 const errMsg = data.error_message || 'The job encountered an error during execution';
                 toast.error('Process failed', { description: errMsg });
+                taskPersistence.addNotification({
+                  title: task.title ? `${task.title} Failed` : 'Job Failed',
+                  description: errMsg,
+                  status: 'failed',
+                  jobId,
+                });
               }
             } catch (jobErr) {
               // ignore single job polling error
@@ -1221,6 +1237,7 @@ function dataURLtoFile(dataURL: string, filename: string): File {
         game_ready_url: (result.game_ready_url as string) || modelUrl,
         source_model_url: (result.source_model_url as string) || (result.high_fidelity_url as string) || undefined,
         tags: ['AI Generated'],
+        candidates: result.candidates,
       });
       addAsset(outputAsset);
       setSelectedAssetId(outputAsset.id);

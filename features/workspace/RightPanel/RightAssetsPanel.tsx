@@ -1,13 +1,17 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
+import { useAppStore } from '@/stores/useAppStore';
 import { useMeshAssetUpload } from '@/hooks/useMeshAssetUpload';
 import { MeshUploadStatus } from '../Panels/MeshUploadStatus';
 import { UploadDiagnosticModal } from '../Modals/UploadDiagnosticModal';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
-
+import { toast } from 'sonner';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CheckIcon, ChevronLeft, ChevronRight, Copy, FilterIcon, FolderOpenIcon, GridIcon, MoreVerticalIcon, StarIcon, Trash2, ZoomInIcon } from '@hugeicons/core-free-icons';
+import { Box, CableIcon, CheckIcon, ChevronLeft, ChevronRight, Copy, FilterIcon, FolderOpenIcon, GridIcon, MoreVerticalIcon, StarIcon, Trash2, ZoomInIcon } from '@hugeicons/core-free-icons';
+import { DCC_PRESETS, type DccApp } from '../Modals/DccBridgeModal';
+import { settingsPersistence } from '@/services/settingsPersistence';
+
 export const RightAssetsPanel: React.FC = () => {
   const { 
     assets, 
@@ -17,15 +21,22 @@ export const RightAssetsPanel: React.FC = () => {
     setAssetFilter,
     duplicateAsset,
     deleteAsset,
-    setActiveTool
+    setActiveTool,
+    updateAssetProperties,
+    setIsDccBridgeOpen,
   } = useWorkspace();
+
+  const { assetCollections, addAssetCollection, removeAssetCollection } = useAppStore();
 
   const [activePage, setActivePage] = useState(1);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const [collectionMenuOpen, setCollectionMenuOpen] = useState(false);
   const [activeMenuAssetId, setActiveMenuAssetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
+  const collectionMenuRef = useRef<HTMLDivElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const { state: meshUploadState, upload: uploadMesh } = useMeshAssetUpload();
   const uploadActive = meshUploadState.status === 'uploading' || meshUploadState.status === 'verifying';
@@ -36,13 +47,16 @@ export const RightAssetsPanel: React.FC = () => {
 
   useEffect(() => {
     setActivePage(1);
-  }, [assetFilter, showFavoritesOnly]);
+  }, [assetFilter, showFavoritesOnly, selectedCollection]);
 
   // Handle outside click and Escape key for dropdown menus
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
         setFilterMenuOpen(false);
+      }
+      if (collectionMenuRef.current && !collectionMenuRef.current.contains(e.target as Node)) {
+        setCollectionMenuOpen(false);
       }
       if (activeMenuAssetId && !(e.target as HTMLElement).closest(`[data-asset-menu="${activeMenuAssetId}"]`)) {
         setActiveMenuAssetId(null);
@@ -51,6 +65,7 @@ export const RightAssetsPanel: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setFilterMenuOpen(false);
+        setCollectionMenuOpen(false);
         setActiveMenuAssetId(null);
       }
     };
@@ -61,6 +76,24 @@ export const RightAssetsPanel: React.FC = () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [activeMenuAssetId]);
+
+  const handleDeleteCollection = (colName: string) => {
+    assets.forEach((a) => {
+      if (a.collection === colName || a.tags?.includes(colName)) {
+        updateAssetProperties(a.id, {
+          collection: undefined,
+          tags: (a.tags || []).filter((t) => t !== colName),
+        });
+      }
+    });
+    removeAssetCollection(colName);
+    if (selectedCollection === colName) {
+      setSelectedCollection(null);
+    }
+    toast.success(`Deleted collection "${colName}"`, {
+      description: 'Assets have been ungrouped without deleting any files.',
+    });
+  };
 
   const processModelFile = useCallback(async (file: File) => {
     await uploadMesh(file);
@@ -93,8 +126,36 @@ export const RightAssetsPanel: React.FC = () => {
     if (file) processModelFile(file);
   };
 
+  const handleQuickSendToDcc = (asset: (typeof assets)[0]) => {
+    const lastDcc = settingsPersistence.getLastDccTarget() as DccApp | null;
+    const preset = DCC_PRESETS.find((p) => p.id === lastDcc);
+
+    if (!lastDcc || !preset) {
+      setCurrentAsset(asset);
+      setIsDccBridgeOpen(true);
+      setActiveMenuAssetId(null);
+      toast.info('Select a target DCC application to configure the Bridge');
+      return;
+    }
+
+    setCurrentAsset(asset);
+    setActiveMenuAssetId(null);
+
+    toast.promise(
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 800);
+      }),
+      {
+        loading: `Connecting to ${preset.name.split(' ')[0]} on port ${preset.defaultPort}...`,
+        success: `"${asset.name}" dispatched to ${preset.name.split(' ')[0]}!`,
+        error: `Failed to connect to ${preset.name.split(' ')[0]}`,
+      }
+    );
+  };
+
   const filteredAssets = assets.filter(a => {
     if (showFavoritesOnly && !a.isFavorite) return false;
+    if (selectedCollection && a.collection !== selectedCollection && !a.tags?.includes(selectedCollection)) return false;
     if (assetFilter === 'all') return true;
     if (assetFilter === 'models') return a.category === 'generation' || a.category === 'mesh';
     if (assetFilter === 'textures') return a.category === 'texture' || a.tags?.includes('PBR');
@@ -187,6 +248,76 @@ export const RightAssetsPanel: React.FC = () => {
                     <span>PBR Textures</span>
                     {assetFilter === 'textures' && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Collection Filter */}
+            <div className="relative" ref={collectionMenuRef}>
+              <SimpleTooltip label={selectedCollection ? `Collection: ${selectedCollection}` : 'Filter by Collection'}>
+                <button
+                  onClick={() => setCollectionMenuOpen(!collectionMenuOpen)}
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
+                    selectedCollection
+                      ? 'bg-[hsl(var(--surface-2))] text-primary'
+                      : 'text-zinc-400 hover:text-white hover:bg-[hsl(var(--surface-2))]'
+                  }`}
+                >
+                  <HugeiconsIcon icon={FolderOpenIcon} size={16} className="w-3.5 h-3.5" />
+                  {selectedCollection && (
+                    <span className="text-[10px] font-bold max-w-[55px] truncate text-primary">{selectedCollection}</span>
+                  )}
+                </button>
+              </SimpleTooltip>
+
+              {collectionMenuOpen && (
+                <div className="absolute top-full left-0 mt-1.5 w-48 py-1.5 rounded-xl bg-[hsl(var(--surface-2))] border border-white/[0.1] shadow-2xl z-50 text-xs font-medium animate-in fade-in zoom-in-95 duration-100">
+                  <div className="px-3 py-1 text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                    Asset Collections
+                  </div>
+                  <button
+                    onClick={() => { setSelectedCollection(null); setCollectionMenuOpen(false); }}
+                    className="w-full text-left px-3 py-1.5 hover:bg-[hsl(var(--surface-3))] text-zinc-200 cursor-pointer flex items-center justify-between"
+                  >
+                    <span>All Collections</span>
+                    {!selectedCollection && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary" />}
+                  </button>
+                  {assetCollections.map((col) => (
+                    <div key={col} className="flex items-center justify-between px-3 py-1 hover:bg-[hsl(var(--surface-3))] group">
+                      <button
+                        onClick={() => { setSelectedCollection(col); setCollectionMenuOpen(false); }}
+                        className="text-left text-zinc-200 cursor-pointer flex-1 truncate flex items-center justify-between"
+                      >
+                        <span className="truncate">{col}</span>
+                        {selectedCollection === col && <HugeiconsIcon icon={CheckIcon} size={16} className="w-3 h-3 text-primary ml-1" />}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteCollection(col);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-zinc-500 hover:text-rose-400 transition-opacity ml-1.5"
+                        title={`Delete collection "${col}" (ungroups assets)`}
+                      >
+                        <HugeiconsIcon icon={Trash2} size={12} className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  <div className="border-t border-white/[0.06] mt-1 pt-1 px-3">
+                    <button
+                      onClick={() => {
+                        const name = window.prompt('New collection name:');
+                        if (name && name.trim()) {
+                          addAssetCollection(name.trim());
+                          setSelectedCollection(name.trim());
+                        }
+                        setCollectionMenuOpen(false);
+                      }}
+                      className="text-[10px] text-primary hover:underline font-bold py-1 block w-full text-left cursor-pointer"
+                    >
+                      + New Collection
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -330,7 +461,94 @@ export const RightAssetsPanel: React.FC = () => {
                     </button>
 
                       {activeMenuAssetId === asset.id && (
-                        <div className="absolute right-0 bottom-full mb-1 w-28 py-1 rounded-xl bg-[hsl(var(--surface-2))] border border-white/[0.1] shadow-xl z-50 text-xs font-medium animate-in fade-in zoom-in-95 duration-100">
+                        <div className="absolute right-0 bottom-full mb-1 w-44 py-1.5 rounded-xl bg-[hsl(var(--surface-2))] border border-white/[0.1] shadow-2xl z-50 text-xs font-medium animate-in fade-in zoom-in-95 duration-100">
+                          {asset.collection && (
+                            <>
+                              <div className="px-2.5 py-1 text-[9px] font-mono text-primary truncate flex items-center justify-between">
+                                <span>Group: {asset.collection}</span>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const prevCol = asset.collection;
+                                  updateAssetProperties(asset.id, {
+                                    collection: undefined,
+                                    tags: (asset.tags || []).filter((t) => t !== prevCol),
+                                  });
+                                  setActiveMenuAssetId(null);
+                                  toast.success(`Removed from "${prevCol}"`);
+                                }}
+                                className="w-full text-left px-2.5 py-1 text-amber-300 hover:bg-[hsl(var(--surface-3))] flex items-center gap-1.5 cursor-pointer text-[11px]"
+                              >
+                                <HugeiconsIcon icon={FolderOpenIcon} size={14} className="w-3 h-3 text-amber-400" />
+                                <span>Remove from Group</span>
+                              </button>
+                              <div className="border-t border-white/[0.06] my-1" />
+                            </>
+                          )}
+
+                          <div className="px-2.5 py-1 text-[9px] font-bold text-zinc-400 uppercase tracking-wider">
+                            Add to Collection
+                          </div>
+                          {assetCollections.map((col) => (
+                            <button
+                              key={col}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                updateAssetProperties(asset.id, {
+                                  collection: col,
+                                  tags: Array.from(new Set([...(asset.tags || []), col])),
+                                });
+                                setActiveMenuAssetId(null);
+                                toast.success(`Added to "${col}"`);
+                              }}
+                              className={`w-full text-left px-2.5 py-1 text-[11px] hover:bg-[hsl(var(--surface-3))] flex items-center justify-between cursor-pointer ${
+                                asset.collection === col ? 'text-primary font-bold' : 'text-zinc-300'
+                              }`}
+                            >
+                              <span className="truncate">{col}</span>
+                              {asset.collection === col && <HugeiconsIcon icon={CheckIcon} size={12} className="w-3 h-3 text-primary" />}
+                            </button>
+                          ))}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const name = window.prompt('New collection name:');
+                              if (name && name.trim()) {
+                                const trimmed = name.trim();
+                                addAssetCollection(trimmed);
+                                updateAssetProperties(asset.id, {
+                                  collection: trimmed,
+                                  tags: Array.from(new Set([...(asset.tags || []), trimmed])),
+                                });
+                                toast.success(`Created "${trimmed}" and added asset`);
+                              }
+                              setActiveMenuAssetId(null);
+                            }}
+                            className="w-full text-left px-2.5 py-1 text-[10px] text-primary hover:underline font-bold cursor-pointer"
+                          >
+                            + Create New
+                          </button>
+
+                          <div className="border-t border-white/[0.06] my-1" />
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuickSendToDcc(asset);
+                            }}
+                            className="w-full text-left px-2.5 py-1.5 text-zinc-200 hover:bg-[hsl(var(--surface-3))] flex items-center gap-1.5 cursor-pointer text-[11px]"
+                          >
+                            <HugeiconsIcon icon={CableIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+                            <span>
+                              Send to {(() => {
+                                const last = settingsPersistence.getLastDccTarget() as DccApp | null;
+                                const p = DCC_PRESETS.find(item => item.id === last);
+                                return p ? p.name.split(' ')[0] : 'DCC Bridge';
+                              })()}
+                            </span>
+                          </button>
+
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

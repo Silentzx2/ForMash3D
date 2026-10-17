@@ -16,7 +16,8 @@ except ImportError:
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
+from pydantic import BaseModel
 
 import psutil
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -1206,6 +1207,13 @@ async def get_job_status(job_id: str, request: Request):
                     "file_extension": Path(thumbnail_path).suffix,
                 }
 
+            # T-06: Populate URLs for candidate variations
+            if "candidates" in result and isinstance(result["candidates"], list):
+                for cand in result["candidates"]:
+                    cid = cand.get("candidate_id", 0)
+                    cand["thumbnail_url"] = f"{request.base_url}api/v1/system/jobs/{job_id}/candidates/{cid}/thumbnail"
+                    cand["model_url"] = f"{request.base_url}api/v1/system/jobs/{job_id}/candidates/{cid}/download"
+
         # Convert input image path to URL (works for both completed and processing jobs)
         inputs = job_status.get("inputs", {})
         input_image_path = inputs.get("image_path")
@@ -2072,6 +2080,126 @@ async def get_job_result_info(job_id: str, request: Request):
         )
 
 
+@router.get("/jobs/{job_id}/candidates/{candidate_id}/download", summary="Download specific candidate mesh")
+async def download_candidate_mesh(
+    job_id: str,
+    candidate_id: int,
+    request: Request,
+):
+    scheduler = await get_scheduler(request)
+    job_status = await scheduler.get_job_status(job_id)
+    if not job_status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    result = job_status.get("result") or {}
+    candidates = result.get("candidates") or []
+    match = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail=f"Candidate {candidate_id} not found")
+    mesh_path = match.get("mesh_path")
+    if not mesh_path or not os.path.exists(mesh_path):
+        raise HTTPException(status_code=404, detail="Candidate mesh file missing on disk")
+    return FileResponse(
+        path=mesh_path,
+        media_type="model/gltf-binary",
+        filename=f"{job_id}_candidate_{candidate_id}.glb",
+    )
+
+
+@router.get("/jobs/{job_id}/candidates/{candidate_id}/thumbnail", summary="Download candidate thumbnail")
+async def download_candidate_thumbnail(
+    job_id: str,
+    candidate_id: int,
+    request: Request,
+):
+    scheduler = await get_scheduler(request)
+    job_status = await scheduler.get_job_status(job_id)
+    if not job_status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    result = job_status.get("result") or {}
+    candidates = result.get("candidates") or []
+    match = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
+    if not match:
+        raise HTTPException(status_code=404, detail=f"Candidate {candidate_id} not found")
+
+    thumb_path = match.get("thumbnail_path")
+    if not thumb_path or not os.path.exists(thumb_path):
+        thumb_path = result.get("thumbnail_path") or (job_status.get("inputs") or {}).get("image_path")
+    if not thumb_path or not os.path.exists(thumb_path):
+        raise HTTPException(status_code=404, detail="Thumbnail not available")
+    return FileResponse(
+        path=thumb_path,
+        media_type="image/png",
+        filename=f"{job_id}_candidate_{candidate_id}_thumb.png",
+    )
+
+
+@router.post("/jobs/{job_id}/candidates/{candidate_id}/select", summary="Promote candidate to master and cleanup unselected")
+async def select_candidate_mesh(
+    job_id: str,
+    candidate_id: int,
+    request: Request,
+):
+    """
+    T-06: On selection, promote chosen candidate through master/source.glb lineage,
+    and garbage-collect unselected candidate files.
+    """
+    scheduler = await get_scheduler(request)
+    job_status = await scheduler.get_job_status(job_id)
+    if not job_status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    result = job_status.get("result") or {}
+    candidates = result.get("candidates") or []
+    chosen = next((c for c in candidates if c.get("candidate_id") == candidate_id), None)
+    if not chosen:
+        raise HTTPException(status_code=404, detail=f"Candidate {candidate_id} not found")
+
+    chosen_mesh = chosen.get("mesh_path")
+    if not chosen_mesh or not os.path.exists(chosen_mesh):
+        raise HTTPException(status_code=404, detail="Candidate mesh file missing on disk")
+
+    from postprocess.pipeline import canonical_asset_workspace
+    asset_root = canonical_asset_workspace(job_id, result, job_status.get("inputs"))
+    master_dir = asset_root / "master"
+    master_dir.mkdir(parents=True, exist_ok=True)
+    master_source = master_dir / "source.glb"
+
+    # Promote chosen candidate to master/source.glb
+    shutil.copy2(chosen_mesh, master_source)
+
+    # Garbage-collect unselected candidate files
+    cleaned = 0
+    for cand in candidates:
+        cand_id = cand.get("candidate_id")
+        cand_path = cand.get("mesh_path")
+        if cand_id != candidate_id:
+            cand["selected"] = False
+            if cand_path and os.path.exists(cand_path) and os.path.abspath(cand_path) != os.path.abspath(str(master_source)):
+                try:
+                    os.unlink(cand_path)
+                    cleaned += 1
+                except Exception as err:
+                    logger.debug(f"Could not remove unselected candidate {cand_path}: {err}")
+        else:
+            cand["selected"] = True
+
+    # Update primary output mesh path to chosen mesh
+    result["output_mesh_path"] = str(master_source)
+    result["selected_candidate_id"] = candidate_id
+    result["candidates"] = candidates
+
+    await scheduler.job_queue.update_job_result(job_id, result)
+    logger.info(f"[T-06 CANDIDATE PROMOTED] job_id={job_id} promoted candidate #{candidate_id} to {master_source}, cleaned {cleaned} files")
+
+    return {
+        "success": True,
+        "job_id": job_id,
+        "selected_candidate_id": candidate_id,
+        "promoted_to_master": str(master_source),
+        "cleaned_candidates_count": cleaned,
+        "candidates": candidates,
+    }
+
+
 @router.post("/jobs/{job_id}/postprocess/retry", summary="Retry canonical production post-processing")
 async def retry_job_postprocess(
     job_id: str, request: Request, _: bool = Depends(verify_api_key)
@@ -2227,6 +2355,169 @@ async def clear_system_cache():
         "files_removed": files_removed,
         "message": f"Cache cleared! Removed {files_removed} temporary files ({freed_mb} MB freed).",
     }
+
+
+class ReorderQueuePayload(BaseModel):
+    job_ids: List[str]
+
+
+@router.get("/storage-breakdown", summary="Get storage usage breakdown by category")
+async def get_storage_breakdown():
+    """Calculate real disk usage by category: master, game_ready, textures, lods, rigging, temp."""
+    from core.utils.file_utils import get_storage_base_dir
+    storage_base_dir = get_storage_base_dir()
+
+    categories: Dict[str, Dict[str, Any]] = {
+        "master": {"bytes": 0, "count": 0},
+        "game_ready": {"bytes": 0, "count": 0},
+        "textures": {"bytes": 0, "count": 0},
+        "lods": {"bytes": 0, "count": 0},
+        "rigging": {"bytes": 0, "count": 0},
+        "temp": {"bytes": 0, "count": 0},
+    }
+
+    total_bytes = 0
+
+    if storage_base_dir.is_dir():
+        for entry in storage_base_dir.rglob("*"):
+            if entry.is_file():
+                try:
+                    size = entry.stat().st_size
+                    total_bytes += size
+                    rel = str(entry.relative_to(storage_base_dir)).lower()
+                    fname = entry.name.lower()
+                    ext = entry.suffix.lower()
+
+                    if "/temp" in rel or rel.startswith("temp") or "/exports" in rel or rel.startswith("exports") or ext in (".tmp", ".scratch") or fname.startswith("tmp_"):
+                        cat = "temp"
+                    elif "rigging" in rel or "unirig" in rel or "rigged" in fname or "skeleton" in fname:
+                        cat = "rigging"
+                    elif "lod" in rel or any(f"lod{i}" in fname for i in range(4)):
+                        cat = "lods"
+                    elif "texture" in rel or ext in (".png", ".jpg", ".jpeg", ".webp", ".tga", ".exr", ".hdr"):
+                        cat = "textures"
+                    elif "game_ready" in rel or "game_ready" in fname or "game-ready" in fname:
+                        cat = "game_ready"
+                    elif "master" in rel or "source" in fname or "/uploads" in rel or rel.startswith("uploads"):
+                        cat = "master"
+                    elif ext in (".glb", ".gltf", ".fbx", ".obj", ".stl", ".ply"):
+                        cat = "game_ready"
+                    else:
+                        cat = "temp"
+
+                    categories[cat]["bytes"] += size
+                    categories[cat]["count"] += 1
+                except OSError:
+                    pass
+
+    for cat_data in categories.values():
+        cat_data["percent"] = round((cat_data["bytes"] / total_bytes) * 100, 1) if total_bytes > 0 else 0.0
+        cat_data["size_mb"] = round(cat_data["bytes"] / (1024 * 1024), 2)
+        cat_data["size_gb"] = round(cat_data["bytes"] / (1024 ** 3), 3)
+
+    return {
+        "success": True,
+        "data": {
+            "root_path": str(storage_base_dir),
+            "total_bytes": total_bytes,
+            "total_mb": round(total_bytes / (1024 * 1024), 2),
+            "total_gb": round(total_bytes / (1024 ** 3), 3),
+            "categories": categories,
+        },
+    }
+
+
+@router.post("/storage-cleanup", summary="Clean up obsolete intermediate and temp files")
+async def cleanup_intermediate_storage(
+    days_old: int = Query(default=7, ge=0),
+    dry_run: bool = Query(default=False),
+):
+    """
+    Identifies and cleans up obsolete scratch/temp outputs older than N days.
+    Guarantees master/source.glb lineage and uploads are strictly protected.
+    """
+    from core.utils.file_utils import get_storage_base_dir
+    import shutil
+    import time
+
+    storage_base_dir = get_storage_base_dir()
+    cutoff_time = time.time() - (days_old * 86400)
+    freed_bytes = 0
+    files_affected = 0
+    candidate_paths: List[str] = []
+
+    cleanup_roots = [
+        storage_base_dir / "temp",
+        storage_base_dir / "exports",
+    ]
+
+    for root in cleanup_roots:
+        if root.is_dir():
+            for p in list(root.iterdir()):
+                try:
+                    # Protection rule: Never touch master/source.glb lineage
+                    if "source." in p.name.lower() or "master" in p.name.lower():
+                        continue
+                    stat = p.stat()
+                    if stat.st_mtime <= cutoff_time:
+                        if p.is_file() or p.is_symlink():
+                            fsize = stat.st_size
+                            freed_bytes += fsize
+                            files_affected += 1
+                            candidate_paths.append(p.name)
+                            if not dry_run:
+                                p.unlink()
+                        elif p.is_dir():
+                            dsize = _dir_size_bytes(p)
+                            freed_bytes += dsize
+                            files_affected += 1
+                            candidate_paths.append(p.name)
+                            if not dry_run:
+                                shutil.rmtree(p, ignore_errors=True)
+                except Exception as e:
+                    logger.debug("Could not process cleanup for %s: %s", p, e)
+
+    freed_mb = round(freed_bytes / (1024 * 1024), 2)
+    return {
+        "success": True,
+        "dry_run": dry_run,
+        "days_old": days_old,
+        "files_affected": files_affected,
+        "freed_bytes": freed_bytes,
+        "freed_mb": freed_mb,
+        "message": (
+            f"Dry run complete: {files_affected} obsolete temp files ({freed_mb} MB) eligible for cleanup."
+            if dry_run
+            else f"Cleaned up {files_affected} obsolete intermediate files ({freed_mb} MB freed). Master lineage preserved."
+        ),
+    }
+
+
+@router.post("/jobs/queue/reorder", summary="Reorder pending queued jobs")
+async def reorder_queued_jobs_endpoint(
+    payload: ReorderQueuePayload,
+    request: Request,
+    _: bool = Depends(verify_api_key),
+):
+    """
+    Manually reorder pending jobs in the queue.
+    Active processing job remains untouched.
+    """
+    scheduler = await get_scheduler(request)
+    success = await scheduler.reorder_queued_jobs(payload.job_ids)
+    return {"success": success, "reordered_count": len(payload.job_ids)}
+
+
+@router.post("/jobs/{job_id}/cancel", summary="Cancel a queued or active job")
+async def cancel_job_endpoint(
+    job_id: str,
+    request: Request,
+    _: bool = Depends(verify_api_key),
+):
+    """Cancel a queued job or active processing job."""
+    scheduler = await get_scheduler(request)
+    cancelled = await scheduler.cancel_job(job_id)
+    return {"success": cancelled, "job_id": job_id, "status": "cancelled" if cancelled else "unchanged"}
 
 
 @router.delete("/jobs/{job_id}/result", summary="Delete job result file")
