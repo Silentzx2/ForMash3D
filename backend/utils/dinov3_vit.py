@@ -169,7 +169,8 @@ class DINOv3ViTRopePositionEmbedding(nn.Module):
             num_patches_h, num_patches_w, dtype=torch.float32, device=pixel_values.device
         )
 
-        angles = 2 * math.pi * patch_coords[:, :, None] * self.inv_freq[None, None, :]
+        inv_freq = self.inv_freq.to(device=pixel_values.device)
+        angles = 2 * math.pi * patch_coords[:, :, None] * inv_freq[None, None, :]
         angles = angles.flatten(1, 2).tile(2)
 
         cos = torch.cos(angles).to(dtype=pixel_values.dtype)
@@ -203,7 +204,10 @@ class DINOv3ViTEmbeddings(nn.Module):
 
     def forward(self, pixel_values: torch.Tensor, bool_masked_pos: Optional[torch.Tensor] = None) -> torch.Tensor:
         batch_size = pixel_values.shape[0]
+        weight_device = self.patch_embeddings.weight.device
         dtype = self.patch_embeddings.weight.dtype
+        if pixel_values.device != weight_device:
+            pixel_values = pixel_values.to(device=weight_device)
         pixel_values = pixel_values.to(dtype=dtype)
 
         patch_embeddings = self.patch_embeddings(pixel_values).flatten(2).transpose(1, 2)
@@ -387,6 +391,12 @@ class DINOv3ViTModel(nn.Module):
         bool_masked_pos: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> torch.Tensor:
+        try:
+            model_device = next(self.parameters()).device
+            if pixel_values.device != model_device:
+                pixel_values = pixel_values.to(model_device)
+        except Exception:
+            pass
         hidden_states = self.embeddings(pixel_values, bool_masked_pos=bool_masked_pos)
         position_embeddings = self.rope_embeddings(pixel_values)
         hidden_states = self.model(hidden_states, position_embeddings=position_embeddings)

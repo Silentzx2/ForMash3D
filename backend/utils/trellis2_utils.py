@@ -173,8 +173,19 @@ class Trellis2Runner:
                         reason=str(self.resource_plan.get("reason", "scheduler resource plan")),
                     ),
                 )
+                primary_dev = f"cuda:{self.resource_plan['gpu_ids'][0]}"
+                self.image_to_3d_pipeline._device = primary_dev
+                if hasattr(self.image_to_3d_pipeline, "image_cond_model") and self.image_to_3d_pipeline.image_cond_model is not None:
+                    self.image_to_3d_pipeline.image_cond_model.to(primary_dev)
+                if getattr(self.image_to_3d_pipeline, "rembg_model", None) is not None:
+                    self.image_to_3d_pipeline.rembg_model.to(primary_dev)
             elif str(self.device).startswith("cuda"):
                 self.image_to_3d_pipeline.to(self.device)
+                self.image_to_3d_pipeline._device = self.device
+                if hasattr(self.image_to_3d_pipeline, "image_cond_model") and self.image_to_3d_pipeline.image_cond_model is not None:
+                    self.image_to_3d_pipeline.image_cond_model.to(self.device)
+                if getattr(self.image_to_3d_pipeline, "rembg_model", None) is not None:
+                    self.image_to_3d_pipeline.rembg_model.to(self.device)
             
             logger.info("TRELLIS.2 image-to-3D pipeline loaded successfully")
             

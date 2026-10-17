@@ -100,3 +100,17 @@ def test_trellis2_feature_extractor_import():
                 assert DinoV3FeatureExtractor is not None
         else:
             raise
+
+
+def test_dinov3_device_alignment():
+    """Verify DINOv3ViTModel handles input device/dtype alignment gracefully."""
+    cfg = DINOv3ViTConfig(hidden_size=32, num_hidden_layers=1, num_attention_heads=2, patch_size=16)
+    model = DINOv3ViTModel(cfg)
+    model.eval()
+
+    # Float64 (double) input to model with Float32 weights
+    fake_img = torch.randn(1, 3, 32, 32, dtype=torch.float64)
+    emb = model.embeddings(fake_img)
+    assert emb.shape[0] == 1
+    assert emb.shape[-1] == 32
+
