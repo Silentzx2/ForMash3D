@@ -386,8 +386,46 @@ def get_dinov3_model_class():
         return DINOv3ViTModel
 
 
+def fix_flex_gemm():
+    """
+    Ensure `flex_gemm.ops.grid_sample` is importable.
+    In environments where flex_gemm is missing or an older wheel lacks ops.grid_sample,
+    this registers pure-PyTorch grid_sample_3d fallback shim.
+    """
+    try:
+        from utils.flex_gemm_fallback import install_flex_gemm_shim
+        return install_flex_gemm_shim()
+    except Exception:
+        try:
+            from backend.utils.flex_gemm_fallback import install_flex_gemm_shim
+            return install_flex_gemm_shim()
+        except Exception as e:
+            print(f"Failed to apply flex_gemm fix: {e}")
+            return False
+
+
+def get_grid_sample_3d():
+    """Retrieve grid_sample_3d, applying fix if needed."""
+    try:
+        from flex_gemm.ops.grid_sample import grid_sample_3d
+        return grid_sample_3d
+    except (ImportError, ModuleNotFoundError, AttributeError):
+        pass
+    fix_flex_gemm()
+    try:
+        from flex_gemm.ops.grid_sample import grid_sample_3d
+        return grid_sample_3d
+    except Exception:
+        try:
+            from utils.flex_gemm_fallback import grid_sample_3d
+            return grid_sample_3d
+        except ImportError:
+            from backend.utils.flex_gemm_fallback import grid_sample_3d
+            return grid_sample_3d
+
+
 def apply_fix():
-    """Apply the compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, and dinov3)."""
+    """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, and flex_gemm)."""
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")
@@ -396,6 +434,7 @@ def apply_fix():
         fix_torchvision_functional_tensor()
     fix_transformers_cache()
     fix_transformers_dinov3()
+    fix_flex_gemm()
     fix_torch_load_weights_only()
     fix_huggingface_repo_redirects()
     fix_numba_caching()
