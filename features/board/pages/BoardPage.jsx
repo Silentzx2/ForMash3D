@@ -17,7 +17,8 @@ import {
   measureImage,
   mimeFromName,
   extFromMime,
-  toServedAssetPath
+  toServedAssetPath,
+  captureBoardSelectionOrCanvas
 } from '../utils/boardHelpers'
 import './BoardPage.css'
 
@@ -243,6 +244,35 @@ export default function BoardPage() {
 
   const getSelectedBoardImage = useCallback(() => selectedImageRef.current, [])
 
+  const handleSendToGenerate = useCallback(async () => {
+    try {
+      const api = excalidrawApiRef.current
+      const dataURL = await captureBoardSelectionOrCanvas(api, selectedImageRef.current)
+      if (!dataURL) {
+        alert('No board drawing or image found to send to Generate.')
+        return
+      }
+      const filename = `board-drawing-${Date.now()}.png`
+      const file = dataURLToFile(dataURL, filename)
+
+      try {
+        const { useAppStore } = await import('@/stores/useAppStore')
+        useAppStore.getState().setPendingBoardImage(file)
+      } catch (err) {
+        console.warn('Could not set in useAppStore directly', err)
+      }
+
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('formash_pending_board_image', dataURL)
+        sessionStorage.setItem('formash_pending_board_image_name', filename)
+        window.location.href = '/workspace?tool=generate'
+      }
+    } catch (err) {
+      console.error('Failed to send board image to Generate', err)
+      alert('Failed to send board image to Generate: ' + err.message)
+    }
+  }, [])
+
   // Flush a pending save on unmount / board switch.
   useEffect(() => () => {
     if (saveTimerRef.current) {
@@ -363,6 +393,29 @@ export default function BoardPage() {
           {saveStatus === 'saved' && 'All changes saved'}
           {saveStatus === 'error' && 'Save failed — retrying on next edit'}
         </span>
+        <button
+          type="button"
+          onClick={handleSendToGenerate}
+          className="board-page__bridge-btn"
+          title="Send current drawing or selected image to 3D Generation"
+          style={{
+            marginLeft: 'auto',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '8px',
+            backgroundColor: '#FFCC00',
+            color: '#080808',
+            fontSize: '11px',
+            fontWeight: '700',
+            border: 'none',
+            cursor: 'pointer',
+            transition: 'opacity 0.15s ease'
+          }}
+        >
+          <span>Send to 3D Generate &rarr;</span>
+        </button>
       </div>
 
       {loadError && <div className="board-page__error">{loadError}</div>}
@@ -389,6 +442,7 @@ export default function BoardPage() {
           boardId={boardId}
           onImageGenerated={placeAssetImage}
           getSelectedBoardImage={getSelectedBoardImage}
+          onSendToGenerate={handleSendToGenerate}
         />
       </div>
     </div>

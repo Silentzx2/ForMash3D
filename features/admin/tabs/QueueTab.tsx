@@ -16,6 +16,8 @@ import {
   WrenchIcon,
   CheckmarkCircle02Icon,
   LoaderCircleIcon,
+  ArrowUp01Icon,
+  ArrowDown01Icon,
 } from '@hugeicons/core-free-icons';
 import { GlassCard } from '@/components/premium/GlassCard';
 import { MetricCard } from '@/components/premium/MetricCard';
@@ -31,6 +33,10 @@ import { toast } from 'sonner';
 export function QueueTab() {
   const [queue, setQueue] = useState<QueueStatus | null>(null);
   const [failedJobs, setFailedJobs] = useState<AdminJob[]>([]);
+  const [queuedJobs, setQueuedJobs] = useState<AdminJob[]>([]);
+  const [activeJob, setActiveJob] = useState<AdminJob | null>(null);
+  const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
+  const [isReordering, setIsReordering] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [repairingJobs, setRepairingJobs] = useState<Record<string, boolean>>({});
@@ -44,13 +50,13 @@ export function QueueTab() {
       ]);
 
       if (queueData.status === 'fulfilled' && queueData.value) {
-        const queue = queueData.value.data;
+        const q = queueData.value.data;
         setQueue({
-          active: queue.processing_jobs ?? 0,
-          queued: queue.pending_jobs ?? 0,
+          active: q.processing_jobs ?? 0,
+          queued: q.pending_jobs ?? 0,
           reserved: 0,
           workers: 0,
-          scheduler_running: queue.processing_jobs > 0,
+          scheduler_running: q.processing_jobs > 0,
         } as any);
         setError(null);
       } else {
@@ -58,11 +64,52 @@ export function QueueTab() {
       }
 
       if (jobsData.status === 'fulfilled') {
-        setFailedJobs((jobsData.value?.jobs ?? []).filter((j: any) => j.status === 'failed') as unknown as AdminJob[]);
+        const rawJobs = (jobsData.value?.jobs ?? []) as unknown as AdminJob[];
+        setFailedJobs(rawJobs.filter((j: any) => j.status === 'failed'));
+        setActiveJob(rawJobs.find((j: any) => j.status === 'processing') || null);
+        setQueuedJobs(rawJobs.filter((j: any) => j.status === 'queued'));
       }
     } catch { /* ignore */ }
     setLoading(false);
   }, []);
+
+  const handleCancelQueuedJob = async (jobId: string) => {
+    setCancellingJobId(jobId);
+    try {
+      const res = await getApiClient().cancelJob(jobId);
+      if (res?.success) {
+        toast.success(`Job ${jobId.slice(0, 8)} cancelled`);
+        setQueuedJobs(prev => prev.filter(j => j.id !== jobId));
+        await load();
+      } else {
+        toast.error('Failed to cancel job');
+      }
+    } catch (e: any) {
+      toast.error(e?.message || 'Error cancelling job');
+    } finally {
+      setCancellingJobId(null);
+    }
+  };
+
+  const handleMoveJob = async (index: number, direction: -1 | 1) => {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= queuedJobs.length) return;
+    const updated = [...queuedJobs];
+    const [moved] = updated.splice(index, 1);
+    updated.splice(newIndex, 0, moved);
+    setQueuedJobs(updated);
+
+    setIsReordering(true);
+    try {
+      await getApiClient().reorderQueue(updated.map(j => j.id));
+      toast.success('Queue order updated');
+    } catch {
+      toast.error('Failed to update queue order on backend');
+      await load();
+    } finally {
+      setIsReordering(false);
+    }
+  };
 
   useEffect(() => {
     load();
@@ -137,6 +184,130 @@ const handlePurge = async () => {
         <MetricCard label="Reserved" value={queue?.reserved ?? 0} icon={<HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 text-primary" />} color="amber" delay={0.15} />
         <MetricCard label="Workers" value={queue?.workers ?? 0} icon={<HugeiconsIcon icon={UsersIcon} size={16} className="w-4 h-4 text-primary" />} color="green" delay={0.2} />
       </div>
+
+      {/* Active Job (Locked) */}
+      {activeJob && (
+        <GlassCard className="p-5 border-amber-500/30 bg-amber-500/5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-sm font-bold text-white">Active Job Running (Single-GPU Lock)</span>
+              <Badge variant="warning">Executing</Badge>
+            </div>
+            <span className="text-[11px] font-mono text-zinc-400">ID: {activeJob.id}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs text-zinc-300">
+            <span>Feature: <strong className="text-white">{activeJob.feature || (activeJob as any).type || 'Generation'}</strong></span>
+            <span>Started: <span className="font-mono">{activeJob.started_at ? new Date(activeJob.started_at).toLocaleTimeString() : 'In Progress'}</span></span>
+          </div>
+          <p className="text-[10.5px] text-zinc-400">
+            🔒 This job is actively computing on hardware and cannot be reordered. Pending queue jobs below will run sequentially upon completion.
+          </p>
+        </GlassCard>
+      )}
+
+      {/* Queued Jobs (Manual Reorder & Cancel) */}
+      <GlassCard className="p-5 space-y-4" delay={0.2}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <span>Pending Queue Sequence</span>
+              <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                {queuedJobs.length} {queuedJobs.length === 1 ? 'Job' : 'Jobs'}
+              </span>
+            </h3>
+            <p className="text-xs text-zinc-400 mt-0.5">
+              Pending jobs to be processed. Reorder priority with buttons before execution starts.
+            </p>
+          </div>
+          {isReordering && (
+            <div className="flex items-center gap-1.5 text-xs text-primary">
+              <HugeiconsIcon icon={LoaderCircleIcon} className="w-3.5 h-3.5 animate-spin" />
+              <span>Saving order…</span>
+            </div>
+          )}
+        </div>
+
+        {queuedJobs.length === 0 ? (
+          <div className="py-8 text-center text-zinc-400 border border-dashed border-white/[0.08] rounded-xl">
+            <HugeiconsIcon icon={ClockIcon} className="w-8 h-8 text-zinc-500 mx-auto mb-2" />
+            <p className="text-xs">No pending jobs in queue.</p>
+            <p className="text-[11px] text-zinc-500 mt-0.5">New generation and batch requests will appear here in live priority order.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {queuedJobs.map((job, idx) => {
+              const isCancelling = cancellingJobId === job.id;
+              return (
+                <div
+                  key={job.id}
+                  className="p-3 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:border-white/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-black/40 text-primary font-mono font-bold text-xs border border-white/[0.06]">
+                      #{idx + 1}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white">
+                          {job.feature || (job as any).type || 'Generation Job'}
+                        </span>
+                        <span className="text-[10px] font-mono text-zinc-400 truncate max-w-[120px] sm:max-w-none">
+                          ({job.id})
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-zinc-400 flex items-center gap-2 mt-0.5">
+                        <span>Queued: {job.created_at ? new Date(job.created_at).toLocaleTimeString() : 'Just now'}</span>
+                        {job.model_preference && <span>• Model: {job.model_preference}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Move Up */}
+                    <button
+                      type="button"
+                      disabled={idx === 0 || isReordering}
+                      onClick={() => handleMoveJob(idx, -1)}
+                      title="Move up in queue"
+                      className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      <HugeiconsIcon icon={ArrowUp01Icon} className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Move Down */}
+                    <button
+                      type="button"
+                      disabled={idx === queuedJobs.length - 1 || isReordering}
+                      onClick={() => handleMoveJob(idx, 1)}
+                      title="Move down in queue"
+                      className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                    >
+                      <HugeiconsIcon icon={ArrowDown01Icon} className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Cancel Queued Job */}
+                    <button
+                      type="button"
+                      disabled={isCancelling}
+                      onClick={() => handleCancelQueuedJob(job.id)}
+                      title="Cancel queued job"
+                      className="px-2.5 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      {isCancelling ? (
+                        <HugeiconsIcon icon={LoaderCircleIcon} className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <HugeiconsIcon icon={TrashIcon} className="w-3.5 h-3.5" />
+                      )}
+                      <span>Cancel</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </GlassCard>
 
       {/* Runtime Errors & Repair Actions */}
       {repairableJobs.length > 0 && (

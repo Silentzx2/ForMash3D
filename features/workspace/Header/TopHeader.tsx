@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
-import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator, CommandShortcut } from '@/components/ui/command';
+import { CommandPalette } from '../CommandPalette';
+import { SnapshotMenu } from './SnapshotMenu';
+import { useUIStore } from '@/stores/useUIStore';
 import { motion } from 'motion/react';
 import { ResourceMonitor } from './ResourceMonitor';
+import { NotificationCenter } from '../Notifications/NotificationCenter';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, CableIcon, CheckIcon, ChevronDown, HexagonIcon, LayersIcon, Menu, PackageIcon, Search01Icon, SettingsIcon, SparklesIcon, UserIcon } from '@hugeicons/core-free-icons';
@@ -38,7 +41,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
   } = useWorkspace();
 
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const [commandOpen, setCommandOpen] = useState(false);
   const workspaceMenuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click or Escape key
@@ -59,18 +61,6 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [workspaceMenuOpen]);
-
-  // Command palette: keeps existing one-key tool shortcuts untouched.
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault();
-        setCommandOpen(open => !open);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
 
   return (
     <header
@@ -271,7 +261,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
         <ResourceMonitor />
 
         <SimpleTooltip label="Command palette • Ctrl K" side="bottom">
-          <button id="btn-header-command-palette" type="button" onClick={() => setCommandOpen(true)} className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-primary/30 text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer" aria-label="Open command palette">
+          <button id="btn-header-command-palette" type="button" onClick={() => useUIStore.getState().setCommandPaletteOpen(true)} className="hidden sm:flex items-center gap-1.5 h-7 px-2.5 rounded-full bg-[hsl(var(--surface-1))] border border-white/[0.08] hover:bg-[hsl(var(--surface-2))] hover:border-primary/30 text-[11px] text-zinc-300 transition-all shadow-sm cursor-pointer" aria-label="Open command palette">
             <HugeiconsIcon icon={Search01Icon} size={16} className="w-3 h-3 text-primary" />
             <span className="font-semibold hidden md:inline">Search</span>
             <kbd className="hidden lg:inline-flex items-center px-1 py-0.5 rounded border border-white/[0.1] bg-black/20 text-[9px] text-zinc-500 font-mono">Ctrl K</kbd>
@@ -302,6 +292,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
           </button>
         </SimpleTooltip>
 
+        {/* Workspace Snapshots (T-05) */}
+        <SnapshotMenu />
+
+        {/* Activity & Notification Center */}
+        <NotificationCenter />
+
         {/* Quick Settings Icon */}
         <SimpleTooltip label="Quick Settings" side="bottom">
           <button
@@ -325,44 +321,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onMobileMenuToggle, isMobi
         </SimpleTooltip>
       </div>
 
-      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen}>
-        <CommandInput placeholder="Search tools, panels, and viewport actions..." />
-        <CommandList className="max-h-[min(70vh,520px)] p-1">
-          <CommandEmpty>No matching command.</CommandEmpty>
-          <CommandGroup heading="Workspace">
-            {[
-              ['model', '3D Model Studio', 'Generate 3D assets', 'G'],
-              ['remesh', 'Retopology / Remesh', 'Make the mesh game-ready', 'R'],
-              ['texture', 'AI Texture', 'Paint or texture the current asset', 'T'],
-              ['animation', 'Animation', 'Generate or inspect motion', 'A'],
-              ['rigging', 'Rigging', 'Prepare a character rig', 'K'],
-              ['segment', 'Segmentation', 'Split the asset into parts', 'S'],
-            ].map(([tool, label, hint, shortcut]) => (
-              <CommandItem key={tool} value={label + ' ' + hint} onSelect={() => { navigateToTool(tool as any); setCommandOpen(false); }}>
-                <HugeiconsIcon icon={Box} size={16} className="mr-2 h-4 w-4 text-primary" />
-                <span>{label}</span><span className="ml-2 text-xs text-muted-foreground">{hint}</span><CommandShortcut>{shortcut}</CommandShortcut>
-              </CommandItem>
-            ))}
-            <CommandItem value="assets outputs" onSelect={() => { navigateToMain('assets'); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Assets</span><CommandShortcut>⌘ 2</CommandShortcut></CommandItem>
-            <CommandItem value="jobs queue history" onSelect={() => { navigateToMain('jobs'); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Jobs</span><CommandShortcut>⌘ 3</CommandShortcut></CommandItem>
-            <CommandItem value="logs system logs" onSelect={() => { router.push('/admin?tab=logs'); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Logs</span><CommandShortcut>⌘ 4</CommandShortcut></CommandItem>
-          </CommandGroup>
-          <CommandSeparator />
-          <CommandGroup heading="Viewport">
-            <CommandItem value="fit frame focus model" onSelect={() => { fitToScreen(); setCommandOpen(false); }}><HugeiconsIcon icon={Box} size={16} className="mr-2 h-4 w-4" /><span>Fit Model</span><CommandShortcut>F</CommandShortcut></CommandItem>
-            <CommandItem value="reset camera home" onSelect={() => { resetCamera(); setCommandOpen(false); }}><HugeiconsIcon icon={Box} size={16} className="mr-2 h-4 w-4" /><span>Reset Camera</span><CommandShortcut>Home</CommandShortcut></CommandItem>
-            <CommandItem value="wireframe topology edges" onSelect={() => { setShowWireframe(!showWireframe); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Toggle Wireframe</span></CommandItem>
-            <CommandItem value="grid floor" onSelect={() => { setShowGrid(!showGrid); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Toggle Grid</span></CommandItem>
-            <CommandItem value="turntable auto rotate" onSelect={() => { setIsTurntable(!isTurntable); setCommandOpen(false); }}><HugeiconsIcon icon={Box} size={16} className="mr-2 h-4 w-4" /><span>{isTurntable ? 'Stop Turntable' : 'Start Turntable'}</span></CommandItem>
-          </CommandGroup>
-          <CommandSeparator />
-          <CommandGroup heading="Panels">
-            <CommandItem value="inspector properties" onSelect={() => { setActiveRightTab('properties'); setRightPanelMode('properties'); setIsRightPanelOpen(true); setCommandOpen(false); }}><HugeiconsIcon icon={Box} size={16} className="mr-2 h-4 w-4" /><span>Open Inspector</span></CommandItem>
-            <CommandItem value="assets library" onSelect={() => { setActiveRightTab('assets'); setRightPanelMode('assets'); setIsRightPanelOpen(true); setCommandOpen(false); }}><HugeiconsIcon icon={LayersIcon} size={16} className="mr-2 h-4 w-4" /><span>Open Asset Library</span></CommandItem>
-            <CommandItem value="settings preferences" onSelect={() => { setIsSettingsOpen(true); setCommandOpen(false); }}><HugeiconsIcon icon={SettingsIcon} size={16} className="mr-2 h-4 w-4" /><span>Open Settings</span></CommandItem>
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
+      {/* Global Command Palette (T-02) */}
+      <CommandPalette />
     </header>
   );
 };

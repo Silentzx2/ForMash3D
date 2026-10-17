@@ -11,6 +11,8 @@ import { LeftNavigation } from './Navigation/LeftNavigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Cancel, FolderOpenIcon, PanelLeftClose, PanelLeftOpen, PanelRightOpen, SlidersHorizontalIcon } from '@hugeicons/core-free-icons';
+import { settingsPersistence } from '@/services/settingsPersistence';
+import { useUIStore } from '@/stores/useUIStore';
 // Dynamic imports for heavy 3D components and panels
 const MeshViewer = dynamic(() => import('./Viewport/MeshViewer').then(mod => mod.MeshViewer), {
   ssr: false,
@@ -127,6 +129,7 @@ export const WorkspaceShell: React.FC = () => {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Global Workspace Navigation Keyboard Shortcuts (⌘1, ⌘2, ⌘3, ⌘4→Logs, G, R, T, A, S, ⌘,)
+  // Global Workspace Navigation Keyboard Shortcuts with Custom Remapping Support (T-04)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting keystrokes in inputs, textareas, or content-editable elements
@@ -144,62 +147,78 @@ export const WorkspaceShell: React.FC = () => {
       const isMac = typeof navigator !== 'undefined' && navigator.platform?.toUpperCase().includes('MAC');
       const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
 
-      if (cmdOrCtrl) {
-        if (e.key === '1') {
-          e.preventDefault();
-          navigateToMainNav('dashboard');
-        } else if (e.key === '2') {
-          e.preventDefault();
-          navigateToMainNav('assets');
-        } else if (e.key === '3') {
-          e.preventDefault();
-          navigateToMainNav('jobs');
-        } else if (e.key === '4') {
-          e.preventDefault();
-          router.push('/admin?tab=logs');
-        } else if (e.key === ',') {
-          e.preventDefault();
-          router.push('/admin?tab=settings');
-        }
-        return;
-      }
+      const parts: string[] = [];
+      if (cmdOrCtrl) parts.push('Ctrl/Cmd');
+      if (e.altKey) parts.push('Alt');
+      if (e.shiftKey) parts.push('Shift');
 
-      // Single-letter tool hotkeys (no modifiers)
-      if (!e.altKey && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-        const key = e.key.toLowerCase();
-        if (key === 'g') {
-          e.preventDefault();
-          navigateToTool('model');
-          setIsLeftPanelOpen(true);
-        } else if (key === 'r') {
-          e.preventDefault();
-          navigateToTool('remesh');
-          setIsLeftPanelOpen(true);
-        } else if (key === 't') {
-          e.preventDefault();
-          navigateToTool('texture');
-          setIsLeftPanelOpen(true);
-        } else if (key === 'u') {
-          e.preventDefault();
-          navigateToTool('uv');
-          setIsLeftPanelOpen(true);
-        } else if (key === 'e') {
-          e.preventDefault();
-          navigateToTool('edit');
-          setIsLeftPanelOpen(true);
-        } else if (key === 'a') {
-          e.preventDefault();
-          navigateToTool('animation');
-          setIsLeftPanelOpen(true);
-        } else if (key === 'k') {
-          e.preventDefault();
-          navigateToTool('rigging');
-          setIsLeftPanelOpen(true);
-        } else if (key === 's') {
-          e.preventDefault();
-          navigateToTool('segment');
-          setIsLeftPanelOpen(true);
-        }
+      let mainKey = e.key;
+      if (mainKey === ' ') mainKey = 'Space';
+      else if (mainKey.length === 1) mainKey = mainKey.toUpperCase();
+      parts.push(mainKey);
+      const pressedCombo = parts.join(' + ').toLowerCase();
+
+      // Read effective shortcuts (defaults + custom overrides)
+      const shortcuts = settingsPersistence.getEffectiveShortcuts();
+
+      const matches = (id: string, fallback: string) => {
+        const bound = (shortcuts[id] || fallback).toLowerCase();
+        return bound === pressedCombo;
+      };
+
+      if (matches('nav-dashboard', 'Ctrl/Cmd + 1')) {
+        e.preventDefault();
+        navigateToMainNav('dashboard');
+      } else if (matches('nav-assets', 'Ctrl/Cmd + 2')) {
+        e.preventDefault();
+        navigateToMainNav('assets');
+      } else if (matches('nav-jobs', 'Ctrl/Cmd + 3')) {
+        e.preventDefault();
+        navigateToMainNav('jobs');
+      } else if (matches('nav-logs', 'Ctrl/Cmd + 4')) {
+        e.preventDefault();
+        router.push('/admin?tab=logs');
+      } else if (matches('nav-settings', 'Ctrl/Cmd + ,')) {
+        e.preventDefault();
+        router.push('/admin?tab=settings');
+      } else if (matches('tool-model', 'G')) {
+        e.preventDefault();
+        navigateToTool('model');
+        setIsLeftPanelOpen(true);
+      } else if (matches('tool-remesh', 'R')) {
+        e.preventDefault();
+        navigateToTool('remesh');
+        setIsLeftPanelOpen(true);
+      } else if (matches('tool-texture', 'T')) {
+        e.preventDefault();
+        navigateToTool('texture');
+        setIsLeftPanelOpen(true);
+      } else if (matches('tool-uv', 'U')) {
+        e.preventDefault();
+        navigateToTool('uv');
+        setIsLeftPanelOpen(true);
+      } else if (matches('tool-edit', 'E')) {
+        e.preventDefault();
+        navigateToTool('edit');
+        setIsLeftPanelOpen(true);
+      } else if (matches('tool-animation', 'A')) {
+        e.preventDefault();
+        navigateToTool('animation');
+        setIsLeftPanelOpen(true);
+      } else if (matches('tool-rigging', 'K')) {
+        e.preventDefault();
+        navigateToTool('rigging');
+        setIsLeftPanelOpen(true);
+      } else if (matches('tool-segment', 'S')) {
+        e.preventDefault();
+        navigateToTool('segment');
+        setIsLeftPanelOpen(true);
+      } else if (matches('command-palette', 'Ctrl/Cmd + K')) {
+        e.preventDefault();
+        useUIStore.getState().toggleCommandPalette();
+      } else if (matches('quick-save', 'Ctrl/Cmd + S')) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('saveWorkspaceSnapshotPrompt'));
       }
     };
 

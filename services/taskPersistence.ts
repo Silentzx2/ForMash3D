@@ -283,7 +283,136 @@ export class TaskPersistenceService {
     
     return mergedTasks;
   }
+
+  // ── Activity Notifications ──
+  loadNotifications(): ActivityNotification[] {
+    try {
+      if (typeof window === 'undefined') return [];
+      const stored = localStorage.getItem(NOTIFICATIONS_STORAGE_KEY);
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.warn('Failed to load notifications from localStorage:', e);
+      return [];
+    }
+  }
+
+  saveNotifications(notifications: ActivityNotification[]): void {
+    try {
+      if (typeof window === 'undefined') return;
+      const capped = notifications.slice(0, MAX_NOTIFICATIONS);
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(capped));
+      window.dispatchEvent(new CustomEvent('formash_notifications_updated'));
+    } catch (e) {
+      console.warn('Failed to save notifications to localStorage:', e);
+    }
+  }
+
+  addNotification(item: Omit<ActivityNotification, 'id' | 'timestamp' | 'read'>): ActivityNotification {
+    const list = this.loadNotifications();
+    const newNotif: ActivityNotification = {
+      ...item,
+      id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      read: false,
+    };
+    this.saveNotifications([newNotif, ...list]);
+    return newNotif;
+  }
+
+  markAllNotificationsAsRead(): void {
+    const list = this.loadNotifications();
+    const updated = list.map((n) => ({ ...n, read: true }));
+    this.saveNotifications(updated);
+  }
+
+  clearNotifications(): void {
+    this.saveNotifications([]);
+  }
+
+  // ── Workspace Session Snapshots (T-05) ──
+  loadSnapshots(): WorkspaceSnapshot[] {
+    try {
+      if (typeof window === 'undefined') return [];
+      const stored = localStorage.getItem(SNAPSHOTS_STORAGE_KEY);
+      if (!stored) return [];
+      return JSON.parse(stored);
+    } catch (error) {
+      console.error('Failed to load workspace snapshots:', error);
+      return [];
+    }
+  }
+
+  saveSnapshot(snapshotData: Omit<WorkspaceSnapshot, 'id' | 'createdAt'> & { name: string }): WorkspaceSnapshot {
+    const list = this.loadSnapshots();
+    const newSnapshot: WorkspaceSnapshot = {
+      ...snapshotData,
+      id: `snapshot_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(SNAPSHOTS_STORAGE_KEY, JSON.stringify([newSnapshot, ...list]));
+      }
+    } catch (error) {
+      console.error('Failed to save workspace snapshot:', error);
+    }
+    return newSnapshot;
+  }
+
+  deleteSnapshot(id: string): boolean {
+    const list = this.loadSnapshots();
+    const filtered = list.filter((s) => s.id !== id);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(SNAPSHOTS_STORAGE_KEY, JSON.stringify(filtered));
+      }
+      return true;
+    } catch (error) {
+      console.error('Failed to delete workspace snapshot:', error);
+      return false;
+    }
+  }
+
+  clearSnapshots(): void {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(SNAPSHOTS_STORAGE_KEY);
+      }
+    } catch (error) {
+      console.error('Failed to clear workspace snapshots:', error);
+    }
+  }
 }
+
+export interface WorkspaceSnapshot {
+  id: string;
+  name: string;
+  createdAt: string;
+  assetId: string | null;
+  activeTool: string;
+  rightPanelSections: Record<string, boolean>;
+  cameraPosition: [number, number, number];
+  cameraTarget: [number, number, number];
+}
+
+const SNAPSHOTS_STORAGE_KEY = 'formash_workspace_snapshots';
+
+export interface ActivityNotification {
+  id: string;
+  title: string;
+  description?: string;
+  status: 'completed' | 'failed' | 'export';
+  timestamp: string;
+  read: boolean;
+  jobId?: string;
+  assetId?: string;
+  assetUrl?: string;
+}
+
+const NOTIFICATIONS_STORAGE_KEY = 'formash_activity_notifications';
+const MAX_NOTIFICATIONS = 100;
 
 // Export singleton instance
 export const taskPersistence = TaskPersistenceService.getInstance(); 

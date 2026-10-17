@@ -47,6 +47,13 @@ export interface FeatureConfig {
   description: string;
 }
 
+export interface AssetCollection {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+}
+
 // Settings Types
 export interface AppSettings {
   apiEndpoint: string;

@@ -94,6 +94,8 @@ export interface ModelAsset {
   meshDetails?: Record<string, unknown>;
   dateCreated: string;
   tags: string[];
+  collection?: string;
+  collectionId?: string;
   isFavorite?: boolean;
   materialConfig?: MaterialConfig;
   materials?: string[];
@@ -117,6 +119,14 @@ export interface ModelAsset {
   qaScore?: number;
   qaStatus?: 'pass' | 'warn' | 'fail';
   qaWarnings?: string[];
+  candidates?: Array<{
+    candidate_id: number;
+    seed: number;
+    thumbnail_url?: string;
+    model_url?: string;
+    mesh_path?: string;
+    selected?: boolean;
+  }>;
 }
 
 export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, any>): ModelAsset {
@@ -229,6 +239,8 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     meshDetails: raw.meshDetails || raw.mesh_details,
     dateCreated: raw.dateCreated || raw.created_at || new Date().toISOString().split('T')[0],
     tags: Array.isArray(raw.tags) ? raw.tags : ['Model'],
+    collection: raw.collection || undefined,
+    collectionId: raw.collectionId || undefined,
     isFavorite: Boolean(raw.isFavorite),
     materialConfig: raw.materialConfig,
     materials: Array.isArray(raw.materials) ? raw.materials : [],
@@ -241,6 +253,7 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
       ? { ...raw.source, fileId: raw.source.fileId ?? raw.fileId }
       : raw.source,
     artifacts,
+    candidates: raw.candidates,
     qaScore: raw.qaScore ?? qaReport?.game_ready_score ?? qaReport?.score,
     qaStatus: raw.qaStatus ?? qaReport?.status,
     qaWarnings: raw.qaWarnings ?? qaReport?.warnings,
@@ -496,6 +509,7 @@ export interface GenerationSettings {
   enableAutoRig?: boolean;
   autoRigMode?: string;
   enablePostprocess?: boolean;
+  candidateCount?: number;
 }
 
 

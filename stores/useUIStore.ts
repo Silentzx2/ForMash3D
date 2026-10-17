@@ -38,6 +38,15 @@ interface UIState {
     textureGen: boolean;
   };
   setCapability: (cap: keyof UIState['capabilities'], enabled: boolean) => void;
+  rightPanelSections: Record<string, boolean>;
+  setRightPanelSections: (sections: Record<string, boolean>) => void;
+  setRightPanelSectionExpanded: (sectionId: string, expanded: boolean) => void;
+  toggleRightPanelSection: (sectionId: string) => void;
+  isCommandPaletteOpen: boolean;
+  setCommandPaletteOpen: (open: boolean) => void;
+  toggleCommandPalette: () => void;
+  clonedJobId: string | null;
+  setClonedJobId: (id: string | null) => void;
 }
 
 let resetCameraCallback: (() => void) | null = null;
@@ -55,9 +64,20 @@ export const useUIStore = create<UIState>()((set) => ({
   get bottomDockTab() { return useAppStore.getState().bottomDockTab as BottomDockTab; },
   get creativeLayoutMode() { return useAppStore.getState().creativeLayoutMode; },
   get capabilities() { return useAppStore.getState().capabilities as UIState['capabilities']; },
+  get rightPanelSections() { return useAppStore.getState().rightPanelSections; },
+  get isCommandPaletteOpen() { return useAppStore.getState().isCommandPaletteOpen; },
+  get clonedJobId() { return useAppStore.getState().clonedJobId; },
 
+  setClonedJobId: (clonedJobId) => useAppStore.setState({ clonedJobId }),
   setCapability: (cap, enabled) =>
     useAppStore.setState((s) => ({ capabilities: { ...s.capabilities, [cap]: enabled } })),
+  setRightPanelSections: (rightPanelSections) => useAppStore.setState({ rightPanelSections }),
+  setRightPanelSectionExpanded: (sectionId, expanded) =>
+    useAppStore.getState().setRightPanelSectionExpanded(sectionId, expanded),
+  toggleRightPanelSection: (sectionId) =>
+    useAppStore.getState().toggleRightPanelSection(sectionId),
+  setCommandPaletteOpen: (isCommandPaletteOpen) => useAppStore.setState({ isCommandPaletteOpen }),
+  toggleCommandPalette: () => useAppStore.getState().toggleCommandPalette(),
   setInspectorTab: (inspectorTab) => useAppStore.setState({ inspectorTab }),
   setBottomDockTab: (bottomDockTab) => useAppStore.setState({ bottomDockTab }),
   toggleLeftSidebar: () => useAppStore.setState((s) => ({ leftSidebarCollapsed: !s.leftSidebarCollapsed })),
@@ -98,5 +118,8 @@ useAppStore.subscribe((state, prevState) => {
   if (prevState.bottomDockTab !== state.bottomDockTab) next.bottomDockTab = state.bottomDockTab as BottomDockTab;
   if (prevState.creativeLayoutMode !== state.creativeLayoutMode) next.creativeLayoutMode = state.creativeLayoutMode;
   if (prevState.capabilities !== state.capabilities) next.capabilities = state.capabilities as UIState['capabilities'];
+  if (prevState.rightPanelSections !== state.rightPanelSections) next.rightPanelSections = state.rightPanelSections;
+  if (prevState.isCommandPaletteOpen !== state.isCommandPaletteOpen) next.isCommandPaletteOpen = state.isCommandPaletteOpen;
+  if (prevState.clonedJobId !== state.clonedJobId) next.clonedJobId = state.clonedJobId;
   if (Object.keys(next).length > 0) useUIStore.setState(next);
 });

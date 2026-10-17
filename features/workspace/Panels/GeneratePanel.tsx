@@ -12,7 +12,10 @@ import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
 import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
+import { Box, Cancel, CheckIcon, ChevronDown, ChevronUp, ImageIcon, InfoIcon, LayersIcon, LoaderCircle, Plus, RefreshCw, Settings2, SparklesIcon, TriangleAlertIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
+import { ToolContextHelp } from '@/features/wiki/components/ToolContextHelp';
+import { toast } from 'sonner';
+import { loadModelInViewer } from '@/stores/useViewerStore';
 
 function dataURLtoFile(dataURL: string, filename: string): File {
   const arr = dataURL.split(',');
@@ -89,6 +92,15 @@ export const MESH_QUALITY_OPTIONS: MeshQualityPreset[] = [
     tooltip: 'Ultra: Maximum output fidelity preserving fine source geometric detail (~100k tris)',
   },
 ];
+
+export const PHYSICS_MATERIAL_PRESETS = [
+  { label: 'Default', friction: 0.5, restitution: 0.1 },
+  { label: 'Rubber', friction: 0.8, restitution: 0.8 },
+  { label: 'Stone', friction: 0.6, restitution: 0.1 },
+  { label: 'Wood', friction: 0.4, restitution: 0.2 },
+  { label: 'Ice', friction: 0.05, restitution: 0.05 },
+  { label: 'Metal', friction: 0.3, restitution: 0.15 },
+] as const;
 
 interface DiscoveredModel {
   id: string;
@@ -266,7 +278,46 @@ export const GeneratePanel: React.FC = () => {
     generationSettings,
     setGenerationSettings,
     navigateToTool,
+    currentAsset,
+    updateAssetProperties,
   } = useWorkspace();
+
+  const [promotingCandId, setPromotingCandId] = useState<number | null>(null);
+
+  const handlePreviewCandidate = (cand: { candidate_id: number; model_url?: string; seed: number }) => {
+    if (!currentAsset) return;
+    const viewUrl = cand.model_url || `/api/v1/system/jobs/${currentAsset.id}/candidates/${cand.candidate_id}/download`;
+    loadModelInViewer(viewUrl, `${currentAsset.name} (Var #${cand.candidate_id + 1})`, currentAsset as any);
+    toast.info(`Previewing candidate #${cand.candidate_id + 1} (Seed: ${cand.seed}) in viewport`);
+  };
+
+  const handleSelectCandidate = async (candidateId: number) => {
+    if (!currentAsset) return;
+    try {
+      setPromotingCandId(candidateId);
+      const res = await fetch(`/api/v1/system/jobs/${currentAsset.id}/candidates/${candidateId}/select`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to promote candidate: ${res.statusText}`);
+      }
+      const data = await res.json();
+      if (data.candidates) {
+        updateAssetProperties(currentAsset.id, {
+          candidates: data.candidates,
+        });
+      }
+      const promotedUrl = `/api/v1/system/jobs/${currentAsset.id}/candidates/${candidateId}/download?v=${Date.now()}`;
+      loadModelInViewer(promotedUrl, currentAsset.name, currentAsset as any);
+      toast.success(`Promoted candidate #${candidateId + 1} to master!`);
+    } catch (err) {
+      toast.error('Failed to select candidate', {
+        description: err instanceof Error ? err.message : 'Unknown error',
+      });
+    } finally {
+      setPromotingCandId(null);
+    }
+  };
   
   const {
     batchGenerationEnabled,
@@ -626,6 +677,35 @@ export const GeneratePanel: React.FC = () => {
     }
   };
 
+  // Check for pending board image from Board-to-Generate bridge (T-10)
+  useEffect(() => {
+    let pendingFile = useAppStore.getState().pendingBoardImage;
+    if (!pendingFile && typeof window !== 'undefined') {
+      const cachedDataUrl = sessionStorage.getItem('formash_pending_board_image');
+      const cachedName = sessionStorage.getItem('formash_pending_board_image_name') || 'board-drawing.png';
+      if (cachedDataUrl) {
+        sessionStorage.removeItem('formash_pending_board_image');
+        sessionStorage.removeItem('formash_pending_board_image_name');
+        try {
+          const [meta, b64] = String(cachedDataUrl).split(',');
+          const mime = /data:(.*?)(;|$)/.exec(meta)?.[1] || 'image/png';
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          pendingFile = new File([bytes], cachedName, { type: mime });
+        } catch (e) {
+          console.error('Failed to parse cached board image', e);
+        }
+      }
+    } else if (pendingFile) {
+      useAppStore.getState().setPendingBoardImage(null);
+    }
+
+    if (pendingFile) {
+      void processImageFiles([pendingFile]);
+    }
+  }, []);
+
   const handleImageTo3DTabClick = () => {
     setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
     navigateToTool('model');
@@ -891,12 +971,15 @@ export const GeneratePanel: React.FC = () => {
           <HugeiconsIcon icon={SparklesIcon} size={16} className="w-4 h-4 text-primary" />
           <span>Generate 3D Model</span>
         </span>
-        {statusInfo && (
-          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold">
-            <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-3 h-3" />
-            {statusInfo.label}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {statusInfo && (
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold">
+              <HugeiconsIcon icon={TriangleAlertIcon} size={16} className="w-3 h-3" />
+              {statusInfo.label}
+            </span>
+          )}
+          <ToolContextHelp tool="model" label="Generate 3D Help" />
+        </div>
       </div>
 
       {/* Main Body */}
@@ -923,6 +1006,75 @@ export const GeneratePanel: React.FC = () => {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* T-06: Candidate Comparison Grid */}
+        {currentAsset?.candidates && currentAsset.candidates.length > 1 && (
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <HugeiconsIcon icon={SparklesIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+                <span className="text-[11px] font-bold text-white">Candidate Variations ({currentAsset.candidates.length})</span>
+              </div>
+              <span className="text-[8px] font-mono text-primary font-bold px-1.5 py-0.5 rounded bg-primary/10 border border-primary/25">
+                Pick-Best-of-N
+              </span>
+            </div>
+            <p className="text-[9px] text-zinc-400 leading-tight">
+              Click a candidate to inspect in the 3D viewport. Click <strong>Use this one</strong> to promote it to master; unselected variations will be cleaned up.
+            </p>
+            <div className={`grid gap-1.5 ${currentAsset.candidates.length === 2 ? 'grid-cols-2' : currentAsset.candidates.length === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}>
+              {currentAsset.candidates.map((cand) => {
+                const isSelected = Boolean(cand.selected);
+                return (
+                  <div
+                    key={cand.candidate_id}
+                    className={`p-2 rounded-lg border flex flex-col justify-between transition-all ${
+                      isSelected
+                        ? 'bg-primary/15 border-primary shadow-sm ring-1 ring-primary/40'
+                        : 'bg-[hsl(var(--surface-1))] border-white/[0.08] hover:border-white/[0.2]'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-white">Var #{cand.candidate_id + 1}</span>
+                        {isSelected && (
+                          <span className="text-[7.5px] font-bold px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            MASTER
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[8px] font-mono text-zinc-400 truncate">
+                        Seed: {cand.seed}
+                      </div>
+                    </div>
+
+                    <div className="mt-2 space-y-1">
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewCandidate(cand)}
+                        className="w-full py-1 rounded text-[8.5px] font-bold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 transition-colors cursor-pointer"
+                      >
+                        Inspect 3D
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSelected || promotingCandId !== null}
+                        onClick={() => void handleSelectCandidate(cand.candidate_id)}
+                        className={`w-full py-1 rounded text-[8.5px] font-black transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-primary/20 text-primary border border-primary/30 cursor-default'
+                            : 'bg-primary text-black hover:brightness-110'
+                        }`}
+                      >
+                        {isSelected ? 'Active' : promotingCandId === cand.candidate_id ? 'Promoting...' : 'Use this one'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Unified Studio Generation Pipeline */}
         <div className="space-y-2.5">
@@ -1554,6 +1706,55 @@ export const GeneratePanel: React.FC = () => {
               )}
             </div>
 
+            {/* T-06: Candidate Variations (Pick-Best-of-N) */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                    <HugeiconsIcon icon={LayersIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+                    <span>Candidate Variations</span>
+                  </div>
+                  <div className="text-[9px] text-zinc-400">
+                    Generate variations in one pass by stepping seeds
+                  </div>
+                </div>
+                <span className="text-[9.5px] font-mono text-primary font-bold px-1.5 py-0.5 rounded bg-primary/10 border border-primary/25">
+                  {(generationSettings.candidateCount || 1) === 1 ? '1 Variation' : `${generationSettings.candidateCount} Variations`}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { count: 1, label: '1', sub: 'Single' },
+                  { count: 2, label: '2', sub: 'Pair' },
+                  { count: 3, label: '3', sub: 'Trio' },
+                  { count: 4, label: '4', sub: 'Pick 4' },
+                ].map(({ count, label, sub }) => {
+                  const isSel = (generationSettings.candidateCount || 1) === count;
+                  return (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setGenerationSettings(prev => ({ ...prev, candidateCount: count }))}
+                      className={`py-1.5 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                        isSel
+                          ? 'bg-primary text-black font-black shadow-sm'
+                          : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                      }`}
+                    >
+                      <span className="text-[11px] font-mono font-bold leading-tight">{label}</span>
+                      <span className={`text-[7.5px] ${isSel ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{sub}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {(generationSettings.candidateCount || 1) > 1 && (
+                <div className="rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-[8.5px] text-zinc-300 flex items-center gap-1.5">
+                  <span className="text-primary font-bold">Pick-Best-of-N:</span>
+                  <span>Generates {generationSettings.candidateCount} variations. You can compare and promote your favorite candidate to master.</span>
+                </div>
+              )}
+            </div>
+
             {/* Post-Processing Pipeline Master Toggle */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -1961,6 +2162,34 @@ export const GeneratePanel: React.FC = () => {
                         className="w-full mt-1 rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200" />
                     )}
                   </label>
+
+                  <div className="col-span-2 space-y-1.5">
+                    <div className="flex items-center justify-between text-[9px] text-zinc-400">
+                      <span className="font-semibold">Quick Material Presets</span>
+                      <span className="text-[8px] text-zinc-500">Sets friction &amp; bounce</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1">
+                      {PHYSICS_MATERIAL_PRESETS.map((preset) => {
+                        const isActive =
+                          Math.abs(Number(physics.friction) - preset.friction) < 0.01 &&
+                          Math.abs(Number(physics.restitution) - preset.restitution) < 0.01;
+                        return (
+                          <button
+                            key={preset.label}
+                            type="button"
+                            onClick={() => updatePhysics({ friction: preset.friction, restitution: preset.restitution })}
+                            className={`px-2 py-1.5 rounded-md text-[9px] font-medium transition-colors border text-center cursor-pointer ${
+                              isActive
+                                ? 'bg-primary/20 border-primary text-primary font-bold shadow-sm'
+                                : 'bg-[hsl(var(--surface-1))] border-white/[0.08] text-zinc-300 hover:bg-white/[0.06] hover:text-white'
+                            }`}
+                          >
+                            {preset.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
 
                   {[
                     ['friction', 'Friction', 0, 2, 0.05],

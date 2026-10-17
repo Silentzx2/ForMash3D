@@ -364,6 +364,9 @@ interface AnimationState {
   };
   setBlendState: (blend: Partial<AnimationState['blendState']>) => void;
 
+  // Quick-Apply Preset Library
+  applyPresetClip: (clipId: string) => boolean;
+
   // Modals
   isExportModalOpen: boolean;
   setIsExportModalOpen: (open: boolean) => void;
@@ -797,6 +800,52 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     transitionDuration: 0.5,
   },
   setBlendState: (blend) => set((s) => ({ blendState: { ...s.blendState, ...blend } })),
+
+  // Quick-Apply Preset Library
+  applyPresetClip: (clipId: string) => {
+    const clip = get().animations.find((c) => c.id === clipId);
+    if (!clip) return false;
+
+    const targetNames = get().loadedSkeletonBoneNames ?? [];
+    let mapping = { ...get().retargetMapping };
+    if (targetNames.length > 0) {
+      const sourceBones = [
+        'Hips', 'Spine', 'Chest', 'Neck', 'Head',
+        'UpperArm_L', 'LowerArm_L', 'Hand_L',
+        'UpperArm_R', 'LowerArm_R', 'Hand_R',
+        'UpperLeg_L', 'LowerLeg_L', 'Foot_L',
+        'UpperLeg_R', 'LowerLeg_R', 'Foot_R',
+      ];
+      mapping = mapRetargetBones(sourceBones, targetNames, mapping);
+      sourceBones.forEach((b) => {
+        const sym = getSymmetricBoneName(b);
+        if (sym && mapping[b] && !mapping[sym]) {
+          const targetSym = getSymmetricBoneName(mapping[b]);
+          if (targetSym && targetNames.includes(targetSym)) {
+            mapping[sym] = targetSym;
+          }
+        }
+      });
+    }
+
+    const trackInterval = clip.duration / 5;
+    const updatedTracks = get().tracks.map((t) => ({
+      ...t,
+      keyframeTimes: Array.from({ length: 6 }, (_, i) => Number((i * trackInterval).toFixed(2))),
+    }));
+
+    set({
+      currentAnimationId: clip.id,
+      duration: clip.duration,
+      fps: clip.fps,
+      currentTime: 0,
+      isPlaying: true,
+      retargetMapping: mapping,
+      motionAiPrompt: clip.name,
+      tracks: updatedTracks,
+    });
+    return true;
+  },
 
   isExportModalOpen: false,
   setIsExportModalOpen: (isExportModalOpen) => set({ isExportModalOpen }),

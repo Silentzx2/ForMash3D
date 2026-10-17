@@ -6,6 +6,7 @@ import { MeshUploadStatus } from './MeshUploadStatus';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, Cancel, FolderOpenIcon, SparklesIcon, UploadIcon, ZapIcon } from '@hugeicons/core-free-icons';
+import { ToolContextHelp } from '@/features/wiki/components/ToolContextHelp';
 export const UVUnwrapPanel: React.FC = () => {
   const {
     currentAsset,
@@ -56,9 +57,12 @@ export const UVUnwrapPanel: React.FC = () => {
           <HugeiconsIcon icon={SparklesIcon} size={16} className="w-3.5 h-3.5 text-primary" />
           <span>Smart UV Unwrapping</span>
         </span>
-        <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
-          PartUV UV Pipeline
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
+            PartUV UV Pipeline
+          </span>
+          <ToolContextHelp tool="uv" label="Auto UV Help" />
+        </div>
       </div>
 
       <div className="p-3 space-y-4 flex-1">

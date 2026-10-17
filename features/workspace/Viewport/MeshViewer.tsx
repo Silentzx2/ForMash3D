@@ -26,9 +26,10 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache';
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
 import { analyzeGeometryTelemetry, prepareMeshTangentsAndNormals } from '../lib/meshTelemetry';
+import { taskPersistence } from '@/services/taskPersistence';
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
+import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RecordIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
 import {
   StandardBrushIcon,
   ClayBrushIcon,
@@ -650,6 +651,12 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
   const [isDesktopScreen, setIsDesktopScreen] = useState(true);
   const [isQueueDrawerOpen, setIsQueueDrawerOpen] = useState(true);
+  const [isCapturingTurntable, setIsCapturingTurntable] = useState(false);
+  const [turntableProgress, setTurntableProgress] = useState(0);
+  const isCapturingTurntableRef = useRef(false);
+  useEffect(() => {
+    isCapturingTurntableRef.current = isCapturingTurntable;
+  }, [isCapturingTurntable]);
 
   const brushCursorRef = useRef<THREE.Mesh | null>(null);
   const isBrushingRef = useRef(false);
@@ -1780,6 +1787,20 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     });
     controls.addEventListener('end', () => {
       isUserInteractingRef.current = false;
+      if (cameraRef.current && controlsRef.current) {
+        useViewerStore.getState().setViewport({
+          cameraPosition: [
+            cameraRef.current.position.x,
+            cameraRef.current.position.y,
+            cameraRef.current.position.z,
+          ],
+          target: [
+            controlsRef.current.target.x,
+            controlsRef.current.target.y,
+            controlsRef.current.target.z,
+          ],
+        });
+      }
     });
     controlsRef.current = controls;
 
@@ -2303,11 +2324,70 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       });
     };
 
+    const onClearPaintCanvas = () => {
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.userData?.paintCtx) {
+          const ctx = child.userData.paintCtx as CanvasRenderingContext2D;
+          const canvas = child.userData.paintCanvas as HTMLCanvasElement;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          if (child.material && (child.material as any).map) {
+            (child.material as any).map.needsUpdate = true;
+          }
+          idleFrames = 0;
+        }
+      });
+    };
+
+    const onCaptureUVMask = () => {
+      let maskDataUrl: string | null = null;
+      currentMeshGroupRef.current?.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.userData?.paintCanvas && !maskDataUrl) {
+          const srcCanvas = child.userData.paintCanvas as HTMLCanvasElement;
+          const maskCanvas = document.createElement('canvas');
+          maskCanvas.width = srcCanvas.width || 1024;
+          maskCanvas.height = srcCanvas.height || 1024;
+          const mCtx = maskCanvas.getContext('2d');
+          if (mCtx) {
+            mCtx.fillStyle = '#000000';
+            mCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+            mCtx.drawImage(srcCanvas, 0, 0);
+            try {
+              const imgData = mCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+              const data = imgData.data;
+              for (let i = 0; i < data.length; i += 4) {
+                const alpha = data[i + 3];
+                if (alpha > 10) {
+                  data[i] = 255;
+                  data[i + 1] = 255;
+                  data[i + 2] = 255;
+                  data[i + 3] = 255;
+                } else {
+                  data[i] = 0;
+                  data[i + 1] = 0;
+                  data[i + 2] = 0;
+                  data[i + 3] = 255;
+                }
+              }
+              mCtx.putImageData(imgData, 0, 0);
+              maskDataUrl = maskCanvas.toDataURL('image/png');
+            } catch {
+              maskDataUrl = maskCanvas.toDataURL('image/png');
+            }
+          }
+        }
+      });
+      window.dispatchEvent(new CustomEvent('formash:uv_mask_ready', {
+        detail: { maskDataUrl: maskDataUrl || '' }
+      }));
+    };
+
     renderer.domElement.addEventListener('pointerdown', onBrushPointerDown);
     renderer.domElement.addEventListener('pointermove', onBrushPointerMove);
     window.addEventListener('pointerup', onBrushPointerUp);
     window.addEventListener('pointercancel', onBrushPointerUp);
     window.addEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
+    window.addEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
+    window.addEventListener('formash:capture_uv_mask', onCaptureUVMask);
 
     // Raycast on canvas to select bone joints or place new bones in Rigging mode
     const onCanvasPointerDown = (event: MouseEvent) => {
@@ -2375,7 +2455,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       timer.update();
       const delta = timer.getDelta();
 
-      const turntableActive = Boolean(isTurntableRef.current && meshGroup && meshGroup.children.length > 0);
+      const turntableActive = Boolean(isTurntableRef.current && !isCapturingTurntableRef.current && meshGroup && meshGroup.children.length > 0);
       if (turntableActive) {
         meshGroup.rotation.y += delta * 0.45;
         if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
@@ -2480,6 +2560,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       window.removeEventListener('pointerup', onBrushPointerUp);
       window.removeEventListener('pointercancel', onBrushPointerUp);
       window.removeEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
+      window.removeEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
+      window.removeEventListener('formash:capture_uv_mask', onCaptureUVMask);
       if (brushCursorRef.current) {
         scene.remove(brushCursorRef.current);
         brushCursorRef.current = null;
@@ -3624,6 +3706,162 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   };
 
+  const handleCaptureTurntable = useCallback(() => {
+    if (isCapturingTurntableRef.current) return;
+    const renderer = rendererRef.current;
+    const scene = sceneRef.current;
+    const camera = cameraRef.current;
+    const meshGroup = currentMeshGroupRef.current;
+
+    if (!renderer || !scene || !camera || !meshGroup || meshGroup.children.length === 0) {
+      setDropToastMessage('No active 3D model in viewport to capture');
+      setTimeout(() => setDropToastMessage(null), 3000);
+      return;
+    }
+
+    const canvas = renderer.domElement;
+    const hasMediaRecorder = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
+    const hasCaptureStream = typeof canvas.captureStream === 'function';
+
+    const cleanName = (currentAsset?.name || 'viewport_3d').toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+    // Fallback: If MediaRecorder or captureStream is unavailable, take a turntable snapshot
+    if (!hasMediaRecorder || !hasCaptureStream) {
+      try {
+        renderer.render(scene, camera);
+        const dataUrl = canvas.toDataURL('image/png');
+        const fileName = `${cleanName}_turntable_${Date.now()}.png`;
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        taskPersistence.addNotification({
+          title: 'Turntable Snapshot Exported',
+          description: `Saved viewport snapshot for ${currentAsset?.name || 'asset'}`,
+          status: 'export',
+          assetId: currentAsset?.id,
+          assetUrl: currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.thumbnail,
+        });
+
+        setDropToastMessage(`Browser lacks video recording; saved PNG snapshot: ${fileName}`);
+        setTimeout(() => setDropToastMessage(null), 3500);
+      } catch (err) {
+        console.error('Turntable snapshot fallback failed:', err);
+      }
+      return;
+    }
+
+    try {
+      // Determine best supported mime type
+      let mimeType = 'video/webm';
+      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+        mimeType = 'video/webm;codecs=vp9';
+      } else if (MediaRecorder.isTypeSupported('video/webm')) {
+        mimeType = 'video/webm';
+      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+        mimeType = 'video/mp4';
+      }
+
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType });
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        setIsCapturingTurntable(false);
+        setTurntableProgress(0);
+        isCapturingTurntableRef.current = false;
+
+        if (chunks.length === 0) {
+          setDropToastMessage('Turntable capture recorded 0 frames');
+          setTimeout(() => setDropToastMessage(null), 3000);
+          return;
+        }
+
+        const blob = new Blob(chunks, { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const fileName = `${cleanName}_turntable_${Date.now()}.${ext}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        taskPersistence.addNotification({
+          title: 'Turntable Video Exported',
+          description: `Captured 360° ${ext.toUpperCase()} turntable for ${currentAsset?.name || 'asset'}`,
+          status: 'export',
+          assetId: currentAsset?.id,
+          assetUrl: currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.thumbnail,
+        });
+
+        setDropToastMessage(`Exported 360° turntable video: ${fileName}`);
+        setTimeout(() => setDropToastMessage(null), 4000);
+      };
+
+      // Start recording
+      recorder.start();
+      setIsCapturingTurntable(true);
+      isCapturingTurntableRef.current = true;
+      setTurntableProgress(0);
+
+      const fps = 30;
+      const durationSec = 3;
+      const totalFrames = fps * durationSec; // 90 frames
+      const frameInterval = 1000 / fps; // ~33.3ms
+      let currentFrame = 0;
+      const startRotation = meshGroup.rotation.y;
+      let lastTime = performance.now();
+
+      const captureStep = (now: number) => {
+        if (!isCapturingTurntableRef.current) {
+          if (recorder.state !== 'inactive') recorder.stop();
+          return;
+        }
+
+        const elapsed = now - lastTime;
+        if (elapsed >= frameInterval) {
+          lastTime = now - (elapsed % frameInterval);
+          currentFrame++;
+          const progress = Math.min(1, currentFrame / totalFrames);
+          meshGroup.rotation.y = startRotation + progress * Math.PI * 2;
+          if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
+          renderer.render(scene, camera);
+          setTurntableProgress(Math.round(progress * 100));
+
+          if (currentFrame >= totalFrames) {
+            meshGroup.rotation.y = startRotation; // restore original rotation
+            if (recorder.state !== 'inactive') {
+              recorder.stop();
+            }
+            return;
+          }
+        }
+        requestAnimationFrame(captureStep);
+      };
+
+      requestAnimationFrame(captureStep);
+    } catch (err) {
+      console.error('Turntable capture failed:', err);
+      setIsCapturingTurntable(false);
+      setTurntableProgress(0);
+      isCapturingTurntableRef.current = false;
+      setDropToastMessage('Failed to initialize turntable recording');
+      setTimeout(() => setDropToastMessage(null), 3000);
+    }
+  }, [currentAsset]);
+
   // Sync external camera preset and viewport snapshot triggers
   const lastAnimCameraPresetRef = useRef<string | null>(null);
   useEffect(() => {
@@ -3643,6 +3881,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     const handleSnapshotEvent = () => {
       handleScreenshot();
     };
+    const handleCaptureTurntableEvent = () => {
+      handleCaptureTurntable();
+    };
     const handleInteractionModeEvent = (e: Event) => {
       const customEvent = e as CustomEvent<'orbit' | 'pan' | 'move' | 'rotate' | 'scale'>;
       if (customEvent.detail) {
@@ -3653,17 +3894,35 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       setEnvironmentSettings((p) => ({ ...p, gridVisible: !p.gridVisible }));
     };
 
+    const handleRestoreCameraEvent = (e: Event) => {
+      const ce = e as CustomEvent<{
+        cameraPosition: [number, number, number];
+        cameraTarget: [number, number, number];
+      }>;
+      if (ce.detail && cameraRef.current && controlsRef.current) {
+        const [cx, cy, cz] = ce.detail.cameraPosition;
+        const [tx, ty, tz] = ce.detail.cameraTarget;
+        cameraRef.current.position.set(cx, cy, cz);
+        controlsRef.current.target.set(tx, ty, tz);
+        controlsRef.current.update();
+      }
+    };
+
     window.addEventListener('setCameraPreset', handleCameraPresetEvent);
     window.addEventListener('takeViewportSnapshot', handleSnapshotEvent);
+    window.addEventListener('formash_capture_turntable', handleCaptureTurntableEvent);
     window.addEventListener('setInteractionMode', handleInteractionModeEvent);
     window.addEventListener('toggleGrid', handleToggleGridEvent);
+    window.addEventListener('restoreCameraState', handleRestoreCameraEvent);
     return () => {
       window.removeEventListener('setCameraPreset', handleCameraPresetEvent);
       window.removeEventListener('takeViewportSnapshot', handleSnapshotEvent);
+      window.removeEventListener('formash_capture_turntable', handleCaptureTurntableEvent);
       window.removeEventListener('setInteractionMode', handleInteractionModeEvent);
       window.removeEventListener('toggleGrid', handleToggleGridEvent);
+      window.removeEventListener('restoreCameraState', handleRestoreCameraEvent);
     };
-  }, [applyCameraPreset, setInteractionMode]);
+  }, [applyCameraPreset, handleCaptureTurntable, setInteractionMode]);
 
   // Drag and drop asset loading handler
   const handleDragOver = (e: React.DragEvent) => {
@@ -5169,6 +5428,26 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   <span className="hidden sm:inline text-[11px]">360°</span>
                 </button>
               </SimpleTooltip>
+
+              {/* Turntable Capture (T-15) */}
+              {isTurntable && (
+                <SimpleTooltip side="top" label={isCapturingTurntable ? `Recording 360° (${turntableProgress}%)` : 'Capture Turntable (MP4/WebM)'}>
+                  <button
+                    onClick={handleCaptureTurntable}
+                    disabled={isCapturingTurntable}
+                    className={`p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer active:scale-95 flex items-center gap-1.5 ${
+                      isCapturingTurntable
+                        ? 'bg-rose-500/20 text-rose-300 border-rose-500/50 animate-pulse'
+                        : 'bg-[hsl(var(--surface-1))]/90 backdrop-blur-md border-white/[0.12] text-zinc-300 hover:text-rose-400 hover:border-rose-500/30'
+                    }`}
+                  >
+                    <HugeiconsIcon icon={RecordIcon} size={15} className={`w-3.5 h-3.5 ${isCapturingTurntable ? 'text-rose-500 fill-rose-500' : 'text-rose-400'}`} />
+                    <span className="hidden sm:inline text-[11px]">
+                      {isCapturingTurntable ? `${turntableProgress}%` : 'Capture'}
+                    </span>
+                  </button>
+                </SimpleTooltip>
+              )}
 
               {/* Export CTA Button */}
               <button
