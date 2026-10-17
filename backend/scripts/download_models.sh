@@ -70,13 +70,26 @@ fi
 
 # Helper for running hf download with token if available
 hf_download() {
+    # Prevent hf-transfer Rust extension segfaults on I/O interruptions
+    export HF_HUB_ENABLE_HF_TRANSFER=0
+
+    # Prefer python-based huggingface-cli for stability and graceful error handling
+    if command -v huggingface-cli >/dev/null 2>&1; then
+        if huggingface-cli download "${HF_EXTRA_ARGS[@]}" "$@"; then
+            return 0
+        fi
+        print_warning "huggingface-cli encountered an error, trying python module fallback..."
+    fi
+
+    local py_bin="${PYTHON_EXEC:-$(command -v python3 || command -v python)}"
+    if [ -n "$py_bin" ]; then
+        if "$py_bin" -m huggingface_hub.cli.download "${HF_EXTRA_ARGS[@]}" "$@"; then
+            return 0
+        fi
+    fi
+
     if command -v hf >/dev/null 2>&1; then
         hf download "${HF_EXTRA_ARGS[@]}" "$@"
-    elif command -v huggingface-cli >/dev/null 2>&1; then
-        huggingface-cli download "${HF_EXTRA_ARGS[@]}" "$@"
-    else
-        local py_bin="${PYTHON_EXEC:-$(command -v python3 || command -v python)}"
-        "$py_bin" -m huggingface_hub.cli.download "${HF_EXTRA_ARGS[@]}" "$@"
     fi
 }
 
@@ -210,6 +223,76 @@ verify_directory() {
     fi
 }
 
+# Function to ensure a model target directory is writable, converting read-only symlinks if needed
+ensure_writable_model_dir() {
+    local target_dir="$1"
+
+    # Try chmod first in case it's a simple permission issue
+    chmod -R u+w "$target_dir" 2>/dev/null || true
+
+    mkdir -p "$target_dir" 2>/dev/null || true
+    local test_file="$target_dir/.writable_test_$$"
+    if touch "$test_file" 2>/dev/null; then
+        rm -f "$test_file" 2>/dev/null
+        return 0
+    fi
+
+    print_warning "Directory '$target_dir' is read-only (e.g. Kaggle /kaggle/input or read-only mount)."
+
+    # Case 1: target_dir is a symlink pointing to a read-only directory
+    if [ -L "$target_dir" ]; then
+        local ro_target
+        ro_target="$(readlink -f "$target_dir" 2>/dev/null || echo "")"
+        local parent_dir
+        parent_dir="$(dirname "$target_dir")"
+        if [ -w "$parent_dir" ]; then
+            print_info "Replacing read-only symlink with writable local directory: $target_dir"
+            rm -f "$target_dir"
+            mkdir -p "$target_dir"
+            if [ -n "$ro_target" ] && [ -d "$ro_target" ]; then
+                print_info "Copying existing files from read-only target into writable directory..."
+                cp -rn "$ro_target"/* "$target_dir/" 2>/dev/null || true
+            fi
+            return 0
+        fi
+    fi
+
+    # Case 2: Parent directory (e.g. PRETRAINED_DIR) is a symlink to a read-only directory
+    local parent_dir
+    parent_dir="$(dirname "$target_dir")"
+    if [ -L "$parent_dir" ]; then
+        local ro_parent
+        ro_parent="$(readlink -f "$parent_dir" 2>/dev/null || echo "")"
+        local grand_parent
+        grand_parent="$(dirname "$parent_dir")"
+        if [ -w "$grand_parent" ]; then
+            print_info "Parent directory '$parent_dir' is a symlink to read-only '$ro_parent'."
+            print_info "Converting parent into a writable directory with per-model symlinks..."
+            rm -f "$parent_dir"
+            mkdir -p "$parent_dir"
+            if [ -n "$ro_parent" ] && [ -d "$ro_parent" ]; then
+                for item in "$ro_parent"/*; do
+                    [ -e "$item" ] || continue
+                    local base
+                    base="$(basename "$item")"
+                    if [ "$parent_dir/$base" != "$target_dir" ]; then
+                        ln -s "$item" "$parent_dir/$base" 2>/dev/null || true
+                    fi
+                done
+            fi
+            mkdir -p "$target_dir"
+            if [ -d "$ro_parent/$(basename "$target_dir")" ]; then
+                print_info "Copying existing files for $(basename "$target_dir") into writable directory..."
+                cp -rn "$ro_parent/$(basename "$target_dir")"/* "$target_dir/" 2>/dev/null || true
+            fi
+            return 0
+        fi
+    fi
+
+    print_error "Cannot make '$target_dir' writable. Please check filesystem permissions."
+    return 1
+}
+
 # Function to download with verification
 download_with_verify() {
     local url="$1"
@@ -256,7 +339,8 @@ download_hunyuan2mini() {
         return 0
     fi
     
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
     print_info "Downloading Hunyuan3D 2.0 mini (geometry)..."
     if hf_download  tencent/Hunyuan3D-2mini \
         --include "hunyuan3d-dit-v2-mini-turbo/*" \
@@ -281,7 +365,8 @@ download_hunyuan21() {
         return 0
     fi
     
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
     print_info "Downloading Hunyuan3D 2.1 models..."
     if hf_download tencent/Hunyuan3D-2.1 --local-dir "$model_dir"; then
         print_success "Hunyuan3D 2.1 models downloaded successfully"
@@ -353,7 +438,8 @@ download_trellis() {
         return 0
     fi
     
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
     print_info "Downloading TRELLIS image-large model..."
     if hf_download  microsoft/TRELLIS-image-large --local-dir "$model_dir"; then
         print_success "TRELLIS image-large model downloaded successfully"
@@ -376,7 +462,8 @@ download_trellis_text() {
         return 0
     fi
     
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
     print_info "Downloading TRELLIS text-xlarge model (optional, for text-conditioned part re-texturing)..."
     if hf_download  microsoft/TRELLIS-text-xlarge --local-dir "$model_dir"; then
         print_success "TRELLIS text-xlarge model downloaded successfully"
@@ -399,7 +486,8 @@ download_trellis2() {
         return 0
     fi
     
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
     print_info "Downloading TRELLIS.2-4B model (image-based generation only)..."
     if hf_download  microsoft/TRELLIS.2-4B --local-dir "$model_dir"; then
         print_success "TRELLIS.2-4B model downloaded successfully"
@@ -422,7 +510,8 @@ download_unirig() {
         return 0
     fi
     
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
     print_info "Downloading UniRig model..."
     if hf_download  VAST-AI/UniRig --local-dir "$model_dir"; then
         print_success "UniRig model downloaded successfully"
@@ -574,7 +663,8 @@ download_unique3d() {
         return 0
     fi
 
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
 
     # Download controlnet-tile directory
     print_info "Downloading Unique3D controlnet-tile..."
@@ -646,7 +736,8 @@ download_pixal3d() {
         return 0
     fi
 
-    mkdir -p "$model_dir"
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
 
     # Download the full Pixal3D model repo (pipeline.json + all safetensors)
     print_info "Downloading Pixal3D model from Hugging Face (TencentARC/Pixal3D)..."

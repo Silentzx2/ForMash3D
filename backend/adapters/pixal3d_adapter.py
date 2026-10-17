@@ -95,6 +95,8 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
             str(self.pixal3d_root / "pixal3d" / "pipelines"),
             str(self.pixal3d_root / "pixal3d" / "modules"),
             str(self.pixal3d_root / "pixal3d" / "representations"),
+            str(self.pixal3d_root / "pixal3d" / "trainers"),
+            str(self.pixal3d_root / "pixal3d" / "trainers" / "flow_matching" / "mixins"),
         ]
         for p in paths_to_add:
             if p not in sys.path:
@@ -112,7 +114,10 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
 
             # Import required modules
             from pixal3d.pipelines import Pixal3DImageTo3DPipeline
-            from pixal3d.modules.image_feature_extractor import DinoV3ProjFeatureExtractor
+            try:
+                from pixal3d.trainers.flow_matching.mixins.image_conditioned_proj import DinoV3ProjFeatureExtractor
+            except ImportError:
+                from pixal3d.modules.image_feature_extractor import DinoV3ProjFeatureExtractor
             import o_voxel
 
             # Initialize pipeline using from_pretrained

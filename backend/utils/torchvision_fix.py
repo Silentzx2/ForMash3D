@@ -489,6 +489,23 @@ def fix_flash_attention_hardware():
     return True
 
 
+def fix_pixal3d_modules():
+    """
+    Ensure DinoV3ProjFeatureExtractor is importable from pixal3d.modules.image_feature_extractor.
+    """
+    try:
+        import pixal3d.modules.image_feature_extractor as ife
+        if not hasattr(ife, "DinoV3ProjFeatureExtractor"):
+            try:
+                from pixal3d.trainers.flow_matching.mixins.image_conditioned_proj import DinoV3ProjFeatureExtractor
+                setattr(ife, "DinoV3ProjFeatureExtractor", DinoV3ProjFeatureExtractor)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return True
+
+
 def apply_fix():
     """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, flex_gemm, and flash_attn)."""
     if torchvision is not None:
@@ -505,6 +522,7 @@ def apply_fix():
     fix_gated_huggingface_repos()
     fix_numba_caching()
     fix_flash_attention_hardware()
+    fix_pixal3d_modules()
     return True
 
 
