@@ -312,6 +312,8 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 - Docker Compose and `manager.sh docker-run` mount root `logs/` into `/app/logs`; Supervisor forwards Redis, scheduler, API and frontend output to the same append target.
 - The Admin Logs API and UI read only `master.log`. Clearing logs truncates the active file in place rather than unlinking it.
 - A remote Redis instance cannot write into the application host's local file; its server-side logs remain on the Redis host.
+- The /api/v1/system/logs/stream endpoint reads tail output in chunks and splits LF and carriage-return delimiters, so sampling/progress updates do not wait for a newline. Initial replay is bounded to 1–3,000 lines.
+- The Next.js SSE proxy sets X-Accel-Buffering: no and forwards upstream chunks directly. The Admin Logs tab batches live entries per animation frame, bounds pending/display history, and follows the latest line without repeated smooth-scroll animations.
 
 ### 6.4 Shutdown (`scripts/stop.sh`)
 - Gracefully terminates Next.js, Uvicorn, and Redis processes.

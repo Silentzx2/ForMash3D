@@ -609,9 +609,31 @@ async def get_logs(
         raise HTTPException(status_code=500, detail=f"Error retrieving logs: {str(e)}")
 
 
+def _pop_complete_log_lines(buffer: bytearray) -> List[str]:
+    """Return complete LF/CR-delimited lines, retaining partial output across reads."""
+    lines = []
+    while True:
+        newline = buffer.find(b"\n")
+        carriage = buffer.find(b"\r")
+        if newline < 0 and carriage < 0:
+            break
+        if carriage >= 0 and (newline < 0 or carriage < newline):
+            boundary, separator = carriage, 13
+        else:
+            boundary, separator = newline, 10
+
+        line = bytes(buffer[:boundary]).decode("utf-8", errors="replace")
+        del buffer[:boundary + 1]
+        if separator == 13 and buffer[:1] == b"\n":
+            del buffer[:1]
+        if line.strip():
+            lines.append(line)
+    return lines
+
+
 @router.get("/logs/stream", summary="Stream logs via SSE")
 async def stream_logs(
-    last_n: int = Query(200, description="Number of recent lines to include initially"),
+    last_n: int = Query(200, ge=1, le=3000, description="Number of recent lines to include initially"),
     _: bool = Depends(verify_api_key),
 ):
     """Stream the canonical master.log over SSE with 15-second heartbeats."""
@@ -629,23 +651,36 @@ async def stream_logs(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
+        pending = bytearray()
         try:
             while True:
                 try:
-                    line = await asyncio.wait_for(process.stdout.readline(), timeout=15.0)
-                    if not line:
-                        break
-                    text = line.decode("utf-8", errors="replace").rstrip("\n\r")
-                    if text:
-                        yield f"data: {text}\n\n"
+                    chunk = await asyncio.wait_for(process.stdout.read(4096), timeout=15.0)
                 except asyncio.TimeoutError:
-                    # Heartbeat to keep SSE connection alive
                     yield ": heartbeat\n\n"
+                    continue
+
+                if not chunk:
+                    if pending:
+                        final_line = pending.decode("utf-8", errors="replace")
+                        if final_line.strip():
+                            yield f"data: {final_line}\n\n"
+                    break
+
+                pending.extend(chunk)
+                for line in _pop_complete_log_lines(pending):
+                    yield f"data: {line}\n\n"
         finally:
-            try:
-                process.terminate()
-            except Exception:
-                pass
+            if process.returncode is None:
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
 
     return StreamingResponse(
         event_generator(),

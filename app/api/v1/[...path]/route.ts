@@ -412,6 +412,7 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
       'content-type': 'text/event-stream',
       'cache-control': 'no-cache',
       'connection': 'keep-alive',
+      'x-accel-buffering': 'no',
     });
     if (origin) {
       headers.set('access-control-allow-origin', origin);

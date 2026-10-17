@@ -1,3 +1,9 @@
+## 2026-10-17 — Real-Time Master Log Streaming
+
+- **Root cause**: stream_logs() awaited stdout.readline(), which only completes on LF and delayed carriage-return progress bars such as model sampling. The Admin Logs view also appended each event separately and used smooth scroll for every render.
+- **Implementation**: The stream reads byte chunks, frames both LF and CR output, retains partial lines across chunks, sends heartbeats, validates the initial replay size, and reaps its tail child on disconnect. The Next.js proxy disables intermediary buffering. The UI batches live entries per animation frame, caps pending lines, and auto-follows without animated scroll on every line.
+- **Regression coverage**: Added backend framing tests and an SSE proxy chunk-forwarding test. Execution results should be recorded after running the repository test commands.
+
 ## 2026-10-16 — Unique3D & TripoSG Transformers v5 Compatibility Fix
 
 - **Transformers v5 HybridCache Compatibility (DEP-06)**: Resolved `cannot import name 'HybridCache' from 'transformers'` breaking model worker loads in `Unique3D` and `TripoSG`. In Transformers v5, `HybridCache` was deprecated/refactored, but `diffusers` (via `diffusers.loaders.peft` -> `peft.peft_model`) still attempts to import `HybridCache` from `transformers`. Implemented `fix_transformers_cache()` in [`backend/utils/torchvision_fix.py`](file:///workspaces/ForMash3D/backend/utils/torchvision_fix.py#L123-L150) providing a seamless, backward-compatible fallback subclassing `DynamicCache`/`Cache`.

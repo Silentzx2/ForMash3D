@@ -1,3 +1,9 @@
+## 2026-10-17 — Real-Time Master Log Streaming
+
+- **Realtime progress output**: The backend stream now reads output in chunks and emits both LF- and carriage-return-delimited entries, fixing progress output held behind readline; initial replay is bounded and disconnected tail processes are reaped.
+- **Smooth, bounded Logs UI**: Live entries are batched once per animation frame, pending buffers are capped, and auto-follow scrolls directly to the bottom instead of animating every line.
+- **Proxy and regression coverage**: The Next.js SSE proxy explicitly disables intermediary buffering. Added regression checks for CR/CRLF framing and immediate SSE chunk forwarding.
+
 ## 2026-10-17 — Studio UI/UX & Pipeline Expansion (Tasks T-01 to T-20)
 
 - **BATCH-1 (Core Workspace UX, T-01–T-05)**:

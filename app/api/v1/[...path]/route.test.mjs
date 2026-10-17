@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { afterEach, test } from 'node:test';
 import { NextRequest } from 'next/server';
-import { POST } from './route.ts';
+import { GET, POST } from './route.ts';
 
 const originalFetch = globalThis.fetch;
 const originalBackendUrl = process.env.BACKEND_URL;
@@ -136,3 +136,49 @@ test('aborting the incoming request aborts the upstream POST', async () => {
   assert.equal(upstreamSignal.aborted, true);
   assert.equal(response.status, 500);
 });
+
+test('forwards live SSE chunks immediately with proxy buffering disabled', async () => {
+  process.env.BACKEND_URL = 'http://127.0.0.1:7842';
+  const encoder = new TextEncoder();
+  let releaseSecondChunk;
+  globalThis.fetch = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: first\n\n'));
+        releaseSecondChunk = () => {
+          controller.enqueue(encoder.encode('data: second\n\n'));
+          controller.close();
+        };
+      },
+    }),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
+
+  const request = new NextRequest('http://localhost/api/v1/system/logs/stream');
+  const response = await GET(request, {
+    params: Promise.resolve({ path: ['system', 'logs', 'stream'] }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'text/event-stream');
+  assert.equal(response.headers.get('cache-control'), 'no-cache');
+  assert.equal(response.headers.get('x-accel-buffering'), 'no');
+
+  const reader = response.body.getReader();
+  try {
+    const first = await Promise.race([
+      reader.read(),
+      new Promise(resolve => setTimeout(() => resolve(null), 1000)),
+    ]);
+    assert(first, 'first event should arrive before the upstream stream finishes');
+    assert.equal(new TextDecoder().decode(first.value), 'data: first\n\n');
+
+    releaseSecondChunk();
+    const second = await reader.read();
+    assert.equal(new TextDecoder().decode(second.value), 'data: second\n\n');
+    assert.equal((await reader.read()).done, true);
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+});
+

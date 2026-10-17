@@ -99,6 +99,24 @@ export function LogsTab() {
     let snapshotReady = initialSnapshotLoadedRef.current;
     let replayCounts = snapshotReady ? countLogLines(logsRef.current) : new Map<string, number>();
     const bufferedStreamLines: LogLine[] = [];
+    const pendingLiveLines: LogLine[] = [];
+    let flushFrame: number | null = null;
+
+    const enqueueLiveLine = (line: LogLine) => {
+      pendingLiveLines.push(line);
+      // Keep hidden-tab bursts bounded; the terminal itself is a rolling window.
+      if (pendingLiveLines.length > 3000) {
+        pendingLiveLines.splice(0, pendingLiveLines.length - 3000);
+      }
+      if (flushFrame !== null) return;
+      flushFrame = window.requestAnimationFrame(() => {
+        flushFrame = null;
+        const batch = pendingLiveLines.splice(0);
+        if (!disposed && batch.length) {
+          setLogs(prev => capLogLines([...prev, ...batch]));
+        }
+      });
+    };
 
     setStatus('CONNECTING');
     setHistoryError(false);
@@ -113,10 +131,13 @@ export function LogsTab() {
       if (disposed) return;
       if (!snapshotReady) {
         bufferedStreamLines.push(line);
+        if (bufferedStreamLines.length > 3000) {
+          bufferedStreamLines.splice(0, bufferedStreamLines.length - 3000);
+        }
         return;
       }
       if (isReplayDuplicate(line, replayCounts)) return;
-      setLogs(prev => capLogLines([...prev, line]));
+      enqueueLiveLine(line);
     };
 
     es.onmessage = (e) => {
@@ -178,15 +199,22 @@ export function LogsTab() {
     }
 
     return () => {
+      if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
+      flushFrame = null;
+      if (pendingLiveLines.length) {
+        const pending = pendingLiveLines.splice(0);
+        setLogs(prev => capLogLines([...prev, ...pending]));
+      }
       disposed = true;
       es.close();
     };
   }, [live]);
 
-  // Auto-scroll
+  // Follow the latest entry without animating every incoming log line.
   useEffect(() => {
-    if (autoScrollRef.current) {
-      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const terminal = terminalRef.current;
+    if (autoScrollRef.current && terminal) {
+      terminal.scrollTop = terminal.scrollHeight;
     }
   }, [logs]);
 
@@ -249,7 +277,7 @@ export function LogsTab() {
           ref={terminalRef}
           onScroll={handleScroll}
           className="flex-1 overflow-y-auto overflow-x-hidden px-4 pt-3 pb-6 text-[12.5px] leading-5"
-          style={{ scrollBehavior: 'smooth' }}
+
         >
           {logs.length === 0 ? (
             <div className="text-[#555555] mt-2">
