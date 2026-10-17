@@ -66,12 +66,7 @@ export const NotificationCenter: React.FC = () => {
   const formatTimestamp = (isoString: string) => {
     try {
       const d = new Date(isoString);
-      const now = Date.now();
-      const diffSec = Math.floor((now - d.getTime()) / 1000);
-      if (diffSec < 60) return 'Just now';
-      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}`;
     } catch {
       return '';
     }

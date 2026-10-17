@@ -123,11 +123,9 @@ export default function GameReadyPanel({
 
         {report && !running && (
           <div
-            className="mesh-editor-check-summary"
             className={`mesh-editor-check-summary ${blocking ? 'border-rose-500/50' : warnings ? 'border-amber-500/50' : 'border-emerald-500/50'}`}
           >
-            <span
-              <HugeiconsIcon icon={blocking ? AlertCircle : warnings ? AlertCircle : CheckmarkCircle02Icon} size={18} className={blocking ? 'text-rose-400' : warnings ? 'text-amber-400' : 'text-emerald-400'} />
+            <HugeiconsIcon icon={blocking ? AlertCircle : warnings ? AlertCircle : CheckmarkCircle02Icon} size={18} className={blocking ? 'text-rose-400' : warnings ? 'text-amber-400' : 'text-emerald-400'} />
             <span>
               {blocking
                 ? `${blocking} blocking issue${blocking === 1 ? '' : 's'}`

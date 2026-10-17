@@ -76,8 +76,7 @@ export default function AutoRetopoToolsPanel({
             style={{ display: 'flex', alignItems: 'center', gap: '0.4em' }}
           >
             <span
-              className="material-symbols-outlined"
-              className="text-sm"
+              className="material-symbols-outlined text-sm"
             >
               {watertight.watertight ? 'check_circle' : 'warning'}
             </span>
