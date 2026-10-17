@@ -238,6 +238,13 @@ def model_worker_process(
         worker_settings = get_settings()
         setup_logging(worker_settings.logging)
 
+        # Apply runtime compatibility patches (SDPA hardware fallback, dinov3, gated repos, numba)
+        try:
+            from utils.torchvision_fix import apply_fix
+            apply_fix()
+        except Exception as fix_err:
+            logger.warning("Worker %s compatibility fix warning: %s", worker_id, fix_err)
+
         # Set up process environment
         logger.info(f"Starting worker process {worker_id} on GPU {gpu_id}")
         # At the very beginning we try to login huggingface for the download of some special models
@@ -305,7 +312,7 @@ def model_worker_process(
                 logger.error(f"[GPU LOAD FAILED] ❌ {err_msg}")
                 try:
                     control_response_queue.put(WorkerResponse("init", False, error=err_msg))
-                    time.sleep(0.5)
+                    time.sleep(1.0)
                 except Exception:
                     pass
                 return  # Exit worker if model loading fails
@@ -316,7 +323,7 @@ def model_worker_process(
             logger.error(f"❌ {err_msg}\n{tb}")
             try:
                 control_response_queue.put(WorkerResponse("init", False, error=err_msg))
-                time.sleep(0.5)
+                time.sleep(1.0)
             except Exception:
                 pass
             return  # Exit worker if model loading fails
@@ -2613,10 +2620,25 @@ class MultiprocessModelScheduler:
                     except Exception:
                         pass
 
-                    # If still generic message, report the process exitcode
+                    # If still generic message, report the process exitcode and tail master.log
                     if not init_success and "terminated unexpectedly" in error_reason:
                         exit_code = worker_process.exitcode
-                        error_reason = f"Worker {worker_id} terminated unexpectedly (exitcode={exit_code}) during model initialization"
+                        hint = ""
+                        if exit_code in (-9, 137):
+                            hint = " (SIGKILL: OS Out-of-Memory / OOM Killer)"
+                        elif exit_code in (-11, 139):
+                            hint = " (SIGSEGV: Segmentation Fault)"
+                        
+                        last_log_lines = ""
+                        try:
+                            master_log = Path(__file__).resolve().parents[2] / "logs" / "master.log"
+                            if master_log.exists():
+                                lines = master_log.read_text(encoding="utf-8", errors="replace").splitlines()
+                                if lines:
+                                    last_log_lines = "\nLast logs:\n" + "\n".join(lines[-10:])
+                        except Exception:
+                            pass
+                        error_reason = f"Worker {worker_id} terminated unexpectedly (exitcode={exit_code}{hint}) during model initialization.{last_log_lines}"
                     break
 
                 await asyncio.sleep(0.2)
