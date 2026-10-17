@@ -76,6 +76,13 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
         try:
             logger.info(f"Loading TRELLIS.2 model from {self.trellis2_root}")
 
+            # Apply runtime compatibility fixes (transformers, dinov3, numba, etc.)
+            try:
+                from utils.torchvision_fix import apply_fix
+                apply_fix()
+            except Exception as fix_err:
+                logger.debug(f"apply_fix notice: {fix_err}")
+
             # Sanitize token env vars: empty/whitespace tokens cause HTTP 401 in torch.hub and huggingface_hub
             for k in ("GITHUB_TOKEN", "GH_TOKEN", "HF_TOKEN", "HUGGINGFACE_TOKEN"):
                 if k in os.environ and not os.environ[k].strip():
@@ -425,6 +432,13 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         """Load the TRELLIS.2 texturing pipeline."""
         try:
             logger.info(f"Loading TRELLIS.2 texturing pipeline from {self.trellis2_root}")
+
+            # Apply runtime compatibility fixes (transformers, dinov3, numba, etc.)
+            try:
+                from utils.torchvision_fix import apply_fix
+                apply_fix()
+            except Exception as fix_err:
+                logger.debug(f"apply_fix notice: {fix_err}")
             
             # Initialize TRELLIS.2 runner
             from utils.trellis2_utils import Trellis2Runner

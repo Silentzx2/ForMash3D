@@ -113,6 +113,13 @@ class Trellis2Runner:
         # Add TRELLIS.2 to Python path
         if str(self.trellis2_root) not in sys.path:
             sys.path.insert(0, str(self.trellis2_root))
+
+        # Apply runtime compatibility fixes (transformers, dinov3, numba, etc.)
+        try:
+            from utils.torchvision_fix import apply_fix
+            apply_fix()
+        except Exception as fix_err:
+            logger.debug(f"apply_fix notice: {fix_err}")
         
         # Set environment variables
         os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'

@@ -309,8 +309,85 @@ class SafeBackgroundRemoverFallback:
         return image.convert("RGBA") if hasattr(image, "convert") else image
 
 
+def fix_transformers_dinov3():
+    """
+    Ensure `DINOv3ViTModel` and `DINOv3ViTConfig` are exportable from `transformers`.
+    In older transformers versions (transformers < 4.50), DINOv3 is not included,
+    causing TRELLIS.2 and Pixal3D to fail with:
+    `cannot import name 'DINOv3ViTModel' from 'transformers'`
+    """
+    try:
+        import transformers
+    except ImportError:
+        return False
+
+    if hasattr(transformers, "DINOv3ViTModel") and hasattr(transformers, "DINOv3ViTConfig"):
+        return True
+
+    # 1. Check if dinov3_vit can be imported from transformers.models
+    try:
+        from transformers.models.dinov3_vit.modeling_dinov3_vit import DINOv3ViTModel, DINOv3ViTConfig
+        setattr(transformers, "DINOv3ViTModel", DINOv3ViTModel)
+        setattr(transformers, "DINOv3ViTConfig", DINOv3ViTConfig)
+        if "transformers" in sys.modules:
+            setattr(sys.modules["transformers"], "DINOv3ViTModel", DINOv3ViTModel)
+            setattr(sys.modules["transformers"], "DINOv3ViTConfig", DINOv3ViTConfig)
+        return True
+    except (ImportError, AttributeError):
+        pass
+
+    # 2. Try loading standalone implementation from utils.dinov3_vit
+    try:
+        try:
+            from utils.dinov3_vit import DINOv3ViTModel, DINOv3ViTConfig
+        except ImportError:
+            from backend.utils.dinov3_vit import DINOv3ViTModel, DINOv3ViTConfig
+
+        setattr(transformers, "DINOv3ViTModel", DINOv3ViTModel)
+        setattr(transformers, "DINOv3ViTConfig", DINOv3ViTConfig)
+        if "transformers" in sys.modules:
+            setattr(sys.modules["transformers"], "DINOv3ViTModel", DINOv3ViTModel)
+            setattr(sys.modules["transformers"], "DINOv3ViTConfig", DINOv3ViTConfig)
+
+        # Register with AutoModel if available
+        if hasattr(transformers, "AutoModel"):
+            try:
+                transformers.AutoModel.register(DINOv3ViTConfig, DINOv3ViTModel)
+            except Exception:
+                pass
+
+        print("Applied compatibility fix: registered standalone DINOv3ViTModel into transformers")
+        return True
+    except Exception as e:
+        print(f"Failed to apply DINOv3 transformers fix: {e}")
+        return False
+
+
+def get_dinov3_model_class():
+    """Retrieve DINOv3ViTModel class, applying fix if needed."""
+    try:
+        import transformers
+        if hasattr(transformers, "DINOv3ViTModel"):
+            return getattr(transformers, "DINOv3ViTModel")
+    except ImportError:
+        pass
+    fix_transformers_dinov3()
+    try:
+        import transformers
+        if hasattr(transformers, "DINOv3ViTModel"):
+            return getattr(transformers, "DINOv3ViTModel")
+    except Exception:
+        pass
+    try:
+        from utils.dinov3_vit import DINOv3ViTModel
+        return DINOv3ViTModel
+    except ImportError:
+        from backend.utils.dinov3_vit import DINOv3ViTModel
+        return DINOv3ViTModel
+
+
 def apply_fix():
-    """Apply the compatibility fixes (torchvision, transformers, torch.load, hf redirects, and numba)."""
+    """Apply the compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, and dinov3)."""
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")
@@ -318,6 +395,7 @@ def apply_fix():
             pass
         fix_torchvision_functional_tensor()
     fix_transformers_cache()
+    fix_transformers_dinov3()
     fix_torch_load_weights_only()
     fix_huggingface_repo_redirects()
     fix_numba_caching()
