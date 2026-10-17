@@ -12,9 +12,15 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-import cv2
+try:
+    import cv2
+except ImportError:
+    cv2 = None
 import torch
-import trimesh
+try:
+    import trimesh
+except ImportError:
+    trimesh = None
 from PIL import Image
 
 logger = logging.getLogger(__name__)
@@ -103,6 +109,7 @@ class Trellis2Runner:
         
         self.trellis2_root = Path(trellis2_root)
         self.device = device
+        self.resource_plan = dict(resource_plan or {})
         
         if model_cache_dir is None:
             model_cache_dir = os.path.join(

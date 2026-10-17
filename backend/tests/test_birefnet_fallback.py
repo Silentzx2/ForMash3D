@@ -26,3 +26,18 @@ def test_birefnet_candidate_fallback():
     except Exception as e:
         # If transformers/torch is unavailable in minimal test env, skip
         pytest.skip(f"BiRefNet dependencies not present in this test environment: {e}")
+
+
+def test_trellis2_runner_init_has_resource_plan():
+    from utils.trellis2_utils import Trellis2Runner
+
+    plan = {"gpu_ids": [0, 1], "strategy": "accelerate_component_dispatch"}
+    runner = Trellis2Runner(
+        trellis2_root=str(backend_dir / "thirdparty" / "TRELLIS.2"),
+        model_cache_dir=str(backend_dir / "pretrained" / "TRELLIS.2"),
+        device="cuda:0",
+        resource_plan=plan,
+    )
+    assert hasattr(runner, "resource_plan")
+    assert runner.resource_plan == plan
+
