@@ -415,7 +415,7 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
     const origin = request.headers.get('origin');
     const headers = new Headers({
       'content-type': 'text/event-stream',
-      'cache-control': 'no-cache',
+      'cache-control': 'no-cache, no-transform',
       'connection': 'keep-alive',
       'x-accel-buffering': 'no',
     });
@@ -424,34 +424,11 @@ async function streamResponse(targetUrl: string, request: NextRequest): Promise<
       headers.set('access-control-allow-credentials', 'true');
     }
     
-    // Wrap the response body with a transform that handles client disconnect gracefully
-    // and ensures the upstream response is properly cancelled
+    // Pipe response body through TransformStream for immediate zero-buffering passthrough
     if (response.body) {
-      // Create a readable stream that wraps the upstream response
-      // and handles client disconnect gracefully
-      const reader = response.body.getReader();
-      const stream = new ReadableStream({
-        async start(controller) {
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) {
-                controller.close();
-                break;
-              }
-              controller.enqueue(value);
-            }
-          } catch (error) {
-            controller.error(error);
-          }
-        },
-        cancel() {
-          // Client disconnected - cancel the upstream reader
-          reader.cancel().catch(() => {});
-        }
-      });
-      
-      return new NextResponse(stream, {
+      const transform = new TransformStream();
+      response.body.pipeTo(transform.writable).catch(() => {});
+      return new NextResponse(transform.readable, {
         status: 200,
         headers,
       });

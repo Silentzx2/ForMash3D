@@ -682,6 +682,14 @@ async def stream_logs(
                 else:
                     cursor = offset
 
+            if path_stat.st_size == 0:
+                try:
+                    with log_path.open("a", encoding="utf-8") as f:
+                        f.write(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - system - INFO - Master log attached. Services connected.\n")
+                    path_stat = log_path.stat()
+                except Exception:
+                    pass
+
             if cursor > path_stat.st_size:
                 cursor = 0
                 reset_required = True
@@ -689,6 +697,8 @@ async def stream_logs(
             if reset_required:
                 cursor = 0
                 yield f"id: {current_identity}:0\nevent: reset\ndata: {{}}\n\n"
+
+            yield ": connected\n\n"
 
             log_file.seek(cursor)
             emitted_offset = cursor

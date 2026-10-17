@@ -115,7 +115,7 @@ export function LogsTab() {
       if (
         typeof payload.chunk !== "string" ||
         typeof payload.identity !== "string" ||
-        !/^\d+:\d+$/.test(payload.identity) ||
+        !/^-?\d+:-?\d+$/.test(payload.identity) ||
         !Number.isSafeInteger(nextOffset) ||
         nextOffset < 0
       ) {
@@ -139,7 +139,7 @@ export function LogsTab() {
       const resetEventId = (event as MessageEvent).lastEventId || "";
       const resetParts = resetEventId.split(":");
       streamIdentityRef.current =
-        resetParts.length === 3 && resetParts.every((part) => /^\d+$/.test(part))
+        resetParts.length === 3 && resetParts.every((part) => /^-?\d+$/.test(part))
           ? resetParts.slice(0, 2).join(":")
           : null;
       streamOffsetRef.current = 0;
