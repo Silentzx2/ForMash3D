@@ -159,6 +159,7 @@ image_to_raw_mesh:
     max_workers: 1
 
   pixal3d_image_to_3d:
+    alias_of: "pixal3d_image_to_raw_mesh"
     capabilities:
       text_to_3d: false
       image_to_3d: true
