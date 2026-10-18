@@ -29,7 +29,7 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 ### Runtime failure and readiness contracts
 - Hunyuan3D-Paint's adapter-level Numba/cache and safe-background-remover helpers also use the canonical backend compatibility loader. This avoids a cached generic `utils.torchvision_fix` silently selecting the Shape or Paint vendored helper for adapter-owned fallback logic.
-- Latest verified CPU CI at commit `60691f5a13ce6831ec7dea17dcbb4476409df4ea`: Python source compilation passed and all 12 compatibility-contract tests passed. GPU/checkpoint-backed inference is not covered by this lane.
+- Latest verified CPU CI at commit `cb02d5df21b7fc34e77be10947b95ac526799594`: Python source compilation passed and all 12 compatibility-contract tests passed. Frontend CI also passed at that commit. GPU/checkpoint-backed inference is not covered by these lanes.
 
 - ModelFactory and UniRig load the main backend TorchVision/Transformers compatibility helper by a canonical file path under a private module name; they do not rely on whichever third-party `utils.torchvision_fix` Python resolves first.
 - The generic `utils` package can still resolve model-specific Shape utilities by design, so third-party code must continue to use an adapter-scoped path or its own package-qualified import. Runtime helper lookup must not depend on this package search order.

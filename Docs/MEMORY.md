@@ -1,3 +1,9 @@
+## 2026-10-18 — Final CI Verification
+
+- At `cb02d5df21b7fc34e77be10947b95ac526799594`, GitHub Actions passed both checks: backend Python source compilation plus 12/12 CPU dependency/runtime contract tests, and frontend CI.
+- This is CPU/static-contract validation, not a GPU/checkpoint-backed smoke test for UniRig, ARDY, Paint3D, or Hunyuan3D-Paint.
+- Final diff audit against the initially audited `dev` head found no requirement `.txt` edits and no edits under `backend/thirdparty` or mesh-generation adapters. Third-party Hunyuan Paint internals remain partially unresolved because the separate repository is read-only to the connected integration.
+
 ## 2026-10-18 — Hunyuan Helper Isolation & Verified CPU CI
 
 - Hunyuan3D-Paint adapter-level imports for `SafeBackgroundRemoverFallback`, `apply_fix`, and `fix_numba_caching` now use `get_backend_torchvision_fix()` instead of generic `utils.torchvision_fix` or bare `torchvision_fix` imports. This avoids a cached module from the Hunyuan Shape/Paint namespace being used for adapter-owned fallback logic.

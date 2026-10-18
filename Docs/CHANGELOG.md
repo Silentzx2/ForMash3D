@@ -1,8 +1,8 @@
-## 2026-10-18 — Canonical Hunyuan Helpers & Green CPU Contract CI
+## 2026-10-18 — Verified Runtime Fixes & Green CI
 
 - Switched Hunyuan3D-Paint's adapter-level Numba and background-removal fallback helper calls to the canonical main-backend compatibility module.
 - Added regression assertions against generic helper imports and updated the fallback test to mock the canonical loader.
-- Verified backend Runtime Contract CI (compile + 12 CPU compatibility tests) and frontend CI passing at the preceding commit. GPU inference still needs a GPU smoke environment.
+- Verified at code commit `cb02d5df21b7fc34e77be10947b95ac526799594`: backend Python compilation and all 12 CPU compatibility contracts passed, and frontend CI passed. GPU inference still needs a GPU smoke environment.
 
 ## 2026-10-18 — Canonical Runtime Compatibility Imports
 
