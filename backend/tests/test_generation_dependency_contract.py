@@ -16,19 +16,23 @@ def requirements(path: Path) -> dict[str, Requirement]:
     }
 
 
-def test_backend_baseline_is_compatible_with_triposg():
+def test_backend_baseline_matches_the_declared_shared_triposg_runtime():
     backend = requirements(BACKEND / "requirements.txt")
     triposg = requirements(BACKEND / "thirdparty/TripoSG/requirements.txt")
 
+    # The repo's working shared pins are maintained in backend/requirements.txt.
+    # TripoSG intentionally leaves these shared packages to the parent environment.
     if "torch" in backend:
         assert str(backend["torch"].specifier) == "==2.6.0+cu124"
         assert str(backend["torchvision"].specifier) == "==0.21.0+cu124"
         assert str(backend["torchaudio"].specifier) == "==2.6.0+cu124"
-    assert str(backend["transformers"].specifier) == "==5.10.1"
-    assert str(backend["diffusers"].specifier) == "==0.38.0"
-    assert Version("1.5.0") in backend["huggingface-hub"].specifier
+    assert str(backend["transformers"].specifier) == "==4.44.2"
+    assert str(backend["diffusers"].specifier) == "==0.30.3"
+    assert Version("0.25.5") in backend["huggingface-hub"].specifier
+    assert Version("0.26.0") not in backend["huggingface-hub"].specifier
     assert str(backend["datasets"].specifier) == "==3.6.0"
     assert "jaxtyping" in triposg
+    assert not ({"transformers", "diffusers", "huggingface-hub"} & set(triposg))
 
 
 def test_installer_and_docker_builds_install_triposg_after_backend():
@@ -142,6 +146,7 @@ def test_hunyuan_paint_import_paths_are_scoped_not_global():
     paint_adapter = (BACKEND / "adapters" / "hunyuan3d_paint_v21.py").read_text(encoding="utf-8")
 
     assert "_hy3dpaint_candidates" not in backend_utils
+    assert "hunyuan3d-shape-v2-1" in backend_utils  # Keep shape adapter lookup intact.
     assert "utils_package.__path__[:] = original_utils_path" in paint_adapter
     assert "for path_entry in added_sys_paths:" in paint_adapter
     assert "sys.modules.pop(mod, None)" not in paint_adapter

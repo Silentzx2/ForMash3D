@@ -1,3 +1,10 @@
+## 2026-10-18 — Preserve Shape Runtime & Align Dependency Contract Tests
+
+- Refined the shared `backend.utils` package change: it retains the existing Hunyuan Shape helper path while removing the Hunyuan Paint path from global package initialization. Paint's adapter scopes its utility path at load time and restores it after loading.
+- The backend dependency contract test had stale expectations (`transformers==5.10.1`, `diffusers==0.38.0`) that disagreed with the unchanged working backend requirements (`4.44.2`, `0.30.3`). It now asserts the existing shared pins and checks that TripoSG leaves centrally managed packages to the parent runtime. No requirements .txt file was edited.
+- The previous backend CI run correctly exposed the test drift (submodules were then present; 7 of 8 contracts passed, while the baseline test failed on the stale version expectation). The current commit should rerun the updated suite; its status will be checked before declaring it green.
+- Mesh-generation adapter code was not changed. The Hunyuan Shape utility path is explicitly retained to avoid regressing that workflow. Third-party DINO fallback internals still need an authorized write to the separate third-party repository for a complete repair.
+
 ## 2026-10-18 — Backend CI Checkout, DINO Cache Validation & Texture Error Chains
 
 - Backend Runtime Contract CI now checks out recursive submodules, because an existing dependency-contract test reads the vendored TripoSG metadata from the submodule. The initial run failed for missing checkout state (6 tests passed, 1 failed); this change is intended to correct the workflow configuration and awaits its rerun.

@@ -28,6 +28,9 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 ### Hunyuan Runtime Loading & Shared Dependencies
 
 ### Runtime failure and readiness contracts
+- The shared `backend.utils` package retains the pre-existing Hunyuan Shape utility path for shape-generation compatibility but no longer globally registers the Hunyuan Paint utility path; Paint imports are scoped to its initialization.
+- The dependency-contract test now validates the current shared baseline declared in `backend/requirements.txt` and verifies that TripoSG does not duplicate those centrally managed dependencies. This changes test expectations only; requirement files remain unchanged.
+
 - Hunyuan3D-Paint preserves processing-stage exception causes with `raise ... from e` and traceback logging, not only loader-stage causes.
 - A local DINOv2 checkpoint is selected only when both `config.json` and at least one recognized model-weight file exist; incomplete local caches trigger an explicit warning before the remote fallback.
 - Backend Runtime Contract CI checks out recursive submodules because the existing dependency-contract suite reads reference metadata from a vendored submodule. This lane runs source compilation and CPU-only contracts, not GPU inference.
