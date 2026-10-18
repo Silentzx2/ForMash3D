@@ -16,4 +16,4 @@ def test_hunyuan_adapter_preserves_explicit_checkpoint_source():
 def test_backend_ci_runs_third_party_path_contracts():
     workflow = (ROOT / ".github" / "workflows" / "backend-runtime-ci.yml").read_text(encoding="utf-8")
     assert "branches: [main, dev]" in workflow
-    assert "backend/thirdparty/hunyuan3d-paint-v2-1/tests/test_runtime_path_utils.py" in workflow
+    assert "backend/thirdparty/tests/test_runtime_path_utils.py" in workflow
