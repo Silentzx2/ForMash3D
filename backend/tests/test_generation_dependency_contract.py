@@ -136,3 +136,13 @@ def test_torchvision_fix_import_survives_native_import_error(monkeypatch):
     assert module.torchvision is None
     assert isinstance(module._TORCHVISION_IMPORT_ERROR, RuntimeError)
 
+
+def test_hunyuan_paint_import_paths_are_scoped_not_global():
+    backend_utils = (BACKEND / "utils" / "__init__.py").read_text(encoding="utf-8")
+    paint_adapter = (BACKEND / "adapters" / "hunyuan3d_paint_v21.py").read_text(encoding="utf-8")
+
+    assert "_hy3dpaint_candidates" not in backend_utils
+    assert "utils_package.__path__[:] = original_utils_path" in paint_adapter
+    assert "for path_entry in added_sys_paths:" in paint_adapter
+    assert "sys.modules.pop(mod, None)" not in paint_adapter
+

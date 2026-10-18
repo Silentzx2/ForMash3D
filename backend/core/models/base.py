@@ -93,8 +93,8 @@ class BaseModel(ABC):
 
         except Exception as e:
             self.status = ModelStatus.ERROR
-            logger.error(f"[GPU LOAD FAILED] model={self.model_id} gpu={gpu_id}: {e}", exc_info=True)
-            raise Exception(f"Failed to load model {self.model_id}: {str(e)}")
+            logger.exception("[GPU LOAD FAILED] model=%s gpu=%s", self.model_id, gpu_id)
+            raise RuntimeError(f"Failed to load model {self.model_id}: {e}") from e
 
     def unload(self) -> bool:
         """Unload model from GPU"""

@@ -83,18 +83,6 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
-        # insert(0) not append: backend/utils (CWD) must not shadow hy3dpaint's utils package
-        paint_root = str(self.hunyuan3d_root)
-        paint_sub = str(self.hunyuan3d_root / "hy3dpaint")
-        paint_utils = str(self.hunyuan3d_root / "hy3dpaint" / "utils")
-        for p in (paint_utils, paint_sub, paint_root):
-            if p not in sys.path:
-                sys.path.insert(0, p)
-
-        if "utils" in sys.modules and hasattr(sys.modules["utils"], "__path__"):
-            if paint_utils not in sys.modules["utils"].__path__:
-                sys.modules["utils"].__path__.insert(0, paint_utils)
-
     def _use_safe_background_remover(self, error: BaseException) -> None:
         """Use a safe fallback while explicitly preserving the degraded runtime state."""
         reason = f"{type(error).__name__}: {error}"
@@ -136,22 +124,34 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         )
 
     def _load_model(self):
-        """Load Hunyuan3D-Paint-v2-1 pipeline."""
+        """Load Hunyuan3D-Paint-v2-1 pipeline with scoped import-path changes."""
+        added_sys_paths: List[str] = []
+        utils_package = None
+        original_utils_path = None
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
             logger.info("Loading Hunyuan3D-Paint-v2-1 pipeline")
 
-            # Crucial: ensure hy3dpaint and its utils are discoverable before importing textureGenPipeline
+            # Keep Paint3D's generic `utils.*` imports scoped to initialization.
+            # The shared backend.utils package must not retain this third-party path.
+            import importlib
+
             paint_root = str(self.hunyuan3d_root)
             paint_sub = str(self.hunyuan3d_root / "hy3dpaint")
             paint_utils = str(self.hunyuan3d_root / "hy3dpaint" / "utils")
-            for p in (paint_utils, paint_sub, paint_root):
-                if p not in sys.path:
-                    sys.path.insert(0, p)
-            if "utils" in sys.modules and hasattr(sys.modules["utils"], "__path__"):
-                if paint_utils not in sys.modules["utils"].__path__:
-                    sys.modules["utils"].__path__.insert(0, paint_utils)
+            for path_entry in (paint_sub, paint_root):
+                if path_entry not in sys.path:
+                    sys.path.insert(0, path_entry)
+                    added_sys_paths.append(path_entry)
+
+            utils_package = importlib.import_module("utils")
+            package_path = getattr(utils_package, "__path__", None)
+            if package_path is None:
+                raise ImportError("The shared backend utils module is not a package.")
+            original_utils_path = list(package_path)
+            if paint_utils not in package_path:
+                package_path.insert(0, paint_utils)
 
             os.environ["NUMBA_DISABLE_CACHING"] = "1"
             os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
@@ -182,9 +182,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                         fix_numba_caching()
                     except Exception:
                         pass
-                    for mod in list(sys.modules):
-                        if "pymatting" in mod or "hy3dshape.hy3dshape.rembg" in mod or "rembg" in mod:
-                            sys.modules.pop(mod, None)
+                    # Retain shared module-cache entries; don't duplicate live classes during retry.
                     from hy3dshape.hy3dshape.rembg import BackgroundRemover
                 else:
                     raise
@@ -207,12 +205,22 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             elif self.model_path.is_dir():
                 conf.multiview_pretrained_path = str(self.model_path)
             else:
+                logger.warning(
+                    "Configured local Hunyuan3D-Paint checkpoint path %s (including %s) was not found; "
+                    "falling back to remote repository tencent/Hunyuan3D-2.1. This fallback may require network access.",
+                    self.model_path, paint_pbr_sub,
+                )
                 conf.multiview_pretrained_path = "tencent/Hunyuan3D-2.1"
 
             dino_local = (self.model_path / ".." / ".." / "dinov2-giant").resolve()
             if dino_local.is_dir() and (dino_local / "config.json").is_file():
                 conf.dino_ckpt_path = str(dino_local)
             else:
+                logger.warning(
+                    "Local DINOv2 checkpoint was not found at %s; using remote repository "
+                    "facebook/dinov2-giant instead.",
+                    dino_local,
+                )
                 conf.dino_ckpt_path = "facebook/dinov2-giant"
             conf.realesrgan_ckpt_path = self._resolve_realesrgan_path()
 
@@ -234,9 +242,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                         fix_numba_caching()
                     except Exception:
                         logger.debug("Numba cache patch could not be reapplied", exc_info=True)
-                    for mod in list(sys.modules):
-                        if "pymatting" in mod or "rembg" in mod:
-                            sys.modules.pop(mod, None)
+                    # Retain shared module-cache entries; don't duplicate live classes during retry.
                     try:
                         self.bg_remover = BackgroundRemover()
                     except Exception as retry_err:
@@ -254,6 +260,13 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         except Exception as e:
             logger.exception("Failed to load Hunyuan3D-Paint-v2-1")
             raise RuntimeError(f"Failed to load Hunyuan3D-Paint-v2-1: {e}") from e
+        finally:
+            # Restore shared import state regardless of success or failure.
+            if utils_package is not None and original_utils_path is not None:
+                utils_package.__path__[:] = original_utils_path
+            for path_entry in added_sys_paths:
+                while path_entry in sys.path:
+                    sys.path.remove(path_entry)
 
     def get_vram_status(self, gpu_id: Optional[int] = None) -> Dict[str, Any]:
         """Return VRAM eligibility status for this model."""

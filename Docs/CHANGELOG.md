@@ -1,3 +1,10 @@
+## 2026-10-18 — Scoped Imports, ARDY Diagnostics & Backend CI
+
+- Scoped Hunyuan3D-Paint's temporary utility path to initialization, restored import state in `finally`, and stopped broad shared module-cache deletion during retry.
+- Added warnings for missing local texture/DINO checkpoints before remote fallbacks; kept degraded background-removal state visible.
+- Added ARDY dependency-contract diagnostics from its vendored `pyproject.toml` and preserved the original `BaseModel.load()` exception chain.
+- Added CPU backend Python compilation and compatibility-contract CI without changing requirements files. GPU inference remains outside this CPU lane.
+
 ## 2026-10-18 — Runtime Compatibility, Path Resolution & Fallback Visibility
 
 - Replaced the empty HybridCache subclass with a real cache-class import fallback that reports its semantic limitation.
@@ -13,9 +20,3 @@
 - Added Hunyuan3D-Paint BackgroundRemover import/native error reporting with exception chaining.
 - Paint3D now preflights both child-stage import graphs before reporting the runtime ready and refuses to continue with invalid/missing UVs after a failed unwrap.
 - Added regression tests for state transitions, diagnostic content, child-stage readiness, and UV failure. Test execution is pending CI verification; no pass claim is made here.
-
-## 2026-10-17 — Lossless, Offset-Resumable Master Log Streaming
-
-- **Canonical raw text stream**: The admin Logs view reads the complete `logs/master.log` as ordered UTF-8 text chunks, preserving blank lines, CR/CRLF characters, partial lines, whitespace, and progress output without parsing or filtering entries.
-- **Reconnect without replay or gaps**: Each SSE event carries its ending byte offset plus the current file identity; the proxy forwards `Last-Event-ID`, and pause/resume continues at the last received offset. Rotation/truncation emits a reset event so the view follows the current canonical file.
-- **UI delivery**: Chunks are appended in animation-frame batches without a line cap or silent pending-queue drops. SSE proxy buffering is disabled and regression tests cover control characters, Unicode chunk boundaries, and immediate upstream forwarding.

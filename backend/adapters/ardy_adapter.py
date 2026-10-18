@@ -7,6 +7,7 @@ producing browser-playable motion.json artifacts and raw .npz files.
 
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -78,6 +79,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
         self.default_checkpoint = default_checkpoint
         self.current_checkpoint = default_checkpoint
         self.ardy_model = None
+        self.runtime_dependency_warnings: List[str] = []
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
     def _ensure_ardy_in_path(self):
@@ -90,9 +92,85 @@ class ArdyMotionGenerationAdapter(BaseModel):
             return self.default_checkpoint
         return CHECKPOINT_VARIANTS.get(requested, requested)
 
+    def _check_runtime_dependency_contract(self) -> List[str]:
+        """Warn about installed versions outside the vendored ARDY project's declared contract.
+
+        This is diagnostic only: it does not upgrade or block the shared environment.
+        """
+        pyproject_path = self.ardy_root / "pyproject.toml"
+        if not pyproject_path.is_file():
+            logger.warning(
+                "ARDY dependency contract cannot be checked; pyproject.toml not found at %s",
+                pyproject_path,
+            )
+            return []
+
+        try:
+            from importlib.metadata import PackageNotFoundError, version
+            from packaging.requirements import Requirement
+            from packaging.version import Version
+
+            source = pyproject_path.read_text(encoding="utf-8")
+            project_match = re.search(
+                r"(?ms)^\[project\]\s*(.*?)(?=^\[|\Z)",
+                source,
+            )
+            if project_match is None:
+                raise ValueError("pyproject.toml has no [project] section")
+            dependencies_match = re.search(
+                r"(?ms)^\s*dependencies\s*=\s*\[(.*?)^\s*\]",
+                project_match.group(1),
+            )
+            if dependencies_match is None:
+                raise ValueError("[project].dependencies list was not found")
+
+            declared = re.findall(
+                r"""^\s*["']([^"']+)["']\s*,?\s*$""",
+                dependencies_match.group(1),
+                flags=re.MULTILINE,
+            )
+            mismatches: List[str] = []
+            for requirement_text in declared:
+                requirement = Requirement(requirement_text)
+                if requirement.marker and not requirement.marker.evaluate():
+                    continue
+                try:
+                    installed_version = version(requirement.name)
+                except PackageNotFoundError:
+                    mismatches.append(
+                        f"{requirement}: distribution is not installed"
+                    )
+                    continue
+                if requirement.specifier and Version(installed_version) not in requirement.specifier:
+                    mismatches.append(
+                        f"{requirement}: installed version is {installed_version}"
+                    )
+
+            self.runtime_dependency_warnings = mismatches
+            if mismatches:
+                logger.warning(
+                    "ARDY runtime dependency contract has %d mismatch(es). "
+                    "The shared dependency set is left unchanged; model loading will continue "
+                    "so any API incompatibility can retain its original traceback.",
+                    len(mismatches),
+                )
+                for mismatch in mismatches:
+                    logger.warning("ARDY dependency contract mismatch: %s", mismatch)
+            else:
+                logger.info("Installed packages satisfy the parsed ARDY dependency contract")
+            return mismatches
+        except Exception:
+            logger.warning(
+                "Unable to inspect ARDY runtime dependency contract at %s",
+                pyproject_path,
+                exc_info=True,
+            )
+            return []
+
     def _load_model(self):
         """Load ARDY model with specified checkpoint."""
         try:
+            self._check_runtime_dependency_contract()
             self._ensure_ardy_in_path()
             logger.info(f"Loading ARDY model from {self.ardy_root} (checkpoint: {self.current_checkpoint})")
 

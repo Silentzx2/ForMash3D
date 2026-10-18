@@ -1,0 +1,37 @@
+name: Backend Runtime Contract CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-contracts:
+    name: Python compile and runtime contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install lightweight test dependencies
+        run: python -m pip install --upgrade pytest packaging
+
+      - name: Compile backend Python sources
+        run: python -m compileall -q backend
+
+      - name: Run backend compatibility contracts
+        env:
+          PYTHONPATH: backend
+        run: python -m pytest -q backend/tests/test_generation_dependency_contract.py

@@ -10,6 +10,7 @@ if str(backend_dir) not in sys.path:
 
 from core.models.base import BaseModel, ModelStatus
 from adapters.unirig_adapter import UniRigAdapter
+from adapters.ardy_adapter import ArdyMotionGenerationAdapter
 from utils.unirig_utils import _format_unirig_import_error
 from adapters.hunyuan3d_paint_v21 import (
     Hunyuan3DPaintV21ImageMeshPaintingAdapter,
@@ -93,4 +94,36 @@ def test_hunyuan_background_removal_fallback_is_marked_degraded(monkeypatch):
     assert state.bg_remover_mode == "safe_fallback"
     assert state.bg_remover_fallback_reason.startswith("RuntimeError:")
     assert "background remover initialization failed" in state.bg_remover_fallback_reason
+
+
+def test_ardy_contract_reports_transformers_version_mismatch(tmp_path, monkeypatch):
+    import importlib.metadata
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\n'
+        'dependencies = [\n'
+        '  "transformers==5.8.1",\n'
+        '  "peft>=0.19",\n'
+        ']\n',
+        encoding="utf-8",
+    )
+    installed = {"transformers": "5.10.1", "peft": "0.19.0"}
+
+    def fake_version(package_name):
+        key = package_name.lower().replace("_", "-")
+        if key not in installed:
+            raise importlib.metadata.PackageNotFoundError(package_name)
+        return installed[key]
+
+    monkeypatch.setattr(importlib.metadata, "version", fake_version)
+    adapter = ArdyMotionGenerationAdapter(
+        model_path=str(tmp_path),
+        ardy_root=str(tmp_path),
+        vram_requirement=4096,
+    )
+
+    mismatches = adapter._check_runtime_dependency_contract()
+
+    assert any("transformers==5.8.1" in item for item in mismatches)
+    assert all("peft>=0.19" not in item for item in mismatches)
 

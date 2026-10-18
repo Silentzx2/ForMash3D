@@ -28,6 +28,11 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 ### Hunyuan Runtime Loading & Shared Dependencies
 
 ### Runtime failure and readiness contracts
+- Hunyuan3D-Paint temporarily adds its vendored utility path only during model initialization and restores both `sys.path` and the shared `utils.__path__` in `finally`; the shared utils package no longer globally adds third-party paths.
+- Hunyuan3D-Paint retries no longer purge shared `sys.modules` entries. Missing local texture or DINO checkpoints are logged before selecting a remote repository fallback.
+- ARDY reads its vendored `pyproject.toml` dependency declarations and warns about installed-version mismatches before CUDA allocation; the check is diagnostic only and does not modify the shared environment or block loading.
+- `BaseModel.load()` preserves the original exception as the chained cause. A lightweight CPU backend CI lane compiles backend Python and runs dependency-contract tests; it does not replace GPU/checkpoint-backed smoke tests.
+
 - The Transformers HybridCache import fallback aliases the available real DynamicCache/Cache implementation and logs that HybridCache-specific behavior is not reproduced; it no longer creates an empty compatibility subclass.
 - TorchVision native/operator import errors are captured during helper import so diagnostics remain importable, and compatibility setup failures are reported at warning level with the traceback rather than silently skipped.
 - ModelFactory and model adapters retain the original exception chain during import/construction failures. Diagnostic logs identify the adapter/model without dumping the full configuration.

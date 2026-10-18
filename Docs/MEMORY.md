@@ -1,3 +1,11 @@
+## 2026-10-18 — Scoped Hunyuan Imports, ARDY Contract Diagnostics & Backend CI
+
+- The shared backend utils package no longer globally adds Hunyuan utility paths. Hunyuan3D-Paint scopes its temporary utility path to initialization and restores import state in `finally`; broad `sys.modules` purges were removed from retries.
+- Missing local Hunyuan/DINO checkpoints now produce explicit remote-fallback warnings. The successful job result continues to expose background-removal degraded mode and its reason.
+- ARDY checks installed distributions against dependencies parsed from its vendored `pyproject.toml` before GPU allocation; mismatches are logged, but no requirements files are changed and model loading is not blocked solely by the diagnostic.
+- `BaseModel.load()` preserves the original exception chain. Added lightweight CPU backend CI for source compilation and dependency-contract tests; GPU/checkpoint inference remains a separate smoke-test requirement.
+- **Repository access limitation:** write access to `Silentzx2/ForMash3D-ThirdParty` was denied by the connected GitHub integration, so no third-party source commit or submodule-pointer update was made. The main-repository mitigation scopes the import path, but the vendored third-party `from utils.*` imports are not yet fully package-qualified. No requirements .txt files or mesh-generation code were changed.
+
 ## 2026-10-18 — Compatibility Shims, Runtime Paths & Degraded-Mode Reporting
 
 - HybridCache compatibility now reuses the actual Transformers DynamicCache/Cache API where available and warns that hybrid-specific semantics are not supplied by the fallback.
