@@ -506,8 +506,78 @@ def fix_pixal3d_modules():
     return True
 
 
+def fix_torch_cluster():
+    """
+    Ensure torch_cluster.fps is importable for UniRig.
+    If torch_cluster is not installed (e.g. Kaggle/minimal CUDA env),
+    installs a pure-PyTorch Farthest Point Sampling fallback into sys.modules.
+    """
+    try:
+        import torch_cluster
+        if hasattr(torch_cluster, "fps"):
+            return True
+    except ImportError:
+        pass
+
+    import types
+    import random
+    import math
+
+    def fps_fallback(
+        src: torch.Tensor,
+        batch: Optional[torch.Tensor] = None,
+        ratio: Optional[float] = None,
+        random_start: bool = True,
+    ) -> torch.Tensor:
+        """Pure PyTorch fallback for torch_cluster.fps."""
+        if ratio is None:
+            ratio = 0.5
+
+        if batch is None:
+            batch = torch.zeros(src.size(0), dtype=torch.long, device=src.device)
+
+        batch_size = int(batch.max().item()) + 1 if batch.numel() > 0 else 1
+        selected = []
+
+        for b in range(batch_size):
+            mask = (batch == b)
+            batch_indices = mask.nonzero(as_tuple=False).view(-1)
+            num_points = batch_indices.numel()
+            if num_points == 0:
+                continue
+
+            num_samples = max(1, int(math.ceil(num_points * ratio))) if isinstance(ratio, float) else int(ratio)
+            num_samples = min(num_samples, num_points)
+
+            pts = src[batch_indices]
+
+            sampled_idx = torch.zeros(num_samples, dtype=torch.long, device=src.device)
+            start = random.randint(0, num_points - 1) if random_start else 0
+            sampled_idx[0] = start
+
+            cur = pts[start : start + 1]
+            dists = torch.sum((pts - cur) ** 2, dim=-1)
+
+            for i in range(1, num_samples):
+                far = torch.argmax(dists)
+                sampled_idx[i] = far
+                new_p = pts[far : far + 1]
+                dists = torch.minimum(dists, torch.sum((pts - new_p) ** 2, dim=-1))
+
+            selected.append(batch_indices[sampled_idx])
+
+        if selected:
+            return torch.cat(selected, dim=0)
+        return torch.empty(0, dtype=torch.long, device=src.device)
+
+    mod = types.ModuleType("torch_cluster")
+    mod.fps = fps_fallback
+    sys.modules["torch_cluster"] = mod
+    return True
+
+
 def apply_fix():
-    """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, flex_gemm, and flash_attn)."""
+    """Apply compatibility fixes (torchvision, transformers, torch.load, hf redirects, numba, dinov3, flex_gemm, flash_attn, and torch_cluster)."""
     if torchvision is not None:
         try:
             print(f"Torchvision version: {torchvision.__version__}")
@@ -523,6 +593,7 @@ def apply_fix():
     fix_numba_caching()
     fix_flash_attention_hardware()
     fix_pixal3d_modules()
+    fix_torch_cluster()
     return True
 
 

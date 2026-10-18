@@ -79,6 +79,12 @@ class UniRigAdapter(AutoRigModel):
             if str(self.unirig_root) not in sys.path:
                 sys.path.insert(0, str(self.unirig_root))
 
+            try:
+                from utils.torchvision_fix import apply_fix
+                apply_fix()
+            except Exception as fix_err:
+                logger.debug(f"apply_fix notice: {fix_err}")
+
             from utils.unirig_utils import InferenceConfig, UniRigInferenceEngine
 
             # Create inference configuration

@@ -378,6 +378,9 @@ class ImageMeshPaintingRequest(BaseModel):
     )
     physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
+    topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
+    quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
 
     @field_validator("texture_resolution", mode="before")
     @classmethod
@@ -602,17 +605,17 @@ async def text_mesh_painting(
                 "mesh_path": mesh_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
-                "enable_postprocess": mesh_request.enable_postprocess,
+                "enable_postprocess": getattr(mesh_request, "enable_postprocess", True),
                 **_clean_paint_parameters(mesh_request.model_parameters),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
-                "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
-                "enable_postprocess": mesh_request.enable_postprocess,
+                "postprocess_mode": "production_mesh" if getattr(mesh_request, "enable_postprocess", True) else "none",
+                "enable_postprocess": getattr(mesh_request, "enable_postprocess", True),
                 "feature_type": "text_mesh_painting",
-                "physics_enabled": mesh_request.physics_enabled,
-                "physics_config": mesh_request.physics_config,
+                "physics_enabled": getattr(mesh_request, "physics_enabled", False),
+                "physics_config": getattr(mesh_request, "physics_config", None),
                 "temp_input_dirs": list(tracked_temp_dirs),
             },
             user_id=user_id,
@@ -1275,17 +1278,17 @@ async def image_mesh_painting(
                         else mesh_request.texture_resolution
                     )
                 ),
-                "enable_postprocess": mesh_request.enable_postprocess,
+                "enable_postprocess": getattr(mesh_request, "enable_postprocess", True),
                 **_clean_paint_parameters(mesh_request.model_parameters),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
-                "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
-                "enable_postprocess": mesh_request.enable_postprocess,
+                "postprocess_mode": "production_mesh" if getattr(mesh_request, "enable_postprocess", True) else "none",
+                "enable_postprocess": getattr(mesh_request, "enable_postprocess", True),
                 "feature_type": "image_mesh_painting",
-                "physics_enabled": mesh_request.physics_enabled,
-                "physics_config": mesh_request.physics_config,
+                "physics_enabled": getattr(mesh_request, "physics_enabled", False),
+                "physics_config": getattr(mesh_request, "physics_config", None),
                 "temp_input_dirs": list(tracked_temp_dirs),
             },
             user_id=user_id,
