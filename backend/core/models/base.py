@@ -148,6 +148,7 @@ class BaseModel(ABC):
             )
 
         start_time = time.time()
+        succeeded = False
         logger.info(
             f"[MODEL INFERENCE START] model={self.model_id} "
             f"gpu={self.gpu_id if self.gpu_id is not None else 'cpu'}"
@@ -158,6 +159,7 @@ class BaseModel(ABC):
             if progress_callback:
                 inputs = {**inputs, "progress_callback": progress_callback}
             result = self._process_request(inputs)
+            succeeded = True
             elapsed = time.time() - start_time
             memory = ""
             if (torch is not None and torch.cuda.is_available()) and self.gpu_id is not None:
@@ -173,11 +175,13 @@ class BaseModel(ABC):
             )
             return result
         except Exception as e:
+            self.status = ModelStatus.ERROR
             logger.error(f"[MODEL INFERENCE FAILED] model={self.model_id}: {e}", exc_info=True)
             raise
         finally:
-            # Reset status to loaded after processing
-            self.status = ModelStatus.LOADED
+            # Only successful requests restore readiness; failures remain visible.
+            if succeeded:
+                self.status = ModelStatus.LOADED
 
     @abstractmethod
     def get_supported_formats(self) -> Dict[str, List[str]]:
