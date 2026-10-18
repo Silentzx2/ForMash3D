@@ -1,3 +1,11 @@
+## 2026-10-18 — Runtime Failure-State, Import Diagnostics & Paint3D Preflight
+
+- Truthful request state: BaseModel.process retains ModelStatus.ERROR when request processing raises and returns to LOADED only after success.
+- Precise import diagnosis: UniRig and Hunyuan3D-Paint diagnostics preserve the real missing module/exception instead of always attributing failures to Blender bpy or hiding an import-time native error.
+- Paint3D runtime readiness: Loading runs an import-only child-process preflight for both stage entry points with the same interpreter and environment as execution; it does not download checkpoints or run inference.
+- UV contract: Paint3D aborts mesh preparation if finite per-vertex UVs are not available after unwrap, rather than continuing with an unverified mesh.
+- Verification note: Regression tests were added in this batch. They were not executed in the connected GitHub environment before commit; check the repository Actions results before treating them as passing. No requirements .txt files or mesh-generation code were changed.
+
 ## 2026-10-17 — Lossless Master Log Streaming
 
 - **Canonical source and framing**: `logs/master.log` is streamed as ordered UTF-8 text chunks, rather than parsed log rows. The transport preserves LF, CR, CRLF, blank lines, leading/trailing whitespace, partial lines, and carriage-return progress updates.
