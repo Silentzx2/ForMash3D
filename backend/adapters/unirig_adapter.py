@@ -42,11 +42,12 @@ class UniRigAdapter(AutoRigModel):
             raise ValueError(
                 f"VRAM requirement for {self.MODEL_ID if hasattr(self, 'MODEL_ID') else model_id} must come from the model manifest"
             )
+        backend_root = Path(__file__).resolve().parents[1]
         if model_path is None:
-            model_path = "backend/pretrained/UniRig"
+            model_path = str(backend_root / "pretrained" / "UniRig")
 
         if unirig_root is None:
-            unirig_root = "thirdparty/UniRig"
+            unirig_root = str(backend_root / "thirdparty" / "UniRig")
 
         super().__init__(
             model_id=model_id,
@@ -111,8 +112,8 @@ class UniRigAdapter(AutoRigModel):
             return self.inference_engine
 
         except Exception as e:
-            logger.error(f"Failed to load UniRig model: {str(e)}")
-            raise Exception(f"Failed to load UniRig model: {str(e)}")
+            logger.exception("Failed to load UniRig model from %s", self.unirig_root)
+            raise RuntimeError(f"Failed to load UniRig model: {e}") from e
 
     def _unload_model(self):
         """Unload UniRig model."""

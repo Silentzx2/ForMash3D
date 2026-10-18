@@ -1,3 +1,11 @@
+## 2026-10-18 — Compatibility Shims, Runtime Paths & Degraded-Mode Reporting
+
+- HybridCache compatibility now reuses the actual Transformers DynamicCache/Cache API where available and warns that hybrid-specific semantics are not supplied by the fallback.
+- TorchVision helper import survives native/operator exceptions while recording the root error; ModelFactory emits traceback-backed warnings for compatibility setup failures and preserves exception chaining.
+- UniRig default roots are resolved from the adapter source path, independent of the caller's working directory.
+- Hunyuan3D-Paint exposes background-removal mode and fallback reason in successful job metadata instead of hiding degraded preprocessing.
+- Regression coverage was added for shim behavior, native TorchVision import failures, cwd-independent paths, and degraded fallback metadata. Backend tests have not yet been run locally; review the CI result before treating them as passing. No requirements .txt files or mesh-generation code were changed.
+
 ## 2026-10-18 — Runtime Failure-State, Import Diagnostics & Paint3D Preflight
 
 - Truthful request state: BaseModel.process retains ModelStatus.ERROR when request processing raises and returns to LOADED only after success.

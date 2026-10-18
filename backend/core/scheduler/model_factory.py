@@ -257,9 +257,19 @@ class ModelFactory:
             # Apply runtime compatibility fixes before model import
             try:
                 from utils.torchvision_fix import apply_fix
-                apply_fix()
+                fix_applied = apply_fix()
+                if fix_applied is False:
+                    logger.warning(
+                        "Compatibility setup returned false before importing %s.%s "
+                        "for model %s",
+                        module_name, class_name, model_id,
+                    )
             except Exception as fix_err:
-                logger.debug(f"Compatibility fix skipped: {fix_err}")
+                logger.warning(
+                    "Compatibility setup failed before importing %s.%s for model %s: %s",
+                    module_name, class_name, model_id, fix_err,
+                    exc_info=True,
+                )
 
             # Dynamic import
             try:
@@ -267,13 +277,16 @@ class ModelFactory:
 
                 model_class = getattr(module, class_name)
             except ImportError as e:
-                logger.error(f"Failed to import {module_name}: {e}")
-                raise ImportError(f"Cannot import module {module_name}: {e}")
+                logger.exception("Failed to import adapter module %s for model %s", module_name, model_id)
+                raise ImportError(f"Cannot import module {module_name}: {e}") from e
             except AttributeError as e:
-                logger.error(f"Class {class_name} not found in {module_name}: {e}")
+                logger.exception(
+                    "Adapter class %s was not found in module %s for model %s",
+                    class_name, module_name, model_id,
+                )
                 raise AttributeError(
                     f"Class {class_name} not found in module {module_name}: {e}"
-                )
+                ) from e
 
             # Create instance with config parameters
             init_params = config.get("init_params", {})
@@ -294,11 +307,16 @@ class ModelFactory:
             return model_instance
 
         except Exception as e:
-            logger.error(f"Failed to create model from config: {e}")
-            logger.error(f"Config: {config}")
-            raise Exception(
-                f"Failed to create model {config.get('model_id', 'unknown')}: {e}"
+            logger.exception(
+                "Failed to create model %s through adapter %s.%s",
+                config.get("model_id", "unknown"),
+                locals().get("module_name", "<unresolved>"),
+                locals().get("class_name", "<unresolved>"),
             )
+            # Avoid dumping the entire config: future configs may contain tokens or secrets.
+            raise RuntimeError(
+                f"Failed to create model {config.get('model_id', 'unknown')}: {e}"
+            ) from e
 
     @classmethod
     def create_model(cls, model_id: str, **kwargs) -> BaseModel:

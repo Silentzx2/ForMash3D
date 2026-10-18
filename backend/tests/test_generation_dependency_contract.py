@@ -83,22 +83,56 @@ def test_hunyuan_model_loaders_use_their_vendored_package_roots():
     assert 'WorkerResponse("init", False, error=err_msg)' in scheduler
 
 
-def test_transformers_cache_compatibility_shim():
+def test_transformers_cache_compatibility_shim(monkeypatch):
     import sys
     import types
     from utils.torchvision_fix import fix_transformers_cache
 
+    class DynamicCache:
+        def __init__(self):
+            self.updates = 0
+
+        def update(self):
+            self.updates += 1
+
     fake_tf = types.ModuleType("transformers")
     fake_tf.Cache = object
-    fake_tf.DynamicCache = object
+    fake_tf.DynamicCache = DynamicCache
     fake_cache_utils = types.ModuleType("transformers.cache_utils")
+    fake_cache_utils.DynamicCache = DynamicCache
     fake_tf.cache_utils = fake_cache_utils
-    sys.modules["transformers"] = fake_tf
-    sys.modules["transformers.cache_utils"] = fake_cache_utils
+    monkeypatch.setitem(sys.modules, "transformers", fake_tf)
+    monkeypatch.setitem(sys.modules, "transformers.cache_utils", fake_cache_utils)
 
     assert not hasattr(fake_tf, "HybridCache")
     success = fix_transformers_cache()
     assert success is True
-    assert hasattr(fake_tf, "HybridCache")
-    assert hasattr(fake_cache_utils, "HybridCache")
+    assert fake_tf.HybridCache is DynamicCache
+    assert fake_cache_utils.HybridCache is DynamicCache
+    cache = fake_tf.HybridCache()
+    cache.update()
+    assert cache.updates == 1
+
+
+def test_torchvision_fix_import_survives_native_import_error(monkeypatch):
+    import builtins
+    import importlib.util
+    import uuid
+
+    module_path = BACKEND / "utils" / "torchvision_fix.py"
+    module_name = f"torchvision_fix_native_error_{uuid.uuid4().hex}"
+    original_import = builtins.__import__
+
+    def fail_torchvision_import(name, *args, **kwargs):
+        if name == "torchvision":
+            raise RuntimeError("torchvision::nms operator does not exist")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fail_torchvision_import)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.torchvision is None
+    assert isinstance(module._TORCHVISION_IMPORT_ERROR, RuntimeError)
 

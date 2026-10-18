@@ -9,8 +9,12 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from core.models.base import BaseModel, ModelStatus
+from adapters.unirig_adapter import UniRigAdapter
 from utils.unirig_utils import _format_unirig_import_error
-from adapters.hunyuan3d_paint_v21 import _format_background_remover_import_error
+from adapters.hunyuan3d_paint_v21 import (
+    Hunyuan3DPaintV21ImageMeshPaintingAdapter,
+    _format_background_remover_import_error,
+)
 
 
 class _StubModel(BaseModel):
@@ -60,3 +64,33 @@ def test_background_remover_diagnostic_preserves_import_cause():
     assert "BackgroundRemover" in message
     assert "pymatting" in message
     assert "ModuleNotFoundError" in message
+
+
+def test_unirig_default_paths_are_independent_of_current_working_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    adapter = UniRigAdapter(vram_requirement=4096)
+
+    assert adapter.unirig_root == backend_dir / "thirdparty" / "UniRig"
+    assert adapter.model_path == backend_dir / "pretrained" / "UniRig"
+
+
+def test_hunyuan_background_removal_fallback_is_marked_degraded(monkeypatch):
+    import types
+
+    class SafeFallback:
+        def __call__(self, image):
+            return image
+
+    fallback_module = types.ModuleType("utils.torchvision_fix")
+    fallback_module.SafeBackgroundRemoverFallback = SafeFallback
+    monkeypatch.setitem(sys.modules, "utils.torchvision_fix", fallback_module)
+
+    state = types.SimpleNamespace()
+    Hunyuan3DPaintV21ImageMeshPaintingAdapter._use_safe_background_remover(
+        state, RuntimeError("background remover initialization failed")
+    )
+
+    assert state.bg_remover_mode == "safe_fallback"
+    assert state.bg_remover_fallback_reason.startswith("RuntimeError:")
+    assert "background remover initialization failed" in state.bg_remover_fallback_reason
+

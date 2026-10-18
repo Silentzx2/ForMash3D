@@ -116,8 +116,11 @@ class ArdyMotionGenerationAdapter(BaseModel):
             return self.ardy_model
 
         except Exception as e:
-            logger.error(f"Failed to load ARDY model: {e}")
-            raise RuntimeError(f"Failed to load ARDY model: {e}")
+            logger.exception(
+                "Failed to load ARDY model from %s using checkpoint %s",
+                self.ardy_root, self.current_checkpoint,
+            )
+            raise RuntimeError(f"Failed to load ARDY model: {e}") from e
 
     def _unload_model(self):
         """Unload ARDY model and release VRAM."""

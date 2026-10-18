@@ -78,6 +78,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         self.hunyuan3d_root = Path(hunyuan3d_root)
         self.paint_pipeline = None
         self.bg_remover = None
+        self.bg_remover_mode = "uninitialized"
+        self.bg_remover_fallback_reason = None
         self.mesh_processor = MeshProcessor()
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
@@ -92,6 +94,32 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         if "utils" in sys.modules and hasattr(sys.modules["utils"], "__path__"):
             if paint_utils not in sys.modules["utils"].__path__:
                 sys.modules["utils"].__path__.insert(0, paint_utils)
+
+    def _use_safe_background_remover(self, error: BaseException) -> None:
+        """Use a safe fallback while explicitly preserving the degraded runtime state."""
+        reason = f"{type(error).__name__}: {error}"
+        try:
+            from utils.torchvision_fix import SafeBackgroundRemoverFallback
+            self.bg_remover = SafeBackgroundRemoverFallback()
+            self.bg_remover_mode = "safe_fallback"
+        except Exception as fallback_error:
+            class _IdentityBackgroundRemover:
+                def __call__(self, img):
+                    return img.convert("RGBA") if hasattr(img, "convert") else img
+
+            self.bg_remover = _IdentityBackgroundRemover()
+            self.bg_remover_mode = "identity"
+            reason += (
+                f"; SafeBackgroundRemoverFallback unavailable: "
+                f"{type(fallback_error).__name__}: {fallback_error}"
+            )
+
+        self.bg_remover_fallback_reason = reason
+        logger.warning(
+            "Hunyuan3D-Paint background removal is degraded (mode=%s): %s",
+            self.bg_remover_mode,
+            reason,
+        )
 
     def _resolve_realesrgan_path(self) -> str:
         """Resolve RealESRGAN checkpoint path, checking both thirdparty and pretrained locations."""
@@ -188,11 +216,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 conf.dino_ckpt_path = "facebook/dinov2-giant"
             conf.realesrgan_ckpt_path = self._resolve_realesrgan_path()
 
+            self.bg_remover_mode = "primary"
+            self.bg_remover_fallback_reason = None
             try:
                 self.bg_remover = BackgroundRemover()
             except RuntimeError as err:
                 if "cannot cache function" in str(err) or "no locator available" in str(err):
-                    logger.warning("Caught Numba caching RuntimeError initializing BackgroundRemover in paint: %s. Retrying...", err)
+                    logger.warning(
+                        "Caught Numba cache RuntimeError initializing BackgroundRemover; retrying: %s",
+                        err,
+                    )
                     try:
                         try:
                             from utils.torchvision_fix import fix_numba_caching
@@ -200,42 +233,18 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                             from torchvision_fix import fix_numba_caching
                         fix_numba_caching()
                     except Exception:
-                        pass
+                        logger.debug("Numba cache patch could not be reapplied", exc_info=True)
                     for mod in list(sys.modules):
                         if "pymatting" in mod or "rembg" in mod:
                             sys.modules.pop(mod, None)
                     try:
                         self.bg_remover = BackgroundRemover()
                     except Exception as retry_err:
-                        logger.warning("BackgroundRemover retry failed (%s). Using safe fallback.", retry_err)
-                        try:
-                            from utils.torchvision_fix import SafeBackgroundRemoverFallback
-                            self.bg_remover = SafeBackgroundRemoverFallback()
-                        except Exception:
-                            class _SafeFallback:
-                                def __call__(self, img):
-                                    return img.convert("RGBA") if hasattr(img, "convert") else img
-                            self.bg_remover = _SafeFallback()
+                        self._use_safe_background_remover(retry_err)
                 else:
-                    logger.warning("Failed to initialize BackgroundRemover in paint (%s). Using safe fallback.", err)
-                    try:
-                        from utils.torchvision_fix import SafeBackgroundRemoverFallback
-                        self.bg_remover = SafeBackgroundRemoverFallback()
-                    except Exception:
-                        class _SafeFallback:
-                            def __call__(self, img):
-                                return img.convert("RGBA") if hasattr(img, "convert") else img
-                        self.bg_remover = _SafeFallback()
+                    self._use_safe_background_remover(err)
             except Exception as bg_err:
-                logger.warning("Failed to initialize BackgroundRemover in paint (%s). Using safe fallback.", bg_err)
-                try:
-                    from utils.torchvision_fix import SafeBackgroundRemoverFallback
-                    self.bg_remover = SafeBackgroundRemoverFallback()
-                except Exception:
-                    class _SafeFallback:
-                        def __call__(self, img):
-                            return img.convert("RGBA") if hasattr(img, "convert") else img
-                    self.bg_remover = _SafeFallback()
+                self._use_safe_background_remover(bg_err)
 
             self.paint_pipeline = Hunyuan3DPaintPipeline(conf)
 
@@ -520,6 +529,11 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     "reference_aspect_ratio_preserved": True,
                 },
                 "pbr_verification": pbr_verification,
+                "background_removal": {
+                    "mode": self.bg_remover_mode,
+                    "degraded": self.bg_remover_mode != "primary",
+                    "fallback_reason": self.bg_remover_fallback_reason,
+                },
             }
 
             logger.info(f"Hunyuan3D-Paint-v2-1 mesh painting completed: {output_path}")

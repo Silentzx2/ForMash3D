@@ -3,12 +3,25 @@
 
 ### Migrated from thirdparty/Hunyuan3D-2.1/torchvision_fix.py
 
+import logging
 import sys
+
+logger = logging.getLogger(__name__)
+_TORCHVISION_IMPORT_ERROR = None
 
 try:
     import torchvision
-except ImportError:
+except Exception as error:
+    # Some broken native/operator registrations raise RuntimeError or OSError,
+    # not ImportError. Keep the compatibility helper importable for diagnosis.
     torchvision = None
+    _TORCHVISION_IMPORT_ERROR = error
+    logger.warning(
+        "TorchVision import failed during compatibility setup (%s): %s",
+        type(error).__name__,
+        error,
+        exc_info=True,
+    )
 
 
 
@@ -132,21 +145,42 @@ def fix_transformers_cache():
     """
     try:
         import transformers
-        if not hasattr(transformers, "HybridCache"):
-            cache_base = getattr(transformers, "DynamicCache", getattr(transformers, "Cache", object))
-            class HybridCache(cache_base):
-                """Compatibility fallback for HybridCache in Transformers v5."""
-                pass
 
-            setattr(transformers, "HybridCache", HybridCache)
-            if hasattr(transformers, "cache_utils") and not hasattr(transformers.cache_utils, "HybridCache"):
-                setattr(transformers.cache_utils, "HybridCache", HybridCache)
-            print("Applied compatibility fix: created transformers.HybridCache shim")
+        cache_utils = getattr(transformers, "cache_utils", None)
+        cache_type = (
+            getattr(transformers, "DynamicCache", None)
+            or getattr(cache_utils, "DynamicCache", None)
+            or getattr(transformers, "Cache", None)
+            or getattr(cache_utils, "Cache", None)
+        )
+        if cache_type is None:
+            raise ImportError(
+                "Transformers exports neither DynamicCache nor Cache; "
+                "cannot provide a functional HybridCache import fallback."
+            )
+
+        if not hasattr(transformers, "HybridCache"):
+            # Alias the real cache implementation rather than inventing a new
+            # empty subclass. This preserves its constructor and cache methods;
+            # it does not claim HybridCache-specific sliding-window semantics.
+            setattr(transformers, "HybridCache", cache_type)
+            logger.warning(
+                "Transformers HybridCache is unavailable; exposing %s as an "
+                "import-compatibility fallback. HybridCache-specific semantics "
+                "are not provided by this fallback.",
+                getattr(cache_type, "__name__", repr(cache_type)),
+            )
+        if cache_utils is not None and not hasattr(cache_utils, "HybridCache"):
+            setattr(cache_utils, "HybridCache", getattr(transformers, "HybridCache"))
+
         return True
-    except ImportError:
-        return False
-    except Exception as e:
-        print(f"Failed to apply transformers cache fix: {e}")
+    except Exception as error:
+        logger.warning(
+            "Failed to apply Transformers cache compatibility fix (%s): %s",
+            type(error).__name__,
+            error,
+            exc_info=True,
+        )
         return False
 
 
