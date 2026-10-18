@@ -178,18 +178,18 @@ class Paint3DAdapter(ImageToMeshModel):
             else str(self.paint3d_root)
         )
         import_script = (
-            "import importlib.util, pathlib, sys\\n"
-            "for name in ('pipeline_paint3d_stage1', 'pipeline_paint3d_stage2'):\\n"
-            "    path = pathlib.Path(name + '.py')\\n"
-            "    spec = importlib.util.spec_from_file_location(name, path)\\n"
-            "    if spec is None or spec.loader is None:\\n"
-            "        raise ImportError(f'Cannot create import spec for {path}')\\n"
-            "    module = importlib.util.module_from_spec(spec)\\n"
-            "    sys.modules[name] = module\\n"
-            "    try:\\n"
-            "        spec.loader.exec_module(module)\\n"
-            "    finally:\\n"
-            "        sys.modules.pop(name, None)\\n"
+            "import importlib.util, pathlib, sys\n"
+            "for name in ('pipeline_paint3d_stage1', 'pipeline_paint3d_stage2'):\n"
+            "    path = pathlib.Path(name + '.py')\n"
+            "    spec = importlib.util.spec_from_file_location(name, path)\n"
+            "    if spec is None or spec.loader is None:\n"
+            "        raise ImportError(f'Cannot create import spec for {path}')\n"
+            "    module = importlib.util.module_from_spec(spec)\n"
+            "    sys.modules[name] = module\n"
+            "    try:\n"
+            "        spec.loader.exec_module(module)\n"
+            "    finally:\n"
+            "        sys.modules.pop(name, None)\n"
         )
         try:
             result = subprocess.run(
@@ -215,7 +215,7 @@ class Paint3DAdapter(ImageToMeshModel):
             raise RuntimeError(
                 "Paint3D child-stage import preflight failed "
                 f"(exit={result.returncode}, python={sys.executable}, "
-                f"cwd={self.paint3d_root}). Child output:\\n{output}"
+                f"cwd={self.paint3d_root}). Child output:\n{output}"
             )
 
     def _unload_model(self) -> None:
