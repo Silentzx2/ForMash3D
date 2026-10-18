@@ -28,6 +28,9 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 ### Hunyuan Runtime Loading & Shared Dependencies
 
 ### Runtime failure and readiness contracts
+- ModelFactory and UniRig load the main backend TorchVision/Transformers compatibility helper by a canonical file path under a private module name; they do not rely on whichever third-party `utils.torchvision_fix` Python resolves first.
+- The generic `utils` package can still resolve model-specific Shape utilities by design, so third-party code must continue to use an adapter-scoped path or its own package-qualified import. Runtime helper lookup must not depend on this package search order.
+
 - The CPU contract suite imports the main-repo TorchVision helper by file path to avoid accidentally resolving the identically named Hunyuan Shape utility module, which correctly depends on the full model runtime.
 - Lightweight source-contract tests now cover BaseModel error-state/cause-chain behavior, Paint3D child-stage preflight and UV validation, and the UniRig/ARDY/ModelFactory exception-chain contracts.
 

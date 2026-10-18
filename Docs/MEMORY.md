@@ -1,3 +1,10 @@
+## 2026-10-18 — Canonical Compatibility Helper Resolution
+
+- Added `core.utils.runtime_compat.get_backend_torchvision_fix()`, which loads `backend/utils/torchvision_fix.py` by canonical file path and caches it under a private module name.
+- ModelFactory and UniRig now use that loader instead of generic `from utils.torchvision_fix`, which could resolve to Hunyuan Shape's third-party helper depending on package path ordering. This is a shared loader/helper fix; mesh-generation algorithms and adapters were not changed.
+- The backend CPU test directly imports the main helper by file path and now includes a source contract ensuring ModelFactory uses the canonical loader. Await CI results for the latest commit before treating those tests as green. No requirements .txt files were changed.
+- The external ThirdParty repository is still not writable through the available GitHub integration, so its own generic `from utils.*` imports and catch-all DINO fallback cannot yet be patched at source.
+
 ## 2026-10-18 — CPU Test Import Isolation & Runtime Regression Contracts
 
 - The contract test now loads `backend/utils/torchvision_fix.py` by explicit file path. Importing it via generic `utils.torchvision_fix` resolves to the retained Hunyuan Shape utility path and would require PyTorch, which the CPU-only CI deliberately does not install.

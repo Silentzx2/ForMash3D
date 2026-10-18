@@ -81,10 +81,14 @@ class UniRigAdapter(AutoRigModel):
                 sys.path.insert(0, str(self.unirig_root))
 
             try:
-                from utils.torchvision_fix import apply_fix
-                apply_fix()
+                from core.utils.runtime_compat import get_backend_torchvision_fix
+                get_backend_torchvision_fix().apply_fix()
             except Exception as fix_err:
-                logger.debug(f"apply_fix notice: {fix_err}")
+                logger.warning(
+                    "Backend runtime compatibility setup failed before UniRig initialization: %s",
+                    fix_err,
+                    exc_info=True,
+                )
 
             from utils.unirig_utils import InferenceConfig, UniRigInferenceEngine
 

@@ -88,9 +88,19 @@ def test_hunyuan_model_loaders_use_their_vendored_package_roots():
 
 
 def test_transformers_cache_compatibility_shim(monkeypatch):
+    import importlib.util
     import sys
     import types
-    from utils.torchvision_fix import fix_transformers_cache
+    import uuid
+
+    # Load the main-repo helper by file path; the generic `utils` namespace
+    # intentionally retains Hunyuan Shape's independent utilities.
+    helper_path = BACKEND / "utils" / "torchvision_fix.py"
+    helper_name = f"backend_torchvision_fix_{uuid.uuid4().hex}"
+    spec = importlib.util.spec_from_file_location(helper_name, helper_path)
+    helper_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper_module)
+    fix_transformers_cache = helper_module.fix_transformers_cache
 
     class DynamicCache:
         def __init__(self):
@@ -195,4 +205,15 @@ def test_scoped_adapter_loaders_preserve_exception_causes():
     assert 'raise RuntimeError(f"Failed to load ARDY model: {e}") from e' in ardy
     assert "raise RuntimeError(" in factory and ") from e" in factory
     assert "logger.exception(" in factory
+
+
+def test_model_factory_uses_the_main_backend_compatibility_helper():
+    factory = (BACKEND / "core" / "scheduler" / "model_factory.py").read_text(encoding="utf-8")
+    runtime_compat = (BACKEND / "core" / "utils" / "runtime_compat.py").read_text(encoding="utf-8")
+    unirig = (BACKEND / "adapters" / "unirig_adapter.py").read_text(encoding="utf-8")
+
+    assert "get_backend_torchvision_fix().apply_fix()" in factory
+    assert "_formash3d_backend_torchvision_fix" in runtime_compat
+    assert "from utils.torchvision_fix import apply_fix" not in factory
+    assert "get_backend_torchvision_fix().apply_fix()" in unirig
 

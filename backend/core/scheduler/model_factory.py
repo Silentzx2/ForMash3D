@@ -254,10 +254,11 @@ class ModelFactory:
 
             logger.info(f"Creating model {model_id} from {module_name}.{class_name}")
 
-            # Apply runtime compatibility fixes before model import
+            # Load the main backend helper by file path; generic `utils.*`
+            # names can resolve to a vendored model's different helper module.
             try:
-                from utils.torchvision_fix import apply_fix
-                fix_applied = apply_fix()
+                from core.utils.runtime_compat import get_backend_torchvision_fix
+                fix_applied = get_backend_torchvision_fix().apply_fix()
                 if fix_applied is False:
                     logger.warning(
                         "Compatibility setup returned false before importing %s.%s "
