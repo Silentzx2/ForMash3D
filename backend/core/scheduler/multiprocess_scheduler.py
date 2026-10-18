@@ -1898,14 +1898,18 @@ class MultiprocessModelScheduler:
             # Generation jobs become final only after canonical post-processing.
             if result.get("success"):
                 final_result = result.get("result") or {}
-                postprocess_mode = str(job_request.metadata.get("postprocess_mode") or "none").lower()
-                enable_postprocess = bool(
-                    job_request.metadata.get("enable_postprocess", True)
-                    and job_request.inputs.get("enable_postprocess", True)
-                ) if ("enable_postprocess" in job_request.metadata or "enable_postprocess" in job_request.inputs) else (postprocess_mode == "production_mesh")
+                if job_request.feature in ("image_mesh_painting", "text_mesh_painting"):
+                    postprocess_mode = "manual_mesh_tool"
+                    enable_postprocess = False
+                else:
+                    postprocess_mode = str(job_request.metadata.get("postprocess_mode") or "none").lower()
+                    enable_postprocess = bool(
+                        job_request.metadata.get("enable_postprocess", True)
+                        and job_request.inputs.get("enable_postprocess", True)
+                    ) if ("enable_postprocess" in job_request.metadata or "enable_postprocess" in job_request.inputs) else (postprocess_mode == "production_mesh")
 
-                if not enable_postprocess and postprocess_mode == "production_mesh":
-                    postprocess_mode = "none"
+                    if not enable_postprocess and postprocess_mode == "production_mesh":
+                        postprocess_mode = "none"
 
                 # Normalize texture_enabled into post-processing rather than launching redundant independent child workflows.
                 texture_enabled = bool(

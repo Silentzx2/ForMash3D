@@ -1848,16 +1848,15 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     const runTextureGeneration = useCallback(async () => {
       const resolution = textureSettings.resolution || '2K';
       const isHighRes = resolution === '4K' || resolution === '8K';
-      const routedModel = isHighRes
+      const modelPreference = isHighRes
         ? 'hunyuan3d_paint_v21_image_mesh_painting'
         : 'paint3d';
-      const modelPreference = textureSettings.modelId || routedModel;
 
       const localTaskId = startTask('texture', 'Texture generation', undefined, modelPreference, undefined, undefined, comparisonGroupId ?? undefined);
     try {
       const meshRef = resolveMeshReference(currentAsset);
 
-      const isTextPaintingModel = modelPreference === 'trellis_text_mesh_painting';
+      const isTextPaintingModel = (modelPreference as string) === 'trellis_text_mesh_painting';
       const hasTexturePrompt = Boolean(textureSettings.prompt?.trim());
       const endpoint = isTextPaintingModel
         ? '/api/v1/mesh-generation/text-mesh-painting'
@@ -1876,6 +1875,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
         texture_resolution_preset: resolution,
         output_format: 'glb',
         model_preference: modelPreference,
+        enable_postprocess: false,
         ...meshRef,
       };
 

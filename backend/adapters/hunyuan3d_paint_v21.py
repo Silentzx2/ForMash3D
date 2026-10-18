@@ -72,10 +72,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
 
         # insert(0) not append: backend/utils (CWD) must not shadow hy3dpaint's utils package
-        if str(self.hunyuan3d_root) not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root))
-        if str(self.hunyuan3d_root / "hy3dpaint") not in sys.path:
-            sys.path.insert(0, str(self.hunyuan3d_root / "hy3dpaint"))
+        paint_root = str(self.hunyuan3d_root)
+        paint_sub = str(self.hunyuan3d_root / "hy3dpaint")
+        paint_utils = str(self.hunyuan3d_root / "hy3dpaint" / "utils")
+        for p in (paint_utils, paint_sub, paint_root):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+
+        if "utils" in sys.modules and hasattr(sys.modules["utils"], "__path__"):
+            if paint_utils not in sys.modules["utils"].__path__:
+                sys.modules["utils"].__path__.insert(0, paint_utils)
 
     def _resolve_realesrgan_path(self) -> str:
         """Resolve RealESRGAN checkpoint path, checking both thirdparty and pretrained locations."""
@@ -97,6 +103,17 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
             logger.info("Loading Hunyuan3D-Paint-v2-1 pipeline")
+
+            # Crucial: ensure hy3dpaint and its utils are discoverable before importing textureGenPipeline
+            paint_root = str(self.hunyuan3d_root)
+            paint_sub = str(self.hunyuan3d_root / "hy3dpaint")
+            paint_utils = str(self.hunyuan3d_root / "hy3dpaint" / "utils")
+            for p in (paint_utils, paint_sub, paint_root):
+                if p not in sys.path:
+                    sys.path.insert(0, p)
+            if "utils" in sys.modules and hasattr(sys.modules["utils"], "__path__"):
+                if paint_utils not in sys.modules["utils"].__path__:
+                    sys.modules["utils"].__path__.insert(0, paint_utils)
 
             os.environ["NUMBA_DISABLE_CACHING"] = "1"
             os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")

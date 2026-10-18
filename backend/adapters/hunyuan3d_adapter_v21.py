@@ -217,6 +217,16 @@ class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
 
             # Load paint pipeline if needed
             if self.load_painting:
+                paint_root = str(self.hunyuan3d_root)
+                paint_sub = str(self.hunyuan3d_root / "hy3dpaint")
+                paint_utils = str(self.hunyuan3d_root / "hy3dpaint" / "utils")
+                for p in (paint_utils, paint_sub, paint_root):
+                    if p not in sys.path:
+                        sys.path.insert(0, p)
+                if "utils" in sys.modules and hasattr(sys.modules["utils"], "__path__"):
+                    if paint_utils not in sys.modules["utils"].__path__:
+                        sys.modules["utils"].__path__.insert(0, paint_utils)
+
                 from hy3dpaint.textureGenPipeline import (
                     Hunyuan3DPaintConfig,
                     Hunyuan3DPaintPipeline,
