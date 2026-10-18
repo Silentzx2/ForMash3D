@@ -160,3 +160,39 @@ def test_hunyuan_processing_errors_keep_the_original_cause():
     assert "def _has_local_dino_checkpoint(path: Path) -> bool:" in paint_adapter
     assert "model weight files" in paint_adapter
 
+
+def test_base_model_failure_state_and_load_error_chain_contracts():
+    base = (BACKEND / "core" / "models" / "base.py").read_text(encoding="utf-8")
+    load_start = base.index("    def load(")
+    unload_start = base.index("    def unload(", load_start)
+    load_block = base[load_start:unload_start]
+    process_start = base.index("    def process(")
+    process_end = base.find("\n    def ", process_start + 5)
+    process_block = base[process_start:process_end]
+
+    assert 'raise RuntimeError(f"Failed to load model {self.model_id}: {e}") from e' in load_block
+    assert "self.status = ModelStatus.ERROR" in process_block
+    assert "if succeeded:" in process_block
+    assert "self.status = ModelStatus.LOADED" in process_block
+
+
+def test_paint3d_runtime_preflight_and_uv_contracts():
+    paint = (BACKEND / "adapters" / "paint3d_adapter.py").read_text(encoding="utf-8")
+
+    assert "self._preflight_stage_imports()" in paint
+    assert "pipeline_paint3d_stage1" in paint and "pipeline_paint3d_stage2" in paint
+    assert "child-stage import preflight failed" in paint
+    assert "requires finite per-vertex UV coordinates before texturing" in paint
+    assert "np.isfinite(uv_array).all()" in paint
+
+
+def test_scoped_adapter_loaders_preserve_exception_causes():
+    unirig = (BACKEND / "adapters" / "unirig_adapter.py").read_text(encoding="utf-8")
+    ardy = (BACKEND / "adapters" / "ardy_adapter.py").read_text(encoding="utf-8")
+    factory = (BACKEND / "core" / "scheduler" / "model_factory.py").read_text(encoding="utf-8")
+
+    assert 'raise RuntimeError(f"Failed to load UniRig model: {e}") from e' in unirig
+    assert 'raise RuntimeError(f"Failed to load ARDY model: {e}") from e' in ardy
+    assert "raise RuntimeError(" in factory and ") from e" in factory
+    assert "logger.exception(" in factory
+

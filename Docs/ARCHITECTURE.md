@@ -28,6 +28,9 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 ### Hunyuan Runtime Loading & Shared Dependencies
 
 ### Runtime failure and readiness contracts
+- The CPU contract suite imports the main-repo TorchVision helper by file path to avoid accidentally resolving the identically named Hunyuan Shape utility module, which correctly depends on the full model runtime.
+- Lightweight source-contract tests now cover BaseModel error-state/cause-chain behavior, Paint3D child-stage preflight and UV validation, and the UniRig/ARDY/ModelFactory exception-chain contracts.
+
 - The shared `backend.utils` package retains the pre-existing Hunyuan Shape utility path for shape-generation compatibility but no longer globally registers the Hunyuan Paint utility path; Paint imports are scoped to its initialization.
 - The dependency-contract test now validates the current shared baseline declared in `backend/requirements.txt` and verifies that TripoSG does not duplicate those centrally managed dependencies. This changes test expectations only; requirement files remain unchanged.
 

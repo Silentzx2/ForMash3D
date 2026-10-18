@@ -1,3 +1,10 @@
+## 2026-10-18 — CPU Test Import Isolation & Runtime Regression Contracts
+
+- The contract test now loads `backend/utils/torchvision_fix.py` by explicit file path. Importing it via generic `utils.torchvision_fix` resolves to the retained Hunyuan Shape utility path and would require PyTorch, which the CPU-only CI deliberately does not install.
+- Added CPU-safe source contracts for BaseModel failure state and load exception chains, Paint3D stage preflight/UV requirements, and UniRig/ARDY/ModelFactory chained failures.
+- The backend CI job at the preceding commit was still failing only in its cache-shim test because of that generic package resolution; the new test import path is intended to remove this source of accidental dependency loading. Check the new run before considering the workflow green.
+- Requirements .txt files, the Hunyuan Shape path, and mesh-generation code were left intact. The separate third-party repo still needs authorized write access to fully fix its broad DINO fallback exception handling.
+
 ## 2026-10-18 — Preserve Shape Runtime & Align Dependency Contract Tests
 
 - Refined the shared `backend.utils` package change: it retains the existing Hunyuan Shape helper path while removing the Hunyuan Paint path from global package initialization. Paint's adapter scopes its utility path at load time and restores it after loading.
