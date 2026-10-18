@@ -73,24 +73,30 @@ hf_download() {
     # Prevent hf-transfer Rust extension segfaults on I/O interruptions
     export HF_HUB_ENABLE_HF_TRANSFER=0
 
-    # Prefer python-based huggingface-cli for stability and graceful error handling
+    # 1. Primary: Use modern 'hf' CLI
+    if command -v hf >/dev/null 2>&1; then
+        if hf download "${HF_EXTRA_ARGS[@]}" "$@"; then
+            return 0
+        fi
+        print_warning "'hf download' encountered an issue, trying fallback..."
+    fi
+
+    # 2. Secondary: Fallback to Python module CLI
+    local py_bin="${PYTHON_EXEC:-$(command -v python3 || command -v python)}"
+    if [ -n "$py_bin" ]; then
+        if "$py_bin" -m huggingface_hub.cli.download "${HF_EXTRA_ARGS[@]}" "$@" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    # 3. Tertiary: Fallback to legacy huggingface-cli
     if command -v huggingface-cli >/dev/null 2>&1; then
         if huggingface-cli download "${HF_EXTRA_ARGS[@]}" "$@"; then
             return 0
         fi
-        print_warning "huggingface-cli encountered an error, trying python module fallback..."
     fi
 
-    local py_bin="${PYTHON_EXEC:-$(command -v python3 || command -v python)}"
-    if [ -n "$py_bin" ]; then
-        if "$py_bin" -m huggingface_hub.cli.download "${HF_EXTRA_ARGS[@]}" "$@"; then
-            return 0
-        fi
-    fi
-
-    if command -v hf >/dev/null 2>&1; then
-        hf download "${HF_EXTRA_ARGS[@]}" "$@"
-    fi
+    return 1
 }
 
 # Default values
@@ -924,7 +930,7 @@ print_info "========================================"
 
 # Check if hf or huggingface-cli is available
 if ! command -v hf &> /dev/null && ! command -v huggingface-cli &> /dev/null; then
-    print_error "huggingface-cli / hf is not installed. Please install it first:"
+    print_error "hf CLI is not installed. Please install it first:"
     print_error "uv pip --python ${UV_PYTHON:-python3.10} install huggingface_hub"
     exit 1
 fi
