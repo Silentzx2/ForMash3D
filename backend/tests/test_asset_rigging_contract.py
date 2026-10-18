@@ -459,3 +459,92 @@ def test_asset_09_manual_mesh_tools_preserve_immutable_master_and_source_format(
     # Source must remain immutable
     assert source_obj.read_bytes() == obj_content
     assert _sha256_file(source_obj) == source_hash
+
+
+@pytest.mark.asyncio
+async def test_auto_rig_download_returns_rigged_glb_even_with_game_ready(monkeypatch, tmp_path):
+    """RIG-13: Direct auto_rig jobs download rigged.glb rather than unrigged game_ready mesh."""
+    from api.routers import system
+    from api.routers.system import download_job_result
+    import api.dependencies as api_deps
+
+    storage = tmp_path / "storage"
+    monkeypatch.setattr(system, "get_storage_base_dir", lambda: storage)
+
+    workspace = storage / "models" / "meshes" / "hero_rig_job-1"
+    (workspace / "master").mkdir(parents=True)
+    (workspace / "game_ready").mkdir(parents=True)
+    (workspace / "rigging" / "rig-999").mkdir(parents=True)
+
+    unrigged_game_ready = workspace / "game_ready" / "hero_rig_job-1.glb"
+    unrigged_game_ready.write_bytes(b"unrigged-mesh-bytes")
+
+    rigged_glb = workspace / "rigging" / "rig-999" / "rigged.glb"
+    rigged_glb.write_bytes(b"rigged-glb-bytes")
+
+    rigged_fbx = workspace / "rigging" / "rig-999" / "rigged.fbx"
+    rigged_fbx.write_bytes(b"rigged-fbx-bytes")
+
+    auto_rig_job_status = {
+        "status": "completed",
+        "feature": "auto_rig",
+        "result": {
+            "asset_root": str(workspace),
+            "output_mesh_path": str(rigged_glb),
+            "output_fbx_path": str(rigged_fbx),
+            "artifacts": {
+                "rigged": {"path": str(rigged_glb), "format": "glb"},
+                "rigged_fbx": {"path": str(rigged_fbx), "format": "fbx"},
+            },
+            "rigging": {"artifact_path": str(rigged_glb), "fbx_path": str(rigged_fbx)},
+        },
+    }
+
+    async def fake_get_job_status(jid):
+        return auto_rig_job_status
+
+    scheduler = SimpleNamespace(get_job_status=fake_get_job_status)
+
+    async def fake_get_scheduler(r):
+        return scheduler
+
+    async def fake_get_user(*a, **k):
+        return None
+
+    monkeypatch.setattr(system, "get_scheduler", fake_get_scheduler)
+    monkeypatch.setattr(api_deps, "get_current_user_optional", fake_get_user)
+
+    request = SimpleNamespace(headers=SimpleNamespace(get=lambda *_: None))
+
+    # Default download (artifact_format=None -> glb) must return rigged.glb, NOT unrigged game_ready
+    resp_default = await download_job_result("rig-999", request, artifact_format=None)
+    assert resp_default.path == str(rigged_glb)
+
+    # Explicit glb must return rigged.glb
+    resp_glb = await download_job_result("rig-999", request, artifact_format="glb")
+    assert resp_glb.path == str(rigged_glb)
+
+    # Explicit rigged must return rigged.glb
+    resp_rigged = await download_job_result("rig-999", request, artifact_format="rigged")
+    assert resp_rigged.path == str(rigged_glb)
+
+    # Explicit fbx and rigged_fbx must return rigged.fbx
+    resp_fbx = await download_job_result("rig-999", request, artifact_format="fbx")
+    assert resp_fbx.path == str(rigged_fbx)
+
+    resp_rigged_fbx = await download_job_result("rig-999", request, artifact_format="rigged_fbx")
+    assert resp_rigged_fbx.path == str(rigged_fbx)
+
+
+def test_auto_rig_request_supports_both_fbx_and_glb():
+    """RIG-14: AutoRigRequest accepts both fbx and glb formats."""
+    from api.routers.auto_rigging import AutoRigRequest
+
+    req_fbx = AutoRigRequest(mesh_path="/test.glb", output_format="fbx")
+    assert req_fbx.output_format == "fbx"
+
+    req_glb = AutoRigRequest(mesh_path="/test.glb", output_format="glb")
+    assert req_glb.output_format == "glb"
+
+    req_upper = AutoRigRequest(mesh_path="/test.glb", output_format="GLB")
+    assert req_upper.output_format == "glb"

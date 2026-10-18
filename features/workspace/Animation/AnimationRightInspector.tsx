@@ -12,7 +12,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { ArrowRight, BoneIcon, Box, ChevronDown, ChevronUp, DownloadIcon, EyeIcon, FileCodeIcon, ShieldCheckIcon } from '@hugeicons/core-free-icons';
 export const AnimationRightInspector: React.FC = () => {
   const router = useRouter();
-  const { currentAsset } = useWorkspace();
+  const { currentAsset, setIsExportModalOpen } = useWorkspace();
   const viewerStore = useViewerStore();
 
   const {
@@ -147,7 +147,8 @@ export const AnimationRightInspector: React.FC = () => {
       if (activeClip?.url && activeClip.url.endsWith('.glb')) {
         window.open(activeClip.url, '_blank');
       } else {
-        toast.success('Exporting Animated GLB Mesh', { description: 'Baking character mesh and generated skeleton animation' });
+        setIsExportModalOpen(true);
+        toast.info('Opening Export Dialog', { description: 'Export your animated 3D model with skeletal tracks' });
       }
     }
   };

@@ -39,7 +39,7 @@ class AutoUvOptions(BaseModel):
                                     description="Max angle-distortion ratio a merge may introduce.")
 
     # --- parameterization ---
-    method: Literal["auto", "lscm", "arap", "planar"] = Field(
+    method: Literal["auto", "lscm", "arap", "planar", "xatlas"] = Field(
         default="auto", description="Per-chart flattening method.")
     arap_iters: int = Field(default=4, ge=0, le=100,
                             description="As-rigid-as-possible iterations (0 = LSCM/planar only).")

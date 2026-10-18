@@ -87,6 +87,35 @@ def test_paint3d_input_validation():
         adapter._process_request({"mesh_path": "nonexistent.obj", "image_path": "nonexistent.png"})
 
 
+def test_strict_resolution_routing(tmp_path):
+    """Verify strict resolution routing between Paint3D (1K/2K) and Hunyuan3D-Paint (4K/8K)."""
+    from adapters.hunyuan3d_paint_v21 import Hunyuan3DPaintV21Adapter
+    import trimesh
+    from PIL import Image
+
+    mesh_file = tmp_path / "cube.glb"
+    box = trimesh.creation.box()
+    box.export(str(mesh_file))
+
+    img_file = tmp_path / "ref.png"
+    Image.new("RGB", (64, 64), color="red").save(img_file)
+
+    p3d = Paint3DAdapter(vram_requirement=12000)
+    hy = Hunyuan3DPaintV21Adapter(vram_requirement=21000)
+
+    # Paint3D strictly rejects 4K and 8K
+    with pytest.raises(ValueError, match="Hunyuan3D-Paint-v2-1"):
+        p3d._process_request({"mesh_path": str(mesh_file), "image_path": str(img_file), "texture_resolution": 4096})
+    with pytest.raises(ValueError, match="Hunyuan3D-Paint-v2-1"):
+        p3d._process_request({"mesh_path": str(mesh_file), "image_path": str(img_file), "texture_resolution": 8192})
+
+    # Hunyuan3D-Paint strictly rejects 1K and 2K
+    with pytest.raises(ValueError, match="strictly to Paint3D"):
+        hy._process_request({"mesh_path": str(mesh_file), "image_path": str(img_file), "texture_resolution": 1024})
+    with pytest.raises(ValueError, match="strictly to Paint3D"):
+        hy._process_request({"mesh_path": str(mesh_file), "image_path": str(img_file), "texture_resolution": 2048})
+
+
 def test_paint3d_prepare_job_mesh_applies_scene_transforms(tmp_path):
     """Verify _prepare_job_mesh applies GLB scene node transforms before exporting OBJ."""
     import numpy as np

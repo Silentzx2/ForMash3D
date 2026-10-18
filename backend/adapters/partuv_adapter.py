@@ -192,6 +192,10 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
 
             # Load and get stats from output mesh
             output_mesh = self.mesh_processor.load_mesh(output_mesh_path)
+            if output_format == "glb" and Path(output_mesh_path).suffix.lower() != ".glb":
+                glb_path = Path(output_mesh_path).with_suffix(".glb")
+                self.mesh_processor.save_mesh(output_mesh, glb_path, do_normalise=False)
+                output_mesh_path = str(glb_path)
             output_stats = self.mesh_processor.get_mesh_stats(output_mesh)
 
             # Create generation info

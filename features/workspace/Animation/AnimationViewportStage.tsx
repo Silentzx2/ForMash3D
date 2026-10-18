@@ -48,19 +48,9 @@ export const AnimationViewportStage: React.FC = () => {
   useEffect(() => {
     if (!isPlaying) return;
     let animId: number;
-    let lastTime = performance.now();
 
     const loop = (now: number) => {
-      const delta = (now - lastTime) / 1000;
-      lastTime = now;
-
-      const { currentTime, duration } = useAnimationStore.getState();
-      let next = currentTime + delta;
-      if (next >= duration) {
-        next = 0; // loop
-      }
-      setCurrentTime(next);
-
+      useAnimationStore.getState().tickPlayback(now);
       if (useAnimationStore.getState().isPlaying) {
         animId = requestAnimationFrame(loop);
       }
@@ -68,7 +58,7 @@ export const AnimationViewportStage: React.FC = () => {
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, setCurrentTime]);
+  }, [isPlaying]);
 
   // Handle Timeline Scrubbing
   const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -81,8 +71,8 @@ export const AnimationViewportStage: React.FC = () => {
       if (!timelineRef.current) return;
       const rect = timelineRef.current.getBoundingClientRect();
       const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      const progress = x / rect.width;
-      const newTime = progress * duration;
+      const progress = rect.width > 0 ? x / rect.width : 0;
+      const newTime = Math.max(0, Math.min(progress * duration, duration));
       setCurrentTime(newTime);
     },
     [duration, setCurrentTime]

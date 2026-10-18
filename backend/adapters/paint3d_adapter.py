@@ -260,6 +260,13 @@ class Paint3DAdapter(ImageToMeshModel):
         import trimesh
         target_obj = job_dir / "input_mesh.obj"
 
+        # Support FBX input via headless blender conversion
+        if mesh_path.suffix.lower() == ".fbx":
+            from core.utils.format_utils import fbx_to_glb_headless
+            temp_glb = job_dir / "converted_fbx.glb"
+            fbx_to_glb_headless(str(mesh_path), str(temp_glb))
+            mesh_path = temp_glb
+
         mesh = trimesh.load(str(mesh_path), process=False)
         if isinstance(mesh, trimesh.Scene):
             from postprocess.meshio import scene_to_mesh
@@ -274,12 +281,19 @@ class Paint3DAdapter(ImageToMeshModel):
                 v = mesh.vertices
                 f = mesh.faces
                 atlas = xatlas.Atlas()
+                pack_opts = xatlas.PackOptions()
+                pack_opts.resolution = 2048
+                pack_opts.padding = 4
                 atlas.add_mesh(v, f)
-                atlas.generate()
+                atlas.generate(pack_options=pack_opts)
                 vmapping, indices, uvs = atlas.get_mesh(0)
+                vertex_normals = None
+                if hasattr(mesh, "vertex_normals") and len(mesh.vertex_normals) == len(v):
+                    vertex_normals = mesh.vertex_normals[vmapping]
                 mesh = trimesh.Trimesh(
                     vertices=v[vmapping],
                     faces=indices,
+                    vertex_normals=vertex_normals,
                     visual=trimesh.visual.TextureVisuals(uv=uvs),
                     process=False,
                 )
@@ -306,6 +320,7 @@ class Paint3DAdapter(ImageToMeshModel):
         resolution: int,
         prompt: str,
         ckpts: Dict[str, str],
+        mask_path: Optional[Path] = None,
     ) -> Tuple[Path, Path, Path]:
         """Generate render_config.py and stage1/2 yaml configs in job-scoped dir."""
         render_cfg_path = job_dir / "render_config.py"
@@ -417,10 +432,11 @@ inpaint:
 '''
         stage1_cfg_path.write_text(stage1_content)
 
+        stage2_mask = mask_path.as_posix() if mask_path and mask_path.is_file() else ""
         stage2_content = f'''inpaint:
   sd_model_key: "{ckpts['sd15']}"
   image_path: ""
-  mask_path: ""
+  mask_path: "{stage2_mask}"
   ip_adapter_image_path: ""
   prompt: "UV map, {clean_prompt}"
   negative_prompt: "{neg_prompt}"
@@ -658,11 +674,6 @@ img2img:
             prompt: Optional text prompt
             cancel_checker: Optional callable that returns True if cancellation requested
         """
-        if not torch.cuda.is_available():
-            raise RuntimeError(
-                "Paint3D requires CUDA; CPU inference is not supported under strict GPU policy."
-            )
-
         if "mesh_path" not in inputs:
             raise ValueError("mesh_path is required for Paint3D texturing")
         if "image_path" not in inputs:
@@ -676,16 +687,33 @@ img2img:
         if not image_path.exists():
             raise FileNotFoundError(f"Input image not found: {image_path}")
 
-        # Parse and normalize texture resolution
+        # Parse and normalize texture resolution: strictly 1K (1024) or 2K (2048)
         raw_res = inputs.get("texture_resolution", 1024)
         if isinstance(raw_res, str):
             res_str = raw_res.upper().strip()
-            if "2K" in res_str or "2048" in res_str:
+            if res_str in ("2K", "2048"):
                 texture_resolution = 2048
-            else:
+            elif res_str in ("1K", "1024"):
                 texture_resolution = 1024
+            else:
+                raise ValueError(
+                    f"Paint3D only supports 1K (1024) and 2K (2048) texture resolution, got '{raw_res}'. "
+                    f"4K/8K must route strictly to Hunyuan3D-Paint-v2-1."
+                )
         else:
-            texture_resolution = 2048 if int(raw_res) >= 2048 else 1024
+            int_res = int(raw_res)
+            if int_res in (1024, 2048):
+                texture_resolution = int_res
+            else:
+                raise ValueError(
+                    f"Paint3D only supports 1K (1024) and 2K (2048) texture resolution, got {int_res}. "
+                    f"4K/8K must route strictly to Hunyuan3D-Paint-v2-1."
+                )
+
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "Paint3D requires CUDA; CPU inference is not supported under strict GPU policy."
+            )
 
         output_format = inputs.get("output_format", "glb").lower()
         if output_format not in self.supported_output_formats:
@@ -729,12 +757,18 @@ img2img:
             job_image = self._prepare_reference_image(image_path, job_dir)
             ckpts = self._resolve_checkpoints()
 
+            job_mask = None
+            mask_input = inputs.get("mask_path")
+            if mask_input and Path(mask_input).is_file():
+                job_mask = Path(mask_input)
+
             render_cfg_path, stage1_cfg_path, stage2_cfg_path = self._generate_configs(
                 job_dir=job_dir,
                 mesh_path=job_mesh,
                 resolution=texture_resolution,
                 prompt=prompt,
                 ckpts=ckpts,
+                mask_path=job_mask,
             )
 
             stage1_outdir = job_dir / "stage1"
@@ -759,7 +793,7 @@ img2img:
                 raise RuntimeError("Stage 1 did not produce expected albedo.png coarse texture.")
             s1_albedo = s1_candidates[0]
 
-# Execute Stage 2: UV inpainting & tile refinement
+            # Execute Stage 2: UV inpainting & tile refinement
             self._execute_stage(
                 script_name="pipeline_paint3d_stage2.py",
                 sd_config=stage2_cfg_path,
@@ -791,13 +825,17 @@ img2img:
             # Package output mesh
             import trimesh
             textured_mesh = trimesh.load(str(source_obj), process=False)
+            if isinstance(textured_mesh, trimesh.Scene):
+                from postprocess.meshio import scene_to_mesh
+                textured_mesh = scene_to_mesh(textured_mesh)
+
             with Image.open(final_albedo_map) as alb_im:
                 alb_rgb = alb_im.convert("RGB")
-                if hasattr(textured_mesh, "visual"):
-                    textured_mesh.visual = trimesh.visual.TextureVisuals(
-                        uv=getattr(textured_mesh.visual, "uv", None),
-                        image=alb_rgb,
-                    )
+                existing_uv = getattr(getattr(textured_mesh, "visual", None), "uv", None)
+                textured_mesh.visual = trimesh.visual.TextureVisuals(
+                    uv=existing_uv,
+                    image=alb_rgb,
+                )
 
             if output_format == "glb":
                 textured_mesh.export(str(final_output_mesh), file_type="glb")

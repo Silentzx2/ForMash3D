@@ -34,10 +34,13 @@ def fbx_to_glb(fbx_path: str, output_path: Optional[str] = None) -> str:
     try:
         import bpy
     except ImportError:
-        raise ImportError(
-            "bpy (Blender Python module) is required for FBX to GLB conversion. "
-            "Make sure Blender is installed and bpy is available in your environment."
-        )
+        logger.info("Direct bpy import not available; falling back to headless Blender for FBX-to-GLB conversion")
+        try:
+            return fbx_to_glb_headless(str(fbx_path), str(output_path) if output_path else None)
+        except Exception as headless_err:
+            raise RuntimeError(
+                f"FBX to GLB conversion requires Blender (bpy module or blender CLI): {headless_err}"
+            ) from headless_err
 
     # Validate input file
     fbx_path = Path(fbx_path)
@@ -69,10 +72,10 @@ def fbx_to_glb(fbx_path: str, output_path: Optional[str] = None) -> str:
             use_selection=False,
             export_extras=True,
             export_yup=True,
-            export_apply=True,
+            export_apply=False,
             export_animations=True,
             export_frame_range=True,
-            export_def_bones=True,
+            export_def_bones=False,
             export_optimize_animation_size=False,
             export_anim_single_armature=True,
             export_reset_pose_bones=True,
@@ -154,10 +157,10 @@ bpy.ops.export_scene.gltf(
     use_selection=False,
     export_extras=True,
     export_yup=True,
-    export_apply=True,
+    export_apply=False,
     export_animations=True,
     export_frame_range=True,
-    export_def_bones=True,
+    export_def_bones=False,
     export_optimize_animation_size=False,
     export_anim_single_armature=True,
     export_reset_pose_bones=True,

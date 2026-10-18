@@ -1061,6 +1061,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const motionRootObjectRef = useRef<THREE.Object3D | null>(null);
   const motionRootBasePositionRef = useRef<THREE.Vector3 | null>(null);
   const rigArmatureGroupRef = useRef<THREE.Group | null>(null);
+  const turntableRecorderRef = useRef<MediaRecorder | null>(null);
+  const turntableAnimFrameRef = useRef<number | null>(null);
+  const lastRenderedAnimTimeRef = useRef<number>(-1);
   const meshBoundsCacheRef = useRef<{
     center: THREE.Vector3;
     size: THREE.Vector3;
@@ -1165,22 +1168,24 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     }
   }, [animDisplayOptions, animActiveMode, animInspectorTab, environmentSettings.gridVisible]);
 
-  // 3. Live playback speed & loop mode
+  // 3. Live playback speed & loop mode & play/pause state synchronization
   useEffect(() => {
-    if (mixerRef.current) {
-      mixerRef.current.timeScale = animPlaybackSpeed;
+    try {
+      if (mixerRef.current) {
+        mixerRef.current.timeScale = animPlaybackSpeed;
+      }
+      if (actionRef.current) {
+        actionRef.current.setLoop(animIsLooping ? THREE.LoopRepeat : THREE.LoopOnce, animIsLooping ? Infinity : 1);
+        actionRef.current.paused = !animIsPlaying;
+        if (animIsPlaying && !actionRef.current.isRunning()) {
+          actionRef.current.play();
+        }
+      }
+    } catch (err) {
+      console.warn('[MeshViewer] Error syncing animation playback state:', err);
     }
-    if (actionRef.current) {
-      actionRef.current.setLoop(animIsLooping ? THREE.LoopRepeat : THREE.LoopOnce, animIsLooping ? Infinity : 1);
-    }
-  }, [animPlaybackSpeed, animIsLooping]);
+  }, [animPlaybackSpeed, animIsLooping, animIsPlaying]);
 
-  // 4. Live timeline scrubbing / seeking when paused
-  useEffect(() => {
-    if (mixerRef.current && !animIsPlaying) {
-      mixerRef.current.setTime(animCurrentTime);
-    }
-  }, [animCurrentTime, animIsPlaying]);
 
   const motionClipRef = useRef<{
     id: string;
@@ -1255,7 +1260,16 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         THREE.MathUtils.degToRad(rot[1]),
         THREE.MathUtils.degToRad(rot[2])
       );
-      skeletonHelperRef.current?.updateMatrixWorld(true);
+      bone.updateMatrix();
+      group.traverse((child) => {
+        if (child instanceof THREE.SkinnedMesh && child.skeleton) {
+          child.skeleton.update();
+        }
+      });
+      if (skeletonHelperRef.current && skeletonHelperRef.current.bones?.length) {
+        (skeletonHelperRef.current as any).update?.();
+        skeletonHelperRef.current.updateMatrixWorld(true);
+      }
     }
   }, [animBoneRotations, animSelectedBone]);
 
@@ -1370,6 +1384,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       // Articulate matching bones in model mesh
       const group = currentMeshGroupRef.current;
       if (group) {
+        let hasSkinnedMesh = false;
         group.traverse((child) => {
           if (child instanceof THREE.Bone) {
             const rotDeg = totalRotations[child.name];
@@ -1379,13 +1394,39 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 THREE.MathUtils.degToRad(rotDeg[1]),
                 THREE.MathUtils.degToRad(rotDeg[2])
               );
+              child.updateMatrix();
+            }
+          } else if (child instanceof THREE.SkinnedMesh) {
+            hasSkinnedMesh = true;
+            if (child.skeleton) {
+              child.skeleton.update();
             }
           }
         });
-        skeletonHelperRef.current?.updateMatrixWorld(true);
+        if (hasSkinnedMesh) {
+          group.updateMatrixWorld(true);
+        }
+        if (skeletonHelperRef.current && skeletonHelperRef.current.bones?.length) {
+          (skeletonHelperRef.current as any).update?.();
+          skeletonHelperRef.current.updateMatrixWorld(true);
+        }
       }
     },
     [getMeshBounds, animRetargetOptions]);
+
+  // 6a. Live timeline scrubbing / seeking & pose synchronization
+  const lastScrubSyncedTimeRef = useRef<number>(-1);
+  useEffect(() => {
+    try {
+      if (mixerRef.current && Math.abs(animCurrentTime - lastScrubSyncedTimeRef.current) > 0.001) {
+        mixerRef.current.setTime(animCurrentTime);
+        lastScrubSyncedTimeRef.current = animCurrentTime;
+      }
+      updateArmatureFrame(animCurrentTime);
+    } catch (err) {
+      console.warn('[MeshViewer] Error syncing animation time:', err);
+    }
+  }, [animCurrentTime, updateArmatureFrame]);
 
   // 6b. Live Rigging Armature Visualizer in 3D Viewport (Humanoid Biped 17-Bone Hierarchy)
   useEffect(() => {
@@ -2477,20 +2518,33 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         }
         if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
       }
-      const animationActive = Boolean(mixerRef.current) || isAnimPlaying || physicsActive;
+      const animTimeChanged = Math.abs(animState.currentTime - lastRenderedAnimTimeRef.current) > 0.0001;
+      if (animTimeChanged) {
+        lastRenderedAnimTimeRef.current = animState.currentTime;
+      }
+      const animationActive = Boolean(mixerRef.current && isAnimPlaying) || isAnimPlaying || physicsActive || animTimeChanged;
 
-      if (animationActive && mixerRef.current) {
-        mixerRef.current.update(delta);
+      if (mixerRef.current && isAnimPlaying) {
+        try {
+          mixerRef.current.update(delta);
+        } catch (err) {
+          console.warn('[MeshViewer] Animation mixer update error:', err);
+        }
         if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
       }
-      if (isAnimPlaying || animState.activeMode === 'rigging' || animState.inspectorTab === 'rigging') {
+      if (isAnimPlaying || animTimeChanged || animState.activeMode === 'rigging' || animState.inspectorTab === 'rigging' || animState.activeMode === 'editing' || animState.activeMode === 'animate' || animState.activeMode === 'blend' || animState.activeMode === 'retarget') {
         updateArmatureFrame(animState.currentTime);
       }
-      if (skeletonHelperRef.current && (isAnimPlaying || animState.activeMode === 'rigging')) {
-        skeletonHelperRef.current.updateMatrixWorld();
+      if (skeletonHelperRef.current && (isAnimPlaying || animTimeChanged || animState.activeMode === 'rigging')) {
+        try {
+          (skeletonHelperRef.current as any).update?.();
+          skeletonHelperRef.current.updateMatrixWorld();
+        } catch (_) {}
       }
       if (rigArmatureGroupRef.current && rigArmatureGroupRef.current.visible) {
-        rigArmatureGroupRef.current.updateMatrixWorld();
+        try {
+          rigArmatureGroupRef.current.updateMatrixWorld();
+        } catch (_) {}
       }
 
       // Smoothly fade sculpt highlight vertex colors back to neutral (indexed tracking for 0ms idle overhead)
@@ -2778,10 +2832,23 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       });
     }
 
+    if (turntableRecorderRef.current && turntableRecorderRef.current.state !== 'inactive') {
+      try { turntableRecorderRef.current.stop(); } catch (_) {}
+    }
+    turntableRecorderRef.current = null;
+    if (turntableAnimFrameRef.current) {
+      cancelAnimationFrame(turntableAnimFrameRef.current);
+      turntableAnimFrameRef.current = null;
+    }
+    isCapturingTurntableRef.current = false;
+    setIsCapturingTurntable(false);
+    setTurntableProgress(0);
+
     if (mixerRef.current) {
       mixerRef.current.stopAllAction();
       mixerRef.current = null;
     }
+    actionRef.current = null;
     motionRootObjectRef.current = null;
     motionRootBasePositionRef.current = null;
     if (skeletonHelperRef.current) {
@@ -2872,32 +2939,72 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
             // If GLTF contains animation clips, start AnimationMixer
             if (gltf.animations && gltf.animations.length > 0) {
-              const mixer = new THREE.AnimationMixer(gltf.scene);
-              mixerRef.current = mixer;
-              const action = mixer.clipAction(gltf.animations[0]);
-              actionRef.current = action;
-              action.play();
+              try {
+                const mixer = new THREE.AnimationMixer(gltf.scene);
+                mixerRef.current = mixer;
+                const clip = gltf.animations[0];
+                const action = mixer.clipAction(clip);
+                actionRef.current = action;
+                const shouldPlay = useAnimationStore.getState().isPlaying;
+                action.play();
+                action.paused = !shouldPlay;
+
+                if (clip.duration > 0) {
+                  useAnimationStore.setState({
+                    duration: Number(clip.duration.toFixed(2)),
+                    fps: 30,
+                    currentTime: 0,
+                  });
+                }
+              } catch (err) {
+                console.warn('[MeshViewer] AnimationMixer initialization skipped for GLTF:', err);
+                mixerRef.current = null;
+                actionRef.current = null;
+              }
             }
 
             // Look for SkinnedMesh or Bone to attach SkeletonHelper
             let hasSkeleton = false;
+            let skeletonRoot: THREE.Object3D | null = null;
             const skeletonBoneNames: string[] = [];
             gltf.scene.traverse((child) => {
-              if (child instanceof THREE.Bone && child.name) skeletonBoneNames.push(child.name);
-              if (child instanceof THREE.SkinnedMesh || child instanceof THREE.Bone) {
+              if (child instanceof THREE.Bone) {
+                if (child.name) skeletonBoneNames.push(child.name);
+                if (!skeletonRoot) skeletonRoot = child.parent || child;
                 hasSkeleton = true;
               }
+              if (child instanceof THREE.SkinnedMesh) {
+                if (child.skeleton?.bones?.length) {
+                  hasSkeleton = true;
+                  child.skeleton.bones.forEach((b) => {
+                    if (b && b.name) skeletonBoneNames.push(b.name);
+                  });
+                  if (!skeletonRoot) {
+                    const rootBone = child.skeleton.bones.find((b) => !b.parent || !(b.parent instanceof THREE.Bone));
+                    skeletonRoot = rootBone?.parent || rootBone || child.skeleton.bones[0];
+                  }
+                }
+              }
             });
-            useAnimationStore.getState().setLoadedSkeletonBoneNames([...new Set(skeletonBoneNames)]);
+            gltf.scene.updateMatrixWorld(true);
+            const uniqueBoneNames = [...new Set(skeletonBoneNames)];
+            useAnimationStore.getState().setLoadedSkeletonBoneNames(uniqueBoneNames);
             if (hasSkeleton && sceneRef.current) {
               if (skeletonHelperRef.current) {
                 sceneRef.current.remove(skeletonHelperRef.current);
                 skeletonHelperRef.current.dispose();
+                skeletonHelperRef.current = null;
               }
-              const helper = new THREE.SkeletonHelper(gltf.scene);
-              helper.visible = useAnimationStore.getState().displayOptions.showSkeleton;
-              sceneRef.current.add(helper);
-              skeletonHelperRef.current = helper;
+              const targetRoot = skeletonRoot || gltf.scene;
+              const helper = new THREE.SkeletonHelper(targetRoot);
+              if (helper.bones && helper.bones.length > 0) {
+                helper.visible = useAnimationStore.getState().displayOptions.showSkeleton;
+                sceneRef.current.add(helper);
+                skeletonHelperRef.current = helper;
+                (helper as any).update?.();
+              } else {
+                helper.dispose();
+              }
             }
 
             if (!cancelled) {
@@ -2950,24 +3057,71 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           frameCamera(fbx, { forceResetAngle: shouldResetAngleFbx });
           lastFramedAssetIdRef.current = currentAsset.id;
           computeMeshStats(fbx);
-          if (fbx.animations.length) {
-            const mixer = new THREE.AnimationMixer(fbx);
-            mixerRef.current = mixer;
-            actionRef.current = mixer.clipAction(fbx.animations[0]);
-            actionRef.current.play();
+          if (fbx.animations && fbx.animations.length > 0) {
+            try {
+              const mixer = new THREE.AnimationMixer(fbx);
+              mixerRef.current = mixer;
+              const clip = fbx.animations[0];
+              const action = mixer.clipAction(clip);
+              actionRef.current = action;
+              const shouldPlay = useAnimationStore.getState().isPlaying;
+              action.play();
+              action.paused = !shouldPlay;
+
+              if (clip.duration > 0) {
+                useAnimationStore.setState({
+                  duration: Number(clip.duration.toFixed(2)),
+                  fps: 30,
+                  currentTime: 0,
+                });
+              }
+            } catch (err) {
+              console.warn('[MeshViewer] AnimationMixer initialization skipped for FBX:', err);
+              mixerRef.current = null;
+              actionRef.current = null;
+            }
           }
           let hasSkeleton = false;
+          let skeletonRoot: THREE.Object3D | null = null;
           const skeletonBoneNames: string[] = [];
           fbx.traverse((child) => {
-            if (child instanceof THREE.Bone && child.name) skeletonBoneNames.push(child.name);
-            if (child instanceof THREE.SkinnedMesh || child instanceof THREE.Bone) hasSkeleton = true;
+            if (child instanceof THREE.Bone) {
+              if (child.name) skeletonBoneNames.push(child.name);
+              if (!skeletonRoot) skeletonRoot = child.parent || child;
+              hasSkeleton = true;
+            }
+            if (child instanceof THREE.SkinnedMesh) {
+              if (child.skeleton?.bones?.length) {
+                hasSkeleton = true;
+                child.skeleton.bones.forEach((b) => {
+                  if (b && b.name) skeletonBoneNames.push(b.name);
+                });
+                if (!skeletonRoot) {
+                  const rootBone = child.skeleton.bones.find((b) => !b.parent || !(b.parent instanceof THREE.Bone));
+                  skeletonRoot = rootBone?.parent || rootBone || child.skeleton.bones[0];
+                }
+              }
+            }
           });
-          useAnimationStore.getState().setLoadedSkeletonBoneNames([...new Set(skeletonBoneNames)]);
+          fbx.updateMatrixWorld(true);
+          const uniqueFbxBones = [...new Set(skeletonBoneNames)];
+          useAnimationStore.getState().setLoadedSkeletonBoneNames(uniqueFbxBones);
           if (hasSkeleton && sceneRef.current) {
-            const helper = new THREE.SkeletonHelper(fbx);
-            helper.visible = useAnimationStore.getState().displayOptions.showSkeleton;
-            sceneRef.current.add(helper);
-            skeletonHelperRef.current = helper;
+            if (skeletonHelperRef.current) {
+              sceneRef.current.remove(skeletonHelperRef.current);
+              skeletonHelperRef.current.dispose();
+              skeletonHelperRef.current = null;
+            }
+            const targetRoot = skeletonRoot || fbx;
+            const helper = new THREE.SkeletonHelper(targetRoot);
+            if (helper.bones && helper.bones.length > 0) {
+              helper.visible = useAnimationStore.getState().displayOptions.showSkeleton;
+              sceneRef.current.add(helper);
+              skeletonHelperRef.current = helper;
+              (helper as any).update?.();
+            } else {
+              helper.dispose();
+            }
           }
           setLoadedAssetId(currentAsset.id);
           setModelLoadVersion((version) => version + 1);
@@ -3011,6 +3165,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(object);
             if (!cancelled) {
+              useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
               setLoadedAssetId(currentAsset.id);
               setModelLoadVersion((version) => version + 1);
             }
@@ -3046,6 +3201,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           if (!cancelled) {
+            useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
             group.add(mesh);
             const shouldResetAnglePly = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
             frameCamera(mesh, { forceResetAngle: shouldResetAnglePly });
@@ -3074,6 +3230,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           mesh.castShadow = true;
           mesh.receiveShadow = true;
           if (!cancelled) {
+            useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
             group.add(mesh);
             const shouldResetAngleStl = !hasUserOrbitedRef.current && (lastFramedAssetIdRef.current !== currentAsset.id);
             frameCamera(mesh, { forceResetAngle: shouldResetAngleStl });
@@ -3291,8 +3448,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               });
               if (child instanceof THREE.SkinnedMesh) {
                 const skinnedOverlay = new THREE.SkinnedMesh(child.geometry, wireMat);
-                if (child.skeleton) {
-                  skinnedOverlay.bind(child.skeleton, child.bindMatrix);
+                if (child.skeleton?.bones?.length) {
+                  skinnedOverlay.bind(child.skeleton, child.bindMatrix || child.matrixWorld);
                 }
                 wireOverlay = skinnedOverlay;
               } else {
@@ -3304,8 +3461,8 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             } else {
               if (wireOverlay.geometry !== child.geometry) {
                 wireOverlay.geometry = child.geometry;
-                if (child instanceof THREE.SkinnedMesh && wireOverlay instanceof THREE.SkinnedMesh && child.skeleton) {
-                  wireOverlay.bind(child.skeleton, child.bindMatrix);
+                if (child instanceof THREE.SkinnedMesh && wireOverlay instanceof THREE.SkinnedMesh && child.skeleton?.bones?.length) {
+                  wireOverlay.bind(child.skeleton, child.bindMatrix || child.matrixWorld);
                 }
               }
             }
@@ -3762,17 +3919,20 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     try {
       // Determine best supported mime type
       let mimeType = 'video/webm';
-      if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-        mimeType = 'video/webm;codecs=vp9';
-      } else if (MediaRecorder.isTypeSupported('video/webm')) {
-        mimeType = 'video/webm';
-      } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-        mimeType = 'video/mp4';
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+          mimeType = 'video/webm;codecs=vp9';
+        } else if (MediaRecorder.isTypeSupported('video/webm')) {
+          mimeType = 'video/webm';
+        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+          mimeType = 'video/mp4';
+        }
       }
 
       const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
       const stream = canvas.captureStream(30);
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      turntableRecorderRef.current = recorder;
       const chunks: Blob[] = [];
 
       recorder.ondataavailable = (e) => {
@@ -3781,10 +3941,21 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         }
       };
 
+      recorder.onerror = (e) => {
+        console.error('MediaRecorder error during turntable capture:', e);
+        setIsCapturingTurntable(false);
+        setTurntableProgress(0);
+        isCapturingTurntableRef.current = false;
+        turntableRecorderRef.current = null;
+        setDropToastMessage('Recording error occurred during turntable capture');
+        setTimeout(() => setDropToastMessage(null), 3000);
+      };
+
       recorder.onstop = () => {
         setIsCapturingTurntable(false);
         setTurntableProgress(0);
         isCapturingTurntableRef.current = false;
+        turntableRecorderRef.current = null;
 
         if (chunks.length === 0) {
           setDropToastMessage('Turntable capture recorded 0 frames');
@@ -3792,27 +3963,33 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           return;
         }
 
-        const blob = new Blob(chunks, { type: mimeType });
-        const url = URL.createObjectURL(blob);
-        const fileName = `${cleanName}_turntable_${Date.now()}.${ext}`;
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        try {
+          const blob = new Blob(chunks, { type: mimeType });
+          const url = URL.createObjectURL(blob);
+          const fileName = `${cleanName}_turntable_${Date.now()}.${ext}`;
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
 
-        taskPersistence.addNotification({
-          title: 'Turntable Video Exported',
-          description: `Captured 360° ${ext.toUpperCase()} turntable for ${currentAsset?.name || 'asset'}`,
-          status: 'export',
-          assetId: currentAsset?.id,
-          assetUrl: currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.thumbnail,
-        });
+          taskPersistence.addNotification({
+            title: 'Turntable Video Exported',
+            description: `Captured 360° ${ext.toUpperCase()} turntable for ${currentAsset?.name || 'asset'}`,
+            status: 'export',
+            assetId: currentAsset?.id,
+            assetUrl: currentAsset?.source?.viewUrl || currentAsset?.source?.localUrl || currentAsset?.thumbnail,
+          });
 
-        setDropToastMessage(`Exported 360° turntable video: ${fileName}`);
-        setTimeout(() => setDropToastMessage(null), 4000);
+          setDropToastMessage(`Exported 360° turntable video: ${fileName}`);
+          setTimeout(() => setDropToastMessage(null), 4000);
+        } catch (stopErr) {
+          console.error('Failed to export turntable video:', stopErr);
+          setDropToastMessage('Failed to save turntable video file');
+          setTimeout(() => setDropToastMessage(null), 3000);
+        }
       };
 
       // Start recording
@@ -3831,7 +4008,24 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
       const captureStep = (now: number) => {
         if (!isCapturingTurntableRef.current) {
-          if (recorder.state !== 'inactive') recorder.stop();
+          if (recorder.state !== 'inactive') {
+            try { recorder.stop(); } catch (_) {}
+          }
+          turntableRecorderRef.current = null;
+          return;
+        }
+
+        if (renderer.getContext()?.isContextLost()) {
+          console.warn('WebGL context lost during turntable capture');
+          if (recorder.state !== 'inactive') {
+            try { recorder.stop(); } catch (_) {}
+          }
+          setIsCapturingTurntable(false);
+          setTurntableProgress(0);
+          isCapturingTurntableRef.current = false;
+          turntableRecorderRef.current = null;
+          setDropToastMessage('WebGL context lost; turntable recording cancelled');
+          setTimeout(() => setDropToastMessage(null), 3000);
           return;
         }
 
@@ -3842,23 +4036,33 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           const progress = Math.min(1, currentFrame / totalFrames);
           meshGroup.rotation.y = startRotation + progress * Math.PI * 2;
           if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
-          renderer.render(scene, camera);
+          try {
+            renderer.render(scene, camera);
+          } catch (_) {}
           setTurntableProgress(Math.round(progress * 100));
 
           if (currentFrame >= totalFrames) {
             meshGroup.rotation.y = startRotation; // restore original rotation
             if (recorder.state !== 'inactive') {
-              recorder.stop();
+              try { recorder.stop(); } catch (_) {}
             }
             return;
           }
         }
-        requestAnimationFrame(captureStep);
+        turntableAnimFrameRef.current = requestAnimationFrame(captureStep);
       };
 
-      requestAnimationFrame(captureStep);
+      turntableAnimFrameRef.current = requestAnimationFrame(captureStep);
     } catch (err) {
       console.error('Turntable capture failed:', err);
+      if (turntableRecorderRef.current && turntableRecorderRef.current.state !== 'inactive') {
+        try { turntableRecorderRef.current.stop(); } catch (_) {}
+      }
+      turntableRecorderRef.current = null;
+      if (turntableAnimFrameRef.current) {
+        cancelAnimationFrame(turntableAnimFrameRef.current);
+        turntableAnimFrameRef.current = null;
+      }
       setIsCapturingTurntable(false);
       setTurntableProgress(0);
       isCapturingTurntableRef.current = false;

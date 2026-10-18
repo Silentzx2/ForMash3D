@@ -180,6 +180,18 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
             # Save retopologized mesh
             retopo_mesh = generation_result["mesh"]
             if retopo_mesh is not None:
+                target_polycount = inputs.get("target_polycount")
+                if target_polycount:
+                    try:
+                        target_poly = int(target_polycount)
+                        if target_poly > 0 and len(retopo_mesh.faces) > target_poly:
+                            simplified, _ = self.mesh_processor.simplify_mesh(
+                                retopo_mesh, target_faces=target_poly
+                            )
+                            if simplified is not None:
+                                retopo_mesh = simplified
+                    except Exception as poly_err:
+                        logger.warning("Could not apply target_polycount in FastMesh adapter: %s", poly_err)
                 self.mesh_processor.save_mesh(retopo_mesh, output_path, do_normalise=False)
                 if poly_type == "quad":
                     self.mesh_processor.tri2quad(output_path)

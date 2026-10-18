@@ -1446,10 +1446,11 @@ async def download_job_result(
             raise HTTPException(status_code=404, detail="Job not found")
         
         # User filtering: non-admin users can only download their own jobs
-        current_user = await get_current_user_optional(
+        user_res = get_current_user_optional(
             request.headers.get("authorization"),
             request
         )
+        current_user = await user_res if asyncio.iscoroutine(user_res) or hasattr(user_res, "__await__") else user_res
         
         if current_user:
             job_user_id = job_status.get("user_id")
@@ -1480,7 +1481,7 @@ async def download_job_result(
         if asset_root_path and (asset_root_path == models_root or models_root not in asset_root_path.parents):
             raise HTTPException(status_code=400, detail="Invalid asset workspace")
 
-        if canonical_format == "fbx":
+        if canonical_format in {"fbx", "rigged_fbx"}:
             fbx_candidate = (
                 result.get("output_fbx_path")
                 or (result.get("rigging", {}).get("fbx_path") if isinstance(result.get("rigging"), dict) else None)
@@ -1628,7 +1629,11 @@ async def download_job_result(
             output_path = resolved_derived
 
         elif asset_root_path:
-            if canonical_format in {"glb", "gltf", "obj", "stl", "ply", "quad_obj"} and (asset_root_path / "game_ready").is_dir():
+            is_auto_rig_job = (
+                job_status.get("feature") == "auto_rig"
+                or (isinstance(result.get("artifacts"), dict) and "rigged" in result["artifacts"] and str(result.get("output_mesh_path", "")).endswith("rigged.glb"))
+            )
+            if not is_auto_rig_job and canonical_format in {"glb", "gltf", "obj", "stl", "ply", "quad_obj"} and (asset_root_path / "game_ready").is_dir():
                 target_ext = "obj" if canonical_format == "quad_obj" else canonical_format
                 candidate = asset_root_path / "game_ready" / f"{asset_root_path.name}.{target_ext}"
                 if not candidate.exists() and asset_name:

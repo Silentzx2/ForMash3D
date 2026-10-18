@@ -236,7 +236,7 @@ async def get_supported_formats():
     """
     return {
         "input_formats": ["obj", "glb"],
-        "output_formats": ["obj"],  # PartUV primarily outputs OBJ with UV
+        "output_formats": ["obj", "glb"],
     }
 
 

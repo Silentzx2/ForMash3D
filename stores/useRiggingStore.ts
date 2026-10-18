@@ -171,12 +171,21 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
           generationStatus: computeRigStatusText(statusRes),
         });
       } else if (statusRes.status === 'completed') {
+        const artifacts = (statusRes as any).result?.artifacts;
+        const riggedGlbUrl =
+          artifacts?.rigged?.url ||
+          (statusRes as any).result?.rigged_model_url ||
+          `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download?artifact_format=rigged`;
+        const riggedFbxUrl =
+          artifacts?.rigged_fbx?.url ||
+          (statusRes as any).result?.output_fbx_url ||
+          `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download?artifact_format=fbx`;
         set({
           isGenerating: false,
           generationProgress: computeRigProgress(statusRes),
           generationStatus: computeRigStatusText(statusRes),
-          riggedModelUrl: `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download`,
-          riggedFbxUrl: `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download?artifact_format=fbx`,
+          riggedModelUrl: riggedGlbUrl,
+          riggedFbxUrl: riggedFbxUrl,
         });
         return true;
       } else if (statusRes.status === 'failed' || statusRes.status === 'cancelled') {

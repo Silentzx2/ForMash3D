@@ -103,6 +103,7 @@ export const TexturePanel: React.FC = () => {
       const url = e.detail?.maskDataUrl;
       if (url) {
         setCapturedMaskUrl(url);
+        setTextureSettings(prev => ({ ...prev, maskImage: url }));
         toast.success('UV Mask captured aligned to xatlas UV layout');
       } else {
         toast.error('No active UV paint canvas found. Paint on the mesh surface first.');
@@ -110,7 +111,7 @@ export const TexturePanel: React.FC = () => {
     };
     window.addEventListener('formash:uv_mask_ready', handleMaskReady);
     return () => window.removeEventListener('formash:uv_mask_ready', handleMaskReady);
-  }, []);
+  }, [setTextureSettings]);
 
   const handleSelectSpotMaskTool = () => {
     setPaintSubTool('spot_mask');
@@ -136,6 +137,7 @@ export const TexturePanel: React.FC = () => {
   const handleClearPaint = () => {
     window.dispatchEvent(new CustomEvent('formash:clear_paint_canvas'));
     setCapturedMaskUrl(null);
+    setTextureSettings(prev => ({ ...prev, maskImage: null, maskImageFileId: null }));
     toast.info('Cleared active 3D paint / mask strokes');
   };
 
@@ -1108,7 +1110,10 @@ export const TexturePanel: React.FC = () => {
                   <textarea
                     rows={2}
                     value={spotPrompt}
-                    onChange={(e) => setSpotPrompt(e.target.value)}
+                    onChange={(e) => {
+                      setSpotPrompt(e.target.value);
+                      setTextureSettings(prev => ({ ...prev, prompt: e.target.value }));
+                    }}
                     placeholder="e.g. Scratched rusted iron with weathered edges, gold filigree trim..."
                     className="w-full py-1.5 px-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.08] text-[10px] text-white focus:outline-none focus:border-cyan-400 resize-none"
                   />
@@ -1252,6 +1257,24 @@ export const TexturePanel: React.FC = () => {
                     Paint3D and Hunyuan3D-Paint pipelines currently only support full-mesh texturing. Spot inpainting is not exposed by these adapters. The UV mask is captured and aligned to the mesh xatlas UV layout without re-unwrapping. Target non-destructive destination: <code>textures/&lt;name&gt;_textured_v&#123;n&#125;.glb</code>.
                   </p>
                 </div>
+
+                {/* Trigger Retexture with Mask */}
+                <button
+                  type="button"
+                  disabled={isExecuting || !currentAsset}
+                  onClick={() => {
+                    if (spotPrompt) {
+                      setTextureSettings(prev => ({ ...prev, prompt: spotPrompt, maskImage: capturedMaskUrl }));
+                    } else if (capturedMaskUrl) {
+                      setTextureSettings(prev => ({ ...prev, maskImage: capturedMaskUrl }));
+                    }
+                    runTextureGeneration();
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-black font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] transition-all cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                >
+                  <HugeiconsIcon icon={SparklesIcon} size={15} />
+                  <span>{isExecuting ? 'Retexturing...' : 'Generate Retexture with Mask'}</span>
+                </button>
               </div>
             ) : (
               <>

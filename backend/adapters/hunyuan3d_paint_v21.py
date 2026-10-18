@@ -352,14 +352,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process mesh painting using Hunyuan3D-Paint-v2-1."""
         cancel_checker = inputs.get("cancel_checker")
+        temp_mesh_dir = None
         try:
-            if not torch.cuda.is_available():
-                raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
-            if self.bg_remover is None:
-                raise ValueError("Background remover is not loaded")
-            if self.paint_pipeline is None:
-                raise ValueError("Paint pipeline is not loaded")
-
             if "mesh_path" not in inputs:
                 raise ValueError("mesh_path is required")
             if "image_path" not in inputs:
@@ -372,20 +366,71 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             if not image_path.exists():
                 raise FileNotFoundError(f"Input image not found: {image_path}")
 
-            output_format = inputs.get("output_format", "glb")
-            max_num_view = inputs.get("max_num_view", 6)
-            resolution = int(inputs.get("resolution", 512))
-            texture_resolution = int(inputs.get("texture_resolution", 4096))
-            if texture_resolution not in (1024, 2048, 4096, 8192):
-                raise ValueError("texture_resolution must be one of 1024, 2048, 4096, or 8192")
-
+            output_format = inputs.get("output_format", "glb").lower()
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            logger.info(f"Painting mesh with Hunyuan3D-Paint-v2-1: {mesh_path}")
+            max_num_view = inputs.get("max_num_view", 6)
+            resolution = int(inputs.get("resolution", 512))
+
+            # Strictly enforce 4K (4096) and 8K (8192) resolution routing for Hunyuan3D-Paint-v2-1
+            raw_tex_res = inputs.get("texture_resolution", 4096)
+            if isinstance(raw_tex_res, str):
+                res_str = raw_tex_res.upper().strip()
+                if res_str in ("4K", "4096"):
+                    texture_resolution = 4096
+                elif res_str in ("8K", "8192"):
+                    texture_resolution = 8192
+                else:
+                    raise ValueError(
+                        f"Hunyuan3D-Paint-v2-1 only supports 4K (4096) and 8K (8192) texture resolution, got '{raw_tex_res}'. "
+                        f"1K/2K must route strictly to Paint3D."
+                    )
+            else:
+                int_res = int(raw_tex_res)
+                if int_res in (4096, 8192):
+                    texture_resolution = int_res
+                else:
+                    raise ValueError(
+                        f"Hunyuan3D-Paint-v2-1 only supports 4K (4096) and 8K (8192) texture resolution, got {int_res}. "
+                        f"1K/2K must route strictly to Paint3D."
+                    )
+
+            if not torch.cuda.is_available():
+                raise RuntimeError("Hunyuan3D-Paint-v2-1 requires CUDA; CPU inference is not supported.")
+            if self.bg_remover is None:
+                raise ValueError("Background remover is not loaded")
+            if self.paint_pipeline is None:
+                raise ValueError("Paint pipeline is not loaded")
+
+            mask_path = inputs.get("mask_path")
+            if mask_path:
+                logger.info("Spot retexture mask provided for Hunyuan3D-Paint: %s", mask_path)
+
+            logger.info(f"Painting mesh with Hunyuan3D-Paint-v2-1: {mesh_path} at {texture_resolution}x{texture_resolution}")
 
             if cancel_checker and cancel_checker():
                 raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
+
+            # Support FBX and multi-part GLB with scene node transforms
+            actual_mesh_path = mesh_path
+            if mesh_path.suffix.lower() == ".fbx":
+                import tempfile
+                from core.utils.format_utils import fbx_to_glb_headless
+                temp_mesh_dir = Path(tempfile.mkdtemp(prefix="hy3d_fbx_"))
+                temp_glb = temp_mesh_dir / f"{mesh_path.stem}.glb"
+                fbx_to_glb_headless(str(mesh_path), str(temp_glb))
+                actual_mesh_path = temp_glb
+            elif mesh_path.suffix.lower() == ".glb":
+                import trimesh
+                mesh_obj = trimesh.load(str(mesh_path), process=False)
+                if isinstance(mesh_obj, trimesh.Scene):
+                    from postprocess.meshio import scene_to_mesh
+                    import tempfile
+                    temp_mesh_dir = Path(tempfile.mkdtemp(prefix="hy3d_glb_"))
+                    actual_mesh_path = temp_mesh_dir / f"{mesh_path.stem}_flattened.glb"
+                    flattened = scene_to_mesh(mesh_obj)
+                    flattened.export(str(actual_mesh_path), file_type="glb")
 
             if hasattr(self.paint_pipeline.config, "max_selected_view_num"):
                 self.paint_pipeline.config.max_selected_view_num = max_num_view
@@ -404,9 +449,9 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     renderer.set_default_texture_resolution(texture_resolution)
 
             base_name = f"{self.model_id}_{mesh_path.stem}_{image_path.stem}"
-            output_path = self.path_generator.generate_mesh_path(
+            output_path = Path(self.path_generator.generate_mesh_path(
                 self.model_id, base_name, output_format
-            )
+            ))
 
             use_remesh = bool(inputs.get("use_remesh", False))
             with Image.open(image_path) as reference_image:
@@ -415,15 +460,25 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             if cancel_checker and cancel_checker():
                 raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
 
-            final_mesh_path = self.paint_pipeline(
-                str(mesh_path), reference_image, str(output_path), use_remesh=use_remesh
-            )
+            # Intermediate path passed to paint_pipeline: if glb, paint_pipeline creates .obj then converts to .glb
+            if output_format == "glb":
+                inter_obj_path = output_path.with_suffix(".obj")
+                self.paint_pipeline(
+                    str(actual_mesh_path), reference_image, str(inter_obj_path), use_remesh=use_remesh, save_glb=True
+                )
+                inter_glb = inter_obj_path.with_suffix(".glb")
+                if inter_glb.exists() and inter_glb.resolve() != output_path.resolve():
+                    shutil.move(str(inter_glb), str(output_path))
+                # Clean up intermediate OBJ and MTL
+                inter_obj_path.unlink(missing_ok=True)
+                inter_obj_path.with_suffix(".mtl").unlink(missing_ok=True)
+            else:
+                self.paint_pipeline(
+                    str(actual_mesh_path), reference_image, str(output_path), use_remesh=use_remesh, save_glb=False
+                )
 
             if cancel_checker and cancel_checker():
                 raise InterruptedError("Hunyuan3D-Paint processing cancelled by user")
-
-            if final_mesh_path != str(output_path):
-                shutil.move(final_mesh_path, output_path)
 
             final_mesh = self.mesh_processor.load_mesh(output_path)
             mesh_stats = self.mesh_processor.get_mesh_stats(final_mesh)
@@ -461,10 +516,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             self.status = ModelStatus.LOADED
             return response
 
+        except (ValueError, FileNotFoundError, InterruptedError):
+            self.status = ModelStatus.ERROR
+            raise
         except Exception as e:
             self.status = ModelStatus.ERROR
             logger.error(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {str(e)}")
             raise Exception(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {str(e)}")
+        finally:
+            if temp_mesh_dir:
+                shutil.rmtree(temp_mesh_dir, ignore_errors=True)
 
     @staticmethod
     def _prepare_reference_image(image):
@@ -501,3 +562,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
     def get_supported_formats(self) -> Dict[str, List[str]]:
         return {"input": ["glb", "obj"], "output": ["glb", "obj"]}
+
+
+# Alias for backward-compatibility and clean imports
+Hunyuan3DPaintV21Adapter = Hunyuan3DPaintV21ImageMeshPaintingAdapter
+

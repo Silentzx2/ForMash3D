@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
+import logging
 import os
 import tempfile
 
@@ -65,6 +66,75 @@ _UV_STAGE_LABELS = {
 }
 
 
+logger = logging.getLogger(__name__)
+
+
+def _unwrap_xatlas(
+    mesh: trimesh.Trimesh,
+    options: AutoUvOptions,
+    source_normals=None,
+) -> tuple[trimesh.Trimesh, dict]:
+    """Parametrize mesh UVs using xatlas with seam generation, padding, and normal preservation."""
+    import xatlas
+
+    v = np.asarray(mesh.vertices, dtype=np.float64)
+    f = np.asarray(mesh.faces, dtype=np.int32)
+
+    atlas = xatlas.Atlas()
+    pack_opts = xatlas.PackOptions()
+    pack_opts.resolution = int(options.resolution)
+    pack_opts.padding = int(options.padding_texels)
+    atlas.add_mesh(v, f)
+    atlas.generate(pack_options=pack_opts)
+    vmapping, indices, uvs = atlas.get_mesh(0)
+
+    out_v = v[vmapping]
+    out_f = indices
+    out_uv = uvs
+
+    out_normals = None
+    if source_normals is not None and len(source_normals) == len(v):
+        out_normals = np.asarray(source_normals, dtype=np.float64)[vmapping]
+    elif hasattr(mesh, "vertex_normals") and len(mesh.vertex_normals) == len(v):
+        out_normals = np.asarray(mesh.vertex_normals, dtype=np.float64)[vmapping]
+
+    out = trimesh.Trimesh(
+        vertices=out_v,
+        faces=out_f,
+        vertex_normals=out_normals,
+        process=False,
+    )
+
+    source_visual = getattr(mesh, "visual", None)
+    source_material = getattr(source_visual, "material", None)
+    source_image = getattr(source_visual, "image", None)
+    source_vertex_colors = getattr(source_visual, "vertex_colors", None)
+
+    out.visual = trimesh.visual.TextureVisuals(
+        uv=np.asarray(out_uv),
+        material=source_material if source_material is not None else trimesh.visual.material.PBRMaterial(name="xatlas"),
+        image=source_image if source_image is not None else None,
+    )
+    if source_vertex_colors is not None:
+        try:
+            if len(source_vertex_colors) == len(out_v):
+                out.visual.vertex_colors = source_vertex_colors
+            else:
+                out.visual.vertex_colors = np.asarray(source_vertex_colors)[vmapping]
+        except Exception:
+            pass
+
+    stats = {
+        "n_faces": int(len(out_f)),
+        "n_charts": int(getattr(atlas, "chart_count", 1)),
+        "fill_ratio": 1.0,
+        "method": "xatlas",
+        "padding_texels": int(options.padding_texels),
+        "resolution": int(options.resolution),
+    }
+    return out, stats
+
+
 def run_auto_uv(
     mesh: trimesh.Trimesh,
     options: AutoUvOptions,
@@ -72,6 +142,12 @@ def run_auto_uv(
     source_normals=None,
     cancel_checker: CancelChecker = None,
 ) -> tuple[trimesh.Trimesh, dict, bytes | None]:
+    if getattr(options, "method", "auto") == "xatlas":
+        _emit = progress or (lambda s, f, m: None)
+        _emit("parameterize", 0.5, "Running xatlas UV parameterization")
+        out, stats = _unwrap_xatlas(mesh, options, source_normals)
+        return out, stats, None
+
     src = autouv.Mesh(np.asarray(mesh.vertices), np.asarray(mesh.faces))
 
     unwrap_progress = None
@@ -83,28 +159,38 @@ def run_auto_uv(
                 g = lo + (hi - lo) * max(0.0, min(1.0, float(frac)))
                 progress(stage, g, _UV_STAGE_LABELS.get(stage, stage))
 
-    result = autouv.unwrap(
-        src,
-        max_cone_deg=options.max_cone_deg,
-        sharp_weight=options.sharp_weight,
-        min_faces=options.min_faces,
-        min_area_frac=options.min_area_frac,
-        fold_cap_deg=options.fold_cap_deg,
-        refine=options.refine,
-        refine_target_faces=options.refine_target_faces,
-        refine_ad_thresh=options.refine_ad_thresh,
-        resolution=options.resolution,
-        padding_texels=options.padding_texels,
-        method=options.method,
-        arap_iters=options.arap_iters,
-        weld=options.weld,
-        weld_tol_frac=options.weld_tol_frac,
-        normal_smooth_deg=options.normal_smooth_deg,
-        source_normals=source_normals,
-        preserve_normals=options.preserve_normals,
-        progress=unwrap_progress,
-        verbose=False,
-    )
+    try:
+        result = autouv.unwrap(
+            src,
+            max_cone_deg=options.max_cone_deg,
+            sharp_weight=options.sharp_weight,
+            min_faces=options.min_faces,
+            min_area_frac=options.min_area_frac,
+            fold_cap_deg=options.fold_cap_deg,
+            refine=options.refine,
+            refine_target_faces=options.refine_target_faces,
+            refine_ad_thresh=options.refine_ad_thresh,
+            resolution=options.resolution,
+            padding_texels=options.padding_texels,
+            method=options.method,
+            arap_iters=options.arap_iters,
+            weld=options.weld,
+            weld_tol_frac=options.weld_tol_frac,
+            normal_smooth_deg=options.normal_smooth_deg,
+            source_normals=source_normals,
+            preserve_normals=options.preserve_normals,
+            progress=unwrap_progress,
+            verbose=False,
+        )
+    except Exception as exc:
+        logger.warning("autouv.unwrap failed (%s); falling back to xatlas unwrapping", exc)
+        try:
+            out, stats = _unwrap_xatlas(mesh, options, source_normals)
+            stats["fallback"] = "xatlas"
+            stats["primary_error"] = str(exc)
+            return out, stats, None
+        except Exception:
+            raise exc
 
     if progress is not None:
         progress("render", 0.97, "Rendering UV preview")
@@ -139,5 +225,13 @@ def run_auto_uv(
         image=source_image if source_image is not None else None,
     )
     if source_vertex_colors is not None:
-        out.visual.vertex_colors = source_vertex_colors
+        try:
+            if len(source_vertex_colors) == len(out.vertices):
+                out.visual.vertex_colors = source_vertex_colors
+            else:
+                from scipy.spatial import cKDTree
+                _, nearest = cKDTree(np.asarray(mesh.vertices)).query(np.asarray(out.vertices))
+                out.visual.vertex_colors = np.asarray(source_vertex_colors)[nearest]
+        except Exception:
+            pass
     return out, dict(result.stats), _render_uv_preview(result)

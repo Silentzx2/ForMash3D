@@ -479,7 +479,7 @@ def prepare_asset_job_workspace(source_path: Path | str, job_id: str) -> tuple[P
 
     if asset_root is None:
         asset_root = meshes_root / f"{_safe_name(source.stem)}_{_safe_name(job_id)}"
-        asset_root.mkdir(parents=True, exist_ok=False)
+        asset_root.mkdir(parents=True, exist_ok=True)
 
     asset_root.relative_to(meshes_root)
     master_dir = asset_root / "master"
@@ -534,18 +534,18 @@ def register_asset_job_manifest(
     metadata_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = metadata_dir / f"{_safe_name(job_id)}.json"
     temporary_path = manifest_path.with_suffix(".tmp")
-    _write_json(
-        temporary_path,
-        {
-            "manifest_version": "1",
-            "job_id": job_id,
-            "asset_root": str(root),
-            "source_path": source_ref,
-            "master_path": master.relative_to(root).as_posix(),
-            "artifacts": declared,
-        },
-    )
+    manifest_payload = {
+        "manifest_version": "1",
+        "job_id": job_id,
+        "asset_root": str(root),
+        "source_path": source_ref,
+        "master_path": master.relative_to(root).as_posix(),
+        "artifacts": declared,
+    }
+    _write_json(temporary_path, manifest_payload)
     temporary_path.replace(manifest_path)
+    job_manifest_path = root / "metadata" / "job.json"
+    _write_json(job_manifest_path, manifest_payload)
     return manifest_path
 
 
@@ -576,27 +576,150 @@ def persist_manual_mesh_result(
     derivative = asset_root / "derived" / _safe_name(job_id) / f"result{output.suffix.lower()}"
     derivative.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(output, derivative)
+
+    # Enforce target polycount / face count on derivative if specified
+    target_polycount = job_inputs.get("target_polycount")
+    if target_polycount is not None:
+        try:
+            target_poly = int(target_polycount)
+            if target_poly > 0:
+                from core.mesh_processor import MeshProcessor
+                mp = MeshProcessor()
+                loaded_mesh = mp.load_mesh(derivative)
+                if loaded_mesh is not None and len(loaded_mesh.faces) > target_poly:
+                    simplified, _ = mp.simplify_mesh(loaded_mesh, target_faces=target_poly)
+                    if simplified is not None:
+                        mp.save_mesh(simplified, derivative, do_normalise=False)
+        except Exception as poly_err:
+            logger.warning("[MANUAL MESH TOOL] Could not decimate derivative to target_polycount=%s: %s", target_polycount, poly_err)
+
     if _sha256_file(source) != source_hash:
         derivative.unlink(missing_ok=True)
         raise RuntimeError("Selected source mesh changed while saving the tool derivative.")
 
+    derivative_rel = derivative.relative_to(asset_root).as_posix()
+    master_rel = master_path.relative_to(asset_root).as_posix()
+    try:
+        source_rel = source.relative_to(asset_root).as_posix()
+    except ValueError:
+        source_rel = master_rel
+
     artifact = {
         "status": "ready",
         "path": str(derivative),
+        "relative_path": derivative_rel,
         "format": output.suffix.lower().lstrip("."),
-        "source_path": str(source),
+        "source_path": source_rel,
     }
     artifacts = dict(result.get("artifacts") or {})
     artifacts["derived"] = artifact
     artifacts["master"] = {
         "status": "ready",
         "path": str(master_path),
+        "relative_path": master_rel,
         "format": master_path.suffix.lower().lstrip("."),
     }
+
+    feature_type = (
+        job_metadata.get("feature_type")
+        or job_metadata.get("feature")
+        or job_inputs.get("feature_type")
+        or job_inputs.get("feature")
+        or ""
+    )
+    is_texture_job = (
+        feature_type in ("image_mesh_painting", "text_mesh_painting", "image_to_textured_mesh")
+        or "painting_info" in result
+        or "texture_map_paths" in result
+        or "textured_mesh_path" in result
+        or bool(job_inputs.get("texture_resolution"))
+    )
+
+    if is_texture_job:
+        textures_dir = asset_root / "textures"
+        textures_dir.mkdir(parents=True, exist_ok=True)
+        asset_stem = _safe_name(job_inputs.get("asset_name") or source.stem or "asset")
+        textured_canonical = textures_dir / f"{asset_stem}_textured.glb"
+        standard_textured = textures_dir / "textured.glb"
+        try:
+            shutil.copy2(derivative, textured_canonical)
+            if not standard_textured.exists() or standard_textured.resolve() != textured_canonical.resolve():
+                shutil.copy2(textured_canonical, standard_textured)
+
+            map_paths = result.get("texture_map_paths") or {}
+            if isinstance(map_paths, dict):
+                for map_name, map_p in map_paths.items():
+                    if map_p and Path(map_p).is_file():
+                        shutil.copy2(map_p, textures_dir / f"{map_name}{Path(map_p).suffix}")
+
+            base_color = _extract_base_color_texture(textured_canonical)
+            if base_color is not None:
+                base_color.save(textures_dir / "base_color.png")
+        except Exception as tex_err:
+            logger.warning("[MANUAL MESH TOOL] Could not register canonical texture artifacts: %s", tex_err)
+
+        textured_rel = textured_canonical.relative_to(asset_root).as_posix()
+        artifacts["textured"] = {
+            "status": "ready",
+            "path": str(textured_canonical),
+            "relative_path": textured_rel,
+            "format": "glb",
+            "source_path": source_rel,
+        }
+
     register_asset_job_manifest(asset_root, job_id, source, master_path, artifacts)
+
+    # Update or create canonical asset manifest (asset.json) with relative paths
+    asset_manifest_file = asset_root / "metadata" / "asset.json"
+    manifest_data = {}
+    if asset_manifest_file.is_file():
+        try:
+            manifest_data = json.loads(asset_manifest_file.read_text(encoding="utf-8"))
+        except Exception:
+            manifest_data = {}
+    if not isinstance(manifest_data, dict) or not manifest_data:
+        manifest_data = {
+            "manifest_version": "1",
+            "asset_id": asset_root.name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "master": master_rel,
+            "production_status": "ready",
+            "artifacts": {},
+            "source_lineage": {
+                "source_path": source_rel,
+                "master_path": master_rel,
+                "source_sha256": source_hash,
+                "derivative_path": derivative_rel,
+            },
+        }
+    artifacts_map = manifest_data.setdefault("artifacts", {})
+    artifacts_map["master"] = {
+        "status": "ready",
+        "path": master_rel,
+        "format": master_path.suffix.lower().lstrip("."),
+    }
+    artifacts_map["derived"] = {
+        "status": "ready",
+        "path": derivative_rel,
+        "format": output.suffix.lower().lstrip("."),
+    }
+    if is_texture_job and "textured" in artifacts:
+        artifacts_map["textured"] = {
+            "status": "ready",
+            "path": artifacts["textured"]["relative_path"],
+            "format": "glb",
+        }
+    manifest_data.setdefault("derived_artifacts", {})[job_id] = {
+        "path": derivative_rel,
+        "format": output.suffix.lower().lstrip("."),
+        "job_id": job_id,
+    }
+    _write_json(asset_manifest_file, manifest_data)
 
     final_result = dict(result)
     final_result["output_mesh_path"] = str(derivative)
+    if is_texture_job and "textured" in artifacts:
+        final_result["textured_glb"] = artifacts["textured"]["path"]
     final_result["asset_root"] = str(asset_root)
     final_result["artifacts"] = artifacts
     final_result["source_lineage"] = {
@@ -1183,12 +1306,22 @@ def _build_result(
         "target_polycount": target_polycount,
         "lod_enabled": lod_enabled,
         "artifacts": {
-            "master": {"status": "ready", "url": download_master_url, "required": True},
-            "high_fidelity": {"status": "ready", "url": download_master_url, "required": True},
+            "master": {
+                "status": "ready",
+                "url": download_master_url,
+                "path": "master/source.glb",
+                "required": True,
+            },
+            "high_fidelity": {
+                "status": "ready",
+                "url": download_master_url,
+                "path": "master/source.glb",
+                "required": True,
+            },
             "textured": {
                 "status": "ready" if (texture_completed and textured_glb_path) else ("failed" if texture_failed else "skipped"),
                 "url": textured_url,
-                "path": str(textured_glb_path) if (texture_completed and textured_glb_path) else None,
+                "path": Path(textured_glb_path).relative_to(asset_dir).as_posix() if (texture_completed and textured_glb_path) else None,
                 "required": False,
                 "error": texture_stage.get("error") if texture_failed else None,
             },
@@ -1200,6 +1333,7 @@ def _build_result(
                         else "unavailable"
                     ),
                     "url": f"{base_url}/download?artifact_format={fmt}" if fmt in generated["game_ready"] else None,
+                    "path": Path(generated["game_ready"][fmt]).relative_to(asset_dir).as_posix() if fmt in generated["game_ready"] else None,
                     "error": artifact_errors.get(fmt),
                     "required": fmt == "glb",
                 }
@@ -1209,6 +1343,7 @@ def _build_result(
                 f"lod{idx}": {
                     "status": "ready",
                     "url": f"{base_url}/download?artifact_format=lod{idx}",
+                    "path": Path(generated["lods"][idx]).relative_to(asset_dir).as_posix() if idx in generated.get("lods", {}) else f"lods/lod{idx}.glb",
                     "required": False,
                 }
                 for idx in sorted(generated["lods"])
@@ -1216,12 +1351,14 @@ def _build_result(
             "collision": {
                 "status": "ready" if generated.get("collision") else ("failed" if collision_failed else "skipped"),
                 "url": f"{base_url}/download?artifact_format=collision" if generated.get("collision") else None,
+                "path": Path(generated["collision"]).relative_to(asset_dir).as_posix() if generated.get("collision") else None,
                 "required": False,
                 "error": generated.get("artifact_errors", {}).get("collision"),
             },
             "physics": {
                 "status": "ready" if generated.get("physics") else "skipped",
                 "url": f"{base_url}/download?artifact_format=physics_json" if generated.get("physics") else None,
+                "path": "metadata/physics.json" if generated.get("physics") else None,
                 "required": False,
             },
             "bake": {
@@ -1241,7 +1378,18 @@ def _build_result(
                 "required": texture_enabled,
                 "error": texture_stage.get("error") if texture_failed else None,
             },
-            "qa_report": {"status": "ready", "url": f"{base_url}/download?artifact_format=qa_report", "required": True},
+            "qa_report": {
+                "status": "ready",
+                "url": f"{base_url}/download?artifact_format=qa_report",
+                "path": "metadata/quality_report.json",
+                "required": True,
+            },
+            "thumbnail": {
+                "status": "ready" if generated.get("thumbnail") else "skipped",
+                "url": f"{base_url}/download?artifact_format=thumbnail" if generated.get("thumbnail") else None,
+                "path": Path(generated["thumbnail"]).relative_to(asset_dir).as_posix() if generated.get("thumbnail") else None,
+                "required": False,
+            },
             "zip": {"status": "ready", "url": f"{base_url}/download?artifact_format=zip", "required": False},
         },
         "qa_report": qa_report,
@@ -2441,6 +2589,8 @@ def run_postprocess_job(
             "parent_job_id": job_metadata.get("parent_job_id"),
             "created_at": now,
             "source_path": str(raw_path),
+            "master_path": master_path.relative_to(asset_dir).as_posix(),
+            "game_ready_path": glb_path.relative_to(asset_dir).as_posix() if glb_path.exists() else None,
             "model_id": job_metadata.get("model_id"),
             "feature": job_metadata.get("feature"),
             "seed": job_inputs.get("seed"),

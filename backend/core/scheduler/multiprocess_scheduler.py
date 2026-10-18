@@ -2142,11 +2142,21 @@ class MultiprocessModelScheduler:
                             "required": False,
                         },
                     }
+                    final_result["rigged_model_url"] = (
+                        f"/api/v1/system/jobs/{job_id}/download?artifact_format=rigged"
+                    )
+                    final_result["output_fbx_url"] = (
+                        f"/api/v1/system/jobs/{job_id}/download?artifact_format=fbx" if fbx_path else None
+                    )
                     from postprocess.pipeline import register_asset_job_manifest
 
-                    manifest_artifacts = {"rigged": {"path": str(preview_path), "format": "glb"}}
+                    manifest_artifacts = {
+                        "rigged": {"path": str(preview_path), "format": "glb"},
+                        "glb": {"path": str(preview_path), "format": "glb"},
+                    }
                     if fbx_path:
                         manifest_artifacts["fbx"] = {"path": str(fbx_path), "format": "fbx"}
+                        manifest_artifacts["rigged_fbx"] = {"path": str(fbx_path), "format": "fbx"}
                     register_asset_job_manifest(
                         asset_root, job_id, source_path, master_path, manifest_artifacts
                     )

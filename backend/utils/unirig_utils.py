@@ -138,9 +138,14 @@ class ModelCache:
         system.to(self.device)
         system.eval()
 
-        # Compile model for faster inference
+        # Compile model for faster inference if supported
         if compile_model:
-            system = torch.compile(system)
+            try:
+                system = torch.compile(system)
+            except Exception as comp_err:
+                logging.getLogger(__name__).warning(
+                    f"torch.compile failed or unsupported, falling back to uncompiled execution: {comp_err}"
+                )
 
         # Prepare writer config template
         writer_config = task_config.writer.copy()
@@ -452,8 +457,13 @@ class UniRigInferenceEngine:
                     batch = batch.to(self.device)
 
                 # Generate prediction
+                autocast_dtype = (
+                    torch.bfloat16
+                    if torch.cuda.is_available() and getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+                    else torch.float16
+                )
                 with torch.amp.autocast(
-                    device_type="cuda", dtype=torch.bfloat16, enabled=True
+                    device_type="cuda", dtype=autocast_dtype, enabled=torch.cuda.is_available()
                 ):
                     prediction = loaded_system.system.predict_step(batch, batch_idx)
 

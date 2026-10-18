@@ -278,7 +278,7 @@ const DEFAULT_STATE: AppStateData = {
   inspectorTab: 'scene',
   bottomDockTab: 'recent',
   creativeLayoutMode: true,
-  capabilities: { threeDGen: true, remesh: true, textureGen: true },
+  capabilities: { threeDGen: true, remesh: true, textureGen: true, autoRig: true },
   rightPanelSections: {
     transform: true,
     geometry: true,

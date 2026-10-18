@@ -423,6 +423,8 @@ export interface TextureSettings {
   paintResolution?: 512 | 768;
   referenceImage: string | null;
   referenceImageFileId?: string | null;
+  maskImage?: string | null;
+  maskImageFileId?: string | null;
   prompt: string;
   modelId: string;
   maps: {

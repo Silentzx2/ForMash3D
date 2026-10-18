@@ -239,7 +239,7 @@ export const UVUnwrapPanel: React.FC = () => {
                 type="button"
                 id="btn-start-uv-unwrap"
                 onClick={handleStartUnwrap}
-                disabled={isExecuting || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId)}
+                disabled={isExecuting || (!currentAsset?.source?.viewUrl && !currentAsset?.source?.localUrl && !currentAsset?.source?.fileId && !currentAsset?.fileId)}
                 className="w-full h-11 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-black/40 transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 <HugeiconsIcon icon={ZapIcon} size={16} className="w-4 h-4 fill-current" />

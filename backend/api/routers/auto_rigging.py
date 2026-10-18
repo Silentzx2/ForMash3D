@@ -75,10 +75,11 @@ class AutoRigRequest(BaseModel):
     @field_validator("output_format")
     @classmethod
     def validate_output_format(cls, v):
-        allowed_formats = ["fbx"]
-        if v not in allowed_formats:
+        allowed_formats = ["fbx", "glb"]
+        v_norm = str(v).lower().strip()
+        if v_norm not in allowed_formats:
             raise ValueError(f"Output format must be one of: {allowed_formats}")
-        return v
+        return v_norm
 
     @field_validator("mesh_file_id")
     @classmethod
@@ -176,7 +177,7 @@ async def generate_rig(
             inputs={
                 "rig_mode": request.rig_mode.lower(),
                 "mesh_path": mesh_file_path,
-                "output_format": request.output_format,
+                "output_format": request.output_format.lower().strip(),
                 **(request.model_parameters or {}),
             },
             model_preference=request.model_preference,
@@ -223,7 +224,7 @@ async def get_supported_formats():
     Returns:
         Dictionary of supported formats
     """
-    return {"input_formats": ["obj", "glb", "fbx"], "output_formats": ["fbx"]}
+    return {"input_formats": ["obj", "glb", "fbx"], "output_formats": ["fbx", "glb"]}
 
 
 @router.get("/available-models")

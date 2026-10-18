@@ -190,8 +190,35 @@ async function textureToPngBlob(texture, channel = null) {
 // the exporter takes the min of the image's own size and this). It is how an LOD
 // level honours a requested texture resolution without a bake: LOD0's UVs are the
 // source's, so its textures only ever need to be resampled smaller.
+function rebindClipForExport(clip) {
+  if (!clip || !Array.isArray(clip.tracks)) return clip
+  const tracks = clip.tracks.map(track => {
+    const cloned = track.clone()
+    const m = /^\.bones\[(.+?)\]\.(.+)$/.exec(cloned.name)
+    if (m) cloned.name = `${m[1]}.${m[2]}`
+    return cloned
+  })
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks)
+}
+
 function exportGlb(object, base, maxTextureSize = Infinity) {
   return new Promise((resolve, reject) => {
+    let animations = Array.isArray(object.animations) ? [...object.animations] : []
+    if (animations.length === 0 && object.traverse) {
+      object.traverse(child => {
+        if (Array.isArray(child.animations) && child.animations.length > 0) {
+          animations.push(...child.animations)
+        }
+      })
+      const seen = new Set()
+      animations = animations.filter(clip => {
+        if (!clip || seen.has(clip.name)) return false
+        seen.add(clip.name)
+        return true
+      })
+    }
+    const exportClips = animations.map(rebindClipForExport)
+
     new GLTFExporter().parse(
       object,
       result => {
@@ -202,10 +229,7 @@ function exportGlb(object, base, maxTextureSize = Infinity) {
         resolve([{ filename: `${base}.glb`, blob: new Blob([result], { type: 'model/gltf-binary' }) }])
       },
       error => reject(error instanceof Error ? error : new Error('Failed to export the mesh as GLB.')),
-      // Loader-produced clips are already node-name-addressed, so they need no
-      // track renaming here — the `.bones[...]` rewrite in animationLibrary.js
-      // exists only for the retargeter's mixer-bound clips.
-      { binary: true, onlyVisible: false, animations: object.animations || [], maxTextureSize }
+      { binary: true, onlyVisible: false, animations: exportClips, maxTextureSize }
     )
   })
 }

@@ -52,8 +52,9 @@ def configure_cpu_runtime(threads: Optional[int] = None, optimize_for_throughput
         except Exception:
             logger.debug("Unable to set torch CPU thread count", exc_info=True)
         try:
-            torch.set_num_interop_threads(max(1, min(4, threads)))
-        except RuntimeError:
+            if hasattr(torch, "set_num_interop_threads"):
+                torch.set_num_interop_threads(max(1, min(4, threads)))
+        except Exception:
             pass
     return threads
 

@@ -67,30 +67,17 @@ export const AnimationTimelineDock: React.FC = () => {
   useEffect(() => {
     if (!isPlaying) return;
     let animId: number;
-    let lastTime = performance.now();
 
     const loop = (now: number) => {
-      const delta = (now - lastTime) / 1000;
-      lastTime = now;
-
-      const { currentTime, duration, isLooping } = useAnimationStore.getState();
-      let next = currentTime + delta;
-      if (next >= duration) {
-        if (isLooping) {
-          next = 0;
-        } else {
-          next = duration;
-          setIsPlaying(false);
-          return;
-        }
+      useAnimationStore.getState().tickPlayback(now);
+      if (useAnimationStore.getState().isPlaying) {
+        animId = requestAnimationFrame(loop);
       }
-      setCurrentTime(next);
-      animId = requestAnimationFrame(loop);
     };
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, setCurrentTime, setIsPlaying]);
+  }, [isPlaying]);
 
   // Handle Timeline Scrubbing
   const handleTimelineScrub = useCallback(
@@ -98,7 +85,7 @@ export const AnimationTimelineDock: React.FC = () => {
       if (!timelineRef.current) return;
       const rect = timelineRef.current.getBoundingClientRect();
       const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      const percentage = x / rect.width;
+      const percentage = rect.width > 0 ? x / rect.width : 0;
       const newTime = Math.max(0, Math.min(percentage * duration, duration));
       setCurrentTime(newTime);
     },

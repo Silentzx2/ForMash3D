@@ -1044,20 +1044,24 @@ export const RightPropertyPanel: React.FC = () => {
 
                     {Boolean(currentAsset.artifacts?.lods && currentAsset.artifacts.lods.length > 0) && (
                       <div className="flex gap-1.5">
-                        {currentAsset.artifacts!.lods!.map((lodUrl, idx) => (
-                          <button
-                            key={lodUrl}
-                            type="button"
-                            onClick={() => {
-                              setSelectedLineageUrl(lodUrl);
-                              setSelectedCompareAssetId(null);
-                              setSelectedLineageLabel(`LOD ${idx + 1}`);
-                            }}
-                            className="flex-1 py-1 px-1.5 rounded-md bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-[10px] font-mono text-[hsl(var(--muted-foreground))] hover:text-white transition-colors"
-                          >
-                            LOD {idx + 1}
-                          </button>
-                        ))}
+                        {currentAsset.artifacts!.lods!.map((lodUrl, idx) => {
+                          const match = lodUrl.match(/lod(\d+)/i);
+                          const label = match ? `LOD ${match[1]}` : `LOD ${idx}`;
+                          return (
+                            <button
+                              key={lodUrl}
+                              type="button"
+                              onClick={() => {
+                                setSelectedLineageUrl(lodUrl);
+                                setSelectedCompareAssetId(null);
+                                setSelectedLineageLabel(label);
+                              }}
+                              className="flex-1 py-1 px-1.5 rounded-md bg-[hsl(var(--surface-0))] hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] text-[10px] font-mono text-[hsl(var(--muted-foreground))] hover:text-white transition-colors"
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

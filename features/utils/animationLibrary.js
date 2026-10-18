@@ -699,7 +699,17 @@ export function retargetAnimationClip({
   targetScene, targetSkinnedMesh, sourceScene, sourceSkinnedMesh, clip, mapping, fps = 30,
   matchRestPose = true,
 }) {
-  const sourceSkeleton = sourceSkinnedMesh.skeleton
+  if (!targetScene || !clip) {
+    throw new Error('Retarget requires a valid target scene and animation clip.')
+  }
+  const sourceSkeleton = sourceSkinnedMesh?.skeleton
+  const targetSkeleton = targetSkinnedMesh?.skeleton
+  if (!sourceSkeleton || !Array.isArray(sourceSkeleton.bones) || !sourceSkeleton.bones.length) {
+    throw new Error('Source asset has no skeleton or bones to retarget from.')
+  }
+  if (!targetSkeleton || !Array.isArray(targetSkeleton.bones) || !targetSkeleton.bones.length) {
+    throw new Error('Target asset has no skinned mesh or skeleton bones to retarget to.')
+  }
   const sourceByName = new Map(sourceSkeleton.bones.map(b => [b.name, b]))
 
   // Target bones in parent-first order (pre-order traversal).
@@ -710,11 +720,11 @@ export function retargetAnimationClip({
   // source's hip. Its position IS retargeted (scaled) so crouches/pushups lower
   // the body and the feet stay planted — everything else is rotation-only.
   const sourceHipName = detectHipBone(sourceSkeleton.bones.map(b => b.name))
-  const hipTargetName = Object.keys(mapping).find(t => mapping[t] === sourceHipName) || null
+  const hipTargetName = Object.keys(mapping || {}).find(t => mapping[t] === sourceHipName) || null
 
   // Capture bind-pose world quaternions for both rigs.
-  sourceSkeleton.pose(); sourceScene.updateMatrixWorld(true)
-  targetSkinnedMesh.skeleton.pose(); targetScene.updateMatrixWorld(true)
+  sourceSkeleton.pose(); sourceScene?.updateMatrixWorld?.(true)
+  targetSkeleton.pose(); targetScene.updateMatrixWorld(true)
   const srcBindWorldInv = new Map()
   sourceSkeleton.bones.forEach(b => srcBindWorldInv.set(b.name, b.getWorldQuaternion(new Quaternion()).invert()))
 
@@ -838,7 +848,7 @@ export function retargetAnimationClip({
   mixer.stopAllAction()
   mixer.uncacheRoot(sourceScene)
   sourceSkeleton.pose()
-  targetSkinnedMesh.skeleton.pose()
+  targetSkeleton.pose()
   targetScene.updateMatrixWorld(true)
 
   const tracks = mapped.map(tb =>

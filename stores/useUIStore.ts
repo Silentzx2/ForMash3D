@@ -36,6 +36,7 @@ interface UIState {
     threeDGen: boolean;
     remesh: boolean;
     textureGen: boolean;
+    autoRig: boolean;
   };
   setCapability: (cap: keyof UIState['capabilities'], enabled: boolean) => void;
   rightPanelSections: Record<string, boolean>;

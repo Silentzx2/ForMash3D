@@ -153,6 +153,10 @@ class TextMeshPaintingRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    mask_path: Optional[str] = Field(None, description="Path to optional spot retexture UV mask image")
+    mask_base64: Optional[str] = Field(None, description="Base64 encoded spot retexture UV mask image")
+    mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
+    postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
 
     @field_validator("texture_resolution", mode="before")
@@ -380,6 +384,10 @@ class ImageMeshPaintingRequest(BaseModel):
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
+    mask_path: Optional[str] = Field(None, description="Path to optional spot retexture UV mask image")
+    mask_base64: Optional[str] = Field(None, description="Base64 encoded spot retexture UV mask image")
+    mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
+    postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
 
     @field_validator("texture_resolution", mode="before")
@@ -598,20 +606,34 @@ async def text_mesh_painting(
             tracked_temp_dirs=tracked_temp_dirs,
         )
 
+        # Process mask input if provided
+        mask_file_path = None
+        if mesh_request.mask_path or mesh_request.mask_base64 or mesh_request.mask_file_id:
+            mask_file_path = await process_file_input(
+                file_path=mesh_request.mask_path,
+                base64_data=mesh_request.mask_base64,
+                file_id=mesh_request.mask_file_id,
+                input_type="image",
+                file_store=file_store,
+                tracked_temp_dirs=tracked_temp_dirs,
+            )
+
         job_request = JobRequest(
             feature="text_mesh_painting",
             inputs={
                 "text_prompt": mesh_request.text_prompt,
                 "mesh_path": mesh_file_path,
+                "mask_path": mask_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
                 "enable_postprocess": False,
+                "postprocess_mode": mesh_request.postprocess_mode or "manual_mesh_tool",
                 **_clean_paint_parameters(mesh_request.model_parameters),
             },
             model_preference=mesh_request.model_preference,
             priority=1,
             metadata={
-                "postprocess_mode": "manual_mesh_tool",
+                "postprocess_mode": mesh_request.postprocess_mode or "manual_mesh_tool",
                 "enable_postprocess": False,
                 "feature_type": "text_mesh_painting",
                 "physics_enabled": getattr(mesh_request, "physics_enabled", False),
@@ -1236,9 +1258,17 @@ async def image_mesh_painting(
     try:
         user_id = getattr(current_user, "user_id", None)
         
+        # Resolution routing: 1K/2K strictly routes to Paint3D, 4K/8K strictly routes to Hunyuan3D-Paint-v2-1
+        model_preference = mesh_request.model_preference
+        if model_preference in ("trellis_image_mesh_painting", "auto", "default", None, ""):
+            if mesh_request.texture_resolution >= 4096:
+                model_preference = "hunyuan3d_paint_v21_image_mesh_painting"
+            else:
+                model_preference = "paint3d_image_mesh_painting"
+
         # Validate model preference
         validate_model_preference(
-            mesh_request.model_preference, "image_mesh_painting", scheduler
+            model_preference, "image_mesh_painting", scheduler
         )
 
         # Process image input
@@ -1261,30 +1291,44 @@ async def image_mesh_painting(
             tracked_temp_dirs=tracked_temp_dirs,
         )
 
+        # Process mask input if provided
+        mask_file_path = None
+        if mesh_request.mask_path or mesh_request.mask_base64 or mesh_request.mask_file_id:
+            mask_file_path = await process_file_input(
+                file_path=mesh_request.mask_path,
+                base64_data=mesh_request.mask_base64,
+                file_id=mesh_request.mask_file_id,
+                input_type="image",
+                file_store=file_store,
+                tracked_temp_dirs=tracked_temp_dirs,
+            )
+
         job_request = JobRequest(
             feature="image_mesh_painting",
             inputs={
                 "image_path": image_file_path,
                 "reference_image_path": image_file_path,
                 "mesh_path": mesh_file_path,
+                "mask_path": mask_file_path,
                 "output_format": mesh_request.output_format,
                 "texture_resolution": mesh_request.texture_resolution,
                 "resolution": (
                     (mesh_request.model_parameters or {}).get("resolution")
                     or (
-                        768 if "paint_v21" in mesh_request.model_preference
+                        768 if "paint_v21" in model_preference
                         and mesh_request.texture_resolution >= 8192
-                        else 512 if "paint_v21" in mesh_request.model_preference
+                        else 512 if "paint_v21" in model_preference
                         else mesh_request.texture_resolution
                     )
                 ),
                 "enable_postprocess": False,
+                "postprocess_mode": mesh_request.postprocess_mode or "manual_mesh_tool",
                 **_clean_paint_parameters(mesh_request.model_parameters),
             },
-            model_preference=mesh_request.model_preference,
+            model_preference=model_preference,
             priority=1,
             metadata={
-                "postprocess_mode": "manual_mesh_tool",
+                "postprocess_mode": mesh_request.postprocess_mode or "manual_mesh_tool",
                 "enable_postprocess": False,
                 "feature_type": "image_mesh_painting",
                 "physics_enabled": getattr(mesh_request, "physics_enabled", False),

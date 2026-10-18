@@ -53,7 +53,7 @@ class UniRigAdapter(AutoRigModel):
             model_path=model_path,
             vram_requirement=vram_requirement,
             supported_input_formats=["fbx", "obj", "glb"],
-            supported_output_formats=["fbx"],
+            supported_output_formats=["fbx", "glb"],
         )
 
         self.unirig_root = Path(unirig_root)
@@ -87,14 +87,18 @@ class UniRigAdapter(AutoRigModel):
 
             from utils.unirig_utils import InferenceConfig, UniRigInferenceEngine
 
-            # Create inference configuration
+            use_bf16 = False
+            if torch.cuda.is_available():
+                use_bf16 = getattr(torch.cuda, "is_bf16_supported", lambda: False)()
+
+            # Create inference configuration with VRAM-conscious settings
             config = InferenceConfig(
                 device=self.device,
-                compile_model=True,  # Use torch.compile for faster inference
+                compile_model=False,  # Fallback to eager mode to conserve VRAM
                 cache_dir=str(
                     self.path_generator.base_output_dir / "temp" / "unirig_cache"
                 ),
-                precision="bf16-mixed",
+                precision="bf16-mixed" if use_bf16 else "fp16",
             )
 
             # Initialize inference engine
@@ -200,7 +204,8 @@ class UniRigAdapter(AutoRigModel):
 
             # Extract parameters
             rig_mode = inputs.get("rig_mode", "full")
-            output_format = inputs.get("output_format", "fbx")
+            raw_output_format = str(inputs.get("output_format", "fbx")).lower().strip()
+            output_format = raw_output_format if raw_output_format in ["fbx", "glb"] else "fbx"
             seed = inputs.get("seed", None)
             with_skinning = inputs.get("with_skinning", True)
             skeleton_config = inputs.get("skeleton_config", None)
@@ -322,6 +327,9 @@ class UniRigAdapter(AutoRigModel):
             self.status = ModelStatus.ERROR
             logger.error(f"UniRig auto-rigging failed: {str(e)}")
             raise Exception(f"UniRig auto-rigging failed: {str(e)}")
+        finally:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     def _generate_thumbnail_path(self, mesh_path: Path) -> Path:
         """Generate thumbnail file path based on mesh path."""

@@ -33,27 +33,34 @@ export interface AnimationClipItem {
 
 const BONE_ALIASES: Record<string, string> = {
   root: 'hips', pelvis: 'hips', hip: 'hips', hips: 'hips',
-  spine: 'spine', spine01: 'spine', spine1: 'spine',
+  spine: 'spine', spine0: 'spine', spine01: 'spine', spine1: 'spine',
   spine02: 'chest', spine2: 'chest', spine03: 'chest', spine3: 'chest', chest: 'chest', upperchest: 'chest',
-  neck: 'neck', neck01: 'neck', neck1: 'neck', head: 'head',
+  neck: 'neck', neck0: 'neck', neck01: 'neck', neck1: 'neck', head: 'head',
   leftshoulder: 'upperarml', leftshoulderpitch: 'upperarml', leftshoulderroll: 'upperarml', leftshoulderyaw: 'upperarml',
   leftarm: 'upperarml', leftupperarm: 'upperarml', upperarml: 'upperarml',
   leftforearm: 'lowerarml', leftelbow: 'lowerarml', leftlowerarm: 'lowerarml', lowerarml: 'lowerarml',
   lefthand: 'handl', leftwrist: 'handl', leftwristroll: 'handl', leftwristpitch: 'handl', leftwristyaw: 'handl', leftthumb: 'handl', handl: 'handl',
-  leftupleg: 'upperlegl', leftthigh: 'upperlegl', lefthip: 'upperlegl', lefthippitch: 'upperlegl', lefthiproll: 'upperlegl', lefthipyaw: 'upperlegl', upperlegl: 'upperlegl',
-  leftleg: 'lowerlegl', leftknee: 'lowerlegl', leftshin: 'lowerlegl', lowerlegl: 'lowerlegl',
+  leftupleg: 'upperlegl', leftthigh: 'upperlegl', lefthip: 'upperlegl', lefthippitch: 'upperlegl', lefthiproll: 'upperlegl', lefthipyaw: 'upperlegl', upperlegl: 'upperlegl', leftupperleg: 'upperlegl',
+  leftleg: 'lowerlegl', leftknee: 'lowerlegl', leftshin: 'lowerlegl', lowerlegl: 'lowerlegl', leftlowerleg: 'lowerlegl',
   leftfoot: 'footl', leftankle: 'footl', leftanklepitch: 'footl', leftankleroll: 'footl', lefttoebase: 'footl', lefttoe: 'footl', footl: 'footl',
   rightshoulder: 'upperarmr', rightshoulderpitch: 'upperarmr', rightshoulderroll: 'upperarmr', rightshoulderyaw: 'upperarmr',
   rightarm: 'upperarmr', rightupperarm: 'upperarmr', upperarmr: 'upperarmr',
   rightforearm: 'lowerarmr', rightelbow: 'lowerarmr', rightlowerarm: 'lowerarmr', lowerarmr: 'lowerarmr',
   righthand: 'handr', rightwrist: 'handr', rightwristroll: 'handr', rightwristpitch: 'handr', rightwristyaw: 'handr', rightthumb: 'handr', handr: 'handr',
-  rightupleg: 'upperlegr', rightthigh: 'upperlegr', righthip: 'upperlegr', righthippitch: 'upperlegr', righthiproll: 'upperlegr', righthipyaw: 'upperlegr', upperlegr: 'upperlegr',
-  rightleg: 'lowerlegr', rightknee: 'lowerlegr', rightshin: 'lowerlegr', lowerlegr: 'lowerlegr',
+  rightupleg: 'upperlegr', rightthigh: 'upperlegr', righthip: 'upperlegr', righthippitch: 'upperlegr', righthiproll: 'upperlegr', righthipyaw: 'upperlegr', upperlegr: 'upperlegr', rightupperleg: 'upperlegr',
+  rightleg: 'lowerlegr', rightknee: 'lowerlegr', rightshin: 'lowerlegr', lowerlegr: 'lowerlegr', rightlowerleg: 'lowerlegr',
   rightfoot: 'footr', rightankle: 'footr', rightanklepitch: 'footr', rightankleroll: 'footr', righttoebase: 'footr', righttoe: 'footr', footr: 'footr',
 };
 
 export function normalizeBoneName(name: string): string {
-  return name.toLowerCase().replace(/^(mixamorig|armature|bip001|bip|rig)/, '').replace(/[^a-z0-9]/g, '').replace(/skel$/, '');
+  let s = name.toLowerCase();
+  let side = '';
+  if (/^j_(?:bip|sec)_l_/i.test(name)) side = 'l';
+  else if (/^j_(?:bip|sec)_r_/i.test(name)) side = 'r';
+  s = s.replace(/^(mixamorig[:_]?|armature[:_]?|bip001[:_]?|bip[:_]?|rig[:_]|j_bip_[clr]_|j_sec_[clr]_|def_|def-|org-|mch-|b_|valvebiped_|cc_base_)/i, '');
+  s = s.replace(/[^a-z0-9]/g, '').replace(/skel$/, '');
+  if (side && !s.endsWith(side)) s += side;
+  return s;
 }
 
 export function canonicalBoneName(name: string): string {
@@ -206,6 +213,7 @@ interface AnimationState {
   setPlaybackSpeed: (speed: number) => void;
   isLooping: boolean;
   setIsLooping: (loop: boolean) => void;
+  tickPlayback: (now: number) => void;
   hasRootMotion: boolean;
   setHasRootMotion: (val: boolean) => void;
   hasFootLock: boolean;
@@ -420,8 +428,14 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   setTransform: (tf) => set((s) => ({ transform: { ...s.transform, ...tf } })),
 
   isPlaying: false,
-  setIsPlaying: (isPlaying) => set({ isPlaying }),
-  togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
+  setIsPlaying: (isPlaying) => {
+    (useAnimationStore as any)._lastTick = 0;
+    set({ isPlaying });
+  },
+  togglePlay: () => {
+    (useAnimationStore as any)._lastTick = 0;
+    set((s) => ({ isPlaying: !s.isPlaying }));
+  },
   currentTime: 0,
   setCurrentTime: (currentTime) => set({ currentTime }),
   duration: 2.0,
@@ -432,6 +446,27 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
   isLooping: true,
   setIsLooping: (isLooping) => set({ isLooping }),
+  tickPlayback: (now: number) => {
+    const s = get();
+    if (!s.isPlaying || s.duration <= 0) return;
+    const last = (useAnimationStore as any)._lastTick || 0;
+    const elapsed = (now - last) / 1000;
+    if (last > 0 && elapsed < 0.002) return; // avoid duplicate ticks from multiple mounted timeline components in same frame
+    (useAnimationStore as any)._lastTick = now;
+    const delta = last === 0 ? 0 : Math.min(elapsed, 0.1);
+    const speed = typeof s.playbackSpeed === 'number' && s.playbackSpeed > 0 ? s.playbackSpeed : 1.0;
+    let next = s.currentTime + delta * speed;
+    if (next >= s.duration) {
+      if (s.isLooping) {
+        next = s.duration > 0 ? next % s.duration : 0;
+      } else {
+        (useAnimationStore as any)._lastTick = 0;
+        set({ currentTime: s.duration, isPlaying: false });
+        return;
+      }
+    }
+    set({ currentTime: next });
+  },
   hasRootMotion: false,
   setHasRootMotion: (hasRootMotion) => set({ hasRootMotion }),
   hasFootLock: true,
@@ -679,43 +714,67 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
   setRetargetOptions: (opts) => set((s) => ({ retargetOptions: { ...s.retargetOptions, ...opts } })),
   retargetMapping: {
     Hips: 'Hips',
+    Spine: 'Spine',
     Spine1: 'Spine',
     Chest: 'Chest',
+    Neck: 'Neck',
     Neck1: 'Neck',
     Head: 'Head',
+    LeftShoulder: 'UpperArm_L',
     LeftArm: 'UpperArm_L',
     LeftForeArm: 'LowerArm_L',
     LeftHand: 'Hand_L',
+    RightShoulder: 'UpperArm_R',
     RightArm: 'UpperArm_R',
     RightForeArm: 'LowerArm_R',
     RightHand: 'Hand_R',
-    LeftLeg: 'UpperLeg_L',
-    LeftFoot: 'LowerLeg_L',
+    LeftUpLeg: 'UpperLeg_L',
+    LeftLeg: 'LowerLeg_L',
+    LeftFoot: 'Foot_L',
     LeftToeBase: 'Foot_L',
-    RightLeg: 'UpperLeg_R',
-    RightFoot: 'LowerLeg_R',
+    RightUpLeg: 'UpperLeg_R',
+    RightLeg: 'LowerLeg_R',
+    RightFoot: 'Foot_R',
     RightToeBase: 'Foot_R',
   },
   setRetargetMapping: (retargetMapping) => set({ retargetMapping }),
   autoMapBones: () => {
+    const targetNames = get().loadedSkeletonBoneNames ?? [];
+    if (targetNames.length > 0) {
+      const sourceBones = [
+        'Hips', 'Spine', 'Chest', 'Neck', 'Head',
+        'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
+        'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
+        'LeftUpLeg', 'LeftLeg', 'LeftFoot',
+        'RightUpLeg', 'RightLeg', 'RightFoot',
+      ];
+      set({ retargetMapping: mapRetargetBones(sourceBones, targetNames, get().retargetMapping) });
+      return;
+    }
     set({
       retargetMapping: {
         Hips: 'Hips',
+        Spine: 'Spine',
         Spine1: 'Spine',
         Chest: 'Chest',
+        Neck: 'Neck',
         Neck1: 'Neck',
         Head: 'Head',
+        LeftShoulder: 'UpperArm_L',
         LeftArm: 'UpperArm_L',
         LeftForeArm: 'LowerArm_L',
         LeftHand: 'Hand_L',
+        RightShoulder: 'UpperArm_R',
         RightArm: 'UpperArm_R',
         RightForeArm: 'LowerArm_R',
         RightHand: 'Hand_R',
-        LeftLeg: 'UpperLeg_L',
-        LeftFoot: 'LowerLeg_L',
+        LeftUpLeg: 'UpperLeg_L',
+        LeftLeg: 'LowerLeg_L',
+        LeftFoot: 'Foot_L',
         LeftToeBase: 'Foot_L',
-        RightLeg: 'UpperLeg_R',
-        RightFoot: 'LowerLeg_R',
+        RightUpLeg: 'UpperLeg_R',
+        RightLeg: 'LowerLeg_R',
+        RightFoot: 'Foot_R',
         RightToeBase: 'Foot_R',
       },
     });
@@ -809,13 +868,15 @@ export const useAnimationStore = create<AnimationState>((set, get) => ({
     const targetNames = get().loadedSkeletonBoneNames ?? [];
     let mapping = { ...get().retargetMapping };
     if (targetNames.length > 0) {
-      const sourceBones = [
-        'Hips', 'Spine', 'Chest', 'Neck', 'Head',
-        'UpperArm_L', 'LowerArm_L', 'Hand_L',
-        'UpperArm_R', 'LowerArm_R', 'Hand_R',
-        'UpperLeg_L', 'LowerLeg_L', 'Foot_L',
-        'UpperLeg_R', 'LowerLeg_R', 'Foot_R',
-      ];
+      const sourceBones = (clip.jointNames && clip.jointNames.length > 0)
+        ? clip.jointNames
+        : [
+            'Hips', 'Spine', 'Chest', 'Neck', 'Head',
+            'UpperArm_L', 'LowerArm_L', 'Hand_L',
+            'UpperArm_R', 'LowerArm_R', 'Hand_R',
+            'UpperLeg_L', 'LowerLeg_L', 'Foot_L',
+            'UpperLeg_R', 'LowerLeg_R', 'Foot_R',
+          ];
       mapping = mapRetargetBones(sourceBones, targetNames, mapping);
       sourceBones.forEach((b) => {
         const sym = getSymmetricBoneName(b);

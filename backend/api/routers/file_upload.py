@@ -453,7 +453,7 @@ async def get_file_path_impl(
 
 _JOB_ARTIFACT_FORMATS = {
     "master", "glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj",
-    "lod0", "lod1", "lod2", "lod3", "textured", "rigged", "derived", "collision",
+    "lod0", "lod1", "lod2", "lod3", "textured", "rigged", "rigged_fbx", "derived", "collision",
     "thumbnail", "qa_report", "job_json", "asset_json", "physics_json",
     "texture_base_color", "texture_normal", "texture_ao", "texture_roughness",
     "texture_metallic", "texture_orm",
@@ -537,6 +537,14 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
                 resolved = resolve_declared_artifact(workspace, declared, "rigged_fbx")
                 if resolved:
                     return resolved
+            if selector in {"fbx", "rigged_fbx"} and "fbx" in declared:
+                resolved = resolve_declared_artifact(workspace, declared, "fbx")
+                if resolved:
+                    return resolved
+            if selector in {"glb", "rigged"} and "rigged" in declared:
+                resolved = resolve_declared_artifact(workspace, declared, "rigged")
+                if resolved:
+                    return resolved
             if selector == "master" and manifest_data.get("master_path"):
                 cand = workspace / manifest_data["master_path"]
                 safe = _storage_path(cand)
@@ -582,6 +590,7 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
     else:
         fixed_paths = {
             "rigged": workspace / "rigging" / job_id / "rigged.glb",
+            "rigged_fbx": workspace / "rigging" / job_id / "rigged.fbx",
             "collision": workspace / "collision" / "collision.glb",
             "thumbnail": workspace / "previews" / "thumbnail.png",
             "qa_report": workspace / "metadata" / "quality_report.json",
@@ -597,6 +606,12 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
                 workspace / "rigging" / "game_ready_rigged.glb",
             ]
             candidates.extend(sorted((workspace / "rigging").glob("*/rigged.glb")))
+        elif selector == "rigged_fbx":
+            candidates = [
+                workspace / "rigging" / job_id / "rigged.fbx",
+                workspace / "rigging" / "game_ready_rigged.fbx",
+            ]
+            candidates.extend(sorted((workspace / "rigging").glob("*/rigged.fbx")))
         else:
             candidates = [fixed_paths[selector]]
     for candidate in candidates:

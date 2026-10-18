@@ -425,3 +425,60 @@ def test_quad_retopology_on_native_textures_executes_quad_pass(tmp_path, monkeyp
     )
 
     assert result["artifacts"]["retopology"]["status"] == "completed"
+
+
+def test_persist_manual_mesh_result_texture_lineage(tmp_path, monkeypatch):
+    """Verify manual mesh tool texturing outputs save to textures/<name>_textured.glb and declare artifacts['textured']."""
+    import json
+    from postprocess.pipeline import persist_manual_mesh_result
+
+    monkeypatch.setenv("STORAGE_LOCAL_PATH", str(tmp_path / "storage"))
+
+    # Setup source mesh in an asset root
+    asset_root = tmp_path / "assets" / "my_character"
+    (asset_root / "master").mkdir(parents=True)
+    source_mesh = asset_root / "master" / "source.glb"
+    box = trimesh.creation.box()
+    box.export(str(source_mesh))
+
+    # Mock tool output
+    tool_out_dir = tmp_path / "scratch"
+    tool_out_dir.mkdir(parents=True)
+    tool_output = tool_out_dir / "tool_result.glb"
+    box.export(str(tool_output))
+
+    job_id = "test-texture-job-42"
+    result_in = {
+        "output_mesh_path": str(tool_output),
+        "texture_map_paths": {},
+    }
+    job_inputs = {
+        "mesh_path": str(source_mesh),
+        "asset_name": "my_character",
+        "texture_resolution": 2048,
+    }
+    job_metadata = {
+        "feature_type": "image_mesh_painting",
+    }
+
+    final_result = persist_manual_mesh_result(job_id, result_in, job_inputs, job_metadata)
+
+    # Lineage verification
+    assert "artifacts" in final_result
+    assert "textured" in final_result["artifacts"]
+    assert final_result["artifacts"]["textured"]["status"] == "ready"
+    assert "textures/my_character_textured.glb" in final_result["artifacts"]["textured"]["relative_path"]
+
+    # File existence checks
+    actual_asset_root = Path(final_result["asset_root"])
+    canonical_textured = actual_asset_root / "textures" / "my_character_textured.glb"
+    standard_textured = actual_asset_root / "textures" / "textured.glb"
+    assert canonical_textured.exists()
+    assert standard_textured.exists()
+
+    # Manifest verification
+    manifest_file = actual_asset_root / "metadata" / "asset.json"
+    assert manifest_file.exists()
+    manifest_data = json.loads(manifest_file.read_text())
+    assert "textured" in manifest_data["artifacts"]
+    assert manifest_data["artifacts"]["textured"]["status"] == "ready"
