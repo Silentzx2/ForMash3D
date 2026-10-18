@@ -18,29 +18,65 @@ from typing import Dict, Optional
 import numpy as np
 import torch
 import yaml
-from box import Box
+try:
+    from box import Box
+except ImportError:
+    class Box(dict):
+        """Fallback implementation of Box when python-box is not installed."""
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            for k, v in list(self.items()):
+                if isinstance(v, dict) and not isinstance(v, Box):
+                    self[k] = Box(v)
+                elif isinstance(v, list):
+                    self[k] = [Box(i) if isinstance(i, dict) and not isinstance(i, Box) else i for i in v]
+
+        def __getattr__(self, name):
+            try:
+                return self[name]
+            except KeyError:
+                raise AttributeError(f"'Box' object has no attribute '{name}'")
+
+        def __setattr__(self, name, value):
+            self[name] = value
+
+        def __delattr__(self, name):
+            try:
+                del self[name]
+            except KeyError:
+                raise AttributeError(f"'Box' object has no attribute '{name}'")
 
 try:
     from thirdparty.UniRig.src.data.datapath import Datapath
     from thirdparty.UniRig.src.data.dataset import DatasetConfig, UniRigDatasetModule
     from thirdparty.UniRig.src.data.extract import extract_builtin
     from thirdparty.UniRig.src.data.transform import TransformConfig
+    from thirdparty.UniRig.src.inference.download import download
+    from thirdparty.UniRig.src.model.parse import get_model
+    from thirdparty.UniRig.src.system.parse import get_system, get_writer
+    from thirdparty.UniRig.src.tokenizer.parse import get_tokenizer
+    from thirdparty.UniRig.src.tokenizer.spec import TokenizerConfig
+    _unirig_import_error = None
 except ImportError as e:
-    raise ImportError(
-        f"UniRig data modules under thirdparty/UniRig/src/data failed to import ({e}). "
-        "They require Blender's 'bpy' module (see backend/thirdparty/UniRig/requirements.txt: "
-        "bpy==4.0) for mesh import and FBX export, which is missing from this Python "
-        "environment. Install a bpy build compatible with this interpreter (Python 3.10 -> "
-        "bpy 4.0.x) or run the worker with a Blender-enabled Python."
-    ) from e
-from thirdparty.UniRig.src.inference.download import download
-from thirdparty.UniRig.src.model.parse import get_model
-from thirdparty.UniRig.src.system.parse import get_system, get_writer
-from thirdparty.UniRig.src.tokenizer.parse import get_tokenizer
-from thirdparty.UniRig.src.tokenizer.spec import TokenizerConfig
+    _unirig_import_error = e
+    Datapath = None
+    DatasetConfig = None
+    UniRigDatasetModule = None
+    extract_builtin = None
+    TransformConfig = None
+    download = None
+    get_model = None
+    get_system = None
+    get_writer = None
+    get_tokenizer = None
+    TokenizerConfig = None
 
 CONFIG_PREFIX = "thirdparty/UniRig"
-torch.serialization.add_safe_globals([Box])
+if hasattr(torch.serialization, "add_safe_globals"):
+    try:
+        torch.serialization.add_safe_globals([Box])
+    except Exception:
+        pass
 
 @dataclass
 class InferenceConfig:
@@ -236,6 +272,15 @@ class UniRigInferenceEngine:
     """
 
     def __init__(self, config: Optional[InferenceConfig] = None):
+        if _unirig_import_error is not None:
+            raise ImportError(
+                f"UniRig data modules under thirdparty/UniRig/src failed to import ({_unirig_import_error}). "
+                "They require Blender's 'bpy' module (see backend/thirdparty/UniRig/requirements.txt: "
+                "bpy==4.0) for mesh import and FBX export, which is missing from this Python "
+                "environment. Install a bpy build compatible with this interpreter (Python 3.10 -> "
+                "bpy 4.0.x) or run the worker with a Blender-enabled Python."
+            ) from _unirig_import_error
+
         self.config = config or InferenceConfig()
         self.device = torch.device(self.config.device)
         self.model_cache = ModelCache(self.device)
