@@ -1,3 +1,11 @@
+## 2026-10-18 — Runtime Import Diagnostics, Readiness & UV Guardrails
+
+- Fixed BaseModel.process state transitions so inference failures remain visible as ERROR and successful requests restore LOADED.
+- Replaced UniRig's hardcoded Blender-missing explanation with the underlying import exception and missing-module name.
+- Added Hunyuan3D-Paint BackgroundRemover import/native error reporting with exception chaining.
+- Paint3D now preflights both child-stage import graphs before reporting the runtime ready and refuses to continue with invalid/missing UVs after a failed unwrap.
+- Added regression tests for state transitions, diagnostic content, child-stage readiness, and UV failure. Test execution is pending CI verification; no pass claim is made here.
+
 ## 2026-10-17 — Lossless, Offset-Resumable Master Log Streaming
 
 - **Canonical raw text stream**: The admin Logs view reads the complete `logs/master.log` as ordered UTF-8 text chunks, preserving blank lines, CR/CRLF characters, partial lines, whitespace, and progress output without parsing or filtering entries.
@@ -31,18 +39,3 @@
   - **DOCS-01 (T-19)**: Contextual In-App Help (Tool-Aware Wiki). Added dynamic markdown route `app/api/wiki/[id]/route.ts` with path sanitization and created `ToolContextHelp.tsx`. Integrated contextual "?" affordances into the headers of all 6 workspace tool panels (`GeneratePanel.tsx`, `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, `TexturePanel.tsx`, `RiggingLeftPanel.tsx`, `MeshSegmentPanel.tsx`) mapping tools directly to official wiki documentation articles in an accessible slide-over drawer with graceful missing-article fallback.
   - **BRIDGE-01 (T-20)**: DCC Bridge Quick-Send. Implemented persistent last-used DCC target tracking (`blender`, `unreal`, `unity`, `maya`) in `services/settingsPersistence.ts` and `DccBridgeModal.tsx`. Added dynamic "Send to {last-used DCC}" action directly inside `RightAssetsPanel.tsx` 3-dots asset menu, bypassing the modal when target is configured with live connection toast feedback, while gracefully falling back to the configuration modal when unset.
   - **NAV-02**: Added pinned Admin & Settings button at the bottom of the workspace `LeftNavigation.tsx` desktop rail and mobile drawer routing directly to `/admin`.
-
-## 2026-10-16 — Unique3D & TripoSG Transformers v5 Compatibility Fix
-
-- **LOAD-01**: Fixed `NameError: name 'load_pipeline' is not defined` in [`backend/adapters/unique3d_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/unique3d_adapter.py#L132-L145): imported `load_pipeline` from `app.custom_models.utils` directly after `self._ensure_unique3d_in_path()` adds Unique3D directories to `sys.path`.
-- **LOAD-02**: Fixed `torchvision_fix not applied: No module named 'utils.torchvision_fix'` warning in [`backend/adapters/unique3d_adapter.py`](file:///workspaces/ForMash3D/backend/adapters/unique3d_adapter.py#L120-L135): resolved `backend/utils/torchvision_fix.py` dynamically via `importlib.util.spec_from_file_location` to prevent namespace collisions with Unique3D's internal `app/utils`.
-- **LOAD-03**: Fixed `cannot import name 'HybridCache' from 'transformers'` breaking `diffusers` & `peft` imports in `Unique3D` and `TripoSG`: added `fix_transformers_cache()` shim in [`backend/utils/torchvision_fix.py`](file:///workspaces/ForMash3D/backend/utils/torchvision_fix.py) dynamically creating `transformers.HybridCache` fallback for Transformers v5 environments, hooked into `ModelFactory.create_model_from_config` and `triposg_adapter.py`.
-- **TEST-01**: Verified TypeScript type contracts (`bun run test`), workspace node test suite (26/26 passing), and generation dependency contract suite (`pytest backend/tests/test_generation_dependency_contract.py`, 5/5 passing).
-
-## 2026-10-16 — Topology Wireframe Crash Fix, Mini Turbo Volume Decoding Acceleration & Immediate Viewport Loading
-
-- **VIEW-06**: Fixed shader switching and topology wireframe renderer crash in `MeshViewer.tsx`. Added `child.userData?.isWireframeOverlay` guard to prevent recursive `group.traverse` duplication and material overwrites. Added full support for `THREE.SkinnedMesh` wireframe overlays (binding `skeleton` and `bindMatrix`) and wrapped the WebGL animation render loop in safe exception handling to prevent any unhandled error boundary crashes.
-- **VIEW-07**: Fixed wireframe overlay geometry double-disposal in `MeshViewer.tsx`: scene clearing now disposes only overlay materials while preserving parent mesh geometry.
-- **PERF-01**: Accelerated Hunyuan3D-DiT-v2-mini-Turbo volume decoding by ~4–8x: raised `num_chunks` default from 20,000 to 80,000, reducing sequential chunk loop iterations from 2,766 down to ~345 on GPU.
-- **GEN-01**: Fixed model ID format mismatch in `features/workspace/utils/buildGenerationParameters.ts` by normalizing IDs (hyphen/underscore agnostic); correctly assigns official `octree_resolution: 380`, `num_inference_steps: 5`, and `num_chunks: 80000`, eliminating backend resolution clamping warnings and generation latency.
-- **GEN-02**: Aligned backend scheduler max quality presets in `backend/core/scheduler/multiprocess_scheduler.py` for Mini Turbo (`octree_resolution: 380`, `num_chunks: 80000`) and enhanced `WorkspaceContext.tsx` to immediately select and load generated meshes in the 3D viewport without indefinite loading spinners.
