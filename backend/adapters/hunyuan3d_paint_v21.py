@@ -23,6 +23,16 @@ from core.utils.mesh_utils import MeshProcessor
 logger = logging.getLogger(__name__)
 
 
+def _format_background_remover_import_error(error: BaseException) -> ImportError:
+    """Build an actionable diagnostic for BackgroundRemover import-time failures."""
+    failing_module = getattr(error, "name", None)
+    module_detail = f" (module: {failing_module})" if failing_module else ""
+    return ImportError(
+        "Unable to import Hunyuan3D-Paint BackgroundRemover: "
+        f"{type(error).__name__}{module_detail}: {error}"
+    )
+
+
 class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
     """
     Adapter for Hunyuan3D-Paint-v2-1 mesh texture painting.
@@ -150,6 +160,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     from hy3dshape.hy3dshape.rembg import BackgroundRemover
                 else:
                     raise
+            except (ImportError, OSError) as err:
+                raise _format_background_remover_import_error(err) from err
 
             max_num_view = 6
             resolution = 512
@@ -231,10 +243,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             return {"paint": self.paint_pipeline, "bg_remover": self.bg_remover}
 
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            logger.error(f"Failed to load Hunyuan3D-Paint-v2-1: {str(e)}")
-            raise Exception(f"Failed to load Hunyuan3D-Paint-v2-1: {str(e)}")
+            logger.exception("Failed to load Hunyuan3D-Paint-v2-1")
+            raise RuntimeError(f"Failed to load Hunyuan3D-Paint-v2-1: {e}") from e
 
     def get_vram_status(self, gpu_id: Optional[int] = None) -> Dict[str, Any]:
         """Return VRAM eligibility status for this model."""
