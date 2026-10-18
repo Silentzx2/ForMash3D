@@ -87,8 +87,9 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
         """Use a safe fallback while explicitly preserving the degraded runtime state."""
         reason = f"{type(error).__name__}: {error}"
         try:
-            from utils.torchvision_fix import SafeBackgroundRemoverFallback
-            self.bg_remover = SafeBackgroundRemoverFallback()
+            from core.utils.runtime_compat import get_backend_torchvision_fix
+            compatibility = get_backend_torchvision_fix()
+            self.bg_remover = compatibility.SafeBackgroundRemoverFallback()
             self.bg_remover_mode = "safe_fallback"
         except Exception as fallback_error:
             class _IdentityBackgroundRemover:
@@ -172,14 +173,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             os.environ["NUMBA_DISABLE_CACHING"] = "1"
             os.environ.setdefault("NUMBA_CACHE_DIR", "/tmp/numba_cache")
             try:
-                try:
-                    from utils.torchvision_fix import apply_fix, fix_numba_caching
-                except ImportError:
-                    from torchvision_fix import apply_fix, fix_numba_caching
-                apply_fix()
-                fix_numba_caching()
-            except (ImportError, Exception) as e:
-                logger.warning(f"torchvision_fix / numba_fix not applied: {e}")
+                from core.utils.runtime_compat import get_backend_torchvision_fix
+                compatibility = get_backend_torchvision_fix()
+                compatibility.apply_fix()
+                compatibility.fix_numba_caching()
+            except Exception as e:
+                logger.warning(
+                    "Backend compatibility/Numba cache fix did not apply during Hunyuan3D-Paint load: %s",
+                    e,
+                    exc_info=True,
+                )
 
             from hy3dpaint.textureGenPipeline import (
                 Hunyuan3DPaintConfig,
@@ -191,11 +194,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 if "cannot cache function" in str(err) or "no locator available" in str(err):
                     logger.warning("Caught Numba cache error importing BackgroundRemover in paint: %s; retrying...", err)
                     try:
-                        try:
-                            from utils.torchvision_fix import fix_numba_caching
-                        except ImportError:
-                            from torchvision_fix import fix_numba_caching
-                        fix_numba_caching()
+                        from core.utils.runtime_compat import get_backend_torchvision_fix
+                        get_backend_torchvision_fix().fix_numba_caching()
                     except Exception:
                         pass
                     # Retain shared module-cache entries; don't duplicate live classes during retry.
@@ -251,11 +251,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                         err,
                     )
                     try:
-                        try:
-                            from utils.torchvision_fix import fix_numba_caching
-                        except ImportError:
-                            from torchvision_fix import fix_numba_caching
-                        fix_numba_caching()
+                        from core.utils.runtime_compat import get_backend_torchvision_fix
+                        get_backend_torchvision_fix().fix_numba_caching()
                     except Exception:
                         logger.debug("Numba cache patch could not be reapplied", exc_info=True)
                     # Retain shared module-cache entries; don't duplicate live classes during retry.

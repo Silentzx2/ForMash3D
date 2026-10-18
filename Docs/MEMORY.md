@@ -1,3 +1,10 @@
+## 2026-10-18 — Hunyuan Helper Isolation & Verified CPU CI
+
+- Hunyuan3D-Paint adapter-level imports for `SafeBackgroundRemoverFallback`, `apply_fix`, and `fix_numba_caching` now use `get_backend_torchvision_fix()` instead of generic `utils.torchvision_fix` or bare `torchvision_fix` imports. This avoids a cached module from the Hunyuan Shape/Paint namespace being used for adapter-owned fallback logic.
+- Updated the degraded-background-removal test mock for the canonical loader and added a source contract that rejects generic compatibility-helper imports in the Paint adapter.
+- **Verified:** GitHub Actions at commit `60691f5a13ce6831ec7dea17dcbb4476409df4ea` completed successfully: Python source compilation passed and all 12 backend compatibility-contract tests passed; frontend CI also succeeded. This is CPU/import-contract validation, not a GPU/checkpoint inference smoke test.
+- Requirements .txt files and mesh-generation adapters remain untouched. The third-party source's own generic `from utils.*` import statements and catch-all DINO exception fallback still require authorized write access to `ForMash3D-ThirdParty` for a complete source-level fix.
+
 ## 2026-10-18 — Canonical Compatibility Helper Resolution
 
 - Added `core.utils.runtime_compat.get_backend_torchvision_fix()`, which loads `backend/utils/torchvision_fix.py` by canonical file path and caches it under a private module name.

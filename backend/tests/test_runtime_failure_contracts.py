@@ -82,9 +82,12 @@ def test_hunyuan_background_removal_fallback_is_marked_degraded(monkeypatch):
         def __call__(self, image):
             return image
 
-    fallback_module = types.ModuleType("utils.torchvision_fix")
-    fallback_module.SafeBackgroundRemoverFallback = SafeFallback
-    monkeypatch.setitem(sys.modules, "utils.torchvision_fix", fallback_module)
+    import core.utils.runtime_compat as runtime_compat
+    monkeypatch.setattr(
+        runtime_compat,
+        "get_backend_torchvision_fix",
+        lambda: types.SimpleNamespace(SafeBackgroundRemoverFallback=SafeFallback),
+    )
 
     state = types.SimpleNamespace()
     Hunyuan3DPaintV21ImageMeshPaintingAdapter._use_safe_background_remover(

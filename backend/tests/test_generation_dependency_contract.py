@@ -217,3 +217,8 @@ def test_model_factory_uses_the_main_backend_compatibility_helper():
     assert "from utils.torchvision_fix import apply_fix" not in factory
     assert "get_backend_torchvision_fix().apply_fix()" in unirig
 
+    paint = (BACKEND / "adapters" / "hunyuan3d_paint_v21.py").read_text(encoding="utf-8")
+    assert "get_backend_torchvision_fix().fix_numba_caching()" in paint
+    assert "from utils.torchvision_fix import" not in paint
+    assert "from torchvision_fix import" not in paint
+
