@@ -26,6 +26,14 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 
 ### Hunyuan Runtime Loading & Shared Dependencies
+
+### Runtime failure and readiness contracts
+- BaseModel.process preserves ERROR after a failed request; only a successful request returns the model state to LOADED.
+- UniRig import failures report the actual exception type/message and missing module when available. Blender bpy is described as the cause only when the original exception supports that diagnosis.
+- Paint3D initialization imports both child-stage entry-point graphs in a fresh subprocess using the production interpreter, working directory, PYTHONPATH, and GPU visibility before marking the runtime ready.
+- Paint3D validates finite per-vertex UV coordinates after the unwrap attempt. If automatic unwrap fails and UVs are invalid, the request stops at mesh preparation with the original cause rather than failing later in texturing.
+- Hunyuan3D-Paint reports BackgroundRemover import-time ImportError and native-library OSError with their chained cause; model-load failures retain traceback context.
+
 - The Python 3.10 / PyTorch 2.6 + CUDA 12.4 environment pins `transformers==4.48.3` to satisfy Mini Turbo's upstream minimum and PEFT's `HybridCache` import; `diffusers==0.30.3` remains unchanged.
 - Shape imports `hy3dshape.pipelines` and `hy3dshape.rembg` from the vendored package root. Mini resolves its vendored `hy3dgen` root before importing and validates both source files and the checkpoint subfolder.
 - Model adapters log chained initialization exceptions; the multiprocess worker stores the full traceback in backend logs and returns a concise initialization summary to the client.
