@@ -660,3 +660,9 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Fixed the remaining advanced UI fallback labels that presented 50K for a native target; new workspace defaults disable automatic LOD generation in Native/Raw mode.
 - Added regression coverage for API target precedence, model-manifest/profile parity, Native/Raw optimize/remesh incompatibility, and the expanded telemetry contract.
 - **Validation status:** source-level contracts inspected; test/typecheck/format suites and CUDA A/B benchmarks have not been run in this environment. Do not claim them as passing. `Docs/TASKS.md` intentionally preserved byte-for-byte under the existing instruction; implementation and validation status is tracked in `Docs/MESH_QUALITY_IMPLEMENTATION_REPORT.md`.
+
+
+### 2026-10-18 — Explicit Hunyuan3D-Paint Source Resolution
+- Added a shared resolver in the third-party Hunyuan Paint source to distinguish existing local directories from Hugging Face repository IDs.
+- Missing absolute paths, incomplete DINOv2 checkpoints, and local Paint directories without `model_index.json` now fail clearly rather than silently switching to a default remote model.
+- Added dependency-light resolver tests and wired them into backend CI through the pinned third-party submodule. No requirements files or mesh-generation algorithms changed.

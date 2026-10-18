@@ -2,7 +2,7 @@ name: Backend Runtime Contract CI
 
 on:
   push:
-    branches: [dev]
+    branches: [main, dev]
   pull_request:
     branches: [dev]
   workflow_dispatch:
@@ -36,4 +36,4 @@ jobs:
       - name: Run backend compatibility contracts
         env:
           PYTHONPATH: backend
-        run: python -m pytest -q backend/tests/test_generation_dependency_contract.py
+        run: python -m pytest -q backend/tests/test_generation_dependency_contract.py backend/thirdparty/hunyuan3d-paint-v2-1/tests/test_runtime_path_utils.py

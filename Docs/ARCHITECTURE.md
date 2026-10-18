@@ -720,3 +720,11 @@ The Next.js 16 Presentation Layer unifies all creation, editing, retopology, rig
 - **Watertight 3D Print Preservation**:
   - AutoRetopo conditional shell reconstruction respects already-closed geometry (`watertight=not bool(repaired_topology.get("watertight", False))`), using the source surface directly for closed meshes to avoid rounding sharp edges with voxel shells.
   - The `3d_print` smart preset configures `target_polycount: 0`, guaranteeing 100% passthrough in `run_optimize()` without decimation artifacts, preserving strict manifold geometry for 3D slicing and additive manufacturing.
+
+
+## Hunyuan3D-Paint Runtime Source Contract (2026-10-18)
+
+- The third-party Paint runtime resolves a blank model source to its documented default Hugging Face repository.
+- Existing local checkpoint directories are preferred; a local Paint pipeline must include `model_index.json`, and a local DINOv2 checkpoint must include `config.json` plus model weights.
+- A missing absolute path or incomplete local checkpoint fails with an actionable diagnostic instead of silently switching to an unrelated remote model. Explicit Hugging Face repository IDs remain supported.
+- Dependency-light source-resolution regression tests run from the third-party submodule in backend CI. GPU checkpoint loading/inference still requires the supported GPU environment.
