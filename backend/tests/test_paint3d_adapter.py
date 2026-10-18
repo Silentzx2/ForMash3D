@@ -148,5 +148,70 @@ def test_paint3d_prepare_job_mesh_applies_scene_transforms(tmp_path):
     assert x_extent >= 10.0, f"Expected X extent >= 10.0 with transforms applied, got {x_extent}"
 
 
+
+def test_paint3d_load_preflights_both_child_stages(tmp_path, monkeypatch):
+    import adapters.paint3d_adapter as paint3d_module
+    from types import SimpleNamespace
+
+    (tmp_path / "pipeline_paint3d_stage1.py").write_text("# stage one import fixture\n")
+    (tmp_path / "pipeline_paint3d_stage2.py").write_text("# stage two import fixture\n")
+    adapter = Paint3DAdapter(vram_requirement=12000, paint3d_root=str(tmp_path))
+    monkeypatch.setattr(paint3d_module.torch.cuda, "is_available", lambda: True)
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(paint3d_module.subprocess, "run", fake_run)
+    result = adapter._load_model()
+
+    assert result["model_id"] == "paint3d"
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command[0] == paint3d_module.sys.executable
+    assert "pipeline_paint3d_stage1" in command[2]
+    assert "pipeline_paint3d_stage2" in command[2]
+    assert kwargs["cwd"] == str(tmp_path)
+    assert kwargs["env"]["PYTHONPATH"].startswith(str(tmp_path))
+
+
+def test_paint3d_load_fails_if_child_stage_import_fails(tmp_path, monkeypatch):
+    import adapters.paint3d_adapter as paint3d_module
+    from types import SimpleNamespace
+
+    (tmp_path / "pipeline_paint3d_stage1.py").write_text("# stage one import fixture\n")
+    (tmp_path / "pipeline_paint3d_stage2.py").write_text("# stage two import fixture\n")
+    adapter = Paint3DAdapter(vram_requirement=12000, paint3d_root=str(tmp_path))
+    monkeypatch.setattr(paint3d_module.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        paint3d_module.subprocess,
+        "run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=1,
+            stdout="ModuleNotFoundError: No module named 'paint3d'",
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="child-stage import preflight failed") as exc:
+        adapter._load_model()
+    assert "ModuleNotFoundError" in str(exc.value)
+
+
+def test_paint3d_prepare_job_mesh_fails_when_uv_unwrap_fails(tmp_path, monkeypatch):
+    import trimesh
+
+    mesh_path = tmp_path / "no_uv.glb"
+    trimesh.creation.box().export(str(mesh_path))
+    job_dir = tmp_path / "job"
+    job_dir.mkdir()
+    monkeypatch.setitem(sys.modules, "xatlas", None)
+
+    adapter = Paint3DAdapter(vram_requirement=12000)
+    with pytest.raises(RuntimeError, match="requires finite per-vertex UV coordinates"):
+        adapter._prepare_job_mesh(mesh_path, job_dir)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
