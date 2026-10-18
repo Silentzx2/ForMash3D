@@ -71,6 +71,18 @@ except ImportError as e:
     get_tokenizer = None
     TokenizerConfig = None
 
+def _format_unirig_import_error(error: ImportError) -> str:
+    """Describe the real UniRig import failure without guessing that bpy caused it."""
+    missing_module = getattr(error, "name", None)
+    missing_detail = f" (missing module: {missing_module})" if missing_module else ""
+    return (
+        "UniRig import preflight failed under thirdparty/UniRig/src: "
+        f"{type(error).__name__}: {error}{missing_detail}. "
+        "Blender's 'bpy' module may be required for mesh import/FBX export, but it is "
+        "not identified as the cause unless the underlying exception names it."
+    )
+
+
 CONFIG_PREFIX = "thirdparty/UniRig"
 if hasattr(torch.serialization, "add_safe_globals"):
     try:
@@ -274,11 +286,7 @@ class UniRigInferenceEngine:
     def __init__(self, config: Optional[InferenceConfig] = None):
         if _unirig_import_error is not None:
             raise ImportError(
-                f"UniRig data modules under thirdparty/UniRig/src failed to import ({_unirig_import_error}). "
-                "They require Blender's 'bpy' module (see backend/thirdparty/UniRig/requirements.txt: "
-                "bpy==4.0) for mesh import and FBX export, which is missing from this Python "
-                "environment. Install a bpy build compatible with this interpreter (Python 3.10 -> "
-                "bpy 4.0.x) or run the worker with a Blender-enabled Python."
+                _format_unirig_import_error(_unirig_import_error)
             ) from _unirig_import_error
 
         self.config = config or InferenceConfig()
