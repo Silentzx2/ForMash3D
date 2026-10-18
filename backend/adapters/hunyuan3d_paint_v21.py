@@ -58,6 +58,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             )
         if model_id is None:
             model_id = self.MODEL_ID
+        self._model_path_was_explicit = model_path is not None
         if model_path is None:
             model_path = str(Path(__file__).resolve().parents[1] / "pretrained" / "tencent" / "Hunyuan3D-2.1")
         if hunyuan3d_root is None:
@@ -216,14 +217,26 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 self.hunyuan3d_root / "hy3dpaint/hunyuanpaintpbr"
             )
             paint_pbr_sub = self.model_path / "hunyuan3d-paintpbr-v2-1"
-            if paint_pbr_sub.is_dir():
+            if self._model_path_was_explicit:
+                # Respect an explicitly configured local path or Hugging Face repo ID.
+                # The third-party resolver raises on missing/invalid local paths instead
+                # of silently replacing the user's source with a different remote model.
+                from hy3dpaint.utils.runtime_path_utils import resolve_model_source
+
+                _source_kind, source_value = resolve_model_source(
+                    self.model_path,
+                    default_repo_id="tencent/Hunyuan3D-2.1",
+                    nested_dir="hunyuan3d-paintpbr-v2-1",
+                )
+                conf.multiview_pretrained_path = source_value
+            elif paint_pbr_sub.is_dir():
                 conf.multiview_pretrained_path = str(paint_pbr_sub)
             elif self.model_path.is_dir():
                 conf.multiview_pretrained_path = str(self.model_path)
             else:
                 logger.warning(
-                    "Configured local Hunyuan3D-Paint checkpoint path %s (including %s) was not found; "
-                    "falling back to remote repository tencent/Hunyuan3D-2.1. This fallback may require network access.",
+                    "Default local Hunyuan3D-Paint checkpoint path %s (including %s) was not found; "
+                    "using the documented remote repository tencent/Hunyuan3D-2.1.",
                     self.model_path, paint_pbr_sub,
                 )
                 conf.multiview_pretrained_path = "tencent/Hunyuan3D-2.1"
