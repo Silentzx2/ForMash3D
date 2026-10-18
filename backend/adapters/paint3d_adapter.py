@@ -144,7 +144,9 @@ class Paint3DAdapter(ImageToMeshModel):
         target_device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
         self.device = target_device
 
-        logger.info(f"Paint3D initialized on device {self.device}")
+        # Validate the exact child-process import graph used by real Paint3D jobs.
+        self._preflight_stage_imports()
+        logger.info(f"Paint3D runtime import preflight passed on device {self.device}")
         self.status = ModelStatus.LOADED
         return {
             "model_id": self.model_id,
@@ -152,6 +154,69 @@ class Paint3DAdapter(ImageToMeshModel):
             "model_path": str(self.model_path),
             "device": self.device,
         }
+
+
+    def _preflight_stage_imports(self) -> None:
+        """Import both entry-point graphs in the same isolated environment used for jobs."""
+        stage_names = ("pipeline_paint3d_stage1", "pipeline_paint3d_stage2")
+        missing = [
+            str(self.paint3d_root / f"{name}.py")
+            for name in stage_names
+            if not (self.paint3d_root / f"{name}.py").is_file()
+        ]
+        if missing:
+            raise FileNotFoundError(
+                "Paint3D stage entrypoint(s) missing: " + ", ".join(missing)
+            )
+
+        env = os.environ.copy()
+        env["CUDA_VISIBLE_DEVICES"] = str(self.gpu_id if self.gpu_id is not None else "0")
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            f"{self.paint3d_root}{os.pathsep}{existing_pythonpath}"
+            if existing_pythonpath
+            else str(self.paint3d_root)
+        )
+        import_script = (
+            "import importlib.util, pathlib, sys\\n"
+            "for name in ('pipeline_paint3d_stage1', 'pipeline_paint3d_stage2'):\\n"
+            "    path = pathlib.Path(name + '.py')\\n"
+            "    spec = importlib.util.spec_from_file_location(name, path)\\n"
+            "    if spec is None or spec.loader is None:\\n"
+            "        raise ImportError(f'Cannot create import spec for {path}')\\n"
+            "    module = importlib.util.module_from_spec(spec)\\n"
+            "    sys.modules[name] = module\\n"
+            "    try:\\n"
+            "        spec.loader.exec_module(module)\\n"
+            "    finally:\\n"
+            "        sys.modules.pop(name, None)\\n"
+        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", import_script],
+                cwd=str(self.paint3d_root),
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TimeoutError(
+                f"Paint3D child-stage import preflight timed out after 120s "
+                f"using {sys.executable}"
+            ) from exc
+
+        if result.returncode != 0:
+            output = (result.stdout or "")[-6000:]
+            raise RuntimeError(
+                "Paint3D child-stage import preflight failed "
+                f"(exit={result.returncode}, python={sys.executable}, "
+                f"cwd={self.paint3d_root}). Child output:\\n{output}"
+            )
 
     def _unload_model(self) -> None:
         """Unload model resources and clear GPU cache."""
@@ -274,6 +339,7 @@ class Paint3DAdapter(ImageToMeshModel):
 
         # Check for UV coordinates, unwrap if missing
         has_uv = hasattr(mesh.visual, "uv") and mesh.visual.uv is not None and len(mesh.visual.uv) > 0
+        uv_error = None
         if not has_uv:
             logger.info("Mesh lacks UV coordinates; unwrapping using xatlas/trimesh...")
             try:
@@ -298,9 +364,23 @@ class Paint3DAdapter(ImageToMeshModel):
                     process=False,
                 )
             except Exception as uv_err:
-                logger.warning(
-                    f"Automatic UV unwrapping via xatlas had an issue: {uv_err}; proceeding with default mesh."
-                )
+                uv_error = uv_err
+                logger.warning("Automatic UV unwrapping via xatlas failed: %s", uv_err, exc_info=True)
+
+        uv = getattr(getattr(mesh, "visual", None), "uv", None)
+        uv_array = np.asarray(uv) if uv is not None else None
+        valid_uv = (
+            uv_array is not None
+            and uv_array.ndim == 2
+            and uv_array.shape[1] >= 2
+            and len(uv_array) == len(mesh.vertices)
+            and np.isfinite(uv_array).all()
+        )
+        if not valid_uv:
+            message = "Paint3D requires finite per-vertex UV coordinates before texturing."
+            if uv_error is not None:
+                raise RuntimeError(f"{message} Automatic unwrap failed: {uv_error}") from uv_error
+            raise RuntimeError(message)
 
         mesh.export(str(target_obj))
         return target_obj
