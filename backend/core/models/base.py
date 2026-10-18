@@ -159,7 +159,6 @@ class BaseModel(ABC):
             if progress_callback:
                 inputs = {**inputs, "progress_callback": progress_callback}
             result = self._process_request(inputs)
-            succeeded = True
             elapsed = time.time() - start_time
             memory = ""
             if (torch is not None and torch.cuda.is_available()) and self.gpu_id is not None:
@@ -173,6 +172,7 @@ class BaseModel(ABC):
                 f"[MODEL INFERENCE SUCCESS] model={self.model_id} "
                 f"elapsed={elapsed:.2f}s{memory}"
             )
+            succeeded = True
             return result
         except Exception as e:
             self.status = ModelStatus.ERROR
