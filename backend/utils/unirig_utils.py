@@ -8,8 +8,11 @@ inference runs, eliminating the overhead of repeated checkpoint loading.
 
 import logging
 import os
+import shutil
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
@@ -416,6 +419,7 @@ class UniRigInferenceEngine:
         predict_dataloader = data_module.predict_dataloader()
 
         # Setup writer
+        # Setup writer
         writer_config = loaded_system.writer_config.copy()
         writer_config["npz_dir"] = self.config.cache_dir
         writer_config["output_dir"] = output_dir
@@ -425,6 +429,11 @@ class UniRigInferenceEngine:
         writer_config["user_mode"] = (
             True  # Always use user mode for inference, which DOES NOT produce the .npz data
         )
+
+        if output_filename:
+            os.makedirs(os.path.dirname(os.path.abspath(output_filename)), exist_ok=True)
+        if output_dir:
+            os.makedirs(os.path.abspath(output_dir), exist_ok=True)
 
         writer = get_writer(
             **writer_config, order_config=predict_transform_config.order_config
@@ -462,8 +471,23 @@ class UniRigInferenceEngine:
         # Finalize writer
         # writer.on_predict_end(trainer=None, pl_module=loaded_system.system)
 
-        # Return the output path
+        # Return the output path and verify file resolution
         if output_filename:
+            if not os.path.isfile(output_filename):
+                # Search for alternative written files in output_dir or cache_dir
+                search_dirs = [d for d in [output_dir, self.config.cache_dir] if d and os.path.isdir(d)]
+                candidate = None
+                for d in search_dirs:
+                    fbx_files = [
+                        os.path.join(d, f)
+                        for f in os.listdir(d)
+                        if f.endswith(".fbx") and os.path.isfile(os.path.join(d, f))
+                    ]
+                    if fbx_files:
+                        candidate = max(fbx_files, key=os.path.getmtime)
+                        break
+                if candidate and candidate != output_filename:
+                    shutil.copy2(candidate, output_filename)
             return output_filename
         else:
             return output_dir
@@ -594,7 +618,7 @@ class UniRigInferenceEngine:
         Run the complete rigging pipeline: skeleton generation -> skin weights generation
 
         Args:
-            input_path: Path to input FBX file
+            input_path: Path to input 3D model file
             output_dir: Directory to save output files
             output_filename: Specific output filename
             **kwargs: Additional configuration overrides
@@ -604,23 +628,81 @@ class UniRigInferenceEngine:
         """
         self.logger.info("Starting full rigging pipeline")
 
-        # Step 1: Generate skeleton (preprocesses input FBX internally)
+        # Determine target final output path
+        if output_filename:
+            final_output_path = (
+                output_filename
+                if os.path.isabs(output_filename)
+                else os.path.join(output_dir, output_filename)
+            )
+        else:
+            final_output_path = os.path.join(output_dir, "rigged.fbx")
+
+        os.makedirs(os.path.dirname(os.path.abspath(final_output_path)), exist_ok=True)
+        os.makedirs(self.config.cache_dir, exist_ok=True)
+
+        # Intermediate skeleton path in cache_dir so it has an isolated temp location
+        file_stem = Path(input_path).stem
+        temp_skeleton_filename = f"{file_stem}_skeleton_{uuid.uuid4().hex[:8]}.fbx"
+        temp_skeleton_path = os.path.join(self.config.cache_dir, temp_skeleton_filename)
+
+        # Step 1: Generate skeleton (preprocesses input FBX/GLB internally)
+        self.logger.info(f"Step 1: Generating skeleton for input: {input_path}")
         skeleton_result = self.generate_skeleton(
             input_path=input_path,
             output_dir=self.config.cache_dir,
-            output_filename=output_filename,
+            output_filename=temp_skeleton_path,
             **kwargs,
         )
 
+        # Ensure skeleton output exists
+        if not os.path.isfile(skeleton_result):
+            # Check if writer saved under another name in cache_dir
+            candidates = [
+                os.path.join(self.config.cache_dir, f)
+                for f in os.listdir(self.config.cache_dir)
+                if f.endswith(".fbx") and os.path.isfile(os.path.join(self.config.cache_dir, f))
+            ]
+            if candidates:
+                latest = max(candidates, key=os.path.getmtime)
+                shutil.copy2(latest, temp_skeleton_path)
+                skeleton_result = temp_skeleton_path
+            else:
+                raise RuntimeError(
+                    f"UniRig skeleton generation failed: intermediate skeleton file not found at {skeleton_result}"
+                )
+
+        self.logger.info(f"Skeleton generated successfully at: {skeleton_result}")
+
         # Step 2: Generate skin weights using skeleton output (preprocesses skeleton FBX internally)
+        self.logger.info(f"Step 2: Generating skin weights for skeleton: {skeleton_result}")
         skin_result = self.generate_skin_weights(
             input_path=skeleton_result,
             output_dir=output_dir,
-            output_filename=skeleton_result,
+            output_filename=final_output_path,
             **kwargs,
         )
 
-        self.logger.info("Full rigging pipeline completed")
+        # Verify skin result exists
+        if not os.path.isfile(skin_result):
+            if os.path.isfile(final_output_path):
+                skin_result = final_output_path
+            else:
+                candidates = [
+                    os.path.join(output_dir, f)
+                    for f in os.listdir(output_dir)
+                    if f.endswith(".fbx") and os.path.isfile(os.path.join(output_dir, f))
+                ]
+                if candidates:
+                    latest = max(candidates, key=os.path.getmtime)
+                    shutil.copy2(latest, final_output_path)
+                    skin_result = final_output_path
+                else:
+                    raise RuntimeError(
+                        f"UniRig skin weights generation failed: final rigged file not found at {final_output_path}"
+                    )
+
+        self.logger.info(f"Full rigging pipeline completed successfully: {skin_result}")
         return skin_result
 
     def clear_cache(self):

@@ -156,9 +156,47 @@ class UniRigAdapter(AutoRigModel):
             if "mesh_path" not in inputs:
                 raise ValueError("mesh_path is required for auto-rigging")
 
-            mesh_path = Path(inputs["mesh_path"])
-            if not mesh_path.exists():
-                raise FileNotFoundError(f"Input mesh file not found: {mesh_path}")
+            mesh_path = Path(inputs["mesh_path"]).resolve()
+            if mesh_path.is_dir():
+                candidate = None
+                for sub in [
+                    mesh_path / "game_ready" / "game_ready.fbx",
+                    mesh_path / "game_ready" / "game_ready.glb",
+                    mesh_path / "master" / "source.fbx",
+                    mesh_path / "master" / "source.glb",
+                    mesh_path / "source.fbx",
+                    mesh_path / "source.glb",
+                ]:
+                    if sub.is_file():
+                        candidate = sub
+                        break
+                if candidate is None:
+                    all_fbx = sorted(mesh_path.rglob("*.fbx"))
+                    all_glb = sorted(mesh_path.rglob("*.glb"))
+                    if all_fbx:
+                        candidate = all_fbx[0]
+                    elif all_glb:
+                        candidate = all_glb[0]
+                if candidate:
+                    logger.info(f"Resolved mesh directory {mesh_path} to file: {candidate}")
+                    mesh_path = candidate
+                else:
+                    raise FileNotFoundError(f"No valid 3D mesh (.glb or .fbx) found in directory: {mesh_path}")
+            elif not mesh_path.is_file():
+                for alt_ext in [".glb", ".fbx", ".obj"]:
+                    alt_path = mesh_path.with_suffix(alt_ext)
+                    if alt_path.is_file():
+                        mesh_path = alt_path
+                        break
+                if not mesh_path.is_file():
+                    raise FileNotFoundError(f"Input mesh file not found: {mesh_path}")
+
+            # If input is a GLB, prefer companion FBX if it exists in the same folder
+            if mesh_path.suffix.lower() == ".glb":
+                companion_fbx = mesh_path.with_suffix(".fbx")
+                if companion_fbx.is_file():
+                    logger.info(f"Using companion FBX file for rigging: {companion_fbx}")
+                    mesh_path = companion_fbx
 
             # Extract parameters
             rig_mode = inputs.get("rig_mode", "full")
@@ -198,16 +236,13 @@ class UniRigAdapter(AutoRigModel):
 
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / "rigged.fbx"
-            output_filename = output_path.name
 
             if rig_mode == "skeleton":
                 # NOTE: using await here will make blender context incorrect
                 result_path = self.inference_engine.generate_skeleton(
                     str(mesh_path),
                     str(output_dir),
-                    os.path.join(
-                        str(output_dir), output_filename
-                    ),  # notice that this should ACTUALLY be output_path
+                    str(output_path),
                     skeleton_config,
                 )
                 has_skinning = False
@@ -216,7 +251,7 @@ class UniRigAdapter(AutoRigModel):
                 result_path = self.inference_engine.generate_skin_weights(
                     str(mesh_path),
                     str(output_dir),
-                    os.path.join(str(output_dir), output_filename),
+                    str(output_path),
                     skin_config,
                 )
                 has_skinning = True
@@ -225,7 +260,7 @@ class UniRigAdapter(AutoRigModel):
                 result_path = self.inference_engine.full_pipeline(
                     str(mesh_path),
                     str(output_dir),
-                    os.path.join(str(output_dir), output_filename),
+                    str(output_path),
                 )
                 has_skinning = with_skinning
 
