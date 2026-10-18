@@ -161,10 +161,19 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             conf.custom_pipeline = str(
                 self.hunyuan3d_root / "hy3dpaint/hunyuanpaintpbr"
             )
-            conf.multiview_pretrained_path = str(self.model_path)
-            conf.dino_ckpt_path = str(
-                self.model_path / ".." / ".." / "dinov2-giant"
-            )
+            paint_pbr_sub = self.model_path / "hunyuan3d-paintpbr-v2-1"
+            if paint_pbr_sub.is_dir():
+                conf.multiview_pretrained_path = str(paint_pbr_sub)
+            elif self.model_path.is_dir():
+                conf.multiview_pretrained_path = str(self.model_path)
+            else:
+                conf.multiview_pretrained_path = "tencent/Hunyuan3D-2.1"
+
+            dino_local = (self.model_path / ".." / ".." / "dinov2-giant").resolve()
+            if dino_local.is_dir() and (dino_local / "config.json").is_file():
+                conf.dino_ckpt_path = str(dino_local)
+            else:
+                conf.dino_ckpt_path = "facebook/dinov2-giant"
             conf.realesrgan_ckpt_path = self._resolve_realesrgan_path()
 
             try:
