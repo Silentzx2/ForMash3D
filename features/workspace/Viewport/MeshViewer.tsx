@@ -2470,7 +2470,11 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const isAnimPlaying = animState.isPlaying;
       const physicsActive = physicsRuntimeRef.current?.isRunning() ?? false;
       if (physicsActive) {
-        physicsRuntimeRef.current?.tick(delta);
+        try {
+          physicsRuntimeRef.current?.tick(delta);
+        } catch (err) {
+          console.warn('[MeshViewer] Physics tick error suppressed:', err);
+        }
         if (keyLightRef.current) keyLightRef.current.shadow.needsUpdate = true;
       }
       const animationActive = Boolean(mixerRef.current) || isAnimPlaying || physicsActive;
@@ -2572,7 +2576,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       }
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-      physicsRuntimeRef.current?.dispose();
+      try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
       physicsRuntimeRef.current = null;
       transformControls.dispose();
       controls.dispose();
@@ -2613,7 +2617,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
   // Rebind physics only after the current asset has actually finished loading.
   useEffect(() => {
-    physicsRuntimeRef.current?.dispose();
+    try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
     physicsRuntimeRef.current = null;
     setPhysicsRunning(false);
     setPhysicsStatus(null);
@@ -2622,7 +2626,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
   useEffect(() => {
     if (!isLoading) return;
-    physicsRuntimeRef.current?.dispose();
+    try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
     physicsRuntimeRef.current = null;
     setPhysicsRunning(false);
     setPhysicsStatus(null);
@@ -2652,8 +2656,6 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       const body = metadata.body || {};
       const material = metadata.material || {};
       const runtime = new PhysicsRuntime();
-      physicsRuntimeRef.current?.dispose();
-      physicsRuntimeRef.current = runtime;
 
       try {
         await runtime.init(scene, group, collisionUrl, {
@@ -2669,13 +2671,15 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
           gravityEnabled: Boolean(body.gravity_enabled ?? true),
         });
         if (cancelled) {
-          runtime.dispose();
+          try { runtime.dispose(); } catch (_) {}
           return;
         }
+        try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
+        physicsRuntimeRef.current = runtime;
         runtime.setDebugVisibility(physicsDebug);
         setPhysicsStatus('Physics ready — rigid-body preview');
       } catch (error) {
-        runtime.dispose();
+        try { runtime.dispose(); } catch (_) {}
         if (physicsRuntimeRef.current === runtime) physicsRuntimeRef.current = null;
         if (!cancelled) setPhysicsStatus(error instanceof Error ? error.message : 'Physics preview initialization failed');
       }
@@ -3481,13 +3485,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         angularDamping: 0.08,
         gravityEnabled: true,
       });
-      physicsRuntimeRef.current?.dispose();
+      try { physicsRuntimeRef.current?.dispose(); } catch (_) {}
       physicsRuntimeRef.current = runtime;
       setPhysicsStatus('Quick physics ready — bounds-based smoke test');
       runtime.applyTest('drop');
       setPhysicsRunning(true);
     } catch (error) {
-      runtime.dispose();
+      try { runtime.dispose(); } catch (_) {}
+      if (physicsRuntimeRef.current === runtime) physicsRuntimeRef.current = null;
       setPhysicsStatus(error instanceof Error ? 'Physics test failed: ' + error.message : 'Physics test failed.');
       setPhysicsRunning(false);
     }
@@ -4438,24 +4443,38 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                 <>
                   <button type="button" disabled={!physicsViewerReady}
                     onClick={() => {
-                      const runtime = physicsRuntimeRef.current;
-                      if (!runtime?.isReady()) return;
-                      const running = !runtime.isRunning();
-                      runtime.setRunning(running);
-                      setPhysicsRunning(running);
+                      try {
+                        const runtime = physicsRuntimeRef.current;
+                        if (!runtime?.isReady()) return;
+                        const running = !runtime.isRunning();
+                        runtime.setRunning(running);
+                        setPhysicsRunning(running);
+                      } catch (err) {
+                        console.warn('[MeshViewer] Physics toggle error:', err);
+                      }
                     }}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
                   >{physicsRunning ? 'Pause' : 'Play'}</button>
                   <button type="button" disabled={!physicsViewerReady}
-                    onClick={() => physicsRuntimeRef.current?.isReady() && physicsRuntimeRef.current.step()}
+                    onClick={() => {
+                      try {
+                        if (physicsRuntimeRef.current?.isReady()) physicsRuntimeRef.current.step();
+                      } catch (err) {
+                        console.warn('[MeshViewer] Physics step error:', err);
+                      }
+                    }}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
                   >Step</button>
                   <button type="button" disabled={!physicsViewerReady}
                     onClick={() => {
-                      const runtime = physicsRuntimeRef.current;
-                      if (!runtime?.isReady()) return;
-                      runtime.reset();
-                      setPhysicsRunning(false);
+                      try {
+                        const runtime = physicsRuntimeRef.current;
+                        if (!runtime?.isReady()) return;
+                        runtime.reset();
+                        setPhysicsRunning(false);
+                      } catch (err) {
+                        console.warn('[MeshViewer] Physics reset error:', err);
+                      }
                     }}
                     className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-[10px] text-zinc-200 border border-white/[0.08] disabled:opacity-40 disabled:cursor-not-allowed"
                   >Reset</button>
@@ -4466,10 +4485,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                   {(['drop', 'bounce', 'slide', 'spin'] as const).map(test => (
                     <button key={test} type="button" disabled={!physicsViewerReady}
                       onClick={() => {
-                        const runtime = physicsRuntimeRef.current;
-                        if (!runtime?.isReady()) return;
-                        runtime.applyTest(test);
-                        setPhysicsRunning(true);
+                        try {
+                          const runtime = physicsRuntimeRef.current;
+                          if (!runtime?.isReady()) return;
+                          runtime.applyTest(test);
+                          setPhysicsRunning(true);
+                        } catch (err) {
+                          console.warn('[MeshViewer] Physics applyTest error:', err);
+                        }
                       }}
                       className="px-2 py-1.5 rounded-lg bg-[hsl(var(--surface-2))] text-zinc-300 border border-white/[0.08] text-[10px] capitalize disabled:opacity-40 disabled:cursor-not-allowed"
                     >{test}</button>

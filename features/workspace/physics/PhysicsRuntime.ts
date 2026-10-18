@@ -45,27 +45,38 @@ export class PhysicsRuntime {
     config: PhysicsRuntimeConfig,
   ): Promise<void> {
     this.dispose();
-    this.scene = scene;
-    this.sourceVisual = sourceVisual;
 
     const rapier = await import('@dimforge/rapier3d-compat');
     await rapier.init();
     this.rapier = rapier;
 
+    // Load collision geometry first before creating any physics world
+    const collision = await loader.loadAsync(collisionUrl);
+
+    this.scene = scene;
+    this.sourceVisual = sourceVisual;
+
     const gravity = config.gravityEnabled ? { x: 0, y: -9.81, z: 0 } : { x: 0, y: 0, z: 0 };
     this.world = new rapier.World(gravity);
 
-    const collision = await loader.loadAsync(collisionUrl);
+    sourceVisual.updateMatrixWorld(true);
     const sourceBox = new THREE.Box3().setFromObject(sourceVisual);
-    const floorY = sourceBox.min.y - 0.02;
+    const size = sourceBox.getSize(new THREE.Vector3());
+    const center = sourceBox.getCenter(new THREE.Vector3());
 
-    const floorDesc = rapier.ColliderDesc.cuboid(
-      Math.max(5, sourceBox.getSize(new THREE.Vector3()).x * 4),
-      0.05,
-      Math.max(5, sourceBox.getSize(new THREE.Vector3()).z * 4),
-    );
-    floorDesc.setTranslation(sourceBox.getCenter(new THREE.Vector3()).x, floorY, sourceBox.getCenter(new THREE.Vector3()).z);
-    this.floor = this.world.createCollider(floorDesc);
+    const floorSizeX = Number.isFinite(size.x) ? Math.max(5, size.x * 4) : 10;
+    const floorSizeZ = Number.isFinite(size.z) ? Math.max(5, size.z * 4) : 10;
+    const floorCenterX = Number.isFinite(center.x) ? center.x : 0;
+    const floorCenterZ = Number.isFinite(center.z) ? center.z : 0;
+    const floorY = Number.isFinite(sourceBox.min.y) ? sourceBox.min.y - 0.02 : -1;
+
+    try {
+      const floorDesc = rapier.ColliderDesc.cuboid(floorSizeX, 0.05, floorSizeZ);
+      floorDesc.setTranslation(floorCenterX, floorY, floorCenterZ);
+      this.floor = this.world.createCollider(floorDesc);
+    } catch (err) {
+      console.warn('[PhysicsRuntime] Failed to create floor collider:', err);
+    }
 
     const bodyPosition = sourceVisual.getWorldPosition(new THREE.Vector3());
     const bodyQuaternion = sourceVisual
@@ -76,28 +87,39 @@ export class PhysicsRuntime {
     const colliderPoints: Float32Array[] = [];
     collision.scene.updateMatrixWorld(true);
     collision.scene.traverse((child) => {
-      if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes.position) return;
+      if (!(child instanceof THREE.Mesh) || !child.geometry?.attributes?.position) return;
 
       const position = child.geometry.attributes.position;
+      if (position.count < 4) return;
       const points = new Float32Array(position.count * 3);
       const v = new THREE.Vector3();
+      let hasInvalid = false;
 
       for (let i = 0; i < position.count; i++) {
-        v.set(
-          position.getX(i),
-          position.getY(i),
-          position.getZ(i),
-        )
+        const rawX = position.getX(i);
+        const rawY = position.getY(i);
+        const rawZ = position.getZ(i);
+        if (!Number.isFinite(rawX) || !Number.isFinite(rawY) || !Number.isFinite(rawZ)) {
+          hasInvalid = true;
+          break;
+        }
+
+        v.set(rawX, rawY, rawZ)
           .applyMatrix4(child.matrixWorld)
           .sub(bodyPosition)
           .applyQuaternion(inverseBodyRotation);
+
+        if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)) {
+          hasInvalid = true;
+          break;
+        }
 
         points[i * 3] = v.x;
         points[i * 3 + 1] = v.y;
         points[i * 3 + 2] = v.z;
       }
 
-      if (points.length >= 12) colliderPoints.push(points);
+      if (!hasInvalid && points.length >= 12) colliderPoints.push(points);
     });
 
     if (!colliderPoints.length) {
@@ -111,38 +133,48 @@ export class PhysicsRuntime {
       : () => rapier.RigidBodyDesc.dynamic();
 
     const bodyDesc = descFactory()
-      .setTranslation(bodyPosition.x, bodyPosition.y, bodyPosition.z)
+      .setTranslation(
+        Number.isFinite(bodyPosition.x) ? bodyPosition.x : 0,
+        Number.isFinite(bodyPosition.y) ? bodyPosition.y : 0,
+        Number.isFinite(bodyPosition.z) ? bodyPosition.z : 0,
+      )
       .setRotation({
-        x: bodyQuaternion.x,
-        y: bodyQuaternion.y,
-        z: bodyQuaternion.z,
-        w: bodyQuaternion.w,
+        x: Number.isFinite(bodyQuaternion.x) ? bodyQuaternion.x : 0,
+        y: Number.isFinite(bodyQuaternion.y) ? bodyQuaternion.y : 0,
+        z: Number.isFinite(bodyQuaternion.z) ? bodyQuaternion.z : 0,
+        w: Number.isFinite(bodyQuaternion.w) ? bodyQuaternion.w : 1,
       })
-      .setLinearDamping(Math.max(0, config.linearDamping))
-      .setAngularDamping(Math.max(0, config.angularDamping));
+      .setLinearDamping(Math.max(0, Number.isFinite(config.linearDamping) ? config.linearDamping : 0.05))
+      .setAngularDamping(Math.max(0, Number.isFinite(config.angularDamping) ? config.angularDamping : 0.05));
 
     if (config.bodyType !== 'static') {
-      // Backend metadata resolves both estimated and manual mass to this value.
-      bodyDesc.setAdditionalMass(Math.max(0.01, config.massKg));
+      bodyDesc.setAdditionalMass(Math.max(0.01, Number.isFinite(config.massKg) ? config.massKg : 1));
     }
 
     const body = this.world.createRigidBody(bodyDesc);
     let colliderCount = 0;
 
     for (const points of colliderPoints) {
-      const desc = rapier.ColliderDesc.convexHull(points);
-      if (!desc) continue;
-      desc
-        // Explicit body mass is authoritative; collider density must not overwrite it.
-        .setDensity(0)
-        .setFriction(Math.max(0, Math.min(2, config.friction)))
-        .setRestitution(Math.max(0, Math.min(1, config.restitution)));
-      this.world.createCollider(desc, body);
-      colliderCount += 1;
+      try {
+        const desc = rapier.ColliderDesc.convexHull(points);
+        if (!desc || !(desc as any).raw) continue;
+        desc
+          .setDensity(0)
+          .setFriction(Math.max(0, Math.min(2, Number.isFinite(config.friction) ? config.friction : 0.5)))
+          .setRestitution(Math.max(0, Math.min(1, Number.isFinite(config.restitution) ? config.restitution : 0.1)));
+        this.world.createCollider(desc, body);
+        colliderCount += 1;
+      } catch (err) {
+        console.warn('[PhysicsRuntime] Skipped invalid convex hull collider:', err);
+      }
     }
 
     if (colliderCount === 0) {
-      this.world.removeRigidBody(body);
+      try {
+        if (body && (body as any).raw) {
+          this.world.removeRigidBody(body);
+        }
+      } catch (_) {}
       throw new Error('Physics collision artifact contains no valid convex collider.');
     }
 
@@ -195,7 +227,6 @@ export class PhysicsRuntime {
     return group;
   }
 
-
   /**
    * Lightweight viewport-only rigid-body smoke test for ordinary loaded meshes.
    * Uses an approximate bounds collider and never writes physics metadata.
@@ -206,12 +237,13 @@ export class PhysicsRuntime {
     config: PhysicsRuntimeConfig,
   ): Promise<void> {
     this.dispose();
-    this.scene = scene;
-    this.sourceVisual = sourceVisual;
 
     const rapier = await import('@dimforge/rapier3d-compat');
     await rapier.init();
     this.rapier = rapier;
+
+    this.scene = scene;
+    this.sourceVisual = sourceVisual;
 
     const gravity = config.gravityEnabled ? { x: 0, y: -9.81, z: 0 } : { x: 0, y: 0, z: 0 };
     this.world = new rapier.World(gravity);
@@ -224,10 +256,19 @@ export class PhysicsRuntime {
     const bodyQuaternion = sourceVisual.getWorldQuaternion(new THREE.Quaternion()).normalize();
     const localCenter = center.clone().sub(bodyPosition).applyQuaternion(bodyQuaternion.clone().invert());
 
-    const floorY = sourceBox.min.y - 0.02;
-    const floorDesc = rapier.ColliderDesc.cuboid(Math.max(5, size.x * 4), 0.05, Math.max(5, size.z * 4));
-    floorDesc.setTranslation(center.x, floorY, center.z);
-    this.floor = this.world.createCollider(floorDesc);
+    const floorSizeX = Number.isFinite(size.x) ? Math.max(5, size.x * 4) : 10;
+    const floorSizeZ = Number.isFinite(size.z) ? Math.max(5, size.z * 4) : 10;
+    const floorCenterX = Number.isFinite(center.x) ? center.x : 0;
+    const floorCenterZ = Number.isFinite(center.z) ? center.z : 0;
+    const floorY = Number.isFinite(sourceBox.min.y) ? sourceBox.min.y - 0.02 : -1;
+
+    try {
+      const floorDesc = rapier.ColliderDesc.cuboid(floorSizeX, 0.05, floorSizeZ);
+      floorDesc.setTranslation(floorCenterX, floorY, floorCenterZ);
+      this.floor = this.world.createCollider(floorDesc);
+    } catch (err) {
+      console.warn('[PhysicsRuntime] Failed to create quick test floor:', err);
+    }
 
     const bodyDesc = config.bodyType === 'static'
       ? rapier.RigidBodyDesc.fixed()
@@ -236,25 +277,44 @@ export class PhysicsRuntime {
       : rapier.RigidBodyDesc.dynamic();
 
     bodyDesc
-      .setTranslation(bodyPosition.x, bodyPosition.y, bodyPosition.z)
-      .setRotation({ x: bodyQuaternion.x, y: bodyQuaternion.y, z: bodyQuaternion.z, w: bodyQuaternion.w })
-      .setLinearDamping(Math.max(0, config.linearDamping))
-      .setAngularDamping(Math.max(0, config.angularDamping));
+      .setTranslation(
+        Number.isFinite(bodyPosition.x) ? bodyPosition.x : 0,
+        Number.isFinite(bodyPosition.y) ? bodyPosition.y : 0,
+        Number.isFinite(bodyPosition.z) ? bodyPosition.z : 0,
+      )
+      .setRotation({
+        x: Number.isFinite(bodyQuaternion.x) ? bodyQuaternion.x : 0,
+        y: Number.isFinite(bodyQuaternion.y) ? bodyQuaternion.y : 0,
+        z: Number.isFinite(bodyQuaternion.z) ? bodyQuaternion.z : 0,
+        w: Number.isFinite(bodyQuaternion.w) ? bodyQuaternion.w : 1,
+      })
+      .setLinearDamping(Math.max(0, Number.isFinite(config.linearDamping) ? config.linearDamping : 0.05))
+      .setAngularDamping(Math.max(0, Number.isFinite(config.angularDamping) ? config.angularDamping : 0.05));
 
-    if (config.bodyType !== 'static') bodyDesc.setAdditionalMass(Math.max(0.01, config.massKg));
+    if (config.bodyType !== 'static') {
+      bodyDesc.setAdditionalMass(Math.max(0.01, Number.isFinite(config.massKg) ? config.massKg : 1));
+    }
 
     const body = this.world.createRigidBody(bodyDesc);
-    const collider = rapier.ColliderDesc.cuboid(
-      Math.max(0.02, size.x * 0.5),
-      Math.max(0.02, size.y * 0.5),
-      Math.max(0.02, size.z * 0.5),
-    );
-    collider
-      .setTranslation(localCenter.x, localCenter.y, localCenter.z)
-      .setDensity(0)
-      .setFriction(Math.max(0, Math.min(2, config.friction)))
-      .setRestitution(Math.max(0, Math.min(1, config.restitution)));
-    this.world.createCollider(collider, body);
+    const halfX = Number.isFinite(size.x) ? Math.max(0.02, size.x * 0.5) : 0.5;
+    const halfY = Number.isFinite(size.y) ? Math.max(0.02, size.y * 0.5) : 0.5;
+    const halfZ = Number.isFinite(size.z) ? Math.max(0.02, size.z * 0.5) : 0.5;
+
+    try {
+      const collider = rapier.ColliderDesc.cuboid(halfX, halfY, halfZ);
+      collider
+        .setTranslation(
+          Number.isFinite(localCenter.x) ? localCenter.x : 0,
+          Number.isFinite(localCenter.y) ? localCenter.y : 0,
+          Number.isFinite(localCenter.z) ? localCenter.z : 0,
+        )
+        .setDensity(0)
+        .setFriction(Math.max(0, Math.min(2, Number.isFinite(config.friction) ? config.friction : 0.5)))
+        .setRestitution(Math.max(0, Math.min(1, Number.isFinite(config.restitution) ? config.restitution : 0.1)));
+      this.world.createCollider(collider, body);
+    } catch (err) {
+      console.warn('[PhysicsRuntime] Failed to create quick test cuboid collider:', err);
+    }
 
     const debug = new THREE.Group();
     debug.add(new THREE.Box3Helper(sourceBox, 0xffcc00));
@@ -272,16 +332,17 @@ export class PhysicsRuntime {
     this.initialized = true;
     this.setDebugVisibility(false);
   }
+
   setRunning(value: boolean): void {
-    this.running = value;
+    this.running = Boolean(value);
   }
 
   isRunning(): boolean {
-    return this.running;
+    return this.running && this.isReady();
   }
 
   isReady(): boolean {
-    return this.initialized && Boolean(this.world);
+    return this.initialized && Boolean(this.world) && Boolean((this.world as any).raw);
   }
 
   setDebugVisibility(visible: boolean): void {
@@ -292,10 +353,16 @@ export class PhysicsRuntime {
   reset(): void {
     this.accumulator = 0;
     for (const item of this.bodies) {
-      item.body.setTranslation(item.initialPosition, true);
-      item.body.setRotation(item.initialQuaternion, true);
-      item.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-      item.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      try {
+        if (item.body && (item.body as any).raw) {
+          item.body.setTranslation(item.initialPosition, true);
+          item.body.setRotation(item.initialQuaternion, true);
+          item.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          item.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        }
+      } catch (e) {
+        // Silently swallow dangling pointer errors on reset
+      }
       item.visual.position.copy(item.initialPosition);
       item.visual.quaternion.copy(item.initialQuaternion);
       item.debug.position.copy(item.initialPosition);
@@ -304,65 +371,105 @@ export class PhysicsRuntime {
   }
 
   applyTest(test: 'drop' | 'bounce' | 'slide' | 'spin'): void {
-    if (!this.bodies.length) return;
-    this.reset();
-    const item = this.bodies[0];
-    if (test === 'bounce') item.body.setLinvel({ x: 0, y: 3, z: 0 }, true);
-    if (test === 'slide') item.body.setLinvel({ x: 2, y: 0, z: 0 }, true);
-    if (test === 'spin') item.body.setAngvel({ x: 0, y: 3, z: 0 }, true);
-    this.running = true;
+    if (!this.bodies.length || !this.isReady()) return;
+    try {
+      this.reset();
+      const item = this.bodies[0];
+      if (item?.body && (item.body as any).raw) {
+        if (test === 'bounce') item.body.setLinvel({ x: 0, y: 3, z: 0 }, true);
+        if (test === 'slide') item.body.setLinvel({ x: 2, y: 0, z: 0 }, true);
+        if (test === 'spin') item.body.setAngvel({ x: 0, y: 3, z: 0 }, true);
+      }
+      this.running = true;
+    } catch (e) {
+      console.warn('[PhysicsRuntime] applyTest error:', e);
+    }
   }
 
   step(): void {
-    if (!this.world) return;
-    this.world.step();
-    this.sync();
+    if (!this.isReady()) return;
+    try {
+      this.world.step();
+      this.sync();
+    } catch (err) {
+      console.warn('[PhysicsRuntime] Step error suppressed:', err);
+      this.running = false;
+    }
   }
 
   tick(deltaSeconds = this.fixedStep): void {
-    if (!this.world || !this.running) return;
-    this.accumulator += Math.min(0.05, Math.max(0, deltaSeconds));
-    while (this.accumulator >= this.fixedStep) {
-      this.world.step();
-      this.accumulator -= this.fixedStep;
+    if (!this.running || !this.isReady()) return;
+    try {
+      this.accumulator += Math.min(0.05, Math.max(0, deltaSeconds));
+      while (this.accumulator >= this.fixedStep) {
+        if (!this.isReady()) break;
+        this.world.step();
+        this.accumulator -= this.fixedStep;
+      }
+      this.sync();
+    } catch (err) {
+      console.warn('[PhysicsRuntime] Tick error suppressed:', err);
+      this.running = false;
     }
-    this.sync();
   }
 
   private sync(): void {
+    if (!this.isReady()) return;
     for (const item of this.bodies) {
-      const p = item.body.translation();
-      const r = item.body.rotation();
-      item.visual.position.set(p.x, p.y, p.z);
-      item.visual.quaternion.set(r.x, r.y, r.z, r.w);
-      item.debug.position.set(p.x, p.y, p.z);
-      item.debug.quaternion.copy(item.visual.quaternion);
+      try {
+        if (!item.body || !(item.body as any).raw) continue;
+        const p = item.body.translation();
+        const r = item.body.rotation();
+        if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)) {
+          item.visual.position.set(p.x, p.y, p.z);
+          item.debug.position.set(p.x, p.y, p.z);
+        }
+        if (r && Number.isFinite(r.x) && Number.isFinite(r.y) && Number.isFinite(r.z) && Number.isFinite(r.w)) {
+          item.visual.quaternion.set(r.x, r.y, r.z, r.w);
+          item.debug.quaternion.copy(item.visual.quaternion);
+        }
+      } catch (err) {
+        // Guard against dangling or deallocated Rapier body pointers
+      }
     }
   }
 
   dispose(): void {
     this.running = false;
     this.accumulator = 0;
+    this.initialized = false;
+
     for (const item of this.bodies) {
-      item.debug.parent?.remove(item.debug);
-      item.debug.traverse((obj) => {
-        if (obj instanceof THREE.LineSegments) {
-          obj.geometry.dispose();
-          const material = obj.material;
-          if (Array.isArray(material)) material.forEach((m) => m.dispose());
-          else material.dispose();
-        }
-      });
+      try {
+        item.debug.parent?.remove(item.debug);
+        item.debug.traverse((obj) => {
+          if (obj instanceof THREE.LineSegments) {
+            obj.geometry.dispose();
+            const material = obj.material;
+            if (Array.isArray(material)) material.forEach((m) => m.dispose());
+            else material.dispose();
+          }
+        });
+      } catch (_) {}
     }
     this.bodies = [];
-    if (this.world && this.rapier) {
-      this.world.free();
-    }
+
+    const worldToFree = this.world;
     this.floor = null;
     this.world = null;
     this.rapier = null;
     this.scene = null;
     this.sourceVisual = null;
-    this.initialized = false;
+
+    if (worldToFree) {
+      try {
+        if (typeof worldToFree.free === 'function') {
+          worldToFree.free();
+        }
+      } catch (err) {
+        // Silently swallow any WASM / Rust double-free or null pointer panic
+        console.warn('[PhysicsRuntime] World free error suppressed:', err);
+      }
+    }
   }
 }
