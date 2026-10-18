@@ -28,6 +28,10 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 ### Hunyuan Runtime Loading & Shared Dependencies
 
 ### Runtime failure and readiness contracts
+- Hunyuan3D-Paint preserves processing-stage exception causes with `raise ... from e` and traceback logging, not only loader-stage causes.
+- A local DINOv2 checkpoint is selected only when both `config.json` and at least one recognized model-weight file exist; incomplete local caches trigger an explicit warning before the remote fallback.
+- Backend Runtime Contract CI checks out recursive submodules because the existing dependency-contract suite reads reference metadata from a vendored submodule. This lane runs source compilation and CPU-only contracts, not GPU inference.
+
 - Hunyuan3D-Paint temporarily adds its vendored utility path only during model initialization and restores both `sys.path` and the shared `utils.__path__` in `finally`; the shared utils package no longer globally adds third-party paths.
 - Hunyuan3D-Paint retries no longer purge shared `sys.modules` entries. Missing local texture or DINO checkpoints are logged before selecting a remote repository fallback.
 - ARDY reads its vendored `pyproject.toml` dependency declarations and warns about installed-version mismatches before CUDA allocation; the check is diagnostic only and does not modify the shared environment or block loading.

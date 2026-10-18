@@ -109,6 +109,22 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             reason,
         )
 
+    @staticmethod
+    def _has_local_dino_checkpoint(path: Path) -> bool:
+        """Return true only when a local Transformers checkpoint has config and weights."""
+        if not path.is_dir() or not (path / "config.json").is_file():
+            return False
+        weight_patterns = (
+            "*.safetensors",
+            "pytorch_model*.bin",
+            "model*.bin",
+        )
+        return any(
+            weight_file.is_file()
+            for pattern in weight_patterns
+            for weight_file in path.glob(pattern)
+        )
+
     def _resolve_realesrgan_path(self) -> str:
         """Resolve RealESRGAN checkpoint path, checking both thirdparty and pretrained locations."""
         candidates = [
@@ -213,12 +229,12 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 conf.multiview_pretrained_path = "tencent/Hunyuan3D-2.1"
 
             dino_local = (self.model_path / ".." / ".." / "dinov2-giant").resolve()
-            if dino_local.is_dir() and (dino_local / "config.json").is_file():
+            if self._has_local_dino_checkpoint(dino_local):
                 conf.dino_ckpt_path = str(dino_local)
             else:
                 logger.warning(
-                    "Local DINOv2 checkpoint was not found at %s; using remote repository "
-                    "facebook/dinov2-giant instead.",
+                    "Local DINOv2 checkpoint at %s is missing config.json or model weight files; "
+                    "using remote repository facebook/dinov2-giant instead.",
                     dino_local,
                 )
                 conf.dino_ckpt_path = "facebook/dinov2-giant"
@@ -558,8 +574,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             raise
         except Exception as e:
             self.status = ModelStatus.ERROR
-            logger.error(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {str(e)}")
-            raise Exception(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {str(e)}")
+            logger.exception("Hunyuan3D-Paint-v2-1 mesh painting failed")
+            raise RuntimeError(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {e}") from e
         finally:
             if temp_mesh_dir:
                 shutil.rmtree(temp_mesh_dir, ignore_errors=True)

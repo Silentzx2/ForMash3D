@@ -146,3 +146,12 @@ def test_hunyuan_paint_import_paths_are_scoped_not_global():
     assert "for path_entry in added_sys_paths:" in paint_adapter
     assert "sys.modules.pop(mod, None)" not in paint_adapter
 
+
+def test_hunyuan_processing_errors_keep_the_original_cause():
+    paint_adapter = (BACKEND / "adapters" / "hunyuan3d_paint_v21.py").read_text(encoding="utf-8")
+
+    assert 'logger.exception("Hunyuan3D-Paint-v2-1 mesh painting failed")' in paint_adapter
+    assert 'raise RuntimeError(f"Hunyuan3D-Paint-v2-1 mesh painting failed: {e}") from e' in paint_adapter
+    assert "def _has_local_dino_checkpoint(path: Path) -> bool:" in paint_adapter
+    assert "model weight files" in paint_adapter
+

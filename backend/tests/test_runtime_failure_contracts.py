@@ -127,3 +127,22 @@ def test_ardy_contract_reports_transformers_version_mismatch(tmp_path, monkeypat
     assert any("transformers==5.8.1" in item for item in mismatches)
     assert all("peft>=0.19" not in item for item in mismatches)
 
+
+def test_hunyuan_local_dino_checkpoint_requires_config_and_weights(tmp_path):
+    helper = Hunyuan3DPaintV21ImageMeshPaintingAdapter._has_local_dino_checkpoint
+
+    assert helper(tmp_path) is False
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    assert helper(tmp_path) is False
+
+    (tmp_path / "model.safetensors").write_bytes(b"checkpoint")
+    assert helper(tmp_path) is True
+
+
+def test_hunyuan_local_dino_checkpoint_accepts_sharded_weight_names(tmp_path):
+    helper = Hunyuan3DPaintV21ImageMeshPaintingAdapter._has_local_dino_checkpoint
+    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "model-00001-of-00002.safetensors").write_bytes(b"checkpoint")
+
+    assert helper(tmp_path) is True
+

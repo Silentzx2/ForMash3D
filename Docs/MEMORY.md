@@ -1,3 +1,10 @@
+## 2026-10-18 — Backend CI Checkout, DINO Cache Validation & Texture Error Chains
+
+- Backend Runtime Contract CI now checks out recursive submodules, because an existing dependency-contract test reads the vendored TripoSG metadata from the submodule. The initial run failed for missing checkout state (6 tests passed, 1 failed); this change is intended to correct the workflow configuration and awaits its rerun.
+- Hunyuan3D-Paint validates both `config.json` and model weight files before selecting a local DINOv2 cache. Incomplete caches produce an explicit warning before the remote repository fallback.
+- Hunyuan3D-Paint request failures now log the traceback and chain the underlying exception through a RuntimeError.
+- Added regression coverage for the DINO checkpoint layout and exception-chain source contract. No requirements .txt files or mesh-generation code were changed. The third-party repo remains read-only to this connected integration; its fallback wrapper itself still requires a separately authorized patch.
+
 ## 2026-10-18 — Scoped Hunyuan Imports, ARDY Contract Diagnostics & Backend CI
 
 - The shared backend utils package no longer globally adds Hunyuan utility paths. Hunyuan3D-Paint scopes its temporary utility path to initialization and restores import state in `finally`; broad `sys.modules` purges were removed from retries.
