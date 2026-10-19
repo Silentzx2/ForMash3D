@@ -44,11 +44,13 @@ This is a **static source audit**, not a claim that GPU inference, Blender, brow
 |---|---|
 | TEX-01 | **Mitigated** — UV masks use a separate capture canvas; model-based mask retexture is disabled and mask-bearing API requests fail with 422 until adapters support it. Paint3D prompt forwarding is fixed. |
 | TEX-02 | **Fixed** — the paint action exports the live-painted viewport mesh as GLB and reports exporter success/failure. |
-| UV-01 | **Pending** — the inspector still needs to be connected to real UV attributes. |
+| UV-01 | **Fixed** — inspector requests the loaded mesh UV channel, renders actual UV triangle edges (sampled for responsiveness), shows measured geometry/UV counts and bounds, and implements fullscreen. Unsupported metrics are not shown. |
 | UV-02 | **Fixed** — threshold is passed into PartUV; settings the algorithm does not consume were removed from the UI. |
 | UV-03 | **Fixed** — individual part files are not written when the opt-out is false. |
 | UV-04 | **Fixed** — packing failure or missing output now fails the UV task. |
-| RIG-01, RIG-02 | **Pending** — rigging options and save feedback remain to be addressed. |
+| RIG-01 | **Fixed** — unsupported UniRig topology/IK/weight override controls were removed instead of submitting ignored parameters; manual mirror remains editor-only. |
+| RIG-02 | **Fixed** — legacy armature inspector checks the persisted-save result before success notification/navigation. |
+| RIG-03 | **Fixed** — Manual Armature mode no longer dispatches a UniRig AI job. |
 | ANIM-01, ANIM-02 | **Pending** — BVH export and polling reliability remain to be addressed. |
 
 ## Detailed findings
@@ -290,4 +292,4 @@ This is not a claim that every optional dependency, checkpoint, Python environme
 - [ ] Animation: prove a JSON motion clip can produce a downloadable BVH; prove transient polling errors can recover and persistent failures become a visible recoverable state.
 - [ ] Runtime: run adapter import tests plus environment-appropriate model-load and GPU-backed smoke tests on a machine with installed dependencies/weights. Report skipped tests distinctly from passing tests.
 
-**Bottom line:** The inspected PartUV/UniRig import mappings did not show a confirmed broken Python import. Texture export/mask handling and PartUV threshold/output contracts have been corrected or explicitly disabled where model support does not exist. Rigging, UV-inspector data binding and Animation findings remain for follow-up. Runtime GPU/Blender verification is still required.
+**Bottom line:** The inspected PartUV/UniRig import mappings did not show a confirmed broken Python import. Texture export/mask handling and PartUV threshold/output contracts have been corrected or explicitly disabled where model support does not exist. Animation export and polling findings remain for follow-up; UV inspector and rigging contract findings were fixed in the latest source change. Runtime GPU/Blender verification is still required.

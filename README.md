@@ -68,7 +68,7 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 | Neural 3D Generation | Image-to-3D adapters with model-specific inference contracts |
 | Source Preservation | Immutable master/source.glb checkpoint before production processing |
 | Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
-| PBR Materials | Hunyuan3D Paint-v2.1 and model-specific textured generation |
+| PBR Materials | Full-mesh Paint3D/Hunyuan3D texturing; localized mask repaint remains disabled until adapter inference supports it |
 | Smart Generation | One-click image-only intents with deterministic model selection and scheduler-backed execution |
 | QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
 | Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |

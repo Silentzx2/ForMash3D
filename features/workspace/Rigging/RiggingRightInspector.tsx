@@ -66,7 +66,11 @@ export const RiggingRightInspector: React.FC = () => {
 
   const handleApplyAndContinue = async () => {
     try {
-      await applyAndSaveRig();
+      const saved = await applyAndSaveRig();
+      if (!saved) {
+        toast.error('Failed to save rig', { description: 'The armature snapshot could not be stored locally.' });
+        return;
+      }
       toast.success('Rig applied successfully', { description: 'Opening Animation Studio' });
       navigateToTool('animation');
     } catch {

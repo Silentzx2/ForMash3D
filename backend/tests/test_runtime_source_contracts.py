@@ -164,3 +164,26 @@ def test_partuv_respects_requested_threshold_files_and_packing():
     assert "distortion_threshold=distortion_threshold" in adapter
     assert "seam_angle" not in panel and "zero island overlap" not in panel
 
+def test_uv_inspector_uses_live_viewport_uv_data_without_fabricated_metrics():
+    panel = (ROOT / "features" / "workspace" / "RightPanel" / "UVInspector.tsx").read_text(encoding="utf-8")
+    viewer = (ROOT / "features" / "workspace" / "Viewport" / "MeshViewer.tsx").read_text(encoding="utf-8")
+
+    assert "formash:request_uv_layout" in panel and "formash:uv_layout_ready" in viewer
+    assert "getAttribute('uv')" in viewer and "getAttribute('uv1')" in viewer
+    assert "requestFullscreen" in panel
+    assert "87.4%" not in panel and "512 px/m" not in panel and "UV Islands" not in panel
+    assert "outOfBoundsVertices" in panel and "sampledTriangleCount" in viewer
+
+
+def test_unirig_controls_match_supported_adapter_and_save_failure_is_handled():
+    store = (ROOT / "stores" / "useRiggingStore.ts").read_text(encoding="utf-8")
+    studio = (ROOT / "features" / "workspace" / "Rigging" / "RiggingStudio.tsx").read_text(encoding="utf-8")
+    panel = (ROOT / "features" / "workspace" / "Rigging" / "RiggingLeftPanel.tsx").read_text(encoding="utf-8")
+    inspector = (ROOT / "features" / "workspace" / "Rigging" / "RiggingRightInspector.tsx").read_text(encoding="utf-8")
+
+    assert "target_skeleton:" not in store and "create_ik:" not in store and "optimize_weights:" not in store
+    assert "Generate IK Handles" not in studio and "Preserve Existing Weights" not in studio
+    assert "targetSkeleton" not in panel and "Target Skeleton Preset" not in panel
+    assert "riggingMethod === 'manual_rig'" in panel
+    assert "if (!saved)" in inspector
+

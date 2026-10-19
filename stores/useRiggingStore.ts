@@ -40,7 +40,6 @@ export const DEFAULT_RIG_BONES: RigBoneNode[] = [
 ];
 
 export type RiggingMethod = 'auto_rig' | 'manual_rig';
-export type TargetSkeleton = 'biped' | 'humanoid' | 'quadruped';
 export type RiggingWorkspaceAction = 'pose' | 'edit_bones' | 'weight_paint' | 'preview_animation';
 export type RiggingViewportTool = 'select' | 'move' | 'rotate' | 'scale';
 
@@ -57,18 +56,9 @@ interface RiggingState {
   setRiggingMethod: (m: RiggingMethod) => void;
   autoRigProvider: 'unirig_auto_rig';
   setAutoRigProvider: (p: 'unirig_auto_rig') => void;
-  targetSkeleton: TargetSkeleton;
-  setTargetSkeleton: (s: TargetSkeleton) => void;
-
-  // Options switches
-  createIkControls: boolean;
-  setCreateIkControls: (val: boolean) => void;
-  optimizeForAnimation: boolean;
-  setOptimizeForAnimation: (val: boolean) => void;
+  // Bilateral mirroring is used by the manual armature editor, not sent to UniRig.
   symmetry: boolean;
   setSymmetry: (val: boolean) => void;
-  reuseExistingWeights: boolean;
-  setReuseExistingWeights: (val: boolean) => void;
 
   // Advanced options
   advancedOptionsOpen: boolean;
@@ -222,17 +212,8 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
   setRiggingMethod: (riggingMethod) => set({ riggingMethod }),
   autoRigProvider: 'unirig_auto_rig',
   setAutoRigProvider: (autoRigProvider) => set({ autoRigProvider }),
-  targetSkeleton: 'biped',
-  setTargetSkeleton: (targetSkeleton) => set({ targetSkeleton }),
-
-  createIkControls: true,
-  setCreateIkControls: (createIkControls) => set({ createIkControls }),
-  optimizeForAnimation: true,
-  setOptimizeForAnimation: (optimizeForAnimation) => set({ optimizeForAnimation }),
   symmetry: true,
   setSymmetry: (symmetry) => set({ symmetry }),
-  reuseExistingWeights: false,
-  setReuseExistingWeights: (reuseExistingWeights) => set({ reuseExistingWeights }),
 
   advancedOptionsOpen: false,
   setAdvancedOptionsOpen: (advancedOptionsOpen) => set({ advancedOptionsOpen }),
@@ -285,7 +266,7 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
   // Real backend call to /api/v1/auto-rigging/generate-rig
   generateRig: async (meshPath?: string, meshFileId?: string) => {
     rigPollPaused = false;
-    const { autoRigProvider, rigMode, targetSkeleton } = get();
+    const { autoRigProvider, rigMode } = get();
     if (!meshFileId && !meshPath) {
       set({ generationError: 'Select or upload a mesh first' });
       return false;
@@ -305,12 +286,6 @@ export const useRiggingStore = create<RiggingState>((set, get) => {
         rig_mode: rigMode,
         output_format: 'fbx',
         model_preference: autoRigProvider,
-        model_parameters: {
-          target_skeleton: targetSkeleton,
-          optimize_weights: get().optimizeForAnimation,
-          create_ik: get().createIkControls,
-          symmetry: get().symmetry,
-        },
       };
       if (meshFileId) payload.mesh_file_id = meshFileId;
       else if (meshPath) payload.mesh_path = meshPath;

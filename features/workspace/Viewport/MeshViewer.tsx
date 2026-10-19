@@ -793,6 +793,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const reflectionPeekTweenRef = useRef<number | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
+  const loadedAssetIdRef = useRef<string | null>(null);
   const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
   const [meshUploadProgress, setMeshUploadProgress] = useState<{
     isUploading: boolean;
@@ -2446,6 +2447,102 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       lastPaintUVRef.current = null;
     };
 
+    const onRequestUVLayout = (event: Event) => {
+      const request = (event as CustomEvent<{ assetId?: string | null; channel?: number }>).detail || {};
+      const requestedAssetId = request.assetId ?? null;
+      const channel = Number(request.channel) === 1 ? 1 : 0;
+      const root = currentMeshGroupRef.current;
+      // Ponytail: fail closed while an old mesh is still visible during an asset switch.
+      if (!root || !requestedAssetId || loadedAssetIdRef.current !== requestedAssetId) return;
+
+      let meshCount = 0;
+      let uvMeshCount = 0;
+      let vertexCount = 0;
+      let triangleCount = 0;
+      let uvVertexCount = 0;
+      let outOfBoundsVertices = 0;
+      let invalidUvCount = 0;
+      let sampledTriangleCount = 0;
+      let minU = Infinity;
+      let minV = Infinity;
+      let maxU = -Infinity;
+      let maxV = -Infinity;
+      let remainingFaces = 5000;
+      const edges: Array<[number, number, number, number]> = [];
+
+      root.traverse((child) => {
+        if (!(child instanceof THREE.Mesh) || !child.geometry) return;
+        const geometry = child.geometry;
+        const positions = geometry.getAttribute('position');
+        if (!positions) return;
+        meshCount += 1;
+        vertexCount += positions.count;
+        const index = geometry.getIndex();
+        const triangles = Math.floor((index ? index.count : positions.count) / 3);
+        triangleCount += triangles;
+        const uv = channel === 0
+          ? geometry.getAttribute('uv')
+          : (geometry.getAttribute('uv1') || geometry.getAttribute('uv2'));
+        if (!uv) return;
+        uvMeshCount += 1;
+        uvVertexCount += uv.count;
+
+        for (let i = 0; i < uv.count; i += 1) {
+          const u = uv.getX(i);
+          const v = uv.getY(i);
+          if (!Number.isFinite(u) || !Number.isFinite(v)) {
+            invalidUvCount += 1;
+            continue;
+          }
+          if (u < 0 || u > 1 || v < 0 || v > 1) outOfBoundsVertices += 1;
+          minU = Math.min(minU, u);
+          minV = Math.min(minV, v);
+          maxU = Math.max(maxU, u);
+          maxV = Math.max(maxV, v);
+        }
+
+        if (remainingFaces <= 0 || triangles <= 0) return;
+        const faceBudget = remainingFaces;
+        const stride = Math.max(1, Math.ceil(triangles / faceBudget));
+        let sampled = 0;
+        for (let face = 0; face < triangles && sampled < faceBudget; face += stride) {
+          const baseIndex = face * 3;
+          const ids = [0, 1, 2].map((corner) => index ? index.getX(baseIndex + corner) : baseIndex + corner);
+          if (ids.some((id) => id < 0 || id >= uv.count)) continue;
+          const points = ids.map((id) => [uv.getX(id), uv.getY(id)] as const);
+          if (points.some(([u, v]) => !Number.isFinite(u) || !Number.isFinite(v))) continue;
+          edges.push(
+            [points[0][0], points[0][1], points[1][0], points[1][1]],
+            [points[1][0], points[1][1], points[2][0], points[2][1]],
+            [points[2][0], points[2][1], points[0][0], points[0][1]],
+          );
+          sampled += 1;
+        }
+        remainingFaces -= sampled;
+        sampledTriangleCount += sampled;
+      });
+
+      if (!Number.isFinite(minU) || !Number.isFinite(minV) || !Number.isFinite(maxU) || !Number.isFinite(maxV)) {
+        minU = 0; minV = 0; maxU = 1; maxV = 1;
+      }
+      window.dispatchEvent(new CustomEvent('formash:uv_layout_ready', {
+        detail: {
+          assetId: requestedAssetId,
+          channel,
+          meshCount,
+          uvMeshCount,
+          vertexCount,
+          triangleCount,
+          uvVertexCount,
+          outOfBoundsVertices,
+          invalidUvCount,
+          sampledTriangleCount,
+          minU, minV, maxU, maxV,
+          edges,
+        },
+      }));
+    };
+
     const onCaptureUVMask = () => {
       let maskDataUrl: string | null = null;
       currentMeshGroupRef.current?.traverse((child) => {
@@ -2531,6 +2628,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     window.addEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
     window.addEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
     window.addEventListener('formash:capture_uv_mask', onCaptureUVMask);
+    window.addEventListener('formash:request_uv_layout', onRequestUVLayout);
     window.addEventListener('formash:set_mask_paint_mode', onSetMaskPaintMode);
     window.addEventListener('formash:export_painted_mesh', onExportPaintedMesh);
 
@@ -2724,6 +2822,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       window.removeEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
       window.removeEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
       window.removeEventListener('formash:capture_uv_mask', onCaptureUVMask);
+      window.removeEventListener('formash:request_uv_layout', onRequestUVLayout);
       window.removeEventListener('formash:set_mask_paint_mode', onSetMaskPaintMode);
       window.removeEventListener('formash:export_painted_mesh', onExportPaintedMesh);
       if (brushCursorRef.current) {
@@ -2781,6 +2880,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     physicsRuntimeRef.current = null;
     setPhysicsRunning(false);
     setPhysicsStatus(null);
+    loadedAssetIdRef.current = null;
     setLoadedAssetId(null);
   }, [currentAsset?.id]);
 
@@ -2790,6 +2890,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     physicsRuntimeRef.current = null;
     setPhysicsRunning(false);
     setPhysicsStatus(null);
+    loadedAssetIdRef.current = null;
     setLoadedAssetId(null);
   }, [isLoading]);
 
@@ -3121,7 +3222,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             }
 
             if (!cancelled) {
+              loadedAssetIdRef.current = currentAsset.id;
               setLoadedAssetId(currentAsset.id);
+              window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
               setModelLoadVersion((version) => version + 1);
               setIsLoading(false);
             }
@@ -3236,7 +3339,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               helper.dispose();
             }
           }
+          loadedAssetIdRef.current = currentAsset.id;
           setLoadedAssetId(currentAsset.id);
+          window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
           setModelLoadVersion((version) => version + 1);
         } else if (format === 'obj') {
           // ponytail: verify response is text before parsing as OBJ
@@ -3279,7 +3384,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             computeMeshStats(object);
             if (!cancelled) {
               useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
+              loadedAssetIdRef.current = currentAsset.id;
               setLoadedAssetId(currentAsset.id);
+              window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
               setModelLoadVersion((version) => version + 1);
             }
           } else {
@@ -3320,7 +3427,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             frameCamera(mesh, { forceResetAngle: shouldResetAnglePly });
             lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
+            loadedAssetIdRef.current = currentAsset.id;
             setLoadedAssetId(currentAsset.id);
+            window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
             setModelLoadVersion((version) => version + 1);
           } else {
             geometry.dispose();
@@ -3349,7 +3458,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             frameCamera(mesh, { forceResetAngle: shouldResetAngleStl });
             lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
+            loadedAssetIdRef.current = currentAsset.id;
             setLoadedAssetId(currentAsset.id);
+            window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
             setModelLoadVersion((version) => version + 1);
           } else {
             geometry.dispose();

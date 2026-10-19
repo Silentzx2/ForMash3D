@@ -1,3 +1,10 @@
+## 2026-10-19 Texture, UV and Rigging Contract Update
+
+- Paint3D/Hunyuan3D-Paint requests reject user-supplied localized UV masks until an adapter actually wires them into inference; full-mesh texturing remains available.
+- The UV inspector requests the selected channel from the live viewport mesh, draws sampled triangle edges and shows only measurable counts/bounds. UV-island count, overlap and texel density are not claimed without analysis code.
+- PartUV honors the requested distortion threshold and individual-part output flag; a failed/missing pack artifact fails the operation instead of returning a false packed result.
+- UniRig UI sends no unsupported topology/IK/weight overrides. Manual symmetry remains editor-only, and persistence failures block the legacy inspector's success navigation.
+
 ## 2026-09-30 Review Audit Runtime Contracts
 
 - Redis control-plane data uses noeviction; result payloads use dedicated TTL keys.

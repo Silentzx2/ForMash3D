@@ -1,3 +1,9 @@
+## 2026-10-19 — Live UV Inspection and Rigging Contract
+
+- UV Inspector renders UV edges from the loaded viewport geometry and selected UV channel. Mesh/UV counts, bounds and out-of-bounds values are computed from real geometry; expensive island-overlap and texel-density metrics are explicitly not claimed.
+- UniRig UI no longer sends or promises custom topology, IK generation, weight optimization or weight reuse that the adapter ignores. Manual mirroring remains an editor-only option, manual mode no longer starts UniRig, and legacy armature-save navigation checks the actual persistence result.
+- CPU source-contract regressions added. Browser rendering and the GPU-backed rigging path remain unverified until CI/runtime checks complete.
+
 ## 2026-10-19 — Texture Paint Export, UV Mask and PartUV Result Contracts
 
 - Texture surface paint now exports the viewport's live material texture to a downloaded GLB; success/error notifications follow the exporter result.
