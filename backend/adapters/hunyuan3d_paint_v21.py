@@ -443,7 +443,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            max_num_view = inputs.get("max_num_view", 9)
+            max_num_view = inputs.get("max_num_view", 12)
             resolution = int(inputs.get("resolution", 768))
 
             # Strictly enforce 4K (4096) and 8K (8192) resolution routing for Hunyuan3D-Paint-v2-1
@@ -629,8 +629,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 "resolution": {
                     "type": "integer",
                     "description": "Per-view inference resolution; experimental max-detail default is the upstream demo ceiling of 768.",
-                    "default": 768,
-                    "enum": [512, 768],
+                    "default": 1024,
+                    "enum": [512, 768, 1024, 1536],
                     "required": False,
                 },
             },

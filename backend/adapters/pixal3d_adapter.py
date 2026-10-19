@@ -379,8 +379,8 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         # EXPERIMENTAL_MAX_DETAIL: official standard Pixal3D path is 1536; sampler values below are adapted
         # from TRELLIS.2 community issue #92 and have not been benchmarked directly on Pixal3D.
         pipeline_type: str = "1536_cascade",
-        max_num_tokens: int = 49152,
-        resolution: int = 1536,
+        max_num_tokens: int = 524288,
+        resolution: int = 2048,
         sampler_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         camera_params: Optional[Dict[str, float]] = None,
         low_vram: Optional[bool] = None,
@@ -398,20 +398,20 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         # EXPERIMENTAL_MAX_DETAIL profile (source: microsoft/TRELLIS.2 issue #92).
         # This is an A/B candidate borrowed for Pixal3D's TRELLIS.2-style staged API, not a verified Pixal3D optimum.
         ss_override = {
-            "steps": 50,
-            "guidance_strength": 8.0,
+            "steps": 100,
+            "guidance_strength": 10.0,
             "guidance_rescale": 0.7,
             "rescale_t": 6.0,
         }
         shape_override = {
-            "steps": 50,
-            "guidance_strength": 8.5,
+            "steps": 100,
+            "guidance_strength": 10.0,
             "guidance_rescale": 0.5,
             "rescale_t": 6.0,
         }
         tex_override = {
-            "steps": 50,
-            "guidance_strength": 2.5,
+            "steps": 100,
+            "guidance_strength": 3.5,
             "guidance_rescale": 0.2,
             "rescale_t": 6.0,
         }
@@ -676,9 +676,9 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "object",
                     "description": "Experimental quality-first sampler parameters for sparse_structure, shape and texture. Adapted from TRELLIS.2 community issue #92; not benchmarked directly on Pixal3D.",
                     "default": {
-                        "sparse_structure": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0},
-                        "shape": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0},
-                        "texture": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0},
+                        "sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.7, "rescale_t": 6.0},
+                        "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.5, "rescale_t": 6.0},
+                        "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.2, "rescale_t": 6.0},
                     },
                     "additionalProperties": {
                         "type": "object",

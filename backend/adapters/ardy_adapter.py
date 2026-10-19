@@ -249,7 +249,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             if not prompt:
                 raise ValueError("prompt is required for motion generation")
 
-            duration = float(inputs.get("duration", 5.0))
+            duration = float(inputs.get("duration", 45.0))
             if duration <= 0:
                 raise ValueError("duration must be greater than 0")
 
@@ -399,10 +399,10 @@ class ArdyMotionGenerationAdapter(BaseModel):
                 },
                 "duration": {
                     "type": "number",
-                    "description": "Duration of the motion in seconds",
-                    "default": 5.0,
+                    "description": "EXPERIMENTAL: 45-second motion exceeds the former 30-second UI limit.",
+                    "default": 45.0,
                     "minimum": 0.5,
-                    "maximum": 30.0,
+                    "maximum": 60.0,
                     "required": False,
                 },
                 "checkpoint": {

@@ -688,7 +688,7 @@ trainers:
         front_pil: Image.Image,
         do_refine: bool = True,
         predict_normal: bool = True,
-        expansion_weight: float = 0.1,
+        expansion_weight: float = 1.5,
         init_type: str = "std"
     ):
         """Run geometry reconstruction and refinement."""
@@ -955,9 +955,9 @@ trainers:
                 "expansion_weight": {
                     "type": "number",
                     "description": "Expansion weight for mesh generation (-1.0 to 1.0)",
-                    "default": 0.1,
-                    "minimum": -1.0,
-                    "maximum": 1.0,
+                    "default": 1.5,
+                    "minimum": -2.0,
+                    "maximum": 2.0,
                     "required": False
                 },
                 "init_type": {

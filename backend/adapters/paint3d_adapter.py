@@ -470,7 +470,7 @@ class TrainConfig:
         neg_prompt = "strong light, bright light, intense illumination, shade, darkness, silhouette, shadow"
 
         # EXPERIMENTAL_MAX_DETAIL (2026-10-20): retain Paint3D's implemented two-stage recipe:
-        # stage-1 text/depth generation 20 steps / CFG 7.0; first inpaint 20 / CFG 3.0;
+        # stage-1 text/depth generation 40 steps / CFG 7.0; first inpaint 40 / CFG 3.0;
         # atlas refinement 20 / CFG 3.0 and UV img2img 20 / CFG 7.0. Adapter supports 1K/2K only.
         # No independently validated community override was found. Ask the user once before changing this profile.
         stage1_content = f'''txt2img:
@@ -483,7 +483,7 @@ class TrainConfig:
   height: 512
   num_images_per_prompt: 1
   guidance_scale: 7.0
-  num_inference_steps: 20
+  num_inference_steps: 40
   controlnet_units:
     - preprocessor: "none"
       controlnet_key: "{ckpts['depth']}"
@@ -502,7 +502,7 @@ inpaint:
   height: 512
   num_images_per_prompt: 1
   guidance_scale: 3.0
-  num_inference_steps: 20
+  num_inference_steps: 40
   denoising_strength: 1.0
   controlnet_units:
     - preprocessor: "none"
@@ -529,7 +529,7 @@ inpaint:
   height: {resolution}
   num_images_per_prompt: 1
   guidance_scale: 3.0
-  num_inference_steps: 20
+  num_inference_steps: 40
   denoising_strength: 1.0
   controlnet_units:
     - preprocessor: "none"
@@ -552,7 +552,7 @@ img2img:
   height: {resolution}
   num_images_per_prompt: 1
   guidance_scale: 7.0
-  num_inference_steps: 20
+  num_inference_steps: 40
   denoising_strength: 0.75
   controlnet_units:
     - preprocessor: "none"

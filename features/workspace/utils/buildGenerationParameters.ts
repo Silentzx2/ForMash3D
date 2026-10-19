@@ -167,10 +167,10 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
   );
   // EXPERIMENTAL_MAX_DETAIL: honor upstream maxima where the checkpoint supports them.
   // Mini Turbo is distilled (5 steps); TRELLIS caps at 50; Hunyuan 2.1 UI caps at 100.
-  if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) return 5;
+  if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) return 20;
   if (normId.includes('trellis')) return 50;
-  if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21')) return 100;
-  if (normId.includes('triposg')) return 50;
+  if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21')) return 150;
+  if (normId.includes('triposg')) return 100;
   if (normId.includes('pixal3d')) return 150; // 50 experimental steps in each of 3 Pixal3D stages
   if (schemaSteps >= 1) return schemaSteps;
 
@@ -214,35 +214,35 @@ function applyModelSpecificParams(
   if (normId.includes('triposg')) {
     // Experimental high-detail extraction: dense depth 9, hierarchical depth 10 (runtime has a VRAM gate).
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
-    modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
-    modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 7.0);
+    modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 100);
+    modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 9.0);
     modelParameters.use_flash_decoder = false;
-    modelParameters.dense_octree_depth = 9;
-    modelParameters.hierarchical_octree_depth = 10;
+    modelParameters.dense_octree_depth = 10;
+    modelParameters.hierarchical_octree_depth = 11;
   } else if (normId.includes('trellis2')) {
     // Community quality-first experiment, see microsoft/TRELLIS.2 issue #92 (not a universal optimum).
     modelParameters.decimation_target = -1; // Preserve raw master rather than the community profile's 800k face cap.
     modelParameters.remesh = false;
     modelParameters.pipeline_type = '1536_cascade';
-    modelParameters.max_num_tokens = 262144;
+    modelParameters.max_num_tokens = 524288;
     modelParameters.sparse_structure_sampler_params = {
-      steps: 50, guidance_strength: 8.0, guidance_rescale: 0.7, rescale_t: 6.0,
+      steps: 100, guidance_strength: 10.0, guidance_rescale: 0.9, rescale_t: 8.0,
     };
     modelParameters.shape_slat_sampler_params = {
-      steps: 50, guidance_strength: 8.5, guidance_rescale: 0.5, rescale_t: 6.0,
+      steps: 100, guidance_strength: 10.0, guidance_rescale: 0.8, rescale_t: 8.0,
     };
     modelParameters.tex_slat_sampler_params = {
-      steps: 50, guidance_strength: 2.5, guidance_rescale: 0.2, rescale_t: 6.0,
+      steps: 100, guidance_strength: 3.5, guidance_rescale: 0.5, rescale_t: 8.0,
     };
   } else if (normId.includes('trellis')) {
     // Upstream TRELLIS UI supports up to 50 steps; shared CFG interface remains a known limitation.
     modelParameters.simplify = 0.0;
-    modelParameters.ss_sampling_steps = 50;
-    modelParameters.slat_sampling_steps = 50;
+    modelParameters.ss_sampling_steps = 100;
+    modelParameters.slat_sampling_steps = 100;
   } else if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) {
     // Distilled checkpoint: retain trained 5-step schedule and 380 extraction limit; do not overstep training.
-    modelParameters.octree_resolution = 380;
-    modelParameters.num_inference_steps = 5;
+    modelParameters.octree_resolution = 768;
+    modelParameters.num_inference_steps = 20;
     modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);
     modelParameters.num_chunks = 80000;
     modelParameters.low_vram_mode = false;
@@ -251,16 +251,16 @@ function applyModelSpecificParams(
     modelParameters.mc_algo = 'mc';
   } else if (normId.startsWith('hunyuan3d_shape_v21')) {
     // Upstream Hunyuan UI permits 100 steps; guidance 5.0 is its default; octree 512 is the supported ceiling.
-    modelParameters.octree_resolution = 512;
-    modelParameters.num_inference_steps = 100;
+    modelParameters.octree_resolution = 1300;
+    modelParameters.num_inference_steps = 150;
     modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);
     modelParameters.num_chunks = 80000;
     modelParameters.low_vram = false;
     modelParameters.mc_algo = 'mc';
   } else if (normId.includes('hunyuan')) {
     // Legacy Hunyuan3D 2.1 aliases use the same max-step / default-guidance experimental profile.
-    modelParameters.octree_resolution = 512;
-    modelParameters.num_inference_steps = 100;
+    modelParameters.octree_resolution = 1300;
+    modelParameters.num_inference_steps = 150;
     modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);
     modelParameters.num_chunks = 80000;
     modelParameters.low_vram = false;
@@ -270,12 +270,12 @@ function applyModelSpecificParams(
     modelParameters.low_vram = false;
     modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 42;
     modelParameters.manual_fov = paramDefaults.manual_fov ?? null;
-    modelParameters.resolution = paramDefaults.resolution ?? settings.resolution ?? 1536;
+    modelParameters.resolution = paramDefaults.resolution ?? settings.resolution ?? 2048;
     modelParameters.pipeline_type = paramDefaults.pipeline_type ?? '1536_cascade';
     modelParameters.sampler_overrides = paramDefaults.sampler_overrides ?? {
-      sparse_structure: { steps: 50, guidance_strength: 8.0, guidance_rescale: 0.7, rescale_t: 6.0 },
-      shape: { steps: 50, guidance_strength: 8.5, guidance_rescale: 0.5, rescale_t: 6.0 },
-      texture: { steps: 50, guidance_strength: 2.5, guidance_rescale: 0.2, rescale_t: 6.0 },
+      sparse_structure: { steps: 100, guidance_strength: 10.0, guidance_rescale: 0.9, rescale_t: 8.0 },
+      shape: { steps: 100, guidance_strength: 10.0, guidance_rescale: 0.8, rescale_t: 8.0 },
+      texture: { steps: 100, guidance_strength: 3.5, guidance_rescale: 0.5, rescale_t: 8.0 },
     };
     modelParameters.low_vram_mode = paramDefaults.low_vram ?? settings.lowVram ?? false;
     modelParameters.init_type = paramDefaults.init_type ?? 'std';

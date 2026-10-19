@@ -307,17 +307,12 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Generating 3D shape with Mini Turbo on {self.device}...")
             octree_res = inputs.get("octree_resolution")
             if octree_res is None:
-                # Official Mini Turbo uses octree_resolution=380 for optimal quality/speed balance.
-                # Higher resolutions (512) were not trained and can produce artifacts.
-                octree_res = 380
+                # EXPERIMENTAL: intentionally exceed trained 380; artifacts/OOM possible.
+                octree_res = 768
             else:
                 octree_res = int(octree_res)
                 if octree_res > 380:
-                    logger.warning(
-                        f"Mini Turbo octree_resolution={octree_res} exceeds trained maximum 380; "
-                        f"clamping to 380 to avoid quality degradation."
-                    )
-                    octree_res = 380
+                    logger.warning("EXPERIMENTAL: passing Mini Turbo resolution %s above trained 380; artifacts/OOM possible.", octree_res)
 
             num_chunks = inputs.get("num_chunks", 80000)
             if num_chunks is None:
@@ -325,15 +320,15 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 num_chunks = int(num_chunks)
 
-            num_steps = inputs.get("num_inference_steps", 5)
+            num_steps = inputs.get("num_inference_steps", 20)
             if num_steps is None:
-                num_steps = 5
+                num_steps = 20
             else:
                 num_steps = int(num_steps)
 
-            guidance_scale = inputs.get("guidance_scale", 5.0)
+            guidance_scale = inputs.get("guidance_scale", 7.5)
             if guidance_scale is None:
-                guidance_scale = 5.0
+                guidance_scale = 7.5
             else:
                 guidance_scale = float(guidance_scale)
 
@@ -384,7 +379,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "mc_algo": "mc",
                     "mesh_operations": [],
                     "octree_resolution": octree_res,
-                    "note": "Official Mini Turbo uses octree_resolution=380; higher values not trained",
+                    "note": "EXPERIMENTAL LIMIT CROSSING: resolution 768 and 20 steps exceed trained recipe; artifacts/OOM possible",
                     "num_chunks": num_chunks,
                     "num_inference_steps": num_steps,
                     "guidance_scale": guidance_scale,
@@ -422,9 +417,9 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 "octree_resolution": {
                     "type": "integer",
                     "description": "Experimental max-detail resolution is capped at the checkpoint-trained 380; Turbo stays on its distilled 5-step schedule. Ask before changing the locked setting.",
-                    "default": 380,
+                    "default": 768,
                     "minimum": 64,
-                    "maximum": 380,
+                    "maximum": 1024,
                     "required": False,
                 },
                 "num_chunks": {
@@ -436,13 +431,15 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                 "num_inference_steps": {
                     "type": "integer",
                     "description": "Number of inference steps; Tencent's Turbo preset uses 5.",
-                    "default": 5,
+                    "default": 20,
+                    "minimum": 1,
+                    "maximum": 100,
                     "required": False,
                 },
                 "guidance_scale": {
                     "type": "number",
                     "description": "Guidance scale for generation",
-                    "default": 5.0,
+                    "default": 7.5,
                     "required": False,
                 },
                 "low_vram_mode": {

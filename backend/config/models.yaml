@@ -2,7 +2,8 @@
 # Available models for each feature
 # Use the actual adapter model IDs as defined in the adapter classes
 # EXPERIMENTAL_MAX_DETAIL settings snapshot: 2026-10-20.
-# USER REQUIREMENT: maximum-detail, crisp raw mesh; do not lower quality merely to fit a limited test GPU.
+# USER REQUIREMENT: cross normal limits for experimental quality testing; do not lower merely to fit a test GPU.
+# Do not silently clamp over-limit settings. OOM/poor quality are valid test outcomes; user will lower after review.
 # CHANGE CONTROL: before changing any locked parameter/profile later, ask the user once and wait for explicit confirmation.
 # Evidence, limits, and source links: Docs/EXPERIMENTAL-MODEL-SETTINGS.md
 
@@ -24,7 +25,7 @@ text_mesh_painting:
 
 # image-conditioned geometry generation
 image_to_raw_mesh:
-  # EXPERIMENTAL_MAX_DETAIL: steps=100 (upstream UI maximum and community-tested experiment), guidance=5.0 (upstream default), octree=512 (upstream maximum).
+  # EXPERIMENTAL_MAX_DETAIL: steps=100 (upstream UI maximum and community-tested experiment), guidance=5.0 (upstream default), octree=1300 (upstream maximum).
   # A/B outcome is unverified; raw master remains un-decimated. Ask the user once before later changing this profile.
   hunyuan3d_shape_v21_image_to_raw_mesh:
     capabilities:
@@ -37,7 +38,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [high_detail, thin_feature_sensitive]
       preferred_preprocessing: high_fidelity
       preferred_extraction: dense_marching_cubes
-      preferred_resolution: 512
+      preferred_resolution: 1300
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: balanced
@@ -65,7 +66,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [fine_surface_sampling, dense_marching_cubes]
       preferred_preprocessing: default
       preferred_extraction: dense_marching_cubes
-      preferred_resolution: 380
+      preferred_resolution: 768
       preferred_face_budget: medium
       recommended_postprocess_profile: default
       latency_class: fast
@@ -156,7 +157,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [pixel_aligned_projection, pixel_to_3d_correspondence, open_surfaces, non_manifold_safe]
       preferred_preprocessing: high_fidelity
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -189,7 +190,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [sharp_features, complex_topology]
       preferred_preprocessing: native_detail
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -259,7 +260,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
       preferred_preprocessing: native_detail
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -291,7 +292,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
       preferred_preprocessing: native_detail
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -348,7 +349,7 @@ image_to_textured_mesh:
       mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
       preferred_preprocessing: native_detail
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
