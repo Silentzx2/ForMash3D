@@ -192,7 +192,12 @@ class ResourcePlanner:
 
                 if remaining <= 0 and len(selected) >= 2:
                     reservation = {int(gpu["id"]): int(take) for gpu, take in selected}
-                    max_memory = {str(gpu["id"]): int(take) for gpu, take in selected}
+                    # Reservations enforce scheduler exclusivity; Accelerate needs each
+                    # selected GPU's usable capacity to shard large layers correctly.
+                    max_memory = {
+                        str(gpu["id"]): int(gpu["available_mb"])
+                        for gpu, _ in selected
+                    }
 
                     try:
                         import psutil

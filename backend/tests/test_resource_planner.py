@@ -133,6 +133,8 @@ class ResourcePlannerTests(unittest.TestCase):
         self.assertIsNotNone(plan)
         self.assertTrue(plan.is_multi_gpu)
         self.assertEqual(plan.gpu_ids, (0, 1))
+        self.assertEqual(plan.max_memory_mb["0"], 15000)
+        self.assertEqual(plan.max_memory_mb["1"], 15000)
 
     def test_fastmesh_fails_closed_when_no_single_gpu_meets_its_budget(self):
         monitor = FakeMonitor([
