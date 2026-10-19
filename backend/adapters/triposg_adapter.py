@@ -71,6 +71,9 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
     Produces high-fidelity GLB/OBJ meshes with optional scribble+prompt support.
     """
 
+    # EXPERIMENTAL_MAX_DETAIL (2026-10-20): use depth 9 dense + depth 10 hierarchical extraction,
+    # 50 steps, CFG 7.0 and no Flash decoder. Depth 10 remains subject to the existing VRAM gate.
+    # Ask the user once and require explicit confirmation before changing this locked profile.
     FEATURE_TYPE = "image_to_raw_mesh"
     MODEL_ID = "triposg_image_to_raw_mesh"
 
@@ -516,7 +519,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "dense_octree_depth": {
                     "type": "integer",
-                    "description": "Coarse dense seed grid depth used by hierarchical extraction.",
+                    "description": "EXPERIMENTAL_MAX_DETAIL coarse grid depth (9); user confirmation is required before changing the locked profile.",
                     "default": 9,
                     "minimum": 8,
                     "maximum": 9,
@@ -525,7 +528,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "hierarchical_octree_depth": {
                     "type": "integer",
-                    "description": "Target extraction depth; depth 10 requires 24 GiB free and 32 GiB total VRAM.",
+                    "description": "EXPERIMENTAL_MAX_DETAIL target depth 10; the runtime may lower effective depth under its existing VRAM gate. Ask before profile changes.",
                     "default": 10,
                     "minimum": 8,
                     "maximum": 10,
