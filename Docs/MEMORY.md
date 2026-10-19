@@ -2,6 +2,7 @@
 
 - The BVH action is enabled only when the selected clip already has a BVH artifact; it downloads that file and no longer pretends to synthesize BVH from ARDY JSON.
 - ARDY job-status polling stops after five consecutive request failures, preserves the existing job ID, and exposes a user-triggered retry that reconnects to the same job rather than generating a duplicate.
+- Manual Armature mode also has a guard so its Generate action cannot submit UniRig.
 - CPU source-contract tests added; browser download and actual ARDY polling remain to be validated by CI/runtime execution.
 
 ## 2026-10-19 — Live UV Inspection and Rigging Contract

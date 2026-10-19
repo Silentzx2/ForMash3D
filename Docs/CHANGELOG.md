@@ -2,6 +2,7 @@
 
 - BVH download is limited to existing BVH artifacts; unsupported JSON conversion is disabled and labelled honestly.
 - Motion status polling stops after repeated request failures and allows reconnecting to the same stored job ID.
+- Manual Armature selection cannot submit an accidental UniRig job.
 - Regression source contracts added; no browser or model run is claimed without CI/runtime results.
 
 ## 2026-10-19 — UV Inspector and Rigging Controls

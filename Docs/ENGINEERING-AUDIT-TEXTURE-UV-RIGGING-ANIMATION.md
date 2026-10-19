@@ -22,6 +22,7 @@ The audit followed the four requested workflows from UI controls through workspa
 | UV-04 | P2 | UV packing | Packing errors are downgraded to warnings and an un-packed mesh is returned as an ordinary result while metadata still records the requested pack method. |
 | RIG-01 | P2 | Rigging options | Several visible topology/rigging options are sent in model parameters but never read by the UniRig adapter; reuse-existing-weights is not sent in the request at all. |
 | RIG-02 | P2 | Save armature | The legacy Rigging inspector ignores the boolean failure returned by the store's localStorage save function and still reports success/navigates to Animation. |
+| RIG-03 | P2 | Manual rig mode | The legacy left panel allowed Manual Armature selection but still invoked the UniRig generation action. |
 | ANIM-01 | P2 | BVH export | When the active clip is not already a BVH file, the BVH export handler only displays an informational toast; it does not convert, queue, or download a BVH artifact. |
 | ANIM-02 | P3 | Motion polling | Transient job-status polling failures are only logged. Polling continues indefinitely with no bounded retry/error state while the component remains mounted. |
 
@@ -74,6 +75,8 @@ This is a **static source audit**, not a claim that GPU inference, Blender, brow
 2. The selected image-painting request schema defines mask fields but no text_prompt field. The route constructs queued inputs from the request fields and model parameters without forwarding a request-level text prompt. The UI's spot prompt therefore does not make it to the adapter via this endpoint contract.
 3. Paint3D accepts mask_path into its generated stage-two configuration, but the pinned third-party pipeline's UV_inpaint function regenerates a mask from its current albedo image and assigns that newly generated path to p_cfg.mask_path. This replaces the user-supplied mask before inference.
 4. Hunyuan3D-Paint reads/logs mask_path, but its paint_pipeline invocation receives mesh, reference image, output path, and use_remesh/save_glb options—not the user mask. The logged mask does not affect the shown call.
+
+The audit also added RIG-03 after a further pass discovered that Manual Armature selection still entered the UniRig submit handler; this is now guarded and documented below.
 
 The UI already displays a limitation notice saying these adapters perform full-mesh texturing. That notice is useful, but the adjacent enabled action is still labelled “Generate Retexture with Mask” and sends fields that do not achieve the advertised targeted repaint.
 
@@ -231,6 +234,19 @@ A full localStorage quota, privacy/storage restriction, or other persistence fai
 **Minimal correction direction**
 
 Check the returned boolean and navigate only when true, matching the existing RiggingStudio caller. Add a focused test that forces storage failure and asserts that no success notification/navigation is triggered.
+
+### RIG-03 — Manual Armature selection could launch UniRig anyway
+
+**Severity:** P2  
+**Relevant code:** [RiggingLeftPanel.tsx](https://github.com/Silentzx2/ForMash3D/blob/dev/features/workspace/Rigging/RiggingLeftPanel.tsx#L120-L245), [useRiggingStore.ts](https://github.com/Silentzx2/ForMash3D/blob/dev/stores/useRiggingStore.ts#L285-L320)
+
+**Evidence / root cause**
+
+The left panel exposed an Auto Rig / Manual Armature selector, but its Generate button always called `generateRig`, which submits a `unirig_auto_rig` scheduler job. The selected `riggingMethod` was not checked in that handler.
+
+**Fix**
+
+The handler now guards manual mode, the UniRig generation button is disabled when Manual Armature is selected, and the label/notification no longer imply a manual action starts neural inference. Manual editor symmetry remains local to the editor.
 
 ### ANIM-01 — BVH export is an informational toast, not an export
 
