@@ -1,7 +1,23 @@
+import importlib.util
 import os
+import sys
 import unittest
+from pathlib import Path
 
-from core.scheduler.resource_planner import ResourcePlanner, configure_cpu_runtime, cpu_threads_for_workers
+
+# Load the module by file path so CPU-only contract tests don't import the
+# heavyweight core.scheduler package (which also imports SQLAlchemy/database code).
+_PLANNER_PATH = Path(__file__).resolve().parents[1] / "core" / "scheduler" / "resource_planner.py"
+_PLANNER_NAME = "_formash3d_resource_planner_test"
+_PLANNER_SPEC = importlib.util.spec_from_file_location(_PLANNER_NAME, _PLANNER_PATH)
+if _PLANNER_SPEC is None or _PLANNER_SPEC.loader is None:
+    raise ImportError(f"Cannot load resource planner from {_PLANNER_PATH}")
+_PLANNER_MODULE = importlib.util.module_from_spec(_PLANNER_SPEC)
+sys.modules[_PLANNER_NAME] = _PLANNER_MODULE
+_PLANNER_SPEC.loader.exec_module(_PLANNER_MODULE)
+ResourcePlanner = _PLANNER_MODULE.ResourcePlanner
+configure_cpu_runtime = _PLANNER_MODULE.configure_cpu_runtime
+cpu_threads_for_workers = _PLANNER_MODULE.cpu_threads_for_workers
 
 
 class FakeMonitor:
