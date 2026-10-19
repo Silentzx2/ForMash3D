@@ -143,6 +143,7 @@ class PartUVRunner:
         pack_method: str = "blender",
         save_visuals: bool = False,
         save_individual_parts: bool = True,
+        distortion_threshold: Optional[float] = None,
     ) -> Dict:
         """
         Generate UV coordinates for a mesh using PartUV.
@@ -165,6 +166,8 @@ class PartUVRunner:
             import partuv
             from thirdparty.PartUV.pack.pack import pack_mesh
             from partuv.preprocess import save_results
+
+            threshold = self.distortion_threshold if distortion_threshold is None else float(distortion_threshold)
 
             # Validate input
             mesh_path = Path(mesh_path)
@@ -202,7 +205,7 @@ class PartUVRunner:
                 F = mesh.faces
 
                 logger.info(
-                    f"Running PartUV pipeline: V={V.shape}, F={F.shape}, threshold={self.distortion_threshold}"
+                    f"Running PartUV pipeline: V={V.shape}, F={F.shape}, threshold={threshold}"
                 )
 
                 # Run PartUV pipeline with numpy arrays
@@ -211,7 +214,7 @@ class PartUVRunner:
                     F=F,
                     tree_dict=tree_dict,
                     configPath=self.config_path,
-                    threshold=self.distortion_threshold,
+                    threshold=threshold,
                 )
 
             else:
@@ -224,12 +227,13 @@ class PartUVRunner:
                     tree_filename=tree_filename,
                     mesh_filename=mesh_filename,
                     configPath=self.config_path,
-                    threshold=self.distortion_threshold,
+                    threshold=threshold,
                 )
 
-            # Save results
+            # Save result meshes always, but honor the opt-out for per-part OBJ files.
             logger.info("Saving UV unwrapping results")
-            save_results(str(output_path), final_parts, individual_parts)
+            num_individual_parts = len(individual_parts)
+            save_results(str(output_path), final_parts, individual_parts if save_individual_parts else [])
 
             # Get output file paths
             final_mesh_path = output_path / "final_components.obj"
@@ -238,7 +242,6 @@ class PartUVRunner:
             # Collect metadata
             num_components = final_parts.num_components
             final_distortion = final_parts.distortion
-            num_individual_parts = len(individual_parts)
 
             logger.info(
                 f"UV unwrapping completed: {num_components} charts, distortion={final_distortion:.3f}"
@@ -255,9 +258,12 @@ class PartUVRunner:
                         uvpackmaster=(pack_method == "uvpackmaster"),
                         save_visuals=save_visuals,
                     )
-                    packed_mesh_path = str(output_path / "final_packed.obj")
+                    packed_output = output_path / "final_packed.obj"
+                    if not packed_output.is_file():
+                        raise PartUVError(f"{pack_method} packing did not produce {packed_output}")
+                    packed_mesh_path = str(packed_output)
                 except Exception as e:
-                    logger.warning(f"UV packing failed: {e}")
+                    raise PartUVError(f"UV packing failed ({pack_method}): {e}") from e
 
             # Prepare output dictionary
             output = {
@@ -270,8 +276,9 @@ class PartUVRunner:
                     "num_components": num_components,
                     "num_individual_parts": num_individual_parts,
                     "distortion": final_distortion,
-                    "distortion_threshold": self.distortion_threshold,
-                    "pack_method": pack_method if pack_method != "none" else None,
+                    "distortion_threshold": threshold,
+                    "packing_status": "packed" if packed_mesh_path else "not_requested",
+                    "pack_method": pack_method if packed_mesh_path else None,
                     "config_path": self.config_path,
                 },
             }

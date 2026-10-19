@@ -134,3 +134,33 @@ def test_animation_motion_request_uses_registered_ardy_id_and_canonical_checkpoi
     assert '<option value="ARDY-G1-RP-25FPS-Horizon52"' in inspector
     assert '"ardy-unitree-g1": "ARDY-G1-RP-25FPS-Horizon52"' in adapter
     assert '"ardy-rp-20fps": "ARDY-Core-RP-20FPS-Horizon40"' in adapter
+
+def test_texture_mask_and_export_contracts_are_truthful():
+    panel = (ROOT / "features" / "workspace" / "Panels" / "TexturePanel.tsx").read_text(encoding="utf-8")
+    viewer = (ROOT / "features" / "workspace" / "Viewport" / "MeshViewer.tsx").read_text(encoding="utf-8")
+    workspace = (ROOT / "features" / "workspace" / "store" / "WorkspaceContext.tsx").read_text(encoding="utf-8")
+    route = (ROOT / "backend" / "api" / "routers" / "mesh_generation.py").read_text(encoding="utf-8")
+
+    assert "Mask-Based Retexture Unavailable" in panel
+    assert "formash:export_painted_mesh" in panel
+    assert "GLTFExporter" in viewer and "formash:paint_export_result" in viewer
+    assert "maskPaintModeRef" in viewer and "userData?.maskCanvas" in viewer
+    assert "Localized UV-mask retexturing is not supported" in route
+    assert "body.mask_file_id" not in workspace and "body.mask_base64" not in workspace
+    assert "text_prompt: Optional[str]" in route
+    assert '"prompt": mesh_request.text_prompt.strip()' in route
+
+
+def test_partuv_respects_requested_threshold_files_and_packing():
+    runner = (ROOT / "backend" / "utils" / "partuv_utils.py").read_text(encoding="utf-8")
+    adapter = (ROOT / "backend" / "adapters" / "partuv_adapter.py").read_text(encoding="utf-8")
+    panel = (ROOT / "features" / "workspace" / "Panels" / "UVUnwrapPanel.tsx").read_text(encoding="utf-8")
+
+    assert "distortion_threshold: Optional[float] = None" in runner
+    assert "threshold=threshold" in runner
+    assert "individual_parts if save_individual_parts else []" in runner
+    assert "did not produce" in runner and "UV packing failed" in runner
+    assert '"packing_status": "packed" if packed_mesh_path else "not_requested"' in runner
+    assert "distortion_threshold=distortion_threshold" in adapter
+    assert "seam_angle" not in panel and "zero island overlap" not in panel
+

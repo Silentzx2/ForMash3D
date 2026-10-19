@@ -177,6 +177,7 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
                 pack_method=pack_method,
                 save_visuals=save_visuals,
                 save_individual_parts=save_individual_parts,
+                distortion_threshold=distortion_threshold,
             )
 
             if generation_result is None:

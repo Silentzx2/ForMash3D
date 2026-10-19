@@ -1,3 +1,10 @@
+## 2026-10-19 — Texture Paint Export, UV Mask and PartUV Result Contracts
+
+- Texture surface paint now exports the viewport's live material texture to a downloaded GLB; success/error notifications follow the exporter result.
+- UV region masks use a transparent dedicated canvas. Until either texture adapter supports localized mask inference, the spot-retexture action is disabled and mask-bearing API requests return 422 instead of quietly running full-mesh texturing. Paint3D receives request prompt guidance; Hunyuan remains reference-image guided.
+- PartUV receives the requested distortion threshold, honors save-individual-parts=false, and fails the task when packing throws or its expected output file is missing. Inert UV settings and texture-resolution controls were removed from the UV operation.
+- Regression source-contract tests added; CI and real model/browser execution remain to be verified.
+
 ## 2026-10-19 — Animation ARDY Model-ID / Checkpoint Contract
 
 - Root cause: `AnimationLeftPanel` sent UI skeleton labels `ardy-core` / `ardy-g1` as `model_preference`, but `models.yaml` has one registered motion model: `ardy_motion_generation`. The right inspector stored legacy checkpoint labels (`ardy-core (default)`, `ardy-unitree-g1`, `ardy-rp-20fps`) that are not accepted ARDY checkpoint variants.

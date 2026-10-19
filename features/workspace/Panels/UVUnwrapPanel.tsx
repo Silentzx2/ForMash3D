@@ -17,7 +17,6 @@ export const UVUnwrapPanel: React.FC = () => {
     runUVUnwrapGeneration,
   } = useWorkspace();
 
-  const [resolution, setResolution] = useState(2048);
   const [outputFormat, setOutputFormat] = useState('glb');
   const [showAssetPicker, setShowAssetPicker] = useState(false);
   const { state: meshUploadState, upload: uploadMesh } = useMeshAssetUpload();
@@ -31,14 +30,6 @@ export const UVUnwrapPanel: React.FC = () => {
       packMethod: 'blender',
       outputFormat,
       saveIndividualParts: false,
-      modelParameters: {
-        seam_angle: 66,
-        island_margin: 0.010,
-        iterations: 20,
-        prevent_overlaps: true,
-        fill_holes: true,
-        resolution,
-      },
     });
   };
 
@@ -170,31 +161,11 @@ export const UVUnwrapPanel: React.FC = () => {
                   <div className="text-[10px] text-zinc-400">Automatic conformal seam cutting & packed atlas</div>
                 </div>
               </div>
-
-              {/* Texture Resolution */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-medium text-zinc-300">Texture Resolution</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { val: 2048, label: '2048 × 2048', sub: 'Standard 2K (Recommended)' },
-                    { val: 4096, label: '4096 × 4096', sub: 'Ultra 4K HD' },
-                  ].map((res) => (
-                    <button
-                      key={res.val}
-                      type="button"
-                      onClick={() => setResolution(res.val)}
-                      className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
-                        resolution === res.val
-                          ? 'bg-[hsl(var(--surface-2))] border-primary text-white'
-                          : 'bg-[hsl(var(--surface-0))] border-white/[0.08] text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      <div className="text-xs font-bold">{res.label}</div>
-                      <div className="text-[9px] text-zinc-500 mt-0.5">{res.sub}</div>
-                    </button>
-                  ))}
-                </div>
+              <div className="p-2.5 rounded-xl bg-primary/5 border border-primary/20 text-[10px] text-zinc-400 leading-relaxed">
+                PartUV generates the UV layout and packs the islands. Texture resolution is selected later by texture generation or baking; it is not an input to this UV operation.
               </div>
+
+
 
               {/* Output Format */}
               <div className="space-y-1">
@@ -228,7 +199,7 @@ export const UVUnwrapPanel: React.FC = () => {
                   <span>Automatic Studio Packing Pipeline</span>
                 </div>
                 <div className="text-[10px] text-zinc-400 leading-relaxed">
-                  Conformal curvature seams, 20 relaxation passes, zero island overlap, and 1% gutter padding are automatically calculated and applied for zero texture stretching.
+                  The generated UV mesh is marked complete only after the requested Blender packing produces its output file. Inspect the result before relying on it for final texture baking.
                 </div>
               </div>
             </div>

@@ -1880,16 +1880,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
         ...meshRef,
       };
 
-      if (textureSettings.maskImage) {
-        if (textureSettings.maskImageFileId) {
-          body.mask_file_id = textureSettings.maskImageFileId;
-        } else if (textureSettings.maskImage.startsWith('data:')) {
-          body.mask_base64 = textureSettings.maskImage.replace(/^data:image\/[a-z0-9.+-]+;base64,/, '');
-        } else {
-          body.mask_path = textureSettings.maskImage;
-        }
-      }
-
       if (modelPreference.includes('paint_v21') || isHighRes) {
         body.model_parameters = {
           max_num_view: textureSettings.maxNumView ?? 6,

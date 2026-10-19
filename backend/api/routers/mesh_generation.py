@@ -376,6 +376,9 @@ class ImageMeshPaintingRequest(BaseModel):
     model_preference: str = Field(
         "trellis_image_mesh_painting", description="Model name for mesh generation"
     )
+    text_prompt: Optional[str] = Field(
+        None, description="Optional Paint3D text prompt; Hunyuan3D-Paint is reference-image guided"
+    )
     model_parameters: Optional[dict] = Field(
         None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
@@ -1258,6 +1261,12 @@ async def image_mesh_painting(
     try:
         user_id = getattr(current_user, "user_id", None)
         
+        if mesh_request.mask_path or mesh_request.mask_base64 or mesh_request.mask_file_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Localized UV-mask retexturing is not supported by Paint3D/Hunyuan3D-Paint yet. Submit a full-mesh texture request without a mask.",
+            )
+
         # Resolution routing: 1K/2K strictly routes to Paint3D, 4K/8K strictly routes to Hunyuan3D-Paint-v2-1
         model_preference = mesh_request.model_preference
         if model_preference in ("trellis_image_mesh_painting", "auto", "default", None, ""):
@@ -1321,6 +1330,7 @@ async def image_mesh_painting(
                         else mesh_request.texture_resolution
                     )
                 ),
+                **({"prompt": mesh_request.text_prompt.strip()} if mesh_request.text_prompt and "paint_v21" not in model_preference else {}),
                 "enable_postprocess": False,
                 "postprocess_mode": mesh_request.postprocess_mode or "manual_mesh_tool",
                 **_clean_paint_parameters(mesh_request.model_parameters),
