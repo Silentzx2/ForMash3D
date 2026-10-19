@@ -53,7 +53,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         schema = adapter.get_parameter_schema()["parameters"]
         self.assertEqual(schema["octree_resolution"]["default"], 512)
         self.assertTrue(schema["octree_resolution"]["readOnly"])
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
+        self.assertEqual(schema["num_inference_steps"]["default"], 100)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
         self.assertEqual(schema["seed"]["default"], 1234)
         legacy_source = (backend_root / "adapters/hunyuan3d_adapter_v21.py").read_text(encoding="utf-8")
@@ -71,8 +71,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["octree_resolution"]["default"], 512)
         self.assertEqual(schema["octree_resolution"]["maximum"], 512)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
-        self.assertEqual(schema["guidance_scale"]["default"], 7.5)
+        self.assertEqual(schema["num_inference_steps"]["default"], 100)
+        self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
     def test_hunyuan3d_dit_mini_turbo_contract(self):
         from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter
@@ -80,9 +80,9 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Turbo keeps its trained 5-step schedule while using max supported extraction resolution.
-        self.assertEqual(schema["octree_resolution"]["default"], 512)
-        self.assertEqual(schema["octree_resolution"]["maximum"], 512)
+        # Turbo keeps its trained 5-step schedule and checkpoint-trained extraction ceiling (380).
+        self.assertEqual(schema["octree_resolution"]["default"], 380)
+        self.assertEqual(schema["octree_resolution"]["maximum"], 380)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
         self.assertEqual(schema["num_inference_steps"]["default"], 5)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
@@ -106,8 +106,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TrellisTextToTexturedMeshAdapter(vram_requirement=11776)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["ss_sampling_steps"]["default"], 25)
-        self.assertEqual(schema["slat_sampling_steps"]["default"], 25)
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 50)
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 50)
 
     def test_trellis2_adapter_contract(self):
         from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
