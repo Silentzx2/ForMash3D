@@ -382,7 +382,8 @@ image_mesh_painting:
     enabled: true
     max_workers: 1
 
-  # EXPERIMENTAL_MAX_DETAIL: TRELLIS.2 texture atlas supports 4096 by default and 8192 in the adapter; community sampler profile is experimental.
+  # EXPERIMENTAL_MAX_DETAIL: texture atlas supports 4096 by default and 8192 in the adapter; texture stage uses 50 steps / guidance 2.5 / rescale 0.2 / rescale_t 6.0.
+  # Values are a community candidate, not a verified universal optimum; ask the user once before later changes.
   trellis2_image_mesh_painting:
     capabilities:
       texture_generation: true
