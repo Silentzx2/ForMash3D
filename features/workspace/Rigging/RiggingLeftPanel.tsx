@@ -24,7 +24,6 @@ export const RiggingLeftPanel: React.FC = () => {
     setCharacterInfo,
     riggingMethod,
     setRiggingMethod,
-    riggingMethod,
     symmetry,
     setSymmetry,
     advancedOptionsOpen,
