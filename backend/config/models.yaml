@@ -376,7 +376,7 @@ image_mesh_painting:
       multiview: false
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch
-    vram_requirement: 12000  # MB — lowered from 21504; CPU offload keeps peak below 15GB
+    vram_requirement: 12000  # MB — configured scheduler reservation, not a measured peak-memory guarantee
     supported_inputs: ["mesh", "text", "image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
