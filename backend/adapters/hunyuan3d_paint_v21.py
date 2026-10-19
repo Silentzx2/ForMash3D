@@ -212,6 +212,10 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             planned_gpus = [
                 int(gpu) for gpu in (getattr(self, "resource_plan", None) or {}).get("gpu_ids", [])
             ]
+            if not planned_gpus and self.gpu_id is not None:
+                planned_gpus = [int(self.gpu_id)]
+            if planned_gpus:
+                conf.device = f"cuda:{planned_gpus[0]}"
             if len(planned_gpus) > 1:
                 conf.component_devices = [f"cuda:{gpu}" for gpu in planned_gpus]
                 logger.info(

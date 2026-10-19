@@ -326,17 +326,22 @@ def dispatch_pipeline_across_gpus(
                 pipeline,
                 max_memory=max_memory or None,
             )
-            dispatch_model(pipeline, device_map=device_map, offload_dir=offload_dir)
             assigned_gpus = sorted({
                 int(device) for device in device_map.values()
                 if isinstance(device, int) or (isinstance(device, str) and device.isdigit())
             })
-            return {
-                "applied": True,
-                "strategy": "accelerate_auto_device_map",
-                "gpu_ids": assigned_gpus,
-                "device_map": str(device_map),
-            }
+            if len(assigned_gpus) >= 2:
+                dispatch_model(pipeline, device_map=device_map, offload_dir=offload_dir)
+                return {
+                    "applied": True,
+                    "strategy": "accelerate_auto_device_map",
+                    "gpu_ids": assigned_gpus,
+                    "device_map": str(device_map),
+                }
+            logger.warning(
+                "Accelerate device map selected fewer than two GPUs (%s); trying component dispatch",
+                device_map,
+            )
     except ImportError:
         logger.debug("accelerate is not installed; falling back to component dispatch")
     except Exception as e:
@@ -368,12 +373,10 @@ def dispatch_pipeline_across_gpus(
             if device.startswith("cuda:")
         }
         if failures or len(used_gpus) < 2:
-            return {
-                "applied": False,
-                "reason": "component_dispatch_incomplete",
-                "gpu_ids": sorted(used_gpus),
-                "errors": failures,
-            }
+            raise RuntimeError(
+                "Multi-GPU resource plan could not be applied to every pipeline component; "
+                f"used_gpus={sorted(used_gpus)}, errors={failures}"
+            )
         return {
             "applied": True,
             "strategy": "accelerate_component_dispatch",
@@ -405,12 +408,10 @@ def dispatch_pipeline_across_gpus(
                     if device.startswith("cuda:")
                 }
                 if failures or len(used_gpus) < 2:
-                    return {
-                        "applied": False,
-                        "reason": "child_dispatch_incomplete",
-                        "gpu_ids": sorted(used_gpus),
-                        "errors": failures,
-                    }
+                    raise RuntimeError(
+                        "Multi-GPU resource plan could not be applied to every child module; "
+                        f"used_gpus={sorted(used_gpus)}, errors={failures}"
+                    )
                 return {
                     "applied": True,
                     "strategy": "accelerate_component_dispatch",
@@ -420,4 +421,6 @@ def dispatch_pipeline_across_gpus(
         except Exception as e:
             logger.warning("Could not dispatch children of pipeline: %s", e)
 
-    return {"applied": False, "reason": "no_dispatchable_components"}
+    raise RuntimeError(
+        "Multi-GPU resource plan was selected, but the model exposes no dispatchable components."
+    )

@@ -389,8 +389,7 @@ image_mesh_painting:
       texture_refine: true
       multiview: false
       supported_resolutions: [1024, 2048]
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      # Paint3D stages run in isolated single-GPU subprocesses; aggregate VRAM is not model sharding.
     vram_requirement: 12000  # MB
     supported_inputs: ["mesh", "image"]
     supported_outputs: ["glb", "obj"]
