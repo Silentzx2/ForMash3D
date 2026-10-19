@@ -11,6 +11,13 @@ import { toast } from 'sonner';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { AlertCircle, BoneIcon, ChevronDown, ChevronUp, KeyIcon, LoaderCircle, PlayIcon, RefreshCw, RotateCw, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
+const LEGACY_ARDY_CHECKPOINTS: Record<string, string> = {
+  'ardy-core': 'ARDY-Core-RP-20FPS-Horizon40',
+  'ardy-core (default)': 'ARDY-Core-RP-20FPS-Horizon40',
+  'ardy-g1': 'ARDY-G1-RP-25FPS-Horizon52',
+  'ardy-unitree-g1': 'ARDY-G1-RP-25FPS-Horizon52',
+  'ardy-rp-20fps': 'ARDY-Core-RP-20FPS-Horizon40',
+};
 export const AnimationLeftPanel: React.FC = () => {
   const { currentAsset } = useWorkspace();
   const router = useRouter();
@@ -84,6 +91,15 @@ export const AnimationLeftPanel: React.FC = () => {
     pollRef.current = null;
     setMotionAiIsGenerating(false);
   }, [setMotionAiIsGenerating]);
+
+  useEffect(() => {
+    const checkpoint = LEGACY_ARDY_CHECKPOINTS[ardyCheckpoint];
+    if (!checkpoint) return;
+    const isG1 = checkpoint.includes('ARDY-G1');
+    setArdyCheckpoint(checkpoint);
+    setArdyModel(isG1 ? 'ardy-g1' : 'ardy-core');
+    setMotionAiFps(isG1 ? 25 : 20);
+  }, [ardyCheckpoint, setArdyCheckpoint, setArdyModel, setMotionAiFps]);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,15 +206,18 @@ export const AnimationLeftPanel: React.FC = () => {
 
     try {
       const client = getApiClient();
-      const targetSkeleton = ardyModel.includes('g1') ? 'g1' : 'core';
+      const normalizedCheckpoint = LEGACY_ARDY_CHECKPOINTS[ardyCheckpoint] ?? ardyCheckpoint;
+      const checkpointOption = CHECKPOINT_OPTIONS.find((checkpoint) => checkpoint.id === normalizedCheckpoint)
+        ?? CHECKPOINT_OPTIONS.find((checkpoint) => checkpoint.skeleton === (ardyModel.includes('g1') ? 'g1' : 'core'))!;
+      const targetSkeleton = checkpointOption.skeleton;
 
       const resp = await client.generateMotion({
         prompt: motionAiPrompt.trim(),
         duration: motionAiDuration,
         seed: motionAiSeed ?? undefined,
-        model_preference: ardyModel,
+        model_preference: 'ardy_motion_generation',
         model_parameters: {
-          checkpoint: ardyCheckpoint,
+          checkpoint: checkpointOption.id,
           post_process: motionCorrection,
           target_skeleton: targetSkeleton,
           constraints: mouseWaypointMode

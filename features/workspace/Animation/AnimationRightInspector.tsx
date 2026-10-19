@@ -19,8 +19,10 @@ export const AnimationRightInspector: React.FC = () => {
     inspectorTab,
     setInspectorTab,
     ardyModel,
+    setArdyModel,
     ardyCheckpoint,
     setArdyCheckpoint,
+    setMotionAiFps,
     ardyMode,
     setArdyMode,
     autoReplan,
@@ -201,13 +203,26 @@ export const AnimationRightInspector: React.FC = () => {
                     <label className="text-[11px] font-medium text-zinc-400">Checkpoint</label>
                     <div className="relative">
                       <select
-                        value={ardyCheckpoint}
-                        onChange={(e) => setArdyCheckpoint(e.target.value)}
+                        value={
+                          ardyCheckpoint.startsWith('ARDY-')
+                            ? ardyCheckpoint
+                            : ardyCheckpoint.toLowerCase().includes('g1')
+                              ? 'ARDY-G1-RP-25FPS-Horizon52'
+                              : 'ARDY-Core-RP-20FPS-Horizon40'
+                        }
+                        onChange={(e) => {
+                          const checkpoint = e.target.value;
+                          const isG1 = checkpoint.includes('ARDY-G1');
+                          setArdyCheckpoint(checkpoint);
+                          setArdyModel(isG1 ? 'ardy-g1' : 'ardy-core');
+                          setMotionAiFps(isG1 ? 25 : 20);
+                        }}
                         className="w-full h-8 px-2.5 bg-[hsl(var(--surface-2))] border border-white/[0.08] rounded-lg text-xs text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
                       >
-                        <option value="ardy-core (default)">ardy-core (default)</option>
-                        <option value="ardy-unitree-g1">ardy-unitree-g1</option>
-                        <option value="ardy-rp-20fps">ardy-rp-20fps-horizon40</option>
+                        <option value="ARDY-Core-RP-20FPS-Horizon40">ARDY Core · 20 FPS · Horizon 40</option>
+                        <option value="ARDY-Core-RP-20FPS-Horizon8">ARDY Core · 20 FPS · Horizon 8</option>
+                        <option value="ARDY-G1-RP-25FPS-Horizon52">ARDY G1 · 25 FPS · Horizon 52</option>
+                        <option value="ARDY-G1-RP-25FPS-Horizon8">ARDY G1 · 25 FPS · Horizon 8</option>
                       </select>
                       <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400 absolute right-2.5 top-2.5 pointer-events-none" />
                     </div>

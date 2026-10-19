@@ -116,3 +116,21 @@ def test_unique3d_normal_checkpoint_uses_four_channel_compatible_base():
     assert "Attempting fallback to local img2mvimg base" not in normal_load
     assert 'self.mvimg_config = str(self.unique3d_root / "app" / "custom_models" / "image2mvimage.yaml")' in adapter
     assert 'self.mvimg_checkpoint = str(Path(model_path) / "ckpt" / "img2mvimg" / "unet" / "diffusion_pytorch_model.safetensors")' in adapter
+
+def test_animation_motion_request_uses_registered_ardy_id_and_canonical_checkpoints():
+    panel = (ROOT / "features" / "workspace" / "Animation" / "AnimationLeftPanel.tsx").read_text(encoding="utf-8")
+    inspector = (ROOT / "features" / "workspace" / "Animation" / "AnimationRightInspector.tsx").read_text(encoding="utf-8")
+    route = (ROOT / "backend" / "api" / "routers" / "motion_generation.py").read_text(encoding="utf-8")
+    adapter = (ROOT / "backend" / "adapters" / "ardy_adapter.py").read_text(encoding="utf-8")
+
+    assert "model_preference: 'ardy_motion_generation'" in panel
+    assert "model_preference: ardyModel" not in panel
+    assert "const checkpointOption = CHECKPOINT_OPTIONS.find" in panel
+    assert "LEGACY_MODEL_PREFERENCES = {" in route
+    assert 'model_preference = LEGACY_MODEL_PREFERENCES.get(request.model_preference, request.model_preference)' in route
+    assert "model_preference=model_preference" in route
+    assert '<option value="ardy-core (default)' not in inspector
+    assert '<option value="ardy-unitree-g1' not in inspector
+    assert '<option value="ARDY-G1-RP-25FPS-Horizon52"' in inspector
+    assert '"ardy-unitree-g1": "ARDY-G1-RP-25FPS-Horizon52"' in adapter
+    assert '"ardy-rp-20fps": "ARDY-Core-RP-20FPS-Horizon40"' in adapter

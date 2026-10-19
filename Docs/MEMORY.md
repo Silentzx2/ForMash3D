@@ -1,3 +1,10 @@
+## 2026-10-19 — Animation ARDY Model-ID / Checkpoint Contract
+
+- Root cause: `AnimationLeftPanel` sent UI skeleton labels `ardy-core` / `ardy-g1` as `model_preference`, but `models.yaml` has one registered motion model: `ardy_motion_generation`. The right inspector stored legacy checkpoint labels (`ardy-core (default)`, `ardy-unitree-g1`, `ardy-rp-20fps`) that are not accepted ARDY checkpoint variants.
+- Fix: frontend sends `ardy_motion_generation`, maps old persisted labels to a real checkpoint ID, and derives the target skeleton from that checkpoint. The API maps older model IDs for stale clients; the adapter maps old checkpoint labels to official variants.
+- The supplied Unique3D fallback log is absent from current `dev` source and proves the runtime is running pre-fix backend code. The corrected adapter is already pushed to `dev`, ThirdParty `main` has the compatible normal base, and the submodule is pinned to that commit. Pull `dev`, sync submodules, and restart API/scheduler workers before re-testing.
+- Validation boundary: source-contract tests and CI type-check/build cover these changes; actual model checkpoint inference was not performed in this editing environment.
+
 ## 2026-10-19 — Unique3D Normal Checkpoint Channel Compatibility
 
 - Root cause: `_resolve_normal_config()` preferred the local trained `img2mvimg` model for normal prediction. Its UNet expects 8 input channels, but the `image2normal` checkpoint stores 4-channel `conv_in.weight` and `ref_unet.conv_in.weight` tensors. The local-first fallback repeated the incompatible initialization.

@@ -16,6 +16,11 @@ from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
 
 logger = logging.getLogger(__name__)
 
+LEGACY_MODEL_PREFERENCES = {
+    "ardy-core": "ardy_motion_generation",
+    "ardy-g1": "ardy_motion_generation",
+}
+
 router = APIRouter(prefix="/motion-generation", tags=["motion_generation"])
 
 
@@ -64,9 +69,11 @@ async def generate_motion(
     """
     user_id = current_user.user_id if current_user else None
 
-    # Validate model preference
+    # Old clients used skeleton labels as model IDs; ARDY variants are checkpoints
+    # of one registered model, not separately registered scheduler models.
     feature = "motion_generation"
-    if not scheduler.validate_model_preference(request.model_preference, feature):
+    model_preference = LEGACY_MODEL_PREFERENCES.get(request.model_preference, request.model_preference)
+    if not scheduler.validate_model_preference(model_preference, feature):
         available_models = scheduler.get_available_models(feature)
         feature_models = available_models.get(feature, [])
         if not feature_models:
@@ -76,7 +83,7 @@ async def generate_motion(
             )
         raise HTTPException(
             status_code=400,
-            detail=f"Model '{request.model_preference}' is not available for feature '{feature}'. "
+            detail=f"Model '{model_preference}' is not available for feature '{feature}'. "
             f"Available models: {feature_models}",
         )
 
@@ -96,7 +103,7 @@ async def generate_motion(
         job_request = JobRequest(
             feature=feature,
             inputs=job_inputs,
-            model_preference=request.model_preference,
+            model_preference=model_preference,
             priority=1,
             metadata={"feature_type": feature, "prompt": request.prompt},
             user_id=user_id,

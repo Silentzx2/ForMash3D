@@ -428,6 +428,7 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 ### Motion Generation
 - `POST /api/v1/motion-generation/generate-motion`: Synthesize 3D human motion from text.
 - `GET /api/v1/motion-generation/checkpoints`: Query installed ARDY checkpoints.
+- `model_preference` must use the registered ID `ardy_motion_generation`; Core and G1 are checkpoint variants (`ARDY-Core-RP-20FPS-Horizon40`, `ARDY-Core-RP-20FPS-Horizon8`, `ARDY-G1-RP-25FPS-Horizon52`, `ARDY-G1-RP-25FPS-Horizon8`), not separate scheduler model IDs.
 
 ---
 

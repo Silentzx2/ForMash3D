@@ -37,6 +37,11 @@ CHECKPOINT_VARIANTS = {
     "ARDY-Core-RP-20FPS-Horizon8": "ARDY-Core-RP-20FPS-Horizon8",
     "ARDY-G1-RP-25FPS-Horizon52": "ARDY-G1-RP-25FPS-Horizon52",
     "ARDY-G1-RP-25FPS-Horizon8": "ARDY-G1-RP-25FPS-Horizon8",
+    "ardy-core": "ARDY-Core-RP-20FPS-Horizon40",
+    "ardy-core (default)": "ARDY-Core-RP-20FPS-Horizon40",
+    "ardy-g1": "ARDY-G1-RP-25FPS-Horizon52",
+    "ardy-unitree-g1": "ARDY-G1-RP-25FPS-Horizon52",
+    "ardy-rp-20fps": "ARDY-Core-RP-20FPS-Horizon40",
 }
 
 DEFAULT_CHECKPOINT = "ARDY-Core-RP-20FPS-Horizon40"
