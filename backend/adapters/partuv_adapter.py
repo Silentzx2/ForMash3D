@@ -35,6 +35,8 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
         vram_requirement: Optional[int] = None,
         partuv_root: Optional[str] = None,
         config_path: Optional[str] = None,
+        # EXPERIMENTAL_MAX_DETAIL: retain upstream distortion threshold 1.25; higher values allow more distortion.
+        # This adapter exposes no sampler-step/CFG controls. Ask user once before changing this locked default.
         distortion_threshold: float = 1.25,
     ):
         if model_path is None:
