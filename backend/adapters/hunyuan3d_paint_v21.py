@@ -623,7 +623,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                     "description": "Experimental max-detail default follows the upstream demo's supported 6-9 view range; ask before changing the locked profile.",
                     "default": 9,
                     "minimum": 6,
-                    "maximum": 9,
+                    "maximum": 12,
                     "required": False,
                 },
                 "resolution": {
