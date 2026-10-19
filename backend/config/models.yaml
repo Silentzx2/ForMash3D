@@ -310,6 +310,7 @@ image_to_raw_mesh:
 
 # image-conditioned geometry+texture generation (legacy aliases routing to raw geometry)
 image_to_textured_mesh:
+  # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS profile; 50-step source configuration, shared CFG=7.5, simplify=0.0.
   trellis_image_to_textured_mesh:
     alias_of: "trellis_image_to_3d"
     deprecated: true
@@ -331,6 +332,7 @@ image_to_textured_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS.2 profile; 1536 cascade and separate 50-step sparse/shape/texture sampler candidate.
   trellis2_image_to_textured_mesh:
     alias_of: "trellis2_image_to_3d"
     deprecated: true
