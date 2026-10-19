@@ -51,7 +51,8 @@ This is a **static source audit**, not a claim that GPU inference, Blender, brow
 | RIG-01 | **Fixed** — unsupported UniRig topology/IK/weight override controls were removed instead of submitting ignored parameters; manual mirror remains editor-only. |
 | RIG-02 | **Fixed** — legacy armature inspector checks the persisted-save result before success notification/navigation. |
 | RIG-03 | **Fixed** — Manual Armature mode no longer dispatches a UniRig AI job. |
-| ANIM-01, ANIM-02 | **Pending** — BVH export and polling reliability remain to be addressed. |
+| ANIM-01 | **Mitigated** — BVH download is enabled only when the selected clip already contains a BVH artifact; unsupported JSON conversion is no longer presented as a generation action. |
+| ANIM-02 | **Fixed** — status polling stops after five consecutive failures, retains the existing job ID, and exposes a retry that does not resubmit generation. |
 
 ## Detailed findings
 
@@ -289,7 +290,7 @@ This is not a claim that every optional dependency, checkpoint, Python environme
 - [ ] UV: parameter tests for default/non-default distortion threshold and each supported setting; false/true individual-part file-output test; forced packing exception test; result metadata matches actual artifacts.
 - [ ] UV Inspector: select two different meshes and confirm displayed UVs/metrics change to their actual data; verify channel, Fit and Fullscreen controls.
 - [ ] Rigging: assert each retained option reaches a supported UniRig configuration; force localStorage failure and verify the inspector remains truthful.
-- [ ] Animation: prove a JSON motion clip can produce a downloadable BVH; prove transient polling errors can recover and persistent failures become a visible recoverable state.
+- [ ] Animation: verify only existing BVH artifacts enable download; verify repeated status failures stop at the configured limit and user retry reconnects to the same job ID.
 - [ ] Runtime: run adapter import tests plus environment-appropriate model-load and GPU-backed smoke tests on a machine with installed dependencies/weights. Report skipped tests distinctly from passing tests.
 
-**Bottom line:** The inspected PartUV/UniRig import mappings did not show a confirmed broken Python import. Texture export/mask handling and PartUV threshold/output contracts have been corrected or explicitly disabled where model support does not exist. Animation export and polling findings remain for follow-up; UV inspector and rigging contract findings were fixed in the latest source change. Runtime GPU/Blender verification is still required.
+**Bottom line:** The inspected PartUV/UniRig import mappings did not show a confirmed broken Python import. Texture export/mask handling and PartUV threshold/output contracts have been corrected or explicitly disabled where model support does not exist. UV inspector, rigging and bounded animation polling findings were fixed in the latest source changes. JSON-to-BVH conversion remains unsupported and is now clearly disabled for clips without a BVH artifact. Runtime GPU/Blender verification is still required.

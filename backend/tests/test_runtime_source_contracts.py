@@ -187,3 +187,18 @@ def test_unirig_controls_match_supported_adapter_and_save_failure_is_handled():
     assert "riggingMethod === 'manual_rig'" in panel
     assert "if (!saved)" in inspector
 
+def test_motion_polling_is_bounded_and_retry_reuses_the_existing_job():
+    panel = (ROOT / "features" / "workspace" / "Animation" / "AnimationLeftPanel.tsx").read_text(encoding="utf-8")
+    assert "MAX_MOTION_STATUS_POLL_ERRORS = 5" in panel
+    assert "Retry status polling for the existing job" in panel
+    assert "startMotionPolling(motionJobId" in panel
+    assert "The job ID is retained" in panel
+
+
+def test_bvh_action_only_enables_for_real_bvh_artifacts():
+    inspector = (ROOT / "features" / "workspace" / "Animation" / "AnimationRightInspector.tsx").read_text(encoding="utf-8")
+    assert "hasBvhArtifact" in inspector
+    assert "disabled={!hasBvhArtifact}" in inspector
+    assert "Motion JSON-to-BVH conversion is not implemented" in inspector
+    assert "Generating BVH MoCap Stream" not in inspector
+

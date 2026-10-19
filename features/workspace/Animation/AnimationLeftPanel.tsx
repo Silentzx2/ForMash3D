@@ -11,6 +11,8 @@ import { toast } from 'sonner';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { AlertCircle, BoneIcon, ChevronDown, ChevronUp, KeyIcon, LoaderCircle, PlayIcon, RefreshCw, RotateCw, SlidersHorizontalIcon, SparklesIcon } from '@hugeicons/core-free-icons';
+const MAX_MOTION_STATUS_POLL_ERRORS = 5;
+
 const LEGACY_ARDY_CHECKPOINTS: Record<string, string> = {
   'ardy-core': 'ARDY-Core-RP-20FPS-Horizon40',
   'ardy-core (default)': 'ARDY-Core-RP-20FPS-Horizon40',
@@ -22,6 +24,9 @@ export const AnimationLeftPanel: React.FC = () => {
   const { currentAsset } = useWorkspace();
   const router = useRouter();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollErrorCountRef = useRef(0);
+  const [motionJobId, setMotionJobId] = useState<string | null>(null);
+  const [canRetryMotionStatus, setCanRetryMotionStatus] = useState(false);
   const {
     activeMode,
     setActiveMode,
@@ -186,6 +191,81 @@ export const AnimationLeftPanel: React.FC = () => {
     { id: 'ARDY-G1-RP-25FPS-Horizon8', label: 'ardy-g1-h8 (fast)', skeleton: 'g1', fps: 25 },
   ];
 
+  const startMotionPolling = (jobId: string, targetSkeleton: string, client = getApiClient()) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = null;
+    pollErrorCountRef.current = 0;
+    setMotionJobId(jobId);
+    setCanRetryMotionStatus(false);
+    setMotionAiError(null);
+    setMotionAiIsGenerating(true);
+    setMotionAiStage('Checking ARDY job status...');
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const job = await client.getJobStatus(jobId);
+        pollErrorCountRef.current = 0;
+        if (!pollRef.current) return;
+        if (job.status === 'completed') {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          setMotionJobId(null);
+          setCanRetryMotionStatus(false);
+          setMotionAiIsGenerating(false);
+          setMotionAiStage('Completed');
+          setMotionAiProgress(100);
+
+          // The job download route serves generated JSON; adapter file paths are server-local, not browser URLs.
+          const outputJson = `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download`;
+          const newClip: AnimationClipItem = {
+            id: `ardy-gen-${Date.now()}`,
+            name: motionAiPrompt.length > 28 ? motionAiPrompt.slice(0, 28) + '...' : motionAiPrompt,
+            category: 'Custom',
+            duration: Number(job.result?.duration) || motionAiDuration,
+            fps: Number(job.result?.fps) || motionAiFps,
+            keyframesCount: Number(job.result?.num_frames) || Math.round(motionAiDuration * motionAiFps),
+            url: outputJson,
+            motionJsonUrl: outputJson,
+            artifactType: 'motion',
+            skeletonId: String(job.result?.skeleton_id || targetSkeleton),
+            jointNames: Array.isArray(job.result?.joint_names) ? job.result.joint_names.filter((name: unknown): name is string => typeof name === 'string') : undefined,
+          };
+          addAnimation(newClip);
+          setCurrentAnimationId(newClip.id);
+          toast.success('Motion generated successfully!', {
+            description: `Created ${newClip.duration.toFixed(1)}s clip via ARDY.`,
+          });
+        } else if (job.status === 'failed' || job.status === 'cancelled') {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          setMotionJobId(null);
+          setCanRetryMotionStatus(false);
+          setMotionAiIsGenerating(false);
+          const errMsg = (job as any).error_message || `Motion synthesis ${job.status}`;
+          setMotionAiError(errMsg);
+          toast.error('Generation Failed', { description: errMsg });
+        } else if (job.status === 'processing') {
+          setMotionAiStage('Running ARDY motion synthesis...');
+          setMotionAiProgress(65);
+        }
+      } catch (pollErr) {
+        if (!pollRef.current) return;
+        pollErrorCountRef.current += 1;
+        console.warn('Poll error:', pollErr);
+        if (pollErrorCountRef.current >= MAX_MOTION_STATUS_POLL_ERRORS) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+          setMotionAiIsGenerating(false);
+          setMotionAiStage('Status unavailable — retry to reconnect');
+          const message = `Could not retrieve this ARDY job's status after ${MAX_MOTION_STATUS_POLL_ERRORS} failed attempts. The job ID is retained; retry status polling before submitting another generation job.`;
+          setMotionAiError(message);
+          setCanRetryMotionStatus(true);
+          toast.error('Motion status unavailable', { description: message });
+        }
+      }
+    }, 1500);
+  };
+
   const handleGenerate = async () => {
     if (!hasRig) {
       toast.info("This model isn't rigged yet — rig it first.");
@@ -194,6 +274,9 @@ export const AnimationLeftPanel: React.FC = () => {
     }
     if (pollRef.current) clearInterval(pollRef.current);
     pollRef.current = null;
+    setMotionJobId(null);
+    setCanRetryMotionStatus(false);
+    pollErrorCountRef.current = 0;
     if (!motionAiPrompt.trim()) {
       toast.error('Please enter a motion prompt');
       return;
@@ -237,53 +320,7 @@ export const AnimationLeftPanel: React.FC = () => {
       setMotionAiStage('Queued in scheduler...');
       setMotionAiProgress(25);
 
-      pollRef.current = setInterval(async () => {
-        try {
-          const job = await client.getJobStatus(jobId);
-          if (!pollRef.current) return;
-          if (job.status === 'completed') {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-            setMotionAiIsGenerating(false);
-            setMotionAiStage('Completed');
-            setMotionAiProgress(100);
-
-            // The job download route serves the generated JSON; adapter file paths are server-local, not browser URLs.
-            const outputJson = `/api/v1/system/jobs/${encodeURIComponent(jobId)}/download`;
-            const newClip: AnimationClipItem = {
-              id: `ardy-gen-${Date.now()}`,
-              name: motionAiPrompt.length > 28 ? motionAiPrompt.slice(0, 28) + '...' : motionAiPrompt,
-              category: 'Custom',
-              duration: Number(job.result?.duration) || motionAiDuration,
-              fps: Number(job.result?.fps) || motionAiFps,
-              keyframesCount: Number(job.result?.num_frames) || Math.round(motionAiDuration * motionAiFps),
-              url: outputJson,
-              motionJsonUrl: outputJson,
-              artifactType: 'motion',
-              skeletonId: String(job.result?.skeleton_id || targetSkeleton),
-              jointNames: Array.isArray(job.result?.joint_names) ? job.result.joint_names.filter((name: unknown): name is string => typeof name === 'string') : undefined,
-            };
-
-            addAnimation(newClip);
-            setCurrentAnimationId(newClip.id);
-            toast.success('Motion generated successfully!', {
-              description: `Created ${newClip.duration.toFixed(1)}s clip via ARDY.`,
-            });
-          } else if (job.status === 'failed' || job.status === 'cancelled') {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-            setMotionAiIsGenerating(false);
-            const errMsg = (job as any).error_message || `Motion synthesis ${job.status}`;
-            setMotionAiError(errMsg);
-            toast.error('Generation Failed', { description: errMsg });
-          } else if (job.status === 'processing') {
-            setMotionAiStage('Running ARDY motion synthesis...');
-            setMotionAiProgress(65);
-          }
-        } catch (pollErr) {
-          console.warn('Poll error:', pollErr);
-        }
-      }, 1500);
+      startMotionPolling(jobId, targetSkeleton, client);
     } catch (err: any) {
       setMotionAiIsGenerating(false);
       const msg = err.response?.data?.detail || err.message || 'Generation failed';
@@ -766,6 +803,18 @@ export const AnimationLeftPanel: React.FC = () => {
                 <HugeiconsIcon icon={AlertCircle} size={16} className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1 break-words leading-relaxed">{motionAiError}</div>
               </div>
+            )}
+            {canRetryMotionStatus && motionJobId && (
+              <button
+                type="button"
+                onClick={() => {
+                  const normalized = LEGACY_ARDY_CHECKPOINTS[ardyCheckpoint] ?? ardyCheckpoint;
+                  startMotionPolling(motionJobId, normalized.includes('ARDY-G1') ? 'g1' : 'core');
+                }}
+                className="w-full py-2 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.1] text-xs font-bold text-primary hover:text-white cursor-pointer"
+              >
+                Retry status polling for the existing job
+              </button>
             )}
 
             {/* Progress Stage */}

@@ -1,3 +1,9 @@
+## 2026-10-19 — Animation Export and Status Recovery
+
+- The BVH action is enabled only when the selected clip already has a BVH artifact; it downloads that file and no longer pretends to synthesize BVH from ARDY JSON.
+- ARDY job-status polling stops after five consecutive request failures, preserves the existing job ID, and exposes a user-triggered retry that reconnects to the same job rather than generating a duplicate.
+- CPU source-contract tests added; browser download and actual ARDY polling remain to be validated by CI/runtime execution.
+
 ## 2026-10-19 — Live UV Inspection and Rigging Contract
 
 - UV Inspector renders UV edges from the loaded viewport geometry and selected UV channel. Mesh/UV counts, bounds and out-of-bounds values are computed from real geometry; expensive island-overlap and texel-density metrics are explicitly not claimed.
