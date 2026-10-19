@@ -211,7 +211,8 @@ class UniRigAdapter(AutoRigModel):
                     logger.info(f"Using companion FBX file for rigging: {companion_fbx}")
                     mesh_path = companion_fbx
 
-            # Extract parameters
+            # EXPERIMENTAL_MAX_DETAIL: UniRig exposes rig_mode and optional seed, not CFG/denoising steps.
+            # Upstream recommends refining an inaccurate predicted skeleton before skinning. Ask before changing profile defaults.
             rig_mode = inputs.get("rig_mode", "full")
             raw_output_format = str(inputs.get("output_format", "fbx")).lower().strip()
             output_format = raw_output_format if raw_output_format in ["fbx", "glb"] else "fbx"
