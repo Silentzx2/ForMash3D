@@ -267,14 +267,19 @@ def test_unirig_selects_only_attention_backends_supported_by_the_model():
     assert "'eager'" in source
 
 
-def test_fastmesh_manifest_does_not_claim_unsupported_multi_gpu_dispatch():
+def test_fastmesh_manifest_matches_explicit_multi_gpu_layer_dispatch():
     manifest = (BACKEND / "config" / "models.yaml").read_text(encoding="utf-8")
     start = manifest.index("  fastmesh_v1k_retopology:")
     end = manifest.index("\n# UV unwrapping", start)
     fastmesh = manifest[start:end]
+    runner = (BACKEND / "utils" / "fastmesh_utils.py").read_text(encoding="utf-8")
+    adapter = (BACKEND / "adapters" / "fastmesh_adapter.py").read_text(encoding="utf-8")
 
-    assert "multi_gpu:" not in fastmesh
-    assert "multi_gpu_strategy:" not in fastmesh
+    assert fastmesh.count("multi_gpu: true") == 2
+    assert fastmesh.count("multi_gpu_strategy: accelerate_auto_device_map") == 2
+    assert "infer_auto_device_map" in runner
+    assert "dispatch_model" in runner
+    assert "resource_plan=getattr(self, \"resource_plan\", None)" in adapter
     assert "vram_requirement: 16384" in fastmesh
     assert "vram_requirement: 24500" in fastmesh
 
