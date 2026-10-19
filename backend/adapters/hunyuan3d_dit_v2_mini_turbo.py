@@ -421,10 +421,10 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Dense sampling resolution; keep within the upstream-supported 512 maximum. Turbo sampler remains at its trained 5 steps.",
-                    "default": 512,
+                    "description": "Experimental max-detail resolution is capped at the checkpoint-trained 380; Turbo stays on its distilled 5-step schedule. Ask before changing the locked setting.",
+                    "default": 380,
                     "minimum": 64,
-                    "maximum": 512,
+                    "maximum": 380,
                     "required": False,
                 },
                 "num_chunks": {
