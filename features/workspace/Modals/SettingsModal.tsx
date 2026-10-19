@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { GenerationPresetDrawer } from './GenerationPresetDrawer';
 import Link from 'next/link';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { apiClient } from '../lib/api';
@@ -592,7 +593,12 @@ export const SettingsModal: React.FC = () => {
                   />
                 </button>
               </div>
+              <GenerationPresetDrawer />
             </div>
+          )}
+        </div>
+
+        {/* Footer */}            </div>
           )}
         </div>
 

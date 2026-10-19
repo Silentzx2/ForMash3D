@@ -1,11 +1,18 @@
+## 2026-10-20 — Generation Experiment Presets
+
+- Workspace Settings → AI Inference has a Generation Experiment Lab drawer using the existing model-parameter schema API, workspace settings, generation queue, and parameter builder.
+- Presets persist locally under ai3d:generation:presets:v1. Save/update/delete, load while preserving the current image, export one or all profiles as JSON, and import validated profiles are supported.
+- Controls include seed, guidance, schema-driven model parameters, inference steps where declared, advanced nested JSON overrides, Run Current Settings, and revision/experiment ID metadata. Revision is not sent to inference.
+- Explicit modelParameterOverrides merge after model-specific profiles so final body.model_parameters preserves experiment values. Schema caching now stores each field's default rather than the schema descriptor object.
+- Regression coverage verifies outgoing request overrides and rejects malformed/unsafe JSON. Browser interaction, frontend static checks, and GPU inference remain unverified until actually run.
+
 ## 2026-10-20 — Experimental Max-Detail Model Settings
 
-- The `EXPERIMENTAL_MAX_DETAIL` snapshot is now dated 2026-10-20 and documented in `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`; comments next to model settings point to it.
-- Hunyuan3D-Shape-v2.1 and legacy 2.1 profiles request 100 steps / guidance 5.0 within the official 512 octree ceiling. Mini Turbo remains at its checkpoint-compatible 5 steps / octree 380.
-- TRELLIS.2 uses the community issue #92 three-stage sampler candidate at 50 steps per stage, while raw-master export preserves `decimation_target=-1`. Pixal3D uses 1536 cascade and a clearly marked, not-directly-benchmarked adaptation of those staged sampler values.
-- Hunyuan Paint defaults to 9 views / 768 per-view inference; TRELLIS text generation defaults to the supported 50-step ceiling; TripoSG requests the repo's depth-9/10 profile subject to its existing VRAM guard.
-- Important limitation: no GPU inference or model-output A/B benchmark was run for this settings-only change. Community values are candidates, not proven quality gains; adapter controls that do not exist were not invented.
-- Change-control rule: future edits to locked profiles require asking the user once, presenting the proposed changes together, and waiting for explicit confirmation.
+- The frontend requests Hunyuan Shape-v2.1 / legacy Hunyuan at octree 1300 and 150 steps, although adapter schemas retain 512-octree / 100-step declarations. These are deliberate stress-test requests, not upstream-supported guarantees; OOM risk and output quality remain unbenchmarked.
+- Mini Turbo requests octree 768 and 20 steps while its adapter schema documents 380 and 5. This is an intentional experiment-profile divergence with VRAM/checkpoint risk.
+- TRELLIS sparse/SLAT settings request 100 steps despite schema defaults of 50. TRELLIS.2 uses 100 steps per sampler stage, a 524288-token budget, and raw-master decimation target -1.
+- The EXPERIMENTAL_MAX_DETAIL profile is an unbenchmarked stress-test snapshot. Comments and schema declarations must not be confused with effective frontend request values; no GPU inference or output-quality A/B benchmark is claimed.
+- Change-control stays locked: ask once and obtain explicit user confirmation before changing profile values in a later task.
 
 ## 2026-10-19 — Animation Export and Status Recovery
 

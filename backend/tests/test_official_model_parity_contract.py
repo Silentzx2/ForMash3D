@@ -178,10 +178,11 @@ class TestGenerationProductionContract(unittest.TestCase):
         build_params_content = build_params_path.read_text(encoding="utf-8")
         
         # Source sampling uses each model's max-fidelity profile; production budgets remain downstream.
-        self.assertIn("return 5", build_params_content)  # Hunyuan Mini Turbo's trained schedule
+        self.assertIn("return 20", build_params_content)  # current experimental Mini Turbo request
         self.assertIn("return 50", build_params_content)  # max-fidelity profiles
-        self.assertIn("modelId.startsWith('hunyuan3d_shape_v21')", build_params_content)
-        self.assertIn("modelParameters.octree_resolution = 512", build_params_content)
+        self.assertIn("normId.startsWith('hunyuan3d_shape_v21')", build_params_content)
+        self.assertIn("modelParameters.octree_resolution = 1300", build_params_content)
+        self.assertIn("modelParameters.num_inference_steps = 150", build_params_content)
         self.assertIn("modelParameters.use_flash_decoder = false", build_params_content)
         self.assertIn("ss_sampling_steps", build_params_content)
         self.assertIn("numericTextureResolution", build_params_content)
