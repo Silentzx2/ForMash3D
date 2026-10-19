@@ -560,7 +560,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       generateTexture: true,
       enableFlashVDM: false,
       lowVramMode: 'auto',
-      maxNumView: 6,
+      maxNumView: 9,
       resolution: 1024,
       generateCollision: true,
       generateLOD: false,
@@ -606,7 +606,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     prompt: '',
     modelId: '',
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
-    maxNumView: 6,
+    maxNumView: 9,
     generatePBR: true,
   });
 
@@ -1882,7 +1882,9 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
 
       if (modelPreference.includes('paint_v21') || isHighRes) {
         body.model_parameters = {
-          max_num_view: textureSettings.maxNumView ?? 6,
+          // EXPERIMENTAL_MAX_DETAIL: Hunyuan3D-Paint upstream supports 6-9 views; default to 9.
+          // Ask the user once before changing this locked quality profile in a later task.
+          max_num_view: textureSettings.maxNumView ?? 9,
           resolution: resolution === '8K' ? 768 : 512,
         };
       } else {
@@ -2164,7 +2166,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            generateTexture: batchItem.generateTexture ?? true,
            enableFlashVDM: batchItem.enableFlashVDM ?? false,
            lowVramMode: batchItem.lowVramMode ?? 'auto',
-           maxNumView: batchItem.maxNumView ?? 6,
+           maxNumView: batchItem.maxNumView ?? 9,
            resolution: batchItem.resolution ?? 1024,
            generateCollision: batchItem.generateCollision ?? true,
            intent: batchItem.intent,
