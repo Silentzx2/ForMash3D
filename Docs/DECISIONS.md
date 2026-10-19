@@ -1173,3 +1173,16 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 3. Synchronize the third-party repository revision through the main repository submodule pointer and add a CPU-only source contract.
 
 **Consequences:** Pre-Ampere devices avoid the known unsupported FlashAttention call and use the existing eager attention implementation. This trades potential throughput and VRAM efficiency for compatibility; GPU-backed UniRig inference remains the required runtime validation.
+
+
+## ADR-011: Fail-Closed Multi-GPU Placement
+
+**Decision**: Aggregate VRAM is a scheduling input only when the selected model adapter applies a real multi-GPU placement strategy. Use live physical free memory as a lower bound on scheduler-reported availability. If the adapter cannot place the model on at least two selected GPUs, fail with a diagnostic instead of pretending the plan succeeded.
+
+**Reason**: VRAM across devices is not automatically a shared memory pool. A strategy label or the sum of two cards is insufficient unless weights/components and tensors are actually routed across devices.
+
+**Consequences**:
+- FastMesh uses Accelerate's automatic device map with the scheduler's per-device memory budget.
+- Hunyuan3D-Paint uses explicit component placement and bounded row chunks for raster interpolation/extraction.
+- Paint3D child processes remain single-GPU and do not receive aggregate-VRAM admission until real model sharding exists.
+- GPU inference remains hardware/checkpoint-dependent; CPU source contracts cannot establish peak VRAM or output quality.

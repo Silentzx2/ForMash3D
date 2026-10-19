@@ -1,3 +1,13 @@
+## 2026-10-19 — Multi-GPU Runtime, Paint OOM, and Rigged Preview Fixes
+
+- Scheduler VRAM availability now accounts for live physical free memory as well as tracked reservations.
+- FastMesh V1K/V4K use Accelerate automatic device maps when aggregate VRAM is needed; incomplete or single-GPU placement fails explicitly. Multi-GPU strategy strings alone no longer authorize aggregate admission.
+- Hunyuan3D-Paint bounds interpolation and UV extraction to 128-row chunks and can place the renderer/super-resolution and multiview diffusion components on separate selected GPUs. The renderer honors the scheduler-selected CUDA device.
+- UniRig now follows the scheduler-selected GPU when its default device was generic `cuda`; tensor-copy and softmax-dimension warnings in its third-party skinning helper were corrected.
+- Rigged asset updates clear the stale thumbnail; the viewer resolves canonical `artifact_format` URLs rather than trusting stale asset format metadata.
+- Paint3D remains single-GPU because its stages execute in isolated one-GPU subprocesses. This prevents misleading aggregate-VRAM admission.
+- CPU source/scheduler contracts were added. GPU/checkpoint-backed inference and real peak-memory measurements still require the target hardware.
+
 ## 2026-10-19 — UniRig Runtime Fixes & FastMesh Admission/Attention Compatibility
 
 - Fixed the lazy TorchCluster FPS fallback so it imports Torch and `Optional` before evaluating typed annotations.
@@ -13,10 +23,3 @@
 - Third-party Hunyuan Paint now distinguishes local checkpoint directories from Hugging Face repository IDs.
 - Missing absolute paths, incomplete DINOv2 checkpoints, and invalid local Paint layouts fail clearly rather than silently switching to a remote default.
 - Added dependency-light resolver regression tests and wired them into backend CI through the updated submodule revision. GPU inference still requires a GPU smoke environment.
-
-## 2026-10-18 — Verified Runtime Fixes & Green CI
-
-- Switched Hunyuan3D-Paint's adapter-level Numba and background-removal fallback helper calls to the canonical main-backend compatibility module.
-- Added regression assertions against generic helper imports and updated the fallback test to mock the canonical loader.
-- Verified at code commit `cb02d5df21b7fc34e77be10947b95ac526799594`: backend Python compilation and all 12 CPU compatibility contracts passed, and frontend CI passed. GPU inference still needs a GPU smoke environment.
-

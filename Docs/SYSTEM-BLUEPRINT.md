@@ -10,8 +10,8 @@
 # 🏛️ ForMash 3D — Complete System Architecture & Pipeline Blueprint
 
 > **System Version**: 0.1.0 (FastAPI + Next.js 16, Python 3.10)
-> **Target Deployments**: Single-GPU Linux / Cloud GPU / Local Workstations
-> **Last Verified**: September 30, 2026
+> **Target Deployments**: Single- or multi-GPU Linux / Cloud GPU / Local Workstations
+> **Last Verified**: October 19, 2026
 > **Design Tokens**: Studio Gold `#FFCC00` (`48 100% 50%`) on Matte Black `#080808`
 
 ---
@@ -39,6 +39,13 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 ### Shared Model Runtime Dependency Contract
 - Transformers is pinned at 4.48.3 for Hunyuan3D Mini's upstream minimum and PEFT's `HybridCache` import; Diffusers 0.30.3 and PyTorch 2.6.0 + CUDA 12.4 stay pinned.
 - Hunyuan loaders resolve vendored module roots explicitly, validate expected source/checkpoint paths, and keep full initialization tracebacks in backend logs.
+
+### GPU Placement & Derived Artifact Contract
+- The scheduler combines tracked reservations with live per-device free memory. Aggregate VRAM is admitted only for adapters that actually shard model layers or place independent components on multiple GPUs.
+- FastMesh uses Accelerate automatic device mapping and rejects a multi-GPU plan if its map does not use at least two selected GPUs. Hunyuan3D-Paint uses bounded row-chunk raster work and separate renderer/super-resolution and multiview diffusion devices when a multi-GPU plan is supplied.
+- Paint3D child-stage processes remain single-GPU and are not declared multi-GPU capable. UniRig, PartUV, and ARDY retain their existing single-device inference paths until their own adapters implement and verify actual sharding.
+- Rigging stores native FBX plus a GLB viewport artifact. The viewer obeys canonical artifact-format query values, and rigged geometry invalidates the previous thumbnail.
+
 
 ```mermaid
 graph TD

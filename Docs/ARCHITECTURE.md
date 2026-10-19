@@ -1,7 +1,7 @@
 # Architecture — ForMash 3D
 
 > **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
-> **Last Verified**: October 10, 2026
+> **Last Verified**: October 19, 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
@@ -32,9 +32,18 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 - UniRig chooses SDPA only when the active Transformers causal-LM class advertises `_supports_sdpa`; unsupported architectures such as OPT use eager attention. A GPU-wide fallback alone does not prove every model architecture supports SDPA.
 - UniRig Pointcept `SerializedAttention` checks the current CUDA device before enabling FlashAttention: compute capability 8.0+ may use FlashAttention; pre-Ampere, unknown-capability, or no-FlashAttention environments use its eager implementation. Attention dropout remains an `nn.Dropout` module so the eager path can run both directly and after a FlashAttention runtime failure.
 - The shared TorchCluster FPS fallback imports PyTorch lazily before defining the typed function, preventing missing-name failures when the optional `torch_cluster` package is absent.
-- FastMesh's current adapter uses a single selected device and does not explicitly shard/dispatch the model across GPUs. Its manifest therefore does not advertise multi-GPU capability; aggregate memory is not a valid placement until that implementation exists.
-- Readiness and downloading require the variant-matching `config.json` and a `model.safetensors` file exceeding 4,000,000,000 bytes. The 16,384 MB / 24,500 MB budgets remain conservative project reservations pending target-GPU measurements, not upstream-published minimums.
+- FastMesh V1K/V4K can use Accelerate `infer_auto_device_map` + `dispatch_model` when one GPU cannot meet the reservation. Loading fails explicitly unless the generated device map places layers on at least two reserved GPUs. The 16,384 MB / 24,500 MB budgets remain conservative project reservations, not upstream-published minimums.
+- Hunyuan3D-Paint bounds raster interpolation and UV attribute extraction in 128-row chunks to avoid giant full-frame gather temporaries. Its mesh renderer/super-resolution stage stays on the first selected device; multiview diffusion can run on the second selected device.
+- The scheduler's VRAM estimate is capped by live `torch.cuda.mem_get_info()` data so memory consumed outside the scheduler's own reservations is not treated as free. Aggregate VRAM is considered only for declared, supported dispatch strategies, and incomplete multi-GPU dispatch fails closed.
+- Paint3D does not advertise multi-GPU placement: its isolated child-stage processes currently run on one selected GPU, so adding their VRAM together would be a false capacity guarantee.
+- Rigged assets invalidate stale thumbnails so the viewer generates a preview from the new GLB. The viewport resolves canonical `artifact_format` query values before falling back to asset metadata; the browser-facing rigged artifact is GLB and native FBX remains separately downloadable.
 
+
+### Multi-GPU placement and rigged artifact contracts
+- Model manifests may advertise multi-GPU only when an adapter applies a real layer or component placement strategy. The scheduler passes per-device memory budgets to Accelerate; device-map/component placement must use at least two reserved GPUs or raise a runtime error rather than silently running on one card.
+- FastMesh layer sharding uses the scheduler's selected GPU IDs and memory limits. Hunyuan3D-Paint uses explicit component placement, with the renderer pinned to the first selected GPU and multiview diffusion on a second when available.
+- Live free VRAM is measured alongside tracked allocations to account for CUDA processes and work that did not originate in the current scheduler.
+- The rigging adapter stores both native `rigged.fbx` and a converted `rigged.glb`; the viewport must load the GLB by default and only use FBX when the canonical artifact URL asks for FBX. A changed geometry clears the old preview thumbnail.
 
 ### Runtime failure and readiness contracts
 - Hunyuan3D-Paint's adapter-level Numba/cache and safe-background-remover helpers also use the canonical backend compatibility loader. This avoids a cached generic `utils.torchvision_fix` silently selecting the Shape or Paint vendored helper for adapter-owned fallback logic.
