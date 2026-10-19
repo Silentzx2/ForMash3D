@@ -23,6 +23,9 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20): Hunyuan3D-2.1 uses up to 100 UI-supported steps and upstream default guidance 5.0.
+# Ask the user once and obtain explicit confirmation before future changes to these locked settings.
+
 
 class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
     """
@@ -442,9 +445,9 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
             # Shape generation only
             logger.info("Generating 3D shape...")
             octree_res = 512
-            num_steps = inputs.get("num_inference_steps", 50)
+            num_steps = inputs.get("num_inference_steps", 100)
             if num_steps is None:
-                num_steps = 50
+                num_steps = 100
             else:
                 num_steps = int(num_steps)
             guidance_scale = inputs.get("guidance_scale", 5.0)
@@ -512,7 +515,7 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
         return {
             "parameters": {
                 "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
-                "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
+                "num_inference_steps": {"type": "integer", "description": "Experimental max-detail profile; upstream UI ceiling is 100 steps. Ask before changing the locked setting.", "default": 100, "minimum": 1, "maximum": 100, "required": False},
                 "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
                 "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
             }
@@ -581,9 +584,9 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
 
             # Step 1: Shape generation follows the same model-specific source contract.
             logger.info("Generating 3D shape...")
-            num_steps = inputs.get("num_inference_steps", 50)
+            num_steps = inputs.get("num_inference_steps", 100)
             if num_steps is None:
-                num_steps = 50
+                num_steps = 100
             else:
                 num_steps = int(num_steps)
             guidance_scale = inputs.get("guidance_scale", 5.0)
@@ -682,7 +685,7 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
         return {
             "parameters": {
                 "octree_resolution": {"type": "integer", "default": 512, "minimum": 64, "maximum": 512, "readOnly": True, "required": False},
-                "num_inference_steps": {"type": "integer", "default": 50, "minimum": 1, "maximum": 100, "required": False},
+                "num_inference_steps": {"type": "integer", "description": "Experimental max-detail profile; upstream UI ceiling is 100 steps. Ask before changing the locked setting.", "default": 100, "minimum": 1, "maximum": 100, "required": False},
                 "guidance_scale": {"type": "number", "default": 5.0, "minimum": 1.0, "maximum": 20.0, "required": False},
                 "seed": {"type": "integer", "default": 1234, "minimum": 0, "required": False},
                 "max_num_view": {
