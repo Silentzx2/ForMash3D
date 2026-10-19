@@ -26,6 +26,14 @@ def test_trellis2_fails_when_textured_exporter_is_unavailable():
         adapter._process_request({})
 
 
+def test_hunyuan_paint_defaults_to_experimental_max_view_resolution():
+    adapter = Hunyuan3DPaintV21ImageMeshPaintingAdapter(vram_requirement=12000)
+    schema = adapter.get_parameter_schema()["parameters"]
+    assert schema["max_num_view"]["default"] == 9
+    assert schema["max_num_view"]["maximum"] == 12
+    assert schema["resolution"]["default"] == 768
+
+
 def test_hunyuan_reference_resize_preserves_aspect_ratio(size, content_box):
     image = Image.new("RGB", size, (255, 0, 0))
 
