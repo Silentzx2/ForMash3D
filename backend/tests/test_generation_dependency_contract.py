@@ -304,3 +304,19 @@ def test_fastmesh_uses_architecture_compatible_attention_fallback():
     assert "from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask" in shape_opt
     assert "_prepare_4d_causal_attention_mask(" in shape_opt
     assert "Only flash_attention_2 is supported in MeshAnything" not in shape_opt
+
+
+
+def test_unirig_pointcept_uses_eager_attention_on_pre_ampere_gpus():
+    ptv3 = (
+        BACKEND / "thirdparty" / "UniRig" / "src" / "model"
+        / "pointcept" / "models" / "PTv3Object.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def _supports_flash_attention_on_current_device() -> bool:" in ptv3
+    assert "torch.cuda.get_device_capability(torch.cuda.current_device())" in ptv3
+    assert "return major >= 8" in ptv3
+    assert "enable_flash = bool(enable_flash and _supports_flash_attention_on_current_device())" in ptv3
+    assert "self.attn_drop = torch.nn.Dropout(attn_drop)" in ptv3
+    assert "dropout_p=self.attn_drop.p if self.training else 0" in ptv3
+    assert "self.attn_drop = attn_drop" not in ptv3

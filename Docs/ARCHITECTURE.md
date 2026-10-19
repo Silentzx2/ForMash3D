@@ -30,6 +30,7 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 ### UniRig attention selection and FastMesh resource admission
 
 - UniRig chooses SDPA only when the active Transformers causal-LM class advertises `_supports_sdpa`; unsupported architectures such as OPT use eager attention. A GPU-wide fallback alone does not prove every model architecture supports SDPA.
+- UniRig Pointcept `SerializedAttention` checks the current CUDA device before enabling FlashAttention: compute capability 8.0+ may use FlashAttention; pre-Ampere, unknown-capability, or no-FlashAttention environments use its eager implementation. Attention dropout remains an `nn.Dropout` module so the eager path can run both directly and after a FlashAttention runtime failure.
 - The shared TorchCluster FPS fallback imports PyTorch lazily before defining the typed function, preventing missing-name failures when the optional `torch_cluster` package is absent.
 - FastMesh's current adapter uses a single selected device and does not explicitly shard/dispatch the model across GPUs. Its manifest therefore does not advertise multi-GPU capability; aggregate memory is not a valid placement until that implementation exists.
 - Readiness and downloading require the variant-matching `config.json` and a `model.safetensors` file exceeding 4,000,000,000 bytes. The 16,384 MB / 24,500 MB budgets remain conservative project reservations pending target-GPU measurements, not upstream-published minimums.

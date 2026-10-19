@@ -1158,3 +1158,18 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 **Rationale:** The supplied UniRig log exposed a helper annotation `NameError`, followed by Transformers rejecting SDPA for `OPTForCausalLM`. Separately, FastMesh's current runner does not implement the scheduler's declared multi-GPU dispatch contract. Directory entry counts are not proof that the full FastMesh weights downloaded correctly.
 
 **Consequences:** Unsupported UniRig attention backends fall back to eager; incomplete or mismatched FastMesh checkpoints are not marked ready; 2×T4 aggregate memory cannot falsely admit V1K/V4K. Manifest VRAM budgets remain conservative reservations until peak memory is measured on GPU hardware.
+
+
+## ADR-082 — UniRig Pointcept Pre-Ampere Attention Fallback
+
+**Date:** 2026-10-19  
+**Status:** Accepted
+
+**Context:** UniRig's Point Transformer v3 attempted the FlashAttention variable-length kernel on a pre-Ampere GPU. When the kernel rejected the hardware, the exception fallback invoked `self.attn_drop(attn)`, but the FlashAttention constructor branch had stored `attn_drop` as a plain float, causing a second `TypeError: 'float' object is not callable` and preventing eager fallback from completing.
+
+**Decision:**
+1. Enable FlashAttention only when the package is present, CUDA is available, and the current CUDA device reports compute capability 8.0 or newer. If capability cannot be read, select eager attention.
+2. Store attention dropout as `torch.nn.Dropout` regardless of the selected attention path. Pass `self.attn_drop.p` as FlashAttention's numeric `dropout_p`, and retain module invocation for eager attention and the runtime exception fallback.
+3. Synchronize the third-party repository revision through the main repository submodule pointer and add a CPU-only source contract.
+
+**Consequences:** Pre-Ampere devices avoid the known unsupported FlashAttention call and use the existing eager attention implementation. This trades potential throughput and VRAM efficiency for compatibility; GPU-backed UniRig inference remains the required runtime validation.
