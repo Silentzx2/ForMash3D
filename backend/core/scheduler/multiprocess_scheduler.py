@@ -106,26 +106,28 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
 })
 
 
+# EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20). Ask the user once and get explicit confirmation
+# before changing any locked profile in a later task. Sources/limits: Docs/EXPERIMENTAL-MODEL-SETTINGS.md.
 # High-fidelity source mesh profiles. Production budgets remain in request_inputs and
 # are applied only to downstream copies by post-processing.
 _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
-    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 80000},
+    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000},
+    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000},
+    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000},
     "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 380, "num_inference_steps": 5, "guidance_scale": 5.0, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
     "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 380, "num_inference_steps": 5, "guidance_scale": 5.0, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1, "low_vram": False},
-    "pixal3d_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "low_vram": False},
+    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 9, "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1, "low_vram": False},
+    "pixal3d_image_to_raw_mesh": {"source_quality": "max", "resolution": 1536, "pipeline_type": "1536_cascade", "sampler_overrides": {"sparse_structure": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0}, "shape": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0}, "texture": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0}}, "low_vram": False},
     "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
     "trellis_image_to_raw_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
     "trellis_image_to_3d": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
     "trellis_image_to_textured_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0}, "shape_slat_sampler_params": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0}, "tex_slat_sampler_params": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0}, "shape_slat_sampler_params": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0}, "tex_slat_sampler_params": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0}, "shape_slat_sampler_params": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0}, "tex_slat_sampler_params": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
 }
 
 
@@ -563,7 +565,7 @@ def _attach_raw_geometry_telemetry(
     parameter_names = (
         "source_quality", "seed", "num_inference_steps", "num_steps", "guidance_scale",
         "cfg_scale", "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
-        "shape_slat_sampler_params", "ss_sampling_steps", "slat_sampling_steps",
+        "shape_slat_sampler_params", "tex_slat_sampler_params", "sampler_overrides", "ss_sampling_steps", "slat_sampling_steps",
         "octree_resolution", "octree_res", "grid_resolution", "flash_octree_depth",
         "dense_octree_depth", "hierarchical_octree_depth", "num_chunks",
         "input_processing", "do_refine", "expansion_weight", "init_type",
