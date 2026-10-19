@@ -30,6 +30,9 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 logger = logging.getLogger(__name__)
 
 
+# EXPERIMENTAL_MAX_DETAIL (2026-10-20): preserve upstream-supported seed=1145, input processing,
+# refinement enabled, expansion_weight=0.1 and init_type="std". No configurable inference-step/CFG
+# knobs are exposed by this adapter. Ask the user once before changing these locked settings.
 class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
     """
     Adapter for Unique3D image-to-raw-mesh generation.
