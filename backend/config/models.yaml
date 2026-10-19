@@ -421,7 +421,8 @@ mesh_retopology:
     capabilities:
       retopology: true
       target_variant: "V1K"
-      # FastMeshRunner has no explicit multi-GPU model dispatch; reserve a single device.
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_auto_device_map
     vram_requirement: 16384  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V1K"
@@ -435,7 +436,8 @@ mesh_retopology:
     capabilities:
       retopology: true
       target_variant: "V4K"
-      # FastMeshRunner has no explicit multi-GPU model dispatch; reserve a single device.
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_auto_device_map
     vram_requirement: 24500  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V4K"

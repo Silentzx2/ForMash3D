@@ -209,6 +209,15 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             max_num_view = 6
             resolution = 512
             conf = Hunyuan3DPaintConfig(max_num_view, resolution)
+            planned_gpus = [
+                int(gpu) for gpu in (getattr(self, "resource_plan", None) or {}).get("gpu_ids", [])
+            ]
+            if len(planned_gpus) > 1:
+                conf.component_devices = [f"cuda:{gpu}" for gpu in planned_gpus]
+                logger.info(
+                    "Hunyuan3D-Paint multi-GPU component placement: %s",
+                    conf.component_devices,
+                )
 
             conf.multiview_cfg_path = str(
                 self.hunyuan3d_root / "hy3dpaint/cfgs/hunyuan-paint-pbr.yaml"

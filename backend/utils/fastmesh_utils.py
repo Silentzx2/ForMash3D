@@ -11,7 +11,7 @@ import os
 import sys
 import warnings
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 import numpy as np
 import torch
@@ -44,6 +44,8 @@ class FastMeshRunner:
         precision: str = "fp16",
         input_pc_num: int = 8192,
         fastmesh_root: Optional[str] = None,
+        resource_plan: Optional[Dict[str, Any]] = None,
+        gpu_ids: Optional[List[int]] = None,
     ):
         """
         Initialize the FastMesh runner.
@@ -62,6 +64,9 @@ class FastMeshRunner:
         self.variant = variant
         self.precision = precision
         self.input_pc_num = input_pc_num
+        self.resource_plan = dict(resource_plan or {})
+        self.gpu_ids = [int(gpu) for gpu in (gpu_ids or self.resource_plan.get("gpu_ids", []))]
+        self.multi_gpu_dispatch = False
 
         if variant not in ["V1K", "V4K"]:
             raise FastMeshError(f"Invalid variant: {variant}. Must be 'V1K' or 'V4K'")
@@ -130,8 +135,41 @@ class FastMeshRunner:
                     cache_dir=str(self.model_path),
                 )
 
-            # Prepare model with accelerator
-            self.model = self.accelerator.prepare(self.model)
+            if self.resource_plan.get("kind") == "multi_gpu" and len(self.gpu_ids) > 1:
+                from accelerate import dispatch_model, infer_auto_device_map
+
+                max_memory = {}
+                for key, value in (self.resource_plan.get("max_memory_mb") or {}).items():
+                    if str(key).isdigit():
+                        max_memory[int(key)] = int(value)
+                    elif str(key) in {"cpu", "disk"}:
+                        max_memory[str(key)] = int(value)
+                for gpu_id in self.gpu_ids:
+                    max_memory.setdefault(
+                        gpu_id,
+                        int(torch.cuda.mem_get_info(gpu_id)[0] // (1024 * 1024)),
+                    )
+
+                device_map = infer_auto_device_map(self.model, max_memory=max_memory)
+                used_gpus = {
+                    int(device) for device in device_map.values()
+                    if isinstance(device, int) or (isinstance(device, str) and device.isdigit())
+                }
+                if len(used_gpus.intersection(self.gpu_ids)) < 2:
+                    raise FastMeshError(
+                        "The resource planner reserved multiple GPUs, but Accelerate could not "
+                        f"shard FastMesh across them (device_map={device_map})."
+                    )
+                self.model = dispatch_model(self.model, device_map=device_map)
+                self.multi_gpu_dispatch = True
+                logger.info(
+                    "FastMesh sharded across GPUs %s using Accelerate device_map %s",
+                    sorted(used_gpus.intersection(self.gpu_ids)),
+                    device_map,
+                )
+            else:
+                self.model = self.accelerator.prepare(self.model)
+
             self.model.eval()
 
             logger.info("FastMesh model loaded successfully")
