@@ -475,7 +475,8 @@ Live streaming emits both newline- and carriage-return-delimited output (includi
 | 📋 **[Product Requirements (PRD)](Docs/PRD.md)** | Core features, target users, and product roadmaps |
 | 🎨 **[Design System](Docs/DESIGN.md)** | Studio Gold color tokens, UI component specifications, and layouts |
 | 🛡️ **[Agent & Engineering Rules](RULES.md)** | Authoritative coding standards, minimalist practices, and change policies |
-| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (ADR-001 through ADR-050) |
+| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (latest ADR-084) |
+| 🧪 **[Experimental Model Settings](Docs/EXPERIMENTAL-MODEL-SETTINGS.md)** | Dated upstream/community evidence, active max-detail profiles, compatibility limits and user-confirmation policy |
 | 🧠 **[Project Memory & Status](Docs/MEMORY.md)** | Active state, hardware prerequisites, and verified milestones |
 | 📜 **[Change Log](Docs/CHANGELOG.md)** | Chronological history of releases, fixes, and optimizations |
 | 🎯 **[Task Tracker](Docs/TASKS.md)** | Completed features, active development items, and future roadmap |
