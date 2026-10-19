@@ -44,6 +44,9 @@ CHECKPOINT_VARIANTS = {
     "ardy-rp-20fps": "ARDY-Core-RP-20FPS-Horizon40",
 }
 
+# EXPERIMENTAL_MAX_DETAIL (2026-10-20): retain the trained Core 20 FPS / Horizon 40 default.
+# Upstream CLI CFG weights [2.0, 2.0] are not exposed by this adapter; do not imply changing YAML changes CFG.
+# Ask the user once and get explicit confirmation before changing checkpoint/quality defaults.
 DEFAULT_CHECKPOINT = "ARDY-Core-RP-20FPS-Horizon40"
 
 
