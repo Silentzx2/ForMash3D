@@ -1,3 +1,14 @@
+## 2026-10-19 — UniRig Runtime Failure & FastMesh VRAM/Weight Admission
+
+- **UniRig helper root cause (from the supplied runtime log):** `fix_torch_cluster()` defined `fps_fallback(src: torch.Tensor, ...)` without binding `torch` or `Optional` before annotation evaluation, causing `NameError: name 'torch' is not defined`. The compatibility fallback now imports these names only when the optional `torch_cluster.fps` path is missing.
+- **UniRig attention root cause:** the vendored UniRig autoregressive model forced SDPA on pre-Ampere hardware, but the selected `OPTForCausalLM` class in the active Transformers runtime does not support SDPA. The third-party implementation now checks the causal-LM class's `_supports_sdpa` flag and chooses eager attention when unsupported; the main-repository submodule pointer is synchronized to that third-party commit.
+- **Shared helper resolution:** scheduler worker startup now uses the canonical `core.utils.runtime_compat.get_backend_torchvision_fix()` loader rather than a path-order-dependent `utils.torchvision_fix` import.
+- **FastMesh resource admission:** removed the V1K/V4K multi-GPU capability declaration because `FastMeshRunner` does not explicitly shard/dispatch the model. Two T4 cards cannot be admitted merely by summing VRAM when neither card individually satisfies the configured reservation.
+- **FastMesh checkpoint integrity:** downloader and API readiness now require the matching `config.json` variant plus `model.safetensors` exceeding 4,000,000,000 bytes, preventing metadata-only or truncated files from appearing ready. Public Hugging Face listings show approximately 4.38 GB (V1K) and 4.39 GB (V4K).
+- **Verification boundary:** the supplied log records a 9,216 MB scheduler reservation for UniRig and a pre-Ampere GPU, but it contains no FastMesh load or total/free GPU memory snapshot. The upstream FastMesh repository describes an A6000-tested environment and V1K/V4K batch sizes, without publishing an exact minimum-VRAM figure. Therefore 16 GB / 24.5 GB remain project admission budgets, not measured requirements from this log. GPU/checkpoint validation is still required after pulling the fix.
+
+---
+
 ## 2026-10-18 — Final CI Verification
 
 - At `cb02d5df21b7fc34e77be10947b95ac526799594`, GitHub Actions passed both checks: backend Python source compilation plus 12/12 CPU dependency/runtime contract tests, and frontend CI.

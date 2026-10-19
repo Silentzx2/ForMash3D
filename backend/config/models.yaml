@@ -421,9 +421,8 @@ mesh_retopology:
     capabilities:
       retopology: true
       target_variant: "V1K"
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
-    vram_requirement: 16384  # MB
+      # FastMeshRunner has no explicit multi-GPU model dispatch; reserve a single device.
+    vram_requirement: 16384  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V1K"
     supported_inputs: ["obj", "glb", "ply", "stl"]
@@ -436,9 +435,8 @@ mesh_retopology:
     capabilities:
       retopology: true
       target_variant: "V4K"
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
-    vram_requirement: 24500  # MB
+      # FastMeshRunner has no explicit multi-GPU model dispatch; reserve a single device.
+    vram_requirement: 24500  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V4K"
     supported_inputs: ["obj", "glb", "ply", "stl"]

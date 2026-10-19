@@ -240,8 +240,8 @@ def model_worker_process(
 
         # Apply runtime compatibility patches (SDPA hardware fallback, dinov3, gated repos, numba)
         try:
-            from utils.torchvision_fix import apply_fix
-            apply_fix()
+            from core.utils.runtime_compat import get_backend_torchvision_fix
+            get_backend_torchvision_fix().apply_fix()
         except Exception as fix_err:
             logger.warning("Worker %s compatibility fix warning: %s", worker_id, fix_err)
 

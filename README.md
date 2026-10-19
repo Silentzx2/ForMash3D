@@ -218,7 +218,7 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
 || **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
 
----
+> **FastMesh resource admission:** The 16 GB (V1K) / 24.5 GB (V4K) figures are conservative scheduler reservations, not upstream-published minimum VRAM. The current adapter is single-GPU-only; 2×T4 aggregate memory is not treated as one device's memory. Full variant-matched checkpoint files (about 4.38 GB / 4.39 GB on disk) are required, and checkpoint size must not be confused with inference VRAM.---
 
 ## ⚙️ Production Post-Processing Engine
 
@@ -438,7 +438,7 @@ Yes. Once your model checkpoints are downloaded via `bash backend/scripts/downlo
 
 ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+:
 - **Lightweight Models (6GB–10GB VRAM)**: TripoSG, Hunyuan3D-DiT-v2-mini-Turbo (runs comfortably on RTX 3060, 4060, RTX 2080).
-- **Standard Models (12GB–16GB VRAM)**: TRELLIS, FastMesh (runs on RTX 3080, 4070, 4080, T4, L4).
+- **Standard Models (12GB–16GB VRAM)**: TRELLIS on supported GPUs. FastMesh uses separate V1K/V4K single-GPU reservations; 2×T4 aggregate VRAM is not combined by the current adapter.
 - **Heavy & High-Poly Models (24GB+ VRAM)**: TRELLIS.2, Hunyuan3D-Paint 2B (runs on RTX 3090, 4090, A10, A100).
 </details>
 

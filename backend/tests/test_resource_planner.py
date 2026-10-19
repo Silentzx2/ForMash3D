@@ -85,26 +85,33 @@ class ResourcePlannerTests(unittest.TestCase):
         self.assertEqual(plan.strategy, "single_gpu_low_vram")
         self.assertEqual(plan.reservation_mb, {0: 10240})
 
-    def test_fastmesh_multi_gpu(self):
+    def test_fastmesh_fails_closed_when_no_single_gpu_meets_its_budget(self):
         monitor = FakeMonitor([
-            {"id": 0, "name": "GPU0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
-            {"id": 1, "name": "GPU1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 0, "name": "T4-0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 1, "name": "T4-1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
         ])
         planner = ResourcePlanner(monitor, safety_margin_mb=512)
-        model_cfg = {
+        # FastMesh's runner does not dispatch/shard the model across GPUs, so
+        # aggregate VRAM must not make either variant appear runnable on 2xT4.
+        for required_mb, variant in ((16384, "V1K"), (24500, "V4K")):
+            model_cfg = {
+                "vram_requirement": required_mb,
+                "capabilities": {"retopology": True, "target_variant": variant},
+            }
+            self.assertTrue(planner.model_is_impossible(model_cfg))
+            self.assertIsNone(planner.plan(model_cfg))
+
+        # A single GPU with sufficient capacity remains a valid placement.
+        large_monitor = FakeMonitor([
+            {"id": 0, "name": "Large GPU", "memory_total": 49152, "memory_free": 40000, "available_mb": 39000},
+        ])
+        large_plan = ResourcePlanner(large_monitor, safety_margin_mb=512).plan({
             "vram_requirement": 24500,
-            "capabilities": {
-                "retopology": True,
-                "target_variant": "V4K",
-                "multi_gpu": True,
-                "multi_gpu_strategy": "accelerate_component_dispatch",
-            },
-        }
-        self.assertFalse(planner.model_is_impossible(model_cfg))
-        plan = planner.plan(model_cfg)
-        self.assertIsNotNone(plan)
-        self.assertTrue(plan.is_multi_gpu)
-        self.assertEqual(sum(plan.reservation_mb.values()), 24500)
+            "capabilities": {"retopology": True, "target_variant": "V4K"},
+        })
+        self.assertIsNotNone(large_plan)
+        self.assertFalse(large_plan.is_multi_gpu)
+        self.assertEqual(large_plan.kind, "single_gpu")
 
     def test_impossible_model_exceeds_all_capacity(self):
         monitor = FakeMonitor([

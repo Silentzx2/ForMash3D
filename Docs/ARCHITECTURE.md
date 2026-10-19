@@ -27,9 +27,17 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 ### Hunyuan Runtime Loading & Shared Dependencies
 
+### UniRig attention selection and FastMesh resource admission
+
+- UniRig chooses SDPA only when the active Transformers causal-LM class advertises `_supports_sdpa`; unsupported architectures such as OPT use eager attention. A GPU-wide fallback alone does not prove every model architecture supports SDPA.
+- The shared TorchCluster FPS fallback imports PyTorch lazily before defining the typed function, preventing missing-name failures when the optional `torch_cluster` package is absent.
+- FastMesh's current adapter uses a single selected device and does not explicitly shard/dispatch the model across GPUs. Its manifest therefore does not advertise multi-GPU capability; aggregate memory is not a valid placement until that implementation exists.
+- Readiness and downloading require the variant-matching `config.json` and a `model.safetensors` file exceeding 4,000,000,000 bytes. The 16,384 MB / 24,500 MB budgets remain conservative project reservations pending target-GPU measurements, not upstream-published minimums.
+
+
 ### Runtime failure and readiness contracts
 - Hunyuan3D-Paint's adapter-level Numba/cache and safe-background-remover helpers also use the canonical backend compatibility loader. This avoids a cached generic `utils.torchvision_fix` silently selecting the Shape or Paint vendored helper for adapter-owned fallback logic.
-- Latest verified CPU CI at commit `cb02d5df21b7fc34e77be10947b95ac526799594`: Python source compilation passed and all 12 compatibility-contract tests passed. Frontend CI also passed at that commit. GPU/checkpoint-backed inference is not covered by these lanes.
+- Backend CI runs Python source compilation plus CPU-only compatibility, source-contract, and resource-planner tests; frontend CI runs dependency installation, TypeScript checking, and production build. These lanes do not run GPU/checkpoint-backed inference or measure actual peak VRAM.
 
 - ModelFactory and UniRig load the main backend TorchVision/Transformers compatibility helper by a canonical file path under a private module name; they do not rely on whichever third-party `utils.torchvision_fix` Python resolves first.
 - The generic `utils` package can still resolve model-specific Shape utilities by design, so third-party code must continue to use an adapter-scoped path or its own package-qualified import. Runtime helper lookup must not depend on this package search order.

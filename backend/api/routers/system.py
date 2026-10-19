@@ -339,6 +339,22 @@ def _is_model_weights_available(model_config: Any) -> bool:
         if not path.is_dir():
             return False
 
+        # FastMesh needs a variant-matching descriptor and the complete
+        # multi-gigabyte checkpoint; a tiny/truncated safetensors file is not ready.
+        if path.name in {"FastMesh-V1K", "FastMesh-V4K"}:
+            try:
+                expected_vertices = 1000 if path.name == "FastMesh-V1K" else 4000
+                descriptor = json.loads((path / "config.json").read_text(encoding="utf-8"))
+                checkpoint = path / "model.safetensors"
+                return (
+                    descriptor.get("model_name") == "MeshGen"
+                    and descriptor.get("max_vertices") == expected_vertices
+                    and checkpoint.is_file()
+                    and checkpoint.stat().st_size > 4_000_000_000
+                )
+            except (OSError, json.JSONDecodeError):
+                return False
+
         checkpoint_suffixes = {
             ".safetensors", ".ckpt", ".pt", ".pth", ".bin", ".onnx", ".engine"
         }

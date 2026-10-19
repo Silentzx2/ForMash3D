@@ -1142,3 +1142,19 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 - Raw native extractions are preserved byte-for-byte without unwanted decimation or vertex welding.
 - High-to-low normal baking works reliably across both Blender-enabled and CPU-only environments without dark border seams.
 - All unit and integration tests in `test_raw_mesh_quality_preservation.py` pass cleanly.
+
+
+## ADR-081 — UniRig Attention Compatibility and FastMesh Resource Admission
+
+**Date:** 2026-10-19  
+**Status:** Accepted
+
+**Decision:**
+1. UniRig selects SDPA only if the active Transformers causal-LM class advertises `_supports_sdpa`; otherwise it uses eager attention. A hardware-level fallback alone is insufficient because architectures can differ in backend support.
+2. The main backend compatibility helper imports PyTorch lazily before defining the optional `torch_cluster.fps` fallback, preventing missing-name failures at annotation evaluation.
+3. FastMesh remains single-GPU in resource admission until its adapter implements explicit model sharding/dispatch. Remove its manifest's multi-GPU declaration rather than treating aggregate VRAM as model parallelism.
+4. FastMesh checkpoint readiness and downloader verification require the matching variant descriptor and a `model.safetensors` file exceeding 4,000,000,000 bytes.
+
+**Rationale:** The supplied UniRig log exposed a helper annotation `NameError`, followed by Transformers rejecting SDPA for `OPTForCausalLM`. Separately, FastMesh's current runner does not implement the scheduler's declared multi-GPU dispatch contract. Directory entry counts are not proof that the full FastMesh weights downloaded correctly.
+
+**Consequences:** Unsupported UniRig attention backends fall back to eager; incomplete or mismatched FastMesh checkpoints are not marked ready; 2×T4 aggregate memory cannot falsely admit V1K/V4K. Manifest VRAM budgets remain conservative reservations until peak memory is measured on GPU hardware.

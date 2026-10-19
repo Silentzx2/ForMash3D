@@ -225,6 +225,8 @@ flowchart TD
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
 
+**FastMesh VRAM and weights note:** The 16 GB (V1K) and 24.5 GB (V4K) values are conservative ForMash3D scheduler reservations, not minimums published by upstream. The official repository lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not publish an exact minimum VRAM. Public checkpoint files are about 4.38 GB (V1K) and 4.39 GB (V4K) on disk; disk size is not peak inference memory. FastMesh is single-GPU-only in the current adapter, so 2×T4 aggregate memory is not combined for admission. [Upstream FastMesh](https://github.com/jhkim0759/FastMesh) · [V1K checkpoint](https://huggingface.co/WopperSet/FastMesh-V1K) · [V4K checkpoint](https://huggingface.co/WopperSet/FastMesh-V4K)
+
 ---
 
 ## 5. Multi-Format Asset Packaging & Delivery

@@ -263,6 +263,8 @@ flowchart TD
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
 
+FastMesh's V1K/V4K VRAM figures above are conservative ForMash3D scheduler budgets, not official minimums published by the model authors. Upstream lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not state an exact minimum VRAM. Public weight files are approximately 4.38 GB and 4.39 GB respectively; disk size is not peak inference memory. The current adapter is single-GPU-only, so aggregate memory across multiple cards does not make a request admissible.
+
 ## QA Scoring Methodology
 
 | Category | Weight (Points) |
