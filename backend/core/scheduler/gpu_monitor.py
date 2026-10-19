@@ -165,15 +165,30 @@ class GPUMonitor:
                 return 0
             total_vram = self.gpu_total_vram[gpu_id]
             allocated_vram = self.allocated_vram_per_gpu.get(gpu_id, 0)
-            available_vram = total_vram - allocated_vram - self.memory_buffer
-            return max(0, available_vram)
-        else:
-            # Real-time query mode
-            gpu_status = self.get_gpu_status()
-            for gpu_info in gpu_status:
-                if gpu_info["id"] == gpu_id:
-                    return max(0, gpu_info["memory_free"] - self.memory_buffer)
-            return 0
+            tracked_available = max(0, total_vram - allocated_vram - self.memory_buffer)
+            # Scheduler reservations do not account for CUDA users outside this
+            # process. Never admit a model using theoretical free VRAM when the
+            # device is already occupied by another process or worker.
+            try:
+                physical_free, _ = torch.cuda.mem_get_info(gpu_id)
+                physical_available = max(
+                    0, int(physical_free // (1024 * 1024)) - self.memory_buffer
+                )
+                return min(tracked_available, physical_available)
+            except Exception:
+                logger.debug(
+                    "Physical VRAM query failed for GPU %s; using tracked availability",
+                    gpu_id,
+                    exc_info=True,
+                )
+                return tracked_available
+
+        # Real-time query mode
+        gpu_status = self.get_gpu_status()
+        for gpu_info in gpu_status:
+            if gpu_info["id"] == gpu_id:
+                return max(0, gpu_info["memory_free"] - self.memory_buffer)
+        return 0
 
     def get_gpu_status(self) -> List[Dict]:
         """Get current status of all GPUs"""

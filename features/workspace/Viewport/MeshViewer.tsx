@@ -2872,7 +2872,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         const sourceUrl = currentAsset.source?.localUrl || currentAsset.source?.viewUrl;
         if (!sourceUrl) return;
 
-        const format = currentAsset.format.toLowerCase();
+        const artifactUrl = new URL(sourceUrl, window.location.origin);
+        const artifactFormat = (artifactUrl.searchParams.get('artifact_format') || '').toLowerCase();
+        const pathExtension = artifactUrl.pathname.split('.').pop()?.toLowerCase() || '';
+        const format =
+          artifactFormat === 'rigged' || artifactFormat === 'glb' ? 'glb' :
+          artifactFormat === 'fbx' || artifactFormat === 'rigged_fbx' ? 'fbx' :
+          ['glb', 'gltf', 'fbx', 'obj', 'ply', 'stl'].includes(pathExtension) ? pathExtension :
+          currentAsset.format.toLowerCase();
         if (format === 'glb' || format === 'gltf') {
           // Multi-tier fast loading: L1 in-memory RAM cache (0ms) -> L2 persistent disk cache (~5ms) -> Chunked streaming network fetch
           setLoadProgress({ loaded: 0, total: 0, percent: 0 });

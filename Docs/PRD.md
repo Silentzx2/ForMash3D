@@ -255,7 +255,7 @@ flowchart TD
 | TRELLIS | 11.5 GB | High quality | ~60 seconds |
 | TRELLIS.2 | 23 GB | Highest quality | ~60 seconds |
 | Hunyuan3D-Shape-v2-1 | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
-| Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
+| Hunyuan3D-Paint-v2-1 | No verified hard minimum; 12 GB configured scheduler reservation (actual peak can exceed it) | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
 | ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
@@ -263,7 +263,7 @@ flowchart TD
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
 
-FastMesh's V1K/V4K VRAM figures above are conservative ForMash3D scheduler budgets, not official minimums published by the model authors. Upstream lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not state an exact minimum VRAM. Public weight files are approximately 4.38 GB and 4.39 GB respectively; disk size is not peak inference memory. The current adapter is single-GPU-only, so aggregate memory across multiple cards does not make a request admissible.
+FastMesh's V1K/V4K VRAM figures above are conservative ForMash3D scheduler budgets, not official minimums published by the model authors. Upstream lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not state an exact minimum VRAM. Public weight files are approximately 4.38 GB and 4.39 GB respectively; disk size is not peak inference memory. When one card cannot meet the reservation, the adapter uses Accelerate automatic layer placement and admits aggregate memory only if the generated map spans at least two selected GPUs. GPU/checkpoint inference and peak memory still require validation on the target hardware.
 
 ## QA Scoring Methodology
 

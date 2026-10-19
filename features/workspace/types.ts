@@ -326,6 +326,9 @@ export function withRiggedModel(asset: ModelAsset, riggedUrl: string, riggedFbxU
   return {
     ...asset,
     format: 'GLB',
+    // The rigged geometry differs from the source. Let MeshViewer render a new
+    // preview instead of carrying forward a placeholder/source thumbnail.
+    thumbnail: '',
     source: asset.source
       ? { ...asset.source, filename: `${asset.name}.glb`, viewUrl: riggedUrl, localUrl: undefined }
       : { filename: `${asset.name}.glb`, subfolder: 'rigged', type: 'job', viewUrl: riggedUrl },

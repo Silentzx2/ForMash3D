@@ -376,7 +376,7 @@ image_mesh_painting:
       multiview: false
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch
-    vram_requirement: 12000  # MB — lowered from 21504; CPU offload keeps peak below 15GB
+    vram_requirement: 12000  # MB — configured scheduler reservation, not a measured peak-memory guarantee
     supported_inputs: ["mesh", "text", "image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
@@ -389,8 +389,7 @@ image_mesh_painting:
       texture_refine: true
       multiview: false
       supported_resolutions: [1024, 2048]
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      # Paint3D stages run in isolated single-GPU subprocesses; aggregate VRAM is not model sharding.
     vram_requirement: 12000  # MB
     supported_inputs: ["mesh", "image"]
     supported_outputs: ["glb", "obj"]
@@ -421,7 +420,8 @@ mesh_retopology:
     capabilities:
       retopology: true
       target_variant: "V1K"
-      # FastMeshRunner has no explicit multi-GPU model dispatch; reserve a single device.
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_auto_device_map
     vram_requirement: 16384  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V1K"
@@ -435,7 +435,8 @@ mesh_retopology:
     capabilities:
       retopology: true
       target_variant: "V4K"
-      # FastMeshRunner has no explicit multi-GPU model dispatch; reserve a single device.
+      multi_gpu: true
+      multi_gpu_strategy: accelerate_auto_device_map
     vram_requirement: 24500  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V4K"

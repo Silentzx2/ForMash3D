@@ -87,6 +87,15 @@ class ResourcePlan:
         }
 
 
+def supports_multi_gpu(capabilities: Dict[str, Any]) -> bool:
+    """Return true only for the explicitly supported placement strategies."""
+    strategy = str(capabilities.get("multi_gpu_strategy") or "accelerate_component_dispatch")
+    return capabilities.get("multi_gpu") is True and strategy in {
+        "accelerate_component_dispatch",
+        "accelerate_auto_device_map",
+    }
+
+
 class ResourcePlanner:
     def __init__(self, gpu_monitor: Any, safety_margin_mb: Optional[int] = None):
         self.gpu_monitor = gpu_monitor
@@ -123,7 +132,7 @@ class ResourcePlanner:
         aggregate_total = sum(g["total_mb"] for g in snapshot)
 
         # Multi-GPU check: if multi_gpu is supported and aggregate GPU memory is sufficient
-        if bool(caps.get("multi_gpu")) or bool(caps.get("multi_gpu_strategy")):
+        if supports_multi_gpu(caps):
             if aggregate_total >= required:
                 return False
 
@@ -138,7 +147,7 @@ class ResourcePlanner:
             if max_total >= low_vram_req or aggregate_total >= low_vram_req:
                 return False
 
-        if bool(caps.get("multi_gpu")):
+        if supports_multi_gpu(caps):
             return aggregate_total < required
         return True
 
@@ -168,8 +177,7 @@ class ResourcePlanner:
                     reason="Model fits on one GPU.",
                 )
 
-        supports_multi_gpu = bool(caps.get("multi_gpu")) or bool(caps.get("multi_gpu_strategy"))
-        if supports_multi_gpu:
+        if supports_multi_gpu(caps):
             aggregate = sum(g["available_mb"] for g in snapshot)
             if aggregate >= required:
                 selected = []
@@ -184,7 +192,12 @@ class ResourcePlanner:
 
                 if remaining <= 0 and len(selected) >= 2:
                     reservation = {int(gpu["id"]): int(take) for gpu, take in selected}
-                    max_memory = {str(gpu["id"]): int(take) for gpu, take in selected}
+                    # Reservations enforce scheduler exclusivity; Accelerate needs each
+                    # selected GPU's usable capacity to shard large layers correctly.
+                    max_memory = {
+                        str(gpu["id"]): int(gpu["available_mb"])
+                        for gpu, _ in selected
+                    }
 
                     try:
                         import psutil
@@ -289,55 +302,130 @@ class ResourcePlanner:
         return sorted(feature_models, key=score, reverse=True)[0] if feature_models else None
 
 
-def dispatch_pipeline_across_gpus(pipeline: Any, resource_plan: ResourcePlan, offload_dir: Optional[str] = None) -> Dict[str, Any]:
+def dispatch_pipeline_across_gpus(
+    pipeline: Any,
+    resource_plan: ResourcePlan,
+    offload_dir: Optional[str] = None,
+) -> Dict[str, Any]:
     if not resource_plan.is_multi_gpu:
         return {"applied": False, "reason": "single_gpu_plan"}
 
-    # Attempt accelerate native dispatch if available
+    gpu_ids = list(resource_plan.gpu_ids)
+    if len(gpu_ids) < 2:
+        return {"applied": False, "reason": "fewer_than_two_gpu_ids"}
+
+    max_memory: Dict[Any, int] = {}
+    for key, value in resource_plan.max_memory_mb.items():
+        if str(key).isdigit():
+            max_memory[int(key)] = int(value)
+        elif str(key) in {"cpu", "disk"}:
+            max_memory[str(key)] = int(value)
+
+    # Prefer Accelerate's layer-level map for a torch module. Pass the actual
+    # reserved budgets; inferring without max_memory can ignore the scheduler's
+    # decision and put the whole model on the default CUDA device.
     try:
         from accelerate import dispatch_model, infer_auto_device_map
-        if hasattr(pipeline, "named_parameters"):
-            device_map = infer_auto_device_map(pipeline)
-            dispatch_model(pipeline, device_map=device_map)
-            return {"applied": True, "strategy": "accelerate_native", "device_map": str(device_map)}
+        if callable(getattr(pipeline, "named_parameters", None)):
+            device_map = infer_auto_device_map(
+                pipeline,
+                max_memory=max_memory or None,
+            )
+            assigned_gpus = sorted({
+                int(device) for device in device_map.values()
+                if isinstance(device, int) or (isinstance(device, str) and device.isdigit())
+            })
+            if len(assigned_gpus) >= 2:
+                dispatch_model(pipeline, device_map=device_map, offload_dir=offload_dir)
+                return {
+                    "applied": True,
+                    "strategy": "accelerate_auto_device_map",
+                    "gpu_ids": assigned_gpus,
+                    "device_map": str(device_map),
+                }
+            logger.warning(
+                "Accelerate device map selected fewer than two GPUs (%s); trying component dispatch",
+                device_map,
+            )
     except ImportError:
         logger.debug("accelerate is not installed; falling back to component dispatch")
     except Exception as e:
-        logger.warning("accelerate auto-dispatch failed (%s); falling back to component dispatch", e)
+        logger.warning("Accelerate auto-dispatch failed (%s); trying component dispatch", e)
 
-    # Component-level dispatch across GPUs for modular pipelines (e.g. TRELLIS, Pixal3D)
-    gpu_ids = list(resource_plan.gpu_ids)
-    if not gpu_ids:
-        return {"applied": False, "reason": "no_gpu_ids"}
-
-    device_map = {}
+    # Component placement is only reported successful when every component was
+    # moved and at least two selected GPUs are actually used.
     models_dict = getattr(pipeline, "models", None)
     if isinstance(models_dict, dict) and models_dict:
+        device_map: Dict[str, str] = {}
+        failures = []
         for idx, (name, model) in enumerate(models_dict.items()):
             target_gpu = gpu_ids[idx % len(gpu_ids)]
             target_device = f"cuda:{target_gpu}"
+            if model is None:
+                continue
+            if not callable(getattr(model, "to", None)):
+                failures.append(f"{name}: no .to(device) method")
+                continue
             try:
-                if hasattr(model, "to"):
-                    model.to(target_device)
+                model.to(target_device)
                 device_map[name] = target_device
             except Exception as m_err:
+                failures.append(f"{name}: {m_err}")
                 logger.warning("Could not dispatch pipeline submodel %s to %s: %s", name, target_device, m_err)
-        return {"applied": True, "strategy": "accelerate_component_dispatch", "device_map": str(device_map)}
+        used_gpus = {
+            int(device.split(":", 1)[1])
+            for device in device_map.values()
+            if device.startswith("cuda:")
+        }
+        if failures or len(used_gpus) < 2:
+            raise RuntimeError(
+                "Multi-GPU resource plan could not be applied to every pipeline component; "
+                f"used_gpus={sorted(used_gpus)}, errors={failures}"
+            )
+        return {
+            "applied": True,
+            "strategy": "accelerate_component_dispatch",
+            "gpu_ids": sorted(used_gpus),
+            "device_map": str(device_map),
+        }
 
-    if hasattr(pipeline, "children"):
+    if callable(getattr(pipeline, "named_children", None)):
         try:
             children = list(pipeline.named_children())
             if children:
+                device_map = {}
+                failures = []
                 for idx, (name, child) in enumerate(children):
                     target_gpu = gpu_ids[idx % len(gpu_ids)]
                     target_device = f"cuda:{target_gpu}"
+                    if not callable(getattr(child, "to", None)):
+                        failures.append(f"{name}: no .to(device) method")
+                        continue
                     try:
                         child.to(target_device)
                         device_map[name] = target_device
                     except Exception as m_err:
+                        failures.append(f"{name}: {m_err}")
                         logger.warning("Could not dispatch child module %s to %s: %s", name, target_device, m_err)
-                return {"applied": True, "strategy": "accelerate_component_dispatch", "device_map": str(device_map)}
+                used_gpus = {
+                    int(device.split(":", 1)[1])
+                    for device in device_map.values()
+                    if device.startswith("cuda:")
+                }
+                if failures or len(used_gpus) < 2:
+                    raise RuntimeError(
+                        "Multi-GPU resource plan could not be applied to every child module; "
+                        f"used_gpus={sorted(used_gpus)}, errors={failures}"
+                    )
+                return {
+                    "applied": True,
+                    "strategy": "accelerate_component_dispatch",
+                    "gpu_ids": sorted(used_gpus),
+                    "device_map": str(device_map),
+                }
         except Exception as e:
             logger.warning("Could not dispatch children of pipeline: %s", e)
 
-    return {"applied": False, "reason": "no_dispatchable_components"}
+    raise RuntimeError(
+        "Multi-GPU resource plan was selected, but the model exposes no dispatchable components."
+    )

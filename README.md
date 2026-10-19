@@ -516,9 +516,11 @@ These capabilities reuse the existing scheduler, image editor, post-processing, 
 
 ## High-Fidelity Generation Architecture
 
-ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler can use explicit multi-GPU placement for compatible pipelines and scales CPU-side work from the available core count while preventing worker oversubscription.
+ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler caps tracked VRAM estimates with live device-free memory; supported adapters use actual Accelerate layer maps or component placement when a single GPU cannot meet the reservation.
 
-Quality diagnostics can compare derivatives to the master and can use reference-mesh metrics when ground truth is available. Final GPU/OOM validation remains hardware-specific.
+FastMesh V1K/V4K can shard layers across selected GPUs. Hunyuan3D-Paint uses row-chunk raster interpolation/extraction and can place renderer/super-resolution and multiview diffusion components on separate GPUs. Incomplete placement fails explicitly. Paint3D, UniRig, PartUV, and ARDY are not treated as sharded merely because several GPUs exist; their current adapters remain single-device unless a verified placement implementation is added. Rigged assets regenerate their thumbnail and the viewport resolves canonical GLB/FBX artifact URLs.
+
+Quality diagnostics can compare derivatives to the master and can use reference-mesh metrics when ground truth is available. Final GPU/OOM validation remains hardware-specific; CPU CI covers source and scheduler contracts, not actual model inference.
 
 ## High-Fidelity Runtime Hardening — 2026-10-08
 

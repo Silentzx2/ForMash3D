@@ -90,6 +90,8 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
                 precision="fp16",
                 input_pc_num=self.input_pc_num,
                 fastmesh_root=str(self.fastmesh_root),
+                resource_plan=getattr(self, "resource_plan", None),
+                gpu_ids=getattr(self, "gpu_ids", None),
             )
 
             logger.info("FastMesh model loaded successfully")
