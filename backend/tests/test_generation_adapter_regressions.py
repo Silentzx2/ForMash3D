@@ -145,7 +145,7 @@ def test_triposg_preserves_full_inference_steps_and_octree_depth():
     assert schema["num_inference_steps"]["default"] == 50
     assert schema["faces"]["default"] == -1
     assert schema["use_flash_decoder"]["default"] is False
-    assert schema["dense_octree_depth"]["default"] == 8
+    assert schema["dense_octree_depth"]["default"] == 9
     assert schema["hierarchical_octree_depth"]["default"] == 10
 
 
