@@ -1,3 +1,9 @@
+## 2026-10-19 — Unique3D Normal Checkpoint Compatibility
+
+- Root cause: the normal-prediction loader selected the trained `img2mvimg` UNet as its base (8 input channels), while `image2normal` checkpoint weights expect 4 input channels. A fallback repeated the incompatible load and could terminate model startup.
+- Fix: the normal stage now resolves to the 4-channel Stable Diffusion image-variation base; local `img2mvimg` is no longer used as an `image2normal` fallback. The multiview pipeline and its 8-channel weights remain unchanged.
+- Validation boundary: source-contract regression coverage was added. The checkpoint-backed Unique3D GPU load/inference was not run in this editing environment, so verify it with the installed model weights after pulling the synchronized submodule.
+
 ## 2026-10-19 — ARDY CPU-Only Runtime
 
 - ARDY is explicitly scheduled on CPU with no GPU/VRAM reservation; its dedicated worker skips CUDA initialization and hides CUDA in-process.
@@ -14,14 +20,4 @@
 - Rigged asset updates clear the stale thumbnail; the viewer resolves canonical `artifact_format` URLs rather than trusting stale asset format metadata.
 - Paint3D remains single-GPU because its stages execute in isolated one-GPU subprocesses. This prevents misleading aggregate-VRAM admission.
 - CPU source/scheduler contracts were added. GPU/checkpoint-backed inference and real peak-memory measurements still require the target hardware.
-
-## 2026-10-19 — UniRig Runtime Fixes & FastMesh Admission/Attention Compatibility
-
-- Fixed the lazy TorchCluster FPS fallback so it imports Torch and `Optional` before evaluating typed annotations.
-- UniRig's vendored autoregressive model now checks Transformers' per-class SDPA support and uses eager attention for unsupported causal-LM classes; the main repo submodule pointer is synchronized.
-- UniRig Pointcept now selects its non-FlashAttention implementation on pre-Ampere/unknown CUDA devices, and its dropout module is callable in both normal and kernel-error fallback paths.
-- Scheduler worker startup now resolves the canonical backend compatibility helper.
-- FastMesh no longer advertises unsupported multi-GPU dispatch. Downloader and model readiness reject missing, truncated, or variant-mismatched checkpoints; regression tests cover 2×T4 fail-closed admission.
-- FastMesh now selects FlashAttention only on CUDA compute capability 8.0+ and uses Transformers' eager OPT attention plus a 4D causal mask on pre-Ampere GPUs, avoiding the reported T4/Turing FlashAttention runtime crash. Eager attention may use more VRAM and run slower; target-GPU inference still needs a smoke test.
-- GPU model inference was not executed in CPU CI; actual peak VRAM still needs validation on the target accelerator.
 

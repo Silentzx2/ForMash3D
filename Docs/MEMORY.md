@@ -1,3 +1,9 @@
+## 2026-10-19 — Unique3D Normal Checkpoint Channel Compatibility
+
+- Root cause: `_resolve_normal_config()` preferred the local trained `img2mvimg` model for normal prediction. Its UNet expects 8 input channels, but the `image2normal` checkpoint stores 4-channel `conv_in.weight` and `ref_unet.conv_in.weight` tensors. The local-first fallback repeated the incompatible initialization.
+- Fix: pin the normal pipeline to `lambdalabs/sd-image-variations-diffusers`, a 4-channel base, and only try the alternate image-variation repository after load failure. The multiview pipeline remains paired with its own 8-channel `img2mvimg` weights. Updated the ThirdParty `main` branch and synchronized the main repo submodule pointer.
+- Validation boundary: source-contract tests verify config selection and that the local multiview base is not used in the normal loader. Actual checkpoint-backed GPU inference still needs a smoke test on the target runtime.
+
 ## 2026-10-19 — ARDY CPU-Only Inference
 
 - Root cause: the ARDY adapter rejected hosts without CUDA and forced both the motion model and inference tensors to a CUDA device. Its default text-encoder path could use a remote API or place LLM2Vec on CUDA; vendored LLM2Vec also selected CUDA multiprocessing based on visible GPU count rather than the requested device.

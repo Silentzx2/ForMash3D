@@ -101,3 +101,18 @@ def test_unirig_respects_scheduler_selected_gpu():
     source = (ROOT / "backend" / "adapters" / "unirig_adapter.py").read_text(encoding="utf-8")
     assert 'self.device in {"cuda", "cuda:0"}' in source
     assert 'self.device = f"cuda:{self.gpu_id}"' in source
+
+def test_unique3d_normal_checkpoint_uses_four_channel_compatible_base():
+    adapter = (ROOT / "backend" / "adapters" / "unique3d_adapter.py").read_text(encoding="utf-8")
+    resolver = adapter.split("def _resolve_normal_config", 1)[1].split("def _ensure_ckpt_symlinks", 1)[0]
+    normal_load = adapter.split("# Load normal prediction pipeline (image2normal)", 1)[1].split("# self.normal_pipeline.enable_model_cpu_offload()", 1)[0]
+    config = (ROOT / "backend" / "thirdparty" / "Unique3D" / "app" / "custom_models" / "image2normal.yaml").read_text(encoding="utf-8")
+
+    assert 'pretrained_model_name_or_path: "lambdalabs/sd-image-variations-diffusers"' in config
+    assert 'base_model = "lambdalabs/sd-image-variations-diffusers"' in resolver
+    assert "local_img2mvimg" not in resolver
+    assert "local_img2mvimg" not in normal_load
+    assert "Retrying with the alternate compatible 4-channel image-variation base" in normal_load
+    assert "Attempting fallback to local img2mvimg base" not in normal_load
+    assert 'self.mvimg_config = str(self.unique3d_root / "app" / "custom_models" / "image2mvimage.yaml")' in adapter
+    assert 'self.mvimg_checkpoint = str(Path(model_path) / "ckpt" / "img2mvimg" / "unet" / "diffusion_pytorch_model.safetensors")' in adapter
