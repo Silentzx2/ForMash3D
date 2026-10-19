@@ -1885,7 +1885,9 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
           // EXPERIMENTAL_MAX_DETAIL: Hunyuan3D-Paint upstream supports 6-9 views; default to 9.
           // Ask the user once before changing this locked quality profile in a later task.
           max_num_view: textureSettings.maxNumView ?? 9,
-          resolution: resolution === '8K' ? 768 : 512,
+          // EXPERIMENTAL_MAX_DETAIL: use the supported 768 per-view inference profile for both 4K and 8K atlas outputs.
+          // Atlas resolution remains selected independently below; ask the user before changing this locked quality default.
+          resolution: 768,
         };
       } else {
         body.model_parameters = {};
