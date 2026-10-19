@@ -1200,3 +1200,24 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 - Motion inference is slower and bounded by available system RAM/CPU throughput; the gated text-encoder checkpoint must remain accessible.
 - No GPU VRAM is reserved or used by the ARDY worker; other ForMash3D models keep their existing GPU placement policies.
 - CPU source contracts verify the placement contract. Checkpoint-backed inference and measured CPU RAM/latency still require host-level validation.
+
+---
+
+## ADR-084 — Experimental Max-Detail Model Profiles and User Approval Gate (2026-10-20)
+
+**Status:** Accepted for an explicitly experimental, user-reviewed configuration phase. This ADR records parameter defaults only; it does not claim inference-quality validation.
+
+**Context:** Model defaults were duplicated between the frontend parameter builder, scheduler quality profiles, manifest comments and adapter schemas. Upstream model limits differ, and some community settings are unverified single-user experiments.
+
+**Decision:**
+1. Lock the dated `EXPERIMENTAL_MAX_DETAIL` profile across the frontend builder, scheduler, supported adapter defaults/schema and `backend/config/models.yaml` comments.
+2. Use 100 Hunyuan3D-2.1 steps with guidance 5.0 and octree 512; preserve Mini Turbo's trained 5 steps and octree 380; keep TripoSG's depth 9/10 target subject to the existing runtime memory guard.
+3. Use the community TRELLIS.2 issue #92 sampler candidate (50 steps with separate stage CFG/rescale settings). For Pixal3D, label the same profile as an adaptation only, because it has not been directly benchmarked on Pixal3D.
+4. Preserve raw master geometry: TRELLIS simplification stays at 0.0; TRELLIS.2 raw export remains `decimation_target=-1` and `remesh=false`. Do not replace it with the community issue's 800k face cap.
+5. Keep settings that are not exposed by a model adapter unchanged and document the limitation rather than pretending a manifest-only key controls inference. Do not expand model/algorithm behavior in this settings-only task.
+6. **Future-change approval:** before modifying a locked profile, ask the user once with a consolidated list of proposed changes and wait for explicit confirmation. This is a documented contributor/agent rule, not a runtime-enforced approval mechanism.
+
+**Evidence:** Current upstream UIs and settings documents for Hunyuan3D-2.1, TRELLIS, TRELLIS.2, Pixal3D, Hunyuan Paint, TripoSG, PartUV, UniRig and ARDY are linked in `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`. The TRELLIS.2 50-step/CFG profile is based on an individual community issue and is not an official universal optimum. Hunyuan octree values above 512 are not used because the upstream UI ceiling is 512 and community reports describe OOM.
+
+**Verification boundary:** Contract tests were updated to the selected settings. No actual GPU generation, visual quality comparison or broad VRAM benchmark is claimed; the user will review outputs and approve any subsequent parameter change.
+
