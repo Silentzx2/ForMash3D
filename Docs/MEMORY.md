@@ -1,3 +1,12 @@
+## 2026-10-20 — Experimental Max-Detail Model Settings
+
+- The `EXPERIMENTAL_MAX_DETAIL` snapshot is now dated 2026-10-20 and documented in `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`; comments next to model settings point to it.
+- Hunyuan3D-Shape-v2.1 and legacy 2.1 profiles request 100 steps / guidance 5.0 within the official 512 octree ceiling. Mini Turbo remains at its checkpoint-compatible 5 steps / octree 380.
+- TRELLIS.2 uses the community issue #92 three-stage sampler candidate at 50 steps per stage, while raw-master export preserves `decimation_target=-1`. Pixal3D uses 1536 cascade and a clearly marked, not-directly-benchmarked adaptation of those staged sampler values.
+- Hunyuan Paint defaults to 9 views / 768 per-view inference; TRELLIS text generation defaults to the supported 50-step ceiling; TripoSG requests the repo's depth-9/10 profile subject to its existing VRAM guard.
+- Important limitation: no GPU inference or model-output A/B benchmark was run for this settings-only change. Community values are candidates, not proven quality gains; adapter controls that do not exist were not invented.
+- Change-control rule: future edits to locked profiles require asking the user once, presenting the proposed changes together, and waiting for explicit confirmation.
+
 ## 2026-10-19 — Animation Export and Status Recovery
 
 - The BVH action is enabled only when the selected clip already has a BVH artifact; it downloads that file and no longer pretends to synthesize BVH from ARDY JSON.
