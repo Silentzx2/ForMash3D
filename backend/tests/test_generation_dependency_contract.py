@@ -288,3 +288,19 @@ def test_fastmesh_download_and_readiness_require_full_checkpoints():
     assert 'verify_fastmesh_model "$PRETRAINED_DIR/FastMesh-V4K" || all_verified=false' in downloader
     assert 'checkpoint.stat().st_size > 4_000_000_000' in system
     assert 'descriptor.get("max_vertices") == expected_vertices' in system
+
+
+
+def test_fastmesh_uses_architecture_compatible_attention_fallback():
+    single_gpt = (BACKEND / "thirdparty" / "FastMesh" / "models" / "single_gpt.py").read_text(encoding="utf-8")
+    shape_opt = (BACKEND / "thirdparty" / "FastMesh" / "models" / "shape_opt.py").read_text(encoding="utf-8")
+
+    assert "def _select_fastmesh_attention_implementation() -> str:" in single_gpt
+    assert "torch.cuda.get_device_capability(torch.cuda.current_device())" in single_gpt
+    assert "if capability[0] >= 8:" in single_gpt
+    assert "_attn_implementation=attention_implementation" in single_gpt
+    assert 'self.config._attn_implementation ="flash_attention_2"' not in single_gpt
+
+    assert "from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask" in shape_opt
+    assert "_prepare_4d_causal_attention_mask(" in shape_opt
+    assert "Only flash_attention_2 is supported in MeshAnything" not in shape_opt
