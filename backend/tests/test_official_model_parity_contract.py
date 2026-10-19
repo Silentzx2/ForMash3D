@@ -356,14 +356,14 @@ class TestNativeRawQualityContracts(unittest.TestCase):
 
         cases = {
             "hunyuan3d_shape_v21_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "mc_algo": "mc",
+                "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "mc_algo": "mc",
             },
             "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 5, "enable_flashvdm": False, "mc_algo": "mc",
+                "octree_resolution": 380, "num_inference_steps": 5, "enable_flashvdm": False, "mc_algo": "mc",
             },
             "triposg_image_to_raw_mesh": {
                 "num_inference_steps": 50, "guidance_scale": 7.0,
-                "flash_octree_depth": 9, "dense_octree_depth": 8,
+                "flash_octree_depth": 9, "dense_octree_depth": 9,
                 "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1,
             },
             "unique3d_image_to_raw_mesh": {
@@ -374,7 +374,25 @@ class TestNativeRawQualityContracts(unittest.TestCase):
             },
             "trellis2_image_to_raw_mesh": {
                 "pipeline_type": "1536_cascade", "max_num_tokens": 262144,
+                "sparse_structure_sampler_params": {
+                    "steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0,
+                },
+                "shape_slat_sampler_params": {
+                    "steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0,
+                },
+                "tex_slat_sampler_params": {
+                    "steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0,
+                },
                 "decimation_target": -1, "remesh": False,
+            },
+            "pixal3d_image_to_raw_mesh": {
+                "source_quality": "max", "resolution": 1536, "pipeline_type": "1536_cascade",
+                "sampler_overrides": {
+                    "sparse_structure": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0},
+                    "shape": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0},
+                    "texture": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0},
+                },
+                "low_vram": False,
             },
         }
         downstream_controls = {
