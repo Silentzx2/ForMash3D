@@ -111,9 +111,9 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
 # High-fidelity source mesh profiles. Production budgets remain in request_inputs and
 # are applied only to downstream copies by post-processing.
 _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
-    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
     "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000},
     "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000},
     "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "num_chunks": 80000},
