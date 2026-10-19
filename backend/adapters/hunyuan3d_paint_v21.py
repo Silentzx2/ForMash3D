@@ -206,8 +206,10 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             except (ImportError, OSError) as err:
                 raise _format_background_remover_import_error(err) from err
 
-            max_num_view = 6
-            resolution = 512
+            # EXPERIMENTAL_MAX_DETAIL: upstream Hunyuan3D-Paint demo supports up to 9 views and 768 per-view resolution.
+            # Ask the user once and require explicit confirmation before future changes to these locked defaults.
+            max_num_view = 9
+            resolution = 768
             conf = Hunyuan3DPaintConfig(max_num_view, resolution)
             planned_gpus = [
                 int(gpu) for gpu in (getattr(self, "resource_plan", None) or {}).get("gpu_ids", [])
@@ -441,8 +443,8 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             if output_format not in self.supported_output_formats:
                 raise ValueError(f"Unsupported output format: {output_format}")
 
-            max_num_view = inputs.get("max_num_view", 6)
-            resolution = int(inputs.get("resolution", 512))
+            max_num_view = inputs.get("max_num_view", 9)
+            resolution = int(inputs.get("resolution", 768))
 
             # Strictly enforce 4K (4096) and 8K (8192) resolution routing for Hunyuan3D-Paint-v2-1
             raw_tex_res = inputs.get("texture_resolution", 4096)
@@ -618,16 +620,16 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
             "parameters": {
                 "max_num_view": {
                     "type": "integer",
-                    "description": "Maximum number of views for texture generation",
-                    "default": 6,
+                    "description": "Experimental max-detail default follows the upstream demo's supported 6-9 view range; ask before changing the locked profile.",
+                    "default": 9,
                     "minimum": 6,
-                    "maximum": 12,
+                    "maximum": 9,
                     "required": False,
                 },
                 "resolution": {
                     "type": "integer",
-                    "description": "Texture generation resolution per view",
-                    "default": 512,
+                    "description": "Per-view inference resolution; experimental max-detail default is the upstream demo ceiling of 768.",
+                    "default": 768,
                     "enum": [512, 768],
                     "required": False,
                 },
