@@ -43,7 +43,8 @@ class FastMeshRetopologyAdapter(MeshRetopologyModel):
         if fastmesh_root is None:
             fastmesh_root = str(Path(__file__).resolve().parents[1] / "thirdparty" / "FastMesh")
 
-        # Determine target vertex count based on variant
+        # EXPERIMENTAL_MAX_DETAIL: the trained V1K/V4K variants have fixed 1k/4k targets;
+        # they expose no CFG or diffusion-step controls. Ask before changing model/profile selection.
         target_vertex_count = 1000 if variant == "V1K" else 4000
 
         if vram_requirement is None:
