@@ -67,6 +67,36 @@ def test_rigged_preview_invalidates_thumbnail_and_resolves_artifact_format():
     assert "artifactFormat === 'fbx'" in viewer
 
 
+def test_ardy_is_cpu_only_from_manifest_through_vendored_text_encoder():
+    adapter = (ROOT / "backend" / "adapters" / "ardy_adapter.py").read_text(encoding="utf-8")
+    scheduler = (ROOT / "backend" / "core" / "scheduler" / "multiprocess_scheduler.py").read_text(encoding="utf-8")
+    register_model = scheduler.split("def register_model", 1)[1].split("def unregister_model", 1)[0]
+    planner = (ROOT / "backend" / "core" / "scheduler" / "resource_planner.py").read_text(encoding="utf-8")
+    base_model = (ROOT / "backend" / "core" / "models" / "base.py").read_text(encoding="utf-8")
+    manifest = (ROOT / "backend" / "config" / "models.yaml").read_text(encoding="utf-8")
+    llm2vec = (ROOT / "backend" / "thirdparty" / "ardy" / "ardy" / "model" / "llm2vec" / "llm2vec.py").read_text(encoding="utf-8")
+
+    ardy_config = manifest.split("  ardy_motion_generation:", 1)[1].split("\n# ", 1)[0]
+    assert "cpu_only: true" in ardy_config
+    assert "vram_requirement: 0" in ardy_config
+    assert 'self.device = "cpu"' in adapter
+    assert 'os.environ["TEXT_ENCODER_DEVICE"] = "cpu"' in adapter
+    assert 'text_encoder_mode="local"' in adapter
+    assert "text_encoder_fp32=True" in adapter
+    assert "ARDY requires CUDA" not in adapter
+    assert "rel_motion_url" not in adapter
+    assert 'if not str(device).startswith("cuda") or torch.cuda.device_count() <= 1:' in llm2vec
+    assert 'if caps.get("cpu_only") is True:' in planner
+    assert 'kind="cpu"' in planner
+    assert 'os.environ["CUDA_VISIBLE_DEVICES"] = ""' in scheduler
+    assert scheduler.index('os.environ["CUDA_VISIBLE_DEVICES"] = ""') < scheduler.index("from core.config import get_settings, setup_logging")
+    assert 'import core.config  # Initialize PyTorch compatibility shims & settings in worker processes' not in scheduler
+    assert 'cpu_only = capabilities.get("cpu_only") is True' in register_model
+    assert 'gpu_count = 1 if cpu_only else max(len(self.gpu_monitor.get_gpu_status()), 1)' in register_model
+    assert '(resource_plan or {}).get("kind") == "cpu"' in scheduler
+    assert "if gpu_id is not None and torch is not None and torch.cuda.is_available():" in base_model
+
+
 def test_unirig_respects_scheduler_selected_gpu():
     source = (ROOT / "backend" / "adapters" / "unirig_adapter.py").read_text(encoding="utf-8")
     assert 'self.device in {"cuda", "cuda:0"}' in source

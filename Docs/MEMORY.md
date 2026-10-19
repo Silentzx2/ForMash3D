@@ -1,3 +1,10 @@
+## 2026-10-19 — ARDY CPU-Only Inference
+
+- Root cause: the ARDY adapter rejected hosts without CUDA and forced both the motion model and inference tensors to a CUDA device. Its default text-encoder path could use a remote API or place LLM2Vec on CUDA; vendored LLM2Vec also selected CUDA multiprocessing based on visible GPU count rather than the requested device.
+- Fix: ARDY is declared cpu_only with a zero-GPU-VRAM requirement. The resource planner emits a CPU plan without probing GPU inventory; the worker hides CUDA in its dedicated process, and base-model load/unload paths skip CUDA APIs for CPU plans. The adapter forces the model and local LLM2Vec encoder to CPU, uses deterministic CPU-only seeding, and reports CPU mode in job provenance.
+- Additional runtime fix: corrected an undefined rel_motion_url reference that could raise after motion artifacts had already been written.
+- Validation boundary: CPU-only source/resource-planner regression tests were added. Actual ARDY checkpoint-backed CPU inference, peak system RAM, runtime and output quality have not been executed in this editing environment; the host must also have access to the gated text-encoder checkpoint.
+
 ## 2026-10-19 — UniRig Runtime Failure & FastMesh VRAM/Weight Admission
 
 - **Hunyuan3D-Paint raster OOM:** the reported 384 MiB failure originated in the custom rasterizer's full-frame attribute gather at UV extraction. Third-party Paint now interpolates and extracts visible positions/normals in 128-row chunks, with visible attributes staged through CPU memory, while preserving face-normal orientation. This reduces temporary allocations but has not yet been validated against a GPU checkpoint run.

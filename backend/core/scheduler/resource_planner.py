@@ -121,6 +121,10 @@ class ResourcePlanner:
         return result
 
     def model_is_impossible(self, model_config: Dict[str, Any]) -> bool:
+        caps = model_config.get("capabilities") or {}
+        if caps.get("cpu_only") is True:
+            return False
+
         required = max(1, int(model_config.get("vram_requirement", 1024)))
         snapshot = self.gpu_capacity_snapshot()
         if not snapshot:
@@ -128,7 +132,6 @@ class ResourcePlanner:
         max_total = max((g["total_mb"] for g in snapshot), default=0)
         if max_total >= required:
             return False
-        caps = model_config.get("capabilities") or {}
         aggregate_total = sum(g["total_mb"] for g in snapshot)
 
         # Multi-GPU check: if multi_gpu is supported and aggregate GPU memory is sufficient
@@ -154,6 +157,19 @@ class ResourcePlanner:
     def plan(self, model_config: Dict[str, Any], active_workers: int = 1) -> Optional[ResourcePlan]:
         required = max(1, int(model_config.get("vram_requirement", 1024)))
         caps = dict(model_config.get("capabilities") or {})
+        threads = cpu_threads_for_workers(active_workers)
+        if caps.get("cpu_only") is True:
+            return ResourcePlan(
+                kind="cpu",
+                gpu_ids=(),
+                primary_gpu=None,
+                reservation_mb={},
+                max_memory_mb={},
+                cpu_threads=threads,
+                strategy="cpu_only",
+                reason="Model manifest requires CPU-only inference.",
+            )
+
         snapshot = sorted(
             self.gpu_capacity_snapshot(),
             key=lambda item: item["available_mb"],
@@ -161,8 +177,6 @@ class ResourcePlanner:
         )
         if not snapshot:
             return None
-
-        threads = cpu_threads_for_workers(active_workers)
 
         for gpu in snapshot:
             if gpu["available_mb"] >= required:

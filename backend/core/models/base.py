@@ -56,21 +56,25 @@ class BaseModel(ABC):
         """Process a single request. Override in subclasses."""
         pass
 
-    def load(self, gpu_id: int, resource_plan: Optional[Dict[str, Any]] = None) -> bool:
-        """Load model on specified GPU"""
+    def load(self, gpu_id: Optional[int], resource_plan: Optional[Dict[str, Any]] = None) -> bool:
+        """Load model on the scheduler-selected CPU or GPU device."""
         if self.status == ModelStatus.LOADED:
             return True
 
         start_time = time.time()
-        logger.info(f"[GPU LOAD START] model={self.model_id} gpu={gpu_id}")
+        device_label = f"GPU {gpu_id}" if gpu_id is not None else "CPU"
+        logger.info("[MODEL LOAD START] model=%s device=%s", self.model_id, device_label)
         try:
             self.status = ModelStatus.LOADING
             self.gpu_id = gpu_id
             self.resource_plan = dict(resource_plan or {})
-            self.gpu_ids = [int(x) for x in self.resource_plan.get("gpu_ids", [gpu_id])]
+            planned_gpu_ids = self.resource_plan.get("gpu_ids")
+            if planned_gpu_ids is None:
+                planned_gpu_ids = [] if gpu_id is None else [gpu_id]
+            self.gpu_ids = [int(x) for x in planned_gpu_ids if x is not None]
 
-            # Set CUDA device
-            if (torch is not None and torch.cuda.is_available()):
+            # Only GPU-backed plans initialize a CUDA context.
+            if gpu_id is not None and torch is not None and torch.cuda.is_available():
                 torch.cuda.set_device(gpu_id)
 
             # Load model
@@ -78,7 +82,7 @@ class BaseModel(ABC):
             self.status = ModelStatus.LOADED
             elapsed = time.time() - start_time
             memory = ""
-            if (torch is not None and torch.cuda.is_available()):
+            if gpu_id is not None and torch is not None and torch.cuda.is_available():
                 try:
                     allocated = torch.cuda.memory_allocated(gpu_id) / (1024 ** 2)
                     reserved = torch.cuda.memory_reserved(gpu_id) / (1024 ** 2)
@@ -86,23 +90,23 @@ class BaseModel(ABC):
                 except Exception:
                     pass
             logger.info(
-                f"[GPU LOAD SUCCESS] model={self.model_id} gpu={gpu_id} "
-                f"elapsed={elapsed:.2f}s{memory}"
+                "[MODEL LOAD SUCCESS] model=%s device=%s elapsed=%.2fs%s",
+                self.model_id, device_label, elapsed, memory,
             )
             return True
 
         except Exception as e:
             self.status = ModelStatus.ERROR
-            logger.exception("[GPU LOAD FAILED] model=%s gpu=%s", self.model_id, gpu_id)
+            logger.exception("[MODEL LOAD FAILED] model=%s device=%s", self.model_id, device_label)
             raise RuntimeError(f"Failed to load model {self.model_id}: {e}") from e
 
     def unload(self) -> bool:
-        """Unload model from GPU"""
+        """Unload model and release device resources."""
         if self.status == ModelStatus.UNLOADED:
             return True
 
         start_time = time.time()
-        logger.info(f"[GPU UNLOAD START] model={self.model_id}")
+        logger.info(f"[MODEL UNLOAD START] model={self.model_id}")
         previous_gpu_ids = list(self.gpu_ids)
         try:
             self._unload_model()
@@ -110,12 +114,12 @@ class BaseModel(ABC):
             self.status = ModelStatus.UNLOADED
 
             # Clear GPU cache before capturing final memory state.
-            if (torch is not None and torch.cuda.is_available()):
+            if previous_gpu_ids and torch is not None and torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
             elapsed = time.time() - start_time
             memory = ""
-            if (torch is not None and torch.cuda.is_available()) and previous_gpu_ids:
+            if previous_gpu_ids and torch is not None and torch.cuda.is_available():
                 try:
                     samples = []
                     for gpu_id in previous_gpu_ids:
@@ -130,7 +134,7 @@ class BaseModel(ABC):
             self.gpu_ids = []
             self.resource_plan = None
             logger.info(
-                f"[GPU UNLOAD SUCCESS] model={self.model_id} "
+                f"[MODEL UNLOAD SUCCESS] model={self.model_id} "
                 f"elapsed={elapsed:.2f}s{memory}"
             )
             return True
@@ -161,7 +165,7 @@ class BaseModel(ABC):
             result = self._process_request(inputs)
             elapsed = time.time() - start_time
             memory = ""
-            if (torch is not None and torch.cuda.is_available()) and self.gpu_id is not None:
+            if self.gpu_id is not None and torch is not None and torch.cuda.is_available():
                 try:
                     allocated = torch.cuda.memory_allocated(self.gpu_id) / (1024 ** 2)
                     reserved = torch.cuda.memory_reserved(self.gpu_id) / (1024 ** 2)

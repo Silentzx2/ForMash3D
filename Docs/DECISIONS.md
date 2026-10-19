@@ -1186,3 +1186,17 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 - Hunyuan3D-Paint uses explicit component placement and bounded row chunks for raster interpolation/extraction.
 - Paint3D child processes remain single-GPU and do not receive aggregate-VRAM admission until real model sharding exists.
 - GPU inference remains hardware/checkpoint-dependent; CPU source contracts cannot establish peak VRAM or output quality.
+
+## ADR-083 — ARDY CPU-Only Execution
+
+**Date:** 2026-10-19  
+**Status:** Accepted
+
+**Decision:** ARDY motion generation and its local LLM2Vec text encoder run only on CPU in ForMash3D. The model manifest declares cpu_only: true and vram_requirement: 0; the scheduler creates a CPU resource plan without GPU reservations or inventory probes. The dedicated worker hides CUDA, the adapter passes device=cpu to the vendored loader, and LLM2Vec uses its single-process path for CPU requests even on multi-GPU hosts.
+
+**Reason:** ARDY supports explicit CPU inference. A CUDA-dependent adapter guard and device defaults contradicted the model's capabilities and allowed the text encoder to consume GPU resources independently of the motion-model setting.
+
+**Consequences:**
+- Motion inference is slower and bounded by available system RAM/CPU throughput; the gated text-encoder checkpoint must remain accessible.
+- No GPU VRAM is reserved or used by the ARDY worker; other ForMash3D models keep their existing GPU placement policies.
+- CPU source contracts verify the placement contract. Checkpoint-backed inference and measured CPU RAM/latency still require host-level validation.

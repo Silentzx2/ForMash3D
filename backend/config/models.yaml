@@ -463,7 +463,8 @@ motion_generation:
   ardy_motion_generation:
     capabilities:
       motion_generation: true
-    vram_requirement: 8192  # MB
+      cpu_only: true
+    vram_requirement: 0  # CPU-only; no GPU VRAM reservation
     supported_inputs: ["text"]
     supported_outputs: ["json", "npz"]
     model_path: "backend/pretrained/ardy"

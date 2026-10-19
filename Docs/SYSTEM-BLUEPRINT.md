@@ -37,6 +37,9 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 
 
 ### Shared Model Runtime Dependency Contract
+
+- ARDY is explicitly CPU-only in the model manifest and scheduler. The worker reserves no GPU memory and hides CUDA in its dedicated process; the model and local LLM2Vec encoder both receive device=cpu.
+- The vendored LLM2Vec text encoder keeps non-CUDA requests on the single-process path even when multiple GPUs are visible on the host. CPU generation is slower and requires sufficient system RAM and access to the gated text-encoder checkpoint.
 - Transformers is pinned at 4.48.3 for Hunyuan3D Mini's upstream minimum and PEFT's `HybridCache` import; Diffusers 0.30.3 and PyTorch 2.6.0 + CUDA 12.4 stay pinned.
 - Hunyuan loaders resolve vendored module roots explicitly, validate expected source/checkpoint paths, and keep full initialization tracebacks in backend logs.
 
@@ -227,7 +230,7 @@ flowchart TD
 | Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
-| ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
+| ARDY | CPU-only; no GPU VRAM reservation | Motion AI & Animation; CPU/RAM-bound | Host-dependent; slower than GPU inference |
 | UniRig | 9 GB | Auto-rigging | ~20 seconds |
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |

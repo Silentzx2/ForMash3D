@@ -7,6 +7,7 @@ producing browser-playable motion.json artifacts and raw .npz files.
 
 import logging
 import os
+import random
 import re
 import sys
 from pathlib import Path
@@ -78,6 +79,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
         self.ardy_root = Path(ardy_root)
         self.default_checkpoint = default_checkpoint
         self.current_checkpoint = default_checkpoint
+        self.device = "cpu"
         self.ardy_model = None
         self.runtime_dependency_warnings: List[str] = []
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
@@ -172,11 +174,12 @@ class ArdyMotionGenerationAdapter(BaseModel):
         try:
             self._check_runtime_dependency_contract()
             self._ensure_ardy_in_path()
-            logger.info(f"Loading ARDY model from {self.ardy_root} (checkpoint: {self.current_checkpoint})")
-
-            if not torch.cuda.is_available():
-                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
-            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            # ARDY has a dedicated worker; force LLM2Vec to CPU before it constructs the LLM.
+            os.environ["TEXT_ENCODER_DEVICE"] = "cpu"
+            logger.info(
+                "Loading ARDY model from %s (checkpoint: %s, device=%s)",
+                self.ardy_root, self.current_checkpoint, self.device,
+            )
 
             from ardy.model import load_model as ardy_load
             from ardy.model.registry import resolve_model_name
@@ -188,9 +191,15 @@ class ArdyMotionGenerationAdapter(BaseModel):
             )
 
             resolved = resolve_model_name(self.current_checkpoint, checkpoints_dir=checkpoints_dir)
-            self.ardy_model = ardy_load(resolved, device=device, checkpoints_dir=checkpoints_dir)
+            self.ardy_model = ardy_load(
+                resolved,
+                device=self.device,
+                checkpoints_dir=checkpoints_dir,
+                text_encoder_mode="local",
+                text_encoder_fp32=True,
+            )
 
-            logger.info(f"✓ ARDY model loaded successfully on {device}: {resolved}")
+            logger.info("✓ ARDY model loaded successfully on %s: %s", self.device, resolved)
             return self.ardy_model
 
         except Exception as e:
@@ -204,7 +213,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
         """Unload ARDY model and release VRAM."""
         try:
             self.ardy_model = None
-            if torch.cuda.is_available():
+            if self.device != "cpu" and torch.cuda.is_available():
                 torch.cuda.empty_cache()
             logger.info("ARDY model unloaded successfully")
         except Exception as e:
@@ -242,9 +251,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             post_process = bool(inputs.get("post_process", True))
             target_bones = inputs.get("target_bones")
 
-            if not torch.cuda.is_available():
-                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
-            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            device = self.device
 
             # Determine skeleton type from checkpoint
             is_g1 = "g1" in resolved_cp.lower()
@@ -271,8 +278,10 @@ class ArdyMotionGenerationAdapter(BaseModel):
             num_frames = int(duration * fps)
 
             if seed is not None:
-                from ardy.tools import seed_everything
-                seed_everything(int(seed))
+                # Seed CPU generators directly without initializing CUDA.
+                random.seed(int(seed))
+                np.random.seed(int(seed))
+                torch.random.default_generator.manual_seed(int(seed))
 
             # Run ARDY inference
             from ardy.motion_rep.tools import length_to_mask
@@ -351,6 +360,8 @@ class ArdyMotionGenerationAdapter(BaseModel):
                 "generation_info": {
                     "model": self.model_id,
                     "checkpoint": resolved_cp,
+                    "device": self.device,
+                    "cpu_only": True,
                     "fps": fps,
                     "num_frames": motion_doc["num_frames"],
                     "skeleton_id": motion_doc["skeleton_id"],
@@ -359,7 +370,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             }
 
             self.status = ModelStatus.LOADED
-            logger.info(f"✓ ARDY motion generation completed: {rel_motion_url}")
+            logger.info("✓ ARDY motion generation completed: %s", json_path)
             return response
 
         except Exception as e:

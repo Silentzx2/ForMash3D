@@ -214,7 +214,7 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
 | **FastMesh (1K & 4K)** | `fastmesh_v1k_retopology`<br>`fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB | Fixed-budget neural quad retopology producing clean animation loops |
 | **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB | Automated bipedal skeletal armature generation |
-| **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB | Interactive autoregressive text-to-motion generation |
+| **ARDY** | `ardy_motion_generation` | Motion AI | CPU-only; no GPU VRAM reservation | Interactive autoregressive text-to-motion generation; CPU/RAM-bound |
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
 || **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
 
@@ -524,6 +524,6 @@ Quality diagnostics can compare derivatives to the master and can use reference-
 
 ## High-Fidelity Runtime Hardening — 2026-10-08
 
-ForMash3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
+ForMash3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. ARDY motion inference is explicitly CPU-only; its local LLM2Vec text encoder is also forced to CPU, so this feature does not reserve or use GPU VRAM. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
 
 Production results keep the immutable source master separate from optimized derivatives and now include final QA/LOD/fidelity diagnostics. A lightweight offline A/B benchmark is available for controlled same-input comparisons; without a real reference mesh, generated-vs-generated geometry metrics remain diagnostic.

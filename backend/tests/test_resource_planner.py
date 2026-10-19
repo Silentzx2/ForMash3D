@@ -32,6 +32,25 @@ class FakeMonitor:
 
 
 class ResourcePlannerTests(unittest.TestCase):
+    def test_cpu_only_model_is_planned_without_gpu_inventory(self):
+        class NoGPUAccess:
+            def get_gpu_status(self):
+                raise AssertionError("CPU-only model must not inspect GPUs")
+
+            def get_gpu_available_vram(self, gpu_id):
+                raise AssertionError("CPU-only model must not inspect GPU VRAM")
+
+        planner = ResourcePlanner(NoGPUAccess(), safety_margin_mb=512)
+        config = {"vram_requirement": 0, "capabilities": {"cpu_only": True}}
+        self.assertFalse(planner.model_is_impossible(config))
+        plan = planner.plan(config)
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.kind, "cpu")
+        self.assertEqual(plan.gpu_ids, ())
+        self.assertIsNone(plan.primary_gpu)
+        self.assertEqual(plan.reservation_mb, {})
+        self.assertEqual(plan.strategy, "cpu_only")
+
     def test_single_gpu(self):
         monitor = FakeMonitor([
             {"id": 0, "name": "A", "memory_total": 14336, "memory_free": 12000, "available_mb": 12000},

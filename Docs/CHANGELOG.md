@@ -1,3 +1,10 @@
+## 2026-10-19 — ARDY CPU-Only Runtime
+
+- ARDY is explicitly scheduled on CPU with no GPU/VRAM reservation; its dedicated worker skips CUDA initialization and hides CUDA in-process.
+- The adapter forces both the motion model and local LLM2Vec text encoder to CPU, seeds only CPU generators, and reports CPU mode truthfully.
+- Vendored LLM2Vec does not spawn CUDA multiprocessing for CPU requests on multi-GPU hosts. Added CPU-only resource/source-contract tests.
+- GPU-backed ARDY tests are intentionally not applicable; real CPU checkpoint inference and peak host RAM still need validation on a machine with access to the gated text encoder.
+
 ## 2026-10-19 — Multi-GPU Runtime, Paint OOM, and Rigged Preview Fixes
 
 - Scheduler VRAM availability now accounts for live physical free memory as well as tracked reservations.
@@ -18,8 +25,3 @@
 - FastMesh now selects FlashAttention only on CUDA compute capability 8.0+ and uses Transformers' eager OPT attention plus a 4D causal mask on pre-Ampere GPUs, avoiding the reported T4/Turing FlashAttention runtime crash. Eager attention may use more VRAM and run slower; target-GPU inference still needs a smoke test.
 - GPU model inference was not executed in CPU CI; actual peak VRAM still needs validation on the target accelerator.
 
-## 2026-10-18 — Explicit Hunyuan3D-Paint Source Resolution
-
-- Third-party Hunyuan Paint now distinguishes local checkpoint directories from Hugging Face repository IDs.
-- Missing absolute paths, incomplete DINOv2 checkpoints, and invalid local Paint layouts fail clearly rather than silently switching to a remote default.
-- Added dependency-light resolver regression tests and wired them into backend CI through the updated submodule revision. GPU inference still requires a GPU smoke environment.

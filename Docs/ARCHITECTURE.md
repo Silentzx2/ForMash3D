@@ -64,7 +64,9 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 - Hunyuan3D-Paint temporarily adds its vendored utility path only during model initialization and restores both `sys.path` and the shared `utils.__path__` in `finally`; the shared utils package no longer globally adds third-party paths.
 - Hunyuan3D-Paint retries no longer purge shared `sys.modules` entries. Missing local texture or DINO checkpoints are logged before selecting a remote repository fallback.
-- ARDY reads its vendored `pyproject.toml` dependency declarations and warns about installed-version mismatches before CUDA allocation; the check is diagnostic only and does not modify the shared environment or block loading.
+- ARDY reads its vendored `pyproject.toml` dependency declarations and warns about installed-version mismatches before inference; the check is diagnostic only and does not modify the shared environment or block loading.
+- ARDY is manifest-declared CPU-only: the resource planner returns a CPU plan with no GPU IDs/VRAM reservations, and its dedicated worker hides CUDA before worker initialization. The adapter explicitly loads the motion model and local LLM2Vec text encoder on CPU.
+- ARDY forces TEXT_ENCODER_DEVICE=cpu and local float32 text encoding to prevent a text-encoder API/CUDA fallback. CPU inference is slower and requires sufficient host RAM and access to the gated text-encoder checkpoint.
 - `BaseModel.load()` preserves the original exception as the chained cause. A lightweight CPU backend CI lane compiles backend Python and runs dependency-contract tests; it does not replace GPU/checkpoint-backed smoke tests.
 
 - The Transformers HybridCache import fallback aliases the available real DynamicCache/Cache implementation and logs that HybridCache-specific behavior is not reproduced; it no longer creates an empty compatibility subclass.
@@ -444,7 +446,7 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 | UniRig | `unirig_auto_rig` | Auto-Rigging | ~9 GB |
 | FastMesh | `fastmesh_v1k_retopology`; `fastmesh_v4k_retopology` | Mesh Retopology | ~16–24.5 GB |
 | PartUV | `partuv_uv_unwrapping` | UV Unwrapping | ~7 GB |
-| ARDY | `ardy_motion_generation` | Text → Motion | ~8 GB |
+| ARDY | `ardy_motion_generation` | Text → Motion | CPU-only; no GPU VRAM reservation |
 || Unique3D | `unique3d_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB ||
 
 ## 8.1 Raw Generation Fidelity / Official Parity Contract

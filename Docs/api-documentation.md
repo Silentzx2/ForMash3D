@@ -622,7 +622,7 @@ Content-Type: application/json
 
 ### Generate Motion (ARDY)
 
-Synthesize kinematically valid 3D human motion from a natural language text prompt using ARDY. Produces browser-playable `motion.json` format for Three.js.
+Synthesize kinematically valid 3D human motion from a natural language text prompt using ARDY. Produces browser-playable `motion.json` format for Three.js. ForMash3D runs ARDY and its local LLM2Vec text encoder in CPU-only mode; no GPU VRAM is reserved, and inference is slower and bounded by host CPU/RAM.
 
 ```http
 POST /api/v1/motion-generation/generate-motion
