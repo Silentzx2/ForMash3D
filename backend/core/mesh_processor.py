@@ -569,7 +569,10 @@ class MeshProcessor:
         try:
             mesh = trimesh.load(mesh_path, process=False)
             if isinstance(mesh, trimesh.Scene):
-                mesh = mesh.to_geometry()
+                if hasattr(mesh, "to_geometry"):
+                    mesh = mesh.to_geometry()
+                else:
+                    mesh = trimesh.util.concatenate(mesh.dump())
 
             logger.info(
                 f"Loaded mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"

@@ -130,7 +130,15 @@ def scene_to_mesh(scene: trimesh.Scene) -> trimesh.Trimesh:
     if not all(isinstance(geometry, trimesh.Trimesh) for geometry in scene.geometry.values()):
         raise ValueError("The scene contains non-mesh geometry that cannot be flattened.")
     try:
-        dumped = scene.to_geometry()
+        if hasattr(scene, "to_geometry"):
+            dumped = scene.to_geometry()
+        else:
+            dumped = trimesh.util.concatenate(scene.dump())
+    except (AttributeError, TypeError):
+        try:
+            dumped = trimesh.util.concatenate(scene.dump())
+        except Exception as exc:
+            raise ValueError("Unable to flatten scene geometry with node transforms.") from exc
     except Exception as exc:
         raise ValueError("Unable to flatten scene geometry with node transforms.") from exc
     if not isinstance(dumped, trimesh.Trimesh):

@@ -266,3 +266,24 @@ def test_canonical_scorecard_contains_no_unsourced_numbers():
                 assert isinstance(cell, dict), f"Cell [{row}][{col}] is not null or dict: {cell}"
                 assert "value" in cell
                 assert "source" in cell and bool(cell["source"])
+
+
+def test_scene_to_mesh_fallback_when_to_geometry_missing():
+    """Verify scene_to_mesh succeeds even on older trimesh versions lacking to_geometry()."""
+    from postprocess.meshio import scene_to_mesh
+
+    box = trimesh.creation.box()
+    scene = trimesh.Scene(box)
+
+    # Wrap scene to simulate older trimesh without to_geometry
+    class LegacyScene(trimesh.Scene):
+        def __getattribute__(self, name):
+            if name == "to_geometry":
+                raise AttributeError("'Scene' object has no attribute 'to_geometry'")
+            return super().__getattribute__(name)
+
+    legacy_scene = LegacyScene(box)
+    flattened = scene_to_mesh(legacy_scene)
+    assert isinstance(flattened, trimesh.Trimesh)
+    assert len(flattened.faces) == 12
+    assert len(flattened.vertices) == 8
