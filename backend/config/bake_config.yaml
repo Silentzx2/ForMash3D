@@ -1,8 +1,0 @@
-bake:
-  normal_space: "TANGENT"
-  convention: "OPENGL" # Y+
-  max_ray_distance: 0.05
-  cage_extrusion: 0.02
-  texture_size: 1024
-  gutter_dilation_pixels: 4
-  min_uv_utilization: 0.60

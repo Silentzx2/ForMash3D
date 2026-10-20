@@ -1,6 +1,6 @@
 # Models Configuration
 # Available models for each feature
-# Use the actual adapter model IDs as defined in the adapter classes
+# Canonical model catalog: IDs, model names, upstream source, reviewed revision, checkpoint license, capabilities and VRAM reservation.
 # EXPERIMENTAL_MAX_DETAIL settings snapshot: 2026-10-20.
 # USER REQUIREMENT: cross normal limits for experimental quality testing; do not lower merely to fit a test GPU.
 # Do not silently clamp over-limit settings. OOM/poor quality are valid test outcomes; user will lower after review.
@@ -12,7 +12,13 @@ text_mesh_painting:
   # EXPERIMENTAL_MAX_DETAIL: TRELLIS supports up to 50 sampling steps; adapter has a shared guidance field, so it cannot express separate upstream SS=7.5 / SLAT=3.0 guidance without an implementation change.
   # Review note: keep raw geometry unsimplified and ask the user once before any future profile change.
   trellis_text_mesh_painting:
+    model_name: "TRELLIS — Text Mesh Painting"
+    upstream_repository: "https://github.com/microsoft/TRELLIS"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       text_mesh_painting: true
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch
@@ -28,7 +34,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: steps=100 (upstream UI maximum and community-tested experiment), guidance=5.0 (upstream default), octree=1300 (upstream maximum).
   # A/B outcome is unverified; raw master remains un-decimated. Ask the user once before later changing this profile.
   hunyuan3d_shape_v21_image_to_raw_mesh:
+    model_name: "Hunyuan3D-2.1 Shape — Image to Raw Mesh"
+    upstream_repository: "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: 1300
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -56,7 +68,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: preserve distilled 5-step schedule, guidance=5.0, and trained octree=380; do not raise the octree to 512.
   # This is a checkpoint compatibility boundary, not a low-VRAM quality downgrade. Ask before later changes.
   hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
+    model_name: "Hunyuan3D Mini Turbo — Image to Raw Mesh"
+    upstream_repository: "https://github.com/Tencent-Hunyuan/Hunyuan3D-2"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: 768
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -83,7 +101,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: steps=50 and guidance=7.0 follow upstream defaults; dense depth=9 / hierarchical depth=10 are the repo's high-detail target.
   # Existing VRAM gate may report an effective depth below the request; no higher community optimum is verified. Ask before changes.
   triposg_image_to_raw_mesh:
+    model_name: "TripoSG — Image to Raw Mesh"
+    upstream_repository: "https://github.com/VAST-AI-Research/TripoSG"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: 1024
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -111,7 +135,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: preserve upstream-supported do_refine=true, expansion_weight=0.1, init_type=std and seed=1145.
   # The adapter exposes no configurable inference steps/guidance control; do not invent unsupported knobs. Ask before changes.
   unique3d_image_to_raw_mesh:
+    model_name: "Unique3D — Image to Raw Mesh"
+    upstream_repository: "https://github.com/AiuniAI/Unique3D"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: 1024
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -145,7 +175,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: use official 1536_cascade / resolution=1536; apply the TRELLIS.2 community high-detail sampler profile as an explicitly unbenchmarked experiment for Pixal3D.
   # Keep the raw master non-decimated. Low-VRAM remains false; ask the user once before any later profile edit.
   pixal3d_image_to_raw_mesh:
+    model_name: "Pixal3D — Image to Raw Mesh"
+    upstream_repository: "https://github.com/TencentARC/Pixal3D"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: 2048
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -177,8 +213,14 @@ image_to_raw_mesh:
 
   # EXPERIMENTAL_MAX_DETAIL: legacy alias of pixal3d_image_to_raw_mesh; it must inherit the same 1536 O-Voxel source profile, not an independent lower-resolution profile.
   pixal3d_image_to_3d:
+    model_name: "Pixal3D — Image to 3D"
+    upstream_repository: "https://github.com/TencentARC/Pixal3D"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     alias_of: "pixal3d_image_to_raw_mesh"
     capabilities:
+      native_topology: false
+      output_resolution: 2048
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -211,7 +253,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: source sampling uses 50 steps (upstream UI ceiling); shared adapter guidance remains 7.5, with raw simplification disabled.
   # Official UI uses separate 7.5/3.0 stage guidance, which this shared guidance field cannot represent. Ask before any later change.
   trellis_image_to_3d:
+    model_name: "TRELLIS — Image to 3D"
+    upstream_repository: "https://github.com/microsoft/TRELLIS"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -229,7 +277,13 @@ image_to_raw_mesh:
 
   # EXPERIMENTAL_MAX_DETAIL: alias/raw route retains 50-step geometry stages and simplify=0.0; raw master geometry is not reduced.
   trellis_image_to_raw_mesh:
+    model_name: "TRELLIS — Image to Raw Mesh"
+    upstream_repository: "https://github.com/microsoft/TRELLIS"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -248,7 +302,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: TRELLIS.2 community quality-first issue profile: 50 steps, SS guidance=8.0, shape=8.5, texture=2.5, 1536 cascade.
   # Community issue is a user's experiment, not a maintainer guarantee; raw master uses decimation_target=-1 rather than the issue's 800k cap. Ask before changes.
   trellis2_image_to_3d:
+    model_name: "TRELLIS.2 — Image to 3D"
+    upstream_repository: "https://github.com/microsoft/TRELLIS.2"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: 2048
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -280,7 +340,13 @@ image_to_raw_mesh:
   # EXPERIMENTAL_MAX_DETAIL: same TRELLIS.2 community sampler profile; 1536 cascade, full token budget, remesh=false and decimation_target=-1.
   # The community profile is experimental, not proven best for every asset. Ask before future changes.
   trellis2_image_to_raw_mesh:
+    model_name: "TRELLIS.2 — Image to Raw Mesh"
+    upstream_repository: "https://github.com/microsoft/TRELLIS.2"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: 2048
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -313,9 +379,15 @@ image_to_raw_mesh:
 image_to_textured_mesh:
   # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS profile; 50-step source configuration, shared CFG=7.5, simplify=0.0.
   trellis_image_to_textured_mesh:
+    model_name: "TRELLIS — Legacy Textured Mesh Alias"
+    upstream_repository: "https://github.com/microsoft/TRELLIS"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     alias_of: "trellis_image_to_3d"
     deprecated: true
     capabilities:
+      native_topology: false
+      output_resolution: null
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -335,9 +407,15 @@ image_to_textured_mesh:
 
   # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS.2 profile; 1536 cascade and separate 50-step sparse/shape/texture sampler candidate.
   trellis2_image_to_textured_mesh:
+    model_name: "TRELLIS.2 — Legacy Textured Mesh Alias"
+    upstream_repository: "https://github.com/microsoft/TRELLIS.2"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     alias_of: "trellis2_image_to_3d"
     deprecated: true
     capabilities:
+      native_topology: false
+      output_resolution: 2048
       text_to_3d: false
       image_to_3d: true
       multiview: false
@@ -370,7 +448,13 @@ image_to_textured_mesh:
 image_mesh_painting:
   # EXPERIMENTAL_MAX_DETAIL: TRELLIS texture size stays at its supported 2048 default; higher atlas targets are not assumed to be supported by this adapter.
   trellis_image_mesh_painting:
+    model_name: "TRELLIS — Image Mesh Painting"
+    upstream_repository: "https://github.com/microsoft/TRELLIS"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       texture_generation: true
       texture_refine: true
       multiview: false
@@ -386,7 +470,13 @@ image_mesh_painting:
   # EXPERIMENTAL_MAX_DETAIL: texture atlas supports 4096 by default and 8192 in the adapter; texture stage uses 50 steps / guidance 2.5 / rescale 0.2 / rescale_t 6.0.
   # Values are a community candidate, not a verified universal optimum; ask the user once before later changes.
   trellis2_image_mesh_painting:
+    model_name: "TRELLIS.2 — Image Mesh Painting"
+    upstream_repository: "https://github.com/microsoft/TRELLIS.2"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       texture_generation: true
       texture_refine: true
       multiview: false
@@ -402,7 +492,13 @@ image_mesh_painting:
   # EXPERIMENTAL_MAX_DETAIL: use upstream demo ceiling of 9 views and 768 per-view inference resolution; preserve 4K/8K atlas output.
   # These are supported UI limits, not proof that every image benefits. Ask once before later changes.
   hunyuan3d_paint_v21_image_mesh_painting:
+    model_name: "Hunyuan3D-2.1 Paint — Image Mesh Painting"
+    upstream_repository: "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       texture_generation: true
       texture_refine: true
       multiview: false
@@ -418,7 +514,13 @@ image_mesh_painting:
   # EXPERIMENTAL_MAX_DETAIL: keep the adapter's supported two-stage recipe (20 steps; guidance 7.0 then 3.0) and supported 1K/2K output textures.
   # No better community-tested override was verified; do not invent one. Ask before changing this profile.
   paint3d:
+    model_name: "Paint3D"
+    upstream_repository: null
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       texture_generation: true
       texture_refine: true
       multiview: false
@@ -439,7 +541,13 @@ mesh_segmentation: {}
 auto_rig:
   # EXPERIMENTAL_MAX_DETAIL: UniRig exposes rig mode/seed, not diffusion steps or guidance. Upstream recommends reviewing/refining skeleton before skinning.
   unirig_auto_rig:
+    model_name: "UniRig — Auto Rigging"
+    upstream_repository: "https://github.com/VAST-AI-Research/UniRig"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       auto_rig: true
       character_output: true
     vram_requirement: 9216  # MB
@@ -453,7 +561,13 @@ auto_rig:
 mesh_retopology:
   # EXPERIMENTAL_MAX_DETAIL: V1K is a fixed ~1k-vertex retopology checkpoint; no supported inference-step/guidance controls exist.
   fastmesh_v1k_retopology:
+    model_name: "FastMesh — Retopology"
+    upstream_repository: null
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       retopology: true
       target_variant: "V1K"
       multi_gpu: true
@@ -469,7 +583,13 @@ mesh_retopology:
     
   # EXPERIMENTAL_MAX_DETAIL: V4K is a fixed ~4k-vertex retopology checkpoint; no supported inference-step/guidance controls exist.
   fastmesh_v4k_retopology:
+    model_name: "FastMesh — Retopology"
+    upstream_repository: null
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       retopology: true
       target_variant: "V4K"
       multi_gpu: true
@@ -487,7 +607,13 @@ mesh_retopology:
 uv_unwrapping:
   # EXPERIMENTAL_MAX_DETAIL: retain official PartUV distortion threshold=1.25; larger thresholds explicitly permit more distortion. Adapter exposes no sampling-step/guidance controls.
   partuv_uv_unwrapping:
+    model_name: "PartUV — UV Unwrapping"
+    upstream_repository: null
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       uv_unwrap: true
     vram_requirement: 7168  # MB
     supported_inputs: ["obj", "glb"]
@@ -501,7 +627,13 @@ motion_generation:
   # EXPERIMENTAL_MAX_DETAIL: keep the supported Core/G1 checkpoints and their trained FPS/horizon; upstream CLI CFG defaults to [2.0, 2.0] but this adapter does not expose cfg_weight.
   # Do not add unsupported CFG settings without implementation work; ask user once before changing this profile.
   ardy_motion_generation:
+    model_name: "ARDY — Motion Generation"
+    upstream_repository: "https://github.com/nv-tlabs/ardy"
+    upstream_ref: null # Pin to a reviewed commit/tag only after adapter compatibility is verified
+    checkpoint_license: "unverified"
     capabilities:
+      native_topology: false
+      output_resolution: null
       motion_generation: true
       cpu_only: true
     vram_requirement: 0  # CPU-only; no GPU VRAM reservation

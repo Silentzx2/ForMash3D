@@ -3,35 +3,20 @@ schema_version: "1.0.0"
 # Adapter capabilities and resource constraints
 adapters:
   hunyuan3d_shape_v21_image_to_raw_mesh:
-    adapter_class: "Hunyuan3DShapeV21ImageToRawMeshAdapter"
-    vram_budget_gb: 10.0
-    supported_inputs: ["image"]
     requires_cuda: true
-    native_topology: false
     requires_license_optin: false
 
   hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
-    adapter_class: "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter"
-    vram_budget_gb: 6.0
-    supported_inputs: ["image"]
     requires_cuda: true
-    native_topology: false
     requires_license_optin: false
 
   trellis2_image_to_raw_mesh:
-    adapter_class: "Trellis2ImageToRawMeshAdapter"
-    vram_budget_gb: 16.0
-    supported_inputs: ["image"]
     requires_cuda: true
-    native_topology: false
     requires_license_optin: false
 
   taoflowforge_image_to_raw_mesh:
     adapter_class: "TaoFlowForgeImageToRawMeshAdapter"
-    vram_budget_gb: 16.0
-    supported_inputs: ["image"]
     requires_cuda: true
-    native_topology: true
     requires_license_optin: true
 
 # Benchmark-driven routing candidates by object type and requested quality tier
@@ -41,7 +26,7 @@ object_type_routes:
     retopo_mode: "feature_aware"
     fast:
       candidates:
-        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+        - adapter: "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
           preset: "fast"
           num_seeds: 1
           skip_retopo_allowed: false
@@ -76,7 +61,7 @@ object_type_routes:
     retopo_mode: "smooth"
     fast:
       candidates:
-        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+        - adapter: "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
           preset: "fast"
           num_seeds: 1
           skip_retopo_allowed: false
@@ -111,7 +96,7 @@ object_type_routes:
     retopo_mode: "silhouette_aware"
     fast:
       candidates:
-        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+        - adapter: "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
           preset: "fast"
           num_seeds: 1
           skip_retopo_allowed: false
@@ -146,7 +131,7 @@ object_type_routes:
     retopo_mode: "standard"
     fast:
       candidates:
-        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+        - adapter: "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
           preset: "fast"
           num_seeds: 1
           skip_retopo_allowed: false
@@ -180,7 +165,7 @@ object_type_routes:
 quality_routes:
   fast:
     candidates:
-      - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+      - adapter: "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
         preset: "fast"
         num_seeds: 1
         skip_retopo_allowed: false
@@ -231,7 +216,7 @@ retopo_configs:
 
 # Fallback of last resort (always available candidate)
 fallback_of_last_resort:
-  adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+  adapter: "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
   preset: "fast"
   num_seeds: 1
   skip_retopo_allowed: false
@@ -250,10 +235,16 @@ default_input_prep:
 # Default UV options
 default_uv:
   backend: "auto"
-  partuv_threshold_tris: 500000
 
 # Default bake options
 default_bake:
   normal_from_master: true
   convention: "opengl"
   bake_ao: false
+
+
+# Planner recommendations are observational until measured benchmark evidence justifies changes.
+apply:
+  model_choice: false
+  auto_seeds: false
+  input_prep: true

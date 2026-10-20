@@ -1,0 +1,86 @@
+# Canonical tunable values for generation planning and post-processing.
+# Model identity, repository, capability and VRAM data belong in models.yaml.
+
+shared:
+  feature_edge_angle_deg: 35.0
+
+holes:
+  max_hole_vertices: 50
+  max_hole_perimeter: 0.5
+
+gate:
+  strict: false
+  max_non_manifold_edges: 0
+  max_non_manifold_vertices: 0
+  max_holes: 0
+  max_floater_ratio: 0.005
+  max_degenerate_faces: 0
+  min_aspect_ratio_p1: 0.05
+  min_aspect_ratio_p5: 0.10
+
+decimation:
+  memory_safe_threshold_triangles: 2000000
+  max_deviation_deg: 45.0
+  max_ram_fraction: 0.80
+
+uv:
+  partuv_triangle_threshold: 500000
+  partuv_vram_requirement_gb: 7.0
+  default_backend: auto
+  fallback_backend: xatlas
+  max_chart_size: 4096
+
+bake:
+  normal_space: TANGENT
+  convention: OPENGL
+  max_ray_distance: 0.05
+  cage_extrusion: 0.02
+  texture_size: 1024
+  gutter_dilation_pixels: 4
+  min_uv_utilization: 0.60
+
+seeds:
+  base_seed: 42891
+  seed_step: 1337
+  max_candidates: 4
+  seed_count_by_tier:
+    fast: 1
+    balanced: 2
+    high: 3
+  early_stop_score: 0.85
+  weights:
+    feature_edge_retention: 0.40
+    hole_count: 0.20
+    component_floater_ratio: 0.15
+    degenerate_face_ratio: 0.10
+    triangle_count: 0.05
+    aspect_ratio_p5: 0.10
+  ranges:
+    feature_edge_retention: [0.0, 1.0]
+    hole_count: [0.0, 50.0]
+    component_floater_ratio: [0.0, 0.2]
+    degenerate_face_ratio: [0.0, 0.05]
+    triangle_count: [1000.0, 1000000.0]
+    aspect_ratio_p5: [0.0, 1.0]
+  inverted:
+    - hole_count
+    - component_floater_ratio
+    - degenerate_face_ratio
+    - triangle_count
+    - aspect_ratio_p5
+
+limits:
+  max_production_faces: 2000000
+  memory_safe_dispatch_triangles: 2000000
+  uv_scan_max_faces: 60000
+
+badge:
+  sharp_min_score: 0.85
+  clean_min_score: 0.0
+
+tiers:
+  - fast
+  - balanced
+  - high
+
+default_tier: balanced

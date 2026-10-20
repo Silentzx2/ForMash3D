@@ -1,5 +1,0 @@
-decimation:
-  memory_safe_threshold_triangles: 2000000 # 2M tris
-  crease_angle_deg: 35.0
-  max_deviation_deg: 45.0
-  max_ram_fraction: 0.80 # 80% available RAM

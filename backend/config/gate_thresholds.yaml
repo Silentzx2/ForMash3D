@@ -1,9 +1,0 @@
-topology_gate:
-  strict: false
-  max_non_manifold_edges: 0
-  max_non_manifold_vertices: 0
-  max_holes: 0
-  max_floater_ratio: 0.005 # 0.5%
-  max_degenerate_faces: 0
-  min_aspect_ratio_p1: 0.05
-  min_aspect_ratio_p5: 0.10
