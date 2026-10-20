@@ -85,6 +85,32 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 - Shape imports `hy3dshape.pipelines` and `hy3dshape.rembg` from the vendored package root. Mini resolves its vendored `hy3dgen` root before importing and validates both source files and the checkpoint subfolder.
 - Model adapters log chained initialization exceptions; the multiprocess worker stores the full traceback in backend logs and returns a concise initialization summary to the client.
 
+### Pipeline Planner v0 and Runtime Probe contracts (Task 1E)
+- `backend/core/runtime_probe.py`: Returns a uniform runtime capability payload (`probe_runtime()`) including live VRAM (`torch.cuda.mem_get_info`), peak allocated memory, host RAM (`psutil`), installed adapter classes (`_ADAPTER_MAP`), enabled models from `models.yaml`, and license opt-in state.
+- `backend/core/planner.py`: Pure function `plan_generation(request, runtime, rules)` dynamically routes requests based on quality tier, mesh style, object type, VRAM budgets, and license opt-in. When a preferred candidate fails runtime checks, it recomputes the entire plan (adapter, preset, seeds, retopo permission, UV backend) rather than patching individual fields.
+- `BaseModel`: Initialized with `native_topology: bool = False` flag to differentiate dense marching cubes / implicit field adapters from native topology generators.
+
+### Quality Metrics Library and Master Immutability Audit (Task 1A)
+- `backend/core/quality/metrics.py`: Pure trimesh/NumPy calculation function `compute_mesh_metrics(mesh, reference_master=None)` evaluating 14 topological and geometric metrics:
+  - `triangle_count`, `vertex_count`, `is_watertight`, `non_manifold_edges`, `non_manifold_vertices`
+  - `hole_count` (boundary loop count) and `boundary_loop_sizes`
+  - `connected_components` and `floater_ratio` (share of vertices in components < 0.5% total)
+  - `degenerate_faces` (zero-area or collinear faces)
+  - `aspect_ratio_p1` and `aspect_ratio_p5` (1st and 5th percentile triangle radius-edge aspect ratios)
+  - `uv_island_count` (face-adjacency chart components when visual UVs are present)
+  - `feature_edge_retention` (share of master edges with dihedral angle > 30.0° retained within angle/distance tolerance; 1.0 if no sharp edges or master is None)
+  - Master immutability audit logic: `sha256_file` and `audit_master_immutability` guaranteeing working copies preserve exact SHA-256 master lineage.
+- `backend/core/quality/parity_scorecard.py`: Competitive benchmarking scorecard generator producing `parity_scorecard.json` across rows (`sharpness`, `topology_cleanliness`, `uv_quality`, `texture_quality`, `speed`, `failure_rate`) and columns (`ForMash3D`, `Tripo`, `Meshy`, `Hyper3D`).
+
+### Input Image Prep Module (Task 1B)
+- `backend/core/preprocess/image_prep.py`: Pure Pillow / NumPy preprocessing for 3D generation intake without mutating source images or disk files.
+  - `prepare_input_image(image_input, prep_flags=None, target_size=(1024, 1024)) -> Image.Image`:
+    - `remove_background`: strips uniform backdrops via corner color-distance thresholding or cleans noisy alpha.
+    - `tight_crop`: centers subject bounding box with configurable margin percentage (default 10%).
+    - `target_size`: scales subject preserving aspect ratio and centers onto transparent canvas letterbox.
+    - `upscale_if_small`: resamples with high-fidelity LANCZOS if min dimension is below threshold (e.g. 256).
+  - `validate_image_aspect_and_occupancy(image: Image.Image) -> dict`: Computes foreground occupancy ratio, aspect ratio, bounding box occupancy, border coverage, and individual edge contact flags.
+
 ```mermaid
 flowchart TB
     %% Sleek Studio Palette

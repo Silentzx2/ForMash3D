@@ -1,3 +1,58 @@
+## 2026-10-20 — Quality Metrics Lib, Parity Scorecard, and Master Immutability Audit (Task 1A)
+
+- Implemented pure trimesh/NumPy `compute_mesh_metrics` in `backend/core/quality/metrics.py`:
+  - 14 topological and geometric metrics:
+    - `triangle_count`: int
+    - `vertex_count`: int
+    - `is_watertight`: bool
+    - `non_manifold_edges`: int
+    - `non_manifold_vertices`: int (vertex link graph cycle/disk analysis)
+    - `hole_count`: int (boundary loop count)
+    - `boundary_loop_sizes`: list[int]
+    - `connected_components`: int
+    - `floater_ratio`: float (ratio of vertices in components < 0.5% total vertices)
+    - `degenerate_faces`: int (zero-area or collinear faces)
+    - `aspect_ratio_p1`: float (1st percentile triangle radius-edge aspect ratio in [0, 1])
+    - `aspect_ratio_p5`: float (5th percentile triangle radius-edge aspect ratio in [0, 1])
+    - `uv_island_count`: int (UV charts from face adjacency with texture visuals, 0 if no UVs)
+    - `feature_edge_retention`: float (share of master edges with dihedral angle > 30.0° still present within distance/angle tolerance in mesh; 1.0 if reference is None or has no sharp edges)
+  - Master immutability helpers: `sha256_file` and `audit_master_immutability` to guarantee working copies leave master source untouched.
+- Implemented `backend/core/quality/parity_scorecard.py`:
+  - Generates `parity_scorecard.json` template comparing `ForMash3D`, `Tripo`, `Meshy`, `Hyper3D` across `sharpness`, `topology_cleanliness`, `uv_quality`, `texture_quality`, `speed`, and `failure_rate`.
+- Test suite in `backend/tests/test_mesh_metrics.py` (6/6 passing):
+  - Validates all 14 metrics on canonical cube, holes, floaters, degenerate faces, non-manifold edges/vertices, and UV charts.
+  - Verifies feature edge retention on cube vs subdivided cube (1.0) and smoothed sphere (< 0.1).
+  - Tests 1A.1 master immutability audit workflow ensuring working copies mutate while `master/source.glb` SHA-256 remains immutable.
+  - Verifies parity scorecard JSON generation.
+
+## 2026-10-20 — Hunyuan Presets, Hole-Targeted Repair & Seed Scorer (Tasks 1C & 1D)
+
+- Added `backend/config/hunyuan_presets.yaml` declaring config-driven presets for Hunyuan3D-2.1 with measured VRAM budgets:
+  - `fast`: octree 380, steps 30, guidance 5.0, vram_budget_gb 8.0
+  - `balanced`: octree 512, steps 50, guidance 7.5, vram_budget_gb 10.0
+  - `high`: octree 512, steps 100, guidance 7.5, vram_budget_gb 14.0
+  - Hole-repair thresholds: `max_hole_perimeter: 0.5`, `max_hole_vertices: 50`.
+- Implemented `repair_holes_targeted` in `backend/postprocess/services/hole_repair.py`:
+  - Inspects boundary loops via `mesh.edges_face` / boundary edges without modifying non-hole geometry.
+  - Loops with vertex count <= `max_hole_vertices` are filled by triangulating polygon loops / boundary fan.
+  - Returns repaired mesh and stats dict (`holes_filled`, `holes_remaining`, `boundary_edges_before`, `boundary_edges_after`).
+- Created `backend/config/seed_scoring.yaml` and `backend/core/scheduler/seed_scorer.py`:
+  - Pure function `score_seed_candidate(metrics: dict, config_path: str = None) -> float`: computes normalized composite score [0.0, 1.0] using fixed reference ranges from config, inverting negative metrics.
+  - Pure function `select_best_candidate(candidates_metrics: list[dict], early_stop_threshold: float = 0.85)`: sequential candidate evaluation, early stops when composite score >= 0.85, and breaks ties within 2% composite score preferring higher `feature_edge_retention` then lower `triangle_count`.
+- Full test coverage in `backend/tests/test_hole_repair_and_seeds.py` (8/8 passing).
+
+## 2026-10-20 — Input Image Prep Module (Task 1B)
+
+- Created pure Pillow / NumPy module `backend/core/preprocess/image_prep.py` with `prepare_input_image` and `validate_image_aspect_and_occupancy`.
+- Guaranteed non-mutation of input images and disk files via explicit copying and read-only loading.
+- Features:
+  - `remove_background`: strips uniform background by corner color-distance thresholding or cleans low-alpha noise.
+  - `tight_crop`: bounding-box crop with configurable margin percentage (default 10%), padding out-of-bounds bounds with transparent pixels to preserve centering.
+  - `target_size`: letterboxing / centering on transparent canvas with aspect-ratio preservation.
+  - `upscale_if_small`: Lanczos resampling when input min dimension is below threshold (default 256).
+  - `validate_image_aspect_and_occupancy`: reports foreground occupancy ratio, aspect ratio, bbox occupancy, border contact flags (top, bottom, left, right), and border coverage.
+- Tests in `backend/tests/test_image_prep.py` (13/13 passing) verify input immutability, crop margins, centering, aspect preservation, upscaling, and occupancy calculations.
+
 ## 2026-10-20 — Generation Experiment Presets
 
 - Workspace Settings → AI Inference has a Generation Experiment Lab drawer using the existing model-parameter schema API, workspace settings, generation queue, and parameter builder.
