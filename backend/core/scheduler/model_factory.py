@@ -168,6 +168,11 @@ class ModelFactory:
             "module": "adapters.pixal3d_adapter",
             "class": "Pixal3DImageToRawMeshAdapter",
         },
+        # TaoFlowForge adapter
+        "taoflowforge_image_to_raw_mesh": {
+            "module": "adapters.taoflowforge_adapter",
+            "class": "TaoFlowForgeImageToRawMeshAdapter",
+        },
     }
 
     LEGACY_IMAGE_TO_RAW_ALIASES = {

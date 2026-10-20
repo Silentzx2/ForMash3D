@@ -797,6 +797,23 @@ else
     exit 1
 fi
 
+echo ""
+echo "========================================"
+echo "Installing TaoFlowForge Dependencies"
+echo "========================================"
+if [ -d "$THIRDPARTY_DIR/Taobao3D/TaoFlowForge" ]; then
+    cd "$THIRDPARTY_DIR/Taobao3D/TaoFlowForge"
+    echo "[INFO] Installing TaoFlowForge requirements from requirements.txt..."
+    $UV_PIP install --find-links="$WHEEL_DIR" -r requirements.txt --index-strategy unsafe-best-match
+    if [ $? -eq 0 ]; then
+        echo "[SUCCESS] TaoFlowForge requirements installed"
+    else
+        echo "[WARN] Could not install all TaoFlowForge requirements (CUDA/open3d wheels may require GPU environment)"
+    fi
+else
+    echo "[WARN] TaoFlowForge thirdparty directory not found, skipping"
+fi
+
 # huggingface_hub is managed centrally by backend/requirements.txt.
 
 # Older installer runs installed Gradio only for Unique3D's standalone demo.

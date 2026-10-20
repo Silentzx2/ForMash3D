@@ -96,8 +96,6 @@ def test_planner_candidates_in_models_yaml():
         return candidates
 
     planner_candidates = extract_candidates(planner_data.get("routes", {}))
-    # Exclude disabled spike stubs
-    planner_candidates.discard("taoflowforge_image_to_raw_mesh")
 
     for cand in planner_candidates:
         assert cand in model_ids, f"Planner candidate '{cand}' not registered in models.yaml"

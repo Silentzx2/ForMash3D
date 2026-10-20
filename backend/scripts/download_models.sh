@@ -5,7 +5,7 @@
 # 
 # Available models:
 #   hunyuan2mini, hunyuan21, trellis, trellis-text, trellis2,
-#   unirig, partuv, fastmesh, triposg, ardy, unique3d, paint3d, pixal3d, misc, all
+#   unirig, partuv, fastmesh, triposg, ardy, unique3d, paint3d, pixal3d, taoflowforge, misc, all
 #
 # Options:
 #   -h, --help              Show this help message
@@ -105,7 +105,7 @@ VERIFY_ONLY=false
 FORCE_DOWNLOAD=false
 
 # Available models
-AVAILABLE_MODELS=("hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "unirig" "partuv" "fastmesh" "triposg" "ardy" "unique3d" "paint3d" "pixal3d" "misc" "all")
+AVAILABLE_MODELS=("hunyuan2mini" "hunyuan21" "hunyuan3d_shape_v21" "hunyuan3d_paint_v21" "hunyuan3d_dit_v2_mini_turbo" "trellis" "trellis-text" "trellis2" "unirig" "partuv" "fastmesh" "triposg" "ardy" "unique3d" "paint3d" "pixal3d" "taoflowforge" "misc" "all")
 
 show_help() {
     cat << EOF
@@ -137,6 +137,7 @@ Available models:
     unique3d           - Unique3D high-fidelity single-image to 3D model
     paint3d            - Paint3D 1K/2K UV texture diffusion model
     pixal3d            - Pixal3D pixel-aligned image to 3D generation model
+    taoflowforge       - TaoFlowForge progressive native mesh generation model (Alibaba)
     misc               - Miscellaneous utility models (RealESRGAN, DINOv2)
     all                - All core models (excluding optional normal ControlNet)
 
@@ -833,6 +834,101 @@ download_paint3d() {
     fi
 }
 
+# Function to download TaoFlowForge models
+download_taoflowforge() {
+    print_info "========================================"
+    print_info "Downloading TaoFlowForge Models"
+    print_info "========================================"
+
+    local model_dir="$PRETRAINED_DIR/Taobao3D/TaoFlowForge"
+
+    if [ "$FORCE_DOWNLOAD" = false ] && \
+       [ -d "$model_dir" ] && \
+       verify_directory "$model_dir" 3 && \
+       verify_file "$model_dir/stage0.pt" 1000000000 && \
+       verify_file "$model_dir/stage1.pt" 1000000000 && \
+       verify_file "$model_dir/stage2.pt" 1000000000; then
+        print_info "TaoFlowForge models already exist and verified"
+        return 0
+    fi
+
+    mkdir -p "$model_dir" 2>/dev/null || true
+    ensure_writable_model_dir "$model_dir" || return 1
+
+    print_info "Downloading TaoFlowForge checkpoints from ModelScope (Taobao3D/TaoFlowForge)..."
+    local download_success=false
+
+    # 1. Primary: ModelScope CLI if available
+    if command -v modelscope >/dev/null 2>&1; then
+        print_info "Using modelscope CLI..."
+        if modelscope download --model Taobao3D/TaoFlowForge --local_dir "$model_dir"; then
+            download_success=true
+        fi
+    fi
+
+    # 2. Secondary: Python snapshot_download from modelscope
+    if [ "$download_success" = false ]; then
+        local py_bin="${PYTHON_EXEC:-$(command -v python3 || command -v python)}"
+        if [ -n "$py_bin" ]; then
+            print_info "Attempting download via python modelscope snapshot_download..."
+            if "$py_bin" -c "from modelscope import snapshot_download; snapshot_download('Taobao3D/TaoFlowForge', local_dir='$model_dir')" 2>/dev/null || \
+               "$py_bin" -c "from modelscope import snapshot_download; snapshot_download('Taobao3D/TaoFlowForge', cache_dir='$model_dir')" 2>/dev/null; then
+                download_success=true
+            fi
+        fi
+    fi
+
+    # 3. Tertiary: Direct download via wget/curl from ModelScope resolve URLs
+    if [ "$download_success" = false ]; then
+        print_info "Attempting direct download of stage checkpoints from ModelScope..."
+        local base_url="https://modelscope.cn/models/Taobao3D/TaoFlowForge/resolve/master"
+        local files=("stage0.pt" "stage1.pt" "stage2.pt")
+        local direct_failed=false
+
+        for file in "${files[@]}"; do
+            local file_path="$model_dir/$file"
+            if [ -f "$file_path" ] && [ "$FORCE_DOWNLOAD" = false ]; then
+                print_info "$file already exists, skipping."
+                continue
+            fi
+            print_info "Downloading $file from ModelScope..."
+            if command -v wget >/dev/null 2>&1; then
+                if ! wget -c --show-progress -O "$file_path" "$base_url/$file"; then
+                    direct_failed=true
+                    break
+                fi
+            elif command -v curl >/dev/null 2>&1; then
+                if ! curl -L -C - --progress-bar -o "$file_path" "$base_url/$file"; then
+                    direct_failed=true
+                    break
+                fi
+            else
+                direct_failed=true
+                break
+            fi
+        done
+
+        if [ "$direct_failed" = false ]; then
+            download_success=true
+        fi
+    fi
+
+    # Flatten nested directory if created by cache_dir snapshot_download
+    if [ -f "$model_dir/Taobao3D/TaoFlowForge/stage0.pt" ]; then
+        mv "$model_dir/Taobao3D/TaoFlowForge"/* "$model_dir/" 2>/dev/null || true
+        rm -rf "$model_dir/Taobao3D" 2>/dev/null || true
+    fi
+
+    if [ -f "$model_dir/stage0.pt" ] && [ -f "$model_dir/stage1.pt" ] && [ -f "$model_dir/stage2.pt" ]; then
+        print_success "TaoFlowForge models downloaded successfully"
+        return 0
+    else
+        print_error "Failed to download TaoFlowForge models (Taobao3D/TaoFlowForge)"
+        print_warning "Note: TaoFlowForge checkpoints (~26GB total: stage0.pt, stage1.pt, stage2.pt) require sufficient disk space."
+        return 1
+    fi
+}
+
 # Function to download miscellaneous models
 download_misc() {
     print_info "========================================"
@@ -936,6 +1032,11 @@ verify_all_models() {
     else
         print_warning "Paint3D not found (can be downloaded via -m paint3d)"
     fi
+
+    print_info "Checking TaoFlowForge..."
+    if [ -d "$PRETRAINED_DIR/Taobao3D/TaoFlowForge" ]; then
+        verify_directory "$PRETRAINED_DIR/Taobao3D/TaoFlowForge" 3 || all_verified=false
+    fi
     
     if [ "$all_verified" = true ]; then
         print_success "All required models are present and verified!"
@@ -1022,6 +1123,9 @@ for model in "${MODELS_ARRAY[@]}"; do
             ;;
         "pixal3d")
             download_pixal3d
+            ;;
+        "taoflowforge")
+            download_taoflowforge
             ;;
         "misc")
             download_misc

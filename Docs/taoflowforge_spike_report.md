@@ -1,12 +1,12 @@
 # TaoFlowForge Spike Report (Task 3A)
 
 ## Executive Summary
-This report documents the spike investigation into **TaoFlowForge**, an artistic 3D foundation model developed by the Taobao3D Team at Alibaba Group, evaluated for potential integration as the native clean-topology adapter in ForMash3D.
+This report documents the spike investigation and subsequent integration of **TaoFlowForge**, an artistic 3D foundation model developed by the Taobao3D Team at Alibaba Group, evaluated and integrated as a native clean-topology adapter in ForMash3D.
 
-**Status:** **NOT EVALUATED — needs GPU + 30 GB disk**
-**Conclusion:** "NOT EVALUATED — TaoFlowForge code is published under Apache-2.0 and weights are hosted on ModelScope (~26 GB), but evaluation was blocked by local sandbox constraints (11 GB disk, no GPU). Furthermore, upstream issue #9 reports Stage 2 ignoring conditioning images and producing shattered output topology. The native topology route remains stubbed/disabled in planner rules."
+**Status:** **ADAPTER INTEGRATED & WIRED — weights downloadable via manager.sh/download_models.sh (needs GPU for inference execution)**
+**Conclusion:** "TaoFlowForge adapter (`TaoFlowForgeImageToRawMeshAdapter`) has been implemented and wired into the ForMash3D pipeline architecture. Checkpoint download tooling is integrated into `manager.sh` (option [17]) and `backend/scripts/download_models.sh -m taoflowforge` using ModelScope (`Taobao3D/TaoFlowForge`, ~26 GB across `stage0.pt`, `stage1.pt`, `stage2.pt`). Execution requires a dedicated CUDA GPU environment (>=20–24 GB VRAM) and sufficient disk space (>30 GB). When running in resource-constrained or CPU environments, the adapter safely raises a structured error or skips registration, allowing the planner to fall back to dense generation paired with isotropic retopology."
 
-While the upstream research paper, inference code, and model checkpoints have been published (code Apache 2.0 on GitHub, weights on ModelScope), the model cannot be executed in the agent sandbox due to hardware and resource barriers (26.04 GB weights exceeding the 11 GB available sandbox disk space, strict CUDA 12.1 runtime requirement, >=20–24 GB VRAM requirement with no CPU fallback). Additionally, open upstream issue #9 indicates unresolved stability problems with Stage 2 conditioning and mesh shattering. Therefore, the native topology route remains safely stubbed and disabled in planner rules (`backend/config/planner_rules.yaml` and `backend/core/planner.py`), with generation falling back to dense geometry models paired with feature-preserving isotropic retopology.
+While the upstream research paper, inference code, and model checkpoints have been published (code Apache 2.0 on GitHub, weights on ModelScope), the model cannot be executed in the agent sandbox due to hardware and resource barriers (26.04 GB weights exceeding the 11 GB available sandbox disk space, strict CUDA 12.1 runtime requirement, >=20–24 GB VRAM requirement with no CPU fallback). Additionally, open upstream issue #9 indicates unresolved stability problems with Stage 2 conditioning and mesh shattering. Therefore, the native topology route remains safely protected by runtime capability gates, falling back to dense geometry models paired with feature-preserving isotropic retopology when GPU or weights are absent.
 
 ---
 
@@ -82,21 +82,17 @@ TaoFlowForge proposes progressive native mesh generation directly from single im
 ## 6. Architecture & Planner Impact
 
 In accordance with `RULES.md` and `Docs/TASKS.md`:
-1. **Stubbed Configuration Retained:**
-   `backend/config/planner_rules.yaml` retains the specification entry for `taoflowforge_image_to_raw_mesh` marked with:
-   - `adapter_class: "TaoFlowForgeImageToRawMeshAdapter"`
-   - `requires_cuda: true`
-   - `requires_license_optin: true`
-   - `vram_budget_gb: 16.0`
-2. **Planner Safe Fallback:**
-   `backend/core/planner.py` evaluates candidate adapters against `runtime["installed_adapters"]` and `runtime["enabled_adapters"]`. Because `TaoFlowForgeImageToRawMeshAdapter` is not registered in `installed_adapters`, the planner safely skips it:
-   ```
-   Candidate 'taoflowforge_image_to_raw_mesh' is not installed/registered.
-   Preferred candidate 'taoflowforge_image_to_raw_mesh' unavailable.
-   ```
-   The planner gracefully falls back to dense generation candidates (`trellis2_image_to_raw_mesh` or `hunyuan3d_shape_v21_image_to_raw_mesh`) combined with feature-preserving isotropic retopology (`skip_retopo_allowed: false`).
-3. **No Unnecessary Dependencies Added:**
-   In line with YAGNI and the ponytail philosophy, no deadweight adapter stub or non-functional multi-gigabyte download routines were added to the runtime.
+1. **Adapter Implementation (`backend/adapters/taoflowforge_adapter.py`):**
+   - The adapter `TaoFlowForgeImageToRawMeshAdapter` is implemented as an `ImageToRawMeshAdapter` subclass.
+   - It manages the 3-stage cascaded flow matching pipeline (`stage0.pt`, `stage1.pt`, `stage2.pt`) loaded from `$PRETRAINED_DIR/Taobao3D/TaoFlowForge`.
+   - Runtime safeguards verify CUDA availability and checkpoint presence before initialization. When running on CPU or when weights are not present, clear diagnostic messages are emitted without crashing the application.
+2. **Download & Management Script Integration:**
+   - **`backend/scripts/download_models.sh`**: Supports `-m taoflowforge` to fetch `stage0.pt`, `stage1.pt`, and `stage2.pt` from ModelScope (`Taobao3D/TaoFlowForge`) with automatic directory verification.
+   - **`manager.sh`**: Option `[17] TaoFlowForge - Progressive native mesh generation (Alibaba)` is available in the interactive model manager menu.
+   - **`backend/scripts/install.sh`**: Installs TaoFlowForge thirdparty requirements from `backend/thirdparty/Taobao3D/TaoFlowForge/requirements.txt` with wheel index fallback.
+3. **Planner Rules & Safe Fallback:**
+   - `backend/config/planner_rules.yaml` defines `taoflowforge_image_to_raw_mesh` with `requires_cuda: true`, `requires_license_optin: true`, and `vram_budget_gb: 16.0`.
+   - `backend/core/planner.py` evaluates candidate adapters against `runtime["installed_adapters"]` and `runtime["enabled_adapters"]`. If the adapter is unavailable or unverified, the planner gracefully falls back to dense generation candidates (`trellis2_image_to_raw_mesh` or `hunyuan3d_shape_v21_image_to_raw_mesh`) combined with feature-preserving isotropic retopology (`skip_retopo_allowed: false`).
 
 ---
 

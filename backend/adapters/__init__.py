@@ -67,6 +67,8 @@ _ADAPTER_MAP = {
     "Paint3DImageMeshPaintingAdapter": ("paint3d_adapter", "Paint3DImageMeshPaintingAdapter"),
     # Pixal3D
     "Pixal3DImageToRawMeshAdapter": ("pixal3d_adapter", "Pixal3DImageToRawMeshAdapter"),
+    # TaoFlowForge
+    "TaoFlowForgeImageToRawMeshAdapter": ("taoflowforge_adapter", "TaoFlowForgeImageToRawMeshAdapter"),
 }
 
 __all__ = list(_ADAPTER_MAP.keys())
@@ -75,7 +77,13 @@ __all__ = list(_ADAPTER_MAP.keys())
 def __getattr__(name: str) -> Any:
     if name in _ADAPTER_MAP:
         module_name, class_name = _ADAPTER_MAP[name]
-        module = __import__(f"backend.adapters.{module_name}", fromlist=[class_name])
+        try:
+            module = __import__(f"{__name__}.{module_name}", fromlist=[class_name])
+        except ModuleNotFoundError:
+            try:
+                module = __import__(f"backend.adapters.{module_name}", fromlist=[class_name])
+            except ModuleNotFoundError:
+                module = __import__(f"adapters.{module_name}", fromlist=[class_name])
         attr = getattr(module, class_name)
         globals()[name] = attr
         return attr

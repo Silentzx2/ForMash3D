@@ -375,6 +375,37 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  taoflowforge_image_to_raw_mesh:
+    model_name: "TaoFlowForge — Progressive Native Mesh Generation"
+    upstream_repository: "https://github.com/alibaba/Taobao3D"
+    upstream_ref: null
+    checkpoint_license: "apache-2.0"
+    capabilities:
+      native_topology: true
+      output_resolution: 512
+      text_to_3d: false
+      image_to_3d: true
+      multiview: false
+      texture_generation: false
+      raw_mesh: true
+      high_fidelity_geometry: true
+      mesh_quality_characteristics: [clean_topology, native_mesh, direct_connectivity]
+      preferred_preprocessing: default
+      preferred_extraction: direct_connectivity
+      preferred_resolution: 512
+      preferred_face_budget: medium
+      recommended_postprocess_profile: native_clean
+      latency_class: balanced
+      quality_priority: 90
+      multi_gpu: false
+      paint_autochain: false
+    vram_requirement: 20480 # MB (20 GB VRAM requirement with offload)
+    supported_inputs: ["image"]
+    supported_outputs: ["glb", "obj"]
+    model_path: "backend/pretrained/Taobao3D/TaoFlowForge"
+    enabled: false
+    max_workers: 1
+
 # image-conditioned geometry+texture generation (legacy aliases routing to raw geometry)
 image_to_textured_mesh:
   # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS profile; 50-step source configuration, shared CFG=7.5, simplify=0.0.
