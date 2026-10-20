@@ -105,21 +105,31 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
     "enable_printability_check", "enable_auto_repair", "enable_auto_rig", "auto_rig_mode",
 })
 
+# Adapter-owned numerical profiles live in adapter code; these sets hold only IDs and key names.
+_ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS = frozenset({
+    "hunyuan3d_shape_v21_image_to_raw_mesh",
+    "hunyuan3d_shape_v21_image_to_3d",
+    "hunyuan3d_shape_v21_image_to_textured_mesh",
+    "triposg_image_to_raw_mesh",
+})
+_ADAPTER_OWNED_INFERENCE_INPUTS = frozenset({
+    "source_quality", "requested_quality", "quality", "meshQuality", "mesh_quality",
+    "num_inference_steps", "num_steps", "guidance_scale",
+    "octree_resolution", "octree_res", "grid_resolution", "num_chunks", "mc_algo",
+    "flash_octree_depth", "octree_depth", "dense_octree_depth",
+    "hierarchical_octree_depth", "use_flash_decoder", "low_vram", "low_vram_mode",
+})
 
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20). Ask the user once and get explicit confirmation
 # before changing any locked profile in a later task. Sources/limits: Docs/EXPERIMENTAL-MODEL-SETTINGS.md.
 # High-fidelity source mesh profiles. Production budgets remain in request_inputs and
 # are applied only to downstream copies by post-processing.
 _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
-    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
     "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
     "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
     "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
     "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
     "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "triposg_image_to_raw_mesh": {"num_inference_steps": 100, "guidance_scale": 9.0, "flash_octree_depth": 10, "dense_octree_depth": 10, "hierarchical_octree_depth": 11, "use_flash_decoder": False, "faces": -1, "low_vram": False},
     "pixal3d_image_to_raw_mesh": {"source_quality": "max", "resolution": 2048, "pipeline_type": "1536_cascade", "sampler_overrides": {"sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}}, "low_vram": False},
     "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
     "trellis_image_to_raw_mesh": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
@@ -143,7 +153,14 @@ def _build_model_inference_inputs(
         key: value for key, value in source.items()
         if key not in _POSTPROCESS_ONLY_INPUTS
     }
-    profile = _RAW_MESH_MAX_QUALITY_PARAMETERS.get(str(model_id or "").lower())
+    model_key = str(model_id or "").lower()
+    if model_key in _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS:
+        model_inputs = {
+            key: value for key, value in model_inputs.items()
+            if key not in _ADAPTER_OWNED_INFERENCE_INPUTS
+        }
+        model_inputs["source_quality"] = "max"
+    profile = _RAW_MESH_MAX_QUALITY_PARAMETERS.get(model_key)
     if profile:
         model_inputs.update({
             key: (dict(value) if isinstance(value, dict) else value)
@@ -688,6 +705,16 @@ def _attach_raw_geometry_telemetry(
         or ("reported_by_adapter" if resolution is not None else
             "upstream adapter does not expose a scalar achieved resolution")
     )
+    effective_parameters = {
+        key: (dict(model_inputs[key]) if isinstance(model_inputs[key], dict) else model_inputs[key])
+        for key in parameter_names if key in model_inputs
+    }
+    # Adapter-reported values represent the actual call, unlike stripped request overrides.
+    for key in parameter_names:
+        if key in info:
+            effective_parameters[key] = info[key]
+    if "num_inference_steps" not in effective_parameters and "steps" in info:
+        effective_parameters["num_inference_steps"] = info["steps"]
     info["raw_geometry_telemetry"] = {
         "schema_version": 2,
         "model_id": model_id,
@@ -699,7 +726,7 @@ def _attach_raw_geometry_telemetry(
             or getattr(loaded_model, "model_revision", None)
             or model_config.get("revision")
         ),
-        "source_quality": model_inputs.get("source_quality", "model_default"),
+        "source_quality": info.get("source_quality", model_inputs.get("source_quality", "model_default")),
         "inference_runtime_seconds": round(float(inference_seconds), 4) if inference_seconds is not None else None,
         "input_image_sha256": _sha256_existing_file(input_image),
         "reference_image_sha256": _sha256_existing_file(reference_image),
@@ -710,10 +737,7 @@ def _attach_raw_geometry_telemetry(
             "enabled": bool(request_inputs.get("enhancement_enabled", False)),
             "metadata": preprocessing_metadata if isinstance(preprocessing_metadata, dict) else None,
         },
-        "effective_parameters": {
-            key: (dict(model_inputs[key]) if isinstance(model_inputs[key], dict) else model_inputs[key])
-            for key in parameter_names if key in model_inputs
-        },
+        "effective_parameters": effective_parameters,
         "scheduler_gpu_ids": list(scheduled_gpus),
         "primary_gpu_id": int(gpu_id),
         "model_device": str(getattr(loaded_model, "device", None) or "adapter_reported_device"),
@@ -818,12 +842,14 @@ def _process_job_in_worker(
             "requested_quality": model_inputs.get("quality", model_inputs.get("meshQuality", "not_specified")),
             "source_quality_contract": model_inputs.get("source_quality", "max"),
             "postprocess_target_polycount": request_inputs.get("target_polycount", "native"),
-            "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps", "not_supported")),
-            "actual_guidance": model_inputs.get("guidance_scale", model_inputs.get("cfg_scale", "not_supported")),
+            "actual_inference_steps": model_inputs.get("num_inference_steps", model_inputs.get("num_steps",
+                "adapter_owned" if str(model_id).lower() in _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS else "not_supported")),
+            "actual_guidance": model_inputs.get("guidance_scale", model_inputs.get("cfg_scale",
+                "adapter_owned" if str(model_id).lower() in _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS else "not_supported")),
             "requested_resolution_parameter": model_inputs.get("resolution", "not_supported"),
             "requested_extraction_resolution": model_inputs.get(
-                "mc_resolution",
-                model_inputs.get("octree_resolution", model_inputs.get("octree_res", model_inputs.get("grid_resolution", "not_supported"))),
+                "mc_resolution", model_inputs.get("octree_resolution", model_inputs.get("octree_res", model_inputs.get(
+                    "grid_resolution", "adapter_owned" if str(model_id).lower() in _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS else "not_supported"))),
             ),
             "effective_geometry_resolution": "reported_after_decode_if_supported",
             "actual_seed": model_inputs.get("seed", "not_supported"),

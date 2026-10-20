@@ -1,3 +1,12 @@
+## 2026-10-20 — Generate Refactor Batch 1: Adapter-Owned Inference Profiles
+
+- Moved the effective `dev` scheduler profile into `_LOCKED_INFERENCE_PROFILE` for Hunyuan3D-Shape-v2.1 and TripoSG without changing numerical values.
+- The scheduler filters request-side profile overrides for those model IDs, leaves seed/image identity intact, and keeps target polycount downstream.
+- Geometry telemetry prefers adapter-reported effective values when request-side inference keys are withheld.
+- Updated schema/source-contract tests to match the live profile. Python tests and GPU inference have **not** been run in this editing environment.
+
+---
+
 ## 2026-10-20 — Batch 4: SSOT, Truth, Wiring, and Cleanup (Tasks 4A, 4B, 4C)
 
 - **Single Source of Truth (SSOT - G0):**

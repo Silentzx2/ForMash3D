@@ -6,7 +6,7 @@ Verifies:
 (c) Banned literals do not reappear in refactored service modules.
 (d) Planner candidate IDs exist in models.yaml and planner relies on models.yaml for VRAM.
 (e) Router tier definitions and TypeScript type unions match quality.tiers.
-(f) Locked Hunyuan octree in scheduler matches models.yaml preferred_resolution.
+(f) Locked Hunyuan octree in its adapter matches models.yaml preferred_resolution.
 (g) README model catalog VRAM matches models.yaml.
 """
 
@@ -117,7 +117,7 @@ def test_router_and_frontend_tiers_match_quality_yaml():
 
 
 def test_locked_hunyuan_octree_matches_models_yaml():
-    from core.scheduler.multiprocess_scheduler import _RAW_MESH_MAX_QUALITY_PARAMETERS
+    from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE
     models_flat = _get_flat_models()
 
     hunyuan_model = models_flat.get("hunyuan3d_shape_v21_image_to_raw_mesh")
@@ -127,7 +127,7 @@ def test_locked_hunyuan_octree_matches_models_yaml():
         or hunyuan_model.get("capabilities", {}).get("preferred_resolution")
         or hunyuan_model.get("capabilities", {}).get("output_resolution")
     )
-    assert _RAW_MESH_MAX_QUALITY_PARAMETERS["hunyuan3d_shape_v21_image_to_raw_mesh"]["octree_resolution"] == model_res
+    assert _LOCKED_INFERENCE_PROFILE["octree_resolution"] == model_res
 
 
 def test_readme_vram_matches_models_yaml():

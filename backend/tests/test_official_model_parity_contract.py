@@ -32,12 +32,14 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TripoSGImageToRawMeshAdapter(vram_requirement=8192)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
-        self.assertEqual(schema["guidance_scale"]["default"], 7.0)
+        self.assertEqual(schema["num_inference_steps"]["default"], 100)
+        self.assertEqual(schema["guidance_scale"]["default"], 9.0)
         self.assertEqual(schema["seed"]["default"], 42)
-        self.assertEqual(schema["faces"]["default"], -1)
+        self.assertNotIn("faces", schema)
         self.assertFalse(schema["use_flash_decoder"]["default"])
-        self.assertEqual(schema["hierarchical_octree_depth"]["default"], 10)
+        self.assertTrue(schema["num_inference_steps"]["readOnly"])
+        self.assertTrue(schema["guidance_scale"]["readOnly"])
+        self.assertEqual(schema["hierarchical_octree_depth"]["default"], 11)
 
     def test_common_postprocess_quality_guard_is_wired(self):
         pipeline_path = backend_root / "postprocess/pipeline.py"
@@ -67,12 +69,14 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Shape v2.1 uses the upstream-supported dense sampling ceiling.
-        self.assertEqual(schema["octree_resolution"]["default"], 512)
-        self.assertEqual(schema["octree_resolution"]["maximum"], 512)
-        self.assertFalse(schema["octree_resolution"].get("readOnly", False))
-        self.assertEqual(schema["num_inference_steps"]["default"], 100)
+        # Match the unchanged profile currently enforced by the dev scheduler.
+        self.assertEqual(schema["octree_resolution"]["default"], 1300)
+        self.assertEqual(schema["octree_resolution"]["maximum"], 2048)
+        self.assertTrue(schema["octree_resolution"]["readOnly"])
+        self.assertEqual(schema["num_inference_steps"]["default"], 150)
+        self.assertTrue(schema["num_inference_steps"]["readOnly"])
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
+        self.assertTrue(schema["guidance_scale"]["readOnly"])
 
     def test_hunyuan3d_dit_mini_turbo_contract(self):
         from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter
@@ -324,14 +328,15 @@ class TestNativeRawQualityContracts(unittest.TestCase):
 
     def test_model_manifest_and_runtime_profiles_stay_in_sync(self):
         import yaml
+        from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE as shape_profile
+        from adapters.triposg_adapter import _LOCKED_INFERENCE_PROFILE as triposg_profile
         from core.scheduler.multiprocess_scheduler import (
+            _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS,
             _RAW_MESH_MAX_QUALITY_PARAMETERS,
             _build_model_inference_inputs,
         )
 
-        manifest = yaml.safe_load(
-            (backend_root / "config/models.yaml").read_text(encoding="utf-8")
-        )
+        manifest = yaml.safe_load((backend_root / "config/models.yaml").read_text(encoding="utf-8"))
         active_models = {
             model_id for model_id, config in manifest.get("image_to_raw_mesh", {}).items()
             if config.get("enabled", True)
@@ -342,56 +347,71 @@ class TestNativeRawQualityContracts(unittest.TestCase):
         missing = sorted(
             model_id for model_id in active_models
             if model_id.lower() not in _RAW_MESH_MAX_QUALITY_PARAMETERS
+            and model_id.lower() not in _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS
         )
-        self.assertEqual(
-            missing, [],
-            f"Enabled image geometry models lack max-fidelity profiles: {missing}",
-        )
+        self.assertEqual(missing, [], f"Enabled image geometry models lack profiles: {missing}")
+        profiles = {
+            "hunyuan3d_shape_v21_image_to_raw_mesh": shape_profile,
+            "hunyuan3d_shape_v21_image_to_3d": shape_profile,
+            "hunyuan3d_shape_v21_image_to_textured_mesh": shape_profile,
+            "triposg_image_to_raw_mesh": triposg_profile,
+        }
         for model_id in active_models:
             with self.subTest(model=model_id):
-                profile_inputs = _build_model_inference_inputs({}, model_id=model_id)
-                self.assertEqual(profile_inputs.get("source_quality"), "max", model_id)
+                profile = profiles.get(model_id) or _build_model_inference_inputs({}, model_id=model_id)
+                self.assertEqual(profile.get("source_quality"), "max", model_id)
 
-    def test_scheduler_forces_each_active_model_maximum_geometry_profile(self):
+    def test_scheduler_forces_each_scheduler_owned_geometry_profile(self):
+        from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE as shape_profile
+        from adapters.triposg_adapter import _LOCKED_INFERENCE_PROFILE as triposg_profile
         from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
 
+        self.assertEqual(shape_profile, {
+            "source_quality": "max", "octree_resolution": 1300,
+            "num_inference_steps": 150, "guidance_scale": 5.0,
+            "num_chunks": 80000, "mc_algo": "mc",
+        })
+        self.assertEqual(triposg_profile, {
+            "source_quality": "max", "num_inference_steps": 100,
+            "guidance_scale": 9.0, "flash_octree_depth": 10,
+            "dense_octree_depth": 10, "hierarchical_octree_depth": 11,
+            "use_flash_decoder": False,
+        })
+
         cases = {
-            "hunyuan3d_shape_v21_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "mc_algo": "mc",
-            },
             "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
-                "octree_resolution": 380, "num_inference_steps": 5, "enable_flashvdm": False, "mc_algo": "mc",
-            },
-            "triposg_image_to_raw_mesh": {
-                "num_inference_steps": 50, "guidance_scale": 7.0,
-                "flash_octree_depth": 9, "dense_octree_depth": 9,
-                "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1,
+                "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5,
+                "num_chunks": 80000, "low_vram_mode": False, "low_vram": False,
+                "enable_flashvdm": False, "mc_algo": "mc",
             },
             "unique3d_image_to_raw_mesh": {
                 "input_processing": True, "do_refine": True, "expansion_weight": 0.1,
+                "init_type": "std", "low_vram": False,
             },
             "trellis_image_to_raw_mesh": {
-                "ss_sampling_steps": 50, "slat_sampling_steps": 50, "simplify": 0.0,
+                "num_inference_steps": 100, "ss_sampling_steps": 100,
+                "slat_sampling_steps": 100, "guidance_scale": 7.5,
+                "simplify": 0.0, "low_vram": False,
             },
             "trellis2_image_to_raw_mesh": {
-                "pipeline_type": "1536_cascade", "max_num_tokens": 262144,
+                "pipeline_type": "1536_cascade", "max_num_tokens": 524288,
                 "sparse_structure_sampler_params": {
-                    "steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0,
+                    "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0,
                 },
                 "shape_slat_sampler_params": {
-                    "steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0,
+                    "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0,
                 },
                 "tex_slat_sampler_params": {
-                    "steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0,
+                    "steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0,
                 },
-                "decimation_target": -1, "remesh": False,
+                "decimation_target": -1, "remesh": False, "low_vram": False,
             },
             "pixal3d_image_to_raw_mesh": {
-                "source_quality": "max", "resolution": 1536, "pipeline_type": "1536_cascade",
+                "source_quality": "max", "resolution": 2048, "pipeline_type": "1536_cascade",
                 "sampler_overrides": {
-                    "sparse_structure": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0},
-                    "shape": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0},
-                    "texture": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0},
+                    "sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0},
+                    "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0},
+                    "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0},
                 },
                 "low_vram": False,
             },
@@ -404,13 +424,9 @@ class TestNativeRawQualityContracts(unittest.TestCase):
         for model_id, expected in cases.items():
             with self.subTest(model=model_id):
                 model_inputs = _build_model_inference_inputs({
-                    **expected,
-                    "target_polycount": 50000,
-                    "auto_optimize": True,
-                    "generateLOD": True,
-                    "texture_enabled": True,
-                    "texture_resolution": 4096,
-                    "seed": 123,
+                    **expected, "target_polycount": 50000, "auto_optimize": True,
+                    "generateLOD": True, "texture_enabled": True,
+                    "texture_resolution": 4096, "seed": 123,
                 }, model_id=model_id)
                 self.assertEqual(model_inputs["source_quality"], "max")
                 self.assertEqual(model_inputs["seed"], 123)
