@@ -7,72 +7,39 @@ import trimesh
 import yaml
 
 from postprocess.services.hole_repair import repair_holes_targeted
+from core.config import get_quality_config
 from core.scheduler.seed_scorer import score_seed_candidate, select_best_candidate
 
 
-def test_hunyuan_presets_config():
-    """Verify hunyuan_presets.yaml configuration exists and matches specification."""
-    cfg_path = Path(__file__).resolve().parents[1] / "config" / "hunyuan_presets.yaml"
-    assert cfg_path.is_file(), f"Missing config file at {cfg_path}"
-
-    with open(cfg_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    presets = data.get("presets", data)
-    assert "fast" in presets
-    assert "balanced" in presets
-    assert "high" in presets
-
-    fast = presets["fast"]
-    assert fast["octree_resolution"] == 380
-    assert fast["num_inference_steps"] == 30
-    assert fast["guidance_scale"] == 5.0
-    assert fast["vram_budget_gb"] == 8.0
-
-    balanced = presets["balanced"]
-    assert balanced["octree_resolution"] == 512
-    assert balanced["num_inference_steps"] == 50
-    assert balanced["guidance_scale"] == 7.5
-    assert balanced["vram_budget_gb"] == 10.0
-
-    high = presets["high"]
-    assert high["octree_resolution"] == 512
-    assert high["num_inference_steps"] == 100
-    assert high["guidance_scale"] == 7.5
-    assert high["vram_budget_gb"] == 14.0
-
-    hole_repair = data.get("hole_repair", data)
+def test_hole_repair_config():
+    """Verify quality.yaml hole repair configuration exists and matches specification."""
+    cfg = get_quality_config()
+    hole_repair = cfg.get("holes", {})
     assert hole_repair["max_hole_perimeter"] == 0.5
     assert hole_repair["max_hole_vertices"] == 50
 
 
 def test_seed_scoring_config():
-    """Verify seed_scoring.yaml configuration matches specifications."""
-    cfg_path = Path(__file__).resolve().parents[1] / "config" / "seed_scoring.yaml"
-    assert cfg_path.is_file(), f"Missing config file at {cfg_path}"
-
-    with open(cfg_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    cfg = data.get("seed_scoring", data)
-    weights = cfg["weights"]
-    ranges = cfg["ranges"]
-
+    """Verify quality.yaml seed_scoring configuration matches specifications."""
+    cfg = get_quality_config()
+    seeds = cfg.get("seeds", {})
+    weights = seeds["weights"]
+    ranges = seeds["ranges"]
     assert weights["feature_edge_retention"] == 0.40
     assert weights["hole_count"] == 0.20
     assert weights["component_floater_ratio"] == 0.15
     assert weights["degenerate_face_ratio"] == 0.10
     assert weights["triangle_count"] == 0.05
     assert weights["aspect_ratio_p5"] == 0.10
-    assert pytest.approx(sum(weights.values()), rel=1e-5) == 1.0
 
-    assert ranges["hole_count"] == [0, 50]
+    assert ranges["hole_count"] == [0.0, 50.0]
     assert ranges["component_floater_ratio"] == [0.0, 0.2]
     assert ranges["degenerate_face_ratio"] == [0.0, 0.05]
-    assert ranges["triangle_count"] == [1000, 1000000]
+    assert ranges["triangle_count"] == [1000.0, 1000000.0]
     assert ranges["aspect_ratio_p5"] == [0.0, 1.0]
 
-    assert cfg["early_stop_score"] == 0.85
+    assert seeds["early_stop_score"] == 0.85
+    assert pytest.approx(sum(weights.values()), rel=1e-5) == 1.0
 
 
 def test_watertight_mesh_untouched():

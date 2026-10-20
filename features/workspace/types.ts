@@ -127,6 +127,7 @@ export interface ModelAsset {
     mesh_path?: string;
     selected?: boolean;
   }>;
+  qualityTier?: 'sharp' | 'clean' | 'needs_review' | string;
 }
 
 export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, any>): ModelAsset {
@@ -257,6 +258,7 @@ export function normalizeModelAsset(raw: Partial<ModelAsset> & Record<string, an
     qaScore: raw.qaScore ?? qaReport?.game_ready_score ?? qaReport?.score,
     qaStatus: raw.qaStatus ?? qaReport?.status,
     qaWarnings: raw.qaWarnings ?? qaReport?.warnings,
+    qualityTier: raw.qualityTier ?? raw.quality_tier ?? qaReport?.quality_tier ?? raw.quality_trace?.quality_tier,
   };
 }
 

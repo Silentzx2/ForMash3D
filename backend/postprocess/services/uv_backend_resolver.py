@@ -13,43 +13,18 @@ import numpy as np
 import trimesh
 import yaml
 
-logger = logging.getLogger(__name__)
+try:
+    from backend.core.config import get_quality_config
+except ImportError:
+    from core.config import get_quality_config
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "uv_config.yaml"
+logger = logging.getLogger(__name__)
 
 
 def load_uv_config(config_path: Optional[str | Path] = None) -> Dict[str, Any]:
-    """Load UV configuration from yaml file, with safe fallbacks."""
-    config: Dict[str, Any] = {
-        "partuv_triangle_threshold": 500000,
-        "partuv_vram_requirement_gb": 7.0,
-        "default_backend": "auto",
-        "fallback_backend": "xatlas",
-        "max_chart_size": 4096,
-    }
-
-    resolved_path: Optional[Path] = None
-    if config_path is not None:
-        resolved_path = Path(config_path)
-    elif DEFAULT_CONFIG_PATH.is_file():
-        resolved_path = DEFAULT_CONFIG_PATH
-    else:
-        alt_path = Path.cwd() / "backend" / "config" / "uv_config.yaml"
-        if alt_path.is_file():
-            resolved_path = alt_path
-
-    if resolved_path and resolved_path.is_file():
-        try:
-            with open(resolved_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-                if isinstance(data, dict):
-                    uv_section = data.get("uv", data)
-                    if isinstance(uv_section, dict):
-                        config.update(uv_section)
-        except Exception as e:
-            logger.warning("Failed to load UV config from %s: %s", resolved_path, e)
-
-    return config
+    """Load UV configuration from canonical quality config."""
+    path_str = str(config_path) if config_path is not None else None
+    return dict(get_quality_config(path_str)["uv"])
 
 
 def resolve_uv_backend(

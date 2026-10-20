@@ -155,6 +155,65 @@ def _build_model_inference_inputs(
     return model_inputs
 
 
+def _score_and_select(
+    candidates_list: List[Dict[str, Any]],
+    canonical_dest_path: Optional[str] = None,
+    early_stop_threshold: float = 0.85,
+) -> Tuple[int, List[Dict[str, Any]]]:
+    """Score candidate meshes using trimesh metrics and select the winning candidate.
+
+    Selects the best candidate with select_best_candidate, updates 'selected', 'score', and 'metrics'.
+    If canonical_dest_path is provided, copies the best candidate mesh to canonical_dest_path.
+    Returns: (best_idx, scored_candidates_list)
+    """
+    if not candidates_list:
+        return 0, []
+
+    import trimesh
+    try:
+        from core.quality.metrics import compute_mesh_metrics
+        from core.scheduler.seed_scorer import score_seed_candidate, select_best_candidate
+    except ImportError:
+        from backend.core.quality.metrics import compute_mesh_metrics
+        from backend.core.scheduler.seed_scorer import score_seed_candidate, select_best_candidate
+
+    metrics_list = []
+    for cand in candidates_list:
+        metrics = cand.get("metrics")
+        if metrics is None:
+            mpath = cand.get("mesh_path")
+            metrics = {}
+            if mpath and os.path.isfile(str(mpath)):
+                try:
+                    m = trimesh.load(str(mpath), force="mesh", process=False)
+                    metrics = compute_mesh_metrics(m)
+                except Exception as e:
+                    logger.warning("Failed to compute metrics for candidate %s: %s", cand.get("candidate_id"), e)
+            cand["metrics"] = metrics
+        if "score" not in cand:
+            try:
+                cand["score"] = float(score_seed_candidate(metrics))
+            except Exception:
+                cand["score"] = 0.0
+        metrics_list.append(metrics)
+
+    best_idx, best_score, _ = select_best_candidate(metrics_list, early_stop_threshold=early_stop_threshold)
+
+    for i, cand in enumerate(candidates_list):
+        cand["selected"] = (i == best_idx)
+
+    if canonical_dest_path and candidates_list[best_idx].get("mesh_path"):
+        best_path = candidates_list[best_idx]["mesh_path"]
+        if os.path.isfile(best_path):
+            try:
+                if Path(best_path).resolve() != Path(canonical_dest_path).resolve():
+                    shutil.copy2(best_path, canonical_dest_path)
+            except Exception as e:
+                logger.warning("Failed to copy best candidate to canonical path: %s", e)
+
+    return best_idx, candidates_list
+
+
 class WorkerConfig:
     """Configuration for a worker process - simplified to one model per worker"""
 
@@ -817,17 +876,34 @@ def _process_job_in_worker(
         _reset_cuda_peak_memory_stats(resource_plan, gpu_id)
         inference_start_time = time.time()
 
-        candidate_count = min(max(int(request_inputs.get("candidate_count") or 1), 1), 4)
-        base_seed = int(model_inputs.get("seed") or 42891)
+        from core.config import get_quality_config
+        from core.planner import get_planner_apply_config
+        seeds_cfg = get_quality_config()["seeds"]
+        apply_cfg = get_planner_apply_config()
 
-        if candidate_count > 1:
+        user_candidate_count = int(request_inputs.get("candidate_count") or 1)
+        plan_dict = request_inputs.get("plan") or {}
+        plan_num_seeds = int(plan_dict.get("num_seeds") or 1)
+
+        mode_a = user_candidate_count > 1
+        mode_b = (user_candidate_count == 1) and bool(apply_cfg.get("auto_seeds", False)) and (plan_num_seeds > 1)
+
+        total_seeds_to_run = user_candidate_count if mode_a else (plan_num_seeds if mode_b else 1)
+        max_cands = int(seeds_cfg["max_candidates"])
+        total_seeds_to_run = min(max(total_seeds_to_run, 1), max_cands)
+        base_seed = int(model_inputs.get("seed") or seeds_cfg["base_seed"])
+        seed_step = int(seeds_cfg["seed_step"])
+        early_stop_score = float(seeds_cfg["early_stop_score"])
+
+        if total_seeds_to_run > 1:
             candidates_list = []
-            first_result = None
-            for c_idx in range(candidate_count):
-                c_seed = base_seed + (c_idx * 1337)
+            candidate_results = []
+            canonical_output_path = None
+            for c_idx in range(total_seeds_to_run):
+                c_seed = base_seed + (c_idx * seed_step)
                 c_inputs = dict(model_inputs)
                 c_inputs["seed"] = c_seed
-                logger.info(f"[CANDIDATE GENERATION] Running candidate {c_idx + 1}/{candidate_count} with seed {c_seed}")
+                logger.info(f"[CANDIDATE GENERATION] Running candidate {c_idx + 1}/{total_seeds_to_run} with seed {c_seed}")
                 with torch.no_grad():
                     c_res = loaded_model.process(c_inputs)
                 if not isinstance(c_res, dict) or not c_res.get("success", True):
@@ -840,23 +916,53 @@ def _process_job_in_worker(
                 )
                 if c_mesh and os.path.isfile(str(c_mesh)):
                     c_path = Path(c_mesh)
+                    if canonical_output_path is None:
+                        canonical_output_path = str(c_path)
                     cand_dest = c_path.parent / f"{c_path.stem}_cand_{c_idx}{c_path.suffix}"
                     try:
                         shutil.copy2(c_path, cand_dest)
                         saved_path = str(cand_dest)
                     except Exception:
                         saved_path = str(c_mesh)
-                    candidates_list.append({
+                    cand_record = {
                         "candidate_id": c_idx,
                         "seed": c_seed,
                         "mesh_path": saved_path,
-                        "selected": (c_idx == 0),
-                    })
-                if first_result is None:
-                    first_result = c_res
-            result = first_result or loaded_model.process(model_inputs)
+                        "selected": False,
+                    }
+                    candidates_list.append(cand_record)
+                    candidate_results.append(c_res)
+                    # Check early stop on this candidate
+                    try:
+                        import trimesh
+                        from core.quality.metrics import compute_mesh_metrics
+                        from core.scheduler.seed_scorer import score_seed_candidate
+                        m = trimesh.load(saved_path, force="mesh", process=False)
+                        cand_record["metrics"] = compute_mesh_metrics(m)
+                        cand_record["score"] = float(score_seed_candidate(cand_record["metrics"]))
+                        if cand_record["score"] >= early_stop_score:
+                            logger.info(f"[CANDIDATE GENERATION] Early stopping triggered at candidate {c_idx} (score {cand_record['score']:.4f} >= {early_stop_score})")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Candidate {c_idx} scoring check failed: {e}")
+
+            best_idx, candidates_list = _score_and_select(
+                candidates_list,
+                canonical_dest_path=canonical_output_path,
+                early_stop_threshold=early_stop_score,
+            )
+            result = candidate_results[best_idx] if candidate_results else loaded_model.process(model_inputs)
             if candidates_list:
                 result["candidates"] = candidates_list
+                result["seed_scores"] = [c.get("score", 0.0) for c in candidates_list]
+                result["selected_candidate_id"] = best_idx
+                if mode_b:
+                    for i, c in enumerate(candidates_list):
+                        if i != best_idx and c.get("mesh_path") and os.path.isfile(c["mesh_path"]):
+                            try:
+                                os.remove(c["mesh_path"])
+                            except Exception:
+                                pass
         else:
             with torch.no_grad():
                 result = loaded_model.process(model_inputs)
@@ -1597,7 +1703,10 @@ class MultiprocessModelScheduler:
                         routing_inputs,
                         explicit_model=None,
                     )
-                    candidates = [ranked] if ranked else []
+                    plan_chain = (job_request.inputs or {}).get("fallback_chain") or ((job_request.inputs or {}).get("plan") or {}).get("fallback_chain", [])
+                    candidates = [m for m in plan_chain if m in feature_models and m != target_model]
+                    if ranked and ranked not in candidates and ranked != target_model:
+                        candidates.append(ranked)
                     candidates.extend(
                         model_id for model_id in feature_models
                         if model_id != target_model and model_id not in candidates

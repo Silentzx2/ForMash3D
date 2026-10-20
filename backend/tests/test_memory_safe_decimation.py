@@ -107,15 +107,11 @@ def test_threshold_engagement_and_telemetry(tmp_path: Path):
     assert initial_faces == 1280
 
     # Configure a custom lower threshold via YAML
+    import copy
+    from core.config import get_quality_config
     config_file = tmp_path / "custom_decimation.yaml"
-    config_data = {
-        "decimation": {
-            "memory_safe_threshold_triangles": 500,
-            "crease_angle_deg": 35.0,
-            "max_deviation_deg": 45.0,
-            "max_ram_fraction": 0.80,
-        }
-    }
+    config_data = copy.deepcopy(get_quality_config())
+    config_data["decimation"]["memory_safe_threshold_triangles"] = 500
     config_file.write_text(yaml.safe_dump(config_data), encoding="utf-8")
 
     # 1. When faces (1280) > threshold (500), memory safe mode MUST engage
@@ -138,14 +134,8 @@ def test_threshold_engagement_and_telemetry(tmp_path: Path):
     assert isinstance(telemetry["peak_rss_mb"], float)
 
     # 2. When threshold is raised to 2000 (> 1280), memory safe mode MUST NOT engage
-    config_data_higher = {
-        "decimation": {
-            "memory_safe_threshold_triangles": 2000,
-            "crease_angle_deg": 35.0,
-            "max_deviation_deg": 45.0,
-            "max_ram_fraction": 0.80,
-        }
-    }
+    config_data_higher = copy.deepcopy(get_quality_config())
+    config_data_higher["decimation"]["memory_safe_threshold_triangles"] = 2000
     config_file_higher = tmp_path / "custom_decimation_higher.yaml"
     config_file_higher.write_text(yaml.safe_dump(config_data_higher), encoding="utf-8")
 

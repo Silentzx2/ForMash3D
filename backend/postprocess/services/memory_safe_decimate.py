@@ -19,57 +19,35 @@ import yaml
 
 try:
     from backend.core.mesh_processor import feature_preserving_decimate
+    from backend.core.config import get_quality_config
 except ImportError:
     from core.mesh_processor import feature_preserving_decimate
+    from core.config import get_quality_config
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_CONFIG: dict[str, Any] = {
-    "memory_safe_threshold_triangles": 2_000_000,
-    "crease_angle_deg": 35.0,
-    "max_deviation_deg": 45.0,
-    "max_ram_fraction": 0.80,
-}
 
 
 def load_decimation_config(
     config_path: Optional[Union[str, Path, dict[str, Any]]] = None
 ) -> dict[str, Any]:
-    """Load decimation configuration from file or dict, falling back to defaults."""
-    cfg = dict(DEFAULT_CONFIG)
+    """Load decimation configuration from canonical quality config."""
     if isinstance(config_path, dict):
         raw = config_path.get("decimation", config_path)
-        cfg.update(raw)
-        return cfg
-
-    target_file: Optional[Path] = None
-    if config_path is not None:
-        target_file = Path(config_path)
-    else:
-        # Resolve backend/config/decimation_config.yaml relative to this module
-        default_yaml = (
-            Path(__file__).resolve().parents[2] / "config" / "decimation_config.yaml"
-        )
-        if default_yaml.is_file():
-            target_file = default_yaml
-
-    if target_file is not None and target_file.is_file():
-        try:
-            with open(target_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            raw = data.get("decimation", data)
-            if isinstance(raw, dict):
-                cfg.update(raw)
-        except Exception as exc:
-            logger.warning("Failed to load decimation config from %s: %s", target_file, exc)
-
-    return cfg
+        dec = dict(raw)
+        if "crease_angle_deg" not in dec:
+            dec["crease_angle_deg"] = float(config_path.get("shared", {}).get("feature_edge_angle_deg", 35.0))
+        return dec
+    path_str = str(config_path) if config_path is not None else None
+    cfg = get_quality_config(path_str)
+    dec = dict(cfg.get("decimation", {}))
+    dec["crease_angle_deg"] = float(cfg.get("shared", {}).get("feature_edge_angle_deg", 35.0))
+    return dec
 
 
 def memory_safe_decimate(
     mesh: trimesh.Trimesh,
     target_faces: int,
-    crease_angle_deg: float = 35.0,
+    crease_angle_deg: Optional[float] = None,
     config_path: Optional[Union[str, Path, dict[str, Any]]] = None,
     **kwargs: Any,
 ) -> tuple[trimesh.Trimesh, dict[str, Any]]:
@@ -114,7 +92,9 @@ def memory_safe_decimate(
     )
     max_deviation_deg = float(kwargs.get("max_deviation_deg", cfg.get("max_deviation_deg", 45.0)))
     max_ram_fraction = float(kwargs.get("max_ram_fraction", cfg.get("max_ram_fraction", 0.80)))
-    effective_crease_deg = float(kwargs.get("crease_angle_deg", crease_angle_deg))
+    shared_cfg = get_quality_config(str(config_path) if config_path and not isinstance(config_path, dict) else None).get("shared", {})
+    fallback_crease = float(shared_cfg.get("feature_edge_angle_deg", 35.0))
+    effective_crease_deg = float(kwargs.get("crease_angle_deg", crease_angle_deg if crease_angle_deg is not None else fallback_crease))
 
     # Monitor memory usage
     proc = psutil.Process()

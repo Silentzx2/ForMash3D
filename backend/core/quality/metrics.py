@@ -208,18 +208,30 @@ def _count_uv_islands(mesh: trimesh.Trimesh) -> int:
     return int(len(comps))
 
 
+try:
+    from backend.core.config import get_quality_config
+except ImportError:
+    from core.config import get_quality_config
+
+
 def _compute_feature_edge_retention(
     mesh: trimesh.Trimesh,
     reference_master: Optional[trimesh.Trimesh] = None,
-    angle_tol_deg: float = 30.0,
+    angle_tol_deg: Optional[float] = None,
     dist_tol_ratio: float = 0.02,
 ) -> float:
-    """Calculate share of master edges with dihedral angle > 30.0° still present."""
+    """Calculate share of master feature edges still present in derivative mesh."""
     if reference_master is None or len(reference_master.faces) == 0:
         return 1.0
 
+    if angle_tol_deg is None:
+        try:
+            angle_tol_deg = float(get_quality_config()["shared"]["feature_edge_angle_deg"])
+        except Exception:
+            angle_tol_deg = 35.0
+
     ref_angles = reference_master.face_adjacency_angles
-    ref_sharp_mask = ref_angles > np.radians(30.0)
+    ref_sharp_mask = ref_angles > np.radians(angle_tol_deg)
     ref_sharp_edges = reference_master.face_adjacency_edges[ref_sharp_mask]
 
     if len(ref_sharp_edges) == 0:

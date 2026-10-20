@@ -180,8 +180,18 @@ export function computeQualityMetrics(
   const gateFailed = (topoGate && topoGate.passed_clean === false) || (qualGate && qualGate.passed === false);
   const passedGate = !gateFailed && asset?.qaStatus !== 'fail';
 
+  const backendTier = asset?.qualityTier || rawResult?.quality_tier || qaReport?.quality_tier || (rawResult?.quality_trace as any)?.quality_tier;
   let status: 'Sharp' | 'Clean' | 'Needs Review';
-  if (
+  if (backendTier) {
+    const tierNorm = String(backendTier).toLowerCase();
+    if (tierNorm === 'sharp') {
+      status = 'Sharp';
+    } else if (tierNorm === 'clean') {
+      status = 'Clean';
+    } else {
+      status = 'Needs Review';
+    }
+  } else if (
     asset?.productionStatus === 'degraded' ||
     asset?.qaStatus === 'fail' ||
     asset?.qaStatus === 'warn' ||
@@ -191,8 +201,6 @@ export function computeQualityMetrics(
     holes > 0
   ) {
     status = 'Needs Review';
-  } else if (featureEdgeRetention !== null && featureEdgeRetention >= 0.85) {
-    status = 'Sharp';
   } else {
     status = 'Clean';
   }

@@ -86,7 +86,7 @@ def test_raw_mesh_request_schema_defaults():
     """Verify ImageToRawMeshRequest sets specified defaults."""
     req = ImageToRawMeshRequest(image_path="/tmp/fake.png")
     assert req.mesh_style == "auto"
-    assert req.requested_quality == "balanced"
+    assert req.requested_quality is None
     assert req.object_type == "general"
     assert req.symmetry == "none"
 
@@ -95,7 +95,7 @@ def test_textured_mesh_request_schema_defaults():
     """Verify ImageToTexturedMeshRequest sets specified defaults."""
     req = ImageToTexturedMeshRequest(image_path="/tmp/fake.png")
     assert req.mesh_style == "auto"
-    assert req.requested_quality == "balanced"
+    assert req.requested_quality is None
     assert req.object_type == "general"
     assert req.symmetry == "none"
 
@@ -104,13 +104,13 @@ def test_painting_requests_schema_defaults():
     """Verify TextMeshPaintingRequest and ImageMeshPaintingRequest accept and default the fields."""
     req_text = TextMeshPaintingRequest(text_prompt="robot", mesh_path="/tmp/fake.glb")
     assert req_text.mesh_style == "auto"
-    assert req_text.requested_quality == "balanced"
+    assert req_text.requested_quality is None
     assert req_text.object_type == "general"
     assert req_text.symmetry == "none"
 
     req_img = ImageMeshPaintingRequest(image_path="/tmp/fake.png", mesh_path="/tmp/fake.glb")
     assert req_img.mesh_style == "auto"
-    assert req_img.requested_quality == "balanced"
+    assert req_img.requested_quality is None
     assert req_img.object_type == "general"
     assert req_img.symmetry == "none"
 
@@ -303,7 +303,7 @@ def test_plan_generation_routes_mechanical_clean_when_native_disabled():
         },
         runtime,
     )
-    assert plan_fast_mech["adapter"] == "hunyuan3d_shape_v21_image_to_raw_mesh"
+    assert plan_fast_mech["adapter"] == "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
     assert plan_fast_mech["preset"] == "fast"
     assert plan_fast_mech["num_seeds"] == 1
     assert plan_fast_mech["skip_retopo_allowed"] is False
@@ -378,7 +378,7 @@ def test_plan_generation_general_routing():
         },
         runtime,
     )
-    assert plan["adapter"] == "hunyuan3d_shape_v21_image_to_raw_mesh"
+    assert plan["adapter"] == "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
     assert plan["retopo_mode"] == "standard"
     assert plan["retopo"]["feature_preserving"] is False
     assert plan["retopo"]["crease_angle_deg"] == 45.0
@@ -407,7 +407,7 @@ def test_all_object_types_and_quality_tiers(obj_type, quality):
     assert plan["num_seeds"] == expected_seeds
 
     if quality == "fast":
-        assert plan["adapter"] == "hunyuan3d_shape_v21_image_to_raw_mesh"
+        assert plan["adapter"] == "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
     else:
         assert plan["adapter"] == "trellis2_image_to_raw_mesh"
 

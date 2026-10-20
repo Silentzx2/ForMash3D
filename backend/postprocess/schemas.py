@@ -142,7 +142,7 @@ class RepairOptions(BaseModel):
                     "welds across UV seams and discards all UVs.")
     close_holes: bool = Field(default=True,
                               description="Close the small holes that face removal opens (also runs a trimesh fill pass).")
-    max_hole_size: int = Field(default=30, ge=0, le=5000,
+    max_hole_size: int = Field(default=50, ge=0, le=5000,
                                description="Largest hole (in boundary edges) to close; bigger openings are left intact.")
     weld: bool = Field(default=True,
                        description="Weld coincident vertices by position before repairing (matches the editor's check). "
@@ -219,6 +219,14 @@ class BakeOptions(BaseModel):
                                                "than this fraction of the target's smallest axis. Fails in "
                                                "seconds instead of spending minutes of ray casting to return "
                                                "blank maps. 0 disables the check.")
+    normal_space: Literal["TANGENT", "OBJECT"] = Field(
+        default="TANGENT",
+        description="Normal map coordinate space: TANGENT or OBJECT."
+    )
+    convention: Literal["OPENGL", "DIRECTX"] = Field(
+        default="OPENGL",
+        description="Normal map coordinate orientation: OPENGL (Y+) or DIRECTX (Y-)."
+    )
 
 
 class FlattenOptions(BaseModel):

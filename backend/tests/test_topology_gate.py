@@ -7,19 +7,12 @@ import trimesh
 import yaml
 
 from postprocess.services import evaluate_topology_gate
-from postprocess.services.gate import load_gate_thresholds, DEFAULT_THRESHOLDS
+from postprocess.services.gate import load_gate_thresholds
 
 
 def test_gate_thresholds_config():
-    """Verify backend/config/gate_thresholds.yaml exists and contains all required keys."""
-    cfg_path = Path(__file__).resolve().parents[1] / "config" / "gate_thresholds.yaml"
-    assert cfg_path.is_file(), f"Missing config file at {cfg_path}"
-
-    with open(cfg_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    assert "topology_gate" in data
-    cfg = data["topology_gate"]
+    """Verify quality.yaml gate configuration contains all required keys."""
+    cfg = load_gate_thresholds()
     assert cfg["strict"] is False
     assert cfg["max_non_manifold_edges"] == 0
     assert cfg["max_non_manifold_vertices"] == 0
