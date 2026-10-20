@@ -1,10 +1,10 @@
 """Shared image preprocessing for Image → 3D generation."""
-from core.preprocess.image_prep import (
-    prepare_input_image,
-    validate_image_aspect_and_occupancy,
+from core.preprocess.image_enhancement import (
+    preprocess_image,
+    load_preprocessed_artifact,
 )
 
 __all__ = [
-    "prepare_input_image",
-    "validate_image_aspect_and_occupancy",
+    "preprocess_image",
+    "load_preprocessed_artifact",
 ]

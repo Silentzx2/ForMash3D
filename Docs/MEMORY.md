@@ -1,3 +1,45 @@
+## 2026-10-20 — Batch 4: SSOT, Truth, Wiring, and Cleanup (Tasks 4A, 4B, 4C)
+
+- **Single Source of Truth (SSOT - G0):**
+  - Consolidated 5 fragmented configs (`bake_config.yaml`, `decimation_config.yaml`, `gate_thresholds.yaml`, `seed_scoring.yaml`, `uv_config.yaml`) into single canonical `backend/config/quality.yaml`.
+  - Added cached `get_quality_config()` in `core/config.py` enforcing mandatory validation against `_QUALITY_REQUIRED_KEYS`.
+  - Deleted module-level numeric `DEFAULT` dictionaries and isolated YAML loaders from `uv_backend_resolver.py`, `memory_safe_decimate.py`, `pbr_validator.py`, `seed_scorer.py`, `gate.py`.
+  - Unified feature/crease angles to `quality.shared.feature_edge_angle_deg` (35°) across `simplify.py`, `bake.py`, and `metrics.py`.
+  - Replaced copy-pasted tier validators across routers with unified `validate_quality_tier()`, making schema default `None` with fallback to `quality.default_tier`.
+  - Backend computes `quality_tier` (`sharp`, `clean`, `needs_review`) and adds to quality report; frontend `QualityBadge` renders directly without duplicated cutoffs.
+  - Added SSOT rule to `RULES.md` and test suite `backend/tests/test_config_ssot.py` (6/6 passing).
+- **Planner Execution & Fallback (G1):**
+  - Added `apply: {model_choice: false, auto_seeds: false, input_prep: true}` to `planner_rules.yaml`.
+  - Precedence in routers: explicit user model > `plan.adapter` if `apply.model_choice` > smart presets. Always logs `would_have_chosen`.
+  - Connected `plan.fallback_chain` to worker fallback loop in `multiprocess_scheduler.py`.
+- **Best-of-N Candidate Execution (G2):**
+  - Implemented unit-testable `_score_and_select()` in `multiprocess_scheduler.py`.
+  - Scored candidates with trimesh metrics, evaluated sequential early stopping ($\ge 0.85$), promoted winning mesh to canonical output path, and recorded `selected_candidate_id` and `seed_scores`.
+- **Image Preprocessing Deduplication (G3):**
+  - Deleted redundant 287-line `image_prep.py` and `test_image_prep.py`.
+  - Passed `plan.input_prep` toggles into `image_enhancement.py::preprocess_image` when `enhancement_enabled` is active.
+- **Model Registry Alignment (G4):**
+  - Planner queries `models.yaml` directly for VRAM requirement (MB $\to$ GB) and `native_topology` capability.
+  - Fast tier routed to `hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh` (profile 768/20).
+- **Bake & Quality Report Trace (G5 & G6):**
+  - Verified normal detail bake uses immutable master `raw_bytes` as high-poly source mesh.
+  - Passed `cage_extrusion`, `max_ray_distance`, `margin`, `normal_space`, `convention` from `quality.bake` into `BakeOptions`.
+  - Included `plan` and `seed_scores` in `quality_trace` and `quality_report.json`.
+- **Truthful Scorecard (G7):**
+  - Rewrote `core/quality/parity_scorecard.py` and `parity_scorecard.json`: removed invented competitor numbers and qualitative marketing strings. Every cell is strictly measured with source attribution or `null`.
+  - Added `test_scorecard_rejects_unsourced_competitor_metrics`.
+- **Benchmark Real Image & Dry-Run CLI (G8 & G9):**
+  - Extended `scripts/run_final_parity_benchmark.py` with `--images`, `--api`, `--tiers`, `--dry-run`, and `--competitor-dir`.
+  - Labeled synthetic test primitives as `"kind": "synthetic_smoke_test"`.
+  - Outputs `Docs/benchmark_real.json` and evaluates 1C.1 Hunyuan vs Trellis retention ratio (`Docs/hunyuan_smoothness_report.md` generated on real runs).
+- **TaoFlowForge Spike Correction (G10):**
+  - Corrected status to "NOT EVALUATED — needs GPU + 30 GB disk" with an explicit user execution checklist in `Docs/taoflowforge_spike_report.md`.
+- **Docs & RULES.md Cleanup (G11, G12, G13, G14):**
+  - Replaced TASKS.md with verified task status register.
+  - Restored `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`, removed tracked binaries in `deliverables/`, added `deliverables/` to `.gitignore`.
+  - Added ADR-085, ADR-086, ADR-087 in `Docs/DECISIONS.md`.
+  - Condensed `Docs/CHANGELOG.md` to last 3 entries.
+
 ## 2026-10-20 — Quality Report API & UI Quality Badge / Selectors (Task 3C)
 
 - Updated `features/workspace/Panels/GeneratePanel.tsx`:

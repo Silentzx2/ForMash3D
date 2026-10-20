@@ -21,6 +21,7 @@ from api.routers.file_upload import resolve_file_id_async
 from api.utils.asset_name import resolve_asset_name
 from core.file_store import FileStore
 from core.scheduler.job_queue import JobRequest
+from core.config import get_quality_config, validate_quality_tier
 from core.preprocess.image_enhancement import load_preprocessed_artifact, preprocess_image
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
 from core.smart_presets import resolve_intent
@@ -159,7 +160,7 @@ class TextMeshPaintingRequest(BaseModel):
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
     object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
     symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
 
@@ -176,12 +177,7 @@ class TextMeshPaintingRequest(BaseModel):
     @field_validator("requested_quality")
     @classmethod
     def validate_requested_quality(cls, v):
-        if not v:
-            return "balanced"
-        v_str = str(v).strip().lower()
-        if v_str not in ("fast", "balanced", "high"):
-            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
-        return v_str
+        return validate_quality_tier(v)
 
     @field_validator("object_type")
     @classmethod
@@ -276,11 +272,11 @@ class ImageToRawMeshRequest(BaseModel):
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
-    candidate_count: int = Field(1, ge=1, le=4, description="Candidate variations to generate (1-4, default 1)")
+    candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
     mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
     object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
     symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
 
@@ -297,12 +293,7 @@ class ImageToRawMeshRequest(BaseModel):
     @field_validator("requested_quality")
     @classmethod
     def validate_requested_quality(cls, v):
-        if not v:
-            return "balanced"
-        v_str = str(v).strip().lower()
-        if v_str not in ("fast", "balanced", "high"):
-            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
-        return v_str
+        return validate_quality_tier(v)
 
     @field_validator("object_type")
     @classmethod
@@ -404,11 +395,11 @@ class ImageToTexturedMeshRequest(BaseModel):
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
     enable_postprocess: bool = Field(True, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
-    candidate_count: int = Field(1, ge=1, le=4, description="Candidate variations to generate (1-4, default 1)")
+    candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
     mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
     object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
     symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
 
@@ -425,12 +416,7 @@ class ImageToTexturedMeshRequest(BaseModel):
     @field_validator("requested_quality")
     @classmethod
     def validate_requested_quality(cls, v):
-        if not v:
-            return "balanced"
-        v_str = str(v).strip().lower()
-        if v_str not in ("fast", "balanced", "high"):
-            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
-        return v_str
+        return validate_quality_tier(v)
 
     @field_validator("object_type")
     @classmethod
@@ -525,7 +511,7 @@ class ImageMeshPaintingRequest(BaseModel):
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
     mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
     object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
     symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
 
@@ -542,12 +528,7 @@ class ImageMeshPaintingRequest(BaseModel):
     @field_validator("requested_quality")
     @classmethod
     def validate_requested_quality(cls, v):
-        if not v:
-            return "balanced"
-        v_str = str(v).strip().lower()
-        if v_str not in ("fast", "balanced", "high"):
-            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
-        return v_str
+        return validate_quality_tier(v)
 
     @field_validator("object_type")
     @classmethod
@@ -898,12 +879,53 @@ async def image_to_raw_mesh(
     tracked_temp_dirs: List[str] = []
     try:
         user_id = getattr(current_user, "user_id", None)
-        model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
-            mesh_request,
-            default_model="hunyuan3d_shape_v21_image_to_raw_mesh",
-            default_feature="image_to_raw_mesh",
-            scheduler=scheduler,
-        )
+
+        # Early planner invocation to obtain would_have_chosen and input_prep flags
+        req_qual = getattr(mesh_request, "requested_quality", None) or getattr(mesh_request, "quality_mode", None) or "balanced"
+        planner_req = {
+            "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+            "requested_quality": req_qual,
+            "object_type": getattr(mesh_request, "object_type", "general") or "general",
+            "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+            "target_polycount": getattr(mesh_request, "target_polycount", None),
+            "input_type": "image",
+        }
+        from core.runtime_probe import probe_runtime
+        from core.planner import plan_generation, get_planner_apply_config
+        try:
+            runtime_facts = probe_runtime()
+        except Exception as e:
+            logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
+            runtime_facts = {
+                "has_cuda": False,
+                "installed_adapters": [],
+                "enabled_adapters": [],
+                "license_optins": {},
+            }
+        generation_plan = plan_generation(planner_req, runtime_facts)
+        would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
+        logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
+        apply_cfg = get_planner_apply_config()
+
+        if mesh_request.model_preference:
+            model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
+                mesh_request,
+                default_model="hunyuan3d_shape_v21_image_to_raw_mesh",
+                default_feature="image_to_raw_mesh",
+                scheduler=scheduler,
+            )
+        elif apply_cfg.get("model_choice", False) and would_have_chosen:
+            model_id = would_have_chosen
+            feature = "image_to_raw_mesh"
+            preset = {}
+            preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
+        else:
+            model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
+                mesh_request,
+                default_model="hunyuan3d_shape_v21_image_to_raw_mesh",
+                default_feature="image_to_raw_mesh",
+                scheduler=scheduler,
+            )
 
         if mesh_request.enhancement_enabled and not mesh_request.preprocessing_artifact_id:
             raise HTTPException(
@@ -946,9 +968,13 @@ async def image_to_raw_mesh(
                 else getattr(model_config, "capabilities", {}) or {}
             )
             preprocessing_profile = str(capabilities.get("preferred_preprocessing", "default"))
+            prep_flags = generation_plan.get("input_prep", {}) if apply_cfg.get("input_prep", True) else {}
             enhanced = preprocess_image(
                 str(image_file_path),
                 profile=preprocessing_profile,
+                remove_background=bool(prep_flags.get("remove_background", True)),
+                auto_crop=bool(prep_flags.get("tight_crop", True)),
+                upscale=bool(prep_flags.get("upscale_if_small", True)),
             )
             image_file_path = enhanced["approved_path"]
             preprocessing_metadata = enhanced["metadata"]
@@ -1044,33 +1070,6 @@ async def image_to_raw_mesh(
             enable_auto_rig = False
             target_polycount = 0
 
-        # Rule-based planner invocation
-        req_qual = getattr(mesh_request, "requested_quality", "balanced") or "balanced"
-        if req_qual == "balanced" and getattr(mesh_request, "quality_mode", None) in ("fast", "high"):
-            req_qual = mesh_request.quality_mode
-
-        planner_req = {
-            "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
-            "requested_quality": req_qual,
-            "object_type": getattr(mesh_request, "object_type", "general") or "general",
-            "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
-            "target_polycount": target_polycount,
-            "input_type": "image",
-        }
-        from core.runtime_probe import probe_runtime
-        from core.planner import plan_generation
-        try:
-            runtime_facts = probe_runtime()
-        except Exception as e:
-            logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
-            runtime_facts = {
-                "has_cuda": False,
-                "installed_adapters": [],
-                "enabled_adapters": [],
-                "license_optins": {},
-            }
-        generation_plan = plan_generation(planner_req, runtime_facts)
-
         job_request = JobRequest(
             feature=feature,
             inputs={
@@ -1088,6 +1087,7 @@ async def image_to_raw_mesh(
                 "object_type": getattr(mesh_request, "object_type", "general") or "general",
                 "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
                 "plan": generation_plan,
+                "fallback_chain": generation_plan.get("fallback_chain", []),
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -1191,12 +1191,52 @@ async def image_to_textured_mesh(
     tracked_temp_dirs: List[str] = []
     try:
         user_id = getattr(current_user, "user_id", None)
-        model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
-            mesh_request,
-            default_model="trellis_image_to_textured_mesh",
-            default_feature="image_to_textured_mesh",
-            scheduler=scheduler,
-        )
+        # Early planner invocation to obtain would_have_chosen and input_prep flags
+        req_qual = getattr(mesh_request, "requested_quality", None) or getattr(mesh_request, "quality_mode", None) or "balanced"
+        planner_req = {
+            "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+            "requested_quality": req_qual,
+            "object_type": getattr(mesh_request, "object_type", "general") or "general",
+            "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+            "target_polycount": getattr(mesh_request, "target_polycount", None),
+            "input_type": "image",
+        }
+        from core.runtime_probe import probe_runtime
+        from core.planner import plan_generation, get_planner_apply_config
+        try:
+            runtime_facts = probe_runtime()
+        except Exception as e:
+            logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
+            runtime_facts = {
+                "has_cuda": False,
+                "installed_adapters": [],
+                "enabled_adapters": [],
+                "license_optins": {},
+            }
+        generation_plan = plan_generation(planner_req, runtime_facts)
+        would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
+        logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
+        apply_cfg = get_planner_apply_config()
+
+        if mesh_request.model_preference:
+            model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
+                mesh_request,
+                default_model="trellis_image_to_textured_mesh",
+                default_feature="image_to_textured_mesh",
+                scheduler=scheduler,
+            )
+        elif apply_cfg.get("model_choice", False) and would_have_chosen:
+            model_id = would_have_chosen
+            feature = "image_to_textured_mesh"
+            preset = {}
+            preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
+        else:
+            model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
+                mesh_request,
+                default_model="trellis_image_to_textured_mesh",
+                default_feature="image_to_textured_mesh",
+                scheduler=scheduler,
+            )
 
         if mesh_request.enhancement_enabled and not mesh_request.preprocessing_artifact_id:
             raise HTTPException(
@@ -1239,9 +1279,13 @@ async def image_to_textured_mesh(
                 else getattr(model_config, "capabilities", {}) or {}
             )
             preprocessing_profile = str(capabilities.get("preferred_preprocessing", "default"))
+            prep_flags = generation_plan.get("input_prep", {}) if apply_cfg.get("input_prep", True) else {}
             enhanced = preprocess_image(
                 str(image_file_path),
                 profile=preprocessing_profile,
+                remove_background=bool(prep_flags.get("remove_background", True)),
+                auto_crop=bool(prep_flags.get("tight_crop", True)),
+                upscale=bool(prep_flags.get("upscale_if_small", True)),
             )
             image_file_path = enhanced["approved_path"]
             preprocessing_metadata = enhanced["metadata"]
@@ -1361,33 +1405,6 @@ async def image_to_textured_mesh(
             enable_auto_rig = False
             target_polycount = 0
 
-        # Rule-based planner invocation
-        req_qual = getattr(mesh_request, "requested_quality", "balanced") or "balanced"
-        if req_qual == "balanced" and getattr(mesh_request, "quality_mode", None) in ("fast", "high"):
-            req_qual = mesh_request.quality_mode
-
-        planner_req = {
-            "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
-            "requested_quality": req_qual,
-            "object_type": getattr(mesh_request, "object_type", "general") or "general",
-            "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
-            "target_polycount": target_polycount,
-            "input_type": "image",
-        }
-        from core.runtime_probe import probe_runtime
-        from core.planner import plan_generation
-        try:
-            runtime_facts = probe_runtime()
-        except Exception as e:
-            logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
-            runtime_facts = {
-                "has_cuda": False,
-                "installed_adapters": [],
-                "enabled_adapters": [],
-                "license_optins": {},
-            }
-        generation_plan = plan_generation(planner_req, runtime_facts)
-
         job_request = JobRequest(
             feature=feature,
             inputs={
@@ -1407,6 +1424,7 @@ async def image_to_textured_mesh(
                 "object_type": getattr(mesh_request, "object_type", "general") or "general",
                 "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
                 "plan": generation_plan,
+                "fallback_chain": generation_plan.get("fallback_chain", []),
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,

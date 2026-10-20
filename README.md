@@ -220,7 +220,21 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
 || **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
 
-> **FastMesh resource admission:** The 16 GB (V1K) / 24.5 GB (V4K) figures are conservative scheduler reservations, not upstream-published minimum VRAM. The current adapter is single-GPU-only; 2×T4 aggregate memory is not treated as one device's memory. Full variant-matched checkpoint files (about 4.38 GB / 4.39 GB on disk) are required, and checkpoint size must not be confused with inference VRAM.---
+> **FastMesh resource admission:** The 16 GB (V1K) / 24.5 GB (V4K) figures are conservative scheduler reservations, not upstream-published minimum VRAM. The current adapter is single-GPU-only; 2×T4 aggregate memory is not treated as one device's memory. Full variant-matched checkpoint files (about 4.38 GB / 4.39 GB on disk) are required, and checkpoint size must not be confused with inference VRAM.
+
+### 📐 Single Source of Truth & Generation Planning
+- **Single Source of Truth (`backend/config/quality.yaml`)**: Every tunable threshold, limit, tier, and budget is canonically declared in `quality.yaml` (pipeline tunables) and `models.yaml` (model facts and VRAM reservations). Code reads from these single sources and never defines in-code fallback numeric dicts.
+- **Rule-Based Generation Planning (`backend/config/planner_rules.yaml`)**: Deterministically routes requests by `object_type` (`mechanical`, `organic`, `character`, `general`) and `requested_quality` (`fast`, `balanced`, `high`). Execution behavior is governed by explicit config switches under `apply`:
+  - `apply.model_choice`: When `false` (default), preserves legacy smart-preset selection while logging `would_have_chosen`. When `true`, adopts planner model routing.
+  - `apply.auto_seeds`: When `false` (default), runs single candidate unless requested by user. When `true`, automatically runs multi-seed candidate scoring.
+  - `apply.input_prep`: When `true`, passes plan preprocessing directives into image enhancement pipeline.
+- **Verified Parity Scorecard (`parity_scorecard.json`)**: Operates under a strict truth policy where every cell is either measured with explicit source file attribution or `null`. Competitor entries without user-supplied benchmark GLBs are strictly `null`.
+- **Reproducible Parity Benchmark (`scripts/run_final_parity_benchmark.py`)**:
+  - Offline smoke test: `python scripts/run_final_parity_benchmark.py` evaluates synthetic primitives (`Docs/baseline_vs_now_benchmark.json`).
+  - Real GPU benchmark: `python scripts/run_final_parity_benchmark.py --images <dir> --api http://localhost:7842` evaluates generation time, peak VRAM, master immutability, and Hunyuan vs TRELLIS.2 feature retention (`Docs/benchmark_real.json`, `Docs/hunyuan_smoothness_report.md`).
+  - Competitor evaluation: `python scripts/run_final_parity_benchmark.py --competitor-dir <dir>` evaluates competitor GLBs under `tripo/`, `meshy/`, `hyper3d/`.
+
+---
 
 ## ⚙️ Production Post-Processing Engine
 

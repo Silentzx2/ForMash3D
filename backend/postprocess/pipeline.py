@@ -57,12 +57,14 @@ from .schemas import (
     RepairOptions,
 )
 
+from core.config import get_quality_config
+
 logger = logging.getLogger(__name__)
 
 GenerationProgress = Optional[Callable[[float, str, str], None]]
 CancelChecker = Optional[Callable[[], bool]]
 
-MAX_PRODUCTION_FACES = 2_000_000
+MAX_PRODUCTION_FACES = int(get_quality_config()["limits"]["max_production_faces"])
 _FORMATS = ("glb", "fbx")
 
 
@@ -1718,6 +1720,21 @@ def run_postprocess_job(
             "raw_geometry_telemetry": raw_geometry_telemetry,
         },
     }
+    plan_dict = job_inputs.get("plan") or job_metadata.get("plan") or generation_info.get("plan") or {}
+    quality_trace["plan"] = {
+        "adapter": plan_dict.get("adapter"),
+        "preset": plan_dict.get("preset"),
+        "num_seeds": plan_dict.get("num_seeds"),
+        "fallback_chain": plan_dict.get("fallback_chain"),
+        "reasons": plan_dict.get("reasons", []),
+        "warnings": plan_dict.get("warnings", []),
+        "would_have_chosen": plan_dict.get("would_have_chosen"),
+    }
+    quality_trace["seed_scores"] = (
+        generation_info.get("seed_scores")
+        or generation_result.get("seed_scores")
+        or []
+    )
 
     inspect_t0 = time.time()
     _check_cancelled(cancel_checker)
@@ -1779,7 +1796,7 @@ def run_postprocess_job(
         method="remove",
         preserve_uv=True,
         close_holes=True,
-        max_hole_size=30,
+        max_hole_size=int(get_quality_config()["holes"]["max_hole_vertices"]),
         weld=True,
     )
     source_topology = topology_counts(mesh.vertices, mesh.faces)
@@ -1806,7 +1823,10 @@ def run_postprocess_job(
             "gate_report": gate_eval,
         }
     elif gate_repair_decision == "minimal_repair":
-        repaired, hole_stats = repair_holes_targeted(mesh.copy(), max_hole_vertices=50)
+        repaired, hole_stats = repair_holes_targeted(
+            mesh.copy(),
+            max_hole_vertices=int(get_quality_config()["holes"]["max_hole_vertices"])
+        )
         repair_stats = {
             "before": source_topology,
             "after": topology_counts(repaired.vertices, repaired.faces),
@@ -2041,7 +2061,7 @@ def run_postprocess_job(
         if repaired_face_count <= target_faces and not auto_optimize:
             optimized = repaired
             optimize_stats = {"passthrough": True, "reason": f"Repaired mesh face count ({repaired_face_count}) already within target ({target_faces})"}
-        elif repaired_face_count > 2_000_000:
+        elif repaired_face_count > int(get_quality_config()["limits"]["memory_safe_dispatch_triangles"]):
             optimized, mem_stats = memory_safe_decimate(repaired.copy(), target_faces=target_faces)
             optimize_stats = {"passthrough": False, "method": "memory_safe_decimate", **mem_stats}
         else:
@@ -2234,9 +2254,15 @@ def run_postprocess_job(
             if native_textures:
                 maps_to_bake.extend(["base_color", "roughness", "metallic"])
 
+            bake_cfg = get_quality_config().get("bake", {})
             bake_opts = BakeOptions(
                 resolution=bake_res,
                 maps=maps_to_bake,
+                cage_extrusion=float(bake_cfg.get("cage_extrusion", 0.02)),
+                max_ray_distance=float(bake_cfg.get("max_ray_distance", 0.05)),
+                margin=int(bake_cfg.get("gutter_dilation_pixels", 4)),
+                normal_space=str(bake_cfg.get("normal_space", "TANGENT")),
+                convention=str(bake_cfg.get("convention", "OPENGL")),
             )
             low_glb_bytes = _export_glb(uv_mesh)
             baked_images, worker_stats = run_bake(
@@ -2682,9 +2708,30 @@ def run_postprocess_job(
     if _sha256_file(master_path) != source_sha256:
         raise RuntimeError("Immutable master source.glb changed during post-processing.")
 
+    badge_cfg = get_quality_config().get("badge", {})
+    sharp_cutoff = float(badge_cfg.get("sharp_min_score", 0.85))
+    passed_clean = bool(gate_eval.get("passed_clean", False)) if isinstance(gate_eval, dict) else False
+    pbr_valid = (pbr_report.get("valid", True)) if isinstance(pbr_report, dict) else True
+    has_flaws = (
+        (not passed_clean)
+        or (not pbr_valid)
+        or (len(qa_report.get("warnings", [])) > 0 if isinstance(qa_report, dict) else False)
+    )
+    feature_ret = (master_quality_report or {}).get("feature_edge_retention")
+    if has_flaws:
+        backend_quality_tier = "needs_review"
+    elif feature_ret is not None and float(feature_ret) >= sharp_cutoff:
+        backend_quality_tier = "sharp"
+    else:
+        backend_quality_tier = "clean"
+    quality_trace["quality_tier"] = backend_quality_tier
+
     _write_json(
         metadata_dir / "quality_report.json",
         {
+            "quality_tier": backend_quality_tier,
+            "plan": quality_trace.get("plan"),
+            "seed_scores": quality_trace.get("seed_scores"),
             "source_sha256": source_sha256,
             "adapter_output_sha256": adapter_output_sha256,
             "adapter_output_matches_master": raw_master_identity_matches,
@@ -2761,6 +2808,7 @@ def run_postprocess_job(
         master_quality_report=master_quality_report,
     )
     final_result["quality_trace"] = quality_trace
+    final_result["quality_tier"] = backend_quality_tier
     final_result["generation_info"] = generation_info
     final_result["raw_geometry_telemetry"] = raw_geometry_telemetry or None
     final_result["geometry_quality_warning"] = generation_info.get("geometry_quality_warning")

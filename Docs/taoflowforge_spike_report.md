@@ -3,10 +3,10 @@
 ## Executive Summary
 This report documents the spike investigation into **TaoFlowForge**, an artistic 3D foundation model developed by the Taobao3D Team at Alibaba Group, evaluated for potential integration as the native clean-topology adapter in ForMash3D.
 
-**Status:** **BLOCKED**
-**Conclusion:** "BLOCKED - TaoFlowForge code/weights not publicly released for local execution; native topology route remains stubbed/disabled in planner rules."
+**Status:** **NOT EVALUATED — needs GPU + 30 GB disk**
+**Conclusion:** "NOT EVALUATED — TaoFlowForge code is published under Apache-2.0 and weights are hosted on ModelScope (~26 GB), but evaluation was blocked by local sandbox constraints (11 GB disk, no GPU). Furthermore, upstream issue #9 reports Stage 2 ignoring conditioning images and producing shattered output topology. The native topology route remains stubbed/disabled in planner rules."
 
-While the upstream research paper, inference code, and model checkpoints have been published under Apache 2.0 on ModelScope and GitHub, the model cannot be executed in the local ForMash3D environment due to extreme hardware and resource barriers (26.04 GB weights exceeding available disk space, strict CUDA 12.1 runtime requirement, >=20–24 GB VRAM requirement with no CPU fallback). Therefore, the native topology route remains safely stubbed and disabled in planner rules (`backend/config/planner_rules.yaml` and `backend/core/planner.py`), with generation falling back to dense geometry models paired with feature-preserving isotropic retopology.
+While the upstream research paper, inference code, and model checkpoints have been published (code Apache 2.0 on GitHub, weights on ModelScope), the model cannot be executed in the agent sandbox due to hardware and resource barriers (26.04 GB weights exceeding the 11 GB available sandbox disk space, strict CUDA 12.1 runtime requirement, >=20–24 GB VRAM requirement with no CPU fallback). Additionally, open upstream issue #9 indicates unresolved stability problems with Stage 2 conditioning and mesh shattering. Therefore, the native topology route remains safely stubbed and disabled in planner rules (`backend/config/planner_rules.yaml` and `backend/core/planner.py`), with generation falling back to dense geometry models paired with feature-preserving isotropic retopology.
 
 ---
 
@@ -100,8 +100,16 @@ In accordance with `RULES.md` and `Docs/TASKS.md`:
 
 ---
 
-## 7. Next Steps & Re-evaluation Triggers
-Integration should only be revisited when:
-1. Dedicated GPU compute with $\ge 24\text{ GB}$ VRAM and $\ge 50\text{ GB}$ persistent disk storage is provisioned.
-2. Upstream or community releases provide quantized 4-bit / 8-bit weights or a distilled small-scale variant (e.g., $<6\text{ GB}$).
-3. A lightweight ONNX or TensorRT export becomes available.
+## 7. User-Run Evaluation Checklist & Re-evaluation Triggers
+
+Before enabling or building an adapter for TaoFlowForge, execute this verification checklist on a dedicated GPU host:
+1. **Repository Setup:** Clone `https://github.com/alibaba/Taobao3D` and navigate to the `TaoFlowForge` directory.
+2. **Storage Allocation:** Ensure target disk has $\ge 30\text{ GB}$ free space and download official stage checkpoints from ModelScope (`stage0.pt` ~5.5GB, `stage1.pt` ~14.5GB, `stage2.pt` ~6.0GB, total 26.04 GB).
+3. **Hardware Runtime:** Verify NVIDIA GPU with $\ge 24\text{ GB}$ VRAM (e.g. RTX 3090/4090 or A100) running PyTorch 2.4+ and CUDA 12.1.
+4. **Issue #9 Investigation:** Check upstream GitHub issue #9 status (conditioning image ignored in Stage 2, producing shattered output meshes).
+5. **Execution Verification:** Run the official inference script on standard benchmark conditioning images.
+6. **Topology Metrics Audit:** Pass the resulting raw meshes through ForMash3D's `compute_mesh_metrics` and `evaluate_topology_gate`.
+7. **Adapter Gate:** Enable `taoflowforge_image_to_raw_mesh` in planner rules only if:
+   - Output meshes pass the topology gate (0 non-manifold edges, 0 boundary holes, floater ratio < 0.5%).
+   - Feature edge retention exceeds isotropic retopology baseline on mechanical test shapes.
+   - Stage 2 conditioning is confirmed stable and faithful to input images.

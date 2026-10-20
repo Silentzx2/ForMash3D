@@ -1221,3 +1221,46 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 
 **Verification boundary:** Contract tests were updated to the selected settings. No actual GPU generation, visual quality comparison or broad VRAM benchmark is claimed; the user will review outputs and approve any subsequent parameter change.
 
+---
+
+## ADR-085 — Targeted Boundary-Loop Hole Repair vs. Full Remesh Repair (2026-10-20)
+
+**Context:** `repair.py` provides `run_repair(close_holes=True)` wrapping PyMeshLab `meshing_close_holes` and Trimesh `fill_holes`. While effective for catastrophic mesh corruption, PyMeshLab full remesh/hole filling modifies vertex buffers globally, introduces non-manifold self-intersections on complex geometry, alters intact UV charts, and cannot discriminate hole perimeter or vertex count.
+
+**Decision:** Maintain `hole_repair.py` (`repair_holes_targeted`) as a lightweight, targeted stage preceding full repair.
+- Specifically extracts directed boundary loops from boundary half-edges.
+- Triangulates only small loops with vertex count $\le 50$ (from `quality.holes.max_hole_vertices`) using boundary fan triangulation.
+- Leaves intact surface geometry, non-hole vertices, and visual attributes completely untouched.
+- `repair.py` remains reserved for `full_repair` fallback when severe non-manifold defects exist.
+
+**Consequences:** Intact high-fidelity surfaces from models like Hunyuan and TRELLIS retain pixel-perfect silhouette and UV coords without destructive full remeshing.
+
+---
+
+## ADR-086 — Memory-Safe Staged Decimation vs. Single-Shot Optimization (2026-10-20)
+
+**Context:** `simplify.py` (`run_optimize`) invokes out-of-process Blender workers or single-pass Quadric Error Metric (QEM) decimation. Ultra-dense marching cubes meshes (>2M triangles) cause massive temporary heap spikes during edge collapse tree building, frequently triggering kernel `OOMKilled` on hosts with $\le 16\text{ GB}$ system RAM.
+
+**Decision:** Maintain `memory_safe_decimate.py` as an explicit safety-monitored decimation driver.
+- Queries `psutil.virtual_memory()` and tracks process RSS after every reduction pass.
+- When `len(mesh.faces) > memory_safe_threshold_triangles` (2M tris), executes staged chunked reduction (e.g. 50% ratio steps).
+- Clamps reduction allocations when free RAM falls below `max_ram_fraction` (80% system RAM).
+- For meshes under the 2M threshold, delegates directly to `feature_preserving_decimate`.
+
+**Consequences:** Guarantees zero unhandled OOM aborts on multi-million face raw generative assets while preserving 35° sharp feature edges.
+
+---
+
+## ADR-087 — Dynamic UV Backend Routing vs. Static Auto-UV (2026-10-20)
+
+**Context:** `auto_uv.py` performs static Cycles smart-projection or basic xatlas parameterization without VRAM awareness, polycount thresholding, or PartUV deep-learning integration.
+
+**Decision:** Maintain `uv_backend_resolver.py` as the single source of truth for UV unwrapping resolution and execution.
+- Evaluates asset triangle count against `quality.uv.partuv_triangle_threshold` (500k tris).
+- Probes runtime GPU environment via `runtime_probe` for CUDA availability and $\ge 7.0\text{ GB}$ free VRAM.
+- Automatically routes dense meshes to PartUV when resources suffice, or gracefully falls back to xatlas.
+- Drives xatlas directly using NumPy vertex/face array buffers, eliminating redundant file disk I/O.
+
+**Consequences:** Provides automated, resource-safe UV atlas unwrapping optimized for both high-poly raw geometry and low-poly game-ready LODs.
+
+

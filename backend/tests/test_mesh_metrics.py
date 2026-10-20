@@ -201,13 +201,18 @@ def test_master_immutability_audit(tmp_path: Path):
 
 
 def test_parity_scorecard_generator(tmp_path: Path):
-    """Verify parity_scorecard.json template generation with required rows and columns."""
+    """Verify parity_scorecard.json template generation with required rows, columns, and sourced metrics."""
     out_file = tmp_path / "parity_scorecard.json"
     scorecard_data = generate_parity_scorecard(
         output_path=out_file,
         entries={
-            "sharpness": {"ForMash3D": 0.95, "Tripo": 0.82},
-            "speed": {"ForMash3D": 18.5},
+            "sharpness": {
+                "ForMash3D": {"value": 0.95, "source": "Docs/benchmark_real.json"},
+                "Tripo": {"value": 0.82, "source": "competitor_eval/tripo_samples.glb"},
+            },
+            "speed": {
+                "ForMash3D": {"value": 18.5, "source": "Docs/benchmark_real.json"},
+            },
         },
     )
 
@@ -226,7 +231,38 @@ def test_parity_scorecard_generator(tmp_path: Path):
         for col in SCORECARD_COLUMNS:
             assert col in scorecard[row]
 
-    assert scorecard["sharpness"]["ForMash3D"] == 0.95
-    assert scorecard["sharpness"]["Tripo"] == 0.82
+    assert scorecard["sharpness"]["ForMash3D"]["value"] == 0.95
+    assert scorecard["sharpness"]["Tripo"]["value"] == 0.82
     assert scorecard["sharpness"]["Meshy"] is None
-    assert scorecard["speed"]["ForMash3D"] == 18.5
+    assert scorecard["speed"]["ForMash3D"]["value"] == 18.5
+
+
+def test_scorecard_rejects_unsourced_competitor_metrics():
+    """Verify scorecard generator strictly rejects unsourced numeric metrics or bare literals."""
+    # 1. Bare numeric literal without source dict must raise
+    with pytest.raises(ValueError, match="source file attribution"):
+        generate_parity_scorecard(entries={"sharpness": {"Tripo": 0.885}})
+
+    # 2. Dict missing source must raise
+    with pytest.raises(ValueError, match="must specify a non-empty 'source'"):
+        generate_parity_scorecard(entries={"sharpness": {"Tripo": {"value": 0.885}}})
+
+    # 3. Disallowed qualitative marketing string must raise
+    with pytest.raises(ValueError, match="Disallowed qualitative string"):
+        generate_parity_scorecard(entries={"sharpness": {"Tripo": "88.5% feature retention"}})
+
+
+def test_canonical_scorecard_contains_no_unsourced_numbers():
+    """Verify repo root parity_scorecard.json complies with truth contract."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    scorecard_path = repo_root / "parity_scorecard.json"
+    assert scorecard_path.is_file()
+    data = json.loads(scorecard_path.read_text(encoding="utf-8"))
+    scorecard = data["scorecard"]
+    for row in SCORECARD_ROWS:
+        for col in SCORECARD_COLUMNS:
+            cell = scorecard[row][col]
+            if cell is not None:
+                assert isinstance(cell, dict), f"Cell [{row}][{col}] is not null or dict: {cell}"
+                assert "value" in cell
+                assert "source" in cell and bool(cell["source"])

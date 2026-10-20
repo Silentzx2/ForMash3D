@@ -24,12 +24,42 @@ DEFAULT_ADAPTER_CLASS_MAP = {
 }
 
 _RULES_CACHE: Optional[Dict[str, Any]] = None
+_MODELS_CACHE: Optional[Dict[str, Any]] = None
 
 
 def clear_rules_cache() -> None:
     """Clear internal rules cache to force reload from disk."""
-    global _RULES_CACHE
+    global _RULES_CACHE, _MODELS_CACHE
     _RULES_CACHE = None
+    _MODELS_CACHE = None
+
+
+def _load_models_yaml() -> Dict[str, Any]:
+    """Load canonical model configs from backend/config/models.yaml."""
+    global _MODELS_CACHE
+    if _MODELS_CACHE is not None:
+        return _MODELS_CACHE
+
+    models_path = Path(__file__).resolve().parent.parent / "config" / "models.yaml"
+    if not models_path.exists():
+        candidate = Path.cwd() / "backend" / "config" / "models.yaml"
+        if candidate.exists():
+            models_path = candidate
+
+    flat: Dict[str, Any] = {}
+    if models_path.exists():
+        try:
+            raw = yaml.safe_load(models_path.read_text(encoding="utf-8")) or {}
+            for feature, models in raw.items():
+                if isinstance(models, dict):
+                    for mid, mcfg in models.items():
+                        if isinstance(mcfg, dict):
+                            flat[mid] = mcfg
+        except Exception as e:
+            logger.warning("Failed to load models.yaml in planner: %s", e)
+
+    _MODELS_CACHE = flat
+    return _MODELS_CACHE
 
 
 def _load_default_rules() -> Dict[str, Any]:
@@ -260,12 +290,16 @@ def plan_generation(
     selected_candidate: Optional[Dict[str, Any]] = None
     selected_idx: int = -1
 
+    models_catalog = _load_models_yaml()
+
     for idx, cand in enumerate(candidates):
         cand_id = cand["adapter"]
         cand_meta = rules.get("adapters", {}).get(cand_id, {})
+        model_meta = models_catalog.get(cand_id, {})
         adapter_class = cand_meta.get("adapter_class", DEFAULT_ADAPTER_CLASS_MAP.get(cand_id))
-        vram_budget_gb = cand_meta.get("vram_budget_gb", 0.0)
-        supported_inputs = cand_meta.get("supported_inputs", ["image"])
+        vram_mb = model_meta.get("vram_requirement")
+        vram_budget_gb = round(float(vram_mb) / 1024.0, 2) if vram_mb is not None else float(cand_meta.get("vram_budget_gb", 0.0))
+        supported_inputs = model_meta.get("supported_inputs") or cand_meta.get("supported_inputs", ["image"])
         requires_cuda = cand_meta.get("requires_cuda", True)
         requires_license = cand_meta.get("requires_license_optin", False)
 
@@ -370,7 +404,9 @@ def plan_generation(
     schema_version = str(rules.get("schema_version", "1.0.0"))
 
     # 8. Determine retopology mode and options
-    if selected_candidate.get("skip_retopo_allowed"):
+    selected_model_meta = models_catalog.get(selected_candidate["adapter"], {})
+    native_topology = bool(selected_model_meta.get("capabilities", {}).get("native_topology", False))
+    if selected_candidate.get("skip_retopo_allowed") or native_topology:
         retopo_mode = "native"
     elif mesh_style == "clean" or object_type == "mechanical":
         retopo_mode = "feature_aware"
@@ -413,4 +449,11 @@ def plan_generation(
         "bake": default_bake,
         "reasons": reasons,
         "warnings": warnings,
+        "would_have_chosen": selected_candidate["adapter"],
     }
+
+
+def get_planner_apply_config() -> Dict[str, bool]:
+    """Return feature switches controlling planner application."""
+    rules = _load_default_rules()
+    return dict(rules.get("apply", {"model_choice": False, "auto_seeds": False, "input_prep": True}))

@@ -15,42 +15,17 @@ from PIL import Image, ImageDraw
 import trimesh
 import yaml
 
-logger = logging.getLogger(__name__)
+try:
+    from backend.core.config import get_quality_config
+except ImportError:
+    from core.config import get_quality_config
 
-DEFAULT_BAKE_CONFIG = {
-    "normal_space": "TANGENT",
-    "convention": "OPENGL",
-    "max_ray_distance": 0.05,
-    "cage_extrusion": 0.02,
-    "texture_size": 1024,
-    "gutter_dilation_pixels": 4,
-    "min_uv_utilization": 0.60,
-}
+logger = logging.getLogger(__name__)
 
 
 def load_bake_config(config_path: Optional[str] = None) -> dict:
-    """Load bake configuration from file or fallback to defaults."""
-    candidate_paths = []
-    if config_path:
-        candidate_paths.append(Path(config_path))
-    candidate_paths.extend([
-        Path(__file__).resolve().parents[2] / "config" / "bake_config.yaml",
-        Path.cwd() / "backend" / "config" / "bake_config.yaml",
-        Path.cwd() / "config" / "bake_config.yaml",
-    ])
-
-    for p in candidate_paths:
-        if p.is_file():
-            try:
-                data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-                bake_cfg = data.get("bake", data)
-                merged = dict(DEFAULT_BAKE_CONFIG)
-                merged.update(bake_cfg)
-                return merged
-            except Exception as exc:
-                logger.warning("Failed to parse bake config at %s: %s", p, exc)
-
-    return dict(DEFAULT_BAKE_CONFIG)
+    """Load bake configuration from canonical quality config."""
+    return dict(get_quality_config(config_path)["bake"])
 
 
 def _to_image_array(img_input: Any) -> Optional[np.ndarray]:

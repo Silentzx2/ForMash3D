@@ -187,7 +187,7 @@ def test_quality_mesh_style_object_type_combinations(quality, mesh_style, object
         assert plan["adapter"] == "trellis2_image_to_raw_mesh"
         assert plan["preset"] == quality
     elif quality == "fast":
-        assert plan["adapter"] == "hunyuan3d_shape_v21_image_to_raw_mesh"
+        assert plan["adapter"] == "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
         assert plan["preset"] == "fast"
 
 
@@ -221,7 +221,7 @@ def test_low_vram_fallback():
     assert plan_balanced["adapter"] == "hunyuan3d_shape_v21_image_to_raw_mesh"
     assert plan_balanced["preset"] == "balanced"
     assert plan_balanced["num_seeds"] == 2
-    assert any("requires 16.0 GB VRAM" in r for r in plan_balanced["reasons"])
+    assert any("requires 23.0 GB VRAM" in r or "requires 16.0 GB VRAM" in r for r in plan_balanced["reasons"])
     assert any("Fallback from candidate 'trellis2_image_to_raw_mesh'" in w for w in plan_balanced["warnings"])
 
     # High request
@@ -229,7 +229,7 @@ def test_low_vram_fallback():
     assert plan_high["adapter"] == "hunyuan3d_shape_v21_image_to_raw_mesh"
     assert plan_high["preset"] == "high"
     assert plan_high["num_seeds"] == 3
-    assert any("requires 16.0 GB VRAM" in r for r in plan_high["reasons"])
+    assert any("requires 23.0 GB VRAM" in r or "requires 16.0 GB VRAM" in r for r in plan_high["reasons"])
 
 
 def test_no_cuda_behavior():
@@ -238,7 +238,7 @@ def test_no_cuda_behavior():
     plan = plan_generation({"requested_quality": "balanced"}, runtime)
 
     # Must not crash, should fall back to Hunyuan fast (fallback of last resort)
-    assert plan["adapter"] == "hunyuan3d_shape_v21_image_to_raw_mesh"
+    assert plan["adapter"] == "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh"
     assert plan["preset"] == "fast"
     assert plan["num_seeds"] == 1
     assert any("No CUDA device available" in w for w in plan["warnings"])

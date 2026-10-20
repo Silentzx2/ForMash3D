@@ -14,41 +14,17 @@ import trimesh
 
 try:
     from backend.core.quality.metrics import compute_mesh_metrics
+    from backend.core.config import get_quality_config
 except ImportError:
     from core.quality.metrics import compute_mesh_metrics
-
-
-DEFAULT_THRESHOLDS: Dict[str, Any] = {
-    "strict": False,
-    "max_non_manifold_edges": 0,
-    "max_non_manifold_vertices": 0,
-    "max_holes": 0,
-    "max_floater_ratio": 0.005,
-    "max_degenerate_faces": 0,
-    "min_aspect_ratio_p1": 0.05,
-    "min_aspect_ratio_p5": 0.10,
-}
+    from core.config import get_quality_config
 
 
 @functools.lru_cache(maxsize=8)
 def load_gate_thresholds(config_path: Optional[str] = None) -> Dict[str, Any]:
-    """Load topology gate thresholds from YAML config file."""
-    if config_path is None:
-        path = Path(__file__).resolve().parents[2] / "config" / "gate_thresholds.yaml"
-    else:
-        path = Path(config_path)
-
-    thresholds = dict(DEFAULT_THRESHOLDS)
-    if path.is_file():
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-            cfg = data.get("topology_gate", data)
-            if isinstance(cfg, dict):
-                thresholds.update({k: v for k, v in cfg.items() if k in thresholds})
-        except Exception:
-            pass
-    return thresholds
+    """Load topology gate thresholds from canonical quality config."""
+    cfg = get_quality_config(config_path)
+    return dict(cfg["gate"])
 
 
 def evaluate_topology_gate(
@@ -160,12 +136,13 @@ def evaluate_topology_gate(
             "violations": violations,
         }
 
-    # If mesh only has small boundary loops (holes <= 50 vertices) and no non-manifold geometry:
+    max_hole_limit = int(get_quality_config(config_path)["holes"]["max_hole_vertices"])
+    # If mesh only has small boundary loops (holes <= max_hole_limit vertices) and no non-manifold geometry:
     has_only_small_holes = (
         non_manifold_edges == 0
         and non_manifold_vertices == 0
         and hole_count > 0
-        and max_hole_size <= 50
+        and max_hole_size <= max_hole_limit
         and degenerate_faces <= thresholds["max_degenerate_faces"]
         and floater_ratio <= thresholds["max_floater_ratio"]
         and aspect_ratio_p1 >= thresholds["min_aspect_ratio_p1"]

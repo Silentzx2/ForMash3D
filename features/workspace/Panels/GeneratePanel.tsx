@@ -181,7 +181,10 @@ export function computeQualityMetrics(
   const passedGate = !gateFailed && asset?.qaStatus !== 'fail';
 
   let status: 'Sharp' | 'Clean' | 'Needs Review';
-  if (
+  const backendTier = asset?.qualityTier || rawResult?.quality_tier || qaReport?.quality_tier || (rawResult?.quality_trace as any)?.quality_tier;
+  if (backendTier && (String(backendTier).toLowerCase() === 'sharp' || String(backendTier).toLowerCase() === 'clean')) {
+    status = String(backendTier).toLowerCase() === 'sharp' ? 'Sharp' : 'Clean';
+  } else if (
     asset?.productionStatus === 'degraded' ||
     asset?.qaStatus === 'fail' ||
     asset?.qaStatus === 'warn' ||

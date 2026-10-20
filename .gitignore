@@ -79,7 +79,9 @@ scripts/.cloudflare_tunnels
 scratch/
 LEGACY_BACKEND/
 
-# Built wheels - stored locally and uploaded to GitHub releases
+# Generated deliverables and archive artifacts
+deliverables/
+
 .wheels/
 wheels/
 wheel_build.log

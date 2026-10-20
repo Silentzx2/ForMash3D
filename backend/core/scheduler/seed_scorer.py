@@ -10,62 +10,21 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
-DEFAULT_WEIGHTS: Dict[str, float] = {
-    "feature_edge_retention": 0.40,
-    "hole_count": 0.20,
-    "component_floater_ratio": 0.15,
-    "degenerate_face_ratio": 0.10,
-    "triangle_count": 0.05,
-    "aspect_ratio_p5": 0.10,
-}
-
-DEFAULT_RANGES: Dict[str, List[float]] = {
-    "feature_edge_retention": [0.0, 1.0],
-    "hole_count": [0.0, 50.0],
-    "component_floater_ratio": [0.0, 0.2],
-    "degenerate_face_ratio": [0.0, 0.05],
-    "triangle_count": [1000.0, 1000000.0],
-    "aspect_ratio_p5": [0.0, 1.0],
-}
-
-DEFAULT_INVERTED_METRICS = {
-    "hole_count",
-    "component_floater_ratio",
-    "degenerate_face_ratio",
-    "triangle_count",
-    "aspect_ratio_p5",
-}
-
-DEFAULT_EARLY_STOP_SCORE: float = 0.85
+try:
+    from backend.core.config import get_quality_config
+except ImportError:
+    from core.config import get_quality_config
 
 
 @functools.lru_cache(maxsize=4)
 def load_seed_scoring_config(config_path: Optional[str] = None) -> Dict[str, Any]:
-    """Load seed scoring weights, ranges and early stop threshold from YAML config."""
-    if config_path is None:
-        default_path = Path(__file__).resolve().parents[2] / "config" / "seed_scoring.yaml"
-    else:
-        default_path = Path(config_path)
-
-    if default_path.is_file():
-        try:
-            with open(default_path, "r", encoding="utf-8") as f:
-                raw_cfg = yaml.safe_load(f) or {}
-            cfg = raw_cfg.get("seed_scoring", raw_cfg)
-            return {
-                "weights": cfg.get("weights", DEFAULT_WEIGHTS),
-                "ranges": cfg.get("ranges", DEFAULT_RANGES),
-                "early_stop_score": float(cfg.get("early_stop_score", DEFAULT_EARLY_STOP_SCORE)),
-                "inverted": set(cfg.get("inverted", DEFAULT_INVERTED_METRICS)),
-            }
-        except Exception:
-            pass
-
+    """Load seed scoring weights, ranges and early stop threshold from canonical quality config."""
+    cfg = get_quality_config(config_path)["seeds"]
     return {
-        "weights": DEFAULT_WEIGHTS,
-        "ranges": DEFAULT_RANGES,
-        "early_stop_score": DEFAULT_EARLY_STOP_SCORE,
-        "inverted": DEFAULT_INVERTED_METRICS,
+        "weights": cfg["weights"],
+        "ranges": cfg["ranges"],
+        "early_stop_score": float(cfg["early_stop_score"]),
+        "inverted": set(cfg.get("inverted", [])),
     }
 
 

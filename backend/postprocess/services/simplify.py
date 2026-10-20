@@ -183,10 +183,12 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
             result = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
     except Exception as exc:
         from core.mesh_processor import compute_angle_weighted_normals, feature_preserving_decimate
+        from core.config import get_quality_config
+        shared_crease = float(get_quality_config()["shared"]["feature_edge_angle_deg"])
         if textured:
             try:
                 fallback_mesh = _simplify_textured_fallback(mesh, target_faces)
-                fallback_mesh = compute_angle_weighted_normals(fallback_mesh, crease_angle_deg=35.0)
+                fallback_mesh = compute_angle_weighted_normals(fallback_mesh, crease_angle_deg=shared_crease)
                 triangles = int(len(fallback_mesh.faces))
                 return fallback_mesh, {
                     "input_triangles": input_faces,
@@ -223,7 +225,7 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
                 reduced = trimesh.Trimesh(vertices=v_red, faces=f_red, process=False)
             except Exception:
                 reduced = feature_preserving_decimate(mesh, target_faces=int(target_faces))
-            reduced = compute_angle_weighted_normals(reduced, crease_angle_deg=35.0)
+            reduced = compute_angle_weighted_normals(reduced, crease_angle_deg=shared_crease)
             if hasattr(reduced, "vertex_normals"):
                 _ = reduced.vertex_normals
             triangles = int(len(reduced.faces))
@@ -244,7 +246,9 @@ def _simplify(mesh: trimesh.Trimesh, target_faces: int, cancel_checker: CancelCh
                 "texture_preserved": False, "decimator_error": str(exc),
             }
     from core.mesh_processor import compute_angle_weighted_normals
-    result = compute_angle_weighted_normals(result, crease_angle_deg=35.0)
+    from core.config import get_quality_config
+    shared_crease = float(get_quality_config()["shared"]["feature_edge_angle_deg"])
+    result = compute_angle_weighted_normals(result, crease_angle_deg=shared_crease)
     if hasattr(result, "vertex_normals"):
         _ = result.vertex_normals
     triangles = int(len(result.faces))

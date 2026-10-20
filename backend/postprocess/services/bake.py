@@ -101,8 +101,10 @@ def bake_high_to_low_pure_python(
     _progress("normals", 0.15, "Computing angle-weighted normals…")
 
     from core.mesh_processor import compute_angle_weighted_normals
-    high_mesh = compute_angle_weighted_normals(high_mesh, crease_angle_deg=35.0)
-    low_mesh = compute_angle_weighted_normals(low_mesh, crease_angle_deg=35.0)
+    from core.config import get_quality_config
+    shared_crease = float(get_quality_config()["shared"]["feature_edge_angle_deg"])
+    high_mesh = compute_angle_weighted_normals(high_mesh, crease_angle_deg=shared_crease)
+    low_mesh = compute_angle_weighted_normals(low_mesh, crease_angle_deg=shared_crease)
 
     # Compute MikkTSpace-compatible tangent basis
     low_uv = np.asarray(low_mesh.visual.uv, dtype=np.float64)
@@ -251,7 +253,8 @@ def bake_high_to_low_pure_python(
     ts_z /= ts_len
 
     r = np.clip((ts_x * 0.5 + 0.5) * 255.0, 0, 255).astype(np.uint8)
-    g = np.clip((ts_y * 0.5 + 0.5) * 255.0, 0, 255).astype(np.uint8)
+    g_val = ts_y if getattr(opts, "convention", "OPENGL").upper() == "OPENGL" else -ts_y
+    g = np.clip((g_val * 0.5 + 0.5) * 255.0, 0, 255).astype(np.uint8)
     b = np.clip((ts_z * 0.5 + 0.5) * 255.0, 0, 255).astype(np.uint8)
 
     normal_arr = np.full((res, res, 4), [128, 128, 255, 0], dtype=np.uint8)
