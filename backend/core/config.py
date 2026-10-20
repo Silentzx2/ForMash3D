@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import logging.config
 from pathlib import Path
@@ -28,26 +30,34 @@ try:
 except (ImportError, OSError):
     _ts = types.ModuleType("torch_scatter")
 
-    def _py_scatter_sum(src: torch.Tensor, index: torch.Tensor, dim: int = -1, out: Optional[torch.Tensor] = None, dim_size: Optional[int] = None) -> torch.Tensor:
-        if dim < 0:
-            dim += src.dim()
-        idx = index.expand_as(src) if index.dim() < src.dim() else index
-        if out is None:
-            size = list(src.size())
-            size[dim] = dim_size if dim_size is not None else (int(index.max()) + 1 if index.numel() > 0 else 0)
-            out = torch.zeros(size, dtype=src.dtype, device=src.device)
-        return out.scatter_add_(dim, idx, src)
+    if torch is not None:
+        def _py_scatter_sum(src: torch.Tensor, index: torch.Tensor, dim: int = -1, out: Optional[torch.Tensor] = None, dim_size: Optional[int] = None) -> torch.Tensor:
+            if dim < 0:
+                dim += src.dim()
+            idx = index.expand_as(src) if index.dim() < src.dim() else index
+            if out is None:
+                size = list(src.size())
+                size[dim] = dim_size if dim_size is not None else (int(index.max()) + 1 if index.numel() > 0 else 0)
+                out = torch.zeros(size, dtype=src.dtype, device=src.device)
+            return out.scatter_add_(dim, idx, src)
 
-    def _py_scatter_mean(src: torch.Tensor, index: torch.Tensor, dim: int = -1, out: Optional[torch.Tensor] = None, dim_size: Optional[int] = None) -> torch.Tensor:
-        res = _py_scatter_sum(src, index, dim, out, dim_size)
-        idx = index.expand_as(src) if index.dim() < src.dim() else index
-        counts = torch.zeros_like(res).scatter_add_(dim if dim >= 0 else dim + src.dim(), idx, torch.ones_like(src))
-        return res / counts.clamp_(min=1)
+        def _py_scatter_mean(src: torch.Tensor, index: torch.Tensor, dim: int = -1, out: Optional[torch.Tensor] = None, dim_size: Optional[int] = None) -> torch.Tensor:
+            res = _py_scatter_sum(src, index, dim, out, dim_size)
+            idx = index.expand_as(src) if index.dim() < src.dim() else index
+            counts = torch.zeros_like(res).scatter_add_(dim if dim >= 0 else dim + src.dim(), idx, torch.ones_like(src))
+            return res / counts.clamp_(min=1)
 
-    _ts.scatter_sum = _py_scatter_sum
-    _ts.scatter_add = _py_scatter_sum
-    _ts.scatter_mean = _py_scatter_mean
-    _ts.scatter = _py_scatter_mean
+        _ts.scatter_sum = _py_scatter_sum
+        _ts.scatter_add = _py_scatter_sum
+        _ts.scatter_mean = _py_scatter_mean
+        _ts.scatter = _py_scatter_mean
+    else:
+        _dummy = lambda *args, **kwargs: None
+        _ts.scatter_sum = _dummy
+        _ts.scatter_add = _dummy
+        _ts.scatter_mean = _dummy
+        _ts.scatter = _dummy
+
     _ts.__version__ = "2.1.2"
     sys.modules["torch_scatter"] = _ts
 
@@ -62,7 +72,11 @@ if torch is not None and torch.cuda.is_available():
 
 import yaml
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+except ImportError:
+    from pydantic import BaseModel as BaseSettings
+    SettingsConfigDict = dict
 
 logger = logging.getLogger(__name__)
 

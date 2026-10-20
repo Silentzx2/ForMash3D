@@ -2,9 +2,12 @@
 
 import json
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 
-from redis.asyncio import Redis
+try:
+    from redis.asyncio import Redis
+except ImportError:
+    Redis = Any
 
 from .models import APIToken, User
 

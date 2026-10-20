@@ -1785,7 +1785,7 @@ def run_postprocess_job(
     source_topology = topology_counts(mesh.vertices, mesh.faces)
     gate_eval = evaluate_topology_gate(
         mesh=mesh.copy(),
-        plan=generation_result.get("plan"),
+        plan=generation_result.get("plan") or job_inputs.get("plan"),
         strict=bool(job_inputs.get("strict_topology_gate", False)),
     )
     quality_trace["topology_gate"] = gate_eval
@@ -2151,7 +2151,7 @@ def run_postprocess_job(
         else:
             _emit(progress, 0.55, "uv", "Generating production UVs.")
         optimized_normals = np.asarray(optimized.vertex_normals)
-        plan_uv_backend = (generation_result.get("plan") or {}).get("uv_backend", "auto")
+        plan_uv_backend = (generation_result.get("plan") or job_inputs.get("plan") or {}).get("uv_backend", "auto")
         try:
             uv_mesh, uv_unwrap_stats = execute_uv_unwrap(optimized.copy(), backend=plan_uv_backend)
             uv_stats = {"status": "completed", **uv_unwrap_stats}

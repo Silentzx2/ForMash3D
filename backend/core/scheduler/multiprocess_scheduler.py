@@ -1975,6 +1975,8 @@ class MultiprocessModelScheduler:
                         from postprocess.pipeline import canonical_asset_workspace, run_postprocess_job
                         canonical_root = canonical_asset_workspace(job_id, final_result, job_request.inputs)
                         final_result = {**final_result, "asset_root": str(canonical_root), "postprocess_status": "running", "postprocess_progress": 0.0}
+                        if "plan" in job_request.inputs and "plan" not in final_result:
+                            final_result["plan"] = job_request.inputs["plan"]
                         job_request.result = final_result
                         if not await self.job_queue.update_job_result(job_id, final_result):
                             raise RuntimeError("Failed to persist post-process retry metadata")
