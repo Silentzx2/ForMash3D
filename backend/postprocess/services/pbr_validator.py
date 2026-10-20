@@ -503,9 +503,9 @@ def validate_pbr_asset(
 
     if "metallic" in channel_stats:
         m_stats = channel_stats["metallic"]
-        if m_stats["std"] < 0.001:
+        if 0.05 <= m_stats["mean"] <= 0.95 and m_stats["std"] < 0.001:
             warnings.append(
-                f"Metallic channel has uniform value {m_stats['mean']:.2f}; "
+                f"Metallic channel has uniform intermediate value {m_stats['mean']:.2f}; "
                 "flag for manual review if mixed dielectric/metallic materials are expected."
             )
         elif m_stats["min"] > 0.15 and m_stats["max"] < 0.85 and m_stats["std"] < 0.15:

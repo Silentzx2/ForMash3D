@@ -236,3 +236,20 @@ def test_invalid_normal_space(sample_quad_mesh, valid_pbr_textures):
 
     assert report["normal_convention"] != "OPENGL"
     assert report["valid"] is False
+
+
+def test_dielectric_uniform_metallic_no_false_positive_warning(sample_quad_mesh, valid_pbr_textures):
+    """Test that pure dielectric (metallic=0.0) does not trigger false positive warning."""
+    mr_dielectric = np.zeros((64, 64, 3), dtype=np.uint8)
+    mr_dielectric[..., 0] = 255
+    mr_dielectric[..., 1] = 128  # roughness ~ 0.5
+    mr_dielectric[..., 2] = 0    # pure dielectric metallic = 0.0
+
+    textures = dict(valid_pbr_textures)
+    textures["metallic_roughness"] = Image.fromarray(mr_dielectric, mode="RGB")
+
+    report = validate_pbr_asset(sample_quad_mesh, texture_images=textures)
+    assert report["valid"] is True
+    # Should NOT have uniform warning for pure dielectric
+    assert not any("uniform intermediate value" in w for w in report["warnings"])
+
