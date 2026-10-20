@@ -11,6 +11,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, CableIcon, CheckIcon, ChevronLeft, ChevronRight, Copy, FilterIcon, FolderOpenIcon, GridIcon, MoreVerticalIcon, StarIcon, Trash2, ZoomInIcon } from '@hugeicons/core-free-icons';
 import { DCC_PRESETS, type DccApp } from '../Modals/DccBridgeModal';
 import { settingsPersistence } from '@/services/settingsPersistence';
+import { QualityBadge } from '../Panels/GeneratePanel';
 
 export const RightAssetsPanel: React.FC = () => {
   const { 
@@ -444,9 +445,12 @@ export const RightAssetsPanel: React.FC = () => {
 
                 {/* Bottom Asset Label */}
                 <div className="px-2 py-1.5 bg-[hsl(var(--surface-1))] border-t border-white/[0.06] flex items-center justify-between gap-1">
-                  <span className={`text-xs truncate font-medium ${isSelected ? 'text-primary font-bold' : 'text-zinc-200'}`}>
-                    {asset.name}
-                  </span>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`text-xs truncate font-medium ${isSelected ? 'text-primary font-bold' : 'text-zinc-200'}`}>
+                      {asset.name}
+                    </span>
+                    <QualityBadge asset={asset} size="sm" />
+                  </div>
 
                   {/* 3-Dots Menu */}
                   <div className="relative" data-asset-menu={asset.id}>

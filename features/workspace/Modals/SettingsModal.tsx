@@ -598,10 +598,6 @@ export const SettingsModal: React.FC = () => {
           )}
         </div>
 
-        {/* Footer */}            </div>
-          )}
-        </div>
-
         {/* Footer */}
         <div className="flex items-center justify-between gap-2.5 px-5 py-3.5 bg-[hsl(var(--surface-2))] border-t border-white/[0.08] flex-shrink-0">
           <Link

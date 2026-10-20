@@ -167,7 +167,7 @@ test('forwards live SSE chunks immediately with proxy buffering disabled', async
 
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('content-type'), 'text/event-stream');
-  assert.equal(response.headers.get('cache-control'), 'no-cache');
+  assert.equal(response.headers.get('cache-control'), 'no-cache, no-transform');
   assert.equal(response.headers.get('x-accel-buffering'), 'no');
   assert.equal(forwardedLastEventId, '128');
 

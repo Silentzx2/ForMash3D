@@ -1,0 +1,16 @@
+seed_scoring:
+  weights:
+    feature_edge_retention: 0.40    # sharpness = priority #1
+    hole_count: 0.20                # inverted: fewer = higher
+    component_floater_ratio: 0.15   # inverted
+    degenerate_face_ratio: 0.10     # inverted
+    triangle_count: 0.05            # inverted
+    aspect_ratio_p5: 0.10           # inverted
+  ranges:
+    feature_edge_retention: [0.0, 1.0]
+    hole_count: [0, 50]
+    component_floater_ratio: [0.0, 0.2]
+    degenerate_face_ratio: [0.0, 0.05]
+    triangle_count: [1000, 1000000]
+    aspect_ratio_p5: [0.0, 1.0]
+  early_stop_score: 0.85

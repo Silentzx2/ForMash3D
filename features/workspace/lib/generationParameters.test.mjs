@@ -98,3 +98,44 @@ test('buildGenerationParameters propagates candidate_count (clamped between 1 an
   const resClamped = buildGenerationParameters(settingsClamped, { raw_mesh: true });
   assert.equal(resClamped.body.candidate_count, 4);
 });
+
+test('buildGenerationParameters attaches default quality, mesh_style, object_type, and symmetry', () => {
+  const settings = {
+    imageFileId: 'file-test-defaults',
+    enablePostprocess: false,
+  };
+  const res = buildGenerationParameters(settings, { raw_mesh: true });
+  assert.equal(res.body.quality, 'balanced');
+  assert.equal(res.body.requested_quality, 'balanced');
+  assert.equal(res.body.mesh_style, 'auto');
+  assert.equal(res.body.object_type, 'general');
+  assert.equal(res.body.symmetry, 'none');
+
+  assert.equal(res.modelParameters.quality, 'balanced');
+  assert.equal(res.modelParameters.requested_quality, 'balanced');
+  assert.equal(res.modelParameters.mesh_style, 'auto');
+  assert.equal(res.modelParameters.object_type, 'general');
+  assert.equal(res.modelParameters.symmetry, 'none');
+});
+
+test('buildGenerationParameters attaches explicit quality, mesh_style, object_type, and symmetry', () => {
+  const settings = {
+    imageFileId: 'file-test-explicit',
+    quality: 'high',
+    meshStyle: 'clean',
+    objectType: 'mechanical',
+    symmetry: 'bilateral',
+    enablePostprocess: false,
+  };
+  const res = buildGenerationParameters(settings, { raw_mesh: true });
+  assert.equal(res.body.quality, 'high');
+  assert.equal(res.body.requested_quality, 'high');
+  assert.equal(res.body.mesh_style, 'clean');
+  assert.equal(res.body.object_type, 'mechanical');
+  assert.equal(res.body.symmetry, 'bilateral');
+
+  assert.equal(res.modelParameters.quality, 'high');
+  assert.equal(res.modelParameters.mesh_style, 'clean');
+  assert.equal(res.modelParameters.object_type, 'mechanical');
+  assert.equal(res.modelParameters.symmetry, 'bilateral');
+});

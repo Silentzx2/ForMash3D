@@ -1,0 +1,6 @@
+uv:
+  partuv_triangle_threshold: 500000 # 500k tris
+  partuv_vram_requirement_gb: 7.0
+  default_backend: "auto"
+  fallback_backend: "xatlas"
+  max_chart_size: 4096

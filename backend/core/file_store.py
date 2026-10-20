@@ -2,13 +2,18 @@
 File metadata storage layer using Redis.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import logging
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from redis.asyncio import Redis
+try:
+    from redis.asyncio import Redis
+except ImportError:
+    Redis = Any
 
 logger = logging.getLogger(__name__)
 

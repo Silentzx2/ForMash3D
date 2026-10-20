@@ -158,6 +158,50 @@ class TextMeshPaintingRequest(BaseModel):
     mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
+    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
+    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
+    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+
+    @field_validator("mesh_style")
+    @classmethod
+    def validate_mesh_style(cls, v):
+        if not v:
+            return "auto"
+        v_str = str(v).strip().lower()
+        if v_str not in ("clean", "detailed", "auto"):
+            raise ValueError(f"Invalid mesh_style '{v}'. Must be one of: 'clean', 'detailed', 'auto'")
+        return v_str
+
+    @field_validator("requested_quality")
+    @classmethod
+    def validate_requested_quality(cls, v):
+        if not v:
+            return "balanced"
+        v_str = str(v).strip().lower()
+        if v_str not in ("fast", "balanced", "high"):
+            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
+        return v_str
+
+    @field_validator("object_type")
+    @classmethod
+    def validate_object_type(cls, v):
+        if not v:
+            return "general"
+        v_str = str(v).strip().lower()
+        if v_str not in ("mechanical", "organic", "character", "general"):
+            raise ValueError(f"Invalid object_type '{v}'. Must be one of: 'mechanical', 'organic', 'character', 'general'")
+        return v_str
+
+    @field_validator("symmetry")
+    @classmethod
+    def validate_symmetry(cls, v):
+        if not v:
+            return "none"
+        v_str = str(v).strip().lower()
+        if v_str not in ("bilateral", "radial", "none"):
+            raise ValueError(f"Invalid symmetry '{v}'. Must be one of: 'bilateral', 'radial', 'none'")
+        return v_str
 
     @field_validator("texture_resolution", mode="before")
     @classmethod
@@ -235,6 +279,50 @@ class ImageToRawMeshRequest(BaseModel):
     candidate_count: int = Field(1, ge=1, le=4, description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
+    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
+    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
+    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+
+    @field_validator("mesh_style")
+    @classmethod
+    def validate_mesh_style(cls, v):
+        if not v:
+            return "auto"
+        v_str = str(v).strip().lower()
+        if v_str not in ("clean", "detailed", "auto"):
+            raise ValueError(f"Invalid mesh_style '{v}'. Must be one of: 'clean', 'detailed', 'auto'")
+        return v_str
+
+    @field_validator("requested_quality")
+    @classmethod
+    def validate_requested_quality(cls, v):
+        if not v:
+            return "balanced"
+        v_str = str(v).strip().lower()
+        if v_str not in ("fast", "balanced", "high"):
+            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
+        return v_str
+
+    @field_validator("object_type")
+    @classmethod
+    def validate_object_type(cls, v):
+        if not v:
+            return "general"
+        v_str = str(v).strip().lower()
+        if v_str not in ("mechanical", "organic", "character", "general"):
+            raise ValueError(f"Invalid object_type '{v}'. Must be one of: 'mechanical', 'organic', 'character', 'general'")
+        return v_str
+
+    @field_validator("symmetry")
+    @classmethod
+    def validate_symmetry(cls, v):
+        if not v:
+            return "none"
+        v_str = str(v).strip().lower()
+        if v_str not in ("bilateral", "radial", "none"):
+            raise ValueError(f"Invalid symmetry '{v}'. Must be one of: 'bilateral', 'radial', 'none'")
+        return v_str
 
     @field_validator("texture_resolution", mode="before")
     @classmethod
@@ -319,6 +407,50 @@ class ImageToTexturedMeshRequest(BaseModel):
     candidate_count: int = Field(1, ge=1, le=4, description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
+    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
+    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
+    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+
+    @field_validator("mesh_style")
+    @classmethod
+    def validate_mesh_style(cls, v):
+        if not v:
+            return "auto"
+        v_str = str(v).strip().lower()
+        if v_str not in ("clean", "detailed", "auto"):
+            raise ValueError(f"Invalid mesh_style '{v}'. Must be one of: 'clean', 'detailed', 'auto'")
+        return v_str
+
+    @field_validator("requested_quality")
+    @classmethod
+    def validate_requested_quality(cls, v):
+        if not v:
+            return "balanced"
+        v_str = str(v).strip().lower()
+        if v_str not in ("fast", "balanced", "high"):
+            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
+        return v_str
+
+    @field_validator("object_type")
+    @classmethod
+    def validate_object_type(cls, v):
+        if not v:
+            return "general"
+        v_str = str(v).strip().lower()
+        if v_str not in ("mechanical", "organic", "character", "general"):
+            raise ValueError(f"Invalid object_type '{v}'. Must be one of: 'mechanical', 'organic', 'character', 'general'")
+        return v_str
+
+    @field_validator("symmetry")
+    @classmethod
+    def validate_symmetry(cls, v):
+        if not v:
+            return "none"
+        v_str = str(v).strip().lower()
+        if v_str not in ("bilateral", "radial", "none"):
+            raise ValueError(f"Invalid symmetry '{v}'. Must be one of: 'bilateral', 'radial', 'none'")
+        return v_str
 
     @field_validator("texture_resolution", mode="before")
     @classmethod
@@ -392,6 +524,50 @@ class ImageMeshPaintingRequest(BaseModel):
     mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
+    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
+    requested_quality: str = Field("balanced", description="Requested quality tier: 'fast', 'balanced', or 'high'")
+    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
+    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+
+    @field_validator("mesh_style")
+    @classmethod
+    def validate_mesh_style(cls, v):
+        if not v:
+            return "auto"
+        v_str = str(v).strip().lower()
+        if v_str not in ("clean", "detailed", "auto"):
+            raise ValueError(f"Invalid mesh_style '{v}'. Must be one of: 'clean', 'detailed', 'auto'")
+        return v_str
+
+    @field_validator("requested_quality")
+    @classmethod
+    def validate_requested_quality(cls, v):
+        if not v:
+            return "balanced"
+        v_str = str(v).strip().lower()
+        if v_str not in ("fast", "balanced", "high"):
+            raise ValueError(f"Invalid requested_quality '{v}'. Must be one of: 'fast', 'balanced', 'high'")
+        return v_str
+
+    @field_validator("object_type")
+    @classmethod
+    def validate_object_type(cls, v):
+        if not v:
+            return "general"
+        v_str = str(v).strip().lower()
+        if v_str not in ("mechanical", "organic", "character", "general"):
+            raise ValueError(f"Invalid object_type '{v}'. Must be one of: 'mechanical', 'organic', 'character', 'general'")
+        return v_str
+
+    @field_validator("symmetry")
+    @classmethod
+    def validate_symmetry(cls, v):
+        if not v:
+            return "none"
+        v_str = str(v).strip().lower()
+        if v_str not in ("bilateral", "radial", "none"):
+            raise ValueError(f"Invalid symmetry '{v}'. Must be one of: 'bilateral', 'radial', 'none'")
+        return v_str
 
     @field_validator("texture_resolution", mode="before")
     @classmethod
@@ -868,6 +1044,33 @@ async def image_to_raw_mesh(
             enable_auto_rig = False
             target_polycount = 0
 
+        # Rule-based planner invocation
+        req_qual = getattr(mesh_request, "requested_quality", "balanced") or "balanced"
+        if req_qual == "balanced" and getattr(mesh_request, "quality_mode", None) in ("fast", "high"):
+            req_qual = mesh_request.quality_mode
+
+        planner_req = {
+            "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+            "requested_quality": req_qual,
+            "object_type": getattr(mesh_request, "object_type", "general") or "general",
+            "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+            "target_polycount": target_polycount,
+            "input_type": "image",
+        }
+        from core.runtime_probe import probe_runtime
+        from core.planner import plan_generation
+        try:
+            runtime_facts = probe_runtime()
+        except Exception as e:
+            logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
+            runtime_facts = {
+                "has_cuda": False,
+                "installed_adapters": [],
+                "enabled_adapters": [],
+                "license_optins": {},
+            }
+        generation_plan = plan_generation(planner_req, runtime_facts)
+
         job_request = JobRequest(
             feature=feature,
             inputs={
@@ -880,6 +1083,11 @@ async def image_to_raw_mesh(
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
+                "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+                "requested_quality": req_qual,
+                "object_type": getattr(mesh_request, "object_type", "general") or "general",
+                "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+                "plan": generation_plan,
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -918,6 +1126,11 @@ async def image_to_raw_mesh(
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
+                "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+                "requested_quality": req_qual,
+                "object_type": getattr(mesh_request, "object_type", "general") or "general",
+                "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+                "plan": generation_plan,
                 **preset_metadata,
                 "preprocessing": preprocessing_metadata,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
@@ -1148,6 +1361,33 @@ async def image_to_textured_mesh(
             enable_auto_rig = False
             target_polycount = 0
 
+        # Rule-based planner invocation
+        req_qual = getattr(mesh_request, "requested_quality", "balanced") or "balanced"
+        if req_qual == "balanced" and getattr(mesh_request, "quality_mode", None) in ("fast", "high"):
+            req_qual = mesh_request.quality_mode
+
+        planner_req = {
+            "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+            "requested_quality": req_qual,
+            "object_type": getattr(mesh_request, "object_type", "general") or "general",
+            "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+            "target_polycount": target_polycount,
+            "input_type": "image",
+        }
+        from core.runtime_probe import probe_runtime
+        from core.planner import plan_generation
+        try:
+            runtime_facts = probe_runtime()
+        except Exception as e:
+            logger.warning("probe_runtime failed, using fallback runtime facts: %s", e)
+            runtime_facts = {
+                "has_cuda": False,
+                "installed_adapters": [],
+                "enabled_adapters": [],
+                "license_optins": {},
+            }
+        generation_plan = plan_generation(planner_req, runtime_facts)
+
         job_request = JobRequest(
             feature=feature,
             inputs={
@@ -1162,6 +1402,11 @@ async def image_to_textured_mesh(
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
+                "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+                "requested_quality": req_qual,
+                "object_type": getattr(mesh_request, "object_type", "general") or "general",
+                "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+                "plan": generation_plan,
                 "preprocessing_artifact_id": mesh_request.preprocessing_artifact_id,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
                 "enhancement_enabled": mesh_request.enhancement_enabled,
@@ -1200,6 +1445,11 @@ async def image_to_textured_mesh(
                 "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
+                "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
+                "requested_quality": req_qual,
+                "object_type": getattr(mesh_request, "object_type", "general") or "general",
+                "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
+                "plan": generation_plan,
                 **preset_metadata,
                 "preprocessing": preprocessing_metadata,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
