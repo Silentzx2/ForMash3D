@@ -1,3 +1,78 @@
+## 2026-10-20 — Normal-Map Detail Bake Config & PBR Validation (Task 2C)
+
+- Created `backend/config/bake_config.yaml`:
+  - `normal_space`: "TANGENT"
+  - `convention`: "OPENGL" # Y+
+  - `max_ray_distance`: 0.05
+  - `cage_extrusion`: 0.02
+  - `texture_size`: 1024
+  - `gutter_dilation_pixels`: 4
+  - `min_uv_utilization`: 0.60
+- Implemented `validate_pbr_asset` and `load_bake_config` in `backend/postprocess/services/pbr_validator.py`:
+  - Validates final game-ready assets across both mesh/scene containers and standalone texture dictionaries.
+  - Non-degenerate checks: asserts textures and color channels are not all-0 or all-255.
+  - glTF PBR channel packing: verifies roughness is packed into G channel and metallic in B channel; computes mean, std, min, and max channel statistics.
+  - Tangent-space OpenGL normal convention (Y+): verifies surface normal outward pointing (mean B >= 140, median Nz >= 0.1) and flat region decoding to approx (0, 0, 1) or RGB (128, 128, 255).
+  - UV validity: verifies every face vertex has UV coordinates inside [0, 1] range; computes rasterized UV utilization against `min_uv_utilization` and reports UV overlap fraction.
+  - Metallic/roughness sanity: validates physical distribution bounds and flags non-binary / uniform distributions for review.
+  - Returns structured PBR report dict: `{"valid": bool, "maps_checked": list[str], "uv_utilization": float, "uv_valid": bool, "normal_convention": str, "roughness_metallic_packed": bool, "warnings": list[str], "uv_overlap_fraction": float, "channel_stats": dict}`.
+- Exported `validate_pbr_asset` in `backend/postprocess/services/__init__.py`.
+- Comprehensive test suite in `backend/tests/test_pbr_validator.py` (9/9 passing).
+
+## 2026-10-20 — Feature-Aware Decimation & Memory Safety (Task 2B)
+
+- Created `backend/config/decimation_config.yaml`:
+  - `memory_safe_threshold_triangles`: 2000000 (2M tris)
+  - `crease_angle_deg`: 35.0
+  - `max_deviation_deg`: 45.0
+  - `max_ram_fraction`: 0.80 (80% available RAM)
+- Implemented `memory_safe_decimate` in `backend/postprocess/services/memory_safe_decimate.py`:
+  - Never mutates input mesh in place; operates strictly on `mesh.copy()`.
+  - Dynamic host memory monitoring with `psutil.virtual_memory()` and peak RSS tracking via `psutil.Process().memory_info().rss`.
+  - Under threshold (<=2M tris): uses `feature_preserving_decimate` from `backend.core.mesh_processor` to protect creases, angle-weighted normals, and bounding geometry.
+  - Over threshold (>2M tris): engages memory-safe staged chunking (50% reduction steps) with aggressive intermediate garbage collection (`gc.collect()` and `_cache.clear()`).
+  - When RAM fraction exceeds threshold, prevents OOM by limiting intermediate allocations.
+  - Returns `(decimated_mesh, telemetry_dict)` with `triangles_before`, `triangles_after`, `reduction_ratio`, `peak_rss_mb`, and `memory_safe_mode_engaged`.
+- Exported `memory_safe_decimate` in `backend/postprocess/services/__init__.py`.
+- Comprehensive test suite in `backend/tests/test_memory_safe_decimation.py` (5/5 passing).
+
+## 2026-10-20 — UV Backend Resolver & Driver (Task 2D)
+
+- Created `backend/config/uv_config.yaml`:
+  - `partuv_triangle_threshold`: 500000 (500k tris)
+  - `partuv_vram_requirement_gb`: 7.0
+  - `default_backend`: "auto"
+  - `fallback_backend`: "xatlas"
+  - `max_chart_size`: 4096
+- Implemented `resolve_uv_backend` and `execute_uv_unwrap` in `backend/postprocess/services/uv_backend_resolver.py`:
+  - Single-point-of-truth backend resolution between PartUV (high-poly, GPU) and xatlas (low-poly / fallback, CPU/GPU).
+  - Explicit `"partuv"` checks for CUDA and VRAM >= 7.0GB; otherwise logs warning and falls back to `"xatlas"`.
+  - `"auto"` selects `"partuv"` when triangles >= 500k, CUDA available, and VRAM >= 7.0GB; else selects `"xatlas"`.
+  - `"xatlas"` selects `"xatlas"`.
+  - `execute_uv_unwrap` works on `mesh.copy()` to guarantee input mesh immutability.
+  - Implements numpy-based vertex and face array unwrapping with `xatlas` and maps UV coordinates to visual attributes.
+  - Gracefully falls back from PartUV to xatlas on internal failure.
+  - Returns `(unwrapped_mesh, {"backend_used": str, "resolved_backend": str, "triangle_count": int, "success": bool})`.
+- Exported in `backend/postprocess/services/__init__.py`.
+- Comprehensive test suite in `backend/tests/test_uv_backend_resolver.py` (10/10 passing).
+
+## 2026-10-20 — Topology Gate Service and Quality Thresholds (Task 2A)
+
+- Created `backend/config/gate_thresholds.yaml`:
+  - Declares quality thresholds for non-manifold edges (0), non-manifold vertices (0), holes (0), floater ratio (0.005), degenerate faces (0), and aspect ratios (p1 >= 0.05, p5 >= 0.10).
+  - Configurable `strict` flag (default `false`).
+- Implemented `evaluate_topology_gate` in `backend/postprocess/services/gate.py`:
+  - Runs on working copies without mutating input meshes.
+  - Reuses `compute_mesh_metrics` from `backend.core.quality.metrics` and computes `max_hole_size`.
+  - Evaluates mesh metrics against configured thresholds to decide repair path:
+    - `"skip_repair"` (with `skip_retopo=True` unless plan overrides via `skip_retopo_allowed=False`) when topology is clean.
+    - `"minimal_repair"` (`skip_retopo=False`) when only small boundary loops (<= 50 vertices) exist and geometry is manifold.
+    - `"full_repair"` (`skip_retopo=False`) when non-manifold geometry, degenerate faces, floaters, or large holes exist.
+    - `strict=True` forces any detected flaw/violation to trigger `"full_repair"`.
+  - Returns structured report dict `{"repair_decision": str, "skip_retopo": bool, "passed_clean": bool, "metrics": dict, "violations": list[str]}`.
+- Exported `evaluate_topology_gate` in `backend/postprocess/services/__init__.py`.
+- Comprehensive test suite in `backend/tests/test_topology_gate.py` (11/11 passing).
+
 ## 2026-10-20 — Quality Metrics Lib, Parity Scorecard, and Master Immutability Audit (Task 1A)
 
 - Implemented pure trimesh/NumPy `compute_mesh_metrics` in `backend/core/quality/metrics.py`:

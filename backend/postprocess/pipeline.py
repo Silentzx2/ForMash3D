@@ -38,6 +38,14 @@ from .services.convert_fbx import run_convert_fbx
 from .services.inspect import run_inspect
 from .services.repair import run_repair, topology_counts
 from .services.simplify import run_lods, run_optimize
+from .services import (
+    evaluate_topology_gate,
+    repair_holes_targeted,
+    memory_safe_decimate,
+    resolve_uv_backend,
+    execute_uv_unwrap,
+    validate_pbr_asset,
+)
 from .schemas import (
     AutoRetopoOptions,
     AutoUvOptions,
@@ -1775,8 +1783,43 @@ def run_postprocess_job(
         weld=True,
     )
     source_topology = topology_counts(mesh.vertices, mesh.faces)
-    if _should_run_structural_repair(source_topology, printability_auto_repair):
+    gate_eval = evaluate_topology_gate(
+        mesh=mesh.copy(),
+        plan=generation_result.get("plan"),
+        strict=bool(job_inputs.get("strict_topology_gate", False)),
+    )
+    quality_trace["topology_gate"] = gate_eval
+    gate_repair_decision = gate_eval.get("repair_decision", "full_repair")
+    gate_skip_retopo = gate_eval.get("skip_retopo", False)
+
+    if gate_repair_decision == "skip_repair":
+        repaired = mesh.copy()
+        repair_stats = {
+            "before": source_topology,
+            "after": source_topology.copy(),
+            "removed_faces": 0,
+            "method": "gate_skipped_clean",
+            "preserve_uv": True,
+            "uv_preserved": bool(getattr(getattr(mesh, "visual", None), "uv", None) is not None),
+            "skipped": True,
+            "reason": "Topology gate evaluated mesh as clean; structural repair skipped.",
+            "gate_report": gate_eval,
+        }
+    elif gate_repair_decision == "minimal_repair":
+        repaired, hole_stats = repair_holes_targeted(mesh.copy(), max_hole_vertices=50)
+        repair_stats = {
+            "before": source_topology,
+            "after": topology_counts(repaired.vertices, repaired.faces),
+            "method": "minimal_hole_repair",
+            "hole_stats": hole_stats,
+            "preserve_uv": True,
+            "uv_preserved": bool(getattr(getattr(repaired, "visual", None), "uv", None) is not None),
+            "skipped": False,
+            "gate_report": gate_eval,
+        }
+    elif _should_run_structural_repair(source_topology, printability_auto_repair):
         repaired, repair_stats, _ = run_repair(mesh, repair_opts)
+        repair_stats["gate_report"] = gate_eval
     else:
         repaired = mesh.copy()
         repair_stats = {
@@ -1792,6 +1835,7 @@ def run_postprocess_job(
                 if not printability_auto_repair
                 else "Source mesh already passes manifold/watertight topology checks."
             ),
+            "gate_report": gate_eval,
         }
     repair_duration = time.time() - repair_t0
 
@@ -1893,6 +1937,8 @@ def run_postprocess_job(
         except Exception as exc:
             retopo_stats = {"status": "failed", "trigger": "large_open_defect", "error": str(exc)}
             logger.warning("Conditional AutoRetopo failed for %s; retaining repaired geometry: %s", job_id, exc)
+    elif gate_skip_retopo and not is_quad_requested:
+        retopo_stats = {"status": "skipped", "reason": "Topology gate evaluated mesh as clean; retopology bypassed."}
     elif native_textures:
         retopo_stats = {"status": "skipped", "reason": "Native textures are preserved; structural rebuild would require a real bake source."}
     elif not solid_generation_feature:
@@ -1995,6 +2041,9 @@ def run_postprocess_job(
         if repaired_face_count <= target_faces and not auto_optimize:
             optimized = repaired
             optimize_stats = {"passthrough": True, "reason": f"Repaired mesh face count ({repaired_face_count}) already within target ({target_faces})"}
+        elif repaired_face_count > 2_000_000:
+            optimized, mem_stats = memory_safe_decimate(repaired.copy(), target_faces=target_faces)
+            optimize_stats = {"passthrough": False, "method": "memory_safe_decimate", **mem_stats}
         else:
             optimized, optimize_stats = run_optimize(
                 repaired,
@@ -2102,13 +2151,19 @@ def run_postprocess_job(
         else:
             _emit(progress, 0.55, "uv", "Generating production UVs.")
         optimized_normals = np.asarray(optimized.vertex_normals)
-        uv_mesh, uv_stats, _ = run_auto_uv(
-            optimized,
-            AutoUvOptions(resolution=texture_resolution, padding_texels=4, refine=True, weld=True,
-                          preserve_normals=True, normal_smooth_deg=60),
-            source_normals=optimized_normals,
-            cancel_checker=cancel_checker,
-        )
+        plan_uv_backend = (generation_result.get("plan") or {}).get("uv_backend", "auto")
+        try:
+            uv_mesh, uv_unwrap_stats = execute_uv_unwrap(optimized.copy(), backend=plan_uv_backend)
+            uv_stats = {"status": "completed", **uv_unwrap_stats}
+        except Exception as uv_err:
+            logger.warning("execute_uv_unwrap failed (%s), falling back to run_auto_uv", uv_err)
+            uv_mesh, uv_stats, _ = run_auto_uv(
+                optimized,
+                AutoUvOptions(resolution=texture_resolution, padding_texels=4, refine=True, weld=True,
+                              preserve_normals=True, normal_smooth_deg=60),
+                source_normals=optimized_normals,
+                cancel_checker=cancel_checker,
+            )
         uv_duration = time.time() - uv_t0
         logger.info(
             "\n" + format_box(
@@ -2342,6 +2397,12 @@ def run_postprocess_job(
         game_ready_glb_bytes = _export_glb(game_ready_mesh)
     _save_file(glb_path, game_ready_glb_bytes)
     game_ready["glb"] = str(glb_path)
+    try:
+        pbr_report = validate_pbr_asset(glb_path)
+        quality_trace["pbr_validation"] = pbr_report
+    except Exception as pbr_err:
+        logger.warning("PBR validation failed: %s", pbr_err)
+        quality_trace["pbr_validation"] = {"status": "warn", "error": str(pbr_err)}
 
     if retopo_stats.get("quad_faces"):
         try:
@@ -2630,11 +2691,13 @@ def run_postprocess_job(
             "raw_geometry_telemetry": raw_geometry_telemetry,
             "before_postprocess": qa_before,
             "after_postprocess": qa_report,
+            "topology_gate": quality_trace.get("topology_gate"),
             "repair": repair_stats,
             "retopo": retopo_stats,
             "optimize": optimize_stats,
             "uv": uv_stats,
             "bake": bake_stats,
+            "pbr_validation": quality_trace.get("pbr_validation"),
             "texture_status": texture_status,
             "texture_stage": texture_stage_info,
             "quality_trace": quality_trace,
