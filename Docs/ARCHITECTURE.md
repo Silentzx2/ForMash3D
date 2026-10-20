@@ -111,6 +111,37 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
     - `upscale_if_small`: resamples with high-fidelity LANCZOS if min dimension is below threshold (e.g. 256).
   - `validate_image_aspect_and_occupancy(image: Image.Image) -> dict`: Computes foreground occupancy ratio, aspect ratio, bounding box occupancy, border coverage, and individual edge contact flags.
 
+### Hunyuan Presets, Targeted Hole Repair & Best-of-N Seed Scorer (Tasks 1C & 1D)
+- `backend/config/hunyuan_presets.yaml`: Configures fast/balanced/high generation presets (octree resolution, steps, guidance, VRAM budgets) and targeted hole repair limits (`max_hole_vertices: 50`, `max_hole_perimeter: 0.5`).
+- `backend/postprocess/services/hole_repair.py`: `repair_holes_targeted` inspects boundary loops using directed edge traversal and fills loops `<= max_hole_vertices` with boundary fans, preserving non-hole geometry completely untouched.
+- `backend/core/scheduler/seed_scorer.py`: `score_seed_candidate` and `select_best_candidate` compute weighted composite quality scores using fixed reference ranges from `seed_scoring.yaml`, supporting early termination (`score >= 0.85`) and tie-breaking by feature edge retention.
+
+### Topology Gate & Repair Routing (Task 2A)
+- `backend/config/gate_thresholds.yaml`: Declares thresholds for non-manifold edges (0), non-manifold vertices (0), holes (0), floater ratio (0.005), degenerate faces (0), and aspect ratios (p1 >= 0.05, p5 >= 0.10).
+- `backend/postprocess/services/gate.py`: `evaluate_topology_gate(mesh, plan=None, strict=False)` inspects geometry without mutating inputs; returns repair decision (`skip_repair`, `minimal_repair`, `full_repair`) and `skip_retopo` flag adhering to `plan.skip_retopo_allowed`.
+
+### Memory-Safe Staged Decimation & Feature Retention (Task 2B)
+- `backend/config/decimation_config.yaml`: Sets `memory_safe_threshold_triangles: 2000000`, `crease_angle_deg: 35.0`, `max_deviation_deg: 45.0`, `max_ram_fraction: 0.80`.
+- `backend/postprocess/services/memory_safe_decimate.py`: `memory_safe_decimate(mesh, target_faces, ...)` operates strictly on copies. Under 2M triangles, uses QEM feature-preserving decimation protecting crease planes and boundaries. Over 2M triangles, engages staged 50% reduction chunks with psutil RAM monitoring and aggressive garbage collection.
+
+### Tangent Normal Detail Bake & PBR Asset Validation (Task 2C)
+- `backend/config/bake_config.yaml`: Configures tangent-space OpenGL (Y+) normal baking, cage/ray distances, atlas resolution, and minimum UV utilization (60%).
+- `backend/postprocess/services/pbr_validator.py`: `validate_pbr_asset` validates game-ready GLB assets across non-degenerate textures, packed roughness (G) / metallic (B) channels, OpenGL Y+ normal convention, strictly in-bounds [0, 1] UVs, and atlas space utilization.
+
+### UV Backend Resolver & Unwrap Driver (Task 2D)
+- `backend/config/uv_config.yaml`: Configures PartUV triangle threshold (500k), VRAM requirements (7.0 GB), default backend (`auto`), and fallback backend (`xatlas`).
+- `backend/postprocess/services/uv_backend_resolver.py`: Single source of truth resolving between GPU PartUV (for meshes >= 500k tris when CUDA/VRAM permit) and CPU/GPU xatlas; `execute_uv_unwrap` produces unwrapped non-overlapping UVs without mutating source geometry.
+
+### Postprocess Pipeline Orchestrator Integration (Task 2E)
+- `backend/postprocess/pipeline.py`: Connects Topology Gate, targeted hole repair, memory-safe decimation, UV unwrapping, and PBR validation into `run_postprocess_job` while strictly enforcing master immutability (`master/source.glb` SHA-256 verified identical before and after postprocessing).
+
+### Deterministic Planner v1 & Model Capability Contracts (Task 3B)
+- `backend/config/planner_rules.yaml` & `backend/core/planner.py`: Configures benchmark-driven rules per object type (`mechanical`, `organic`, `character`, `general`) and quality tier (`fast`, `balanced`, `high`). Dynamically selects adapter, preset, seed count, feature-aware retopology mode, and UV backend. Full plan recomputed on any fallback.
+
+### Final Parity Benchmark & Competitive Scorecard (Task 3D)
+- `scripts/run_final_parity_benchmark.py`: Evaluates canonical test shapes (cube, sphere, cylinder, mechanical prop) comparing raw baseline vs postprocessed meshes across triangle count, hole count, non-manifold edges, feature-edge retention, UV utilization, and PBR validation.
+- Output artifacts: `Docs/baseline_vs_now_benchmark.json` and `parity_scorecard.json` containing authoritative competitive comparisons across ForMash3D, Tripo, Meshy, and Hyper3D.
+
 ```mermaid
 flowchart TB
     %% Sleek Studio Palette

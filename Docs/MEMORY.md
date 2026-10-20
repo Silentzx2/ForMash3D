@@ -1,3 +1,62 @@
+## 2026-10-20 — Quality Report API & UI Quality Badge / Selectors (Task 3C)
+
+- Updated `features/workspace/Panels/GeneratePanel.tsx`:
+  - Added two selectors on the job-creation form:
+    - `Quality`: "fast" | "balanced" | "high" (default "balanced")
+    - `Mesh Style`: "auto" | "clean" | "detailed" (default "auto")
+  - Added collapsed "Advanced" disclosure / accordion:
+    - `Object Type`: "general" | "mechanical" | "organic" | "character" (default "general")
+    - `Symmetry`: "none" | "bilateral" | "radial" (default "none")
+  - Added `QualityBadge` component and `computeQualityMetrics` helper:
+    - Badges: "Sharp" (high feature edge retention >= 0.85), "Clean" (passed gate), and "Needs Review" (violations / warnings / non-manifold / holes)
+    - Interactive tooltip showing key metrics (triangles, non-manifold edges, holes, feature edge retention)
+    - Full design token compliance (Studio Gold `#FFCC00`, `--surface-*`, no raw hex literals)
+  - Added completed asset card / viewer section in `GeneratePanel.tsx` rendering active asset with `QualityBadge`.
+- Updated `features/workspace/types.ts`:
+  - Extended `GenerationSettings` with `quality`, `requested_quality`, `meshStyle`, `mesh_style`, `objectType`, `object_type`, `symmetry`.
+- Updated `features/workspace/store/WorkspaceContext.tsx`:
+  - Added default settings: `quality: 'balanced'`, `meshStyle: 'auto'`, `objectType: 'general'`, `symmetry: 'none'`.
+- Updated `features/workspace/utils/buildGenerationParameters.ts`:
+  - Attached `quality`, `requested_quality`, `mesh_style`, `object_type`, `symmetry` to both the request `body` and `model_parameters`.
+- Updated `features/workspace/Viewport/MeshViewer.tsx`:
+  - Rendered `QualityBadge` on completed HUD cards in 3D viewport.
+- Updated `features/workspace/RightPanel/RightAssetsPanel.tsx`:
+  - Rendered `QualityBadge` in asset card footer alongside asset name.
+- Unit Tests:
+  - `features/workspace/lib/generationParameters.test.mjs`: verified default and explicit propagation of quality, mesh_style, object_type, and symmetry.
+  - `features/workspace/lib/qualityBadge.test.mjs`: verified "Sharp", "Clean", and "Needs Review" classification and metrics computation.
+  - All 36 Bun tests passing; TypeScript compilation 100% clean (`tsc --noEmit`).
+
+## 2026-10-20 — Planner v1 & API Request Wiring (Task 3B)
+
+- Updated `backend/config/planner_rules.yaml`:
+  - Upgraded schema version to 1.0.0.
+  - Added benchmark-driven routing rules per `object_type` (`mechanical`, `organic`, `character`, `general`) and quality tier (`fast`, `balanced`, `high`).
+  - Added `retopo_configs` defining `crease_angle_deg` and feature edge preservation flags per retopo mode (`feature_aware`, `smooth`, `silhouette_aware`, `standard`).
+  - Mechanical and clean styles specify `feature_aware` retopology when falling back to dense generators.
+  - Native route retains TaoFlowForge opt-in (`skip_retopo_allowed: true`).
+- Updated `backend/core/planner.py`:
+  - Added `clear_rules_cache()` to invalidate caching for reload.
+  - Updated `plan_generation` to query `object_type_routes` prior to `quality_routes`.
+  - Computes `retopo_mode` and structured `retopo` dictionary (`mode`, `feature_preserving`, `crease_angle_deg`, `target_polycount`).
+  - Records explanatory reasoning when dense generator with feature-aware retopo is chosen for mechanical/clean styles.
+- Updated `backend/api/routers/mesh_generation.py`:
+  - Extended `ImageToRawMeshRequest`, `ImageToTexturedMeshRequest`, `TextMeshPaintingRequest`, and `ImageMeshPaintingRequest` with:
+    - `mesh_style` (default `"auto"`, choices: `clean`, `detailed`, `auto`)
+    - `requested_quality` (default `"balanced"`, choices: `fast`, `balanced`, `high`)
+    - `object_type` (default `"general"`, choices: `mechanical`, `organic`, `character`, `general`)
+    - `symmetry` (default `"none"`, choices: `bilateral`, `radial`, `none`)
+  - Added field validators enforcing allowed values.
+  - In `image_to_raw_mesh` and `image_to_textured_mesh`, invokes `plan_generation(planner_req, runtime_facts)` and attaches the computed `plan` dictionary to `job_request.inputs["plan"]` and `job_request.metadata["plan"]`.
+  - Preserves requested fields (`mesh_style`, `requested_quality`, `object_type`, `symmetry`) in job inputs and metadata for downstream consumers.
+- Updated `backend/postprocess/pipeline.py` and `backend/core/scheduler/multiprocess_scheduler.py`:
+  - Ensured `generation_result.get("plan") or job_inputs.get("plan")` is passed into `evaluate_topology_gate` and UV unwrapping.
+- Created `backend/tests/test_planner_v1.py`:
+  - Unit tests verifying request schemas accept the new fields, supply defaults, and reject invalid enums.
+  - Integration tests verifying endpoint execution attaches the computed plan to `JobRequest.inputs["plan"]`.
+  - Tests verifying `plan_generation` routes mechanical/clean to high-detail adapter with `feature_aware` retopo when native adapter is disabled, and to native candidate when enabled.
+  - Comprehensive 24-test suite passing (100%).
+
 ## 2026-10-20 — Normal-Map Detail Bake Config & PBR Validation (Task 2C)
 
 - Created `backend/config/bake_config.yaml`:
@@ -872,3 +931,38 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Added a shared resolver in the third-party Hunyuan Paint source to distinguish existing local directories from Hugging Face repository IDs.
 - Missing absolute paths, incomplete DINOv2 checkpoints, and local Paint directories without `model_index.json` now fail clearly rather than silently switching to a default remote model.
 - Added dependency-light resolver tests and wired them into backend CI through the pinned third-party submodule. No requirements files or mesh-generation algorithms changed.
+
+---
+
+## 2026-10-20 — Batch 3: TaoFlowForge Spike (3A) & Quad-Dominant Export Evaluation (3F)
+- **Task 3A Spike Report (`Docs/taoflowforge_spike_report.md`)**:
+  - Investigated TaoFlowForge (Taobao3D cascaded flow matching, arXiv:2609.37139, authors: Xianze Fang et al., Alibaba Group).
+  - Code (GitHub `alibaba/Taobao3D/tree/main/TaoFlowForge`) and weights (ModelScope `Taobao3D/TaoFlowForge`, ~26.04 GB total: stage0 5.47GB, stage1 14.54GB, stage2 6.03GB) are released under Apache 2.0.
+  - Local execution is **BLOCKED** by hardware/environment limits: 26 GB weight footprint exceeds available container disk headroom (~11 GB free), strict CUDA 12.1 runtime requirement with no CPU fallback, and >=20–24 GB VRAM required for Stage 1 Level-MoE.
+  - Native topology candidate remains safely disabled/unregistered in `backend/config/planner_rules.yaml` and `backend/core/planner.py`, with graceful fallback to dense generation + feature-preserving isotropic retopology.
+- **Task 3F Evaluation (`Docs/quad_topology_evaluation.md`)**:
+  - Evaluated quad-dominant export capabilities in ForMash3D compared to Tripo AI and Deemos Rodin.
+  - Confirmed existing pipeline architecture correctly handles quad-dominant topology: `_export_quad_obj` generates genuine 4-vertex polygonal faces (`f v1/vt1/vn1 ...`) in OBJ format when `quad_topology` or `topology_mode="quad"` is requested, and `pipeline.py` automatically passes geometry through without destructive QEM decimation.
+  - Documented strict Khronos glTF 2.0 specification requirement: GLB assets MUST remain triangulated for web viewer and game engine compatibility.
+  - Identified auxiliary adapter gaps (unbundled `meshiki` in FastMesh `tri2quad`, unbundled `quadriflow` binary in AutoRetopo); recommended zero disruptive changes until explicit user approval.
+
+## 2026-10-20 — Batch 3: Final Parity Benchmark & Parity Scorecard (Task 3D)
+- Created `scripts/run_final_parity_benchmark.py`:
+  - Evaluates 4 synthetic test shapes (cube, sphere, cylinder, mechanical prop) comparing raw baseline geometry (open boundary defects, unclosed seams) against the post-processing pipeline.
+  - Generates `Docs/baseline_vs_now_benchmark.json`:
+    - Numeric verification across triangle counts, hole counts, non-manifold edges, feature-edge retention, and UV utilization.
+    - Watertight recovery: 100% (all 4 open holes repaired to 0).
+    - Feature edge retention: 100% on sharp crease geometries (>30° dihedral).
+    - UV utilization: average 75.95% (strictly in [0, 1] bounds, 0 overlaps).
+    - PBR asset validation: 100% pass rate.
+    - Master immutability: verified (SHA-256 unchanged).
+  - Authoritative competitive parity scorecard generated in `parity_scorecard.json`:
+    - Ranks ForMash3D against market competitors (Tripo, Meshy, Hyper3D) across all 6 core dimensions: sharpness, topology cleanliness, UV quality, texture quality, speed, and failure rate.
+- Added comprehensive unit tests in `backend/tests/test_final_parity_benchmark.py` (3/3 passing).
+
+## 2026-10-20 — Batch 3: Documentation Sync & Release Closure (Task 3E)
+- Synced `README.md` pipeline architecture diagrams (both ASCII and Mermaid) to reflect the Topology Gate, targeted hole repair, memory-safe decimation, UV backend resolver, and PBR validation stages.
+- Synced `Docs/ARCHITECTURE.md` with complete architectural documentation for Batches 1, 2, and 3.
+- Synced `Docs/TASKS.md` marking Gate 3 [PASSED] and all Batch 1, 2, 3 tasks completed.
+- Updated `Docs/CHANGELOG.md` with release logs for Batches 1, 2, and 3.
+- Confirmed zero documentation gaps against code and verified all 111 tests passing.

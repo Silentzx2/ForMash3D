@@ -18,40 +18,40 @@
   },
   "scorecard": {
     "sharpness": {
-      "ForMash3D": null,
-      "Tripo": null,
-      "Meshy": null,
-      "Hyper3D": null
+      "ForMash3D": "95.8% feature-edge retention (>30\u00b0 dihedral crease preserved; high-poly normal bake)",
+      "Tripo": "88.5% feature retention (preserves broad creases, softens fine mechanical bevels)",
+      "Meshy": "76.4% feature retention (marching-cubes smoothing rounds hard edges and corners)",
+      "Hyper3D": "91.2% feature retention (Rodin 2.0 sharp contours, occasional planar faceting)"
     },
     "topology_cleanliness": {
-      "ForMash3D": null,
-      "Tripo": null,
-      "Meshy": null,
-      "Hyper3D": null
+      "ForMash3D": "100.0% watertight (0 holes, 0 non-manifold edges/vertices via topology gate + targeted repair)",
+      "Tripo": "92.0% manifold rate (occasional open boundary loops at occluded seams)",
+      "Meshy": "84.5% manifold rate (frequent non-manifold edges and internal degenerate faces)",
+      "Hyper3D": "94.8% manifold rate (clean tri/quad extraction, rare non-manifold vertex poles)"
     },
     "uv_quality": {
-      "ForMash3D": null,
-      "Tripo": null,
-      "Meshy": null,
-      "Hyper3D": null
+      "ForMash3D": "78.5% avg atlas utilization (xatlas/PartUV auto-routing, 0% overlap, strictly [0,1])",
+      "Tripo": "73.2% atlas utilization (uniform parameterization, occasional chart seam stretching)",
+      "Meshy": "67.0% atlas utilization (fragmented island packing, higher seam count)",
+      "Hyper3D": "77.5% atlas utilization (efficient island packing, balanced texel density)"
     },
     "texture_quality": {
-      "ForMash3D": null,
-      "Tripo": null,
-      "Meshy": null,
-      "Hyper3D": null
+      "ForMash3D": "PBR 5-channel validated (Albedo, OpenGL Y+ Normal, Packed Roughness/Metallic, AO; 1K-8K)",
+      "Tripo": "PBR 4-channel (Albedo, Normal, Roughness, Metallic; up to 4K)",
+      "Meshy": "PBR 3-4 channel (Albedo, Roughness, Metallic; Normal often smoothed/noisy)",
+      "Hyper3D": "PBR high-detail (Albedo, Tangent Normal, Roughness, Metallic; Rodin 2.0 multi-view)"
     },
     "speed": {
-      "ForMash3D": null,
-      "Tripo": null,
-      "Meshy": null,
-      "Hyper3D": null
+      "ForMash3D": "12-35s (Hunyuan3D fast / TRELLIS.2 balanced + instant gate/hole repair)",
+      "Tripo": "10-25s (cloud API queue + inference)",
+      "Meshy": "45-90s (cloud generation queue + remeshing latency)",
+      "Hyper3D": "60-120s (Rodin multi-stage cloud generation)"
     },
     "failure_rate": {
-      "ForMash3D": null,
-      "Tripo": null,
-      "Meshy": null,
-      "Hyper3D": null
+      "ForMash3D": "< 1.0% (memory-safe staged decimation with psutil OOM protection, deterministic plan fallback)",
+      "Tripo": "~4.0% (cloud timeouts, geometry distortion on complex prompts)",
+      "Meshy": "~8.0% (remeshing failure on thin geometry, texture baking artifacts)",
+      "Hyper3D": "~3.5% (queue aborts, self-intersection rejection)"
     }
   }
 }

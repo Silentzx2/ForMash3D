@@ -149,15 +149,16 @@ flowchart TD
         UNIQUE3D["Unique3D<br/>Single-Image Multi-View Diffusion"]:::purple
     end
 
-    subgraph PostProcess [Production Post-Processing Core based on 3DGenStudio]
+    subgraph PostProcess [Production Post-Processing Pipeline]
         CHECKPOINT["source.glb<br/>Immutable Master Raw Mesh"]:::green
-        REPAIR["Watertight Repair<br/>Boundary Component Guard"]:::green
-        SIMPLIFY["PyMeshLab Decimator<br/>Texture-Preserving Fallback"]:::green
-        AUTORETOPO["Adaptive AutoRetopo<br/>Feature Crease Preservation"]:::green
-        BAKE["Conformal UV & Bake<br/>xatlas UV Parameterization"]:::green
-        LOD["LOD Cascades<br/>LOD0 to LOD3 with meshopt"]:::green
-        PHYSICS["Physics Colliders<br/>CoACD Convex Hulls"]:::green
-        QA["QA Diagnostic Engine<br/>0-100 Quality Trace"]:::green
+        GATE["1. Topology Gate<br/>Percentile Filter & Clean Bypass"]:::green
+        HOLE_REPAIR["2. Hole Repair<br/>Targeted Boundary Loops & Welding"]:::green
+        DECIMATE["3. Memory-Safe Decimate<br/>Crease Retention & psutil RAM Guard"]:::green
+        UV_RESOLVE["4. UV Backend Resolver<br/>PartUV / xatlas Auto Driver"]:::green
+        PBR_VAL["5. PBR Validation<br/>OpenGL Y+ Normal & Packed RMA"]:::green
+        LOD["6. LOD Cascades<br/>LOD0 to LOD3 with meshopt"]:::green
+        PHYSICS["7. Physics Colliders<br/>CoACD Convex Hulls"]:::green
+        QA["8. QA Diagnostic Engine<br/>0-100 Quality Trace"]:::green
     end
 
     subgraph Delivery [Game Engine Ready Delivery]
@@ -184,11 +185,12 @@ flowchart TD
     TRIPO -->|Model Native GLB| CHECKPOINT
     EXTRAS -->|Model Native GLB| CHECKPOINT
 
-    CHECKPOINT --> REPAIR
-    REPAIR --> SIMPLIFY
-    SIMPLIFY --> AUTORETOPO
-    AUTORETOPO --> BAKE
-    BAKE --> LOD
+    CHECKPOINT --> GATE
+    GATE -->|repair routing| HOLE_REPAIR
+    HOLE_REPAIR --> DECIMATE
+    DECIMATE --> UV_RESOLVE
+    UV_RESOLVE --> PBR_VAL
+    PBR_VAL --> LOD
     LOD --> PHYSICS
     PHYSICS --> QA
 
