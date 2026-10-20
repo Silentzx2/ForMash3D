@@ -7,6 +7,7 @@ producing browser-playable motion.json artifacts and raw .npz files.
 
 import logging
 import os
+import random
 import re
 import sys
 from pathlib import Path
@@ -36,8 +37,16 @@ CHECKPOINT_VARIANTS = {
     "ARDY-Core-RP-20FPS-Horizon8": "ARDY-Core-RP-20FPS-Horizon8",
     "ARDY-G1-RP-25FPS-Horizon52": "ARDY-G1-RP-25FPS-Horizon52",
     "ARDY-G1-RP-25FPS-Horizon8": "ARDY-G1-RP-25FPS-Horizon8",
+    "ardy-core": "ARDY-Core-RP-20FPS-Horizon40",
+    "ardy-core (default)": "ARDY-Core-RP-20FPS-Horizon40",
+    "ardy-g1": "ARDY-G1-RP-25FPS-Horizon52",
+    "ardy-unitree-g1": "ARDY-G1-RP-25FPS-Horizon52",
+    "ardy-rp-20fps": "ARDY-Core-RP-20FPS-Horizon40",
 }
 
+# EXPERIMENTAL_MAX_DETAIL (2026-10-20): retain the trained Core 20 FPS / Horizon 40 default.
+# Upstream CLI CFG weights [2.0, 2.0] are not exposed by this adapter; do not imply changing YAML changes CFG.
+# Ask the user once and get explicit confirmation before changing checkpoint/quality defaults.
 DEFAULT_CHECKPOINT = "ARDY-Core-RP-20FPS-Horizon40"
 
 
@@ -78,6 +87,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
         self.ardy_root = Path(ardy_root)
         self.default_checkpoint = default_checkpoint
         self.current_checkpoint = default_checkpoint
+        self.device = "cpu"
         self.ardy_model = None
         self.runtime_dependency_warnings: List[str] = []
         self.path_generator = OutputPathGenerator(base_output_dir="outputs")
@@ -172,11 +182,12 @@ class ArdyMotionGenerationAdapter(BaseModel):
         try:
             self._check_runtime_dependency_contract()
             self._ensure_ardy_in_path()
-            logger.info(f"Loading ARDY model from {self.ardy_root} (checkpoint: {self.current_checkpoint})")
-
-            if not torch.cuda.is_available():
-                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
-            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            # ARDY has a dedicated worker; force LLM2Vec to CPU before it constructs the LLM.
+            os.environ["TEXT_ENCODER_DEVICE"] = "cpu"
+            logger.info(
+                "Loading ARDY model from %s (checkpoint: %s, device=%s)",
+                self.ardy_root, self.current_checkpoint, self.device,
+            )
 
             from ardy.model import load_model as ardy_load
             from ardy.model.registry import resolve_model_name
@@ -188,9 +199,15 @@ class ArdyMotionGenerationAdapter(BaseModel):
             )
 
             resolved = resolve_model_name(self.current_checkpoint, checkpoints_dir=checkpoints_dir)
-            self.ardy_model = ardy_load(resolved, device=device, checkpoints_dir=checkpoints_dir)
+            self.ardy_model = ardy_load(
+                resolved,
+                device=self.device,
+                checkpoints_dir=checkpoints_dir,
+                text_encoder_mode="local",
+                text_encoder_fp32=True,
+            )
 
-            logger.info(f"✓ ARDY model loaded successfully on {device}: {resolved}")
+            logger.info("✓ ARDY model loaded successfully on %s: %s", self.device, resolved)
             return self.ardy_model
 
         except Exception as e:
@@ -204,7 +221,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
         """Unload ARDY model and release VRAM."""
         try:
             self.ardy_model = None
-            if torch.cuda.is_available():
+            if self.device != "cpu" and torch.cuda.is_available():
                 torch.cuda.empty_cache()
             logger.info("ARDY model unloaded successfully")
         except Exception as e:
@@ -232,7 +249,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             if not prompt:
                 raise ValueError("prompt is required for motion generation")
 
-            duration = float(inputs.get("duration", 5.0))
+            duration = float(inputs.get("duration", 45.0))
             if duration <= 0:
                 raise ValueError("duration must be greater than 0")
 
@@ -242,9 +259,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             post_process = bool(inputs.get("post_process", True))
             target_bones = inputs.get("target_bones")
 
-            if not torch.cuda.is_available():
-                raise RuntimeError("ARDY requires CUDA; CPU inference is not supported.")
-            device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
+            device = self.device
 
             # Determine skeleton type from checkpoint
             is_g1 = "g1" in resolved_cp.lower()
@@ -271,8 +286,10 @@ class ArdyMotionGenerationAdapter(BaseModel):
             num_frames = int(duration * fps)
 
             if seed is not None:
-                from ardy.tools import seed_everything
-                seed_everything(int(seed))
+                # Seed CPU generators directly without initializing CUDA.
+                random.seed(int(seed))
+                np.random.seed(int(seed))
+                torch.random.default_generator.manual_seed(int(seed))
 
             # Run ARDY inference
             from ardy.motion_rep.tools import length_to_mask
@@ -351,6 +368,8 @@ class ArdyMotionGenerationAdapter(BaseModel):
                 "generation_info": {
                     "model": self.model_id,
                     "checkpoint": resolved_cp,
+                    "device": self.device,
+                    "cpu_only": True,
                     "fps": fps,
                     "num_frames": motion_doc["num_frames"],
                     "skeleton_id": motion_doc["skeleton_id"],
@@ -359,7 +378,7 @@ class ArdyMotionGenerationAdapter(BaseModel):
             }
 
             self.status = ModelStatus.LOADED
-            logger.info(f"✓ ARDY motion generation completed: {rel_motion_url}")
+            logger.info("✓ ARDY motion generation completed: %s", json_path)
             return response
 
         except Exception as e:
@@ -380,10 +399,10 @@ class ArdyMotionGenerationAdapter(BaseModel):
                 },
                 "duration": {
                     "type": "number",
-                    "description": "Duration of the motion in seconds",
-                    "default": 5.0,
+                    "description": "EXPERIMENTAL: 45-second motion exceeds the former 30-second UI limit.",
+                    "default": 45.0,
                     "minimum": 0.5,
-                    "maximum": 30.0,
+                    "maximum": 60.0,
                     "required": False,
                 },
                 "checkpoint": {

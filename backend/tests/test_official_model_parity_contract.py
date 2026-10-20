@@ -53,7 +53,7 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         schema = adapter.get_parameter_schema()["parameters"]
         self.assertEqual(schema["octree_resolution"]["default"], 512)
         self.assertTrue(schema["octree_resolution"]["readOnly"])
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
+        self.assertEqual(schema["num_inference_steps"]["default"], 100)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
         self.assertEqual(schema["seed"]["default"], 1234)
         legacy_source = (backend_root / "adapters/hunyuan3d_adapter_v21.py").read_text(encoding="utf-8")
@@ -71,8 +71,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         self.assertEqual(schema["octree_resolution"]["default"], 512)
         self.assertEqual(schema["octree_resolution"]["maximum"], 512)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
-        self.assertEqual(schema["num_inference_steps"]["default"], 50)
-        self.assertEqual(schema["guidance_scale"]["default"], 7.5)
+        self.assertEqual(schema["num_inference_steps"]["default"], 100)
+        self.assertEqual(schema["guidance_scale"]["default"], 5.0)
 
     def test_hunyuan3d_dit_mini_turbo_contract(self):
         from adapters.hunyuan3d_dit_v2_mini_turbo import Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter
@@ -80,9 +80,9 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Turbo keeps its trained 5-step schedule while using max supported extraction resolution.
-        self.assertEqual(schema["octree_resolution"]["default"], 512)
-        self.assertEqual(schema["octree_resolution"]["maximum"], 512)
+        # Turbo keeps its trained 5-step schedule and checkpoint-trained extraction ceiling (380).
+        self.assertEqual(schema["octree_resolution"]["default"], 380)
+        self.assertEqual(schema["octree_resolution"]["maximum"], 380)
         self.assertFalse(schema["octree_resolution"].get("readOnly", False))
         self.assertEqual(schema["num_inference_steps"]["default"], 5)
         self.assertEqual(schema["guidance_scale"]["default"], 5.0)
@@ -106,8 +106,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TrellisTextToTexturedMeshAdapter(vram_requirement=11776)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["ss_sampling_steps"]["default"], 25)
-        self.assertEqual(schema["slat_sampling_steps"]["default"], 25)
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 50)
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 50)
 
     def test_trellis2_adapter_contract(self):
         from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
@@ -178,10 +178,11 @@ class TestGenerationProductionContract(unittest.TestCase):
         build_params_content = build_params_path.read_text(encoding="utf-8")
         
         # Source sampling uses each model's max-fidelity profile; production budgets remain downstream.
-        self.assertIn("return 5", build_params_content)  # Hunyuan Mini Turbo's trained schedule
+        self.assertIn("return 20", build_params_content)  # current experimental Mini Turbo request
         self.assertIn("return 50", build_params_content)  # max-fidelity profiles
-        self.assertIn("modelId.startsWith('hunyuan3d_shape_v21')", build_params_content)
-        self.assertIn("modelParameters.octree_resolution = 512", build_params_content)
+        self.assertIn("normId.startsWith('hunyuan3d_shape_v21')", build_params_content)
+        self.assertIn("modelParameters.octree_resolution = 1300", build_params_content)
+        self.assertIn("modelParameters.num_inference_steps = 150", build_params_content)
         self.assertIn("modelParameters.use_flash_decoder = false", build_params_content)
         self.assertIn("ss_sampling_steps", build_params_content)
         self.assertIn("numericTextureResolution", build_params_content)
@@ -356,14 +357,14 @@ class TestNativeRawQualityContracts(unittest.TestCase):
 
         cases = {
             "hunyuan3d_shape_v21_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "mc_algo": "mc",
+                "octree_resolution": 512, "num_inference_steps": 100, "guidance_scale": 5.0, "mc_algo": "mc",
             },
             "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
-                "octree_resolution": 512, "num_inference_steps": 5, "enable_flashvdm": False, "mc_algo": "mc",
+                "octree_resolution": 380, "num_inference_steps": 5, "enable_flashvdm": False, "mc_algo": "mc",
             },
             "triposg_image_to_raw_mesh": {
                 "num_inference_steps": 50, "guidance_scale": 7.0,
-                "flash_octree_depth": 9, "dense_octree_depth": 8,
+                "flash_octree_depth": 9, "dense_octree_depth": 9,
                 "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1,
             },
             "unique3d_image_to_raw_mesh": {
@@ -374,7 +375,25 @@ class TestNativeRawQualityContracts(unittest.TestCase):
             },
             "trellis2_image_to_raw_mesh": {
                 "pipeline_type": "1536_cascade", "max_num_tokens": 262144,
+                "sparse_structure_sampler_params": {
+                    "steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0,
+                },
+                "shape_slat_sampler_params": {
+                    "steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0,
+                },
+                "tex_slat_sampler_params": {
+                    "steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0,
+                },
                 "decimation_target": -1, "remesh": False,
+            },
+            "pixal3d_image_to_raw_mesh": {
+                "source_quality": "max", "resolution": 1536, "pipeline_type": "1536_cascade",
+                "sampler_overrides": {
+                    "sparse_structure": {"steps": 50, "guidance_strength": 8.0, "guidance_rescale": 0.7, "rescale_t": 6.0},
+                    "shape": {"steps": 50, "guidance_strength": 8.5, "guidance_rescale": 0.5, "rescale_t": 6.0},
+                    "texture": {"steps": 50, "guidance_strength": 2.5, "guidance_rescale": 0.2, "rescale_t": 6.0},
+                },
+                "low_vram": False,
             },
         }
         downstream_controls = {

@@ -81,7 +81,7 @@ ForMash 3D's FastAPI backend and Next.js frontend are designed by default for lo
 - `AUTO_UNLOAD_AFTER_JOB=true` frees VRAM between jobs
 - GPU mutual exclusion prevents concurrent inference
 - `MAX_VRAM_MB=0` enables auto-detection
-- Hunyuan3D-Paint-v2-1 requires ~21GB VRAM
+- Hunyuan3D-Paint-v2-1 uses a 12GB configured scheduler reservation, not a guaranteed peak-memory minimum; chunked raster intermediates reduce temporary allocations, but requests still require live VRAM admission and target-GPU validation
 
 ### 7. Data Privacy
 - All processing runs locally; no data is sent to cloud services
@@ -154,7 +154,7 @@ Resource planning must fail closed for unsupported multi-GPU strategies. Do not 
 
 ## Resource Admission Integrity — 2026-10-08
 
-Aggregate VRAM is considered only for model adapters that explicitly declare a supported multi-GPU strategy. Unsupported pipelines fail closed instead of receiving a fabricated device split. CPU worker/thread policies are bounded by the host logical-core count, with optional FORMSH3D_CPU_WORKERS and FORMSH3D_CPU_THREADS overrides.
+Aggregate VRAM is considered only for model adapters that explicitly declare a supported multi-GPU strategy and actually apply its placement plan. Accelerate maps must use at least two selected GPUs; incomplete component placement raises instead of silently proceeding. Live physical free VRAM limits the scheduler ledger. Paint3D child-stage subprocesses remain single-GPU and are not declared multi-GPU capable. CPU worker/thread policies are bounded by the host logical-core count, with optional FORMSH3D_CPU_WORKERS and FORMSH3D_CPU_THREADS overrides.
 
 ## Image Foreground Approval — 2026-10-16
 

@@ -26,6 +26,14 @@ def test_trellis2_fails_when_textured_exporter_is_unavailable():
         adapter._process_request({})
 
 
+def test_hunyuan_paint_defaults_to_experimental_max_view_resolution():
+    adapter = Hunyuan3DPaintV21ImageMeshPaintingAdapter(vram_requirement=12000)
+    schema = adapter.get_parameter_schema()["parameters"]
+    assert schema["max_num_view"]["default"] == 9
+    assert schema["max_num_view"]["maximum"] == 12
+    assert schema["resolution"]["default"] == 768
+
+
 def test_hunyuan_reference_resize_preserves_aspect_ratio(size, content_box):
     image = Image.new("RGB", size, (255, 0, 0))
 
@@ -145,7 +153,7 @@ def test_triposg_preserves_full_inference_steps_and_octree_depth():
     assert schema["num_inference_steps"]["default"] == 50
     assert schema["faces"]["default"] == -1
     assert schema["use_flash_decoder"]["default"] is False
-    assert schema["dense_octree_depth"]["default"] == 8
+    assert schema["dense_octree_depth"]["default"] == 9
     assert schema["hierarchical_octree_depth"]["default"] == 10
 
 
@@ -198,7 +206,8 @@ def test_hunyuan3d_shape_v21_defaults_to_max_fidelity_when_source_quality_max():
 def test_hunyuan3d_dit_v2_mini_turbo_defaults_to_max_fidelity_when_source_quality_max():
     adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
     schema = adapter.get_parameter_schema()["parameters"]
-    assert schema["octree_resolution"]["default"] == 512
+    assert schema["octree_resolution"]["default"] == 380
+    assert schema["octree_resolution"]["maximum"] == 380
     assert schema["enable_flashvdm"]["default"] is False
 
 
@@ -216,10 +225,40 @@ def test_model_specific_max_quality_profiles_override_ui_budgets():
     assert trellis2["pipeline_type"] == "1536_cascade"
     assert trellis2["max_num_tokens"] == 262144
     assert trellis2["sparse_structure_sampler_params"]["steps"] == 50
+    assert trellis2["sparse_structure_sampler_params"]["guidance_strength"] == 8.0
+    assert trellis2["sparse_structure_sampler_params"]["guidance_rescale"] == 0.7
+    assert trellis2["sparse_structure_sampler_params"]["rescale_t"] == 6.0
     assert trellis2["shape_slat_sampler_params"]["steps"] == 50
+    assert trellis2["shape_slat_sampler_params"]["guidance_strength"] == 8.5
+    assert trellis2["shape_slat_sampler_params"]["guidance_rescale"] == 0.5
+    assert trellis2["shape_slat_sampler_params"]["rescale_t"] == 6.0
+    assert trellis2["tex_slat_sampler_params"]["steps"] == 50
+    assert trellis2["tex_slat_sampler_params"]["guidance_strength"] == 2.5
+    assert trellis2["tex_slat_sampler_params"]["guidance_rescale"] == 0.2
+    assert trellis2["tex_slat_sampler_params"]["rescale_t"] == 6.0
     assert trellis2["decimation_target"] == -1
     assert trellis2["remesh"] is False
     assert "target_polycount" not in trellis2
+
+
+
+def test_pixal3d_max_detail_profile_overrides_resolution_and_sampler_defaults():
+    pixal = _build_model_inference_inputs(
+        {
+            "resolution": 1024,
+            "pipeline_type": "1024_cascade",
+            "sampler_overrides": {},
+            "low_vram": True,
+        },
+        model_id="pixal3d_image_to_raw_mesh",
+    )
+    assert pixal["resolution"] == 1536
+    assert pixal["pipeline_type"] == "1536_cascade"
+    assert pixal["low_vram"] is False
+    assert pixal["sampler_overrides"]["sparse_structure"]["steps"] == 50
+    assert pixal["sampler_overrides"]["sparse_structure"]["guidance_strength"] == 8.0
+    assert pixal["sampler_overrides"]["shape"]["guidance_strength"] == 8.5
+    assert pixal["sampler_overrides"]["texture"]["guidance_strength"] == 2.5
 
 
 def test_trellis2_raw_mesh_path_skips_render_only_simplification(tmp_path):

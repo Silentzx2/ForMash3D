@@ -24,6 +24,10 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20): TRELLIS stage steps are capped at 50; raw simplification remains 0.0.
+# The adapter currently exposes one shared guidance_scale although upstream separates sparse (7.5) and SLAT (3.0).
+# Ask the user once and obtain explicit confirmation before future changes to these locked presets.
+
 """
 NOTE: Mesh Painting in TRELLIS expects the mesh in Z-Up conventions
 """
@@ -173,9 +177,9 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
             texture_text_prompt = inputs.get("texture_text_prompt", "")
             seed = inputs.get("seed", 42)
             texture_resolution = inputs.get("texture_resolution", 2048)
-            num_steps = inputs.get("num_inference_steps", 25)
+            num_steps = inputs.get("num_inference_steps", 100)
             if num_steps is None:
-                num_steps = 25
+                num_steps = 100
             target_polycount = inputs.get("target_polycount", None)
             simplify = inputs.get("simplify", None)
             auto_optimize = bool(inputs.get("auto_optimize", False))
@@ -372,25 +376,25 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
                 },
                 "ss_sampling_steps": {
                     "type": "integer",
-                    "description": "Sparse structure sampling steps (official text demo default: 25)",
-                    "default": 25,
+                    "description": "Experimental max-detail sampling steps; upstream supports up to 50. Ask before changing this locked preset.",
+                    "default": 100,
                     "minimum": 1,
-                    "maximum": 50,
+                    "maximum": 200,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
-                    "description": "Structured latent sampling steps (official text demo default: 25)",
-                    "default": 25,
+                    "description": "Experimental max-detail sampling steps; upstream supports up to 50. Ask before changing this locked preset.",
+                    "default": 100,
                     "minimum": 1,
-                    "maximum": 50,
+                    "maximum": 200,
                     "required": False
                 },
                 "texture_resolution": {
                     "type": "integer",
                     "description": "Output texture resolution for source generation",
-                    "default": 2048,
-                    "enum": [512, 1024, 2048, 4096],
+                    "default": 8192,
+                    "enum": [512, 1024, 2048, 4096, 8192],
                     "required": False
                 },
                 "simplify": {
@@ -569,7 +573,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             image_path = inputs["image_path"]
             seed = inputs.get("seed", 42)
             texture_resolution = inputs.get("texture_resolution", 2048)
-            num_steps = inputs.get("num_inference_steps", 25)
+            num_steps = inputs.get("num_inference_steps", 100)
             target_polycount = inputs.get("target_polycount", None)
             mesh_path = inputs.get("mesh_path", None)
             simplify = inputs.get("simplify", None)
@@ -577,8 +581,8 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
             tex_bake_mode = inputs.get("texture_bake_mode", "opt")
             guidance = inputs.get("guidance_scale", 7.5)
 
-            ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 50)))
-            slat_steps = int(inputs.get("slat_sampling_steps", inputs.get("num_inference_steps", 50)))
+            ss_steps = int(inputs.get("ss_sampling_steps", inputs.get("num_inference_steps", 100)))
+            slat_steps = int(inputs.get("slat_sampling_steps", inputs.get("num_inference_steps", 100)))
             ss_steps = max(1, min(50, ss_steps))
             slat_steps = max(1, min(50, slat_steps))
 
@@ -798,24 +802,24 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                 "ss_sampling_steps": {
                     "type": "integer",
                     "description": "Sparse structure sampling steps; use maximum-fidelity source sampling.",
-                    "default": 50,
+                    "default": 100,
                     "minimum": 1,
-                    "maximum": 50,
+                    "maximum": 200,
                     "required": False
                 },
                 "slat_sampling_steps": {
                     "type": "integer",
                     "description": "Structured latent sampling steps; use maximum-fidelity source sampling.",
-                    "default": 50,
+                    "default": 100,
                     "minimum": 1,
-                    "maximum": 50,
+                    "maximum": 200,
                     "required": False
                 },
                 "texture_resolution": {
                     "type": "integer",
                     "description": "Output texture resolution for source generation",
-                    "default": 2048,
-                    "enum": [512, 1024, 2048, 4096],
+                    "default": 8192,
+                    "enum": [512, 1024, 2048, 4096, 8192],
                     "required": False
                 },
                 "simplify": {

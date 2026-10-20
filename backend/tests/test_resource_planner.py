@@ -1,7 +1,23 @@
+import importlib.util
 import os
+import sys
 import unittest
+from pathlib import Path
 
-from core.scheduler.resource_planner import ResourcePlanner, configure_cpu_runtime, cpu_threads_for_workers
+
+# Load the module by file path so CPU-only contract tests don't import the
+# heavyweight core.scheduler package (which also imports SQLAlchemy/database code).
+_PLANNER_PATH = Path(__file__).resolve().parents[1] / "core" / "scheduler" / "resource_planner.py"
+_PLANNER_NAME = "_formash3d_resource_planner_test"
+_PLANNER_SPEC = importlib.util.spec_from_file_location(_PLANNER_NAME, _PLANNER_PATH)
+if _PLANNER_SPEC is None or _PLANNER_SPEC.loader is None:
+    raise ImportError(f"Cannot load resource planner from {_PLANNER_PATH}")
+_PLANNER_MODULE = importlib.util.module_from_spec(_PLANNER_SPEC)
+sys.modules[_PLANNER_NAME] = _PLANNER_MODULE
+_PLANNER_SPEC.loader.exec_module(_PLANNER_MODULE)
+ResourcePlanner = _PLANNER_MODULE.ResourcePlanner
+configure_cpu_runtime = _PLANNER_MODULE.configure_cpu_runtime
+cpu_threads_for_workers = _PLANNER_MODULE.cpu_threads_for_workers
 
 
 class FakeMonitor:
@@ -16,6 +32,25 @@ class FakeMonitor:
 
 
 class ResourcePlannerTests(unittest.TestCase):
+    def test_cpu_only_model_is_planned_without_gpu_inventory(self):
+        class NoGPUAccess:
+            def get_gpu_status(self):
+                raise AssertionError("CPU-only model must not inspect GPUs")
+
+            def get_gpu_available_vram(self, gpu_id):
+                raise AssertionError("CPU-only model must not inspect GPU VRAM")
+
+        planner = ResourcePlanner(NoGPUAccess(), safety_margin_mb=512)
+        config = {"vram_requirement": 0, "capabilities": {"cpu_only": True}}
+        self.assertFalse(planner.model_is_impossible(config))
+        plan = planner.plan(config)
+        self.assertIsNotNone(plan)
+        self.assertEqual(plan.kind, "cpu")
+        self.assertEqual(plan.gpu_ids, ())
+        self.assertIsNone(plan.primary_gpu)
+        self.assertEqual(plan.reservation_mb, {})
+        self.assertEqual(plan.strategy, "cpu_only")
+
     def test_single_gpu(self):
         monitor = FakeMonitor([
             {"id": 0, "name": "A", "memory_total": 14336, "memory_free": 12000, "available_mb": 12000},
@@ -85,26 +120,68 @@ class ResourcePlannerTests(unittest.TestCase):
         self.assertEqual(plan.strategy, "single_gpu_low_vram")
         self.assertEqual(plan.reservation_mb, {0: 10240})
 
-    def test_fastmesh_multi_gpu(self):
+    def test_strategy_without_explicit_multi_gpu_capability_is_rejected(self):
         monitor = FakeMonitor([
-            {"id": 0, "name": "GPU0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
-            {"id": 1, "name": "GPU1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 0, "name": "T4-0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 1, "name": "T4-1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
         ])
         planner = ResourcePlanner(monitor, safety_margin_mb=512)
         model_cfg = {
-            "vram_requirement": 24500,
+            "vram_requirement": 20000,
+            "capabilities": {"multi_gpu_strategy": "accelerate_component_dispatch"},
+        }
+        self.assertTrue(planner.model_is_impossible(model_cfg))
+        self.assertIsNone(planner.plan(model_cfg))
+
+    def test_fastmesh_accelerate_map_can_be_scheduled_across_two_gpus(self):
+        monitor = FakeMonitor([
+            {"id": 0, "name": "T4-0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 1, "name": "T4-1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+        ])
+        planner = ResourcePlanner(monitor, safety_margin_mb=512)
+        model_cfg = {
+            "vram_requirement": 16384,
             "capabilities": {
                 "retopology": True,
-                "target_variant": "V4K",
                 "multi_gpu": True,
-                "multi_gpu_strategy": "accelerate_component_dispatch",
+                "multi_gpu_strategy": "accelerate_auto_device_map",
             },
         }
         self.assertFalse(planner.model_is_impossible(model_cfg))
         plan = planner.plan(model_cfg)
         self.assertIsNotNone(plan)
         self.assertTrue(plan.is_multi_gpu)
-        self.assertEqual(sum(plan.reservation_mb.values()), 24500)
+        self.assertEqual(plan.gpu_ids, (0, 1))
+        self.assertEqual(plan.max_memory_mb["0"], 15000)
+        self.assertEqual(plan.max_memory_mb["1"], 15000)
+
+    def test_fastmesh_fails_closed_when_no_single_gpu_meets_its_budget(self):
+        monitor = FakeMonitor([
+            {"id": 0, "name": "T4-0", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+            {"id": 1, "name": "T4-1", "memory_total": 15360, "memory_free": 15000, "available_mb": 15000},
+        ])
+        planner = ResourcePlanner(monitor, safety_margin_mb=512)
+        # Without an explicit supported placement capability, aggregate VRAM alone
+        # must not make either variant appear runnable on 2xT4.
+        for required_mb, variant in ((16384, "V1K"), (24500, "V4K")):
+            model_cfg = {
+                "vram_requirement": required_mb,
+                "capabilities": {"retopology": True, "target_variant": variant},
+            }
+            self.assertTrue(planner.model_is_impossible(model_cfg))
+            self.assertIsNone(planner.plan(model_cfg))
+
+        # A single GPU with sufficient capacity remains a valid placement.
+        large_monitor = FakeMonitor([
+            {"id": 0, "name": "Large GPU", "memory_total": 49152, "memory_free": 40000, "available_mb": 39000},
+        ])
+        large_plan = ResourcePlanner(large_monitor, safety_margin_mb=512).plan({
+            "vram_requirement": 24500,
+            "capabilities": {"retopology": True, "target_variant": "V4K"},
+        })
+        self.assertIsNotNone(large_plan)
+        self.assertFalse(large_plan.is_multi_gpu)
+        self.assertEqual(large_plan.kind, "single_gpu")
 
     def test_impossible_model_exceeds_all_capacity(self):
         monitor = FakeMonitor([

@@ -186,10 +186,24 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             pipeline_type = str(inputs.get("pipeline_type") or "1536_cascade")
             max_num_tokens = int(inputs.get("max_num_tokens", 262144))
             steps = inputs.get("steps") or inputs.get("num_inference_steps")
-            default_sampler_params = {"steps": int(steps)} if steps else {"steps": 50}
-            sparse_structure_sampler_params = inputs.get("sparse_structure_sampler_params") or default_sampler_params
-            shape_slat_sampler_params = inputs.get("shape_slat_sampler_params") or default_sampler_params
-            tex_slat_sampler_params = inputs.get("tex_slat_sampler_params") or default_sampler_params
+            default_steps = int(steps) if steps else 50
+            # EXPERIMENTAL_MAX_DETAIL defaults from the community TRELLIS.2 issue #92.
+            # This is a review candidate, not a universally proven optimum. Ask once before changing these defaults.
+            sparse_defaults = {
+                "steps": default_steps, "guidance_strength": 10.0,
+                "guidance_rescale": 0.7, "rescale_t": 6.0,
+            }
+            shape_defaults = {
+                "steps": default_steps, "guidance_strength": 10.0,
+                "guidance_rescale": 0.5, "rescale_t": 6.0,
+            }
+            texture_defaults = {
+                "steps": default_steps, "guidance_strength": 3.5,
+                "guidance_rescale": 0.2, "rescale_t": 6.0,
+            }
+            sparse_structure_sampler_params = inputs.get("sparse_structure_sampler_params") or sparse_defaults
+            shape_slat_sampler_params = inputs.get("shape_slat_sampler_params") or shape_defaults
+            tex_slat_sampler_params = inputs.get("tex_slat_sampler_params") or texture_defaults
             
             logger.info(
                 "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s, steps=%s)",
@@ -326,9 +340,9 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 "max_num_tokens": {
                     "type": "integer",
                     "description": "Max cascade token budget; a higher budget prevents silent resolution reduction.",
-                    "default": 262144,
+                    "default": 524288,
                     "minimum": 49152,
-                    "maximum": 262144,
+                    "maximum": 1048576,
                     "required": False
                 },
                 "decimation_target": {
@@ -342,8 +356,8 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 "texture_size": {
                     "type": "integer",
                     "description": "Output texture resolution (width and height)",
-                    "default": 4096,
-                    "enum": [1024, 2048, 4096, 8192],
+                    "default": 8192,
+                    "enum": [1024, 2048, 4096, 8192, 16384],
                     "required": False
                 },
                 "remesh": {

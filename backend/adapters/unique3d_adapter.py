@@ -30,6 +30,9 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 logger = logging.getLogger(__name__)
 
 
+# EXPERIMENTAL_MAX_DETAIL (2026-10-20): preserve upstream-supported seed=1145, input processing,
+# refinement enabled, expansion_weight=0.1 and init_type="std". No configurable inference-step/CFG
+# knobs are exposed by this adapter. Ask the user once before changing these locked settings.
 class Unique3DImageToRawMeshAdapter(ImageToMeshModel):
     """
     Adapter for Unique3D image-to-raw-mesh generation.
@@ -243,47 +246,33 @@ trainers:
             return tf.name
 
     def _resolve_normal_config(self) -> str:
+        """Resolve image2normal against its compatible 4-channel image-variation base.
+
+        The trained img2mvimg UNet has 8 input channels; image2normal checkpoint
+        weights have 4-channel conv_in tensors and must not use that model as a base.
         """
-        Dynamically resolve normal pipeline config.
-        If local checkpoint img2mvimg exists, uses local path as the base.
-        If loading from HuggingFace, sanitizes tokens and ensures valid repo name.
-        """
-        local_img2mvimg = self._find_local_img2mvimg()
-        
+        base_model = "lambdalabs/sd-image-variations-diffusers"
         normal_cfg_path = Path(self.normal_config)
         cfg_content = ""
-        if normal_cfg_path.exists():
+        if normal_cfg_path.is_file():
             try:
                 cfg_content = normal_cfg_path.read_text(encoding="utf-8")
             except Exception as e:
                 logger.warning(f"Could not read normal config {normal_cfg_path}: {e}")
 
-        if local_img2mvimg is not None:
-            relative_valid = (Path("ckpt") / "img2mvimg").exists() or Path("./ckpt/img2mvimg").exists()
-            target_path = "./ckpt/img2mvimg" if relative_valid else str(local_img2mvimg.resolve())
+        if (
+            f'pretrained_model_name_or_path: "{base_model}"' in cfg_content
+            and 'self_attn_ref_other_model_name: "${pretrained_model_name_or_path}"' in cfg_content
+            and 'init_unet_path: "${pretrained_model_name_or_path}"' in cfg_content
+        ):
+            return str(normal_cfg_path)
 
-            # Check if normal_config already has target_path and ${pretrained_model_name_or_path} for ref
-            if (
-                f'pretrained_model_name_or_path: "{target_path}"' in cfg_content
-                or f"pretrained_model_name_or_path: '{target_path}'" in cfg_content
-                or f"pretrained_model_name_or_path: {target_path}" in cfg_content
-            ) and (
-                'self_attn_ref_other_model_name: "${pretrained_model_name_or_path}"' in cfg_content
-                or f'self_attn_ref_other_model_name: "{target_path}"' in cfg_content
-            ):
-                return str(normal_cfg_path)
-
-            logger.info(f"Dynamically resolving normal_config to use local base weights: {target_path}")
-            return self._create_normal_config_override(base_model=target_path)
-
-        # Local img2mvimg does NOT exist: will load from HuggingFace
+        logger.info(
+            "Resolving image2normal with the compatible 4-channel image-variation base; "
+            "the 8-channel img2mvimg base is incompatible."
+        )
         self._sanitize_hf_tokens()
-        
-        if "./ckpt/img2mvimg" in cfg_content and local_img2mvimg is None:
-            logger.info("Local img2mvimg base not found. Falling back to HuggingFace base model.")
-            return self._create_normal_config_override(base_model="lambdalabs/sd-image-variations-diffusers")
-
-        return str(normal_cfg_path)
+        return self._create_normal_config_override(base_model=base_model)
 
     def _ensure_ckpt_symlinks(self):
         """Ensure ckpt symlinks exist so Unique3D relative './ckpt/...' paths resolve to pretrained weights."""
@@ -427,36 +416,23 @@ trainers:
             except Exception as e:
                 logger.warning(
                     f"Failed to load normal pipeline with config '{resolved_normal_config}': {e}. "
-                    "Attempting fallback to local img2mvimg base pipeline or alternate HuggingFace repo..."
+                    "Retrying with the alternate compatible 4-channel image-variation base..."
                 )
                 loaded = False
-                local_img2mvimg = self._find_local_img2mvimg()
-                if local_img2mvimg is not None:
+                self._sanitize_hf_tokens()
+                for hf_repo in ["lambda/sd-image-variations-diffusers"]:
                     try:
-                        rel_valid = (Path("ckpt") / "img2mvimg").exists() or Path("./ckpt/img2mvimg").exists()
-                        target_path = "./ckpt/img2mvimg" if rel_valid else str(local_img2mvimg.resolve())
-                        fallback_cfg = self._create_normal_config_override(base_model=target_path)
-                        logger.info(f"Retrying load_pipeline for normal prediction using local base: {target_path}")
+                        fallback_cfg = self._create_normal_config_override(base_model=hf_repo)
+                        logger.info(
+                            f"Retrying load_pipeline for normal prediction using compatible base: {hf_repo}"
+                        )
                         self.normal_trainer, self.normal_pipeline = load_pipeline(
                             fallback_cfg, self.normal_checkpoint
                         )
                         loaded = True
-                    except Exception as local_e:
-                        logger.warning(f"Local img2mvimg base fallback failed: {local_e}")
-
-                if not loaded:
-                    self._sanitize_hf_tokens()
-                    for hf_repo in ["lambdalabs/sd-image-variations-diffusers", "lambda/sd-image-variations-diffusers"]:
-                        try:
-                            fallback_cfg = self._create_normal_config_override(base_model=hf_repo)
-                            logger.info(f"Retrying load_pipeline for normal prediction using HF repo: {hf_repo}")
-                            self.normal_trainer, self.normal_pipeline = load_pipeline(
-                                fallback_cfg, self.normal_checkpoint
-                            )
-                            loaded = True
-                            break
-                        except Exception as hf_e:
-                            logger.warning(f"Fallback to '{hf_repo}' failed: {hf_e}")
+                        break
+                    except Exception as hf_e:
+                        logger.warning(f"Fallback to '{hf_repo}' failed: {hf_e}")
 
                 if not loaded:
                     raise
@@ -712,7 +688,7 @@ trainers:
         front_pil: Image.Image,
         do_refine: bool = True,
         predict_normal: bool = True,
-        expansion_weight: float = 0.1,
+        expansion_weight: float = 1.5,
         init_type: str = "std"
     ):
         """Run geometry reconstruction and refinement."""
@@ -979,9 +955,9 @@ trainers:
                 "expansion_weight": {
                     "type": "number",
                     "description": "Expansion weight for mesh generation (-1.0 to 1.0)",
-                    "default": 0.1,
-                    "minimum": -1.0,
-                    "maximum": 1.0,
+                    "default": 1.5,
+                    "minimum": -2.0,
+                    "maximum": 2.0,
                     "required": False
                 },
                 "init_type": {

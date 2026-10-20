@@ -556,6 +556,8 @@ def fix_torch_cluster():
     import types
     import random
     import math
+    from typing import Optional
+    import torch
 
     def fps_fallback(
         src: torch.Tensor,

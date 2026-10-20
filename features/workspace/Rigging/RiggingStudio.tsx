@@ -41,16 +41,8 @@ export const RiggingStudio: React.FC = () => {
     resumeRigPolling,
     riggingMethod,
     setRiggingMethod,
-    targetSkeleton,
-    setTargetSkeleton,
-    createIkControls,
-    setCreateIkControls,
-    optimizeForAnimation,
-    setOptimizeForAnimation,
     symmetry,
     setSymmetry,
-    reuseExistingWeights,
-    setReuseExistingWeights,
     advancedOptionsOpen,
     setAdvancedOptionsOpen,
     isGenerating,
@@ -201,7 +193,7 @@ export const RiggingStudio: React.FC = () => {
       return;
     }
     toast.info('Starting UniRig AI Auto-Rigging...', {
-      description: `Targeting ${targetSkeleton === 'quadruped' ? 'Quadruped' : '17-Bone Humanoid'} topology`,
+      description: 'Using UniRig’s native biped skeleton and model-default weighting.',
     });
     const success = await generateRig(undefined, meshFileId);
     if (success) {
@@ -594,49 +586,8 @@ export const RiggingStudio: React.FC = () => {
 
             {advancedOptionsOpen && (
               <div className="space-y-2.5 pt-1">
-                {/* Skeleton Topology */}
-                <div className="space-y-1">
-                  <label className="text-[10px] font-semibold text-zinc-400">Skeleton Topology</label>
-                  <select
-                    value={targetSkeleton}
-                    onChange={(e) => setTargetSkeleton(e.target.value as any)}
-                    className="w-full h-8 px-2.5 bg-[hsl(var(--surface-0))] border border-white/[0.08] rounded-lg text-xs text-white focus:outline-none cursor-pointer"
-                  >
-                    <option value="biped">Biped Humanoid (17 Bones)</option>
-                    <option value="humanoid">Extended Humanoid (Full Spine)</option>
-                    <option value="quadruped">Quadruped (Creature / Beast)</option>
-                  </select>
-                </div>
-
-                {/* Toggles */}
-                <div className="space-y-1.5 pt-1 text-xs">
-                  <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-zinc-300">Generate IK Handles</span>
-                    <input
-                      type="checkbox"
-                      checked={createIkControls}
-                      onChange={(e) => setCreateIkControls(e.target.checked)}
-                      className="rounded border-white/[0.1] bg-[hsl(var(--surface-0))] text-primary focus:ring-0 cursor-pointer"
-                    />
-                  </label>
-                  <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-zinc-300">Optimize Vertex Weights</span>
-                    <input
-                      type="checkbox"
-                      checked={optimizeForAnimation}
-                      onChange={(e) => setOptimizeForAnimation(e.target.checked)}
-                      className="rounded border-white/[0.1] bg-[hsl(var(--surface-0))] text-primary focus:ring-0 cursor-pointer"
-                    />
-                  </label>
-                  <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-zinc-300">Preserve Existing Weights</span>
-                    <input
-                      type="checkbox"
-                      checked={reuseExistingWeights}
-                      onChange={(e) => setReuseExistingWeights(e.target.checked)}
-                      className="rounded border-white/[0.1] bg-[hsl(var(--surface-0))] text-primary focus:ring-0 cursor-pointer"
-                    />
-                  </label>
+                <div className="rounded-lg border border-white/[0.08] bg-[hsl(var(--surface-1))] p-3 text-[10px] text-zinc-400 leading-relaxed">
+                  UniRig uses its native biped topology and model-default weighting. Custom skeleton topology, generated IK handles, and weight-reuse/optimization overrides are not exposed by this adapter and have been removed rather than sent as ignored parameters.
                 </div>
               </div>
             )}

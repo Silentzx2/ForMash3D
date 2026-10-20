@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/examples/jsm/loaders/PLYLoader.js';
@@ -667,6 +668,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const lastSculptedMeshRef = useRef<THREE.Mesh | null>(null);
   const lastNormalsUpdateRef = useRef<number>(0);
   const lastPaintUVRef = useRef<{ x: number; y: number } | null>(null);
+  const maskPaintModeRef = useRef<{ enabled: boolean; erase: boolean }>({ enabled: false, erase: false });
 
   useEffect(() => {
     activeToolRef.current = activeTool;
@@ -791,6 +793,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
   const reflectionFocusBackupRef = useRef<{ position: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const reflectionPeekTweenRef = useRef<number | null>(null);
   const [modelLoadVersion, setModelLoadVersion] = useState(0);
+  const loadedAssetIdRef = useRef<string | null>(null);
   const [loadedAssetId, setLoadedAssetId] = useState<string | null>(null);
   const [meshUploadProgress, setMeshUploadProgress] = useState<{
     isUploading: boolean;
@@ -2137,6 +2140,63 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         if (Array.isArray(mat)) mat = mat[0];
         if (!mat) return;
 
+        // ponytail: a region mask must be independent of the opaque material canvas.
+        const maskMode = maskPaintModeRef.current;
+        if (maskMode.enabled) {
+          let maskCanvas = targetMesh.userData?.maskCanvas as HTMLCanvasElement | undefined;
+          let maskCtx = targetMesh.userData?.maskCtx as CanvasRenderingContext2D | undefined;
+          if (!maskCanvas) {
+            maskCanvas = document.createElement('canvas');
+            maskCanvas.width = 1024;
+            maskCanvas.height = 1024;
+            maskCtx = maskCanvas.getContext('2d') || undefined;
+            targetMesh.userData.maskCanvas = maskCanvas;
+            targetMesh.userData.maskCtx = maskCtx;
+          }
+          if (!maskCtx || !maskCanvas) return;
+          const isFlipped = Boolean(mat.map && mat.map.flipY);
+          const rawU = ((hit.uv.x % 1) + 1) % 1;
+          const rawV = ((hit.uv.y % 1) + 1) % 1;
+          const currX = rawU * maskCanvas.width;
+          const currY = (isFlipped ? (1 - rawV) : rawV) * maskCanvas.height;
+          const pSettings = paintBrushSettingsRef.current;
+          const radius = Math.max(1, pSettings?.size || 24);
+          const opacity = Math.max(0.05, Math.min(1, pSettings?.opacity ?? 1));
+          const hardness = Math.max(0.02, Math.min(0.98, pSettings?.hardness ?? 0.9));
+          const drawMaskDab = (x: number, y: number) => {
+            maskCtx!.save();
+            maskCtx!.globalCompositeOperation = (maskMode.erase || isCtrl) ? 'destination-out' : 'source-over';
+            maskCtx!.globalAlpha = opacity;
+            const gradient = maskCtx!.createRadialGradient(x, y, 0, x, y, radius);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(hardness, 'rgba(255,255,255,1)');
+            gradient.addColorStop(1, 'rgba(255,255,255,0)');
+            maskCtx!.fillStyle = gradient;
+            maskCtx!.beginPath();
+            maskCtx!.arc(x, y, radius, 0, Math.PI * 2);
+            maskCtx!.fill();
+            maskCtx!.restore();
+          };
+          if (lastPaintUVRef.current) {
+            const prev = lastPaintUVRef.current;
+            const distance = Math.hypot(currX - prev.x, currY - prev.y);
+            const step = Math.max(2, radius * 0.25);
+            if (distance > step) {
+              const steps = Math.min(50, Math.ceil(distance / step));
+              for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                drawMaskDab(prev.x + (currX - prev.x) * t, prev.y + (currY - prev.y) * t);
+              }
+            } else {
+              drawMaskDab(currX, currY);
+            }
+          } else {
+            drawMaskDab(currX, currY);
+          }
+          lastPaintUVRef.current = { x: currX, y: currY };
+          return;
+        }
+
         let dynamicCanvas = targetMesh.userData?.paintCanvas as HTMLCanvasElement;
         let ctx = targetMesh.userData?.paintCtx as CanvasRenderingContext2D;
 
@@ -2367,59 +2427,198 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
 
     const onClearPaintCanvas = () => {
       currentMeshGroupRef.current?.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.userData?.paintCtx) {
-          const ctx = child.userData.paintCtx as CanvasRenderingContext2D;
-          const canvas = child.userData.paintCanvas as HTMLCanvasElement;
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          if (child.material && (child.material as any).map) {
-            (child.material as any).map.needsUpdate = true;
-          }
-          idleFrames = 0;
+        if (!(child instanceof THREE.Mesh)) return;
+        const paintCanvas = child.userData?.paintCanvas as HTMLCanvasElement | undefined;
+        const paintCtx = child.userData?.paintCtx as CanvasRenderingContext2D | undefined;
+        if (paintCanvas && paintCtx) {
+          paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+          if (child.material && (child.material as any).map) (child.material as any).map.needsUpdate = true;
         }
+        const maskCanvas = child.userData?.maskCanvas as HTMLCanvasElement | undefined;
+        const maskCtx = child.userData?.maskCtx as CanvasRenderingContext2D | undefined;
+        if (maskCanvas && maskCtx) maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+        idleFrames = 0;
       });
+    };
+
+    const onSetMaskPaintMode = (event: Event) => {
+      const detail = (event as CustomEvent<{ enabled?: boolean; erase?: boolean }>).detail || {};
+      maskPaintModeRef.current = { enabled: Boolean(detail.enabled), erase: Boolean(detail.erase) };
+      lastPaintUVRef.current = null;
+    };
+
+    const onRequestUVLayout = (event: Event) => {
+      const request = (event as CustomEvent<{ assetId?: string | null; channel?: number }>).detail || {};
+      const requestedAssetId = request.assetId ?? null;
+      const channel = Number(request.channel) === 1 ? 1 : 0;
+      const root = currentMeshGroupRef.current;
+      // Ponytail: fail closed while an old mesh is still visible during an asset switch.
+      if (!root || !requestedAssetId || loadedAssetIdRef.current !== requestedAssetId) return;
+
+      let meshCount = 0;
+      let uvMeshCount = 0;
+      let vertexCount = 0;
+      let triangleCount = 0;
+      let uvVertexCount = 0;
+      let outOfBoundsVertices = 0;
+      let invalidUvCount = 0;
+      let sampledTriangleCount = 0;
+      let minU = Infinity;
+      let minV = Infinity;
+      let maxU = -Infinity;
+      let maxV = -Infinity;
+      let remainingFaces = 5000;
+      const edges: Array<[number, number, number, number]> = [];
+
+      root.traverse((child) => {
+        if (!(child instanceof THREE.Mesh) || !child.geometry) return;
+        const geometry = child.geometry;
+        const positions = geometry.getAttribute('position');
+        if (!positions) return;
+        meshCount += 1;
+        vertexCount += positions.count;
+        const index = geometry.getIndex();
+        const triangles = Math.floor((index ? index.count : positions.count) / 3);
+        triangleCount += triangles;
+        const uv = channel === 0
+          ? geometry.getAttribute('uv')
+          : (geometry.getAttribute('uv1') || geometry.getAttribute('uv2'));
+        if (!uv) return;
+        uvMeshCount += 1;
+        uvVertexCount += uv.count;
+
+        for (let i = 0; i < uv.count; i += 1) {
+          const u = uv.getX(i);
+          const v = uv.getY(i);
+          if (!Number.isFinite(u) || !Number.isFinite(v)) {
+            invalidUvCount += 1;
+            continue;
+          }
+          if (u < 0 || u > 1 || v < 0 || v > 1) outOfBoundsVertices += 1;
+          minU = Math.min(minU, u);
+          minV = Math.min(minV, v);
+          maxU = Math.max(maxU, u);
+          maxV = Math.max(maxV, v);
+        }
+
+        if (remainingFaces <= 0 || triangles <= 0) return;
+        const faceBudget = remainingFaces;
+        const stride = Math.max(1, Math.ceil(triangles / faceBudget));
+        let sampled = 0;
+        for (let face = 0; face < triangles && sampled < faceBudget; face += stride) {
+          const baseIndex = face * 3;
+          const ids = [0, 1, 2].map((corner) => index ? index.getX(baseIndex + corner) : baseIndex + corner);
+          if (ids.some((id) => id < 0 || id >= uv.count)) continue;
+          const points = ids.map((id) => [uv.getX(id), uv.getY(id)] as const);
+          if (points.some(([u, v]) => !Number.isFinite(u) || !Number.isFinite(v))) continue;
+          edges.push(
+            [points[0][0], points[0][1], points[1][0], points[1][1]],
+            [points[1][0], points[1][1], points[2][0], points[2][1]],
+            [points[2][0], points[2][1], points[0][0], points[0][1]],
+          );
+          sampled += 1;
+        }
+        remainingFaces -= sampled;
+        sampledTriangleCount += sampled;
+      });
+
+      if (!Number.isFinite(minU) || !Number.isFinite(minV) || !Number.isFinite(maxU) || !Number.isFinite(maxV)) {
+        minU = 0; minV = 0; maxU = 1; maxV = 1;
+      }
+      window.dispatchEvent(new CustomEvent('formash:uv_layout_ready', {
+        detail: {
+          assetId: requestedAssetId,
+          channel,
+          meshCount,
+          uvMeshCount,
+          vertexCount,
+          triangleCount,
+          uvVertexCount,
+          outOfBoundsVertices,
+          invalidUvCount,
+          sampledTriangleCount,
+          minU, minV, maxU, maxV,
+          edges,
+        },
+      }));
     };
 
     const onCaptureUVMask = () => {
       let maskDataUrl: string | null = null;
       currentMeshGroupRef.current?.traverse((child) => {
-        if (child instanceof THREE.Mesh && child.userData?.paintCanvas && !maskDataUrl) {
-          const srcCanvas = child.userData.paintCanvas as HTMLCanvasElement;
+        if (!(child instanceof THREE.Mesh) || maskDataUrl) return;
+        const srcCanvas = child.userData?.maskCanvas as HTMLCanvasElement | undefined;
+        const srcCtx = child.userData?.maskCtx as CanvasRenderingContext2D | undefined;
+        if (!srcCanvas || !srcCtx) return;
+        try {
+          const srcData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
           const maskCanvas = document.createElement('canvas');
-          maskCanvas.width = srcCanvas.width || 1024;
-          maskCanvas.height = srcCanvas.height || 1024;
-          const mCtx = maskCanvas.getContext('2d');
-          if (mCtx) {
-            mCtx.fillStyle = '#000000';
-            mCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
-            mCtx.drawImage(srcCanvas, 0, 0);
-            try {
-              const imgData = mCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-              const data = imgData.data;
-              for (let i = 0; i < data.length; i += 4) {
-                const alpha = data[i + 3];
-                if (alpha > 10) {
-                  data[i] = 255;
-                  data[i + 1] = 255;
-                  data[i + 2] = 255;
-                  data[i + 3] = 255;
-                } else {
-                  data[i] = 0;
-                  data[i + 1] = 0;
-                  data[i + 2] = 0;
-                  data[i + 3] = 255;
-                }
-              }
-              mCtx.putImageData(imgData, 0, 0);
-              maskDataUrl = maskCanvas.toDataURL('image/png');
-            } catch {
-              maskDataUrl = maskCanvas.toDataURL('image/png');
-            }
+          maskCanvas.width = srcCanvas.width;
+          maskCanvas.height = srcCanvas.height;
+          const maskCtx = maskCanvas.getContext('2d');
+          if (!maskCtx) return;
+          const out = maskCtx.createImageData(maskCanvas.width, maskCanvas.height);
+          let hasPaintedPixels = false;
+          for (let i = 0; i < srcData.data.length; i += 4) {
+            const painted = srcData.data[i + 3] > 10;
+            if (painted) hasPaintedPixels = true;
+            const value = painted ? 255 : 0;
+            out.data[i] = value;
+            out.data[i + 1] = value;
+            out.data[i + 2] = value;
+            out.data[i + 3] = 255;
           }
+          if (hasPaintedPixels) {
+            maskCtx.putImageData(out, 0, 0);
+            maskDataUrl = maskCanvas.toDataURL('image/png');
+          }
+        } catch (error) {
+          console.warn('[MeshViewer] Could not serialize the UV mask:', error);
         }
       });
       window.dispatchEvent(new CustomEvent('formash:uv_mask_ready', {
         detail: { maskDataUrl: maskDataUrl || '' }
       }));
+    };
+
+    const onExportPaintedMesh = (event: Event) => {
+      const root = currentMeshGroupRef.current;
+      const requestedName = (event as CustomEvent<{ assetName?: string }>).detail?.assetName || 'mesh';
+      const fail = (message: string) => window.dispatchEvent(new CustomEvent('formash:paint_export_result', {
+        detail: { ok: false, error: message }
+      }));
+      if (!root) { fail('No mesh is loaded in the viewport.'); return; }
+      let hasPaintCanvas = false;
+      root.traverse((child) => {
+        if (child instanceof THREE.Mesh && child.userData?.paintCanvas) hasPaintCanvas = true;
+      });
+      if (!hasPaintCanvas) { fail('Paint on the mesh surface before exporting the painted GLB.'); return; }
+      root.updateMatrixWorld(true);
+      const exporter = new GLTFExporter();
+      try {
+        exporter.parse(
+          root,
+          (result) => {
+            try {
+              if (!(result instanceof ArrayBuffer)) throw new Error('GLB exporter returned a non-binary result.');
+              const blob = new Blob([result], { type: 'model/gltf-binary' });
+              const url = URL.createObjectURL(blob);
+              const stem = String(requestedName).replace(/\.[^/.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_');
+              const filename = `${stem || 'mesh'}_painted.glb`;
+              const anchor = document.createElement('a');
+              anchor.href = url;
+              anchor.download = filename;
+              document.body.appendChild(anchor);
+              anchor.click();
+              anchor.remove();
+              window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+              window.dispatchEvent(new CustomEvent('formash:paint_export_result', { detail: { ok: true, filename } }));
+            } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
+          },
+          (error) => fail(error instanceof Error ? error.message : String(error)),
+          { binary: true }
+        );
+      } catch (error) { fail(error instanceof Error ? error.message : String(error)); }
     };
 
     renderer.domElement.addEventListener('pointerdown', onBrushPointerDown);
@@ -2429,6 +2628,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     window.addEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
     window.addEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
     window.addEventListener('formash:capture_uv_mask', onCaptureUVMask);
+    window.addEventListener('formash:request_uv_layout', onRequestUVLayout);
+    window.addEventListener('formash:set_mask_paint_mode', onSetMaskPaintMode);
+    window.addEventListener('formash:export_painted_mesh', onExportPaintedMesh);
 
     // Raycast on canvas to select bone joints or place new bones in Rigging mode
     const onCanvasPointerDown = (event: MouseEvent) => {
@@ -2620,6 +2822,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
       window.removeEventListener('formash:fill_paint_canvas', onFillPaintCanvas);
       window.removeEventListener('formash:clear_paint_canvas', onClearPaintCanvas);
       window.removeEventListener('formash:capture_uv_mask', onCaptureUVMask);
+      window.removeEventListener('formash:request_uv_layout', onRequestUVLayout);
+      window.removeEventListener('formash:set_mask_paint_mode', onSetMaskPaintMode);
+      window.removeEventListener('formash:export_painted_mesh', onExportPaintedMesh);
       if (brushCursorRef.current) {
         scene.remove(brushCursorRef.current);
         brushCursorRef.current = null;
@@ -2675,6 +2880,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     physicsRuntimeRef.current = null;
     setPhysicsRunning(false);
     setPhysicsStatus(null);
+    loadedAssetIdRef.current = null;
     setLoadedAssetId(null);
   }, [currentAsset?.id]);
 
@@ -2684,6 +2890,7 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
     physicsRuntimeRef.current = null;
     setPhysicsRunning(false);
     setPhysicsStatus(null);
+    loadedAssetIdRef.current = null;
     setLoadedAssetId(null);
   }, [isLoading]);
 
@@ -2872,7 +3079,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
         const sourceUrl = currentAsset.source?.localUrl || currentAsset.source?.viewUrl;
         if (!sourceUrl) return;
 
-        const format = currentAsset.format.toLowerCase();
+        const artifactUrl = new URL(sourceUrl, window.location.origin);
+        const artifactFormat = (artifactUrl.searchParams.get('artifact_format') || '').toLowerCase();
+        const pathExtension = artifactUrl.pathname.split('.').pop()?.toLowerCase() || '';
+        const format =
+          artifactFormat === 'rigged' || artifactFormat === 'glb' ? 'glb' :
+          artifactFormat === 'fbx' || artifactFormat === 'rigged_fbx' ? 'fbx' :
+          ['glb', 'gltf', 'fbx', 'obj', 'ply', 'stl'].includes(pathExtension) ? pathExtension :
+          currentAsset.format.toLowerCase();
         if (format === 'glb' || format === 'gltf') {
           // Multi-tier fast loading: L1 in-memory RAM cache (0ms) -> L2 persistent disk cache (~5ms) -> Chunked streaming network fetch
           setLoadProgress({ loaded: 0, total: 0, percent: 0 });
@@ -3008,7 +3222,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             }
 
             if (!cancelled) {
+              loadedAssetIdRef.current = currentAsset.id;
               setLoadedAssetId(currentAsset.id);
+              window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
               setModelLoadVersion((version) => version + 1);
               setIsLoading(false);
             }
@@ -3123,7 +3339,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
               helper.dispose();
             }
           }
+          loadedAssetIdRef.current = currentAsset.id;
           setLoadedAssetId(currentAsset.id);
+          window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
           setModelLoadVersion((version) => version + 1);
         } else if (format === 'obj') {
           // ponytail: verify response is text before parsing as OBJ
@@ -3166,7 +3384,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             computeMeshStats(object);
             if (!cancelled) {
               useAnimationStore.getState().setLoadedSkeletonBoneNames([]);
+              loadedAssetIdRef.current = currentAsset.id;
               setLoadedAssetId(currentAsset.id);
+              window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
               setModelLoadVersion((version) => version + 1);
             }
           } else {
@@ -3207,7 +3427,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             frameCamera(mesh, { forceResetAngle: shouldResetAnglePly });
             lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
+            loadedAssetIdRef.current = currentAsset.id;
             setLoadedAssetId(currentAsset.id);
+            window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
             setModelLoadVersion((version) => version + 1);
           } else {
             geometry.dispose();
@@ -3236,7 +3458,9 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
             frameCamera(mesh, { forceResetAngle: shouldResetAngleStl });
             lastFramedAssetIdRef.current = currentAsset.id;
             computeMeshStats(mesh);
+            loadedAssetIdRef.current = currentAsset.id;
             setLoadedAssetId(currentAsset.id);
+            window.dispatchEvent(new CustomEvent('formash:uv_layout_changed'));
             setModelLoadVersion((version) => version + 1);
           } else {
             geometry.dispose();

@@ -68,7 +68,9 @@ class UniRigAdapter(AutoRigModel):
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("UniRig requires CUDA; CPU inference is not supported.")
-            if not self.device or self.device.startswith("cpu"):
+            if self.gpu_id is not None and self.device in {"cuda", "cuda:0"}:
+                self.device = f"cuda:{self.gpu_id}"
+            elif not self.device or self.device.startswith("cpu"):
                 self.device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             logger.info(f"Loading UniRig model from {self.unirig_root}")
 
@@ -156,7 +158,9 @@ class UniRigAdapter(AutoRigModel):
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("UniRig requires CUDA; CPU inference is not supported.")
-            if not self.device or self.device.startswith("cpu"):
+            if self.gpu_id is not None and self.device in {"cuda", "cuda:0"}:
+                self.device = f"cuda:{self.gpu_id}"
+            elif not self.device or self.device.startswith("cpu"):
                 self.device = f"cuda:{self.gpu_id}" if self.gpu_id is not None else "cuda:0"
             if self.inference_engine is None:
                 raise ValueError("UniRig inference engine is not loaded")
@@ -207,7 +211,8 @@ class UniRigAdapter(AutoRigModel):
                     logger.info(f"Using companion FBX file for rigging: {companion_fbx}")
                     mesh_path = companion_fbx
 
-            # Extract parameters
+            # EXPERIMENTAL_MAX_DETAIL: UniRig exposes rig_mode and optional seed, not CFG/denoising steps.
+            # Upstream recommends refining an inaccurate predicted skeleton before skinning. Ask before changing profile defaults.
             rig_mode = inputs.get("rig_mode", "full")
             raw_output_format = str(inputs.get("output_format", "fbx")).lower().strip()
             output_format = raw_output_format if raw_output_format in ["fbx", "glb"] else "fbx"

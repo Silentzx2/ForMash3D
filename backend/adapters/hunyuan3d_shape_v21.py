@@ -320,7 +320,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             logger.info(f"Generating 3D shape with Hunyuan3D-Shape-v2-1 on {self.device}...")
             octree_res = inputs.get("octree_resolution") or inputs.get("octree_res") or inputs.get("grid_resolution")
             if octree_res is None:
-                octree_res = 512 if inputs.get("source_quality", "max") == "max" else 256
+                octree_res = 1300 if inputs.get("source_quality", "max") == "max" else 256
             else:
                 octree_res = int(octree_res)
 
@@ -330,15 +330,17 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             else:
                 num_chunks = int(num_chunks)
 
+            # EXPERIMENTAL_MAX_DETAIL (2026-10-20): upstream UI permits 100 steps; guidance 5.0 is the upstream default.
+            # Before any later change to the locked profile, ask the user once and require explicit confirmation.
             num_steps = inputs.get("num_inference_steps") or inputs.get("num_steps")
             if num_steps is None:
-                num_steps = 50 if inputs.get("source_quality", "max") == "max" else 30
+                num_steps = 150 if inputs.get("source_quality", "max") == "max" else 30
             else:
                 num_steps = int(num_steps)
 
-            guidance_scale = inputs.get("guidance_scale", 7.5)
+            guidance_scale = inputs.get("guidance_scale", 5.0)
             if guidance_scale is None:
-                guidance_scale = 7.5
+                guidance_scale = 5.0
             else:
                 guidance_scale = float(guidance_scale)
 
@@ -419,10 +421,10 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "Dense sampling resolution; 512 is the upstream-supported maximum.",
-                    "default": 512,
+                    "description": "EXPERIMENTAL: octree 1300 exceeds UI max 512; severe VRAM/OOM risk.",
+                    "default": 1300,
                     "minimum": 64,
-                    "maximum": 512,
+                    "maximum": 2048,
                     "required": False,
                 },
                 "num_chunks": {
@@ -433,16 +435,16 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Number of inference steps for maximum-fidelity raw source generation.",
-                    "default": 50,
+                    "description": "Experimental max-detail source profile: upstream UI permits up to 100 steps; ask the user before changing the locked setting.",
+                    "default": 150,
                     "minimum": 1,
-                    "maximum": 100,
+                    "maximum": 200,
                     "required": False,
                 },
                 "guidance_scale": {
                     "type": "number",
-                    "description": "Guidance scale for maximum-fidelity raw geometry; matches the upstream default.",
-                    "default": 7.5,
+                    "description": "Guidance scale for the experimental max-detail profile; 5.0 matches the upstream UI default.",
+                    "default": 5.0,
                     "required": False,
                 },
                 "seed": {

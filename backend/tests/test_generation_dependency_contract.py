@@ -217,8 +217,111 @@ def test_model_factory_uses_the_main_backend_compatibility_helper():
     assert "from utils.torchvision_fix import apply_fix" not in factory
     assert "get_backend_torchvision_fix().apply_fix()" in unirig
 
+    scheduler = (BACKEND / "core" / "scheduler" / "multiprocess_scheduler.py").read_text(encoding="utf-8")
+    assert "get_backend_torchvision_fix().apply_fix()" in scheduler
+    assert "from utils.torchvision_fix import apply_fix" not in scheduler
+
     paint = (BACKEND / "adapters" / "hunyuan3d_paint_v21.py").read_text(encoding="utf-8")
     assert "get_backend_torchvision_fix().fix_numba_caching()" in paint
     assert "from utils.torchvision_fix import" not in paint
     assert "from torchvision_fix import" not in paint
 
+
+
+
+def test_torch_cluster_fallback_imports_its_runtime_types_lazily(monkeypatch):
+    import builtins
+    import importlib.util
+    import sys
+    import types
+    import uuid
+
+    helper_path = BACKEND / "utils" / "torchvision_fix.py"
+    helper_name = f"torchvision_fix_torch_cluster_{uuid.uuid4().hex}"
+    original_import = builtins.__import__
+    fake_torch = types.ModuleType("torch")
+    fake_torch.Tensor = type("Tensor", (), {})
+
+    def import_without_torch_cluster(name, *args, **kwargs):
+        if name == "torch_cluster":
+            raise ImportError("optional torch_cluster is not installed")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_torch_cluster)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    monkeypatch.delitem(sys.modules, "torch_cluster", raising=False)
+
+    spec = importlib.util.spec_from_file_location(helper_name, helper_path)
+    helper_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper_module)
+
+    assert helper_module.fix_torch_cluster() is True
+    assert callable(sys.modules["torch_cluster"].fps)
+
+
+def test_unirig_selects_only_attention_backends_supported_by_the_model():
+    source = (BACKEND / "thirdparty" / "UniRig" / "src" / "model" / "unirig_ar.py").read_text(encoding="utf-8")
+
+    assert "AutoModelForCausalLM._model_mapping[type(llm_config)]" in source
+    assert "getattr(model_class, '_supports_sdpa', False)" in source
+    assert "'eager'" in source
+
+
+def test_fastmesh_manifest_matches_explicit_multi_gpu_layer_dispatch():
+    manifest = (BACKEND / "config" / "models.yaml").read_text(encoding="utf-8")
+    start = manifest.index("  fastmesh_v1k_retopology:")
+    end = manifest.index("\n# UV unwrapping", start)
+    fastmesh = manifest[start:end]
+    runner = (BACKEND / "utils" / "fastmesh_utils.py").read_text(encoding="utf-8")
+    adapter = (BACKEND / "adapters" / "fastmesh_adapter.py").read_text(encoding="utf-8")
+
+    assert fastmesh.count("multi_gpu: true") == 2
+    assert fastmesh.count("multi_gpu_strategy: accelerate_auto_device_map") == 2
+    assert "infer_auto_device_map" in runner
+    assert "dispatch_model" in runner
+    assert "resource_plan=getattr(self, \"resource_plan\", None)" in adapter
+    assert "vram_requirement: 16384" in fastmesh
+    assert "vram_requirement: 24500" in fastmesh
+
+
+def test_fastmesh_download_and_readiness_require_full_checkpoints():
+    downloader = (BACKEND / "scripts" / "download_models.sh").read_text(encoding="utf-8")
+    system = (BACKEND / "api" / "routers" / "system.py").read_text(encoding="utf-8")
+
+    assert 'verify_file "$model_dir/model.safetensors" 4000000000' in downloader
+    assert 'verify_fastmesh_model "$PRETRAINED_DIR/FastMesh-V1K" || all_verified=false' in downloader
+    assert 'verify_fastmesh_model "$PRETRAINED_DIR/FastMesh-V4K" || all_verified=false' in downloader
+    assert 'checkpoint.stat().st_size > 4_000_000_000' in system
+    assert 'descriptor.get("max_vertices") == expected_vertices' in system
+
+
+
+def test_fastmesh_uses_architecture_compatible_attention_fallback():
+    single_gpt = (BACKEND / "thirdparty" / "FastMesh" / "models" / "single_gpt.py").read_text(encoding="utf-8")
+    shape_opt = (BACKEND / "thirdparty" / "FastMesh" / "models" / "shape_opt.py").read_text(encoding="utf-8")
+
+    assert "def _select_fastmesh_attention_implementation() -> str:" in single_gpt
+    assert "torch.cuda.get_device_capability(torch.cuda.current_device())" in single_gpt
+    assert "if capability[0] >= 8:" in single_gpt
+    assert "_attn_implementation=attention_implementation" in single_gpt
+    assert 'self.config._attn_implementation ="flash_attention_2"' not in single_gpt
+
+    assert "from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask" in shape_opt
+    assert "_prepare_4d_causal_attention_mask(" in shape_opt
+    assert "Only flash_attention_2 is supported in MeshAnything" not in shape_opt
+
+
+
+def test_unirig_pointcept_uses_eager_attention_on_pre_ampere_gpus():
+    ptv3 = (
+        BACKEND / "thirdparty" / "UniRig" / "src" / "model"
+        / "pointcept" / "models" / "PTv3Object.py"
+    ).read_text(encoding="utf-8")
+
+    assert "def _supports_flash_attention_on_current_device() -> bool:" in ptv3
+    assert "torch.cuda.get_device_capability(torch.cuda.current_device())" in ptv3
+    assert "return major >= 8" in ptv3
+    assert "enable_flash = bool(enable_flash and _supports_flash_attention_on_current_device())" in ptv3
+    assert "self.attn_drop = torch.nn.Dropout(attn_drop)" in ptv3
+    assert "dropout_p=self.attn_drop.p if self.training else 0" in ptv3
+    assert "self.attn_drop = attn_drop" not in ptv3

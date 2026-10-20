@@ -97,6 +97,7 @@ export const TexturePanel: React.FC = () => {
   const [paintSubTool, setPaintSubTool] = useState<'surface' | 'spot_mask'>('surface');
   const [spotPrompt, setSpotPrompt] = useState('');
   const [capturedMaskUrl, setCapturedMaskUrl] = useState<string | null>(null);
+  const [isBakeInProgress, setIsBakeInProgress] = useState(false);
 
   useEffect(() => {
     const handleMaskReady = (e: any) => {
@@ -109,12 +110,34 @@ export const TexturePanel: React.FC = () => {
         toast.error('No active UV paint canvas found. Paint on the mesh surface first.');
       }
     };
+    const handlePaintExportResult = (e: Event) => {
+      const detail = (e as CustomEvent<{ ok?: boolean; filename?: string; error?: string }>).detail || {};
+      setIsBakeInProgress(false);
+      if (detail.ok) {
+        toast.success('Painted mesh exported', { description: `${detail.filename || 'GLB'} includes the live material texture.` });
+      } else {
+        toast.error('Painted mesh export failed', { description: detail.error || 'The viewport could not export the painted mesh.' });
+      }
+    };
     window.addEventListener('formash:uv_mask_ready', handleMaskReady);
-    return () => window.removeEventListener('formash:uv_mask_ready', handleMaskReady);
+    window.addEventListener('formash:paint_export_result', handlePaintExportResult);
+    return () => {
+      window.removeEventListener('formash:uv_mask_ready', handleMaskReady);
+      window.removeEventListener('formash:paint_export_result', handlePaintExportResult);
+      window.dispatchEvent(new CustomEvent('formash:set_mask_paint_mode', { detail: { enabled: false, erase: false } }));
+    };
   }, [setTextureSettings]);
+
+  useEffect(() => {
+    const enabled = panelTab === 'paint' && paintSubTool === 'spot_mask';
+    window.dispatchEvent(new CustomEvent('formash:set_mask_paint_mode', {
+      detail: { enabled, erase: enabled && paintMode === 'erase' }
+    }));
+  }, [panelTab, paintSubTool, paintMode]);
 
   const handleSelectSpotMaskTool = () => {
     setPaintSubTool('spot_mask');
+    setPaintMode('draw');
     setPaintColor('#FFFFFF');
     setPaintOpacity(1.0);
     setPaintHardness(0.9);
@@ -1254,26 +1277,20 @@ export const TexturePanel: React.FC = () => {
                     <span>Backend Adapter Limitation Notice</span>
                   </div>
                   <p>
-                    Paint3D and Hunyuan3D-Paint pipelines currently only support full-mesh texturing. Spot inpainting is not exposed by these adapters. The UV mask is captured and aligned to the mesh xatlas UV layout without re-unwrapping. Target non-destructive destination: <code>textures/&lt;name&gt;_textured_v&#123;n&#125;.glb</code>.
+                    The UV mask can be captured in the existing UV layout, but Paint3D and Hunyuan3D-Paint do not apply this user mask during inference. Mask-based retexturing is disabled to prevent an advertised spot edit from silently retexturing the whole mesh.
                   </p>
                 </div>
 
                 {/* Trigger Retexture with Mask */}
                 <button
                   type="button"
-                  disabled={isExecuting || !currentAsset}
-                  onClick={() => {
-                    if (spotPrompt) {
-                      setTextureSettings(prev => ({ ...prev, prompt: spotPrompt, maskImage: capturedMaskUrl }));
-                    } else if (capturedMaskUrl) {
-                      setTextureSettings(prev => ({ ...prev, maskImage: capturedMaskUrl }));
-                    }
-                    runTextureGeneration();
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 via-teal-400 to-emerald-400 text-black font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(34,211,238,0.3)] hover:shadow-[0_6px_20px_rgba(34,211,238,0.4)] transition-all cursor-pointer disabled:opacity-50 active:scale-[0.98]"
+                  disabled
+                  aria-disabled="true"
+                  title="Localized mask inference is not supported by the selected texture adapters."
+                  className="w-full py-2.5 rounded-xl bg-[hsl(var(--surface-2))] text-zinc-400 font-bold text-xs flex items-center justify-center gap-2 border border-white/[0.08] opacity-60 cursor-not-allowed"
                 >
                   <HugeiconsIcon icon={SparklesIcon} size={15} />
-                  <span>{isExecuting ? 'Retexturing...' : 'Generate Retexture with Mask'}</span>
+                  <span>Mask-Based Retexture Unavailable</span>
                 </button>
               </div>
             ) : (
@@ -1523,15 +1540,17 @@ export const TexturePanel: React.FC = () => {
             <div className="space-y-1.5 pt-1">
               <button
                 type="button"
+                disabled={isBakeInProgress}
                 onClick={() => {
-                  toast.success('Baking 3D Paint to PBR texture atlas...', {
-                    description: 'Viewport paint projections successfully baked into material channels.'
-                  });
+                  setIsBakeInProgress(true);
+                  window.dispatchEvent(new CustomEvent('formash:export_painted_mesh', {
+                    detail: { assetName: currentAsset?.name || 'mesh' }
+                  }));
                 }}
-                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-black font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98]"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] text-black font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] hover:shadow-[0_6px_20px_rgba(255,204,0,0.45)] transition-all cursor-pointer active:scale-[0.98] disabled:opacity-60 disabled:cursor-wait"
               >
                 <HugeiconsIcon icon={PaletteIcon} size={16} className="w-3.5 h-3.5" />
-                <span>BAKE PAINT TO TEXTURE</span>
+                <span>{isBakeInProgress ? 'Exporting Painted GLB…' : 'EXPORT PAINTED MESH (GLB)'}</span>
               </button>
 
                 <button

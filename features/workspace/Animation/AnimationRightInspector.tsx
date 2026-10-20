@@ -19,8 +19,10 @@ export const AnimationRightInspector: React.FC = () => {
     inspectorTab,
     setInspectorTab,
     ardyModel,
+    setArdyModel,
     ardyCheckpoint,
     setArdyCheckpoint,
+    setMotionAiFps,
     ardyMode,
     setArdyMode,
     autoReplan,
@@ -88,6 +90,8 @@ export const AnimationRightInspector: React.FC = () => {
   };
 
   const modelName = currentAsset?.name || viewerStore.loadedModelName || 'No model selected';
+  const activeClipForExport = animations.find((a) => a.id === currentAnimationId) || animations[0];
+  const hasBvhArtifact = Boolean(activeClipForExport?.url && activeClipForExport.url.toLowerCase().split('?')[0].endsWith('.bvh'));
   const hasRig = Boolean(currentAsset?.artifacts?.rigged);
   const realVertices = currentAsset?.statsAvailable ? currentAsset.vertices : viewerStore.modelStats?.vertices;
   const polysText = typeof realVertices === 'number' && realVertices > 0 ? `${realVertices.toLocaleString()} vertices` : '— vertices';
@@ -138,11 +142,17 @@ export const AnimationRightInspector: React.FC = () => {
       URL.revokeObjectURL(url);
       toast.success('ARDY Session Exported', { description: 'Saved motion parameters and constraint tracks as JSON' });
     } else if (format === 'bvh') {
-      if (activeClip?.url && activeClip.url.endsWith('.bvh')) {
-        window.open(activeClip.url, '_blank');
-      } else {
-        toast.info('Generating BVH MoCap Stream', { description: `Exporting ${duration.toFixed(1)}s skeletal trajectory at ${fps} FPS` });
+      const bvhUrl = activeClip?.url?.split('?')[0].toLowerCase().endsWith('.bvh') ? activeClip.url : null;
+      if (!bvhUrl) {
+        toast.error('BVH export unavailable', { description: 'This clip is not a BVH artifact. Motion JSON-to-BVH conversion is not implemented.' });
+        return;
       }
+      const link = document.createElement('a');
+      link.href = bvhUrl;
+      link.download = `${String(activeClip?.name || modelName).replace(/\.[^/.]+$/, '') || 'motion'}.bvh`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
     } else {
       if (activeClip?.url && activeClip.url.endsWith('.glb')) {
         window.open(activeClip.url, '_blank');
@@ -201,13 +211,26 @@ export const AnimationRightInspector: React.FC = () => {
                     <label className="text-[11px] font-medium text-zinc-400">Checkpoint</label>
                     <div className="relative">
                       <select
-                        value={ardyCheckpoint}
-                        onChange={(e) => setArdyCheckpoint(e.target.value)}
+                        value={
+                          ardyCheckpoint.startsWith('ARDY-')
+                            ? ardyCheckpoint
+                            : ardyCheckpoint.toLowerCase().includes('g1')
+                              ? 'ARDY-G1-RP-25FPS-Horizon52'
+                              : 'ARDY-Core-RP-20FPS-Horizon40'
+                        }
+                        onChange={(e) => {
+                          const checkpoint = e.target.value;
+                          const isG1 = checkpoint.includes('ARDY-G1');
+                          setArdyCheckpoint(checkpoint);
+                          setArdyModel(isG1 ? 'ardy-g1' : 'ardy-core');
+                          setMotionAiFps(isG1 ? 25 : 20);
+                        }}
                         className="w-full h-8 px-2.5 bg-[hsl(var(--surface-2))] border border-white/[0.08] rounded-lg text-xs text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
                       >
-                        <option value="ardy-core (default)">ardy-core (default)</option>
-                        <option value="ardy-unitree-g1">ardy-unitree-g1</option>
-                        <option value="ardy-rp-20fps">ardy-rp-20fps-horizon40</option>
+                        <option value="ARDY-Core-RP-20FPS-Horizon40">ARDY Core · 20 FPS · Horizon 40</option>
+                        <option value="ARDY-Core-RP-20FPS-Horizon8">ARDY Core · 20 FPS · Horizon 8</option>
+                        <option value="ARDY-G1-RP-25FPS-Horizon52">ARDY G1 · 25 FPS · Horizon 52</option>
+                        <option value="ARDY-G1-RP-25FPS-Horizon8">ARDY G1 · 25 FPS · Horizon 8</option>
                       </select>
                       <HugeiconsIcon icon={ChevronDown} size={16} className="w-3 h-3 text-zinc-400 absolute right-2.5 top-2.5 pointer-events-none" />
                     </div>
@@ -823,13 +846,15 @@ export const AnimationRightInspector: React.FC = () => {
 
                 <button
                   onClick={() => handleExportMotion('bvh')}
-                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] transition-all cursor-pointer group"
+                  disabled={!hasBvhArtifact}
+                  title={hasBvhArtifact ? 'Download the selected existing BVH clip' : 'The selected clip has no BVH file; JSON conversion is not implemented'}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-[hsl(var(--surface-2))] hover:bg-[hsl(var(--surface-3))] border border-white/[0.08] transition-all cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <div className="flex items-center gap-2.5">
                     <HugeiconsIcon icon={BoneIcon} size={16} className="w-4 h-4 text-primary" />
                     <div className="text-left">
-                      <p className="text-xs font-semibold text-white">Motion Capture (BVH)</p>
-                      <p className="text-[10px] text-zinc-400">Industry standard skeletal trajectory</p>
+                      <p className="text-xs font-semibold text-white">Download Existing BVH</p>
+                      <p className="text-[10px] text-zinc-400">Available only when the selected clip already has a BVH artifact</p>
                     </div>
                   </div>
                   <HugeiconsIcon icon={DownloadIcon} size={16} className="w-3.5 h-3.5 text-zinc-400 group-hover:text-primary transition-colors" />

@@ -24,16 +24,8 @@ export const RiggingLeftPanel: React.FC = () => {
     setCharacterInfo,
     riggingMethod,
     setRiggingMethod,
-    targetSkeleton,
-    setTargetSkeleton,
-    createIkControls,
-    setCreateIkControls,
-    optimizeForAnimation,
-    setOptimizeForAnimation,
     symmetry,
     setSymmetry,
-    reuseExistingWeights,
-    setReuseExistingWeights,
     advancedOptionsOpen,
     setAdvancedOptionsOpen,
     isGenerating,
@@ -55,6 +47,10 @@ export const RiggingLeftPanel: React.FC = () => {
   }, [jobId, generationStatus, resumeRigPolling]);
 
   const handleGenerate = async () => {
+    if (riggingMethod === 'manual_rig') {
+      toast.info('Manual armature mode does not run UniRig. Use the Rigging Studio editor to place bones and save the armature.');
+      return;
+    }
     const meshFileId = currentAsset?.source?.fileId ?? currentAsset?.fileId;
     if (!meshFileId) {
       toast.error('Select or upload a mesh first');
@@ -156,31 +152,8 @@ export const RiggingLeftPanel: React.FC = () => {
         </div>
       </div>
 
-      {/* Target Skeleton Preset */}
-      <div className="space-y-1.5">
-        <label className="text-[11px] font-bold text-zinc-300 uppercase tracking-wide">Skeleton Template</label>
-        <div className="space-y-1">
-          {[
-            { id: 'biped' as const, label: 'Core Biped (19-Joint)', desc: 'Fast, lightweight humanoid for ARDY motion' },
-            { id: 'humanoid' as const, label: 'Full Humanoid (53-Joint)', desc: 'Production rig with fingers & facial joints' },
-          ].map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTargetSkeleton(t.id)}
-              className={`w-full p-2 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-                targetSkeleton === t.id
-                  ? 'border-primary bg-primary/10 text-primary font-bold shadow-xs'
-                  : 'border-white/[0.08] bg-[hsl(var(--surface-0))] text-zinc-400 hover:text-white'
-              }`}
-            >
-              <div>
-                <p className="font-bold text-[11px] text-white">{t.label}</p>
-                <p className="text-[9px] text-zinc-400">{t.desc}</p>
-              </div>
-              <div className={`w-2.5 h-2.5 rounded-full border ${targetSkeleton === t.id ? 'border-primary bg-primary' : 'border-zinc-600'}`} />
-            </button>
-          ))}
-        </div>
+      <div className="p-2.5 rounded-xl bg-[hsl(var(--surface-0))] border border-white/[0.08] text-[10px] text-zinc-400 leading-relaxed">
+        UniRig uses its native biped topology and model-default weights. Custom skeleton presets, IK generation, and weight overrides are not supported by this adapter.
       </div>
 
       {/* Advanced Options Accordion */}
@@ -196,15 +169,6 @@ export const RiggingLeftPanel: React.FC = () => {
         {advancedOptionsOpen && (
           <div className="p-3 border-t border-white/[0.08] space-y-2 text-[11px]">
             <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
-              <span>Create IK Solvers</span>
-              <input
-                type="checkbox"
-                checked={createIkControls}
-                onChange={(e) => setCreateIkControls(e.target.checked)}
-                className="rounded border-white/[0.1] bg-[hsl(var(--surface-1))] text-primary focus:ring-0 cursor-pointer"
-              />
-            </label>
-            <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
               <span>Bilateral Symmetry (-X Mirror)</span>
               <input
                 type="checkbox"
@@ -216,15 +180,6 @@ export const RiggingLeftPanel: React.FC = () => {
                 className="rounded border-white/[0.1] bg-[hsl(var(--surface-1))] text-primary focus:ring-0 cursor-pointer"
               />
             </label>
-            <label className="flex items-center justify-between text-zinc-300 cursor-pointer">
-              <span>Reuse Existing Skinning Weights</span>
-              <input
-                type="checkbox"
-                checked={reuseExistingWeights}
-                onChange={(e) => setReuseExistingWeights(e.target.checked)}
-                className="rounded border-white/[0.1] bg-[hsl(var(--surface-1))] text-primary focus:ring-0 cursor-pointer"
-              />
-            </label>
           </div>
         )}
       </div>
@@ -232,7 +187,7 @@ export const RiggingLeftPanel: React.FC = () => {
       {/* Action: Generate Rig Button */}
       <button
         onClick={handleGenerate}
-        disabled={isGenerating || !meshFileId}
+        disabled={isGenerating || !meshFileId || riggingMethod === 'manual_rig'}
         className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#FFE066] via-[#FFCC00] to-[#E09800] hover:brightness-105 text-[#080808] font-black text-xs flex items-center justify-center gap-2 shadow-[0_4px_16px_rgba(255,204,0,0.35)] transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
       >
         {isGenerating ? (
@@ -243,7 +198,7 @@ export const RiggingLeftPanel: React.FC = () => {
         ) : (
           <>
             <HugeiconsIcon icon={BoneIcon} size={16} className="w-4 h-4 stroke-[2.2]" />
-            <span>GENERATE RIG WITH UNIRIG</span>
+            <span>{riggingMethod === 'manual_rig' ? 'MANUAL ARMATURE MODE' : 'GENERATE RIG WITH UNIRIG'}</span>
           </>
         )}
       </button>

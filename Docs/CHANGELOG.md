@@ -1,18 +1,20 @@
-## 2026-10-18 — Explicit Hunyuan3D-Paint Source Resolution
+## 2026-10-20 — Generation Experiment Presets
 
-- Third-party Hunyuan Paint now distinguishes local checkpoint directories from Hugging Face repository IDs.
-- Missing absolute paths, incomplete DINOv2 checkpoints, and invalid local Paint layouts fail clearly rather than silently switching to a remote default.
-- Added dependency-light resolver regression tests and wired them into backend CI through the updated submodule revision. GPU inference still requires a GPU smoke environment.
+- Added the Generation Experiment Lab drawer with local preset save/update/delete, seed/guidance controls, schema-driven parameters, advanced JSON overrides, revision metadata, import/export, and running through the existing queue.
+- Applied explicit overrides after model-specific defaults and corrected schema caching to use field defaults rather than descriptor objects.
+- Added regression coverage for final request overrides and malformed/unsafe JSON. Browser/UI and GPU checks remain unverified.
 
-## 2026-10-18 — Verified Runtime Fixes & Green CI
+## 2026-10-20 — Experimental Max-Detail Model Settings
 
-- Switched Hunyuan3D-Paint's adapter-level Numba and background-removal fallback helper calls to the canonical main-backend compatibility module.
-- Added regression assertions against generic helper imports and updated the fallback test to mock the canonical loader.
-- Verified at code commit `cb02d5df21b7fc34e77be10947b95ac526799594`: backend Python compilation and all 12 CPU compatibility contracts passed, and frontend CI passed. GPU inference still needs a GPU smoke environment.
+- Added dated upstream/community-backed experimental profiles for Hunyuan3D, TRELLIS/TRELLIS.2, Pixal3D, Hunyuan Paint and the remaining active model/tool entries.
+- Updated parameter defaults across the frontend builder, scheduler and adapters; retained supported checkpoint limits and unsimplified raw master geometry.
+- Added a per-model evidence/limits guide and a one-time explicit user-confirmation rule before future changes. Source-contract tests were updated; actual GPU A/B quality remains unverified.
 
-## 2026-10-18 — Canonical Runtime Compatibility Imports
 
-- Added a path-based, cached loader for the main backend TorchVision/Transformers compatibility helper.
-- Switched ModelFactory and UniRig to the canonical helper, avoiding accidental resolution to an identically named vendored Shape utility module.
-- Updated CPU contracts to validate the main helper path and ensure the cache shim test does not require heavyweight Torch imports. No requirements files or mesh-generation adapters changed.
 
+## 2026-10-19 — Animation Export and Polling
+
+- BVH download is limited to existing BVH artifacts; unsupported JSON conversion is disabled and labelled honestly.
+- Motion status polling stops after repeated request failures and allows reconnecting to the same stored job ID.
+- Manual Armature selection cannot submit an accidental UniRig job.
+- Regression source contracts added; no browser or model run is claimed without CI/runtime results.

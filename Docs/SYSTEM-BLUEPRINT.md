@@ -1,3 +1,10 @@
+## 2026-10-19 Texture, UV and Rigging Contract Update
+
+- Paint3D/Hunyuan3D-Paint requests reject user-supplied localized UV masks until an adapter actually wires them into inference; full-mesh texturing remains available.
+- The UV inspector requests the selected channel from the live viewport mesh, draws sampled triangle edges and shows only measurable counts/bounds. UV-island count, overlap and texel density are not claimed without analysis code.
+- PartUV honors the requested distortion threshold and individual-part output flag; a failed/missing pack artifact fails the operation instead of returning a false packed result.
+- UniRig UI sends no unsupported topology/IK/weight overrides. Manual symmetry remains editor-only, and persistence failures block the legacy inspector's success navigation.
+
 ## 2026-09-30 Review Audit Runtime Contracts
 
 - Redis control-plane data uses noeviction; result payloads use dedicated TTL keys.
@@ -10,8 +17,8 @@
 # 🏛️ ForMash 3D — Complete System Architecture & Pipeline Blueprint
 
 > **System Version**: 0.1.0 (FastAPI + Next.js 16, Python 3.10)
-> **Target Deployments**: Single-GPU Linux / Cloud GPU / Local Workstations
-> **Last Verified**: September 30, 2026
+> **Target Deployments**: Single- or multi-GPU Linux / Cloud GPU / Local Workstations
+> **Last Verified**: October 19, 2026
 > **Design Tokens**: Studio Gold `#FFCC00` (`48 100% 50%`) on Matte Black `#080808`
 
 ---
@@ -37,8 +44,18 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 
 
 ### Shared Model Runtime Dependency Contract
+
+- ARDY is explicitly CPU-only in the model manifest and scheduler. The worker reserves no GPU memory and hides CUDA in its dedicated process; the model and local LLM2Vec encoder both receive device=cpu.
+- The vendored LLM2Vec text encoder keeps non-CUDA requests on the single-process path even when multiple GPUs are visible on the host. CPU generation is slower and requires sufficient system RAM and access to the gated text-encoder checkpoint.
 - Transformers is pinned at 4.48.3 for Hunyuan3D Mini's upstream minimum and PEFT's `HybridCache` import; Diffusers 0.30.3 and PyTorch 2.6.0 + CUDA 12.4 stay pinned.
 - Hunyuan loaders resolve vendored module roots explicitly, validate expected source/checkpoint paths, and keep full initialization tracebacks in backend logs.
+
+### GPU Placement & Derived Artifact Contract
+- The scheduler combines tracked reservations with live per-device free memory. Aggregate VRAM is admitted only for adapters that actually shard model layers or place independent components on multiple GPUs.
+- FastMesh uses Accelerate automatic device mapping and rejects a multi-GPU plan if its map does not use at least two selected GPUs. Hunyuan3D-Paint uses bounded row-chunk raster work and separate renderer/super-resolution and multiview diffusion devices when a multi-GPU plan is supplied.
+- Paint3D child-stage processes remain single-GPU and are not declared multi-GPU capable. UniRig, PartUV, and ARDY retain their existing single-device inference paths until their own adapters implement and verify actual sharding.
+- Rigging stores native FBX plus a GLB viewport artifact. The viewer obeys canonical artifact-format query values, and rigged geometry invalidates the previous thumbnail.
+
 
 ```mermaid
 graph TD
@@ -220,10 +237,12 @@ flowchart TD
 | Hunyuan3D-Paint-v2-1 | ~21 GB | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
-| ARDY | 8 GB | Motion AI & Animation | ~10-25 seconds |
+| ARDY | CPU-only; no GPU VRAM reservation | Motion AI & Animation; CPU/RAM-bound | Host-dependent; slower than GPU inference |
 | UniRig | 9 GB | Auto-rigging | ~20 seconds |
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
 | FastMesh-V4K | 24.5 GB | High-res retopology | ~30 seconds |
+
+**FastMesh VRAM and weights note:** The 16 GB (V1K) and 24.5 GB (V4K) values are conservative ForMash3D scheduler reservations, not minimums published by upstream. The official repository lists an A6000-tested environment and uses batch size 3 for V1K and 1 for V4K, but does not publish an exact minimum VRAM. Public checkpoint files are about 4.38 GB (V1K) and 4.39 GB (V4K) on disk; disk size is not peak inference memory. FastMesh is single-GPU-only in the current adapter, so 2×T4 aggregate memory is not combined for admission. [Upstream FastMesh](https://github.com/jhkim0759/FastMesh) · [V1K checkpoint](https://huggingface.co/WopperSet/FastMesh-V1K) · [V4K checkpoint](https://huggingface.co/WopperSet/FastMesh-V4K)
 
 ---
 

@@ -124,6 +124,8 @@ Read `RULES.md`, `Docs/PRD.md`, `Docs/DESIGN.md`, `Docs/CHANGELOG.md`, and actua
 **5. Output rules:** Same as T-01.
 **6. Doc sync:** `Docs/DESIGN.md` §5/§6, `Docs/PRD.md` §2, `Docs/CHANGELOG.md`, `Docs/api-documentation.md` if routes change.
 
+**Verified implementation status (2026-10-19):** UV mask capture is isolated from surface paint, but neither Paint3D nor Hunyuan3D-Paint applies this user mask in inference. The localized-retexture action is disabled and the API returns HTTP 422 for mask-bearing requests until a genuine adapter-supported inpainting path and regression tests exist. Do not remove that guard or claim a localized repaint before the model call actually consumes the mask.
+
 ---
 
 ## T-08 — Quick Material Preset Swatches

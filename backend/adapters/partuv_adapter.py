@@ -35,7 +35,9 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
         vram_requirement: Optional[int] = None,
         partuv_root: Optional[str] = None,
         config_path: Optional[str] = None,
-        distortion_threshold: float = 1.25,
+        # EXPERIMENTAL_MAX_DETAIL: retain upstream distortion threshold 1.25; higher values allow more distortion.
+        # This adapter exposes no sampler-step/CFG controls. Ask user once before changing this locked default.
+        distortion_threshold: float = 2.5,
     ):
         if model_path is None:
             model_path = "backend/pretrained/PartUV/model_objaverse.ckpt"
@@ -177,6 +179,7 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
                 pack_method=pack_method,
                 save_visuals=save_visuals,
                 save_individual_parts=save_individual_parts,
+                distortion_threshold=distortion_threshold,
             )
 
             if generation_result is None:
@@ -272,9 +275,9 @@ class PartUVUnwrappingAdapter(UVUnwrappingModel):
                 "distortion_threshold": {
                     "type": "number",
                     "description": "Maximum distortion threshold for UV unwrapping",
-                    "default": 1.25,
+                    "default": 2.5,
                     "minimum": 1.0,
-                    "maximum": 2.0,
+                    "maximum": 3.0,
                     "required": False
                 },
                 "pack_method": {

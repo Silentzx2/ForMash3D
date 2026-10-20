@@ -1,7 +1,7 @@
 # Architecture — ForMash 3D
 
 > **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
-> **Last Verified**: October 10, 2026
+> **Last Verified**: October 19, 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
@@ -27,9 +27,27 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 ### Hunyuan Runtime Loading & Shared Dependencies
 
+### UniRig attention selection and FastMesh resource admission
+
+- UniRig chooses SDPA only when the active Transformers causal-LM class advertises `_supports_sdpa`; unsupported architectures such as OPT use eager attention. A GPU-wide fallback alone does not prove every model architecture supports SDPA.
+- UniRig Pointcept `SerializedAttention` checks the current CUDA device before enabling FlashAttention: compute capability 8.0+ may use FlashAttention; pre-Ampere, unknown-capability, or no-FlashAttention environments use its eager implementation. Attention dropout remains an `nn.Dropout` module so the eager path can run both directly and after a FlashAttention runtime failure.
+- The shared TorchCluster FPS fallback imports PyTorch lazily before defining the typed function, preventing missing-name failures when the optional `torch_cluster` package is absent.
+- FastMesh V1K/V4K can use Accelerate `infer_auto_device_map` + `dispatch_model` when one GPU cannot meet the reservation. Loading fails explicitly unless the generated device map places layers on at least two reserved GPUs. The 16,384 MB / 24,500 MB budgets remain conservative project reservations, not upstream-published minimums.
+- Hunyuan3D-Paint bounds raster interpolation and UV attribute extraction in 128-row chunks to avoid giant full-frame gather temporaries. Its mesh renderer/super-resolution stage stays on the first selected device; multiview diffusion can run on the second selected device.
+- The scheduler's VRAM estimate is capped by live `torch.cuda.mem_get_info()` data so memory consumed outside the scheduler's own reservations is not treated as free. Aggregate VRAM is considered only for declared, supported dispatch strategies, and incomplete multi-GPU dispatch fails closed.
+- Paint3D does not advertise multi-GPU placement: its isolated child-stage processes currently run on one selected GPU, so adding their VRAM together would be a false capacity guarantee.
+- Rigged assets invalidate stale thumbnails so the viewer generates a preview from the new GLB. The viewport resolves canonical `artifact_format` query values before falling back to asset metadata; the browser-facing rigged artifact is GLB and native FBX remains separately downloadable.
+
+
+### Multi-GPU placement and rigged artifact contracts
+- Model manifests may advertise multi-GPU only when an adapter applies a real layer or component placement strategy. The scheduler passes per-device memory budgets to Accelerate; device-map/component placement must use at least two reserved GPUs or raise a runtime error rather than silently running on one card.
+- FastMesh layer sharding uses the scheduler's selected GPU IDs and memory limits. Hunyuan3D-Paint uses explicit component placement, with the renderer pinned to the first selected GPU and multiview diffusion on a second when available.
+- Live free VRAM is measured alongside tracked allocations to account for CUDA processes and work that did not originate in the current scheduler.
+- The rigging adapter stores both native `rigged.fbx` and a converted `rigged.glb`; the viewport must load the GLB by default and only use FBX when the canonical artifact URL asks for FBX. A changed geometry clears the old preview thumbnail.
+
 ### Runtime failure and readiness contracts
 - Hunyuan3D-Paint's adapter-level Numba/cache and safe-background-remover helpers also use the canonical backend compatibility loader. This avoids a cached generic `utils.torchvision_fix` silently selecting the Shape or Paint vendored helper for adapter-owned fallback logic.
-- Latest verified CPU CI at commit `cb02d5df21b7fc34e77be10947b95ac526799594`: Python source compilation passed and all 12 compatibility-contract tests passed. Frontend CI also passed at that commit. GPU/checkpoint-backed inference is not covered by these lanes.
+- Backend CI runs Python source compilation plus CPU-only compatibility, source-contract, and resource-planner tests; frontend CI runs dependency installation, TypeScript checking, and production build. These lanes do not run GPU/checkpoint-backed inference or measure actual peak VRAM.
 
 - ModelFactory and UniRig load the main backend TorchVision/Transformers compatibility helper by a canonical file path under a private module name; they do not rely on whichever third-party `utils.torchvision_fix` Python resolves first.
 - The generic `utils` package can still resolve model-specific Shape utilities by design, so third-party code must continue to use an adapter-scoped path or its own package-qualified import. Runtime helper lookup must not depend on this package search order.
@@ -46,7 +64,9 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 - Hunyuan3D-Paint temporarily adds its vendored utility path only during model initialization and restores both `sys.path` and the shared `utils.__path__` in `finally`; the shared utils package no longer globally adds third-party paths.
 - Hunyuan3D-Paint retries no longer purge shared `sys.modules` entries. Missing local texture or DINO checkpoints are logged before selecting a remote repository fallback.
-- ARDY reads its vendored `pyproject.toml` dependency declarations and warns about installed-version mismatches before CUDA allocation; the check is diagnostic only and does not modify the shared environment or block loading.
+- ARDY reads its vendored `pyproject.toml` dependency declarations and warns about installed-version mismatches before inference; the check is diagnostic only and does not modify the shared environment or block loading.
+- ARDY is manifest-declared CPU-only: the resource planner returns a CPU plan with no GPU IDs/VRAM reservations, and its dedicated worker hides CUDA before worker initialization. The adapter explicitly loads the motion model and local LLM2Vec text encoder on CPU.
+- ARDY forces TEXT_ENCODER_DEVICE=cpu and local float32 text encoding to prevent a text-encoder API/CUDA fallback. CPU inference is slower and requires sufficient host RAM and access to the gated text-encoder checkpoint.
 - `BaseModel.load()` preserves the original exception as the chained cause. A lightweight CPU backend CI lane compiles backend Python and runs dependency-contract tests; it does not replace GPU/checkpoint-backed smoke tests.
 
 - The Transformers HybridCache import fallback aliases the available real DynamicCache/Cache implementation and logs that HybridCache-specific behavior is not reproduced; it no longer creates an empty compatibility subclass.
@@ -408,6 +428,7 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 ### Motion Generation
 - `POST /api/v1/motion-generation/generate-motion`: Synthesize 3D human motion from text.
 - `GET /api/v1/motion-generation/checkpoints`: Query installed ARDY checkpoints.
+- `model_preference` must use the registered ID `ardy_motion_generation`; Core and G1 are checkpoint variants (`ARDY-Core-RP-20FPS-Horizon40`, `ARDY-Core-RP-20FPS-Horizon8`, `ARDY-G1-RP-25FPS-Horizon52`, `ARDY-G1-RP-25FPS-Horizon8`), not separate scheduler model IDs.
 
 ---
 
@@ -426,7 +447,7 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 | UniRig | `unirig_auto_rig` | Auto-Rigging | ~9 GB |
 | FastMesh | `fastmesh_v1k_retopology`; `fastmesh_v4k_retopology` | Mesh Retopology | ~16–24.5 GB |
 | PartUV | `partuv_uv_unwrapping` | UV Unwrapping | ~7 GB |
-| ARDY | `ardy_motion_generation` | Text → Motion | ~8 GB |
+| ARDY | `ardy_motion_generation` | Text → Motion | CPU-only; no GPU VRAM reservation |
 || Unique3D | `unique3d_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB ||
 
 ## 8.1 Raw Generation Fidelity / Official Parity Contract

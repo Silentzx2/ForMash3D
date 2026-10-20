@@ -68,8 +68,9 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 | Neural 3D Generation | Image-to-3D adapters with model-specific inference contracts |
 | Source Preservation | Immutable master/source.glb checkpoint before production processing |
 | Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
-| PBR Materials | Hunyuan3D Paint-v2.1 and model-specific textured generation |
+| PBR Materials | Full-mesh Paint3D/Hunyuan3D texturing; localized mask repaint remains disabled until adapter inference supports it |
 | Smart Generation | One-click image-only intents with deterministic model selection and scheduler-backed execution |
+| Generation Experiment Presets | Save local profiles, edit schema-driven parameters, test through the existing queue, and import/export JSON |
 | QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
 | Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |
 
@@ -214,11 +215,11 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 | **TripoSG** | `triposg_image_to_raw_mesh` | Image/Scribble to 3D | 8 GB | High-fidelity image and scribble guided 3D geometry |
 | **FastMesh (1K & 4K)** | `fastmesh_v1k_retopology`<br>`fastmesh_v4k_retopology` | Mesh Retopology | 16–24.5 GB | Fixed-budget neural quad retopology producing clean animation loops |
 | **UniRig** | `unirig_auto_rig` | Auto-Rigging | 9 GB | Automated bipedal skeletal armature generation |
-| **ARDY** | `ardy_motion_generation` | Motion AI | 8 GB | Interactive autoregressive text-to-motion generation |
+| **ARDY** | `ardy_motion_generation` | Motion AI | CPU-only; no GPU VRAM reservation | Interactive autoregressive text-to-motion generation; CPU/RAM-bound |
 | **PartUV** | `partuv_uv_unwrapping` | UV Unwrapping | 7 GB | Automated seam placement and UV chart packing |
 || **Unique3D** | `unique3d_image_to_raw_mesh` | Raw Mesh | ~10 GB | High-fidelity single-image to 3D with multi-view diffusion and textured reconstruction |
 
----
+> **FastMesh resource admission:** The 16 GB (V1K) / 24.5 GB (V4K) figures are conservative scheduler reservations, not upstream-published minimum VRAM. The current adapter is single-GPU-only; 2×T4 aggregate memory is not treated as one device's memory. Full variant-matched checkpoint files (about 4.38 GB / 4.39 GB on disk) are required, and checkpoint size must not be confused with inference VRAM.---
 
 ## ⚙️ Production Post-Processing Engine
 
@@ -438,7 +439,7 @@ Yes. Once your model checkpoints are downloaded via `bash backend/scripts/downlo
 
 ForMash3D runs on modern NVIDIA GPUs supporting CUDA 12.4+:
 - **Lightweight Models (6GB–10GB VRAM)**: TripoSG, Hunyuan3D-DiT-v2-mini-Turbo (runs comfortably on RTX 3060, 4060, RTX 2080).
-- **Standard Models (12GB–16GB VRAM)**: TRELLIS, FastMesh (runs on RTX 3080, 4070, 4080, T4, L4).
+- **Standard Models (12GB–16GB VRAM)**: TRELLIS on supported GPUs. FastMesh uses separate V1K/V4K single-GPU reservations; 2×T4 aggregate VRAM is not combined by the current adapter.
 - **Heavy & High-Poly Models (24GB+ VRAM)**: TRELLIS.2, Hunyuan3D-Paint 2B (runs on RTX 3090, 4090, A10, A100).
 </details>
 
@@ -475,7 +476,8 @@ Live streaming emits both newline- and carriage-return-delimited output (includi
 | 📋 **[Product Requirements (PRD)](Docs/PRD.md)** | Core features, target users, and product roadmaps |
 | 🎨 **[Design System](Docs/DESIGN.md)** | Studio Gold color tokens, UI component specifications, and layouts |
 | 🛡️ **[Agent & Engineering Rules](RULES.md)** | Authoritative coding standards, minimalist practices, and change policies |
-| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (ADR-001 through ADR-050) |
+| 📝 **[Project Decisions (ADRs)](Docs/DECISIONS.md)** | Architecture Decision Records (latest ADR-084) |
+| 🧪 **[Experimental Model Settings](Docs/EXPERIMENTAL-MODEL-SETTINGS.md)** | Dated upstream/community evidence, active max-detail profiles, compatibility limits and user-confirmation policy |
 | 🧠 **[Project Memory & Status](Docs/MEMORY.md)** | Active state, hardware prerequisites, and verified milestones |
 | 📜 **[Change Log](Docs/CHANGELOG.md)** | Chronological history of releases, fixes, and optimizations |
 | 🎯 **[Task Tracker](Docs/TASKS.md)** | Completed features, active development items, and future roadmap |
@@ -514,14 +516,20 @@ ForMash3D's normal Image → 3D workflow now includes optional production automa
 
 These capabilities reuse the existing scheduler, image editor, post-processing, history, and artifact-delivery infrastructure.
 
+## Generation Experiments & Reusable Presets
+
+Workspace Settings → AI Inference includes a Generation Experiment Lab for editing the active model's schema parameters, seed, guidance, inference steps where supported, and advanced nested JSON overrides. Save/reload local presets, track a revision label, queue current settings, and import/export preset JSON files. Presets exclude images and preprocessing artifacts so reloading a profile does not replace the current input image.
+
 ## High-Fidelity Generation Architecture
 
-ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler can use explicit multi-GPU placement for compatible pipelines and scales CPU-side work from the available core count while preventing worker oversubscription.
+ForMash3D now treats the generated master mesh as the immutable high-fidelity asset and produces optimized/game-ready derivatives from it. Model selection remains additive and capability-aware, so existing models are retained rather than replaced. The scheduler caps tracked VRAM estimates with live device-free memory; supported adapters use actual Accelerate layer maps or component placement when a single GPU cannot meet the reservation.
 
-Quality diagnostics can compare derivatives to the master and can use reference-mesh metrics when ground truth is available. Final GPU/OOM validation remains hardware-specific.
+FastMesh V1K/V4K can shard layers across selected GPUs. Hunyuan3D-Paint uses row-chunk raster interpolation/extraction and can place renderer/super-resolution and multiview diffusion components on separate GPUs. Incomplete placement fails explicitly. Paint3D, UniRig, PartUV, and ARDY are not treated as sharded merely because several GPUs exist; their current adapters remain single-device unless a verified placement implementation is added. Rigged assets regenerate their thumbnail and the viewport resolves canonical GLB/FBX artifact URLs.
+
+Quality diagnostics can compare derivatives to the master and can use reference-mesh metrics when ground truth is available. Final GPU/OOM validation remains hardware-specific; CPU CI covers source and scheduler contracts, not actual model inference.
 
 ## High-Fidelity Runtime Hardening — 2026-10-08
 
-ForMash3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
+ForMash3D now uses a normalized model capability contract for deterministic routing, model-aware preprocessing and resource admission. ARDY motion inference is explicitly CPU-only; its local LLM2Vec text encoder is also forced to CPU, so this feature does not reserve or use GPU VRAM. The scheduler can consider aggregate VRAM only for adapters that explicitly declare a supported multi-GPU strategy. CPU worker/thread policy is auto-scaled from available logical cores with environment overrides.
 
 Production results keep the immutable source master separate from optimized derivatives and now include final QA/LOD/fidelity diagnostics. A lightweight offline A/B benchmark is available for controlled same-input comparisons; without a real reference mesh, generated-vs-generated geometry metrics remain diagnostic.

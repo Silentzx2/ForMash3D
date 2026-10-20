@@ -1,9 +1,16 @@
 # Models Configuration
 # Available models for each feature
 # Use the actual adapter model IDs as defined in the adapter classes
+# EXPERIMENTAL_MAX_DETAIL settings snapshot: 2026-10-20.
+# USER REQUIREMENT: cross normal limits for experimental quality testing; do not lower merely to fit a test GPU.
+# Do not silently clamp over-limit settings. OOM/poor quality are valid test outcomes; user will lower after review.
+# CHANGE CONTROL: before changing any locked parameter/profile later, ask the user once and wait for explicit confirmation.
+# Evidence, limits, and source links: Docs/EXPERIMENTAL-MODEL-SETTINGS.md
 
 # text-conditioned mesh painting
 text_mesh_painting:
+  # EXPERIMENTAL_MAX_DETAIL: TRELLIS supports up to 50 sampling steps; adapter has a shared guidance field, so it cannot express separate upstream SS=7.5 / SLAT=3.0 guidance without an implementation change.
+  # Review note: keep raw geometry unsimplified and ask the user once before any future profile change.
   trellis_text_mesh_painting:
     capabilities:
       text_mesh_painting: true
@@ -18,6 +25,8 @@ text_mesh_painting:
 
 # image-conditioned geometry generation
 image_to_raw_mesh:
+  # EXPERIMENTAL_MAX_DETAIL: steps=100 (upstream UI maximum and community-tested experiment), guidance=5.0 (upstream default), octree=1300 (upstream maximum).
+  # A/B outcome is unverified; raw master remains un-decimated. Ask the user once before later changing this profile.
   hunyuan3d_shape_v21_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -29,7 +38,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [high_detail, thin_feature_sensitive]
       preferred_preprocessing: high_fidelity
       preferred_extraction: dense_marching_cubes
-      preferred_resolution: 512
+      preferred_resolution: 1300
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: balanced
@@ -44,6 +53,8 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: preserve distilled 5-step schedule, guidance=5.0, and trained octree=380; do not raise the octree to 512.
+  # This is a checkpoint compatibility boundary, not a low-VRAM quality downgrade. Ask before later changes.
   hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -55,7 +66,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [fine_surface_sampling, dense_marching_cubes]
       preferred_preprocessing: default
       preferred_extraction: dense_marching_cubes
-      preferred_resolution: 512
+      preferred_resolution: 768
       preferred_face_budget: medium
       recommended_postprocess_profile: default
       latency_class: fast
@@ -69,6 +80,8 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: steps=50 and guidance=7.0 follow upstream defaults; dense depth=9 / hierarchical depth=10 are the repo's high-detail target.
+  # Existing VRAM gate may report an effective depth below the request; no higher community optimum is verified. Ask before changes.
   triposg_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -95,6 +108,8 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: preserve upstream-supported do_refine=true, expansion_weight=0.1, init_type=std and seed=1145.
+  # The adapter exposes no configurable inference steps/guidance control; do not invent unsupported knobs. Ask before changes.
   unique3d_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -127,6 +142,8 @@ image_to_raw_mesh:
       expansion_weight: 0.1
       init_type: "std"
 
+  # EXPERIMENTAL_MAX_DETAIL: use official 1536_cascade / resolution=1536; apply the TRELLIS.2 community high-detail sampler profile as an explicitly unbenchmarked experiment for Pixal3D.
+  # Keep the raw master non-decimated. Low-VRAM remains false; ask the user once before any later profile edit.
   pixal3d_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -140,7 +157,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [pixel_aligned_projection, pixel_to_3d_correspondence, open_surfaces, non_manifold_safe]
       preferred_preprocessing: high_fidelity
       preferred_extraction: o_voxel
-      preferred_resolution: 1024
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -158,6 +175,7 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: legacy alias of pixal3d_image_to_raw_mesh; it must inherit the same 1536 O-Voxel source profile, not an independent lower-resolution profile.
   pixal3d_image_to_3d:
     alias_of: "pixal3d_image_to_raw_mesh"
     capabilities:
@@ -171,8 +189,8 @@ image_to_raw_mesh:
       vertex_color: false
       mesh_quality_characteristics: [sharp_features, complex_topology]
       preferred_preprocessing: native_detail
-      preferred_extraction: marching_cubes
-      preferred_resolution: 512
+      preferred_extraction: o_voxel
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -190,6 +208,8 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: source sampling uses 50 steps (upstream UI ceiling); shared adapter guidance remains 7.5, with raw simplification disabled.
+  # Official UI uses separate 7.5/3.0 stage guidance, which this shared guidance field cannot represent. Ask before any later change.
   trellis_image_to_3d:
     capabilities:
       text_to_3d: false
@@ -207,6 +227,7 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: alias/raw route retains 50-step geometry stages and simplify=0.0; raw master geometry is not reduced.
   trellis_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -224,6 +245,8 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: TRELLIS.2 community quality-first issue profile: 50 steps, SS guidance=8.0, shape=8.5, texture=2.5, 1536 cascade.
+  # Community issue is a user's experiment, not a maintainer guarantee; raw master uses decimation_target=-1 rather than the issue's 800k cap. Ask before changes.
   trellis2_image_to_3d:
     capabilities:
       text_to_3d: false
@@ -237,7 +260,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
       preferred_preprocessing: native_detail
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -254,6 +277,8 @@ image_to_raw_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: same TRELLIS.2 community sampler profile; 1536 cascade, full token budget, remesh=false and decimation_target=-1.
+  # The community profile is experimental, not proven best for every asset. Ask before future changes.
   trellis2_image_to_raw_mesh:
     capabilities:
       text_to_3d: false
@@ -267,7 +292,7 @@ image_to_raw_mesh:
       mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
       preferred_preprocessing: native_detail
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -286,6 +311,7 @@ image_to_raw_mesh:
 
 # image-conditioned geometry+texture generation (legacy aliases routing to raw geometry)
 image_to_textured_mesh:
+  # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS profile; 50-step source configuration, shared CFG=7.5, simplify=0.0.
   trellis_image_to_textured_mesh:
     alias_of: "trellis_image_to_3d"
     deprecated: true
@@ -307,6 +333,7 @@ image_to_textured_mesh:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: deprecated alias of the TRELLIS.2 profile; 1536 cascade and separate 50-step sparse/shape/texture sampler candidate.
   trellis2_image_to_textured_mesh:
     alias_of: "trellis2_image_to_3d"
     deprecated: true
@@ -322,7 +349,7 @@ image_to_textured_mesh:
       mesh_quality_characteristics: [sharp_features, open_surfaces, non_manifold_safe]
       preferred_preprocessing: native_detail
       preferred_extraction: o_voxel
-      preferred_resolution: 1536
+      preferred_resolution: 2048
       preferred_face_budget: high
       recommended_postprocess_profile: high_fidelity
       latency_class: quality
@@ -341,6 +368,7 @@ image_to_textured_mesh:
 
 # image-conditioned mesh painting
 image_mesh_painting:
+  # EXPERIMENTAL_MAX_DETAIL: TRELLIS texture size stays at its supported 2048 default; higher atlas targets are not assumed to be supported by this adapter.
   trellis_image_mesh_painting:
     capabilities:
       texture_generation: true
@@ -355,6 +383,8 @@ image_mesh_painting:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: texture atlas supports 4096 by default and 8192 in the adapter; texture stage uses 50 steps / guidance 2.5 / rescale 0.2 / rescale_t 6.0.
+  # Values are a community candidate, not a verified universal optimum; ask the user once before later changes.
   trellis2_image_mesh_painting:
     capabilities:
       texture_generation: true
@@ -369,6 +399,8 @@ image_mesh_painting:
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: use upstream demo ceiling of 9 views and 768 per-view inference resolution; preserve 4K/8K atlas output.
+  # These are supported UI limits, not proof that every image benefits. Ask once before later changes.
   hunyuan3d_paint_v21_image_mesh_painting:
     capabilities:
       texture_generation: true
@@ -376,21 +408,22 @@ image_mesh_painting:
       multiview: false
       multi_gpu: true
       multi_gpu_strategy: accelerate_component_dispatch
-    vram_requirement: 12000  # MB — lowered from 21504; CPU offload keeps peak below 15GB
+    vram_requirement: 12000  # MB — configured scheduler reservation, not a measured peak-memory guarantee
     supported_inputs: ["mesh", "text", "image"]
     supported_outputs: ["glb", "obj"]
     model_path: "backend/pretrained/tencent/Hunyuan3D-2.1"
     enabled: true
     max_workers: 1
 
+  # EXPERIMENTAL_MAX_DETAIL: keep the adapter's supported two-stage recipe (20 steps; guidance 7.0 then 3.0) and supported 1K/2K output textures.
+  # No better community-tested override was verified; do not invent one. Ask before changing this profile.
   paint3d:
     capabilities:
       texture_generation: true
       texture_refine: true
       multiview: false
       supported_resolutions: [1024, 2048]
-      multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
+      # Paint3D stages run in isolated single-GPU subprocesses; aggregate VRAM is not model sharding.
     vram_requirement: 12000  # MB
     supported_inputs: ["mesh", "image"]
     supported_outputs: ["glb", "obj"]
@@ -404,6 +437,7 @@ mesh_segmentation: {}
 
 # auto-rigging
 auto_rig:
+  # EXPERIMENTAL_MAX_DETAIL: UniRig exposes rig mode/seed, not diffusion steps or guidance. Upstream recommends reviewing/refining skeleton before skinning.
   unirig_auto_rig:
     capabilities:
       auto_rig: true
@@ -417,13 +451,14 @@ auto_rig:
 
 # mesh retopology
 mesh_retopology:
+  # EXPERIMENTAL_MAX_DETAIL: V1K is a fixed ~1k-vertex retopology checkpoint; no supported inference-step/guidance controls exist.
   fastmesh_v1k_retopology:
     capabilities:
       retopology: true
       target_variant: "V1K"
       multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
-    vram_requirement: 16384  # MB
+      multi_gpu_strategy: accelerate_auto_device_map
+    vram_requirement: 16384  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V1K"
     supported_inputs: ["obj", "glb", "ply", "stl"]
@@ -432,13 +467,14 @@ mesh_retopology:
     enabled: true
     max_workers: 1
     
+  # EXPERIMENTAL_MAX_DETAIL: V4K is a fixed ~4k-vertex retopology checkpoint; no supported inference-step/guidance controls exist.
   fastmesh_v4k_retopology:
     capabilities:
       retopology: true
       target_variant: "V4K"
       multi_gpu: true
-      multi_gpu_strategy: accelerate_component_dispatch
-    vram_requirement: 24500  # MB
+      multi_gpu_strategy: accelerate_auto_device_map
+    vram_requirement: 24500  # MB; conservative admission budget, not an upstream-published minimum
     init_params:
       variant: "V4K"
     supported_inputs: ["obj", "glb", "ply", "stl"]
@@ -449,6 +485,7 @@ mesh_retopology:
 
 # UV unwrapping
 uv_unwrapping:
+  # EXPERIMENTAL_MAX_DETAIL: retain official PartUV distortion threshold=1.25; larger thresholds explicitly permit more distortion. Adapter exposes no sampling-step/guidance controls.
   partuv_uv_unwrapping:
     capabilities:
       uv_unwrap: true
@@ -461,10 +498,13 @@ uv_unwrapping:
 
 # Motion generation (ARDY)
 motion_generation:
+  # EXPERIMENTAL_MAX_DETAIL: keep the supported Core/G1 checkpoints and their trained FPS/horizon; upstream CLI CFG defaults to [2.0, 2.0] but this adapter does not expose cfg_weight.
+  # Do not add unsupported CFG settings without implementation work; ask user once before changing this profile.
   ardy_motion_generation:
     capabilities:
       motion_generation: true
-    vram_requirement: 8192  # MB
+      cpu_only: true
+    vram_requirement: 0  # CPU-only; no GPU VRAM reservation
     supported_inputs: ["text"]
     supported_outputs: ["json", "npz"]
     model_path: "backend/pretrained/ardy"

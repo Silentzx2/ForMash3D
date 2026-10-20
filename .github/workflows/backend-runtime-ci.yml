@@ -33,7 +33,10 @@ jobs:
       - name: Compile backend Python sources
         run: python -m compileall -q backend
 
+      - name: Check model downloader shell syntax
+        run: bash -n backend/scripts/download_models.sh
+
       - name: Run backend compatibility contracts
         env:
           PYTHONPATH: backend
-        run: python -m pytest -q backend/tests/test_generation_dependency_contract.py backend/tests/test_runtime_source_contracts.py backend/thirdparty/tests/test_runtime_path_utils.py
+        run: python -m pytest -q backend/tests/test_generation_dependency_contract.py backend/tests/test_runtime_source_contracts.py backend/tests/test_resource_planner.py backend/thirdparty/tests/test_runtime_path_utils.py

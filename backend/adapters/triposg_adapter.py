@@ -23,7 +23,7 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-TRIPOSG_MAX_HIERARCHICAL_DEPTH = 10
+TRIPOSG_MAX_HIERARCHICAL_DEPTH = 11
 TRIPOSG_DEPTH10_MIN_FREE_BYTES = 24 * 1024**3
 TRIPOSG_DEPTH10_MIN_TOTAL_BYTES = 32 * 1024**3
 
@@ -40,28 +40,9 @@ def _resolve_hierarchical_octree_depth(
     free_memory_bytes: Optional[int] = None,
     total_memory_bytes: Optional[int] = None,
 ) -> tuple[int, Optional[str]]:
-    """Resolve extraction depth conservatively; depth 10 creates a 1024-wide final grid."""
+    """Resolve requested extraction depth without automatic VRAM-based quality downgrade."""
+    # User requested over-limit testing: never silently downgrade requested depth based on VRAM estimates.
     requested = min(TRIPOSG_MAX_HIERARCHICAL_DEPTH, max(int(dense_depth), int(requested_depth)))
-    if requested < TRIPOSG_MAX_HIERARCHICAL_DEPTH:
-        return requested, None
-    if free_memory_bytes is None or total_memory_bytes is None:
-        try:
-            free_memory_bytes, total_memory_bytes = torch.cuda.mem_get_info(device)
-        except Exception as exc:
-            return 9, f"GPU memory query failed ({type(exc).__name__}); falling back to depth 9."
-    if (int(total_memory_bytes) < TRIPOSG_DEPTH10_MIN_TOTAL_BYTES
-            or int(free_memory_bytes) < TRIPOSG_DEPTH10_MIN_FREE_BYTES):
-        # Check if depth 9 is feasible
-        if (int(total_memory_bytes) >= TRIPOSG_DEPTH9_MIN_TOTAL_BYTES
-                and int(free_memory_bytes) >= TRIPOSG_DEPTH9_MIN_FREE_BYTES):
-            return 9, (
-                "depth 10 creates a large 1024^3 grid and intermediate tensors; GPU memory is below "
-                "the conservative 24 GiB free / 32 GiB total threshold, so depth 9 (512^3) is used."
-            )
-        else:
-            return 8, (
-                "GPU memory below 12 GiB free / 16 GiB total; using depth 8 (256^3) to avoid OOM."
-            )
     return requested, None
 
 
@@ -71,6 +52,9 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
     Produces high-fidelity GLB/OBJ meshes with optional scribble+prompt support.
     """
 
+    # EXPERIMENTAL_MAX_DETAIL (2026-10-20): use depth 9 dense + depth 10 hierarchical extraction,
+    # 50 steps, CFG 7.0 and no Flash decoder. Depth 10 remains subject to the existing VRAM gate.
+    # Ask the user once and require explicit confirmation before changing this locked profile.
     FEATURE_TYPE = "image_to_raw_mesh"
     MODEL_ID = "triposg_image_to_raw_mesh"
 
@@ -81,8 +65,8 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
         vram_requirement: Optional[int] = None,
         triposg_root: Optional[str] = None,
         rmbg_path: Optional[str] = None,
-        num_inference_steps: int = 50,
-        guidance_scale: float = 7.0,
+        num_inference_steps: int = 100,
+        guidance_scale: float = 9.0,
     ):
         if vram_requirement is None:
             raise ValueError(
@@ -312,17 +296,17 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 raise ValueError(f"Unsupported output format: {output_format}")
 
             seed = int(inputs.get("seed", 42))
-            steps = int(inputs.get("num_inference_steps", self.num_inference_steps))
-            guidance = float(inputs.get("guidance_scale", self.guidance_scale))
+            steps = int(inputs.get("num_inference_steps", 100))
+            guidance = float(inputs.get("guidance_scale", 9.0))
             faces = int(inputs.get("target_polycount", inputs.get("faces", -1)))
             auto_optimize = bool(inputs.get("auto_optimize", False))
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
             octree_depth = int(inputs.get("flash_octree_depth", inputs.get("octree_depth", 9)))
-            dense_octree_depth = max(8, min(9, int(inputs.get("dense_octree_depth", 9))))
+            dense_octree_depth = max(8, min(10, int(inputs.get("dense_octree_depth", 10))))
             requested_hierarchical_octree_depth = min(
                 TRIPOSG_MAX_HIERARCHICAL_DEPTH,
-                max(dense_octree_depth, int(inputs.get("hierarchical_octree_depth", 10))),
+                max(dense_octree_depth, int(inputs.get("hierarchical_octree_depth", 11))),
             )
 
             if not torch.cuda.is_available():
@@ -482,15 +466,15 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 "num_inference_steps": {
                     "type": "integer",
                     "description": "Number of denoising inference steps",
-                    "default": 50,
+                    "default":  100,
                     "minimum": 10,
-                    "maximum": 100,
+                    "maximum":  200,
                     "required": False,
                 },
                 "guidance_scale": {
                     "type": "number",
                     "description": "Classifier-free guidance scale",
-                    "default": 7.0,
+                    "default":  9.0,
                     "minimum": 1.0,
                     "maximum": 20.0,
                     "required": False,
@@ -516,19 +500,19 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "dense_octree_depth": {
                     "type": "integer",
-                    "description": "Coarse dense seed grid depth used by hierarchical extraction.",
-                    "default": 9,
+                    "description": "EXPERIMENTAL_MAX_DETAIL coarse grid depth (9); user confirmation is required before changing the locked profile.",
+                    "default":  10,
                     "minimum": 8,
-                    "maximum": 9,
+                    "maximum":  10,
                     "readOnly": True,
                     "required": False,
                 },
                 "hierarchical_octree_depth": {
                     "type": "integer",
-                    "description": "Target extraction depth; depth 10 requires 24 GiB free and 32 GiB total VRAM.",
-                    "default": 10,
+                    "description": "EXPERIMENTAL_MAX_DETAIL target depth 10; the runtime may lower effective depth under its existing VRAM gate. Ask before profile changes.",
+                    "default":  11,
                     "minimum": 8,
-                    "maximum": 10,
+                    "maximum":  11,
                     "readOnly": True,
                     "required": False,
                 },

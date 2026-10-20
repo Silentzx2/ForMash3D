@@ -1,3 +1,79 @@
+## 2026-10-20 — Generation Experiment Presets
+
+- Workspace Settings → AI Inference has a Generation Experiment Lab drawer using the existing model-parameter schema API, workspace settings, generation queue, and parameter builder.
+- Presets persist locally under ai3d:generation:presets:v1. Save/update/delete, load while preserving the current image, export one or all profiles as JSON, and import validated profiles are supported.
+- Controls include seed, guidance, schema-driven model parameters, inference steps where declared, advanced nested JSON overrides, Run Current Settings, and revision/experiment ID metadata. Revision is not sent to inference.
+- Explicit modelParameterOverrides merge after model-specific profiles so final body.model_parameters preserves experiment values. Schema caching now stores each field's default rather than the schema descriptor object.
+- Regression coverage verifies outgoing request overrides and rejects malformed/unsafe JSON. Browser interaction, frontend static checks, and GPU inference remain unverified until actually run.
+
+## 2026-10-20 — Experimental Max-Detail Model Settings
+
+- The frontend requests Hunyuan Shape-v2.1 / legacy Hunyuan at octree 1300 and 150 steps, although adapter schemas retain 512-octree / 100-step declarations. These are deliberate stress-test requests, not upstream-supported guarantees; OOM risk and output quality remain unbenchmarked.
+- Mini Turbo requests octree 768 and 20 steps while its adapter schema documents 380 and 5. This is an intentional experiment-profile divergence with VRAM/checkpoint risk.
+- TRELLIS sparse/SLAT settings request 100 steps despite schema defaults of 50. TRELLIS.2 uses 100 steps per sampler stage, a 524288-token budget, and raw-master decimation target -1.
+- The EXPERIMENTAL_MAX_DETAIL profile is an unbenchmarked stress-test snapshot. Comments and schema declarations must not be confused with effective frontend request values; no GPU inference or output-quality A/B benchmark is claimed.
+- Change-control stays locked: ask once and obtain explicit user confirmation before changing profile values in a later task.
+
+## 2026-10-19 — Animation Export and Status Recovery
+
+- The BVH action is enabled only when the selected clip already has a BVH artifact; it downloads that file and no longer pretends to synthesize BVH from ARDY JSON.
+- ARDY job-status polling stops after five consecutive request failures, preserves the existing job ID, and exposes a user-triggered retry that reconnects to the same job rather than generating a duplicate.
+- Manual Armature mode also has a guard so its Generate action cannot submit UniRig.
+- CPU source-contract tests added; browser download and actual ARDY polling remain to be validated by CI/runtime execution.
+
+## 2026-10-19 — Live UV Inspection and Rigging Contract
+
+- UV Inspector renders UV edges from the loaded viewport geometry and selected UV channel. Mesh/UV counts, bounds and out-of-bounds values are computed from real geometry; expensive island-overlap and texel-density metrics are explicitly not claimed.
+- UniRig UI no longer sends or promises custom topology, IK generation, weight optimization or weight reuse that the adapter ignores. Manual mirroring remains an editor-only option, manual mode no longer starts UniRig, and legacy armature-save navigation checks the actual persistence result.
+- CPU source-contract regressions added. Browser rendering and the GPU-backed rigging path remain unverified until CI/runtime checks complete.
+
+## 2026-10-19 — Texture Paint Export, UV Mask and PartUV Result Contracts
+
+- Texture surface paint now exports the viewport's live material texture to a downloaded GLB; success/error notifications follow the exporter result.
+- UV region masks use a transparent dedicated canvas. Until either texture adapter supports localized mask inference, the spot-retexture action is disabled and mask-bearing API requests return 422 instead of quietly running full-mesh texturing. Paint3D receives request prompt guidance; Hunyuan remains reference-image guided.
+- PartUV receives the requested distortion threshold, honors save-individual-parts=false, and fails the task when packing throws or its expected output file is missing. Inert UV settings and texture-resolution controls were removed from the UV operation.
+- Regression source-contract tests added; CI and real model/browser execution remain to be verified.
+
+## 2026-10-19 — Animation ARDY Model-ID / Checkpoint Contract
+
+- Root cause: `AnimationLeftPanel` sent UI skeleton labels `ardy-core` / `ardy-g1` as `model_preference`, but `models.yaml` has one registered motion model: `ardy_motion_generation`. The right inspector stored legacy checkpoint labels (`ardy-core (default)`, `ardy-unitree-g1`, `ardy-rp-20fps`) that are not accepted ARDY checkpoint variants.
+- Fix: frontend sends `ardy_motion_generation`, maps old persisted labels to a real checkpoint ID, and derives the target skeleton from that checkpoint. The API maps older model IDs for stale clients; the adapter maps old checkpoint labels to official variants.
+- The supplied Unique3D fallback log is absent from current `dev` source and proves the runtime is running pre-fix backend code. The corrected adapter is already pushed to `dev`, ThirdParty `main` has the compatible normal base, and the submodule is pinned to that commit. Pull `dev`, sync submodules, and restart API/scheduler workers before re-testing.
+- Validation boundary: source-contract tests and CI type-check/build cover these changes; actual model checkpoint inference was not performed in this editing environment.
+
+## 2026-10-19 — Unique3D Normal Checkpoint Channel Compatibility
+
+- Root cause: `_resolve_normal_config()` preferred the local trained `img2mvimg` model for normal prediction. Its UNet expects 8 input channels, but the `image2normal` checkpoint stores 4-channel `conv_in.weight` and `ref_unet.conv_in.weight` tensors. The local-first fallback repeated the incompatible initialization.
+- Fix: pin the normal pipeline to `lambdalabs/sd-image-variations-diffusers`, a 4-channel base, and only try the alternate image-variation repository after load failure. The multiview pipeline remains paired with its own 8-channel `img2mvimg` weights. Updated the ThirdParty `main` branch and synchronized the main repo submodule pointer.
+- Validation boundary: source-contract tests verify config selection and that the local multiview base is not used in the normal loader. Actual checkpoint-backed GPU inference still needs a smoke test on the target runtime.
+
+## 2026-10-19 — ARDY CPU-Only Inference
+
+- Root cause: the ARDY adapter rejected hosts without CUDA and forced both the motion model and inference tensors to a CUDA device. Its default text-encoder path could use a remote API or place LLM2Vec on CUDA; vendored LLM2Vec also selected CUDA multiprocessing based on visible GPU count rather than the requested device.
+- Fix: ARDY is declared cpu_only with a zero-GPU-VRAM requirement. The resource planner emits a CPU plan without probing GPU inventory; the worker hides CUDA in its dedicated process, and base-model load/unload paths skip CUDA APIs for CPU plans. The adapter forces the model and local LLM2Vec encoder to CPU, uses deterministic CPU-only seeding, and reports CPU mode in job provenance.
+- Additional runtime fix: corrected an undefined rel_motion_url reference that could raise after motion artifacts had already been written.
+- Validation boundary: CPU-only source/resource-planner regression tests were added. Actual ARDY checkpoint-backed CPU inference, peak system RAM, runtime and output quality have not been executed in this editing environment; the host must also have access to the gated text-encoder checkpoint.
+
+## 2026-10-19 — UniRig Runtime Failure & FastMesh VRAM/Weight Admission
+
+- **Hunyuan3D-Paint raster OOM:** the reported 384 MiB failure originated in the custom rasterizer's full-frame attribute gather at UV extraction. Third-party Paint now interpolates and extracts visible positions/normals in 128-row chunks, with visible attributes staged through CPU memory, while preserving face-normal orientation. This reduces temporary allocations but has not yet been validated against a GPU checkpoint run.
+- **Hunyuan3D-Paint placement:** the renderer honors the configured CUDA device. Under a multi-GPU resource plan, super-resolution and the renderer use the first selected GPU while multiview diffusion uses the second. This is component placement, not tensor-parallel diffusion.
+- **Live VRAM guard:** tracked reservations are capped by `torch.cuda.mem_get_info()` free memory, accounting for processes/allocations outside the current scheduler's ledger. The generic multi-GPU dispatcher uses its scheduled max-memory budget and fails closed unless it actually places work across selected GPUs.
+- **Rigged asset preview/load:** `withRiggedModel` clears the old thumbnail so the viewport generates a preview for the rigged GLB. `MeshViewer` uses canonical `artifact_format=rigged` / `fbx` query values to distinguish browser GLB from native FBX, avoiding stale asset-format metadata.
+- **Device selection:** UniRig now resolves the generic default `cuda` to the scheduler-selected `cuda:{gpu_id}`. Its third-party skinning code uses `torch.as_tensor` and explicit `softmax(dim=-1)` to remove the warnings in the uploaded logs.
+- **Capability truthfulness:** Paint3D remains single-GPU; its two isolated child-stage processes do not currently shard weights, so its manifest no longer claims aggregate-VRAM multi-GPU support. UniRig, PartUV, and ARDY likewise remain single-device; do not claim universal model sharding without model-specific placement code.
+- **Verification boundary:** new CPU source/scheduler contracts cover these invariants. They do not demonstrate CUDA inference, actual peak VRAM, or output-quality parity; GPU/checkpoint smoke testing remains pending.
+
+- **UniRig helper root cause (from the supplied runtime log):** `fix_torch_cluster()` defined `fps_fallback(src: torch.Tensor, ...)` without binding `torch` or `Optional` before annotation evaluation, causing `NameError: name 'torch' is not defined`. The compatibility fallback now imports these names only when the optional `torch_cluster.fps` path is missing.
+- **UniRig attention root cause:** the vendored UniRig autoregressive model forced SDPA on pre-Ampere hardware, but the selected `OPTForCausalLM` class in the active Transformers runtime does not support SDPA. The third-party implementation now checks the causal-LM class's `_supports_sdpa` flag and chooses eager attention when unsupported; the main-repository submodule pointer is synchronized to that third-party commit.
+- **UniRig Pointcept FlashAttention root cause (new runtime log):** `SerializedAttention` attempted `flash_attn_varlen_qkvpacked_func` on a pre-Ampere GPU, then its exception fallback called `self.attn_drop(attn)` even though the FlashAttention branch stored `attn_drop` as a float. Pointcept now gates FlashAttention on CUDA compute capability 8.0+ (unknown capability or unavailable FlashAttention safely selects eager attention) and stores dropout as `torch.nn.Dropout` in both paths; FlashAttention receives the numeric `.p`. GPU auto-rigging still needs a real inference smoke test; eager attention can run slower and use more VRAM.
+- **Shared helper resolution:** scheduler worker startup now uses the canonical `core.utils.runtime_compat.get_backend_torchvision_fix()` loader rather than a path-order-dependent `utils.torchvision_fix` import.
+- **FastMesh resource admission:** the earlier dev revision removed multi-GPU capability because its runner did not shard. The current fix restores that capability only with Accelerate `infer_auto_device_map`/`dispatch_model`, scheduler memory budgets, and a hard check that at least two reserved GPUs actually receive model layers; a failed/single-GPU map now errors instead of silently continuing.
+- **FastMesh checkpoint integrity:** downloader and API readiness now require the matching `config.json` variant plus `model.safetensors` exceeding 4,000,000,000 bytes, preventing metadata-only or truncated files from appearing ready. Public Hugging Face listings show approximately 4.38 GB (V1K) and 4.39 GB (V4K).
+- **Verification boundary:** the supplied log records a 9,216 MB scheduler reservation for UniRig and a pre-Ampere GPU, but it contains no FastMesh load or total/free GPU memory snapshot. The upstream FastMesh repository describes an A6000-tested environment and V1K/V4K batch sizes, without publishing an exact minimum-VRAM figure. Therefore 16 GB / 24.5 GB remain project admission budgets, not measured requirements from this log. GPU/checkpoint validation is still required after pulling the fix.
+
+---
+
 ## 2026-10-18 — Final CI Verification
 
 - At `cb02d5df21b7fc34e77be10947b95ac526799594`, GitHub Actions passed both checks: backend Python source compilation plus 12/12 CPU dependency/runtime contract tests, and frontend CI.

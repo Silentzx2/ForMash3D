@@ -560,7 +560,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       generateTexture: true,
       enableFlashVDM: false,
       lowVramMode: 'auto',
-      maxNumView: 6,
+      maxNumView: 9,
       resolution: 1024,
       generateCollision: true,
       generateLOD: false,
@@ -606,7 +606,7 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     prompt: '',
     modelId: '',
     maps: { albedo: true, normal: true, roughness: true, metallic: true, ao: true, height: false },
-    maxNumView: 6,
+    maxNumView: 9,
     generatePBR: true,
   });
 
@@ -669,9 +669,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let cancelled = false;
     getApiClient().getModelParameters(modelId).then(data => {
       if (cancelled) return;
+      const schema = data.schema?.parameters || {};
+      const defaults = Object.fromEntries(
+        Object.entries(schema).map(([name, parameter]) => [name, parameter.default])
+      );
       setModelParameterDefaults(prev => ({
         ...prev,
-        [modelId]: data.schema?.parameters || {},
+        [modelId]: defaults,
       }));
     }).catch(err => {
       console.warn(`Failed to load model parameters for ${modelId}:`, err);
@@ -1880,20 +1884,14 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
         ...meshRef,
       };
 
-      if (textureSettings.maskImage) {
-        if (textureSettings.maskImageFileId) {
-          body.mask_file_id = textureSettings.maskImageFileId;
-        } else if (textureSettings.maskImage.startsWith('data:')) {
-          body.mask_base64 = textureSettings.maskImage.replace(/^data:image\/[a-z0-9.+-]+;base64,/, '');
-        } else {
-          body.mask_path = textureSettings.maskImage;
-        }
-      }
-
       if (modelPreference.includes('paint_v21') || isHighRes) {
         body.model_parameters = {
-          max_num_view: textureSettings.maxNumView ?? 6,
-          resolution: resolution === '8K' ? 768 : 512,
+          // EXPERIMENTAL_MAX_DETAIL: Hunyuan3D-Paint upstream supports 6-9 views; default to 9.
+          // Ask the user once before changing this locked quality profile in a later task.
+          max_num_view: textureSettings.maxNumView ?? 9,
+          // EXPERIMENTAL_MAX_DETAIL: use the supported 768 per-view inference profile for both 4K and 8K atlas outputs.
+          // Atlas resolution remains selected independently below; ask the user before changing this locked quality default.
+          resolution: 768,
         };
       } else {
         body.model_parameters = {};
@@ -2174,7 +2172,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            generateTexture: batchItem.generateTexture ?? true,
            enableFlashVDM: batchItem.enableFlashVDM ?? false,
            lowVramMode: batchItem.lowVramMode ?? 'auto',
-           maxNumView: batchItem.maxNumView ?? 6,
+           maxNumView: batchItem.maxNumView ?? 9,
            resolution: batchItem.resolution ?? 1024,
            generateCollision: batchItem.generateCollision ?? true,
            intent: batchItem.intent,

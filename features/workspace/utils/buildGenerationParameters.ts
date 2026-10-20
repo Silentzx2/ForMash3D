@@ -1,6 +1,10 @@
 /**
  * Build generation parameters for model inference.
  * Pure function - no React dependencies, fully testable.
+ *
+ * Preset governance: EXPERIMENTAL_MAX_DETAIL values reflect the 2026-10-20
+ * upstream/community snapshot. Ask the user once and get explicit confirmation
+ * before changing any locked model setting in a later task.
  */
 
 import type { GenerationSettings } from '../types.ts';
@@ -18,6 +22,29 @@ export interface BuildParamsResult {
   isTextured: boolean;
   isRawModel: boolean;
   isPaintModel: boolean;
+}
+
+const FORBIDDEN_PARAMETER_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function isJsonParameterValue(value: unknown, depth = 0): boolean {
+  if (depth > 16) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.length <= 512 && value.every(item => isJsonParameterValue(item, depth + 1));
+  if (typeof value !== 'object') return false;
+  const entries = Object.entries(value as Record<string, unknown>);
+  return entries.length <= 512 && entries.every(([key, item]) =>
+    key.length <= 200 && !FORBIDDEN_PARAMETER_KEYS.has(key) && isJsonParameterValue(item, depth + 1)
+  );
+}
+
+/** Validate imported/free-form parameter JSON before merging it into inference arguments. */
+export function parseModelParameterOverrides(value: unknown): Record<string, unknown> {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value) || !isJsonParameterValue(value)) {
+    throw new Error('Model parameter overrides must be a safe JSON object (finite values, max depth 16).');
+  }
+  return { ...(value as Record<string, unknown>) };
 }
 
 export function buildGenerationParameters(
@@ -80,8 +107,9 @@ export function buildGenerationParameters(
     candidate_count: settings.candidateCount ? Math.max(1, Math.min(4, Number(settings.candidateCount))) : 1,
   };
   
-  // Model-specific parameters
+  // Existing model defaults establish the profile; explicit UI/preset values win last.
   applyModelSpecificParams(modelParameters, modelId, currentQuality, settings, paramDefaults);
+  Object.assign(modelParameters, parseModelParameterOverrides(settings.modelParameterOverrides));
   
   // Determine endpoint and body
   let endpoint: string;
@@ -161,12 +189,13 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
     paramDefaults.ss_sampling_steps ??
     -1
   );
-  // Ignore schema defaults for models with a fixed maximum-fidelity source profile.
-  if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) return 5;
+  // EXPERIMENTAL_MAX_DETAIL values are project requests, not proof of upstream support.
+  // Mini Turbo requests 20 steps; TRELLIS defaults to 50; Hunyuan Shape requests 150.
+  if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) return 20;
   if (normId.includes('trellis')) return 50;
-  if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21') ||
-      normId.includes('triposg')) return 50;
-  if (normId.includes('pixal3d')) return 36; // 12 + 12 + 12
+  if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21')) return 150;
+  if (normId.includes('triposg')) return 100;
+  if (normId.includes('pixal3d')) return 150; // 50 experimental steps in each of 3 Pixal3D stages
   if (schemaSteps >= 1) return schemaSteps;
 
   let infSteps = 50;
@@ -175,9 +204,9 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
   } else if (normId.includes('triposg')) {
     infSteps = 50;
   } else if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21')) {
-    infSteps = 50;
+    infSteps = 100;
   } else if (normId.includes('pixal3d')) {
-    infSteps = 36;
+    infSteps = 150; // Experimental profile: 50 steps for each of the three stages.
   }
 
   return infSteps;
@@ -199,55 +228,79 @@ function applyModelSpecificParams(
   settings: GenerationSettings,
   paramDefaults: Record<string, any> = {}
 ): void {
+  // EXPERIMENTAL_MAX_DETAIL settings snapshot: 2026-10-20.
+  // User policy: before changing any locked parameter/profile later, ask once and wait for explicit confirmation.
   // Source geometry and source textures always use maximum-fidelity generation settings.
   // UI poly/quality budgets apply only to downstream production artifacts.
   // When the backend provides parameter defaults, prefer them over hardcoded values.
   const normId = (modelId || '').toLowerCase().replace(/-/g, '_');
   
   if (normId.includes('triposg')) {
+    // Experimental high-detail extraction: dense depth 9, hierarchical depth 10 (runtime has a VRAM gate).
     modelParameters.faces = Number(paramDefaults.faces ?? -1);
-    modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 50);
+    modelParameters.num_inference_steps = Number(paramDefaults.num_inference_steps ?? 100);
+    modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 9.0);
     modelParameters.use_flash_decoder = false;
-    modelParameters.dense_octree_depth = 9;
-    modelParameters.hierarchical_octree_depth = 10;
+    modelParameters.dense_octree_depth = 10;
+    modelParameters.hierarchical_octree_depth = 11;
   } else if (normId.includes('trellis2')) {
-    modelParameters.decimation_target = -1;
+    // Community quality-first experiment, see microsoft/TRELLIS.2 issue #92 (not a universal optimum).
+    modelParameters.decimation_target = -1; // Preserve raw master rather than the community profile's 800k face cap.
     modelParameters.remesh = false;
     modelParameters.pipeline_type = '1536_cascade';
-    modelParameters.max_num_tokens = 262144;
-    modelParameters.sparse_structure_sampler_params = { steps: 50 };
-    modelParameters.shape_slat_sampler_params = { steps: 50 };
+    modelParameters.max_num_tokens = 524288;
+    modelParameters.sparse_structure_sampler_params = {
+      steps: 100, guidance_strength: 10.0, guidance_rescale: 0.9, rescale_t: 8.0,
+    };
+    modelParameters.shape_slat_sampler_params = {
+      steps: 100, guidance_strength: 10.0, guidance_rescale: 0.8, rescale_t: 8.0,
+    };
+    modelParameters.tex_slat_sampler_params = {
+      steps: 100, guidance_strength: 3.5, guidance_rescale: 0.5, rescale_t: 8.0,
+    };
   } else if (normId.includes('trellis')) {
+    // Schema defaults to 50; the active project stress-test requests 100 sparse/SLAT steps.
     modelParameters.simplify = 0.0;
-    modelParameters.ss_sampling_steps = 50;
-    modelParameters.slat_sampling_steps = 50;
+    modelParameters.ss_sampling_steps = 100;
+    modelParameters.slat_sampling_steps = 100;
   } else if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-    // Official Mini Turbo uses octree_resolution=380; 512 exceeds trained range and degrades quality
-    modelParameters.octree_resolution = 380;
-    modelParameters.num_inference_steps = 5;
+    // Locked stress-test profile requests 20 steps / octree 768, above the adapter's declared 5 / 380 schema.
+    modelParameters.octree_resolution = 768;
+    modelParameters.num_inference_steps = 20;
+    modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);
     modelParameters.num_chunks = 80000;
     modelParameters.low_vram_mode = false;
     modelParameters.low_vram = false;
     modelParameters.enable_flashvdm = false;
     modelParameters.mc_algo = 'mc';
   } else if (normId.startsWith('hunyuan3d_shape_v21')) {
-    modelParameters.octree_resolution = 512;
-    modelParameters.num_inference_steps = 50;
-    modelParameters.guidance_scale = 7.5;
+    // Locked stress-test profile deliberately requests 150 steps / octree 1300 beyond upstream UI declarations.
+    modelParameters.octree_resolution = 1300;
+    modelParameters.num_inference_steps = 150;
+    modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);
     modelParameters.num_chunks = 80000;
     modelParameters.low_vram = false;
     modelParameters.mc_algo = 'mc';
   } else if (normId.includes('hunyuan')) {
-    modelParameters.octree_resolution = 512;
-    modelParameters.num_inference_steps = 50;
+    // Legacy Hunyuan3D 2.1 aliases use the same max-step / default-guidance experimental profile.
+    modelParameters.octree_resolution = 1300;
+    modelParameters.num_inference_steps = 150;
+    modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);
     modelParameters.num_chunks = 80000;
     modelParameters.low_vram = false;
   } else if (normId.includes('pixal3d')) {
+    // Community TRELLIS.2 high-detail samplers adapted for Pixal3D's compatible staged sampler API.
+    // This adaptation has not been benchmarked directly on Pixal3D; resolution=1536 is its official standard mode.
     modelParameters.low_vram = false;
     modelParameters.seed = paramDefaults.seed ?? settings.seed ?? 42;
     modelParameters.manual_fov = paramDefaults.manual_fov ?? null;
-    modelParameters.resolution = paramDefaults.resolution ?? settings.resolution ?? 1024;
-    modelParameters.pipeline_type = paramDefaults.pipeline_type ?? '1024_cascade';
+    modelParameters.resolution = paramDefaults.resolution ?? settings.resolution ?? 2048;
+    modelParameters.pipeline_type = paramDefaults.pipeline_type ?? '1536_cascade';
+    modelParameters.sampler_overrides = paramDefaults.sampler_overrides ?? {
+      sparse_structure: { steps: 100, guidance_strength: 10.0, guidance_rescale: 0.9, rescale_t: 8.0 },
+      shape: { steps: 100, guidance_strength: 10.0, guidance_rescale: 0.8, rescale_t: 8.0 },
+      texture: { steps: 100, guidance_strength: 3.5, guidance_rescale: 0.5, rescale_t: 8.0 },
+    };
     modelParameters.low_vram_mode = paramDefaults.low_vram ?? settings.lowVram ?? false;
     modelParameters.init_type = paramDefaults.init_type ?? 'std';
     modelParameters.native_pbr = true;

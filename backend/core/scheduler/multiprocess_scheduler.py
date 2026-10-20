@@ -63,7 +63,7 @@ try:
 except ImportError:
     torch = None
 
-import core.config  # Initialize PyTorch compatibility shims & settings in worker processes
+# core.config is imported inside model_worker_process after CPU-only CUDA visibility is applied.
 from core.utils.file_utils import get_storage_base_dir
 from core.utils.log_formatters import (
     format_banner,
@@ -106,26 +106,29 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
 })
 
 
+# EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20). Ask the user once and get explicit confirmation
+# before changing any locked profile in a later task. Sources/limits: Docs/EXPERIMENTAL-MODEL-SETTINGS.md.
 # High-fidelity source mesh profiles. Production budgets remain in request_inputs and
 # are applied only to downstream copies by post-processing.
 _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
-    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 7.5, "num_chunks": 80000, "mc_algo": "mc"},
-    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 512, "num_inference_steps": 50, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 380, "num_inference_steps": 5, "guidance_scale": 5.0, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 380, "num_inference_steps": 5, "guidance_scale": 5.0, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "triposg_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "flash_octree_depth": 9, "dense_octree_depth": 8, "hierarchical_octree_depth": 10, "use_flash_decoder": False, "faces": -1, "low_vram": False},
-    "pixal3d_image_to_raw_mesh": {"num_inference_steps": 50, "guidance_scale": 7.0, "low_vram": False},
+    "hunyuan3d_shape_v21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_3d": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3d_shape_v21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000, "mc_algo": "mc"},
+    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
+    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
+    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
+    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
+    "triposg_image_to_raw_mesh": {"num_inference_steps": 100, "guidance_scale": 9.0, "flash_octree_depth": 10, "dense_octree_depth": 10, "hierarchical_octree_depth": 11, "use_flash_decoder": False, "faces": -1, "low_vram": False},
+    "pixal3d_image_to_raw_mesh": {"source_quality": "max", "resolution": 2048, "pipeline_type": "1536_cascade", "sampler_overrides": {"sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}}, "low_vram": False},
     "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
-    "trellis_image_to_raw_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis_image_to_3d": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis_image_to_textured_mesh": {"num_inference_steps": 50, "ss_sampling_steps": 50, "slat_sampling_steps": 50, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 262144, "sparse_structure_sampler_params": {"steps": 50}, "shape_slat_sampler_params": {"steps": 50}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis_image_to_raw_mesh": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis_image_to_3d": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis_image_to_textured_mesh": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
+    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_mesh_painting": {"tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "texture_size": 4096},
+    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
 }
 
 
@@ -158,14 +161,14 @@ class WorkerConfig:
     def __init__(
         self,
         worker_id: str,
-        gpu_id: int,
+        gpu_id: Optional[int],
         model_config: Dict[str, Any],
         gpu_ids: Optional[List[int]] = None,
         resource_plan: Optional[Dict[str, Any]] = None,
     ):
         self.worker_id = worker_id
         self.gpu_id = gpu_id
-        self.gpu_ids = list(gpu_ids or [gpu_id])
+        self.gpu_ids = list(gpu_ids if gpu_ids is not None else ([] if gpu_id is None else [gpu_id]))
         self.resource_plan = dict(resource_plan or {})
         self.model_config = model_config
 
@@ -230,7 +233,12 @@ def model_worker_process(
     """
     worker_id = worker_config.worker_id
     gpu_id = worker_config.gpu_id
-    gpu_ids = list(worker_config.gpu_ids or [gpu_id])
+    gpu_ids = list(worker_config.gpu_ids)
+    cpu_only = (worker_config.resource_plan or {}).get("kind") == "cpu"
+    device_label = "CPU" if cpu_only else f"GPU {gpu_id}"
+    if cpu_only:
+        # Dedicated worker process: hide CUDA before any runtime code can initialize it.
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
     try:
         # Re-initialize logging in spawned worker process so logs are routed to logs/*.log files
@@ -240,13 +248,13 @@ def model_worker_process(
 
         # Apply runtime compatibility patches (SDPA hardware fallback, dinov3, gated repos, numba)
         try:
-            from utils.torchvision_fix import apply_fix
-            apply_fix()
+            from core.utils.runtime_compat import get_backend_torchvision_fix
+            get_backend_torchvision_fix().apply_fix()
         except Exception as fix_err:
             logger.warning("Worker %s compatibility fix warning: %s", worker_id, fix_err)
 
         # Set up process environment
-        logger.info(f"Starting worker process {worker_id} on GPU {gpu_id}")
+        logger.info(f"Starting worker process {worker_id} on {device_label}")
         # At the very beginning we try to login huggingface for the download of some special models
         import os
         from huggingface_hub import InferenceClient, login
@@ -260,29 +268,30 @@ def model_worker_process(
                 logger.warning("Failed to login to huggingface, possibly invalid token!")
 
         # Set primary CUDA device; multi-GPU adapters dispatch modules across worker_config.gpu_ids.
-        if torch.cuda.is_available():
+        if not cpu_only and gpu_id is not None and torch.cuda.is_available():
             torch.cuda.set_device(gpu_id)
         worker_threads = int((worker_config.resource_plan or {}).get("cpu_threads", 0))
         if worker_threads <= 1:
             worker_threads = os.cpu_count() or 8
         configure_cpu_runtime(worker_threads)
-        # Enable TF32 and benchmark for Tensor Core acceleration
-        try:
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
-            torch.backends.cudnn.benchmark = True
-        except Exception:
-            pass
-        # Warm up CUDA context
-        try:
-            dummy = torch.zeros(1, device=f"cuda:{gpu_id}")
-            del dummy
-        except Exception:
-            pass
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
+        if not cpu_only:
+            # Enable TF32 and benchmark for Tensor Core acceleration.
+            try:
+                torch.backends.cuda.matmul.allow_tf32 = True
+                torch.backends.cudnn.allow_tf32 = True
+                torch.backends.cudnn.benchmark = True
+            except Exception:
+                pass
+            # Warm up CUDA context only for GPU-backed resource plans.
+            try:
+                dummy = torch.zeros(1, device=f"cuda:{gpu_id}")
+                del dummy
+            except Exception:
+                pass
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
 
         # Initialize worker state - simplified for single model
         loaded_model: Optional[BaseModel] = None
@@ -299,17 +308,17 @@ def model_worker_process(
 
         # Load model immediately upon worker creation
         try:
-            logger.info(f"[GPU LOAD START] Worker {worker_id} loading model '{model_id}' on GPU {gpu_id} with config: {model_config.get('init_params', {})}")
+            logger.info(f"[MODEL LOAD START] Worker {worker_id} loading model '{model_id}' on {device_label} with config: {model_config.get('init_params', {})}")
             model = _create_model_from_config(model_config)
             success = model.load(gpu_id, resource_plan=worker_config.resource_plan)
 
             if success:
                 loaded_model = model
-                logger.info(f"[GPU LOAD SUCCESS] ✓ Worker {worker_id} successfully loaded model '{model_id}' on GPU {gpu_id}")
+                logger.info(f"[MODEL LOAD SUCCESS] ✓ Worker {worker_id} loaded model '{model_id}' on {device_label}")
                 control_response_queue.put(WorkerResponse("init", True, {"model_id": model_id}))
             else:
-                err_msg = f"Worker {worker_id} model.load({gpu_id}) returned False for model '{model_id}'"
-                logger.error(f"[GPU LOAD FAILED] ❌ {err_msg}")
+                err_msg = f"Worker {worker_id} model.load on {device_label} returned False for model '{model_id}'"
+                logger.error(f"[MODEL LOAD FAILED] ❌ {err_msg}")
                 try:
                     control_response_queue.put(WorkerResponse("init", False, error=err_msg))
                     time.sleep(1.0)
@@ -391,12 +400,12 @@ def model_worker_process(
             if loaded_model and hasattr(loaded_model, "_unload_model"):
                 # Synchronous unload for cleanup
                 try:
-                    logger.info(f"[GPU UNLOAD START] Worker {worker_id} unloading model from GPU {gpu_id}...")
+                    logger.info(f"[MODEL UNLOAD START] Worker {worker_id} unloading model from {device_label}...")
                     loaded_model._unload_model()
-                    logger.info(f"[GPU UNLOAD SUCCESS] ✓ Worker {worker_id} model unloaded from GPU {gpu_id}")
+                    logger.info(f"[MODEL UNLOAD SUCCESS] ✓ Worker {worker_id} unloaded model from {device_label}")
                 except Exception as unl_err:
                     logger.warning(f"[GPU UNLOAD FAILED] Worker {worker_id} unload warning: {unl_err}")
-            if torch.cuda.is_available():
+            if not cpu_only and torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:
             pass
@@ -411,12 +420,13 @@ def _handle_control_message(
     loaded_model: Optional[BaseModel],
     model_config: Dict[str, Any],
     processing_job: Optional[str],
-    gpu_id: int,
+    gpu_id: Optional[int],
     resource_plan: Optional[Dict[str, Any]] = None,
 ) -> WorkerResponse:
     """Handle control messages in worker process - simplified for single model"""
     try:
         model_id = model_config["model_id"]
+        device_label = "CPU" if (resource_plan or {}).get("kind") == "cpu" else f"GPU {gpu_id}"
 
         if msg.type == WorkerMessage.Type.LOAD_MODEL:
             requested_model_id = msg.data["model_id"]
@@ -431,7 +441,7 @@ def _handle_control_message(
                 return WorkerResponse(msg.msg_id, True, {"status": "already_loaded"})
 
             # Create and load model
-            logger.info(f"[GPU LOAD START] Worker loading model '{model_id}' on GPU {gpu_id}...")
+            logger.info(f"[MODEL LOAD START] Worker loading model '{model_id}' on {device_label}...")
             model = _create_model_from_config(model_config)
 
             # Load synchronously (we're in a worker process)
@@ -439,10 +449,10 @@ def _handle_control_message(
 
             if success:
                 loaded_model = model
-                logger.info(f"[GPU LOAD SUCCESS] ✓ Worker successfully loaded model '{model_id}' on GPU {gpu_id}")
+                logger.info(f"[MODEL LOAD SUCCESS] ✓ Worker loaded model '{model_id}' on {device_label}")
                 return WorkerResponse(msg.msg_id, True, {"status": "loaded"})
             else:
-                logger.error(f"[GPU LOAD FAILED] ❌ Failed to load model '{model_id}' on GPU {gpu_id}")
+                logger.error(f"[MODEL LOAD FAILED] ❌ Failed to load model '{model_id}' on {device_label}")
                 return WorkerResponse(msg.msg_id, False, error="Failed to load model")
 
         elif msg.type == WorkerMessage.Type.UNLOAD_MODEL:
@@ -453,15 +463,15 @@ def _handle_control_message(
             if loaded_model is None:
                 return WorkerResponse(msg.msg_id, True, {"status": "not_loaded"})
 
-            logger.info(f"[GPU UNLOAD START] Worker unloading model '{model_id}' from GPU {gpu_id}...")
+            logger.info(f"[MODEL UNLOAD START] Worker unloading model '{model_id}' from {device_label}...")
             success = loaded_model.unload()
 
             if success:
                 loaded_model = None
-                logger.info(f"[GPU UNLOAD SUCCESS] ✓ Worker successfully unloaded model '{model_id}' from GPU {gpu_id}")
+                logger.info(f"[MODEL UNLOAD SUCCESS] ✓ Worker unloaded model '{model_id}' from {device_label}")
                 return WorkerResponse(msg.msg_id, True, {"status": "unloaded"})
             else:
-                logger.error(f"[GPU UNLOAD FAILED] ❌ Failed to unload model '{model_id}' from GPU {gpu_id}")
+                logger.error(f"[MODEL UNLOAD FAILED] ❌ Failed to unload model '{model_id}' from {device_label}")
                 return WorkerResponse(msg.msg_id, False, error="Failed to unload model")
 
         elif msg.type == WorkerMessage.Type.GET_STATUS:
@@ -490,8 +500,10 @@ def _handle_control_message(
         return WorkerResponse(msg.msg_id, False, error=str(e))
 
 
-def _reset_cuda_peak_memory_stats(resource_plan: Optional[Dict[str, Any]], fallback_gpu_id: int) -> None:
+def _reset_cuda_peak_memory_stats(resource_plan: Optional[Dict[str, Any]], fallback_gpu_id: Optional[int]) -> None:
     """Reset per-job CUDA memory peaks after model load and before inference."""
+    if (resource_plan or {}).get("kind") == "cpu":
+        return
     if torch is None or not torch.cuda.is_available():
         return
     gpu_ids = (resource_plan or {}).get("gpu_ids") or [fallback_gpu_id]
@@ -554,7 +566,7 @@ def _attach_raw_geometry_telemetry(
     parameter_names = (
         "source_quality", "seed", "num_inference_steps", "num_steps", "guidance_scale",
         "cfg_scale", "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
-        "shape_slat_sampler_params", "ss_sampling_steps", "slat_sampling_steps",
+        "shape_slat_sampler_params", "tex_slat_sampler_params", "sampler_overrides", "ss_sampling_steps", "slat_sampling_steps",
         "octree_resolution", "octree_res", "grid_resolution", "flash_octree_depth",
         "dense_octree_depth", "hierarchical_octree_depth", "num_chunks",
         "input_processing", "do_refine", "expansion_weight", "init_type",
@@ -675,13 +687,14 @@ def _process_job_in_worker(
     loaded_model: Optional[BaseModel],
     model_config: Dict[str, Any],
     processing_job: Optional[str],
-    gpu_id: int,
+    gpu_id: Optional[int],
     resource_plan: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], Optional[BaseModel], Optional[str]]:
     """Process a job in the worker process - simplified for single model"""
     try:
         job_id = job_request.job_id
         model_id = model_config["model_id"]
+        cpu_only = (resource_plan or {}).get("kind") == "cpu"
 
         # Check if this worker can handle the requested feature
         if model_config.get("feature_type") != job_request.feature:
@@ -755,9 +768,11 @@ def _process_job_in_worker(
             "effective_geometry_resolution": "reported_after_decode_if_supported",
             "actual_seed": model_inputs.get("seed", "not_supported"),
             "actual_dtype": str(getattr(loaded_model, "dtype", None) or model_inputs.get("dtype") or "adapter_default"),
-            "actual_device": str(
-                getattr(loaded_model, "device", None)
-                or (f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+            "actual_device": (
+                "cpu" if cpu_only else str(
+                    getattr(loaded_model, "device", None)
+                    or (f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
+                )
             ),
             "actual_low_vram_mode": model_inputs.get("low_vram_mode", model_inputs.get("low_vram", "not_supported")),
             "requested_target_polycount": request_inputs.get("target_polycount", "native"),
@@ -786,7 +801,7 @@ def _process_job_in_worker(
                     ("Job ID", job_id),
                     ("Model ID", f"{model_id} (v{runtime_log['model_version']})"),
                     ("Feature Type", job_request.feature),
-                    ("Device", f"{runtime_log['actual_device']} ({get_gpu_memory_summary(gpu_id)})"),
+                    ("Device", "CPU-only (GPU intentionally unused)" if cpu_only else f"{runtime_log['actual_device']} ({get_gpu_memory_summary(gpu_id)})"),
                     ("Input Source", input_desc),
                     ("Steps / Guidance", f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"),
                     ("Requested Resolution / Grid", f"{runtime_log['requested_resolution_parameter']} / {runtime_log['requested_extraction_resolution']}"),
@@ -903,7 +918,7 @@ def _process_job_in_worker(
                     ("Elapsed Time", f"{elapsed:.2f}s"),
                     ("Output Artifact", str(out_mesh) if out_mesh else "In-memory result"),
                     ("Artifact Details", real_output_details),
-                    ("GPU Memory State", get_gpu_memory_summary(gpu_id)),
+                    ("GPU Memory State", "CPU-only (GPU intentionally unused)" if cpu_only else get_gpu_memory_summary(gpu_id)),
                 ],
             )
         )
@@ -911,7 +926,7 @@ def _process_job_in_worker(
         if auto_unload_after_job_enabled():
             try:
                 logger.info(
-                    f"[GPU UNLOAD QUEUED] job_id={job_id} model={model_id} reason=AUTO_UNLOAD_AFTER_JOB"
+                    f"[MODEL UNLOAD QUEUED] job_id={job_id} model={model_id} reason=AUTO_UNLOAD_AFTER_JOB"
                 )
                 loaded_model.unload()
                 loaded_model = None
@@ -1090,10 +1105,10 @@ class MultiprocessModelScheduler:
         """
         model_id = model_config["model_id"]
         feature_type = model_config["feature_type"]
-        gpu_count = max(len(self.gpu_monitor.get_gpu_status()), 1)
-        max_workers = max(model_config.get("max_workers", 1), gpu_count)
-
         capabilities = dict(model_config.get("capabilities") or {})
+        cpu_only = capabilities.get("cpu_only") is True
+        gpu_count = 1 if cpu_only else max(len(self.gpu_monitor.get_gpu_status()), 1)
+        max_workers = model_config.get("max_workers", 1) if cpu_only else max(model_config.get("max_workers", 1), gpu_count)
         capabilities.setdefault("image_to_3d", feature_type.startswith("image_to_"))
         capabilities.setdefault("multiview", False)
         capabilities.setdefault("raw_mesh", feature_type.endswith("raw_mesh"))
@@ -2479,11 +2494,14 @@ class MultiprocessModelScheduler:
                 )
                 return available_worker
 
-        # Check if we can create a new worker for this model
+        model_config = self.model_registry[target_model_id]
+        cpu_only = (model_config.get("capabilities") or {}).get("cpu_only") is True
+
+        # CPU-only models do not depend on the visible GPU inventory.
         current_workers = len(self.worker_assignments.get(target_model_id, []))
-        gpu_count = max(len(self.gpu_monitor.get_gpu_status()), 1)
+        gpu_count = 1 if cpu_only else max(len(self.gpu_monitor.get_gpu_status()), 1)
         configured_max = self.model_max_workers.get(target_model_id, 1)
-        max_workers = max(configured_max, gpu_count)
+        max_workers = configured_max if cpu_only else max(configured_max, gpu_count)
 
         if current_workers >= max_workers:
             logger.info(
@@ -2491,7 +2509,6 @@ class MultiprocessModelScheduler:
             )
             return "WORKERS_BUSY"
 
-        model_config = self.model_registry[target_model_id]
         resource_plan = self.resource_planner.plan(
             model_config,
             active_workers=self.resource_planner.cpu_worker_limit(len(self.workers)),
@@ -2550,9 +2567,10 @@ class MultiprocessModelScheduler:
                     return None
                 allocated.append((int(plan_gpu), int(plan_vram)))
 
-            primary_gpu = int(resource_plan.primary_gpu)
+            primary_gpu = resource_plan.primary_gpu
+            device_suffix = f"gpu{primary_gpu}" if primary_gpu is not None else "cpu"
             worker_count = len(self.worker_assignments.get(model_id, []))
-            worker_id = f"worker_{model_id}_{primary_gpu}_{worker_count}"
+            worker_id = f"worker_{model_id}_{device_suffix}_{worker_count}"
 
             worker_config = WorkerConfig(
                 worker_id=worker_id,
@@ -2669,7 +2687,8 @@ class MultiprocessModelScheduler:
                 return None
 
             logger.info(
-                f"Created worker {worker_id} for model {model_id} on GPU {gpu_id}"
+                f"Created worker {worker_id} for model {model_id} on "
+                f"{'CPU' if primary_gpu is None else f'GPU {primary_gpu}'}"
             )
 
             return worker_id

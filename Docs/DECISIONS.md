@@ -1142,3 +1142,82 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 - Raw native extractions are preserved byte-for-byte without unwanted decimation or vertex welding.
 - High-to-low normal baking works reliably across both Blender-enabled and CPU-only environments without dark border seams.
 - All unit and integration tests in `test_raw_mesh_quality_preservation.py` pass cleanly.
+
+
+## ADR-081 — UniRig Attention Compatibility and FastMesh Resource Admission
+
+**Date:** 2026-10-19  
+**Status:** Accepted
+
+**Decision:**
+1. UniRig selects SDPA only if the active Transformers causal-LM class advertises `_supports_sdpa`; otherwise it uses eager attention. A hardware-level fallback alone is insufficient because architectures can differ in backend support.
+2. The main backend compatibility helper imports PyTorch lazily before defining the optional `torch_cluster.fps` fallback, preventing missing-name failures at annotation evaluation.
+3. FastMesh remains single-GPU in resource admission until its adapter implements explicit model sharding/dispatch. Remove its manifest's multi-GPU declaration rather than treating aggregate VRAM as model parallelism.
+4. FastMesh checkpoint readiness and downloader verification require the matching variant descriptor and a `model.safetensors` file exceeding 4,000,000,000 bytes.
+
+**Rationale:** The supplied UniRig log exposed a helper annotation `NameError`, followed by Transformers rejecting SDPA for `OPTForCausalLM`. Separately, FastMesh's current runner does not implement the scheduler's declared multi-GPU dispatch contract. Directory entry counts are not proof that the full FastMesh weights downloaded correctly.
+
+**Consequences:** Unsupported UniRig attention backends fall back to eager; incomplete or mismatched FastMesh checkpoints are not marked ready; 2×T4 aggregate memory cannot falsely admit V1K/V4K. Manifest VRAM budgets remain conservative reservations until peak memory is measured on GPU hardware.
+
+
+## ADR-082 — UniRig Pointcept Pre-Ampere Attention Fallback
+
+**Date:** 2026-10-19  
+**Status:** Accepted
+
+**Context:** UniRig's Point Transformer v3 attempted the FlashAttention variable-length kernel on a pre-Ampere GPU. When the kernel rejected the hardware, the exception fallback invoked `self.attn_drop(attn)`, but the FlashAttention constructor branch had stored `attn_drop` as a plain float, causing a second `TypeError: 'float' object is not callable` and preventing eager fallback from completing.
+
+**Decision:**
+1. Enable FlashAttention only when the package is present, CUDA is available, and the current CUDA device reports compute capability 8.0 or newer. If capability cannot be read, select eager attention.
+2. Store attention dropout as `torch.nn.Dropout` regardless of the selected attention path. Pass `self.attn_drop.p` as FlashAttention's numeric `dropout_p`, and retain module invocation for eager attention and the runtime exception fallback.
+3. Synchronize the third-party repository revision through the main repository submodule pointer and add a CPU-only source contract.
+
+**Consequences:** Pre-Ampere devices avoid the known unsupported FlashAttention call and use the existing eager attention implementation. This trades potential throughput and VRAM efficiency for compatibility; GPU-backed UniRig inference remains the required runtime validation.
+
+
+## ADR-011: Fail-Closed Multi-GPU Placement
+
+**Decision**: Aggregate VRAM is a scheduling input only when the selected model adapter applies a real multi-GPU placement strategy. Use live physical free memory as a lower bound on scheduler-reported availability. If the adapter cannot place the model on at least two selected GPUs, fail with a diagnostic instead of pretending the plan succeeded.
+
+**Reason**: VRAM across devices is not automatically a shared memory pool. A strategy label or the sum of two cards is insufficient unless weights/components and tensors are actually routed across devices.
+
+**Consequences**:
+- FastMesh uses Accelerate's automatic device map with the scheduler's per-device memory budget.
+- Hunyuan3D-Paint uses explicit component placement and bounded row chunks for raster interpolation/extraction.
+- Paint3D child processes remain single-GPU and do not receive aggregate-VRAM admission until real model sharding exists.
+- GPU inference remains hardware/checkpoint-dependent; CPU source contracts cannot establish peak VRAM or output quality.
+
+## ADR-083 — ARDY CPU-Only Execution
+
+**Date:** 2026-10-19  
+**Status:** Accepted
+
+**Decision:** ARDY motion generation and its local LLM2Vec text encoder run only on CPU in ForMash3D. The model manifest declares cpu_only: true and vram_requirement: 0; the scheduler creates a CPU resource plan without GPU reservations or inventory probes. The dedicated worker hides CUDA, the adapter passes device=cpu to the vendored loader, and LLM2Vec uses its single-process path for CPU requests even on multi-GPU hosts.
+
+**Reason:** ARDY supports explicit CPU inference. A CUDA-dependent adapter guard and device defaults contradicted the model's capabilities and allowed the text encoder to consume GPU resources independently of the motion-model setting.
+
+**Consequences:**
+- Motion inference is slower and bounded by available system RAM/CPU throughput; the gated text-encoder checkpoint must remain accessible.
+- No GPU VRAM is reserved or used by the ARDY worker; other ForMash3D models keep their existing GPU placement policies.
+- CPU source contracts verify the placement contract. Checkpoint-backed inference and measured CPU RAM/latency still require host-level validation.
+
+---
+
+## ADR-084 — Experimental Max-Detail Model Profiles and User Approval Gate (2026-10-20)
+
+**Status:** Accepted for an explicitly experimental, user-reviewed configuration phase. This ADR records parameter defaults only; it does not claim inference-quality validation.
+
+**Context:** Model defaults were duplicated between the frontend parameter builder, scheduler quality profiles, manifest comments and adapter schemas. Upstream model limits differ, and some community settings are unverified single-user experiments.
+
+**Decision:**
+1. Lock the dated `EXPERIMENTAL_MAX_DETAIL` profile across the frontend builder, scheduler, supported adapter defaults/schema and `backend/config/models.yaml` comments.
+2. Use 100 Hunyuan3D-2.1 steps with guidance 5.0 and octree 512; preserve Mini Turbo's trained 5 steps and octree 380; keep TripoSG's depth 9/10 target subject to the existing runtime memory guard.
+3. Use the community TRELLIS.2 issue #92 sampler candidate (50 steps with separate stage CFG/rescale settings). For Pixal3D, label the same profile as an adaptation only, because it has not been directly benchmarked on Pixal3D.
+4. Preserve raw master geometry: TRELLIS simplification stays at 0.0; TRELLIS.2 raw export remains `decimation_target=-1` and `remesh=false`. Do not replace it with the community issue's 800k face cap.
+5. Keep settings that are not exposed by a model adapter unchanged and document the limitation rather than pretending a manifest-only key controls inference. Do not expand model/algorithm behavior in this settings-only task.
+6. **Future-change approval:** before modifying a locked profile, ask the user once with a consolidated list of proposed changes and wait for explicit confirmation. This is a documented contributor/agent rule, not a runtime-enforced approval mechanism.
+
+**Evidence:** Current upstream UIs and settings documents for Hunyuan3D-2.1, TRELLIS, TRELLIS.2, Pixal3D, Hunyuan Paint, TripoSG, PartUV, UniRig and ARDY are linked in `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`. The TRELLIS.2 50-step/CFG profile is based on an individual community issue and is not an official universal optimum. Hunyuan octree values above 512 are not used because the upstream UI ceiling is 512 and community reports describe OOM.
+
+**Verification boundary:** Contract tests were updated to the selected settings. No actual GPU generation, visual quality comparison or broad VRAM benchmark is claimed; the user will review outputs and approve any subsequent parameter change.
+

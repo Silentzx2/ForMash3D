@@ -1,7 +1,7 @@
 # UI Design System & Component Reference
 
 > **Design Version**: 0.1.0
-> **Last Updated**: October 3, 2026
+> **Last Updated**: October 20, 2026
 > **Design System**: Studio Gold (`#FFCC00`, `48 100% 50%`) on Matte Black (`#080808`)
 
 ---
@@ -203,6 +203,8 @@ Universal motion specifications compatible with `motion/react`:
 - `GeneratePanel.tsx`: Universal Textured Generation toggle for all image-to-3D geometry models, atlas resolution preset selector, VRAM warning for 4K/8K
 - Source-generation controls output raw geometry; texturing runs as a separate, optional, non-destructive stage preserving `master/source.glb`.
 - `systemStats`: Real-time GPU/VRAM telemetry in texture panel
+- Spot-mask mode draws to a separate UV mask canvas; localized inference remains visibly unavailable until supported by Paint3D/Hunyuan adapter calls.
+- UV Inspector is bound to the loaded viewport mesh's UV attributes; sampled edges are for responsiveness and only computed counts/bounds are shown.
 
 ### Generation & Texture Power Tools (Batch 2)
 - `GeneratePanel.tsx` (Pick-Best-of-N Candidate Generation): Multi-variation count selector (1 to 4) stepping seeds deterministically. Interactive Candidate Comparison Grid rendered on completion with individual candidate seed display, 3D viewport previewing (`loadModelInViewer`), and one-click promotion to `master/source.glb` with unselected candidate file garbage collection.
@@ -376,6 +378,7 @@ The `WorkspaceShell` (`features/workspace/WorkspaceShell.tsx`) is the main appli
   - **Auto-Rig (UniRig AI)**: Invokes backend `unirig_auto_rig` pipeline with user-chosen target skeleton presets (`biped`, `humanoid`, `quadruped`). No ARDY references appear in the rigging module.
   - **Manual Rig with Bilateral Symmetry (X-Mirror)**: Interactive 3D bone placement with automatic opposite-side mirroring (`[-x, y, z]`). Editing or translating a bone on one side automatically mirrors to its anatomical counterpart (`Left*` <-> `Right*`, `*_L` <-> `*_R`). Saving persists the editor-bone snapshot locally; it does not create skin weights or export a rigged mesh, so motion generation remains gated until a real rigged artifact exists.
   - **Real 3D Armature**: Three.js octahedron bone meshes and glowing spherical joints rendered natively in `MeshViewer` (no fake 2D SVG overlays), with gizmo controls (`select`, `move`, `rotate`, `scale`).
+  - **Rigged Artifact Preview**: Auto-rig stores native FBX for DCC downloads and a converted GLB for the browser viewport. The viewer uses canonical artifact-format URLs instead of stale asset metadata; replacing a mesh clears its previous thumbnail so a new preview can be captured.
 
 ---
 
@@ -643,3 +646,14 @@ Quality mode must never silently downgrade the immutable master. A requested pol
 - **Global Keyboard Navigation**:
   - Interactive hotkey cheat sheet listening to window events (`G` → Generate, `R` → Retopo, `T` → Texture, `U` → UV, `A` → Animation, `D` → Dashboard, `O` → Outputs, `S` → System) for lightning-fast power-user navigation.
 - **Responsive Layout**: Designed mobile-first, maintaining optimal hierarchy and touch targets from 375px mobile screens up to 4K ultra-wide monitors.
+
+
+## Generation Experiment Lab
+
+Workspace Settings → AI Inference → Generation Experiment Lab is a native disclosure drawer inside the existing Settings modal. It reuses workspace generation settings, getModelParameters(), queueGenerationJob(), and buildGenerationParameters() rather than adding another inference or persistence service.
+
+- Presets persist in browser localStorage under ai3d:generation:presets:v1; profiles can be saved, updated, deleted, imported, and exported individually or as a library.
+- Controls expose seed, guidance scale, schema-declared inference steps, and active-model primitive parameters. Nested/experimental fields remain editable in advanced JSON.
+- Explicit parameter overrides merge after model-specific defaults. Schema min/max values are guidance only; values are not silently clamped.
+- Revision/experiment ID is metadata, not an inference argument. Presets omit image bytes, upload IDs, and preprocessing artifacts, so loading a preset keeps the current image.
+- UI uses existing surface tokens and native browser controls; no new dependency is introduced.

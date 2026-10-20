@@ -527,6 +527,19 @@ download_unirig() {
     fi
 }
 
+# Verify the actual FastMesh variant and full checkpoint, not directory entry count.
+# Both public V1K/V4K safetensors files are larger than 4 GB; truncated weights are not ready.
+verify_fastmesh_model() {
+    local model_dir="$1"
+    if ! verify_file "$model_dir/config.json" 100; then
+        return 1
+    fi
+    if ! verify_file "$model_dir/model.safetensors" 4000000000; then
+        return 1
+    fi
+    return 0
+}
+
 # Function to download FastMesh model
 download_fastmesh() {
     print_info "========================================"
@@ -536,12 +549,16 @@ download_fastmesh() {
     local model_dir_v1k="$PRETRAINED_DIR/FastMesh-V1K"
     local model_dir_v4k="$PRETRAINED_DIR/FastMesh-V4K"
 
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir_v1k" 3; then
+    if [ "$FORCE_DOWNLOAD" = false ] && verify_fastmesh_model "$model_dir_v1k"; then
         print_info "FastMesh v1k model already exists and verified"
     else
         mkdir -p "$model_dir_v1k"
         print_info "Downloading FastMesh v1k model..."
         if hf_download "WopperSet/FastMesh-V1K" --local-dir "$model_dir_v1k"; then
+            if ! verify_fastmesh_model "$model_dir_v1k"; then
+                print_error "FastMesh V1K download did not contain a complete checkpoint"
+                return 1
+            fi
             print_success "FastMesh v1k model downloaded successfully"
         else
             print_error "Failed to download FastMesh v1k model"
@@ -549,12 +566,16 @@ download_fastmesh() {
         fi
     fi
 
-    if [ "$FORCE_DOWNLOAD" = false ] && verify_directory "$model_dir_v4k" 3; then
+    if [ "$FORCE_DOWNLOAD" = false ] && verify_fastmesh_model "$model_dir_v4k"; then
         print_info "FastMesh v4k model already exists and verified"
     else
         mkdir -p "$model_dir_v4k"
         print_info "Downloading FastMesh v4k model..."
         if hf_download "WopperSet/FastMesh-V4K" --local-dir "$model_dir_v4k"; then
+            if ! verify_fastmesh_model "$model_dir_v4k"; then
+                print_error "FastMesh V4K download did not contain a complete checkpoint"
+                return 1
+            fi
             print_success "FastMesh v4k model downloaded successfully"
         else
             print_error "Failed to download FastMesh v4k model"
@@ -880,9 +901,9 @@ verify_all_models() {
     print_info "Checking PartUV..."
     verify_directory "$PRETRAINED_DIR/PartUV" 1 || all_verified=false
     print_info "Checking FastMesh v1k..."
-    verify_directory "$PRETRAINED_DIR/FastMesh-V1K" 3 || all_verified=false
+    verify_fastmesh_model "$PRETRAINED_DIR/FastMesh-V1K" || all_verified=false
     print_info "Checking FastMesh v4k..."
-    verify_directory "$PRETRAINED_DIR/FastMesh-V4K" 3 || all_verified=false
+    verify_fastmesh_model "$PRETRAINED_DIR/FastMesh-V4K" || all_verified=false
     
     print_info "Checking TRELLIS.2-4B..."
     verify_directory "$PRETRAINED_DIR/TRELLIS.2/TRELLIS.2-4B" 5 || all_verified=false
