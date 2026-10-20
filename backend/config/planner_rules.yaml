@@ -1,4 +1,4 @@
-schema_version: "0.1.0"
+schema_version: "1.0.0"
 
 # Adapter capabilities and resource constraints
 adapters:
@@ -34,7 +34,149 @@ adapters:
     native_topology: true
     requires_license_optin: true
 
-# Routing candidates by requested quality tier (in priority order)
+# Benchmark-driven routing candidates by object type and requested quality tier
+object_type_routes:
+  mechanical:
+    description: "Hard-surface mechanical objects requiring sharp crease and feature-edge preservation"
+    retopo_mode: "feature_aware"
+    fast:
+      candidates:
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "fast"
+          num_seeds: 1
+          skip_retopo_allowed: false
+          retopo_mode: "feature_aware"
+    balanced:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "feature_aware"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "feature_aware"
+    high:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "feature_aware"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "feature_aware"
+
+  organic:
+    description: "Curved organic shapes prioritizing smooth curvature and surface continuity"
+    retopo_mode: "smooth"
+    fast:
+      candidates:
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "fast"
+          num_seeds: 1
+          skip_retopo_allowed: false
+          retopo_mode: "smooth"
+    balanced:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "smooth"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "smooth"
+    high:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "smooth"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "smooth"
+
+  character:
+    description: "Characters and figurines prioritizing silhouette fidelity and bilateral symmetry"
+    retopo_mode: "silhouette_aware"
+    fast:
+      candidates:
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "fast"
+          num_seeds: 1
+          skip_retopo_allowed: false
+          retopo_mode: "silhouette_aware"
+    balanced:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "silhouette_aware"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "silhouette_aware"
+    high:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "silhouette_aware"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "silhouette_aware"
+
+  general:
+    description: "General objects and props with balanced default settings"
+    retopo_mode: "standard"
+    fast:
+      candidates:
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "fast"
+          num_seeds: 1
+          skip_retopo_allowed: false
+          retopo_mode: "standard"
+    balanced:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "standard"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "balanced"
+          num_seeds: 2
+          skip_retopo_allowed: false
+          retopo_mode: "standard"
+    high:
+      candidates:
+        - adapter: "trellis2_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "standard"
+        - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+          preset: "high"
+          num_seeds: 3
+          skip_retopo_allowed: false
+          retopo_mode: "standard"
+
+# Baseline routing candidates by requested quality tier (for backwards compatibility and general fallback)
 quality_routes:
   fast:
     candidates:
@@ -70,6 +212,22 @@ specialized_routes:
       adapter: "taoflowforge_image_to_raw_mesh"
       skip_retopo_allowed: true
     fallback_to_dense: true
+    dense_retopo_mode: "feature_aware"
+
+# Retopology configurations per mode
+retopo_configs:
+  feature_aware:
+    crease_angle_deg: 35.0
+    preserve_feature_edges: true
+  smooth:
+    crease_angle_deg: 60.0
+    preserve_feature_edges: false
+  silhouette_aware:
+    crease_angle_deg: 45.0
+    preserve_feature_edges: true
+  standard:
+    crease_angle_deg: 45.0
+    preserve_feature_edges: false
 
 # Fallback of last resort (always available candidate)
 fallback_of_last_resort:

@@ -26,6 +26,12 @@ DEFAULT_ADAPTER_CLASS_MAP = {
 _RULES_CACHE: Optional[Dict[str, Any]] = None
 
 
+def clear_rules_cache() -> None:
+    """Clear internal rules cache to force reload from disk."""
+    global _RULES_CACHE
+    _RULES_CACHE = None
+
+
 def _load_default_rules() -> Dict[str, Any]:
     """Load default planner rules from backend/config/planner_rules.yaml."""
     global _RULES_CACHE
@@ -195,21 +201,34 @@ def plan_generation(
             "num_seeds": quality_seeds,
             "skip_retopo_allowed": True,
             "source": "native_clean_route",
+            "retopo_mode": "native",
         })
 
-    # Add dense quality candidates
+    # Add dense quality candidates: check object_type_routes first, then fallback to quality_routes
     dense_candidates = (
-        rules.get("quality_routes", {})
+        rules.get("object_type_routes", {})
+        .get(object_type, {})
         .get(requested_quality, {})
         .get("candidates", [])
     )
+    if not dense_candidates:
+        dense_candidates = (
+            rules.get("quality_routes", {})
+            .get(requested_quality, {})
+            .get("candidates", [])
+        )
+
     for dc in dense_candidates:
+        cand_retopo = dc.get("retopo_mode")
+        if (mesh_style == "clean" or object_type == "mechanical") and not cand_retopo:
+            cand_retopo = "feature_aware"
         candidates.append({
             "adapter": dc["adapter"],
             "preset": dc.get("preset", requested_quality),
             "num_seeds": dc.get("num_seeds", quality_seeds),
             "skip_retopo_allowed": dc.get("skip_retopo_allowed", False),
-            "source": f"quality_{requested_quality}_route",
+            "source": f"object_{object_type}_{requested_quality}_route",
+            "retopo_mode": cand_retopo,
         })
 
     # Always ensure fallback of last resort is at the tail
@@ -219,12 +238,14 @@ def plan_generation(
         "num_seeds": 1,
         "skip_retopo_allowed": False,
     })
+    fallback_retopo = "feature_aware" if (mesh_style == "clean" or object_type == "mechanical") else (rules.get("object_type_routes", {}).get(object_type, {}).get("retopo_mode") or "standard")
     fallback_resort_cand = {
         "adapter": fallback_resort.get("adapter", "hunyuan3d_shape_v21_image_to_raw_mesh"),
         "preset": fallback_resort.get("preset", "fast"),
         "num_seeds": fallback_resort.get("num_seeds", 1),
         "skip_retopo_allowed": fallback_resort.get("skip_retopo_allowed", False),
         "source": "fallback_of_last_resort",
+        "retopo_mode": fallback_retopo,
     }
     if not candidates or candidates[-1]["adapter"] != fallback_resort_cand["adapter"] or candidates[-1]["preset"] != fallback_resort_cand["preset"]:
         candidates.append(fallback_resort_cand)
@@ -346,12 +367,36 @@ def plan_generation(
     if isinstance(request.get("bake"), dict):
         default_bake.update(request["bake"])
 
-    schema_version = str(rules.get("schema_version", "0.1.0"))
+    schema_version = str(rules.get("schema_version", "1.0.0"))
+
+    # 8. Determine retopology mode and options
+    if selected_candidate.get("skip_retopo_allowed"):
+        retopo_mode = "native"
+    elif mesh_style == "clean" or object_type == "mechanical":
+        retopo_mode = "feature_aware"
+    else:
+        retopo_mode = selected_candidate.get("retopo_mode") or rules.get("object_type_routes", {}).get(object_type, {}).get("retopo_mode", "standard")
+
+    if (mesh_style == "clean" or object_type == "mechanical") and not selected_candidate.get("skip_retopo_allowed"):
+        reasons.append(
+            f"Dense route '{selected_candidate['adapter']}' selected with feature-aware retopology "
+            f"because native topology candidate is unavailable or disabled."
+        )
+
+    retopo_configs = rules.get("retopo_configs", {})
+    retopo_cfg = dict(retopo_configs.get(retopo_mode, {}))
+    retopo_dict = {
+        "mode": retopo_mode,
+        "feature_preserving": retopo_mode == "feature_aware",
+        **retopo_cfg,
+    }
+    if target_polycount is not None:
+        retopo_dict["target_polycount"] = target_polycount
 
     reasons.append(
         f"Selected adapter '{selected_candidate['adapter']}' with preset '{selected_candidate['preset']}' "
         f"({selected_candidate['num_seeds']} seeds) for quality='{requested_quality}', "
-        f"mesh_style='{mesh_style}', object_type='{object_type}'."
+        f"mesh_style='{mesh_style}', object_type='{object_type}', retopo_mode='{retopo_mode}'."
     )
 
     return {
@@ -362,6 +407,8 @@ def plan_generation(
         "num_seeds": selected_candidate["num_seeds"],
         "input_prep": default_input_prep,
         "skip_retopo_allowed": selected_candidate["skip_retopo_allowed"],
+        "retopo_mode": retopo_mode,
+        "retopo": retopo_dict,
         "uv_backend": uv_backend,
         "bake": default_bake,
         "reasons": reasons,
