@@ -669,9 +669,13 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let cancelled = false;
     getApiClient().getModelParameters(modelId).then(data => {
       if (cancelled) return;
+      const schema = data.schema?.parameters || {};
+      const defaults = Object.fromEntries(
+        Object.entries(schema).map(([name, parameter]) => [name, parameter.default])
+      );
       setModelParameterDefaults(prev => ({
         ...prev,
-        [modelId]: data.schema?.parameters || {},
+        [modelId]: defaults,
       }));
     }).catch(err => {
       console.warn(`Failed to load model parameters for ${modelId}:`, err);

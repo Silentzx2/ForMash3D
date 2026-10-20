@@ -24,6 +24,29 @@ export interface BuildParamsResult {
   isPaintModel: boolean;
 }
 
+const FORBIDDEN_PARAMETER_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function isJsonParameterValue(value: unknown, depth = 0): boolean {
+  if (depth > 16) return false;
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (Array.isArray(value)) return value.length <= 512 && value.every(item => isJsonParameterValue(item, depth + 1));
+  if (typeof value !== 'object') return false;
+  const entries = Object.entries(value as Record<string, unknown>);
+  return entries.length <= 512 && entries.every(([key, item]) =>
+    key.length <= 200 && !FORBIDDEN_PARAMETER_KEYS.has(key) && isJsonParameterValue(item, depth + 1)
+  );
+}
+
+/** Validate imported/free-form parameter JSON before merging it into inference arguments. */
+export function parseModelParameterOverrides(value: unknown): Record<string, unknown> {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value) || !isJsonParameterValue(value)) {
+    throw new Error('Model parameter overrides must be a safe JSON object (finite values, max depth 16).');
+  }
+  return { ...(value as Record<string, unknown>) };
+}
+
 export function buildGenerationParameters(
   settings: GenerationSettings,
   modelCapabilities: ModelCapabilities,
@@ -84,8 +107,9 @@ export function buildGenerationParameters(
     candidate_count: settings.candidateCount ? Math.max(1, Math.min(4, Number(settings.candidateCount))) : 1,
   };
   
-  // Model-specific parameters
+  // Existing model defaults establish the profile; explicit UI/preset values win last.
   applyModelSpecificParams(modelParameters, modelId, currentQuality, settings, paramDefaults);
+  Object.assign(modelParameters, parseModelParameterOverrides(settings.modelParameterOverrides));
   
   // Determine endpoint and body
   let endpoint: string;
@@ -165,8 +189,8 @@ function getInferenceSteps(modelId: string, paramDefaults: Record<string, any> =
     paramDefaults.ss_sampling_steps ??
     -1
   );
-  // EXPERIMENTAL_MAX_DETAIL: honor upstream maxima where the checkpoint supports them.
-  // Mini Turbo is distilled (5 steps); TRELLIS caps at 50; Hunyuan 2.1 UI caps at 100.
+  // EXPERIMENTAL_MAX_DETAIL values are project requests, not proof of upstream support.
+  // Mini Turbo requests 20 steps; TRELLIS defaults to 50; Hunyuan Shape requests 150.
   if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) return 20;
   if (normId.includes('trellis')) return 50;
   if (normId.includes('hunyuan3d_shape_v21') || normId.includes('hunyuan3dv21')) return 150;
@@ -235,12 +259,12 @@ function applyModelSpecificParams(
       steps: 100, guidance_strength: 3.5, guidance_rescale: 0.5, rescale_t: 8.0,
     };
   } else if (normId.includes('trellis')) {
-    // Upstream TRELLIS UI supports up to 50 steps; shared CFG interface remains a known limitation.
+    // Schema defaults to 50; the active project stress-test requests 100 sparse/SLAT steps.
     modelParameters.simplify = 0.0;
     modelParameters.ss_sampling_steps = 100;
     modelParameters.slat_sampling_steps = 100;
   } else if (normId.includes('hunyuan3d_dit_v2_mini_turbo')) {
-    // Distilled checkpoint: retain trained 5-step schedule and 380 extraction limit; do not overstep training.
+    // Locked stress-test profile requests 20 steps / octree 768, above the adapter's declared 5 / 380 schema.
     modelParameters.octree_resolution = 768;
     modelParameters.num_inference_steps = 20;
     modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);
@@ -250,7 +274,7 @@ function applyModelSpecificParams(
     modelParameters.enable_flashvdm = false;
     modelParameters.mc_algo = 'mc';
   } else if (normId.startsWith('hunyuan3d_shape_v21')) {
-    // Upstream Hunyuan UI permits 100 steps; guidance 5.0 is its default; octree 512 is the supported ceiling.
+    // Locked stress-test profile deliberately requests 150 steps / octree 1300 beyond upstream UI declarations.
     modelParameters.octree_resolution = 1300;
     modelParameters.num_inference_steps = 150;
     modelParameters.guidance_scale = Number(paramDefaults.guidance_scale ?? 5.0);

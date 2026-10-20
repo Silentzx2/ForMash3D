@@ -473,6 +473,8 @@ export interface GenerationSettings {
   topologyMode?: 'triangle' | 'quad' | 'adaptive';
   seed: number;
   guidanceScale: number;
+  /** User/model preset parameters merged after the existing model profile. */
+  modelParameterOverrides?: Record<string, unknown>;
   removeBackground: boolean;
   lowVram?: boolean;
   vramMode?: 'auto' | 'normal' | 'low';

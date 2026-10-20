@@ -1,7 +1,7 @@
 # UI Design System & Component Reference
 
 > **Design Version**: 0.1.0
-> **Last Updated**: October 3, 2026
+> **Last Updated**: October 20, 2026
 > **Design System**: Studio Gold (`#FFCC00`, `48 100% 50%`) on Matte Black (`#080808`)
 
 ---
@@ -646,3 +646,14 @@ Quality mode must never silently downgrade the immutable master. A requested pol
 - **Global Keyboard Navigation**:
   - Interactive hotkey cheat sheet listening to window events (`G` → Generate, `R` → Retopo, `T` → Texture, `U` → UV, `A` → Animation, `D` → Dashboard, `O` → Outputs, `S` → System) for lightning-fast power-user navigation.
 - **Responsive Layout**: Designed mobile-first, maintaining optimal hierarchy and touch targets from 375px mobile screens up to 4K ultra-wide monitors.
+
+
+## Generation Experiment Lab
+
+Workspace Settings → AI Inference → Generation Experiment Lab is a native disclosure drawer inside the existing Settings modal. It reuses workspace generation settings, getModelParameters(), queueGenerationJob(), and buildGenerationParameters() rather than adding another inference or persistence service.
+
+- Presets persist in browser localStorage under ai3d:generation:presets:v1; profiles can be saved, updated, deleted, imported, and exported individually or as a library.
+- Controls expose seed, guidance scale, schema-declared inference steps, and active-model primitive parameters. Nested/experimental fields remain editable in advanced JSON.
+- Explicit parameter overrides merge after model-specific defaults. Schema min/max values are guidance only; values are not silently clamped.
+- Revision/experiment ID is metadata, not an inference argument. Presets omit image bytes, upload IDs, and preprocessing artifacts, so loading a preset keeps the current image.
+- UI uses existing surface tokens and native browser controls; no new dependency is introduced.

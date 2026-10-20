@@ -70,6 +70,7 @@ ForMash3D unifies neural 3D generation, asset finishing, validation, and export 
 | Production Optimization | Post-process-only polycount, retopology, UV, LOD, collision, and bake controls |
 | PBR Materials | Full-mesh Paint3D/Hunyuan3D texturing; localized mask repaint remains disabled until adapter inference supports it |
 | Smart Generation | One-click image-only intents with deterministic model selection and scheduler-backed execution |
+| Generation Experiment Presets | Save local profiles, edit schema-driven parameters, test through the existing queue, and import/export JSON |
 | QA & Diagnostics | Geometry, UV/material, and production-budget quality tracing |
 | Engine Export | GLB/FBX game-ready packages plus LOD and collision assets |
 
@@ -514,6 +515,10 @@ ForMash3D's normal Image → 3D workflow now includes optional production automa
 - Auto-Rig through the existing UniRig adapter after final production processing, with explicit success/degraded state.
 
 These capabilities reuse the existing scheduler, image editor, post-processing, history, and artifact-delivery infrastructure.
+
+## Generation Experiments & Reusable Presets
+
+Workspace Settings → AI Inference includes a Generation Experiment Lab for editing the active model's schema parameters, seed, guidance, inference steps where supported, and advanced nested JSON overrides. Save/reload local presets, track a revision label, queue current settings, and import/export preset JSON files. Presets exclude images and preprocessing artifacts so reloading a profile does not replace the current input image.
 
 ## High-Fidelity Generation Architecture
 
