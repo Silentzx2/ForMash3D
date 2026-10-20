@@ -185,9 +185,19 @@ flowchart TB
     subgraph POST["⚙️ Production Post-Processing Core"]
         direction TB
         SRC_CHECK["master/source.glb<br/>Immutable Master Checkpoint"]:::green
-        REPAIR["Watertight Repair<br/>Boundary Component Guard"]:::green
-        SIMPLIFY["PyMeshLab Decimation<br/>Texture Preservation Fallback"]:::green
+        GATE["Topology Gate (Task 2A)<br/>14 Metric Audit & Repair Routing"]:::green
+        HOLE_REP["Targeted Hole Repair (Task 1C)<br/>Directed Boundary Loop Fans"]:::green
+        MEM_DEC["Memory-Safe Decimation (Task 2B)<br/>Staged QEM & Crease Guard"]:::green
+        UV_RES["UV Backend Resolver (Task 2D)<br/>GPU PartUV / CPU xatlas Driver"]:::green
+        PBR_VAL["PBR Validation & Bake (Task 2C)<br/>OpenGL Y+ Normal & Packed RMA"]:::green
         FINISH["LOD0-LOD3 Cascades<br/>CoACD Physics & QA 0-100"]:::green
+
+        SRC_CHECK --> GATE
+        GATE --> HOLE_REP
+        HOLE_REP --> MEM_DEC
+        MEM_DEC --> UV_RES
+        UV_RES --> PBR_VAL
+        PBR_VAL --> FINISH
     end
 
     subgraph DATA["📦 Canonical Storage Layer"]
@@ -324,7 +334,7 @@ sequenceDiagram
     Adapter-->>SCHED: Raw model-native mesh output (untextured)
     SCHED->>Storage: Preserve master/source.glb byte-for-byte
     alt Post-Processing Enabled (enable_postprocess = true)
-        SCHED->>PostProcess: Repair -> conditional Retopo -> apply target polycount -> Auto UV/Preserve -> QA
+        SCHED->>PostProcess: Topology Gate -> Targeted Hole Repair -> Feature Decimation -> UV Resolver -> Normal Bake & PBR Validation -> LOD/Physics/QA
         opt Texture Enabled
             PostProcess->>TexAdapter: Apply textures via Paint3D (1K/2K) or Hunyuan Paint (4K/8K)
             TexAdapter-->>PostProcess: Textured GLB + real texture maps
@@ -640,13 +650,20 @@ bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 
 The production post-processing engine lives under `backend/postprocess/`. Successful mesh-generation jobs run this engine before the job is marked completed.
 
-Pipeline: MODEL INFERENCE -> immutable `master/source.glb` -> world-space scene flattening -> Inspect/Repair -> conditional AutoRetopo / Quad retopology -> texture-aware Optimize/Preserve -> Auto UV/Preserve for raw outputs -> GAME READY (GLB + Quad OBJ) -> LOD -> collision -> preview/thumbnail -> QA. Scene flattening applies node transforms and fails explicitly for unsupported mixed geometry rather than silently processing local-space coordinates. Native textured outputs are optimized with UV/material-aware decimation; raw outputs receive geometry optimization and production UVs. UV coordinates do not generate an image texture; shape-only model outputs remain untextured unless an explicit texture-generation or bake step succeeds. High-to-low bake remains an explicit transfer operation, and post-processing does not synthesize semantic textures from an untextured source. Quality metadata records source hash, source/repaired/optimized/game-ready snapshots, topology state, texture state, and per-LOD UV/material preservation.
+Pipeline: MODEL INFERENCE -> immutable `master/source.glb` (SHA-256 pre-verification) -> working copy -> **Topology Gate** (14 geometric/topological metrics) -> **Targeted Hole Repair** (directed boundary loop triangulation) -> **Memory-Safe Decimation** (feature-preserving QEM & psutil RAM guard) -> **UV Backend Resolver** (PartUV GPU / xatlas CPU driver) -> **Detail Normal Bake & PBR Validation** (OpenGL Y+ convention, packed RMA) -> GAME READY (GLB + Quad OBJ) -> LOD Cascades (LOD0-LOD3 via meshopt) -> CoACD Convex Physics Colliders -> QA Diagnostic Engine (0-100 score).
 
+#### Post-Processing Pipeline Components:
+- **Topology Gate (`backend/postprocess/services/gate.py`)**: Evaluates mesh manifoldness, boundary loops, floater components, degenerate faces, and aspect ratios against `gate_thresholds.yaml`. When topology is clean, repairs are bypassed (`skip_repair`, `skip_retopo=True`). If only small boundary loops exist (<= 50 vertices), routes to `minimal_repair`. Non-manifold or heavily defective geometry routes to `full_repair`.
+- **Targeted Hole Repair (`backend/postprocess/services/hole_repair.py`)**: Triangulates small boundary loops using directed edge traversal and fan triangulation. Fixes open generation seams without smoothing uncorrupted surface geometry or changing edge sharpness.
+- **Memory-Safe Decimation (`backend/postprocess/services/memory_safe_decimate.py`)**: Preserves crease angles (>35°) and boundary edges. For meshes over 2M triangles, engages staged 50% chunked decimation with dynamic psutil RAM tracking (80% headroom cap) and aggressive garbage collection to prevent out-of-memory crashes.
+- **UV Backend Resolver (`backend/postprocess/services/uv_backend_resolver.py`)**: Centralized single source of truth for UV unwrapping. High-poly models (>=500k triangles) automatically route to GPU PartUV if CUDA and >=7.0 GB VRAM are available (after generative model memory is released); otherwise seamlessly routes to high-throughput CPU/GPU xatlas with 0% overlap and strict [0, 1] bounds.
+- **Normal Detail Bake & PBR Validation (`backend/postprocess/services/pbr_validator.py`)**: Bakes tangent-space normal maps from high-poly master source to game-ready mesh using the OpenGL convention (Y+). Validates that all 5 PBR channels exist and are non-degenerate, roughness/metallic are correctly packed into G/B channels, normals decoded to (0, 0, 1) on flat faces, and UV atlas space utilization meets minimum thresholds (>=60%).
 - **Polygonal Quad Export**: `_export_quad_obj` serializes genuine 4-vertex polygonal faces (`f v/vt/vn ...`). When quad-dominant topology is requested and generated, the optimization stage automatically passes geometry through without destructive triangle decimation.
 - **Budget Precedence & Native Retention**: `_resolve_target_polycount_precedence` guarantees explicit top-level targets take priority over nested defaults and presets, while treating `0` as an intentional request for Native/Raw model output without decimation.
 - **Headless Blender Worker Invocation**: `blender_worker_argv` and `blender_expr_argv` in `backend/postprocess/config.py` resolve the headless Blender execution path: using `BLENDER_EXECUTABLE` on `PATH` if present, or falling back seamlessly to running scripts under `sys.executable` via the embedded `bpy` Python wheel.
 - **Dynamic Canonical Storage Resolution**: `get_storage_base_dir()` in `backend/core/utils/file_utils.py` dynamically resolves `STORAGE_LOCAL_PATH` relative to project root or defaults to `backend/storage`, preventing directory nesting bugs across artifact delivery and storage mounts.
 - **Watertight 3D Print Preservation**: For 3D printing and closed meshes, AutoRetopo shell reconstruction respects existing watertightness (`watertight=not bool(repaired_topology.get("watertight", False))`) to preserve sharp features without voxel-rounding distortion; `3d_print` presets set `target_polycount: 0` to ensure 100% native resolution passthrough without decimation.
+- **Master Immutability Enforcement**: Post-processing computes the SHA-256 of `master/source.glb` before any operation begins and verifies that the hash is 100% identical after post-processing completes.
 
 The main runtime remains Python 3.10 + PyTorch 2.6.0 + CUDA 12.4. Blender-dependent FBX, GLTF, and thumbnail work runs headlessly via `blender_worker_argv` (standalone binary or `bpy` wheel) and is best-effort for generation completion.
 

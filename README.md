@@ -90,21 +90,20 @@ ForMash3D enforces an **immutable master preservation architecture**. The raw ne
  │  PRODUCTION POST-PROCESSING & ENGINE FINISHING (Ported & Enhanced from 3DGenStudio)
  ▼
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ 1. Repair       │───►│ 2. Retopo       │───►│ 3. UV & Bake    │───►│ 4. LOD Cascade  │
-│ Watertightness  │    │ FastMesh Quads  │    │ Conformal UV    │    │ LOD0: 100%      │
-│ Non-Manifold Fix│    │ AutoRetopo Def. │    │ Optional PBR Map│    │ LOD1: 50%       │
-│ Boundary Guard  │    │ Feature Angle   │    │ Hunyuan ESRGAN  │    │ LOD2: 25% / 12% │
+│ 1. Topology Gate│───►│ 2. Hole Repair  │───►│ 3. Decimation   │───►│ 4. UV Resolver  │
+│ 14 Metric Audit │    │ Boundary Loops  │    │ Memory-Safe QEM │    │ PartUV GPU      │
+│ Clean Bypass    │    │ Fan Triangulate │    │ Crease Guard    │    │ xatlas Fallback │
 └─────────────────┘    └─────────────────┘    └─────────────────┘    └────────┬────────┘
-                                                                               │
+                                                                              │
  ┌────────────────────────────────────────────────────────────────────────────┘
  ▼
-┌─────────────────┐    ┌─────────────────┐    ┌────────────────────────────────────────┘
-│ 5. Physics      │───►│ 6. QA Engine    │───►│ GAME-READY EXPORT PACKAGE              │
-│ CoACD Convex    │    │ 0-100 Score     │    │ • game_ready.glb (Unreal / Unity/Godot)│
-│ Decomposition   │    │ Stage Snapshots │    │ • lods/ (lod0.glb - lod3.glb)          │
-│ Rapier3D WebSim │    │ Quality Trace   │    │ • collision.glb & physics.json         │
+┌─────────────────┐    ┌─────────────────┐    ┌────────────────────────────────────────┐
+│ 5. PBR & Bake   │───►│ 6. LOD & Physics│───►│ GAME-READY EXPORT PACKAGE              │
+│ OpenGL Y+ Normal│    │ LOD0-LOD3 meshopt│   │ • game_ready.glb (Unreal / Unity/Godot)│
+│ Packed RMA Check│    │ CoACD Colliders │    │ • lods/ (lod0.glb - lod3.glb)          │
+│ [0, 1] UV Bounds│    │ Rapier3D Sim    │    │ • collision.glb & physics.json         │
 └─────────────────┘    └─────────────────┘    │ • Structured Engine-Ready ZIP Archive  │
-                                               └────────────────────────────────────────┘
+                                              └────────────────────────────────────────┘
 ```
 
 ---
@@ -233,7 +232,7 @@ backend/storage/models/meshes/<asset_name>_<job_id>/
 │   └── source.glb              # Immutable master raw mesh
 ├── game_ready/
 │   └── <asset_name>_<job_id>.glb # Production engine-ready model
-├── lords/
+├── lods/
 │   ├── lod0.glb                # LOD0 (100% detail)
 │   ├── lod1.glb                # LOD1 (50% reduction)
 │   ├── lod2.glb                # LOD2 (25% reduction)
@@ -249,10 +248,12 @@ backend/storage/models/meshes/<asset_name>_<job_id>/
 ```
 
 ### Core Finishing Highlights:
-1. **Texture-Preserving Decimation**: Powered by PyMeshLab with custom wedge UV remapping. If complex non-manifold geometry prevents decimation, the engine safely falls back to passthrough without dropping materials.
-2. **Structural AutoRetopo**: Triggers on structural boundary defects (e.g. boundary component holes > 30 edges) with feature-angle preservation (`25.0°`) and controlled smoothing.
-3. **CoACD Physics Colliders**: Computes approximate convex decomposition for immediate rigid-body physics in game engines.
-4. **Three.js & Rapier3D In-Browser Simulator**: Test gravity, bouncy collisions, and mass properties directly in the workspace viewer before exporting.
+1. **Topology Gating & Clean Passthrough**: Evaluates 14 geometric and topological metrics (non-manifold edges/vertices, boundary holes, floater ratio, aspect-ratio percentiles). Clean meshes bypass repair entirely; small boundary loops are routed to targeted repair.
+2. **Targeted Hole Repair**: Traverses directed boundary loops and triangulates small holes (<= 50 vertices) with fan triangulation without altering or smoothing uncorrupted surfaces.
+3. **Memory-Safe Staged Decimation**: Feature-preserving QEM decimation protecting crease edges (>35°); meshes exceeding 2M triangles engage staged 50% chunked decimation with live psutil RAM tracking (80% headroom cap) and aggressive garbage collection.
+4. **Centralized UV Backend Resolver**: Single-point resolver automatically routing meshes >= 500k triangles to GPU PartUV (when CUDA and 7GB VRAM are free), falling back to high-throughput CPU/GPU xatlas with 0% overlap and strict [0, 1] bounds.
+5. **Tangent Normal Bake & 5-Channel PBR Validation**: Tangent-space normal baking (OpenGL Y+ convention) from high-poly master, validating non-degenerate textures, packed roughness (G) / metallic (B) channels, and atlas space utilization.
+6. **CoACD Physics Colliders & WebSim**: Computes approximate convex decomposition for game engine colliders with in-browser Rapier3D physics preview.
 
 ---
 

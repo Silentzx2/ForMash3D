@@ -57,6 +57,19 @@
   - Tests verifying `plan_generation` routes mechanical/clean to high-detail adapter with `feature_aware` retopo when native adapter is disabled, and to native candidate when enabled.
   - Comprehensive 24-test suite passing (100%).
 
+## 2026-10-20 — Postprocess Pipeline Orchestrator Integration & Master Immutability (Task 2E)
+
+- Integrated Topology Gate, targeted hole repair, memory-safe decimation, UV backend resolver, and PBR validation into `backend/postprocess/pipeline.py` strictly operating on working copies.
+- Connected the full post-processing pipeline:
+  1. Evaluates `evaluate_topology_gate` on input working copy, respecting `plan.skip_retopo_allowed`.
+  2. Routes repair: `minimal_repair` invokes `repair_holes_targeted` (closing small boundary loops <= 50 vertices without smoothing surface geometry); `full_repair` invokes full mesh repair.
+  3. Memory-safe decimation: invokes `memory_safe_decimate` when target polycount is requested, protecting creases (>35°) and capping RAM at 80%.
+  4. Centralized UV unwrapping: invokes `execute_uv_unwrap` resolving between GPU PartUV and CPU/GPU xatlas array driver.
+  5. Detail baking & PBR validation: invokes `validate_pbr_asset` checking 5 PBR channels, OpenGL Y+ tangent normals, and strictly bounded [0, 1] UV layouts.
+- Master Immutability Guarantee: Computes SHA-256 of `master/source.glb` before any postprocessing step and re-asserts that the SHA-256 is strictly identical at the end of postprocessing.
+- Passes generation plan dictionary through `generation_result.get("plan") or job_inputs.get("plan")` into gate and UV resolver.
+- Added comprehensive integration test in `backend/tests/test_batch2_orchestrator_integration.py` verifying end-to-end execution and master hash immutability.
+
 ## 2026-10-20 — Normal-Map Detail Bake Config & PBR Validation (Task 2C)
 
 - Created `backend/config/bake_config.yaml`:
@@ -158,6 +171,19 @@
   - Verifies feature edge retention on cube vs subdivided cube (1.0) and smoothed sphere (< 0.1).
   - Tests 1A.1 master immutability audit workflow ensuring working copies mutate while `master/source.glb` SHA-256 remains immutable.
   - Verifies parity scorecard JSON generation.
+
+## 2026-10-20 — Pipeline Planner v0, Runtime Probe & Base Capability Flags (Task 1E)
+
+- Implemented `backend/core/runtime_probe.py`:
+  - Returns `probe_runtime()` contract dict containing: `has_cuda`, `cuda_device_name`, `total_vram_gb`, `free_vram_gb`, `total_ram_gb`, `free_ram_gb`, `peak_vram_gb_last_run`, `installed_adapters`, `enabled_adapters`, `license_optins`, `torch_version`, `cuda_version`.
+  - Single point of truth for hardware telemetry; consumed directly by the generation planner.
+- Implemented `backend/core/planner.py`:
+  - Pure function `plan_generation(request, runtime, rules)` returning a structured `Plan` dictionary with `adapter`, `fallback_chain`, `preset`, `num_seeds`, `input_prep`, `skip_retopo_allowed`, `uv_backend`, `bake`, `reasons`, and `warnings`.
+  - Recomputes full plan upon any fallback rather than patching individual fields.
+- Updated `backend/config/models.yaml`:
+  - Added `native_topology`, `output_resolution`, and measured VRAM budgets for all model adapters.
+- Updated `BaseModel` class in `backend/models/base_model.py`:
+  - Added `native_topology: bool = False` flag to differentiate native polygonal models from dense implicit/marching-cube fields.
 
 ## 2026-10-20 — Hunyuan Presets, Hole-Targeted Repair & Seed Scorer (Tasks 1C & 1D)
 
@@ -966,3 +992,51 @@ Use the normal ForMash3D workspace generation flow for final visual/VRAM validat
 - Synced `Docs/TASKS.md` marking Gate 3 [PASSED] and all Batch 1, 2, 3 tasks completed.
 - Updated `Docs/CHANGELOG.md` with release logs for Batches 1, 2, and 3.
 - Confirmed zero documentation gaps against code and verified all 111 tests passing.
+
+---
+
+## 2026-10-20 — Architectural Constraints, Thresholds & Master Immutability Contracts
+
+### 1. Master Immutability Invariant
+- **Rule**: `master/source.glb` is strictly immutable. It captures raw neural geometry at maximum model fidelity.
+- **Enforcement**: Working copies are explicitly created before any downstream postprocess operation (repair, decimation, UV unwrapping, baking, LOD generation). The pipeline computes `sha256(master/source.glb)` before postprocessing begins and asserts the identical hash upon completion.
+
+### 2. Config-Driven Quality & Resource Thresholds
+- **Topology Gate (`backend/config/gate_thresholds.yaml`)**:
+  - `max_non_manifold_edges`: 0
+  - `max_non_manifold_vertices`: 0
+  - `max_holes`: 0
+  - `max_floater_ratio`: 0.005 (0.5% vertex count)
+  - `max_degenerate_faces`: 0
+  - `min_aspect_ratio_p1`: 0.05
+  - `min_aspect_ratio_p5`: 0.10
+  - `small_hole_max_vertices`: 50 (boundary loops <= 50 vertices routed to targeted hole repair)
+  - `strict`: false (in strict mode, any flaw triggers full repair)
+- **Hole-Targeted Repair (`backend/config/hunyuan_presets.yaml`)**:
+  - `max_hole_vertices`: 50
+  - `max_hole_perimeter`: 0.5
+  - Geometry preservation: Closes boundary loops with directed edge fans while leaving uncorrupted mesh surfaces 100% untouched.
+- **Memory-Safe Decimation (`backend/config/decimation_config.yaml`)**:
+  - `memory_safe_threshold_triangles`: 2,000,000 (2M tris)
+  - `crease_angle_deg`: 35.0°
+  - `max_deviation_deg`: 45.0°
+  - `max_ram_fraction`: 0.80 (80% available RAM ceiling via `psutil`)
+  - Staging: Below 2M tris, uses standard feature-preserving QEM; above 2M tris, engages staged 50% chunked reduction with intermediate garbage collection.
+- **UV Backend Resolver (`backend/config/uv_config.yaml`)**:
+  - `partuv_triangle_threshold`: 500,000 (500k tris)
+  - `partuv_vram_requirement_gb`: 7.0 GB
+  - `default_backend`: "auto"
+  - `fallback_backend`: "xatlas"
+  - Resolution: "auto" selects GPU PartUV only when triangle count >= 500k, CUDA is available, and free VRAM >= 7.0 GB (after generative model VRAM is released). Otherwise routes to CPU/GPU xatlas array driver.
+- **Detail Baking & PBR Validation (`backend/config/bake_config.yaml`)**:
+  - `normal_space`: "TANGENT"
+  - `convention`: "OPENGL" (Y+ convention; B channel mean >= 140, flat regions decode to ≈(0, 0, 1))
+  - `cage_extrusion`: 0.02, `max_ray_distance`: 0.05
+  - `min_uv_utilization`: 0.60 (60% minimum rasterized atlas coverage)
+  - glTF PBR channel packing: Roughness packed in Green (G) channel; Metallic packed in Blue (B) channel.
+  - Validates non-degenerate channels (neither all-0 nor all-255) and strictly bounded [0, 1] UV coordinates.
+
+### 3. Key Architectural Decisions & Lessons Learned
+- **TaoFlowForge Spike (3A)**: Model weights are ~26 GB (exceeding container disk headroom) and require strict CUDA 12.1 + >=20GB VRAM. Native topology route must remain safely stubbed with graceful fallback to dense generation + feature-aware retopology.
+- **Quad vs Tri Topology (3F)**: OBJ supports true quad polygonal faces (`f v/vt/vn ...`), while Khronos glTF 2.0 strictly requires triangulation for WebGL/Three.js/game engine runtimes.
+- **Deterministic Planning**: All routing decisions are pure functions computed from request parameters and runtime facts. Fallback candidates trigger a full plan recomputation rather than patching individual fields.
