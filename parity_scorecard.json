@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "title": "ForMash3D Parity Scorecard",
+    "columns": [
+      "ForMash3D",
+      "Tripo",
+      "Meshy",
+      "Hyper3D"
+    ],
+    "rows": [
+      "sharpness",
+      "topology_cleanliness",
+      "uv_quality",
+      "texture_quality",
+      "speed",
+      "failure_rate"
+    ]
+  },
+  "scorecard": {
+    "sharpness": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "topology_cleanliness": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "uv_quality": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "texture_quality": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "speed": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    },
+    "failure_rate": {
+      "ForMash3D": null,
+      "Tripo": null,
+      "Meshy": null,
+      "Hyper3D": null
+    }
+  }
+}
