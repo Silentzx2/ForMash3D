@@ -566,7 +566,25 @@ backend/thirdparty/
 
 ---
 
-## 10. Configuration Files
+## 10. Configuration Files & Single Source of Truth Map
+
+### Configuration Map (SSOT)
+Every tunable parameter has exactly one canonical definition:
+
+| Value Family | Owning File | Canonical Key | Description |
+| :--- | :--- | :--- | :--- |
+| **Shared Crease Angles** | `backend/config/quality.yaml` | `quality.shared.feature_edge_angle_deg` | Crease angle cutoff (35.0°) for sharp edge retention across decimation, baking, and metrics. |
+| **Hole Repair Limits** | `backend/config/quality.yaml` | `quality.holes.*` | `max_hole_vertices` (50) and `max_hole_perimeter` (0.5) for targeted boundary loop filling. |
+| **Topology Gate** | `backend/config/quality.yaml` | `quality.gate.*` | Clean-mesh criteria: non-manifold edges/vertices (0), holes (0), floater ratio (0.005), degenerate faces (0), aspect ratio p1/p5 (0.05 / 0.10). |
+| **Memory-Safe Decimation**| `backend/config/quality.yaml` | `quality.decimation.*` | `memory_safe_threshold_triangles` (2M), `max_deviation_deg` (45.0), `max_ram_fraction` (0.80). |
+| **UV Auto-Routing** | `backend/config/quality.yaml` | `quality.uv.*` | `partuv_triangle_threshold` (500k), `partuv_vram_requirement_gb` (7.0 GB), default backend (`auto`), fallback (`xatlas`), `max_chart_size` (4096). |
+| **Normal Detail Bake** | `backend/config/quality.yaml` | `quality.bake.*` | `normal_space` ("TANGENT"), `convention` ("OPENGL"), `cage_extrusion` (0.02), `max_ray_distance` (0.05), `gutter_dilation_pixels` (4), `min_uv_utilization` (0.60). |
+| **Candidate Seed Scoring**| `backend/config/quality.yaml` | `quality.seeds.*` | `base_seed` (42891), `seed_step` (1337), `max_candidates` (4), `early_stop_score` (0.85), weights, ranges. |
+| **Quality Tiers** | `backend/config/quality.yaml` | `quality.tiers`, `quality.default_tier` | Tiers (`fast`, `balanced`, `high`), default tier (`balanced`). |
+| **Quality Badge** | `backend/config/quality.yaml` | `quality.badge.*` | `sharp_min_score` (0.85), `clean_min_score` (0.0). |
+| **Production Limits** | `backend/config/quality.yaml` | `quality.limits.*` | `max_production_faces` (2M), `memory_safe_dispatch_triangles` (2M), `uv_scan_max_faces` (60k). |
+| **Model Facts & VRAM** | `backend/config/models.yaml` | `models.yaml: <feature>.<id>.*` | Upstream repo, revision, checkpoint license, VRAM requirement (MB), `capabilities.native_topology`, `preferred_resolution`. |
+| **Planner Routing Policy**| `backend/config/planner_rules.yaml`| `planner_rules.yaml: routes.*, apply.*` | Routing decisions per object type and tier; execution toggles (`apply.model_choice`, `apply.auto_seeds`, `apply.input_prep`). |
 
 ### system.yaml (`backend/config/system.yaml`)
 ```yaml

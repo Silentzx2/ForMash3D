@@ -23,23 +23,23 @@ except ImportError:
 
 def test_load_uv_config(tmp_path):
     """Test loading config from yaml file and fallback defaults."""
+    import copy
+    import yaml
+    from core.config import get_quality_config
+
     cfg = load_uv_config()
     assert cfg["partuv_triangle_threshold"] == 500000
     assert cfg["partuv_vram_requirement_gb"] == 7.0
     assert cfg["default_backend"] == "auto"
     assert cfg["fallback_backend"] == "xatlas"
 
-    # Custom config
+    # Custom config derived from SSOT
     custom_yaml = tmp_path / "custom_uv.yaml"
-    custom_yaml.write_text(
-        """
-uv:
-  partuv_triangle_threshold: 100000
-  partuv_vram_requirement_gb: 12.0
-  default_backend: "auto"
-  fallback_backend: "xatlas"
-"""
-    )
+    config_data = copy.deepcopy(get_quality_config())
+    config_data["uv"]["partuv_triangle_threshold"] = 100000
+    config_data["uv"]["partuv_vram_requirement_gb"] = 12.0
+    custom_yaml.write_text(yaml.safe_dump(config_data), encoding="utf-8")
+
     custom_cfg = load_uv_config(str(custom_yaml))
     assert custom_cfg["partuv_triangle_threshold"] == 100000
     assert custom_cfg["partuv_vram_requirement_gb"] == 12.0
@@ -149,6 +149,7 @@ def test_resolve_uv_backend_explicit_xatlas():
 
 def test_execute_uv_unwrap_valid_uv_coordinates():
     """Test execute_uv_unwrap on a mesh with xatlas produces valid UV coordinates in [0, 1]."""
+    pytest.importorskip("xatlas")
     mesh = trimesh.creation.box()
     unwrapped, meta = execute_uv_unwrap(mesh, backend="xatlas")
 
@@ -167,6 +168,7 @@ def test_execute_uv_unwrap_valid_uv_coordinates():
 
 def test_execute_uv_unwrap_does_not_mutate_input():
     """Test input mesh is not mutated in-place by execute_uv_unwrap."""
+    pytest.importorskip("xatlas")
     mesh = trimesh.creation.icosphere(subdivisions=2)
     original_vertices = mesh.vertices.copy()
     original_faces = mesh.faces.copy()
@@ -184,6 +186,7 @@ def test_execute_uv_unwrap_does_not_mutate_input():
 
 def test_execute_uv_unwrap_partuv_fallback_on_failure():
     """Test graceful fallback to xatlas when PartUV fails."""
+    pytest.importorskip("xatlas")
     mesh = trimesh.creation.box()
 
     # PartUV resolved but fails internally -> graceful fallback to xatlas
