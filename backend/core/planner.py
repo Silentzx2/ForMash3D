@@ -1,0 +1,369 @@
+"""Rule-based pipeline planner.
+
+Pure function plan_generation(request, runtime, rules) -> dict.
+Fulfills TASKS.md Section 8 specification.
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import yaml
+
+logger = logging.getLogger(__name__)
+
+# Default mapping between adapter ID and adapter class name
+DEFAULT_ADAPTER_CLASS_MAP = {
+    "hunyuan3d_shape_v21_image_to_raw_mesh": "Hunyuan3DShapeV21ImageToRawMeshAdapter",
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter",
+    "trellis2_image_to_raw_mesh": "Trellis2ImageToRawMeshAdapter",
+    "trellis_image_to_raw_mesh": "TrellisImageToRawMeshAdapter",
+    "triposg_image_to_raw_mesh": "TripoSGImageToRawMeshAdapter",
+    "taoflowforge_image_to_raw_mesh": "TaoFlowForgeImageToRawMeshAdapter",
+}
+
+_RULES_CACHE: Optional[Dict[str, Any]] = None
+
+
+def _load_default_rules() -> Dict[str, Any]:
+    """Load default planner rules from backend/config/planner_rules.yaml."""
+    global _RULES_CACHE
+    if _RULES_CACHE is not None:
+        return _RULES_CACHE
+
+    rules_path = Path(__file__).resolve().parent.parent / "config" / "planner_rules.yaml"
+    if not rules_path.exists():
+        candidate = Path.cwd() / "backend" / "config" / "planner_rules.yaml"
+        if candidate.exists():
+            rules_path = candidate
+
+    if rules_path.exists():
+        try:
+            _RULES_CACHE = yaml.safe_load(rules_path.read_text(encoding="utf-8")) or {}
+            return _RULES_CACHE
+        except Exception as e:
+            logger.warning("Failed to load planner rules from %s: %s", rules_path, e)
+
+    return {}
+
+
+def _is_adapter_registered(
+    adapter_id: str,
+    adapter_class: Optional[str],
+    installed: List[str],
+) -> bool:
+    """Verify if adapter is registered in installed_adapters."""
+    if not installed:
+        return False
+    if adapter_id in installed:
+        return True
+    if adapter_class and adapter_class in installed:
+        return True
+    mapped_class = DEFAULT_ADAPTER_CLASS_MAP.get(adapter_id)
+    if mapped_class and mapped_class in installed:
+        return True
+    return False
+
+
+def _is_adapter_enabled(
+    adapter_id: str,
+    adapter_class: Optional[str],
+    enabled: List[str],
+) -> bool:
+    """Verify if adapter is enabled in models configuration."""
+    if not enabled:
+        return False
+    if adapter_id in enabled:
+        return True
+    if adapter_class and adapter_class in enabled:
+        return True
+    for item in enabled:
+        if item == adapter_id or adapter_id.startswith(f"{item}_") or item.startswith(f"{adapter_id}_"):
+            return True
+    return False
+
+
+def _is_license_optin_satisfied(
+    adapter_id: str,
+    requires_optin: bool,
+    optins: Dict[str, bool],
+) -> Tuple[bool, Optional[str]]:
+    """Check license opt-in status for an adapter."""
+    # Check explicit opt-out / rejection
+    if adapter_id in optins and optins[adapter_id] is False:
+        return False, f"License opt-in explicitly rejected for candidate '{adapter_id}'."
+
+    for key, accepted in optins.items():
+        if (key in adapter_id or adapter_id.startswith(key)) and accepted is False:
+            return False, f"License opt-in explicitly rejected for candidate '{adapter_id}'."
+
+    # If opt-in is required, check if user explicitly accepted
+    if requires_optin:
+        accepted = False
+        if adapter_id in optins and optins[adapter_id] is True:
+            accepted = True
+        else:
+            for key, val in optins.items():
+                if (key in adapter_id or adapter_id.startswith(key)) and val is True:
+                    accepted = True
+                    break
+        if not accepted:
+            return False, f"Candidate '{adapter_id}' requires license opt-in which has not been accepted."
+
+    return True, None
+
+
+def plan_generation(
+    request: Dict[str, Any],
+    runtime: Dict[str, Any],
+    rules: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Pure function generating an execution plan from request parameters and runtime facts.
+
+    Inputs:
+        request: dict containing mesh_style, requested_quality, object_type, symmetry,
+                 target_polycount, input_type, etc.
+        runtime: dict matching exact specification from runtime_probe.py.
+        rules: optional custom routing rules; defaults to backend/config/planner_rules.yaml.
+
+    Outputs dict:
+        adapter, fallback_chain, preset, num_seeds, input_prep, skip_retopo_allowed,
+        uv_backend, bake, reasons, warnings, schema_version.
+    """
+    if rules is None:
+        rules = _load_default_rules()
+
+    reasons: List[str] = []
+    warnings: List[str] = []
+
+    # 1. Normalize and default inputs
+    mesh_style = request.get("mesh_style", "auto")
+    if mesh_style not in ("clean", "detailed", "auto"):
+        mesh_style = "auto"
+
+    requested_quality = request.get("requested_quality", request.get("quality", "balanced"))
+    if requested_quality not in ("fast", "balanced", "high"):
+        requested_quality = "balanced"
+
+    object_type = request.get("object_type", "general")
+    if object_type not in ("mechanical", "organic", "character", "general"):
+        object_type = "general"
+
+    symmetry = request.get("symmetry", "none")
+    if symmetry not in ("bilateral", "radial", "none"):
+        symmetry = "none"
+
+    target_polycount = request.get("target_polycount")
+    if target_polycount is not None:
+        try:
+            target_polycount = int(target_polycount)
+        except (ValueError, TypeError):
+            target_polycount = None
+
+    input_type = request.get("input_type")
+    if not input_type:
+        if "text" in request and "image" not in request:
+            input_type = "text"
+        else:
+            input_type = "image"
+
+    if symmetry != "none":
+        reasons.append(f"Requested symmetry: {symmetry} (recorded for downstream processing)")
+    if target_polycount is not None:
+        reasons.append(f"Target polycount constraint: {target_polycount}")
+
+    # 2. Compute seeds based on quality tier
+    seeds_by_quality = {"fast": 1, "balanced": 2, "high": 3}
+    quality_seeds = seeds_by_quality.get(requested_quality, 2)
+
+    # 3. Assemble candidate chain in priority order
+    candidates: List[Dict[str, Any]] = []
+
+    # Check if native topology route requested (clean or mechanical)
+    # TASKS.md: clean/mechanical -> native adapter ONLY if enabled + verified; else dense route with feature-aware retopo
+    if mesh_style == "clean" or object_type == "mechanical":
+        native_cfg = (
+            rules.get("specialized_routes", {})
+            .get("native_clean", {})
+            .get("native_candidate", {})
+        )
+        native_adapter = native_cfg.get("adapter", "taoflowforge_image_to_raw_mesh")
+        candidates.append({
+            "adapter": native_adapter,
+            "preset": requested_quality,
+            "num_seeds": quality_seeds,
+            "skip_retopo_allowed": True,
+            "source": "native_clean_route",
+        })
+
+    # Add dense quality candidates
+    dense_candidates = (
+        rules.get("quality_routes", {})
+        .get(requested_quality, {})
+        .get("candidates", [])
+    )
+    for dc in dense_candidates:
+        candidates.append({
+            "adapter": dc["adapter"],
+            "preset": dc.get("preset", requested_quality),
+            "num_seeds": dc.get("num_seeds", quality_seeds),
+            "skip_retopo_allowed": dc.get("skip_retopo_allowed", False),
+            "source": f"quality_{requested_quality}_route",
+        })
+
+    # Always ensure fallback of last resort is at the tail
+    fallback_resort = rules.get("fallback_of_last_resort", {
+        "adapter": "hunyuan3d_shape_v21_image_to_raw_mesh",
+        "preset": "fast",
+        "num_seeds": 1,
+        "skip_retopo_allowed": False,
+    })
+    fallback_resort_cand = {
+        "adapter": fallback_resort.get("adapter", "hunyuan3d_shape_v21_image_to_raw_mesh"),
+        "preset": fallback_resort.get("preset", "fast"),
+        "num_seeds": fallback_resort.get("num_seeds", 1),
+        "skip_retopo_allowed": fallback_resort.get("skip_retopo_allowed", False),
+        "source": "fallback_of_last_resort",
+    }
+    if not candidates or candidates[-1]["adapter"] != fallback_resort_cand["adapter"] or candidates[-1]["preset"] != fallback_resort_cand["preset"]:
+        candidates.append(fallback_resort_cand)
+
+    # 4. Evaluate candidates sequentially against runtime capabilities
+    installed_adapters = runtime.get("installed_adapters", [])
+    enabled_adapters = runtime.get("enabled_adapters", [])
+    license_optins = runtime.get("license_optins", {})
+    has_cuda = runtime.get("has_cuda", False)
+    free_vram_gb = runtime.get("free_vram_gb")
+
+    selected_candidate: Optional[Dict[str, Any]] = None
+    selected_idx: int = -1
+
+    for idx, cand in enumerate(candidates):
+        cand_id = cand["adapter"]
+        cand_meta = rules.get("adapters", {}).get(cand_id, {})
+        adapter_class = cand_meta.get("adapter_class", DEFAULT_ADAPTER_CLASS_MAP.get(cand_id))
+        vram_budget_gb = cand_meta.get("vram_budget_gb", 0.0)
+        supported_inputs = cand_meta.get("supported_inputs", ["image"])
+        requires_cuda = cand_meta.get("requires_cuda", True)
+        requires_license = cand_meta.get("requires_license_optin", False)
+
+        # Check A: Registered
+        if not _is_adapter_registered(cand_id, adapter_class, installed_adapters):
+            msg = f"Candidate '{cand_id}' is not installed/registered."
+            reasons.append(f"Candidate {cand_id} skipped: {msg}")
+            if idx == 0:
+                warnings.append(f"Preferred candidate '{cand_id}' unavailable: {msg}")
+            continue
+
+        # Check B: Enabled
+        if not _is_adapter_enabled(cand_id, adapter_class, enabled_adapters):
+            msg = f"Candidate '{cand_id}' is disabled in configuration."
+            reasons.append(f"Candidate {cand_id} skipped: {msg}")
+            if idx == 0:
+                warnings.append(f"Preferred candidate '{cand_id}' unavailable: {msg}")
+            continue
+
+        # Check C: License opt-in
+        lic_ok, lic_msg = _is_license_optin_satisfied(cand_id, requires_license, license_optins)
+        if not lic_ok:
+            reasons.append(f"Candidate {cand_id} skipped: {lic_msg}")
+            if idx == 0:
+                warnings.append(f"Preferred candidate '{cand_id}' unavailable: {lic_msg}")
+            continue
+
+        # Check D: CUDA and VRAM budget
+        if requires_cuda:
+            if not has_cuda:
+                msg = f"Candidate '{cand_id}' requires CUDA, but CUDA is not available."
+                reasons.append(f"Candidate {cand_id} skipped: {msg}")
+                if idx == 0:
+                    warnings.append(f"Preferred candidate '{cand_id}' unavailable: {msg}")
+                continue
+            if free_vram_gb is not None and vram_budget_gb > free_vram_gb:
+                msg = f"Candidate '{cand_id}' requires {vram_budget_gb} GB VRAM, but only {free_vram_gb} GB is free."
+                reasons.append(f"Candidate {cand_id} skipped: {msg}")
+                warnings.append(f"Fallback from candidate '{cand_id}': {msg}")
+                continue
+
+        # Check E: Input type support
+        if input_type not in supported_inputs:
+            msg = f"Candidate '{cand_id}' does not support input type '{input_type}'."
+            reasons.append(f"Candidate {cand_id} skipped: {msg}")
+            if idx == 0:
+                warnings.append(f"Preferred candidate '{cand_id}' unavailable: {msg}")
+            continue
+
+        # All checks passed!
+        selected_candidate = cand
+        selected_idx = idx
+        break
+
+    # 5. If all candidates failed (e.g. no CUDA), recompute whole plan using fallback of last resort
+    if selected_candidate is None:
+        selected_candidate = fallback_resort_cand
+        selected_idx = len(candidates) - 1
+        reasons.append(
+            f"All candidates failed runtime checks; selected fallback of last resort: {selected_candidate['adapter']}"
+        )
+        warnings.append("Selected fallback of last resort; generation may run on CPU or fail if CUDA is required.")
+        if not has_cuda:
+            warnings.append("No CUDA device available in runtime environment.")
+
+    # 6. Build remaining fallback chain (unique candidate adapter IDs after the selected one)
+    fallback_chain: List[str] = []
+    for cand in candidates[selected_idx + 1:]:
+        f_id = cand["adapter"]
+        if f_id != selected_candidate["adapter"] and f_id not in fallback_chain:
+            fallback_chain.append(f_id)
+
+    last_resort_id = fallback_resort_cand["adapter"]
+    if last_resort_id != selected_candidate["adapter"] and last_resort_id not in fallback_chain:
+        fallback_chain.append(last_resort_id)
+
+    # 7. Merge defaults with request overrides for input_prep, uv_backend, bake
+    default_input_prep = dict(rules.get("default_input_prep", {
+        "remove_background": True,
+        "clean_alpha": True,
+        "tight_crop": True,
+        "margin": 0.1,
+        "resize": True,
+        "target_size": 1024,
+        "upscale_small": True,
+        "upscale_threshold": 512,
+    }))
+    if isinstance(request.get("input_prep"), dict):
+        default_input_prep.update(request["input_prep"])
+
+    default_uv = rules.get("default_uv", {}).get("backend", "auto")
+    uv_backend = request.get("uv_backend", default_uv)
+
+    default_bake = dict(rules.get("default_bake", {
+        "normal_from_master": True,
+        "convention": "opengl",
+        "bake_ao": False,
+    }))
+    if isinstance(request.get("bake"), dict):
+        default_bake.update(request["bake"])
+
+    schema_version = str(rules.get("schema_version", "0.1.0"))
+
+    reasons.append(
+        f"Selected adapter '{selected_candidate['adapter']}' with preset '{selected_candidate['preset']}' "
+        f"({selected_candidate['num_seeds']} seeds) for quality='{requested_quality}', "
+        f"mesh_style='{mesh_style}', object_type='{object_type}'."
+    )
+
+    return {
+        "schema_version": schema_version,
+        "adapter": selected_candidate["adapter"],
+        "fallback_chain": fallback_chain,
+        "preset": selected_candidate["preset"],
+        "num_seeds": selected_candidate["num_seeds"],
+        "input_prep": default_input_prep,
+        "skip_retopo_allowed": selected_candidate["skip_retopo_allowed"],
+        "uv_backend": uv_backend,
+        "bake": default_bake,
+        "reasons": reasons,
+        "warnings": warnings,
+    }

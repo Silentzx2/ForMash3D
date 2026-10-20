@@ -39,6 +39,7 @@ class BaseModel(ABC):
         self.gpu_id: Optional[int] = None
         self.gpu_ids: List[int] = []
         self.resource_plan: Optional[Dict[str, Any]] = None
+        self.native_topology: bool = False
         self.model = None
 
     @abstractmethod

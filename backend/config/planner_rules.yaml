@@ -1,0 +1,101 @@
+schema_version: "0.1.0"
+
+# Adapter capabilities and resource constraints
+adapters:
+  hunyuan3d_shape_v21_image_to_raw_mesh:
+    adapter_class: "Hunyuan3DShapeV21ImageToRawMeshAdapter"
+    vram_budget_gb: 10.0
+    supported_inputs: ["image"]
+    requires_cuda: true
+    native_topology: false
+    requires_license_optin: false
+
+  hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh:
+    adapter_class: "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter"
+    vram_budget_gb: 6.0
+    supported_inputs: ["image"]
+    requires_cuda: true
+    native_topology: false
+    requires_license_optin: false
+
+  trellis2_image_to_raw_mesh:
+    adapter_class: "Trellis2ImageToRawMeshAdapter"
+    vram_budget_gb: 16.0
+    supported_inputs: ["image"]
+    requires_cuda: true
+    native_topology: false
+    requires_license_optin: false
+
+  taoflowforge_image_to_raw_mesh:
+    adapter_class: "TaoFlowForgeImageToRawMeshAdapter"
+    vram_budget_gb: 16.0
+    supported_inputs: ["image"]
+    requires_cuda: true
+    native_topology: true
+    requires_license_optin: true
+
+# Routing candidates by requested quality tier (in priority order)
+quality_routes:
+  fast:
+    candidates:
+      - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+        preset: "fast"
+        num_seeds: 1
+        skip_retopo_allowed: false
+  balanced:
+    candidates:
+      - adapter: "trellis2_image_to_raw_mesh"
+        preset: "balanced"
+        num_seeds: 2
+        skip_retopo_allowed: false
+      - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+        preset: "balanced"
+        num_seeds: 2
+        skip_retopo_allowed: false
+  high:
+    candidates:
+      - adapter: "trellis2_image_to_raw_mesh"
+        preset: "high"
+        num_seeds: 3
+        skip_retopo_allowed: false
+      - adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+        preset: "high"
+        num_seeds: 3
+        skip_retopo_allowed: false
+
+# Style & object type routing modifiers
+specialized_routes:
+  native_clean:
+    native_candidate:
+      adapter: "taoflowforge_image_to_raw_mesh"
+      skip_retopo_allowed: true
+    fallback_to_dense: true
+
+# Fallback of last resort (always available candidate)
+fallback_of_last_resort:
+  adapter: "hunyuan3d_shape_v21_image_to_raw_mesh"
+  preset: "fast"
+  num_seeds: 1
+  skip_retopo_allowed: false
+
+# Default input prep flags
+default_input_prep:
+  remove_background: true
+  clean_alpha: true
+  tight_crop: true
+  margin: 0.1
+  resize: true
+  target_size: 1024
+  upscale_small: true
+  upscale_threshold: 512
+
+# Default UV options
+default_uv:
+  backend: "auto"
+  partuv_threshold_tris: 500000
+
+# Default bake options
+default_bake:
+  normal_from_master: true
+  convention: "opengl"
+  bake_ao: false
