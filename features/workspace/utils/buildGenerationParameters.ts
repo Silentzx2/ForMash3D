@@ -84,6 +84,10 @@ export function buildGenerationParameters(
   );
 
   const isTextured = textureEnabled;
+  const quality = settings.quality || 'balanced';
+  const meshStyle = settings.meshStyle || settings.mesh_style || 'auto';
+  const objectType = settings.objectType || settings.object_type || 'general';
+  const symmetry = settings.symmetry || 'none';
   
   // Build model parameters
   const modelParameters: Record<string, unknown> = {
@@ -105,6 +109,11 @@ export function buildGenerationParameters(
     generate_texture: textureEnabled,
     enable_postprocess: enablePostprocess,
     candidate_count: settings.candidateCount ? Math.max(1, Math.min(4, Number(settings.candidateCount))) : 1,
+    quality,
+    requested_quality: quality,
+    mesh_style: meshStyle,
+    object_type: objectType,
+    symmetry,
   };
   
   // Existing model defaults establish the profile; explicit UI/preset values win last.
@@ -164,6 +173,11 @@ export function buildGenerationParameters(
       texture_fidelity_preset: settings.textureFidelityPreset || 'high',
       texture_enabled: textureEnabled,
       generate_texture: textureEnabled,
+      quality,
+      requested_quality: quality,
+      mesh_style: meshStyle,
+      object_type: objectType,
+      symmetry,
       ...(textureEnabled ? {
         texture_resolution: numericTextureResolution,
         texture_resolution_preset: textureResolutionPreset,

@@ -28,6 +28,7 @@ import { getCachedGLB, setCachedGLB, loadGLBWithProgress } from '../lib/glbCache
 import { PhysicsRuntime } from '../physics/PhysicsRuntime';
 import { analyzeGeometryTelemetry, prepareMeshTangentsAndNormals } from '../lib/meshTelemetry';
 import { taskPersistence } from '@/services/taskPersistence';
+import { QualityBadge } from '../Panels/GeneratePanel';
 
 import { HugeiconsIcon } from '@hugeicons/react';
 import { Box, CameraIcon, Cancel, Cancel01Icon, CheckIcon, ChevronDown, CloudUpload, CompassIcon, DownloadIcon, EyeIcon, FlipHorizontalIcon, GridIcon, Hand, Layers01Icon, Maximize02Icon, MoveIcon, RecordIcon, RotateCcwIcon, RotateCw, SearchIcon, SparklesIcon, SunIcon, ZapIcon, ZoomInIcon, ZoomOutIcon } from '@hugeicons/core-free-icons';
@@ -5586,9 +5587,14 @@ export const MeshViewer: React.FC<MeshViewerProps> = ({
                       />
                     </div>
 
-                    <span className="text-[8.5px] text-zinc-400 truncate mt-0.5">
-                      {job.stage || (isQueued ? 'In queue (waiting for GPU)' : isRunning ? 'Processing...' : isCompleted ? 'Completed' : 'Error')}
-                    </span>
+                    <div className="flex items-center justify-between gap-1 mt-0.5">
+                      <span className="text-[8.5px] text-zinc-400 truncate">
+                        {job.stage || (isQueued ? 'In queue (waiting for GPU)' : isRunning ? 'Processing...' : isCompleted ? 'Completed' : 'Error')}
+                      </span>
+                      {isCompleted && (
+                        <QualityBadge rawResult={job.result} size="sm" />
+                      )}
+                    </div>
                   </div>
 
                   {/* Actions: View when completed & Dismiss */}

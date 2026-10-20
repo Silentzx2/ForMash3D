@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import { useAppStore } from '@/stores/useAppStore';
-import type { GenerationSettings, PhysicsSettings } from '../types';
+import type { GenerationSettings, PhysicsSettings, ModelAsset } from '../types';
 import { useUploadProgress } from '@/hooks/useUploadProgress';
 import { getApiClient } from '@/services/apiClient';
 import { requireUploadFileId } from '../lib/uploadResponse';
@@ -101,6 +101,213 @@ export const PHYSICS_MATERIAL_PRESETS = [
   { label: 'Ice', friction: 0.05, restitution: 0.05 },
   { label: 'Metal', friction: 0.3, restitution: 0.15 },
 ] as const;
+
+export interface QualityMetrics {
+  triangles: number;
+  nonManifoldEdges: number;
+  holes: number;
+  featureEdgeRetention: number | null;
+  warnings: string[];
+  passedGate: boolean;
+  status: 'Sharp' | 'Clean' | 'Needs Review';
+}
+
+export function computeQualityMetrics(
+  asset?: ModelAsset | null,
+  rawResult?: Record<string, any> | null
+): QualityMetrics {
+  const qaReport = (
+    asset?.artifacts?.qaReport ||
+    (asset as any)?.qa_report ||
+    (asset as any)?.quality_trace?.game_ready?.qa ||
+    rawResult?.qa_report ||
+    rawResult?.quality_report ||
+    rawResult?.artifacts?.qaReport
+  ) as Record<string, any> | undefined;
+
+  const afterMetrics = qaReport?.after_postprocess?.metrics || qaReport?.metrics || rawResult?.metrics || {};
+  const masterToDeriv = qaReport?.master_to_derivative || rawResult?.master_to_derivative || {};
+  const meshDetails = ((asset?.meshDetails || rawResult?.mesh_details) || {}) as Record<string, any>;
+
+  const triangles = Number(
+    asset?.triangles ||
+    asset?.faces ||
+    afterMetrics.triangle_count ||
+    afterMetrics.triangles ||
+    meshDetails.triangle_count ||
+    meshDetails.triangles ||
+    rawResult?.triangle_count ||
+    0
+  );
+
+  const nonManifoldEdges = Number(
+    asset?.nonManifoldEdges ??
+    afterMetrics.non_manifold_edges ??
+    meshDetails.non_manifold_edges ??
+    rawResult?.non_manifold_edges ??
+    (asset?.isManifold === false ? 1 : 0)
+  );
+
+  const holes = Number(
+    afterMetrics.hole_count ??
+    afterMetrics.holes ??
+    meshDetails.hole_count ??
+    meshDetails.holes ??
+    rawResult?.hole_count ??
+    0
+  );
+
+  const rawRetention =
+    masterToDeriv.feature_edge_retention ??
+    afterMetrics.feature_edge_retention ??
+    qaReport?.feature_edge_retention ??
+    meshDetails.feature_edge_retention ??
+    rawResult?.feature_edge_retention;
+
+  const featureEdgeRetention = (rawRetention !== undefined && rawRetention !== null && !isNaN(Number(rawRetention)))
+    ? Number(rawRetention)
+    : null;
+
+  const warnings: string[] = [];
+  if (Array.isArray(asset?.qaWarnings)) warnings.push(...asset!.qaWarnings);
+  if (Array.isArray(asset?.degradedReasons)) warnings.push(...asset!.degradedReasons);
+  if (Array.isArray(qaReport?.warnings)) warnings.push(...qaReport!.warnings);
+  if (Array.isArray(rawResult?.warnings)) warnings.push(...rawResult!.warnings);
+  if (Array.isArray(rawResult?.degraded_reasons)) warnings.push(...rawResult!.degraded_reasons);
+
+  const topoGate = qaReport?.topology_gate || rawResult?.topology_gate;
+  const qualGate = qaReport?.quality_gate || masterToDeriv.quality_gate || rawResult?.quality_gate;
+  const gateFailed = (topoGate && topoGate.passed_clean === false) || (qualGate && qualGate.passed === false);
+  const passedGate = !gateFailed && asset?.qaStatus !== 'fail';
+
+  let status: 'Sharp' | 'Clean' | 'Needs Review';
+  if (
+    asset?.productionStatus === 'degraded' ||
+    asset?.qaStatus === 'fail' ||
+    asset?.qaStatus === 'warn' ||
+    warnings.length > 0 ||
+    gateFailed ||
+    nonManifoldEdges > 0 ||
+    holes > 0
+  ) {
+    status = 'Needs Review';
+  } else if (featureEdgeRetention !== null && featureEdgeRetention >= 0.85) {
+    status = 'Sharp';
+  } else {
+    status = 'Clean';
+  }
+
+  return {
+    triangles,
+    nonManifoldEdges,
+    holes,
+    featureEdgeRetention,
+    warnings,
+    passedGate,
+    status,
+  };
+}
+
+export interface QualityBadgeProps {
+  asset?: ModelAsset | null;
+  rawResult?: Record<string, any> | null;
+  metrics?: Partial<QualityMetrics>;
+  className?: string;
+  size?: 'sm' | 'md';
+}
+
+export const QualityBadge: React.FC<QualityBadgeProps> = ({
+  asset,
+  rawResult,
+  metrics: customMetrics,
+  className = '',
+  size = 'md',
+}) => {
+  const computed = useMemo(() => {
+    const base = computeQualityMetrics(asset, rawResult);
+    return { ...base, ...customMetrics };
+  }, [asset, rawResult, customMetrics]);
+
+  const { status, triangles, nonManifoldEdges, holes, featureEdgeRetention, warnings } = computed;
+
+  const badgeConfig = {
+    Sharp: {
+      label: 'Sharp',
+      icon: SparklesIcon,
+      style: 'bg-primary/15 text-primary border-primary/30 shadow-[0_0_8px_hsl(var(--primary)/0.15)]',
+      dotStyle: 'bg-primary',
+    },
+    Clean: {
+      label: 'Clean',
+      icon: CheckIcon,
+      style: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shadow-[0_0_8px_rgba(52,211,153,0.15)]',
+      dotStyle: 'bg-emerald-400',
+    },
+    'Needs Review': {
+      label: 'Needs Review',
+      icon: TriangleAlertIcon,
+      style: 'bg-amber-500/15 text-amber-300 border-amber-500/30 shadow-[0_0_8px_rgba(251,191,36,0.15)]',
+      dotStyle: 'bg-amber-400',
+    },
+  }[status];
+
+  const retentionDisplay = featureEdgeRetention !== null
+    ? `${(featureEdgeRetention <= 1 ? featureEdgeRetention * 100 : featureEdgeRetention).toFixed(1)}%`
+    : '100.0%';
+
+  const tooltipContent = (
+    <div className="space-y-1.5 text-left py-1 px-0.5 text-[9.5px]">
+      <div className="font-bold border-b border-white/10 pb-1 flex items-center justify-between gap-3">
+        <span className="text-white">Mesh Quality Report</span>
+        <span className={`px-1.5 py-0.2 rounded text-[8px] font-mono font-bold ${badgeConfig.style}`}>
+          {status}
+        </span>
+      </div>
+      <div className="space-y-1">
+        <div className="flex justify-between gap-4 text-zinc-300">
+          <span>Triangles</span>
+          <span className="font-mono text-white font-bold">{triangles.toLocaleString()}</span>
+        </div>
+        <div className="flex justify-between gap-4 text-zinc-300">
+          <span>Non-Manifold Edges</span>
+          <span className={`font-mono font-bold ${nonManifoldEdges > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
+            {nonManifoldEdges}
+          </span>
+        </div>
+        <div className="flex justify-between gap-4 text-zinc-300">
+          <span>Holes</span>
+          <span className={`font-mono font-bold ${holes > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>
+            {holes}
+          </span>
+        </div>
+        <div className="flex justify-between gap-4 text-zinc-300">
+          <span>Feature Edge Retention</span>
+          <span className="font-mono text-primary font-bold">{retentionDisplay}</span>
+        </div>
+      </div>
+      {warnings.length > 0 && (
+        <div className="pt-1 border-t border-white/10 text-[8px] text-amber-300/90 leading-tight">
+          ⚠ {warnings[0]}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <SimpleTooltip label={tooltipContent} side="top">
+      <span
+        data-testid="quality-badge"
+        className={`inline-flex items-center gap-1 font-bold rounded-md border tracking-wider transition-all cursor-help ${
+          size === 'sm' ? 'px-1.5 py-0.2 text-[8px]' : 'px-2 py-0.5 text-[9.5px]'
+        } ${badgeConfig.style} ${className}`}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full ${badgeConfig.dotStyle}`} />
+        <HugeiconsIcon icon={badgeConfig.icon} size={size === 'sm' ? 11 : 13} className="stroke-[2.5]" />
+        <span>{badgeConfig.label}</span>
+      </span>
+    </SimpleTooltip>
+  );
+};
 
 interface DiscoveredModel {
   id: string;
@@ -435,6 +642,7 @@ export const GeneratePanel: React.FC = () => {
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
+  const [isAdvancedAccordionOpen, setIsAdvancedAccordionOpen] = useState(false);
   const getStatusInfo = () => {
     const selected = providersList.find(m => m.id === generationSettings.aiModel);
     if (!selected) {
@@ -1076,6 +1284,56 @@ export const GeneratePanel: React.FC = () => {
           </div>
         )}
 
+        {/* Completed Asset Card / Viewer Panel */}
+        {currentAsset && (
+          <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.08] flex items-center justify-center text-primary shrink-0 overflow-hidden">
+                  {currentAsset.thumbnail ? (
+                    <img src={currentAsset.thumbnail} alt={currentAsset.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <HugeiconsIcon icon={Box} size={16} className="w-4 h-4 text-primary" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-white truncate flex items-center gap-1.5">
+                    <span className="truncate">{currentAsset.name}</span>
+                    <span className="text-[8px] font-mono px-1 py-0.2 rounded bg-white/[0.06] text-zinc-300">
+                      {currentAsset.format || 'GLB'}
+                    </span>
+                  </div>
+                  <div className="text-[9px] text-zinc-400 font-mono truncate">
+                    {currentAsset.triangles ? `${currentAsset.triangles.toLocaleString()} tris` : currentAsset.faces ? `${currentAsset.faces.toLocaleString()} faces` : 'Ready in Viewport'}
+                  </div>
+                </div>
+              </div>
+              <QualityBadge asset={currentAsset} size="md" />
+            </div>
+
+            <div className="flex items-center gap-1.5 pt-1 border-t border-white/[0.06]">
+              <button
+                type="button"
+                onClick={() => {
+                  const url = currentAsset.artifacts?.gameReady || currentAsset.source?.viewUrl || currentAsset.source?.localUrl;
+                  if (url) loadModelInViewer(url, currentAsset.name, currentAsset as any);
+                }}
+                className="flex-1 py-1 px-2 rounded-lg text-[9.5px] font-bold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 transition-colors cursor-pointer flex items-center justify-center gap-1"
+              >
+                <HugeiconsIcon icon={Box} size={14} className="w-3 h-3 text-primary" />
+                <span>Focus in Viewport</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigateToTool('edit')}
+                className="py-1 px-2.5 rounded-lg text-[9.5px] font-bold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 transition-colors cursor-pointer"
+              >
+                Inspect & Edit
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Unified Studio Generation Pipeline */}
         <div className="space-y-2.5">
           <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
@@ -1625,6 +1883,175 @@ export const GeneratePanel: React.FC = () => {
               ) : null}
             </div>
 
+            {/* Job Generation Settings: Quality, Mesh Style & Advanced Options */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2.5">
+              {/* Quality Selector */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <HugeiconsIcon icon={ZapIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+                    <span>Quality</span>
+                  </span>
+                  <span className="text-[9.5px] font-mono text-primary font-bold capitalize">
+                    {generationSettings.quality || 'balanced'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['fast', 'balanced', 'high'] as const).map((q) => {
+                    const isSelected = (generationSettings.quality || 'balanced') === q;
+                    const labels = {
+                      fast: { title: 'Fast', desc: 'Draft preview' },
+                      balanced: { title: 'Balanced', desc: 'Standard balance' },
+                      high: { title: 'High', desc: 'Maximum detail' },
+                    }[q];
+                    return (
+                      <button
+                        key={q}
+                        type="button"
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, quality: q }))}
+                        className={`py-1.5 px-2 rounded-lg text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-primary text-black font-black shadow-sm'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:border-white/[0.15] border border-white/[0.06]'
+                        }`}
+                      >
+                        <span className="block text-[10.5px] font-bold leading-tight">{labels.title}</span>
+                        <span className={`block text-[7.5px] truncate ${isSelected ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>
+                          {labels.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Mesh Style Selector */}
+              <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <HugeiconsIcon icon={LayersIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+                    <span>Mesh Style</span>
+                  </span>
+                  <span className="text-[9.5px] font-mono text-primary font-bold capitalize">
+                    {generationSettings.meshStyle || 'auto'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['auto', 'clean', 'detailed'] as const).map((style) => {
+                    const isSelected = (generationSettings.meshStyle || 'auto') === style;
+                    const labels = {
+                      auto: { title: 'Auto', desc: 'Adaptive mesh' },
+                      clean: { title: 'Clean', desc: 'CAD / Hard-surface' },
+                      detailed: { title: 'Detailed', desc: 'Feature retention' },
+                    }[style];
+                    return (
+                      <button
+                        key={style}
+                        type="button"
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshStyle: style }))}
+                        className={`py-1.5 px-2 rounded-lg text-left transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-primary text-black font-black shadow-sm'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:border-white/[0.15] border border-white/[0.06]'
+                        }`}
+                      >
+                        <span className="block text-[10.5px] font-bold leading-tight">{labels.title}</span>
+                        <span className={`block text-[7.5px] truncate ${isSelected ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>
+                          {labels.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Collapsed Advanced Disclosure / Accordion */}
+              <div className="pt-2 border-t border-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setIsAdvancedAccordionOpen(!isAdvancedAccordionOpen)}
+                  className="w-full py-1.5 px-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] hover:border-white/[0.12] hover:bg-[hsl(var(--surface-2))] transition-colors flex items-center justify-between cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-300">
+                    <HugeiconsIcon icon={Settings2} size={14} className="w-3.5 h-3.5 text-primary" />
+                    <span>Advanced</span>
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[8.5px] font-mono text-zinc-500">
+                      {generationSettings.objectType || 'general'} · {generationSettings.symmetry || 'none'}
+                    </span>
+                    <HugeiconsIcon
+                      icon={isAdvancedAccordionOpen ? ChevronUp : ChevronDown}
+                      size={14}
+                      className="w-3.5 h-3.5 text-zinc-400"
+                    />
+                  </div>
+                </button>
+
+                {isAdvancedAccordionOpen && (
+                  <div className="mt-2 space-y-2.5 p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                    {/* Object Type */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9.5px] font-bold text-zinc-300">Object Type</span>
+                        <span className="text-[9px] font-mono text-primary capitalize font-bold">
+                          {generationSettings.objectType || 'general'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {(['general', 'mechanical', 'organic', 'character'] as const).map((type) => {
+                          const isSel = (generationSettings.objectType || 'general') === type;
+                          return (
+                            <button
+                              key={type}
+                              type="button"
+                              onClick={() => setGenerationSettings(prev => ({ ...prev, objectType: type }))}
+                              className={`py-1 px-1 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
+                                isSel
+                                  ? 'bg-primary text-black font-bold shadow-sm'
+                                  : 'bg-[hsl(var(--surface-2))] text-zinc-400 hover:text-white border border-white/[0.04]'
+                              }`}
+                            >
+                              {type}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Symmetry */}
+                    <div className="space-y-1 pt-1.5 border-t border-white/[0.04]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9.5px] font-bold text-zinc-300">Symmetry</span>
+                        <span className="text-[9px] font-mono text-primary capitalize font-bold">
+                          {generationSettings.symmetry || 'none'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(['none', 'bilateral', 'radial'] as const).map((sym) => {
+                          const isSel = (generationSettings.symmetry || 'none') === sym;
+                          return (
+                            <button
+                              key={sym}
+                              type="button"
+                              onClick={() => setGenerationSettings(prev => ({ ...prev, symmetry: sym }))}
+                              className={`py-1 px-1.5 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
+                                isSel
+                                  ? 'bg-primary text-black font-bold shadow-sm'
+                                  : 'bg-[hsl(var(--surface-2))] text-zinc-400 hover:text-white border border-white/[0.04]'
+                              }`}
+                            >
+                              {sym}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
 
             <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${
               isPostprocessOff
@@ -1992,6 +2419,77 @@ export const GeneratePanel: React.FC = () => {
                     className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${generationSettings.enablePostprocess !== false ? 'translate-x-4' : 'translate-x-0 bg-zinc-300'}`}
                   />
                 </button>
+              </div>
+            </div>
+
+            {/* Object Type & Symmetry */}
+            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                  <HugeiconsIcon icon={Settings2} size={14} className="w-3.5 h-3.5 text-primary" />
+                  <span>Object Type & Symmetry</span>
+                </span>
+                <span className="text-[8.5px] font-mono text-primary font-bold">
+                  {generationSettings.objectType || 'general'} · {generationSettings.symmetry || 'none'}
+                </span>
+              </div>
+              
+              {/* Object Type */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9.5px] text-zinc-400">Object Type</span>
+                  <span className="text-[9px] font-mono text-zinc-300 capitalize font-bold">
+                    {generationSettings.objectType || 'general'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {(['general', 'mechanical', 'organic', 'character'] as const).map((type) => {
+                    const isSel = (generationSettings.objectType || 'general') === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, objectType: type }))}
+                        className={`py-1 px-1 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
+                          isSel
+                            ? 'bg-primary text-black font-bold shadow-sm'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.04]'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Symmetry */}
+              <div className="space-y-1 pt-1.5 border-t border-white/[0.04]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9.5px] text-zinc-400">Symmetry</span>
+                  <span className="text-[9px] font-mono text-zinc-300 capitalize font-bold">
+                    {generationSettings.symmetry || 'none'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  {(['none', 'bilateral', 'radial'] as const).map((sym) => {
+                    const isSel = (generationSettings.symmetry || 'none') === sym;
+                    return (
+                      <button
+                        key={sym}
+                        type="button"
+                        onClick={() => setGenerationSettings(prev => ({ ...prev, symmetry: sym }))}
+                        className={`py-1 px-1.5 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
+                          isSel
+                            ? 'bg-primary text-black font-bold shadow-sm'
+                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.04]'
+                        }`}
+                      >
+                        {sym}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 

@@ -517,6 +517,13 @@ export interface GenerationSettings {
   autoRigMode?: string;
   enablePostprocess?: boolean;
   candidateCount?: number;
+  quality?: 'fast' | 'balanced' | 'high';
+  requested_quality?: 'fast' | 'balanced' | 'high';
+  meshStyle?: 'auto' | 'clean' | 'detailed';
+  mesh_style?: 'auto' | 'clean' | 'detailed';
+  objectType?: 'general' | 'mechanical' | 'organic' | 'character';
+  object_type?: 'general' | 'mechanical' | 'organic' | 'character';
+  symmetry?: 'none' | 'bilateral' | 'radial';
 }
 
 
