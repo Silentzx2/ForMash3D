@@ -129,6 +129,7 @@ _RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
     "trellis2_image_mesh_painting": {"tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "texture_size": 4096},
     "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
     "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
+    "taoflowforge_image_to_raw_mesh": {"source_quality": "max", "fill_holes": True, "offload": "auto", "low_vram": False},
 }
 
 
