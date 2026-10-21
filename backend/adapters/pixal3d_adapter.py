@@ -25,6 +25,34 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "resolution": 2048,
+    "pipeline_type": "1536_cascade",
+    "sampler_overrides": {
+        "sparse_structure": {
+            "steps": 100,
+            "guidance_strength": 10.0,
+            "guidance_rescale": 0.9,
+            "rescale_t": 8.0,
+        },
+        "shape": {
+            "steps": 100,
+            "guidance_strength": 10.0,
+            "guidance_rescale": 0.8,
+            "rescale_t": 8.0,
+        },
+        "texture": {
+            "steps": 100,
+            "guidance_strength": 3.5,
+            "guidance_rescale": 0.5,
+            "rescale_t": 8.0,
+        },
+    },
+    "low_vram": False,
+}
+
 
 class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -496,6 +524,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         Returns:
             Dictionary with generation results
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Pixal3D requires CUDA; CPU fallback is not supported")
@@ -655,8 +684,9 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                 "resolution": {
                     "type": "integer",
                     "description": "Pipeline resolution; experimental max-detail defaults to official standard resolution 1536.",
-                    "default": 1536,
-                    "enum": [1024, 1536],
+                    "default": 2048,
+                    "enum": [1024, 1536, 2048],
+                    "readOnly": True,
                     "required": False,
                 },
                 "pipeline_type": {
@@ -664,22 +694,25 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
                     "description": "Pipeline type for cascade generation; experimental max-detail defaults to 1536 cascade.",
                     "default": "1536_cascade",
                     "enum": ["1024_cascade", "1536_cascade"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "low_vram": {
                     "type": "boolean",
                     "description": "Whether to use low-VRAM mode (models on CPU, loaded on-demand). Reduces peak VRAM from ~18GB to ~10-12GB at cost of slower inference.",
                     "default": False,
+                    "readOnly": True,
                     "required": False,
                 },
                 "sampler_overrides": {
                     "type": "object",
                     "description": "Experimental quality-first sampler parameters for sparse_structure, shape and texture. Adapted from TRELLIS.2 community issue #92; not benchmarked directly on Pixal3D.",
                     "default": {
-                        "sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.7, "rescale_t": 6.0},
-                        "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.5, "rescale_t": 6.0},
-                        "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.2, "rescale_t": 6.0},
+                        "sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0},
+                        "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0},
+                        "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0},
                     },
+                    "readOnly": True,
                     "additionalProperties": {
                         "type": "object",
                         "properties": {

@@ -26,6 +26,14 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "fill_holes": True,
+    "offload": "auto",
+    "low_vram": False,
+}
+
 
 class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -243,6 +251,7 @@ class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
             - fill_holes: Optional bool (default: self.fill_holes)
             - show_progress: Optional bool (default: False)
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             self.status = ModelStatus.PROCESSING
 
@@ -370,6 +379,7 @@ class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "boolean",
                     "description": "Apply postprocessing mesh repair and hole filling",
                     "default": True,
+                    "readOnly": True,
                     "required": False,
                 },
                 "offload": {
@@ -377,6 +387,7 @@ class TaoFlowForgeImageToRawMeshAdapter(ImageToMeshModel):
                     "description": "Memory offloading mode across pipeline stages ('auto', 'on', 'off')",
                     "default": "auto",
                     "enum": ["auto", "on", "off"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "output_format": {

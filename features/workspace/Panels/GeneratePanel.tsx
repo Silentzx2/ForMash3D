@@ -44,55 +44,6 @@ function formatValidationDetails(validation: unknown): string | null {
   return messages.length > 0 ? messages.join(' · ') : JSON.stringify(validation);
 }
 
-export interface MeshQualityPreset {
-  id: 'low' | 'medium' | 'high' | 'ultra';
-  label: string;
-  subLabel: string;
-  tagline: string;
-  polyEstimate: string;
-  badge: string;
-  tooltip: string;
-}
-
-export const MESH_QUALITY_OPTIONS: MeshQualityPreset[] = [
-  {
-    id: 'low',
-    label: 'Low',
-    subLabel: 'Draft / ~15k',
-    tagline: 'Fast preview',
-    polyEstimate: '~15k tris',
-    badge: 'Draft (Fast)',
-    tooltip: 'Low: Fast preview and draft generation with lightweight downstream polycount (~15k tris)',
-  },
-  {
-    id: 'medium',
-    label: 'Medium',
-    subLabel: 'Balanced / ~30k',
-    tagline: 'Balanced workflow',
-    polyEstimate: '~30k tris',
-    badge: 'Standard (Balanced)',
-    tooltip: 'Medium: Balanced workflow for interactive real-time assets (~30k tris)',
-  },
-  {
-    id: 'high',
-    label: 'High',
-    subLabel: 'Production / ~60k',
-    tagline: 'Detailed production',
-    polyEstimate: '~60k tris',
-    badge: 'Detailed (Production)',
-    tooltip: 'High: Detailed production mesh with high texture fidelity (~60k tris)',
-  },
-  {
-    id: 'ultra',
-    label: 'Ultra',
-    subLabel: 'Studio / ~100k',
-    tagline: 'Maximum fidelity',
-    polyEstimate: '~100k tris',
-    badge: 'Maximum (Studio)',
-    tooltip: 'Ultra: Maximum output fidelity preserving fine source geometric detail (~100k tris)',
-  },
-];
-
 export const PHYSICS_MATERIAL_PRESETS = [
   { label: 'Default', friction: 0.5, restitution: 0.1 },
   { label: 'Rubber', friction: 0.8, restitution: 0.8 },
@@ -700,7 +651,6 @@ export const GeneratePanel: React.FC = () => {
 
   const activeModelId = generationSettings.aiModel || providersList[0]?.id || '';
   const activeModelObj = providersList.find(m => m.id === activeModelId) || providersList[0];
-  const isFlashVDMModel = activeModelObj?.id?.includes('dit_v2_mini_turbo') || false;
   // Master post-processing bypass flag
   const isPostprocessOff = generationSettings.enablePostprocess === false;
 
@@ -953,54 +903,70 @@ export const GeneratePanel: React.FC = () => {
     },
   ];
 
-  const applyIntentPreset = async (intent: string) => {
-    const preset = smartPresets[intent];
-    if (!preset) return;
-
-    let chosenModel = '';
-    let resolved: { model_id?: string } | null = null;
-    try {
-      resolved = await getApiClient().resolveSmartIntent(intent);
-      chosenModel = resolved!.model_id || '';
-    } catch (error) {
-      setEnhancementError(error instanceof Error ? error.message : 'No ready model satisfies this intent');
+  const selectOutputPreset = (presetId: 'mobile' | 'game_ready' | 'cinematic' | 'animation' | '3d_print' | 'native') => {
+    if (presetId === 'native') {
+      setGenerationSettings(prev => ({
+        ...prev,
+        intent: undefined,
+        enablePostprocess: false,
+        generateTexture: false,
+        texture_enabled: false,
+        generateLOD: false,
+        generateCollision: false,
+        enablePrintabilityCheck: false,
+        enableAutoRepair: false,
+        enableAutoRig: false,
+        autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: 0 },
+      }));
       return;
     }
 
-    const textureResolution = Number(preset.texture_resolution || 0);
-    const textureQuality: GenerationSettings['textureQuality'] =
-      textureResolution <= 512 ? 'low'
-        : textureResolution <= 1024 ? 'medium'
-          : textureResolution <= 2048 ? 'high'
-            : '8k';
+    const presetData = smartPresets[presetId];
 
-    setSmartResolution(resolved!);
-    const canAutoGenerate = Boolean(generationSettings.imageFileId)
-      && (!generationSettings.enhancementEnabled || Boolean(generationSettings.preprocessingArtifactId))
-      && approvalStatus !== 'failed'
-      && !(approvalStatus === 'needs_review' && !approvalAcknowledged)
-      && !batchGenerationEnabled;
-    if (canAutoGenerate) pendingGenerateRef.current = true;
+    if (presetId === '3d_print') {
+      setGenerationSettings(prev => ({
+        ...prev,
+        intent: '3d_print',
+        enablePostprocess: true,
+        generateTexture: false,
+        texture_enabled: false,
+        generateLOD: false,
+        generateCollision: false,
+        enablePrintabilityCheck: true,
+        enableAutoRepair: true,
+        enableAutoRig: false,
+        autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: 0 },
+      }));
+      return;
+    }
+
+    const targetPoly = presetData?.target_polycount !== undefined
+      ? Number(presetData.target_polycount)
+      : presetId === 'cinematic' ? 200000 : presetId === 'animation' ? 30000 : presetId === 'mobile' ? 20000 : 50000;
+
+    const texResPreset: '1K' | '2K' | '4K' = presetId === 'cinematic' ? '2K' : '1K';
 
     setGenerationSettings(prev => ({
       ...prev,
-      intent: intent as GenerationSettings['intent'],
-      aiModel: chosenModel,
-      textureQuality,
-      generateTexture: textureResolution > 0,
-      generateLOD: Boolean(preset.generate_lod),
-      lodPreset: preset.lod_preset || prev.lodPreset,
-      lodCount: Number(preset.lod_count || 0),
-      generateCollision: Boolean(preset.collision),
-      enablePrintabilityCheck: Boolean(preset.enable_printability_check),
-      enableAutoRepair: Boolean(preset.enable_auto_repair),
-      enableAutoRig: Boolean(preset.enable_auto_rig),
+      intent: presetId,
+      enablePostprocess: true,
+      generateTexture: true,
+      texture_enabled: true,
+      texture_resolution: texResPreset,
+      textureResolution: texResPreset,
+      textureQuality: presetId === 'cinematic' ? 'high' : 'medium',
+      generateLOD: true,
+      lodPreset: (presetData?.lod_preset || (presetId === 'mobile' ? 'mobile' : 'high')) as any,
+      lodCount: Number(presetData?.lod_count || 4),
+      generateCollision: presetId === 'game_ready',
+      enablePrintabilityCheck: false,
+      enableAutoRepair: false,
+      enableAutoRig: presetId === 'animation',
       autoOptimizeSettings: {
         ...prev.autoOptimizeSettings,
-        targetPolycount: Number(preset.target_polycount || 0),
+        targetPolycount: targetPoly,
       },
     }));
-    setEnhancementError(null);
   };
 
   const previewEnhancement = async () => {
@@ -1148,25 +1114,6 @@ export const GeneratePanel: React.FC = () => {
         },
       }));
     }
-  };
-  const applyWorkflowRecipe = (recipe: 'mobile' | 'game' | 'cinematic' | 'native') => {
-    const presets = {
-      mobile: { meshQuality: 'medium' as const, targetPolycount: 15000, generateLOD: true, lodPreset: 'mobile', lodCount: 4, generateCollision: true },
-      game: { meshQuality: 'high' as const, targetPolycount: 35000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
-      cinematic: { meshQuality: 'ultra' as const, targetPolycount: 100000, generateLOD: true, lodPreset: 'high', lodCount: 4, generateCollision: true },
-      native: { meshQuality: 'ultra' as const, targetPolycount: 0, generateLOD: false, lodPreset: 'high', lodCount: 4, generateCollision: true },
-    }[recipe];
-    setGenerationSettings(prev => ({
-      ...prev,
-      intent: undefined,
-      aiModel: '',
-      meshQuality: presets.meshQuality,
-      autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: presets.targetPolycount },
-      generateLOD: presets.generateLOD,
-      lodPreset: presets.lodPreset as 'mobile' | 'low' | 'medium' | 'high' | 'custom' | undefined,
-      lodCount: presets.lodCount,
-      generateCollision: presets.generateCollision,
-    }));
   };
 
   return (
@@ -1705,10 +1652,9 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               )}
 
-              {/* Engine Feature Toggles: PBR Texture & Low VRAM */}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/[0.06]">
-                {/* Textured Generation Toggle - visible for every image-to-3D geometry model */}
-                {showTextureToggle && (
+              {/* Textured Generation Toggle */}
+              {showTextureToggle && (
+                <div className="pt-2 border-t border-white/[0.06]">
                   <button
                     type="button"
                     disabled={isPostprocessOff}
@@ -1724,7 +1670,7 @@ export const GeneratePanel: React.FC = () => {
                         };
                       });
                     }}
-                    className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all ${
+                    className={`w-full p-2 rounded-lg border text-left flex items-center justify-between transition-all ${
                       isPostprocessOff
                         ? 'bg-[hsl(var(--surface-1))] border-white/[0.04] text-zinc-500 cursor-not-allowed opacity-50'
                         : generationSettings.generateTexture !== false
@@ -1765,68 +1711,8 @@ export const GeneratePanel: React.FC = () => {
                       }`} />
                     </div>
                   </button>
-                )}
-
-                {/* FlashVDM Toggle - only visible for FlashVDM-compatible models */}
-                {isFlashVDMModel && (
-                  <button
-                    type="button"
-                    onClick={() => setGenerationSettings(prev => ({
-                      ...prev,
-                      enableFlashVDM: !prev.enableFlashVDM,
-                    }))}
-                    className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
-                      Boolean(generationSettings.enableFlashVDM)
-                        ? 'bg-amber-500/10 border-amber-500/30 text-white'
-                        : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
-                    }`}
-                  >
-                    <div className="flex flex-col min-w-0 pr-1">
-                      <span className="text-[11px] font-bold text-white leading-tight">FlashVDM</span>
-                      <span className="text-[9px] text-zinc-400">
-                        {Boolean(generationSettings.enableFlashVDM) ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </div>
-                    <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
-                      Boolean(generationSettings.enableFlashVDM) ? 'bg-amber-500' : 'bg-zinc-700'
-                    }`}>
-                      <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
-                        Boolean(generationSettings.enableFlashVDM) ? 'left-4' : 'left-0.5 bg-zinc-300'
-                      }`} />
-                    </div>
-                  </button>
-                )}
-
-                {/* Low VRAM Toggle */}
-                {activeModelObj?.low_vram_supported && (
-                <button
-                  type="button"
-                  onClick={() => setGenerationSettings(prev => ({
-                    ...prev,
-                    lowVram: !prev.lowVram,
-                  }))}
-                  className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all cursor-pointer ${
-                    Boolean(generationSettings.lowVram)
-                      ? 'bg-primary/10 border-primary/30 text-white'
-                      : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-400'
-                  }`}
-                >
-                  <div className="flex flex-col min-w-0 pr-1">
-                    <span className="text-[11px] font-bold text-white leading-tight">Low VRAM</span>
-                    <span className="text-[9px] text-zinc-400">
-                      {Boolean(generationSettings.lowVram) ? 'Active (<12G)' : 'Full Speed'}
-                    </span>
-                  </div>
-                  <div className={`w-8 h-4.5 rounded-full transition-colors relative flex-shrink-0 ${
-                    Boolean(generationSettings.lowVram) ? 'bg-primary' : 'bg-zinc-700'
-                  }`}>
-                    <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
-                      Boolean(generationSettings.lowVram) ? 'left-4' : 'left-0.5 bg-zinc-300'
-                    }`} />
-                  </div>
-                </button>
-                )}
-              </div>
+                </div>
+              )}
 
               {/* Output Atlas Size Selector when Textured Generation is ON */}
               {isPostprocessOff ? (
@@ -1886,305 +1772,6 @@ export const GeneratePanel: React.FC = () => {
               ) : null}
             </div>
 
-            {/* Job Generation Settings: Quality, Mesh Style & Advanced Options */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2.5">
-              {/* Quality Selector */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <HugeiconsIcon icon={ZapIcon} size={14} className="w-3.5 h-3.5 text-primary" />
-                    <span>Quality</span>
-                  </span>
-                  <span className="text-[9.5px] font-mono text-primary font-bold capitalize">
-                    {generationSettings.quality || 'balanced'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(['fast', 'balanced', 'high'] as const).map((q) => {
-                    const isSelected = (generationSettings.quality || 'balanced') === q;
-                    const labels = {
-                      fast: { title: 'Fast', desc: 'Draft preview' },
-                      balanced: { title: 'Balanced', desc: 'Standard balance' },
-                      high: { title: 'High', desc: 'Maximum detail' },
-                    }[q];
-                    return (
-                      <button
-                        key={q}
-                        type="button"
-                        onClick={() => setGenerationSettings(prev => ({ ...prev, quality: q }))}
-                        className={`py-1.5 px-2 rounded-lg text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-primary text-black font-black shadow-sm'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:border-white/[0.15] border border-white/[0.06]'
-                        }`}
-                      >
-                        <span className="block text-[10.5px] font-bold leading-tight">{labels.title}</span>
-                        <span className={`block text-[7.5px] truncate ${isSelected ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>
-                          {labels.desc}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Mesh Style Selector */}
-              <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <HugeiconsIcon icon={LayersIcon} size={14} className="w-3.5 h-3.5 text-primary" />
-                    <span>Mesh Style</span>
-                  </span>
-                  <span className="text-[9.5px] font-mono text-primary font-bold capitalize">
-                    {generationSettings.meshStyle || 'auto'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(['auto', 'clean', 'detailed'] as const).map((style) => {
-                    const isSelected = (generationSettings.meshStyle || 'auto') === style;
-                    const labels = {
-                      auto: { title: 'Auto', desc: 'Adaptive mesh' },
-                      clean: { title: 'Clean', desc: 'CAD / Hard-surface' },
-                      detailed: { title: 'Detailed', desc: 'Feature retention' },
-                    }[style];
-                    return (
-                      <button
-                        key={style}
-                        type="button"
-                        onClick={() => setGenerationSettings(prev => ({ ...prev, meshStyle: style }))}
-                        className={`py-1.5 px-2 rounded-lg text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-primary text-black font-black shadow-sm'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:border-white/[0.15] border border-white/[0.06]'
-                        }`}
-                      >
-                        <span className="block text-[10.5px] font-bold leading-tight">{labels.title}</span>
-                        <span className={`block text-[7.5px] truncate ${isSelected ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>
-                          {labels.desc}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Collapsed Advanced Disclosure / Accordion */}
-              <div className="pt-2 border-t border-white/[0.06]">
-                <button
-                  type="button"
-                  onClick={() => setIsAdvancedAccordionOpen(!isAdvancedAccordionOpen)}
-                  className="w-full py-1.5 px-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] hover:border-white/[0.12] hover:bg-[hsl(var(--surface-2))] transition-colors flex items-center justify-between cursor-pointer"
-                >
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-300">
-                    <HugeiconsIcon icon={Settings2} size={14} className="w-3.5 h-3.5 text-primary" />
-                    <span>Advanced</span>
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[8.5px] font-mono text-zinc-500">
-                      {generationSettings.objectType || 'general'} · {generationSettings.symmetry || 'none'}
-                    </span>
-                    <HugeiconsIcon
-                      icon={isAdvancedAccordionOpen ? ChevronUp : ChevronDown}
-                      size={14}
-                      className="w-3.5 h-3.5 text-zinc-400"
-                    />
-                  </div>
-                </button>
-
-                {isAdvancedAccordionOpen && (
-                  <div className="mt-2 space-y-2.5 p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
-                    {/* Object Type */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9.5px] font-bold text-zinc-300">Object Type</span>
-                        <span className="text-[9px] font-mono text-primary capitalize font-bold">
-                          {generationSettings.objectType || 'general'}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-4 gap-1">
-                        {(['general', 'mechanical', 'organic', 'character'] as const).map((type) => {
-                          const isSel = (generationSettings.objectType || 'general') === type;
-                          return (
-                            <button
-                              key={type}
-                              type="button"
-                              onClick={() => setGenerationSettings(prev => ({ ...prev, objectType: type }))}
-                              className={`py-1 px-1 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
-                                isSel
-                                  ? 'bg-primary text-black font-bold shadow-sm'
-                                  : 'bg-[hsl(var(--surface-2))] text-zinc-400 hover:text-white border border-white/[0.04]'
-                              }`}
-                            >
-                              {type}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Symmetry */}
-                    <div className="space-y-1 pt-1.5 border-t border-white/[0.04]">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9.5px] font-bold text-zinc-300">Symmetry</span>
-                        <span className="text-[9px] font-mono text-primary capitalize font-bold">
-                          {generationSettings.symmetry || 'none'}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-1">
-                        {(['none', 'bilateral', 'radial'] as const).map((sym) => {
-                          const isSel = (generationSettings.symmetry || 'none') === sym;
-                          return (
-                            <button
-                              key={sym}
-                              type="button"
-                              onClick={() => setGenerationSettings(prev => ({ ...prev, symmetry: sym }))}
-                              className={`py-1 px-1.5 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
-                                isSel
-                                  ? 'bg-primary text-black font-bold shadow-sm'
-                                  : 'bg-[hsl(var(--surface-2))] text-zinc-400 hover:text-white border border-white/[0.04]'
-                              }`}
-                            >
-                              {sym}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-
-            <div className={`rounded-xl border p-2.5 space-y-2 transition-all ${
-              isPostprocessOff
-                ? 'border-white/[0.06] bg-[hsl(var(--surface-0))] opacity-60'
-                : 'border-primary/20 bg-primary/5'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                    <span>Smart Intent</span>
-                    {isPostprocessOff && (
-                      <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
-                        BLOCKED
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[9px] text-zinc-400">
-                    {isPostprocessOff
-                      ? 'Production recipes require post-processing pipeline'
-                      : 'Backend-owned deterministic production recipe'}
-                  </div>
-                </div>
-                <span className="text-[9px] font-mono text-primary">
-                  {isPostprocessOff ? 'Bypassed' : (generationSettings.intent || 'Manual')}
-                </span>
-              </div>
-              <div className="grid grid-cols-5 gap-1">
-                {[
-                  ['game_ready', 'Game'],
-                  ['cinematic', 'Cinematic'],
-                  ['animation', 'Animation'],
-                  ['3d_print', 'Print'],
-                  ['mobile', 'Mobile'],
-                ].map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    disabled={isPostprocessOff || !smartPresets[id]}
-                    onClick={() => {
-                      if (isPostprocessOff) return;
-                      void applyIntentPreset(id);
-                    }}
-                    className={isPostprocessOff
-                      ? 'min-h-10 rounded-lg border border-white/[0.04] bg-[hsl(var(--surface-1))] text-zinc-600 cursor-not-allowed opacity-40 text-[8px]'
-                      : generationSettings.intent === id
-                      ? 'min-h-10 rounded-lg border border-primary bg-primary text-black font-bold text-[8px]'
-                      : 'min-h-10 rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] text-zinc-300 hover:border-primary/30 disabled:opacity-40 text-[8px]'}
-                  >
-                    <span className="block font-black">{label}</span>
-                    <span className="block mt-0.5 text-[7px] opacity-70">
-                      {isPostprocessOff
-                        ? 'Off'
-                        : Number(smartPresets[id]?.target_polycount) > 0
-                        ? Math.round(Number(smartPresets[id].target_polycount) / 1000) + 'K'
-                        : id === '3d_print' ? 'QA' : 'Preset'}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              {isPostprocessOff ? (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
-                  <span>🔒 Production recipes are blocked because Post-Processing is OFF.</span>
-                </div>
-              ) : generationSettings.intent && smartResolution ? (
-                <div className="rounded-lg border border-white/[0.06] bg-[hsl(var(--surface-1))] px-2 py-1.5 text-[8px] text-zinc-400 space-y-0.5">
-                  <div className="flex justify-between gap-2"><span>Selected model</span><span className="font-mono text-white truncate">{smartResolution.model_id}</span></div>
-                  <div className="flex justify-between gap-2"><span>Preset</span><span className="font-mono text-white truncate">{smartPresets[generationSettings.intent]?.label || generationSettings.intent}</span></div>
-                  <div className="flex justify-between gap-2"><span>Applied</span><span className="font-mono text-zinc-300">{Math.round(Number(generationSettings.autoOptimizeSettings?.targetPolycount || 0) / 1000)}K · {generationSettings.generateLOD ? String(generationSettings.lodCount || 4) + ' LOD' : 'No LOD'} · {generationSettings.generateCollision ? 'Collision' : 'No collision'}</span></div>
-                  <div className="flex justify-between gap-2"><span>Eligibility</span><span className="text-emerald-300">Image → 3D · ready · VRAM-fit</span></div>
-                  <div className="flex justify-between gap-2"><span>Safety</span><span className="font-mono text-zinc-300">No preflight clamp · scheduler authoritative</span></div>
-                </div>
-              ) : null}
-              {generationSettings.intent && !isPostprocessOff && (
-                <button type="button"
-                  onClick={() => { setSmartResolution(null); setGenerationSettings(prev => ({ ...prev, intent: undefined, aiModel: '' })); }}
-                  className="w-full text-[9px] text-zinc-500 hover:text-white">
-                  Clear intent and keep manual settings
-                </button>
-              )}
-            </div>
-
-            {/* T-06: Candidate Variations (Pick-Best-of-N) */}
-            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                    <HugeiconsIcon icon={LayersIcon} size={14} className="w-3.5 h-3.5 text-primary" />
-                    <span>Candidate Variations</span>
-                  </div>
-                  <div className="text-[9px] text-zinc-400">
-                    Generate variations in one pass by stepping seeds
-                  </div>
-                </div>
-                <span className="text-[9.5px] font-mono text-primary font-bold px-1.5 py-0.5 rounded bg-primary/10 border border-primary/25">
-                  {(generationSettings.candidateCount || 1) === 1 ? '1 Variation' : `${generationSettings.candidateCount} Variations`}
-                </span>
-              </div>
-              <div className="grid grid-cols-4 gap-1.5">
-                {[
-                  { count: 1, label: '1', sub: 'Single' },
-                  { count: 2, label: '2', sub: 'Pair' },
-                  { count: 3, label: '3', sub: 'Trio' },
-                  { count: 4, label: '4', sub: 'Pick 4' },
-                ].map(({ count, label, sub }) => {
-                  const isSel = (generationSettings.candidateCount || 1) === count;
-                  return (
-                    <button
-                      key={count}
-                      type="button"
-                      onClick={() => setGenerationSettings(prev => ({ ...prev, candidateCount: count }))}
-                      className={`py-1.5 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
-                        isSel
-                          ? 'bg-primary text-black font-black shadow-sm'
-                          : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
-                      }`}
-                    >
-                      <span className="text-[11px] font-mono font-bold leading-tight">{label}</span>
-                      <span className={`text-[7.5px] ${isSel ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{sub}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              {(generationSettings.candidateCount || 1) > 1 && (
-                <div className="rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-[8.5px] text-zinc-300 flex items-center gap-1.5">
-                  <span className="text-primary font-bold">Pick-Best-of-N:</span>
-                  <span>Generates {generationSettings.candidateCount} variations. You can compare and promote your favorite candidate to master.</span>
-                </div>
-              )}
-            </div>
-
             {/* Post-Processing Pipeline Master Toggle */}
             <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -2229,7 +1816,7 @@ export const GeneratePanel: React.FC = () => {
               )}
             </div>
 
-            {/* Unified Production Target & Polycount Budget */}
+            {/* Target Polycount & Output Presets */}
             <div className={`rounded-xl border p-2.5 space-y-2.5 transition-all ${
               isPostprocessOff
                 ? 'border-white/[0.06] bg-[hsl(var(--surface-0))] opacity-60'
@@ -2238,7 +1825,7 @@ export const GeneratePanel: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                    <span>Target & Polycount Budget</span>
+                    <span>Target & Output Preset</span>
                     {isPostprocessOff && (
                       <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
                         BLOCKED
@@ -2248,7 +1835,7 @@ export const GeneratePanel: React.FC = () => {
                   <div className="text-[9px] text-zinc-400">
                     {isPostprocessOff
                       ? 'Post-processing is OFF: downstream decimation, remesh & LOD stages are blocked'
-                      : 'Native/Raw preserves source geometry; production presets opt into remesh, decimation, and LOD budgets'}
+                      : 'Output recipes configure production budgets; press Generate to run'}
                   </div>
                 </div>
                 <span className="font-mono text-xs font-black text-primary">
@@ -2260,44 +1847,41 @@ export const GeneratePanel: React.FC = () => {
                 </span>
               </div>
 
-              <div className="grid grid-cols-4 gap-1">
+              {/* Canonical 6 Presets */}
+              <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  ['mobile', 'Mobile', '15K · LOD'],
-                  ['game', 'Game Ready', '35K · LOD · FX'],
-                  ['cinematic', 'Cinematic', '100K · Ultra'],
-                  ['native', 'Native', 'Raw geometry'],
-                ].map(([id, label, detail]) => {
-                  const targetP = generationSettings.autoOptimizeSettings?.targetPolycount ?? 0;
-                  const isMatch = (
-                    (id === 'mobile' && targetP === 15000) ||
-                    (id === 'game' && targetP === 35000) ||
-                    (id === 'cinematic' && targetP === 100000) ||
-                    (id === 'native' && targetP <= 0)
-                  );
+                  { id: 'mobile', label: 'Mobile', desc: '20K · 1K PBR · LOD' },
+                  { id: 'game_ready', label: 'Game Ready', desc: '50K · 1K PBR · Col' },
+                  { id: 'cinematic', label: 'Cinematic', desc: '200K · 2K PBR' },
+                  { id: 'animation', label: 'Animation', desc: '30K · 1K PBR · Rig' },
+                  { id: '3d_print', label: '3D Print', desc: 'Raw · QA Repair' },
+                  { id: 'native', label: 'Native', desc: 'Raw geometry' },
+                ].map(({ id, label, desc }) => {
+                  const isSelected = id === 'native'
+                    ? (isPostprocessOff || ((generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 && !generationSettings.intent))
+                    : generationSettings.intent === id;
                   return (
                     <button
                       key={id}
                       type="button"
-                      disabled={isPostprocessOff}
-                      onClick={() => {
-                        if (isPostprocessOff) return;
-                        applyWorkflowRecipe(id as 'mobile' | 'game' | 'cinematic' | 'native');
-                      }}
-                      className={"min-h-11 rounded-lg border text-left px-2 py-1.5 transition-all " + (
-                        isPostprocessOff
+                      disabled={isPostprocessOff && id !== 'native'}
+                      onClick={() => selectOutputPreset(id as any)}
+                      className={`min-h-11 rounded-lg border text-left px-2 py-1.5 transition-all flex flex-col justify-between ${
+                        isPostprocessOff && id !== 'native'
                           ? 'opacity-40 cursor-not-allowed bg-[hsl(var(--surface-1))] border-white/[0.04] text-zinc-600'
-                          : isMatch
+                          : isSelected
                             ? 'bg-primary text-black border-primary font-bold shadow-sm cursor-pointer'
                             : 'bg-[hsl(var(--surface-1))] border-white/[0.06] text-zinc-300 hover:border-primary/30 hover:text-white cursor-pointer'
-                      )}
+                      }`}
                     >
-                      <span className="block text-[9px] font-black leading-tight">{label}</span>
-                      <span className={"block text-[7px] mt-0.5 " + (isPostprocessOff ? 'text-zinc-600' : isMatch ? 'text-black/75' : 'text-zinc-500')}>{detail}</span>
+                      <span className="block text-[10px] font-black leading-tight truncate">{label}</span>
+                      <span className={`block text-[7.5px] mt-0.5 leading-tight ${isSelected ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{desc}</span>
                     </button>
                   );
                 })}
               </div>
 
+              {/* Polycount Slider */}
               <div className="space-y-1 pt-1 border-t border-white/[0.06]">
                 <div className="flex items-center justify-between text-[9px] text-zinc-400">
                   <span>Fine-tune triangle budget</span>
@@ -2311,7 +1895,14 @@ export const GeneratePanel: React.FC = () => {
                   max={200000}
                   step={5000}
                   value={(generationSettings.autoOptimizeSettings?.targetPolycount ?? 50000) > 0 ? generationSettings.autoOptimizeSettings!.targetPolycount : 50000}
-                  onChange={(e) => setGenerationSettings(prev => ({ ...prev, autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: Number(e.target.value) } }))}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setGenerationSettings(prev => ({
+                      ...prev,
+                      intent: undefined,
+                      autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: val },
+                    }));
+                  }}
                   className={`w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary ${isPostprocessOff ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
                 />
               </div>
@@ -2390,110 +1981,215 @@ export const GeneratePanel: React.FC = () => {
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2.5 space-y-2.5 scrollbar-none">
-            {/* Post-Processing Pipeline Master Toggle */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
-              <div className="flex items-center justify-between gap-2">
+            {/* Candidate Variations */}
+            <div className="rounded-xl border border-white/[0.08] bg-[hsl(var(--surface-0))] p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5 flex-wrap">
-                    <span>Post-Processing Pipeline</span>
-                    <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded border font-semibold ${generationSettings.enablePostprocess !== false ? 'bg-primary/10 text-primary border-primary/30' : 'bg-amber-500/10 text-amber-300 border-amber-500/30'}`}>
-                      {generationSettings.enablePostprocess !== false ? 'ACTIVE' : 'BYPASSED'}
-                    </span>
+                  <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                    <HugeiconsIcon icon={LayersIcon} size={14} className="w-3.5 h-3.5 text-primary" />
+                    <span>Candidate Variations</span>
                   </div>
-                  <div className="text-[9px] text-zinc-500">
-                    {generationSettings.enablePostprocess !== false
-                      ? 'Executes canonical retopology, UVs, baking & repair after generation'
-                      : 'Bypasses post-processing; delivers raw source mesh immediately'}
+                  <div className="text-[9px] text-zinc-400">
+                    Generate variations in one pass by stepping seeds
                   </div>
+                </div>
+                <span className="text-[9.5px] font-mono text-primary font-bold px-1.5 py-0.5 rounded bg-primary/10 border border-primary/25">
+                  {(generationSettings.candidateCount || 1) === 1 ? '1 Variation' : `${generationSettings.candidateCount} Variations`}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { count: 1, label: '1', sub: 'Single' },
+                  { count: 2, label: '2', sub: 'Pair' },
+                  { count: 3, label: '3', sub: 'Trio' },
+                  { count: 4, label: '4', sub: 'Pick 4' },
+                ].map(({ count, label, sub }) => {
+                  const isSel = (generationSettings.candidateCount || 1) === count;
+                  return (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setGenerationSettings(prev => ({ ...prev, candidateCount: count }))}
+                      className={`py-1.5 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
+                        isSel
+                          ? 'bg-primary text-black font-black shadow-sm'
+                          : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.06]'
+                      }`}
+                    >
+                      <span className="text-[11px] font-mono font-bold leading-tight">{label}</span>
+                      <span className={`text-[7.5px] ${isSel ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{sub}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Topology & Normal-Map Baking */}
+            <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2.5 transition-all ${
+              isPostprocessOff ? 'border-white/[0.06] opacity-60' : 'border-white/[0.1]'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
+                  <HugeiconsIcon icon={Box} size={16} className={`w-3.5 h-3.5 ${isPostprocessOff ? 'text-zinc-600' : 'text-primary'}`} />
+                  <span>Topology & Normal Baking</span>
+                </div>
+                <span className="text-[9px] text-zinc-500">
+                  {isPostprocessOff ? 'Blocked in Fast Mode' : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'Quads' : 'Triangles'}
+                </span>
+              </div>
+
+              {/* Topology: Triangles vs Quads */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-300 text-[10.5px] font-medium">Topology Target</span>
+                  <span className="text-[9px] text-zinc-400 font-mono uppercase">
+                    {(generationSettings.topologyMode === 'quad' || generationSettings.quadTopology) ? 'Quad dominant' : 'Triangles'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    disabled={isPostprocessOff}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      setGenerationSettings(prev => ({
+                        ...prev,
+                        topologyMode: 'triangle',
+                        quadTopology: false,
+                      }));
+                    }}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+                      isPostprocessOff
+                        ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                        : generationSettings.topologyMode !== 'quad' && !generationSettings.quadTopology
+                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
+                    }`}
+                  >
+                    <span>▲ Triangles</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isPostprocessOff}
+                    onClick={() => {
+                      if (isPostprocessOff) return;
+                      setGenerationSettings(prev => ({
+                        ...prev,
+                        topologyMode: 'quad',
+                        quadTopology: true,
+                      }));
+                    }}
+                    title="Convert to quad-dominant topology in post-processing"
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
+                      isPostprocessOff
+                        ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
+                        : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
+                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
+                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
+                    }`}
+                  >
+                    <span>■ Quads</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Normal-Map Baking Toggle */}
+              <div className="flex items-center justify-between p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] pt-1.5">
+                <div>
+                  <span className="text-xs font-semibold text-zinc-200 block">Bake Normal Maps</span>
+                  <span className="text-[9.5px] text-zinc-500 block">Bakes high-frequency micro-relief into tangent-space normal maps</span>
                 </div>
                 <button
                   type="button"
-                  role="switch"
-                  aria-label="Toggle post-processing"
-                  aria-checked={generationSettings.enablePostprocess !== false}
-                  onClick={() => setGenerationSettings(prev => ({
-                    ...prev,
-                    enablePostprocess: prev.enablePostprocess === false ? true : false,
-                  }))}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${generationSettings.enablePostprocess !== false ? 'bg-primary' : 'bg-zinc-700'}`}
+                  disabled={isPostprocessOff}
+                  onClick={() => {
+                    if (isPostprocessOff) return;
+                    setGenerationSettings(p => ({
+                      ...p,
+                      highResolutionNormalBaking: p.highResolutionNormalBaking === false ? true : false,
+                    }));
+                  }}
+                  className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
+                    (generationSettings.highResolutionNormalBaking ?? true) ? 'bg-primary' : 'bg-zinc-700'
+                  } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
                 >
-                  <span
-                    aria-hidden="true"
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-black shadow ring-0 transition duration-200 ease-in-out ${generationSettings.enablePostprocess !== false ? 'translate-x-4' : 'translate-x-0 bg-zinc-300'}`}
-                  />
+                  <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                    (generationSettings.highResolutionNormalBaking ?? true) ? 'translate-x-4' : 'translate-x-0.5'
+                  }`} />
                 </button>
               </div>
             </div>
 
-            {/* Object Type & Symmetry */}
-            <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2.5">
+            {/* Level of Detail (LOD) */}
+            <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2 transition-all ${
+              isPostprocessOff ? 'border-white/[0.06] opacity-60' : 'border-white/[0.1]'
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                  <HugeiconsIcon icon={Settings2} size={14} className="w-3.5 h-3.5 text-primary" />
-                  <span>Object Type & Symmetry</span>
-                </span>
-                <span className="text-[8.5px] font-mono text-primary font-bold">
-                  {generationSettings.objectType || 'general'} · {generationSettings.symmetry || 'none'}
-                </span>
-              </div>
-              
-              {/* Object Type */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9.5px] text-zinc-400">Object Type</span>
-                  <span className="text-[9px] font-mono text-zinc-300 capitalize font-bold">
-                    {generationSettings.objectType || 'general'}
-                  </span>
+                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
+                  <HugeiconsIcon icon={LayersIcon} size={16} className={`w-3.5 h-3.5 ${isPostprocessOff ? 'text-zinc-600' : 'text-primary'}`} />
+                  <span>Level of Detail (LOD)</span>
                 </div>
-                <div className="grid grid-cols-4 gap-1">
-                  {(['general', 'mechanical', 'organic', 'character'] as const).map((type) => {
-                    const isSel = (generationSettings.objectType || 'general') === type;
-                    return (
-                      <button
-                        key={type}
-                        type="button"
-                        onClick={() => setGenerationSettings(prev => ({ ...prev, objectType: type }))}
-                        className={`py-1 px-1 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
-                          isSel
-                            ? 'bg-primary text-black font-bold shadow-sm'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.04]'
-                        }`}
-                      >
-                        {type}
-                      </button>
-                    );
-                  })}
-                </div>
+                <span className="text-[9px] text-zinc-500">
+                  {isPostprocessOff ? 'Blocked in Fast Mode' : generationSettings.generateLOD !== false ? `${generationSettings.lodCount || 4} Levels` : 'Disabled'}
+                </span>
               </div>
 
-              {/* Symmetry */}
-              <div className="space-y-1 pt-1.5 border-t border-white/[0.04]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9.5px] text-zinc-400">Symmetry</span>
-                  <span className="text-[9px] font-mono text-zinc-300 capitalize font-bold">
-                    {generationSettings.symmetry || 'none'}
-                  </span>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06]">
+                <div>
+                  <span className="text-xs font-semibold text-zinc-200 block">Generate LOD Hierarchy</span>
+                  <span className="text-[9.5px] text-zinc-500 block">Generates decimation chain for game engines</span>
                 </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {(['none', 'bilateral', 'radial'] as const).map((sym) => {
-                    const isSel = (generationSettings.symmetry || 'none') === sym;
-                    return (
-                      <button
-                        key={sym}
-                        type="button"
-                        onClick={() => setGenerationSettings(prev => ({ ...prev, symmetry: sym }))}
-                        className={`py-1 px-1.5 rounded text-center text-[9px] font-semibold capitalize transition-all cursor-pointer ${
-                          isSel
-                            ? 'bg-primary text-black font-bold shadow-sm'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white border border-white/[0.04]'
-                        }`}
-                      >
-                        {sym}
-                      </button>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  disabled={isPostprocessOff}
+                  onClick={() => {
+                    if (isPostprocessOff) return;
+                    setGenerationSettings(p => ({
+                      ...p,
+                      generateLOD: p.generateLOD === false ? true : false,
+                    }));
+                  }}
+                  className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
+                    generationSettings.generateLOD !== false ? 'bg-primary' : 'bg-zinc-700'
+                  } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
+                    generationSettings.generateLOD !== false ? 'translate-x-4' : 'translate-x-0.5'
+                  }`} />
+                </button>
               </div>
+
+              {generationSettings.generateLOD !== false && !isPostprocessOff && (
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-semibold text-zinc-400">LOD Preset</span>
+                    <select
+                      value={generationSettings.lodPreset || 'high'}
+                      onChange={e => setGenerationSettings(p => ({ ...p, lodPreset: e.target.value as any }))}
+                      className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200"
+                    >
+                      <option value="mobile">Mobile (aggressive)</option>
+                      <option value="low">Low (lightweight)</option>
+                      <option value="medium">Medium (balanced)</option>
+                      <option value="high">High (standard)</option>
+                    </select>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-[9px] font-semibold text-zinc-400">LOD Count</span>
+                    <select
+                      value={generationSettings.lodCount || 4}
+                      onChange={e => setGenerationSettings(p => ({ ...p, lodCount: Number(e.target.value) }))}
+                      className="w-full rounded-md bg-[hsl(var(--surface-1))] border border-white/[0.08] px-2 py-1.5 text-[10px] text-zinc-200"
+                    >
+                      <option value={2}>2 Levels (LOD0-1)</option>
+                      <option value={3}>3 Levels (LOD0-2)</option>
+                      <option value={4}>4 Levels (LOD0-3)</option>
+                      <option value={5}>5 Levels (LOD0-4)</option>
+                      <option value={6}>6 Levels (LOD0-5)</option>
+                    </select>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2 transition-all ${
@@ -2729,380 +2425,8 @@ export const GeneratePanel: React.FC = () => {
                 </div>
               )}
             </div>
-
-            {/* Streamlined Mesh Settings Card (Target Polycount + Triangle / Quad Topology ONLY) */}
-            <div className={`rounded-xl border bg-[hsl(var(--surface-0))] p-2.5 space-y-2 transition-all ${
-              isPostprocessOff ? 'border-white/[0.06] opacity-60' : 'border-white/[0.1]'
-            }`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-100">
-                  <HugeiconsIcon icon={Box} size={16} className={`w-3.5 h-3.5 ${isPostprocessOff ? 'text-zinc-600' : 'text-primary'}`} />
-                  <span>Mesh Settings</span>
-                  {isPostprocessOff && (
-                    <span className="text-[7.5px] font-mono px-1.5 py-0.2 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300 font-bold">
-                      BLOCKED
-                    </span>
-                  )}
-                </div>
-                <span className={`text-[9.5px] font-mono px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
-                  isPostprocessOff
-                    ? 'bg-zinc-800 text-zinc-400 border border-white/[0.08]'
-                    : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
-                }`}>
-                  {!isPostprocessOff && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />}
-                  {isPostprocessOff ? 'Bypassed' : 'Studio Quality'}
-                </span>
-              </div>
-
-              {/* 0. Output Quality Preset (source geometry is always max fidelity) */}
-              <div className="space-y-1.5 pb-1 border-b border-white/[0.04]">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Texture / Output Quality</span>
-                  <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25 capitalize">
-                    {isPostprocessOff ? 'Bypassed' : (generationSettings.meshQuality || 'high')}
-                  </span>
-                </div>
-                <p className="text-[10px] leading-4 text-zinc-500">
-                  {isPostprocessOff
-                    ? 'Post-processing is OFF: Texture baking and downstream decimation are completely bypassed.'
-                    : "Source geometry is always generated at the selected model's maximum fidelity. This control changes texture/output quality only; polycount is applied downstream."}
-                </p>
-                <div className="grid grid-cols-4 gap-1">
-                  {MESH_QUALITY_OPTIONS.map((opt) => {
-                    const isSelected = (generationSettings.meshQuality || 'high') === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        disabled={isPostprocessOff}
-                        title={opt.tooltip}
-                        onClick={() => {
-                          if (isPostprocessOff) return;
-                          setGenerationSettings(prev => ({ ...prev, meshQuality: opt.id }));
-                        }}
-                        className={`py-1.5 px-1 rounded-lg text-center transition-all capitalize font-bold text-[10px] ${
-                          isPostprocessOff
-                            ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
-                            : isSelected
-                            ? 'bg-primary text-black shadow-sm font-black cursor-pointer'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06] cursor-pointer'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 1. Target Polycount Budget */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Target Polycount</span>
-                  <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                    {isPostprocessOff
-                      ? 'Bypassed (Native)'
-                      : generationSettings.autoOptimizeSettings?.targetPolycount === -1 || (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0
-                      ? 'Native (Raw)'
-                      : `${(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0).toLocaleString()} tris`}
-                  </span>
-                </div>
-
-                {/* Preset Chips */}
-                <div className="grid grid-cols-5 gap-1">
-                  {[
-                    { label: '15K', val: 15000, desc: 'Mobile' },
-                    { label: '35K', val: 35000, desc: 'Game' },
-                    { label: '50K', val: 50000, desc: 'Studio' },
-                    { label: '100K', val: 100000, desc: 'Cinema' },
-                    { label: 'Native', val: 0, desc: 'Raw' },
-                  ].map((preset) => {
-                    const currentTarget = generationSettings.autoOptimizeSettings?.targetPolycount ?? 0;
-                    const isSelected = currentTarget === preset.val;
-                    return (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        disabled={isPostprocessOff}
-                        onClick={() => {
-                          if (isPostprocessOff) return;
-                          setGenerationSettings(prev => ({
-                            ...prev,
-                            autoOptimizeSettings: {
-                              ...prev.autoOptimizeSettings,
-                              targetPolycount: preset.val,
-                            },
-                          }));
-                        }}
-                        className={`py-1.5 px-1 rounded-lg text-center transition-all flex flex-col items-center justify-center ${
-                          isPostprocessOff
-                            ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
-                            : isSelected
-                            ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
-                            : 'bg-[hsl(var(--surface-1))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06] cursor-pointer'
-                        }`}
-                      >
-                        <span className="text-[10px] font-black leading-tight">{preset.label}</span>
-                        <span className={`text-[7.5px] ${isPostprocessOff ? 'text-zinc-600' : isSelected ? 'text-black/75 font-bold' : 'text-zinc-500'}`}>{preset.desc}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Smooth Slider */}
-                <input
-                  type="range"
-                  disabled={isPostprocessOff}
-                  min={5000}
-                  max={200000}
-                  step={5000}
-                  value={generationSettings.autoOptimizeSettings?.targetPolycount && generationSettings.autoOptimizeSettings.targetPolycount > 0 ? generationSettings.autoOptimizeSettings.targetPolycount : 50000}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value, 10);
-                    setGenerationSettings(prev => ({
-                      ...prev,
-                      autoOptimizeSettings: {
-                        ...prev.autoOptimizeSettings,
-                        targetPolycount: val,
-                      },
-                    }));
-                  }}
-                  className={`w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary ${isPostprocessOff ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'}`}
-                />
-              </div>
-
-              {/* 2. Topology Selection: Triangles vs Quads */}
-              <div className="space-y-1 pt-1 border-t border-white/[0.04]">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium">Topology Target</span>
-                  <span className="text-[10px] text-zinc-400 font-mono uppercase">
-                    {isPostprocessOff
-                      ? 'Bypassed (Source Topology)'
-                      : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
-                      ? 'Quads (post-process)'
-                      : 'Triangles'}
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    disabled={isPostprocessOff}
-                    onClick={() => {
-                      if (isPostprocessOff) return;
-                      setGenerationSettings(prev => ({
-                        ...prev,
-                        topologyMode: 'triangle',
-                        quadTopology: false,
-                      }));
-                    }}
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
-                      isPostprocessOff
-                        ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
-                        : generationSettings.topologyMode !== 'quad' && !generationSettings.quadTopology
-                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
-                    }`}
-                  >
-                    <span>▲ Triangles</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isPostprocessOff}
-                    onClick={() => {
-                      if (isPostprocessOff) return;
-                      setGenerationSettings(prev => ({
-                        ...prev,
-                        topologyMode: 'quad',
-                        quadTopology: true,
-                      }));
-                    }}
-                    title="Convert to quad-dominant topology in post-processing"
-                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all text-center flex items-center justify-center gap-1.5 ${
-                      isPostprocessOff
-                        ? 'bg-[hsl(var(--surface-1))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
-                        : (generationSettings.topologyMode === 'quad' || generationSettings.quadTopology)
-                        ? 'bg-primary text-black font-black shadow-sm cursor-pointer'
-                        : 'bg-[hsl(var(--surface-1))] text-zinc-300 hover:text-white hover:bg-[hsl(var(--surface-2))] border border-white/[0.08] cursor-pointer'
-                    }`}
-                  >
-                    <span>■ Quads</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* 3. Pro Studio Fidelity & Surface Crease Controls */}
-              <div className="space-y-2.5 pt-2 border-t border-white/[0.04]">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200 font-medium flex items-center gap-1.5">
-                    <HugeiconsIcon icon={SparklesIcon} size={14} className="text-primary" />
-                    Pro Studio Fidelity & Creases
-                  </span>
-                  <span className="text-[10px] text-zinc-400 font-mono">Tripo / Meshy Grade</span>
-                </div>
-
-                {/* Sharp Feature Preservation Toggle */}
-                <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
-                  <div>
-                    <span className="text-xs font-semibold text-zinc-200 block">Sharp Feature Preservation</span>
-                    <span className="text-[9.5px] text-zinc-500 block">Protects mechanical edges, vehicle creases, and hard organic silhouettes</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isPostprocessOff}
-                    onClick={() => {
-                      if (isPostprocessOff) return;
-                      setGenerationSettings(p => ({
-                        ...p,
-                        sharpFeaturePreservation: p.sharpFeaturePreservation === false ? true : false,
-                      }));
-                    }}
-                    className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
-                      (generationSettings.sharpFeaturePreservation ?? true) ? 'bg-primary' : 'bg-zinc-700'
-                    } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
-                  >
-                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
-                      (generationSettings.sharpFeaturePreservation ?? true) ? 'translate-x-4' : 'translate-x-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Angle Crease Threshold Slider */}
-                <div className="space-y-1.5 p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300 text-[11px] font-medium">Angle Crease Threshold</span>
-                    <span className="font-mono text-primary font-bold text-xs bg-primary/10 px-2 py-0.5 rounded border border-primary/25">
-                      {generationSettings.angleCreaseThreshold ?? 45}°
-                    </span>
-                  </div>
-                  <p className="text-[9.5px] text-zinc-500">
-                    Normals split boundary angle. Surface creases sharper than this value remain crisp rather than smoothed.
-                  </p>
-                  <input
-                    type="range"
-                    min={30}
-                    max={85}
-                    step={1}
-                    disabled={isPostprocessOff}
-                    value={generationSettings.angleCreaseThreshold ?? 45}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setGenerationSettings(p => ({ ...p, angleCreaseThreshold: val }));
-                    }}
-                    className={`w-full h-1.5 rounded-full appearance-none bg-[hsl(var(--surface-2))] accent-primary ${
-                      isPostprocessOff ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer'
-                    }`}
-                  />
-                  <div className="flex justify-between text-[8px] text-zinc-600 font-mono">
-                    <span>30° (Ultra Sharp)</span>
-                    <span>45° (Standard)</span>
-                    <span>85° (Soft Organic)</span>
-                  </div>
-                </div>
-
-                {/* High-Resolution Normal Baking Toggle */}
-                <div className="flex items-center justify-between p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
-                  <div>
-                    <span className="text-xs font-semibold text-zinc-200 block">High-Resolution Normal Baking</span>
-                    <span className="text-[9.5px] text-zinc-500 block">Bakes high-frequency tangent-space micro-relief into normal maps</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isPostprocessOff}
-                    onClick={() => {
-                      if (isPostprocessOff) return;
-                      setGenerationSettings(p => ({
-                        ...p,
-                        highResolutionNormalBaking: p.highResolutionNormalBaking === false ? true : false,
-                      }));
-                    }}
-                    className={`w-8 h-4.5 rounded-full transition-colors relative cursor-pointer ${
-                      (generationSettings.highResolutionNormalBaking ?? true) ? 'bg-primary' : 'bg-zinc-700'
-                    } ${isPostprocessOff ? 'opacity-40 cursor-not-allowed' : ''}`}
-                  >
-                    <div className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-black transition-transform ${
-                      (generationSettings.highResolutionNormalBaking ?? true) ? 'translate-x-4' : 'translate-x-0.5'
-                    }`} />
-                  </button>
-                </div>
-
-                {/* Texture Fidelity Preset */}
-                <div className="space-y-1.5 p-2 rounded-xl bg-[hsl(var(--surface-1))] border border-white/[0.06]">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-zinc-300 text-[11px] font-medium">Texture Fidelity Preset</span>
-                    <span className="font-mono text-primary font-bold text-[10px] uppercase">
-                      {generationSettings.textureFidelityPreset || 'high'}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-1">
-                    {[
-                      { id: 'ultra', label: 'Ultra 4K', sub: 'Lossless' },
-                      { id: 'high', label: 'High 2K', sub: 'Studio PBR' },
-                      { id: 'balanced', label: '1K Crisp', sub: 'Optimized' },
-                      { id: 'compressed', label: 'Compact', sub: 'Mobile' },
-                    ].map((tf) => {
-                      const isSel = (generationSettings.textureFidelityPreset || 'high') === tf.id;
-                      return (
-                        <button
-                          key={tf.id}
-                          type="button"
-                          disabled={isPostprocessOff}
-                          onClick={() => {
-                            if (isPostprocessOff) return;
-                            setGenerationSettings(p => ({ ...p, textureFidelityPreset: tf.id as any }));
-                          }}
-                          className={`py-1.5 px-1 rounded-lg text-center transition-all flex flex-col items-center justify-center cursor-pointer ${
-                            isPostprocessOff
-                              ? 'bg-[hsl(var(--surface-2))] text-zinc-600 border border-white/[0.04] opacity-40 cursor-not-allowed'
-                              : isSel
-                              ? 'bg-primary text-black font-black shadow-sm'
-                              : 'bg-[hsl(var(--surface-2))] text-zinc-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.06]'
-                          }`}
-                        >
-                          <span className="text-[10px] font-bold leading-tight">{tf.label}</span>
-                          <span className={`text-[7.5px] ${isSel ? 'text-black/80 font-bold' : 'text-zinc-500'}`}>{tf.sub}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Quality & Geometry Telemetry Indicators */}
-                <div className="grid grid-cols-3 gap-1 pt-1 font-mono text-[9px]">
-                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
-                    <span className="text-zinc-500 block text-[8px]">DENSITY CLASS</span>
-                    <span className="text-zinc-200 font-bold">
-                      {(generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) >= 100000
-                        ? 'Cinema Grade'
-                        : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) >= 50000
-                        ? 'Studio High'
-                        : (generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) > 0
-                        ? 'Game Ready'
-                        : 'Raw Native'}
-                    </span>
-                  </div>
-                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
-                    <span className="text-zinc-500 block text-[8px]">FEATURE PRESERVE</span>
-                    <span className={(generationSettings.sharpFeaturePreservation ?? true) ? "text-[hsl(var(--neon-green))] font-bold" : "text-zinc-400 font-bold"}>
-                      {(generationSettings.sharpFeaturePreservation ?? true) ? 'Active (Hard)' : 'Standard'}
-                    </span>
-                  </div>
-                  <div className="px-2 py-1 rounded-lg bg-[hsl(var(--surface-1))] border border-white/[0.06] text-zinc-400">
-                    <span className="text-zinc-500 block text-[8px]">NORMAL PRECISION</span>
-                    <span className="text-primary font-bold">
-                      {(generationSettings.highResolutionNormalBaking ?? true) ? '16-bit Tangent' : '8-bit Standard'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {isPostprocessOff && (
-                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8.5px] text-amber-300/80 flex items-center gap-1.5">
-                  <span>🔒 Mesh post-processing (decimation, quad retopology, baking) is blocked when Post-Processing is OFF.</span>
-                </div>
-              )}
-            </div>
-            </div>
-            <div className="p-2.5 border-t border-white/[0.08] shrink-0 bg-[hsl(var(--surface-1))]">
+          </div>
+          <div className="p-2.5 border-t border-white/[0.08] shrink-0 bg-[hsl(var(--surface-1))]">
               <button
                 type="button"
                 onClick={() => setAdvancedSettingsOpen(false)}

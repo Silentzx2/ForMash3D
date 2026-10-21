@@ -84,7 +84,6 @@ export interface BatchQueueItem {
   startedAt?: Date;
   completedAt?: Date;
   // Generation settings that were current when the item was added to the queue
-  meshQuality?: GenerationSettings['meshQuality'];
   textureQuality?: GenerationSettings['textureQuality'];
   quadTopology?: GenerationSettings['quadTopology'];
   topologyMode?: GenerationSettings['topologyMode'];
@@ -95,8 +94,6 @@ export interface BatchQueueItem {
   vramMode?: GenerationSettings['vramMode'];
   autoOptimizeSettings?: GenerationSettings['autoOptimizeSettings'];
   generateTexture?: GenerationSettings['generateTexture'];
-  enableFlashVDM?: GenerationSettings['enableFlashVDM'];
-  lowVramMode?: GenerationSettings['lowVramMode'];
   maxNumView?: GenerationSettings['maxNumView'];
   resolution?: GenerationSettings['resolution'];
   generateCollision?: GenerationSettings['generateCollision'];

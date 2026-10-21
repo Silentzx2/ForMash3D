@@ -2142,15 +2142,15 @@ def run_postprocess_job(
                 ],
             )
         )
-    elif not auto_uv and not native_textures:
-        # Preserve watertightness for 3D printing: when auto_uv is False and not native_textures,
-        # skip run_auto_uv so vertices are not split along seams.
+    elif not auto_uv and not (native_textures and retopo_ran):
+        # Preserve watertightness / native state: when auto_uv is False (and retopo did not discard UVs on a textured mesh),
+        # skip UV unwrapping so vertices are not split along seams and native vertex colors/geometry are preserved.
         uv_mesh = optimized
         uv_stats = {
             "status": "skipped",
             "auto_uv": False,
-            "native_textures": False,
-            "reason": "auto_uv disabled and not native_textures; preserving watertightness for 3D printing",
+            "native_textures": bool(native_textures),
+            "reason": "auto_uv disabled; UV unwrapping skipped",
         }
         uv_duration = time.time() - uv_t0
         logger.info(
@@ -2159,7 +2159,7 @@ def run_postprocess_job(
                 [
                     ("Status", "Skipped (auto_uv=False)"),
                     ("Watertight Preserved", True),
-                    ("Reason", "auto_uv disabled; seam vertex splitting skipped for 3D printing"),
+                    ("Reason", "auto_uv disabled; seam vertex splitting skipped"),
                     ("Stage Elapsed", f"{uv_duration:.2f}s"),
                 ],
             )

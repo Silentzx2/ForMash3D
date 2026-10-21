@@ -1,22 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { getApiClient } from '@/services/apiClient';
+import { useEffect, useRef, useState } from 'react';
 import { useWorkspace } from '../store/WorkspaceContext';
 import type { GenerationSettings } from '../types';
-import type { ParameterSchema } from '@/types/api';
-import { buildGenerationParameters, parseModelParameterOverrides } from '../utils/buildGenerationParameters';
+import { parseModelParameterOverrides } from '../utils/buildGenerationParameters';
 
 const STORAGE_KEY = 'ai3d:generation:presets:v1';
 const EXPORT_FORMAT = 'formash3d-generation-presets';
 const OMIT_FROM_PRESET = new Set([
   'image', 'imageFileId', 'imageName', 'preprocessingArtifactId',
   'preprocessingPreviewUrl', 'preprocessingMetadata', 'modelParameterOverrides',
+  'modelParameters',
 ]);
 
 type PresetSettings = Omit<Partial<GenerationSettings>,
   'image' | 'imageFileId' | 'imageName' | 'preprocessingArtifactId' |
-  'preprocessingPreviewUrl' | 'preprocessingMetadata' | 'modelParameterOverrides'>;
+  'preprocessingPreviewUrl' | 'preprocessingMetadata'>;
 
 interface GenerationPreset {
   version: 1;
@@ -27,7 +26,6 @@ interface GenerationPreset {
   createdAt: string;
   updatedAt: string;
   settings: PresetSettings;
-  modelParameters: Record<string, unknown>;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,17 +40,20 @@ function normalizePreset(value: unknown): GenerationPreset {
     throw new Error('Each preset needs a valid name, model ID, and identifier.');
   }
   if (!isRecord(value.settings)) throw new Error('Preset settings must be an object.');
-  const settings = parseModelParameterOverrides(
-    Object.fromEntries(Object.entries(value.settings).filter(([key]) => !OMIT_FROM_PRESET.has(key)))
-  );
+
+  // Safely ignore legacy modelParameters and modelParameterOverrides on import
+  const rawSettings = { ...value.settings };
+  delete (rawSettings as Record<string, unknown>).modelParameterOverrides;
+  delete (rawSettings as Record<string, unknown>).modelParameters;
+
+  const filteredEntries = Object.entries(rawSettings).filter(([key]) => !OMIT_FROM_PRESET.has(key));
+  const settings = parseModelParameterOverrides(Object.fromEntries(filteredEntries));
+
   if (settings.seed !== undefined &&
       (typeof settings.seed !== 'number' || !Number.isSafeInteger(settings.seed) || settings.seed < 0)) {
     throw new Error('Preset seed must be a non-negative safe integer.');
   }
-  if (settings.guidanceScale !== undefined &&
-      (typeof settings.guidanceScale !== 'number' || !Number.isFinite(settings.guidanceScale))) {
-    throw new Error('Preset guidance scale must be finite.');
-  }
+
   const now = new Date().toISOString();
   return {
     version: 1,
@@ -63,7 +64,6 @@ function normalizePreset(value: unknown): GenerationPreset {
     createdAt: typeof value.createdAt === 'string' ? value.createdAt.slice(0, 50) : now,
     updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt.slice(0, 50) : now,
     settings: settings as unknown as PresetSettings,
-    modelParameters: parseModelParameterOverrides(value.modelParameters),
   };
 }
 
@@ -91,13 +91,9 @@ export function GenerationPresetDrawer() {
   const [ready, setReady] = useState(false);
   const [storageBlocked, setStorageBlocked] = useState(false);
   const [selectedId, setSelectedId] = useState('');
-  const [name, setName] = useState('Quality Experiment');
+  const [name, setName] = useState('Quality Recipe');
   const [revision, setRevision] = useState('1');
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [schema, setSchema] = useState<Record<string, ParameterSchema>>({});
-  const [schemaLoading, setSchemaLoading] = useState(false);
-  const [schemaError, setSchemaError] = useState<string | null>(null);
-  const [advancedJson, setAdvancedJson] = useState('{}');
   const [queueing, setQueueing] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
 
@@ -115,56 +111,7 @@ export function GenerationPresetDrawer() {
     catch { setStatus({ type: 'error', message: 'Could not save presets to browser storage.' }); }
   }, [presets, ready, storageBlocked]);
 
-  useEffect(() => {
-    setAdvancedJson(JSON.stringify(generationSettings.modelParameterOverrides || {}, null, 2));
-  }, [generationSettings.aiModel, generationSettings.modelParameterOverrides]);
-
-  useEffect(() => {
-    if (!generationSettings.aiModel) {
-      setSchema({});
-      setSchemaLoading(false);
-      setSchemaError(null);
-      return;
-    }
-    let cancelled = false;
-    setSchema({});
-    setSchemaLoading(true);
-    setSchemaError(null);
-    getApiClient().getModelParameters(generationSettings.aiModel)
-      .then(response => { if (!cancelled) setSchema(response.schema?.parameters || {}); })
-      .catch((error: unknown) => {
-        if (!cancelled) setSchemaError(error instanceof Error ? error.message : 'Could not load this model parameter schema.');
-      })
-      .finally(() => { if (!cancelled) setSchemaLoading(false); });
-    return () => { cancelled = true; };
-  }, [generationSettings.aiModel]);
-
-  const basePreview = useMemo<Record<string, unknown>>(() => {
-    if (!generationSettings.aiModel) return {};
-    try {
-      return buildGenerationParameters({
-        ...generationSettings,
-        image: null,
-        imageFileId: '__settings_preview__',
-        modelParameterOverrides: undefined,
-      }, {}, {}).modelParameters;
-    } catch { return {}; }
-  }, [generationSettings]);
-
   const selected = presets.find(preset => preset.id === selectedId);
-  const stepsSchema = schema.num_inference_steps;
-
-  const updateOverrides = (next: Record<string, unknown>) => {
-    setGenerationSettings(prev => ({ ...prev, modelParameterOverrides: next }));
-    setAdvancedJson(JSON.stringify(next, null, 2));
-  };
-
-  const setOverride = (key: string, value: unknown | undefined) => {
-    const next = { ...(generationSettings.modelParameterOverrides || {}) };
-    if (value === undefined) delete next[key];
-    else next[key] = value;
-    updateOverrides(next);
-  };
 
   const savePreset = () => {
     if (!generationSettings.aiModel || !name.trim()) {
@@ -184,7 +131,6 @@ export function GenerationPresetDrawer() {
         createdAt: existing?.createdAt || now,
         updatedAt: now,
         settings: snapshotSettings(generationSettings),
-        modelParameters: parseModelParameterOverrides(generationSettings.modelParameterOverrides),
       };
       setStorageBlocked(false);
       setPresets(existing
@@ -203,9 +149,7 @@ export function GenerationPresetDrawer() {
       ...prev,
       ...selected.settings,
       aiModel: selected.modelId,
-      modelParameterOverrides: selected.modelParameters,
     }));
-    setAdvancedJson(JSON.stringify(selected.modelParameters, null, 2));
     setName(selected.name);
     setRevision(selected.revision);
     setStatus({ type: 'success', message: 'Loaded "' + selected.name + '" while keeping the current image.' });
@@ -268,51 +212,10 @@ export function GenerationPresetDrawer() {
     finally { setQueueing(false); }
   };
 
-  const renderParameter = (key: string, parameter: ParameterSchema) => {
-    const overrides = generationSettings.modelParameterOverrides || {};
-    const hasOverride = Object.prototype.hasOwnProperty.call(overrides, key);
-    const hasPreview = Object.prototype.hasOwnProperty.call(basePreview, key);
-    const value = hasOverride ? overrides[key] : hasPreview ? basePreview[key] : (parameter.default ?? '');
-    const id = 'generation-preset-param-' + key;
-    return (
-      <div key={key} className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(140px,220px)] gap-2 items-start border-t border-white/[0.06] pt-2">
-        <div className="min-w-0">
-          <label htmlFor={id} className="font-medium text-zinc-200">{key}</label>
-          {parameter.description && <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-500">{parameter.description}</p>}
-          {(parameter.minimum !== undefined || parameter.maximum !== undefined) && <p className="text-[10px] text-zinc-600">Schema range: {parameter.minimum ?? '—'} to {parameter.maximum ?? '—'} (not clamped)</p>}
-        </div>
-        {parameter.enum?.length ? (
-          <select id={id} value={JSON.stringify(value)} onChange={event => {
-            try { setOverride(key, JSON.parse(event.target.value)); } catch { /* Keep current value. */ }
-          }} className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs text-white">
-            {parameter.enum.map(choice => <option key={JSON.stringify(choice)} value={JSON.stringify(choice)}>{String(choice)}</option>)}
-          </select>
-        ) : parameter.type === 'boolean' ? (
-          <label className="flex items-center gap-2 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs text-white">
-            <input id={id} type="checkbox" checked={Boolean(value)} onChange={event => setOverride(key, event.target.checked)} className="accent-primary" />
-            {Boolean(value) ? 'Enabled' : 'Disabled'}
-          </label>
-        ) : (
-          <input id={id} type={parameter.type === 'integer' || parameter.type === 'number' ? 'number' : 'text'}
-            step={parameter.type === 'integer' ? 1 : parameter.type === 'number' ? 'any' : undefined}
-            value={String(value ?? '')} onChange={event => {
-              const raw = event.target.value;
-              if (raw === '') { setOverride(key, undefined); return; }
-              if (parameter.type === 'integer' || parameter.type === 'number') {
-                const number = Number(raw);
-                if (!Number.isFinite(number) || (parameter.type === 'integer' && !Number.isInteger(number))) return;
-                setOverride(key, number);
-              } else setOverride(key, raw);
-            }} className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs font-mono text-white" />
-        )}
-      </div>
-    );
-  };
-
   return (
     <details className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-1))] group">
       <summary className="cursor-pointer list-none px-3.5 py-3 flex items-center justify-between gap-3 font-semibold text-zinc-200">
-        <span>Generation Experiment Lab</span><span className="text-[10px] text-zinc-500 font-normal">Presets · Seed · Model parameters</span>
+        <span>Generation Output Recipes</span><span className="text-[10px] text-zinc-500 font-normal">Presets · Seed · Output Settings</span>
       </summary>
       <div className="border-t border-white/[0.08] p-3.5 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -331,14 +234,14 @@ export function GenerationPresetDrawer() {
           <div className="space-y-1.5">
             <label htmlFor="generation-preset-name" className="text-[11px] font-semibold text-zinc-300">Preset name</label>
             <input id="generation-preset-name" value={name} maxLength={100} onChange={event => setName(event.target.value)}
-              className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs text-white" placeholder="e.g. Hunyuan · high detail" />
+              className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs text-white" placeholder="e.g. Game Ready Production" />
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <label htmlFor="generation-preset-revision" className="text-[11px] font-semibold text-zinc-300">Revision / experiment ID</label>
             <input id="generation-preset-revision" value={revision} maxLength={100} onChange={event => setRevision(event.target.value)}
-              className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs text-white" placeholder="e.g. exp-03" />
+              className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs text-white" placeholder="e.g. v1" />
             <p className="text-[10px] text-zinc-500">Metadata only; never sent to the model.</p>
           </div>
           <div className="space-y-1.5">
@@ -347,68 +250,12 @@ export function GenerationPresetDrawer() {
               if (event.target.value === '') return;
               const value = Number(event.target.value);
               if (!Number.isSafeInteger(value) || value < 0) return;
-              const next = { ...(generationSettings.modelParameterOverrides || {}), seed: value };
-              setGenerationSettings(prev => ({ ...prev, seed: value, modelParameterOverrides: next }));
-              setAdvancedJson(JSON.stringify(next, null, 2));
+              setGenerationSettings(prev => ({ ...prev, seed: value }));
             }} className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs font-mono text-white" />
           </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <label htmlFor="generation-preset-guidance" className="text-[11px] font-semibold text-zinc-300">Guidance scale</label>
-            <input id="generation-preset-guidance" type="number" step="any" value={generationSettings.guidanceScale} onChange={event => {
-              if (event.target.value === '') return;
-              const value = Number(event.target.value);
-              if (!Number.isFinite(value)) return;
-              const next = { ...(generationSettings.modelParameterOverrides || {}), guidance_scale: value };
-              setGenerationSettings(prev => ({ ...prev, guidanceScale: value, modelParameterOverrides: next }));
-              setAdvancedJson(JSON.stringify(next, null, 2));
-            }} className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs font-mono text-white" />
-          </div>
-          {stepsSchema && <div className="space-y-1.5">
-            <label htmlFor="generation-preset-steps" className="text-[11px] font-semibold text-zinc-300">Inference steps</label>
-            <input id="generation-preset-steps" type="number" min={stepsSchema.minimum} max={stepsSchema.maximum}
-              step={stepsSchema.type === 'integer' ? 1 : 'any'}
-              value={String(Object.prototype.hasOwnProperty.call(generationSettings.modelParameterOverrides || {}, 'num_inference_steps')
-                ? generationSettings.modelParameterOverrides?.num_inference_steps
-                : (basePreview.num_inference_steps ?? stepsSchema.default ?? ''))}
-              onChange={event => {
-                if (event.target.value === '') { setOverride('num_inference_steps', undefined); return; }
-                const value = Number(event.target.value);
-                if (!Number.isFinite(value) || (stepsSchema.type === 'integer' && !Number.isInteger(value))) return;
-                setOverride('num_inference_steps', value);
-              }} className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] px-2.5 py-2 text-xs font-mono text-white" />
-            {(stepsSchema.minimum !== undefined || stepsSchema.maximum !== undefined) && <p className="text-[10px] text-zinc-500">Schema range: {stepsSchema.minimum ?? '—'} to {stepsSchema.maximum ?? '—'}; values are not clamped.</p>}
-          </div>}
-        </div>
-        <div className="space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="font-semibold text-zinc-300">Model-specific parameters</span>
-            <span className="text-[10px] text-zinc-500">{schemaLoading ? 'Loading schema…' : Object.keys(schema).length + ' schema fields'}</span>
-          </div>
-          {schemaError && <p role="alert" className="text-[11px] text-rose-400">{schemaError}</p>}
-          {!schemaLoading && !schemaError && Object.entries(schema)
-            .filter(([key, parameter]) => !['seed', 'guidance_scale', 'num_inference_steps'].includes(key) &&
-              ['integer', 'number', 'boolean', 'string'].includes(parameter.type))
-            .map(([key, parameter]) => renderParameter(key, parameter))}
-          {!schemaLoading && !schemaError && Object.keys(schema).length === 0 &&
-            <p className="text-[11px] text-zinc-500">Select a registered model to load its parameter schema. Advanced JSON remains available.</p>}
         </div>
         <div className="space-y-2 border-t border-white/[0.08] pt-3">
-          <label htmlFor="generation-preset-advanced-json" className="font-semibold text-zinc-300">Advanced model-parameter JSON</label>
-          <textarea id="generation-preset-advanced-json" value={advancedJson} onChange={event => setAdvancedJson(event.target.value)}
-            rows={7} spellCheck={false} aria-describedby="generation-preset-advanced-help"
-            className="w-full rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.12] p-3 font-mono text-[11px] leading-relaxed text-zinc-200" />
-          <p id="generation-preset-advanced-help" className="text-[10px] text-zinc-500">Use nested samplers or experimental fields absent from the form. Values are sent as-is after model defaults; unsupported keys may be rejected by the backend.</p>
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => {
-              if (advancedJson.length > 100_000) { setStatus({ type: 'error', message: 'Advanced JSON is too large (maximum 100 KB).' }); return; }
-              try {
-                const overrides = parseModelParameterOverrides(JSON.parse(advancedJson) as unknown);
-                updateOverrides(overrides);
-                setStatus({ type: 'success', message: 'Advanced parameters applied to current generation settings.' });
-              } catch (error) { setStatus({ type: 'error', message: error instanceof Error ? error.message : 'Invalid model-parameter JSON.' }); }
-            }} className="rounded-lg border border-white/[0.12] px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05]">Apply JSON</button>
             <button type="button" disabled={!selected} onClick={loadSelected} className="rounded-lg border border-white/[0.12] px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-white/[0.05] disabled:opacity-40">Load selected</button>
             <button type="button" disabled={!generationSettings.aiModel || !name.trim()} onClick={savePreset} className="rounded-lg bg-primary px-3 py-2 text-xs font-bold text-[hsl(var(--primary-foreground))] disabled:opacity-40">{selected ? 'Update selected' : 'Save new preset'}</button>
             <button type="button" disabled={!selected} onClick={deleteSelected} className="rounded-lg border border-rose-500/30 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-500/10 disabled:opacity-40">Delete</button>

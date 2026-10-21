@@ -84,12 +84,13 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Turbo keeps its trained 5-step schedule and checkpoint-trained extraction ceiling (380).
-        self.assertEqual(schema["octree_resolution"]["default"], 380)
-        self.assertEqual(schema["octree_resolution"]["maximum"], 380)
-        self.assertFalse(schema["octree_resolution"].get("readOnly", False))
-        self.assertEqual(schema["num_inference_steps"]["default"], 5)
-        self.assertEqual(schema["guidance_scale"]["default"], 5.0)
+        self.assertEqual(schema["octree_resolution"]["default"], 768)
+        self.assertEqual(schema["octree_resolution"]["maximum"], 1024)
+        self.assertTrue(schema["octree_resolution"].get("readOnly", False))
+        self.assertEqual(schema["num_inference_steps"]["default"], 20)
+        self.assertTrue(schema["num_inference_steps"].get("readOnly", False))
+        self.assertEqual(schema["guidance_scale"]["default"], 7.5)
+        self.assertTrue(schema["guidance_scale"].get("readOnly", False))
         self.assertFalse(schema["low_vram_mode"]["default"])
         self.assertFalse(schema["enable_flashvdm"]["default"])
 
@@ -99,10 +100,13 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TrellisImageToTexturedMeshAdapter(vram_requirement=11776)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["ss_sampling_steps"]["default"], 50)
-        self.assertEqual(schema["slat_sampling_steps"]["default"], 50)
-        self.assertEqual(schema["texture_resolution"]["default"], 2048)
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 100)
+        self.assertTrue(schema["ss_sampling_steps"]["readOnly"])
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 100)
+        self.assertTrue(schema["slat_sampling_steps"]["readOnly"])
+        self.assertEqual(schema["texture_resolution"]["default"], 8192)
         self.assertEqual(schema["simplify"]["default"], 0.0)
+        self.assertTrue(schema["simplify"]["readOnly"])
 
     def test_trellis_text_adapter_contract(self):
         from adapters.trellis_adapter import TrellisTextToTexturedMeshAdapter
@@ -110,8 +114,8 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = TrellisTextToTexturedMeshAdapter(vram_requirement=11776)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        self.assertEqual(schema["ss_sampling_steps"]["default"], 50)
-        self.assertEqual(schema["slat_sampling_steps"]["default"], 50)
+        self.assertEqual(schema["ss_sampling_steps"]["default"], 100)
+        self.assertEqual(schema["slat_sampling_steps"]["default"], 100)
 
     def test_trellis2_adapter_contract(self):
         from adapters.trellis2_adapter import Trellis2ImageToTexturedMeshAdapter
@@ -120,10 +124,14 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         schema = adapter.get_parameter_schema()["parameters"]
 
         self.assertEqual(schema["decimation_target"]["default"], -1)
+        self.assertTrue(schema["decimation_target"]["readOnly"])
         self.assertFalse(schema["remesh"]["default"])
-        self.assertEqual(schema["texture_size"]["default"], 4096)
+        self.assertTrue(schema["remesh"]["readOnly"])
+        self.assertEqual(schema["texture_size"]["default"], 8192)
         self.assertEqual(schema["pipeline_type"]["default"], "1536_cascade")
-        self.assertEqual(schema["max_num_tokens"]["default"], 262144)
+        self.assertTrue(schema["pipeline_type"]["readOnly"])
+        self.assertEqual(schema["max_num_tokens"]["default"], 524288)
+        self.assertTrue(schema["max_num_tokens"]["readOnly"])
 
     def test_unique3d_adapter_contract(self):
         from adapters.unique3d_adapter import Unique3DImageToRawMeshAdapter
@@ -131,12 +139,15 @@ class TestOfficialModelDefaultsAndSchemas(unittest.TestCase):
         adapter = Unique3DImageToRawMeshAdapter(vram_requirement=10240)
         schema = adapter.get_parameter_schema()["parameters"]
 
-        # Official Unique3D defaults from gradio_3dgen.py
         self.assertEqual(schema["seed"]["default"], 1145)
         self.assertEqual(schema["input_processing"]["default"], True)
+        self.assertTrue(schema["input_processing"]["readOnly"])
         self.assertEqual(schema["do_refine"]["default"], True)
+        self.assertTrue(schema["do_refine"]["readOnly"])
         self.assertEqual(schema["expansion_weight"]["default"], 0.1)
+        self.assertTrue(schema["expansion_weight"]["readOnly"])
         self.assertEqual(schema["init_type"]["default"], "std")
+        self.assertTrue(schema["init_type"]["readOnly"])
         self.assertEqual(schema["expansion_weight"]["minimum"], -1.0)
         self.assertEqual(schema["expansion_weight"]["maximum"], 1.0)
         self.assertEqual(schema["init_type"]["enum"], ["std", "thin"])
@@ -181,18 +192,13 @@ class TestGenerationProductionContract(unittest.TestCase):
         build_params_path = backend_root.parent / "features/workspace/utils/buildGenerationParameters.ts"
         build_params_content = build_params_path.read_text(encoding="utf-8")
         
-        # Source sampling uses each model's max-fidelity profile; production budgets remain downstream.
-        self.assertIn("return 20", build_params_content)  # current experimental Mini Turbo request
-        self.assertIn("return 50", build_params_content)  # max-fidelity profiles
-        self.assertIn("normId.startsWith('hunyuan3d_shape_v21')", build_params_content)
-        self.assertIn("modelParameters.octree_resolution = 1300", build_params_content)
-        self.assertIn("modelParameters.num_inference_steps = 150", build_params_content)
-        self.assertIn("modelParameters.use_flash_decoder = false", build_params_content)
-        self.assertIn("ss_sampling_steps", build_params_content)
+        # Adapter-owned inference profiles are authoritative; frontend does not inject steps or octree.
+        self.assertIn("Adapter-owned inference profiles are authoritative", build_params_content)
         self.assertIn("numericTextureResolution", build_params_content)
         self.assertIn("texture_resolution: numericTextureResolution", build_params_content)
-        self.assertIn("source_quality: 'max'", build_params_content)
         self.assertIn("target_polycount:", build_params_content)
+        self.assertNotIn("modelParameters.octree_resolution", build_params_content)
+        self.assertNotIn("modelParameters.num_inference_steps", build_params_content)
         
         # Check WorkspaceContext still references the utility
         workspace_context = (backend_root.parent / "features/workspace/store/WorkspaceContext.tsx").read_text(encoding="utf-8")
@@ -329,7 +335,13 @@ class TestNativeRawQualityContracts(unittest.TestCase):
     def test_model_manifest_and_runtime_profiles_stay_in_sync(self):
         import yaml
         from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE as shape_profile
+        from adapters.hunyuan3d_dit_v2_mini_turbo import _LOCKED_INFERENCE_PROFILE as mini_profile
         from adapters.triposg_adapter import _LOCKED_INFERENCE_PROFILE as triposg_profile
+        from adapters.trellis_adapter import _LOCKED_INFERENCE_PROFILE as trellis_profile
+        from adapters.trellis2_adapter import _LOCKED_INFERENCE_PROFILE as trellis2_profile
+        from adapters.pixal3d_adapter import _LOCKED_INFERENCE_PROFILE as pixal3d_profile
+        from adapters.unique3d_adapter import _LOCKED_INFERENCE_PROFILE as unique3d_profile
+        from adapters.taoflowforge_adapter import _LOCKED_INFERENCE_PROFILE as taoflowforge_profile
         from core.scheduler.multiprocess_scheduler import (
             _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS,
             _RAW_MESH_MAX_QUALITY_PARAMETERS,
@@ -354,7 +366,18 @@ class TestNativeRawQualityContracts(unittest.TestCase):
             "hunyuan3d_shape_v21_image_to_raw_mesh": shape_profile,
             "hunyuan3d_shape_v21_image_to_3d": shape_profile,
             "hunyuan3d_shape_v21_image_to_textured_mesh": shape_profile,
+            "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": mini_profile,
+            "hunyuan3d_dit_v2_mini_turbo_image_to_3d": mini_profile,
             "triposg_image_to_raw_mesh": triposg_profile,
+            "trellis_image_to_raw_mesh": trellis_profile,
+            "trellis_image_to_3d": trellis_profile,
+            "trellis_image_to_textured_mesh": trellis_profile,
+            "trellis2_image_to_raw_mesh": trellis2_profile,
+            "trellis2_image_to_3d": trellis2_profile,
+            "trellis2_image_to_textured_mesh": trellis2_profile,
+            "pixal3d_image_to_raw_mesh": pixal3d_profile,
+            "unique3d_image_to_raw_mesh": unique3d_profile,
+            "taoflowforge_image_to_raw_mesh": taoflowforge_profile,
         }
         for model_id in active_models:
             with self.subTest(model=model_id):
@@ -363,13 +386,29 @@ class TestNativeRawQualityContracts(unittest.TestCase):
 
     def test_scheduler_forces_each_scheduler_owned_geometry_profile(self):
         from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE as shape_profile
+        from adapters.hunyuan3d_dit_v2_mini_turbo import _LOCKED_INFERENCE_PROFILE as mini_profile
         from adapters.triposg_adapter import _LOCKED_INFERENCE_PROFILE as triposg_profile
-        from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
+        from adapters.trellis_adapter import _LOCKED_INFERENCE_PROFILE as trellis_profile
+        from adapters.trellis2_adapter import _LOCKED_INFERENCE_PROFILE as trellis2_profile
+        from adapters.pixal3d_adapter import _LOCKED_INFERENCE_PROFILE as pixal3d_profile
+        from adapters.unique3d_adapter import _LOCKED_INFERENCE_PROFILE as unique3d_profile
+        from adapters.taoflowforge_adapter import _LOCKED_INFERENCE_PROFILE as taoflowforge_profile
+        from core.scheduler.multiprocess_scheduler import (
+            _RAW_MESH_MAX_QUALITY_PARAMETERS,
+            _build_model_inference_inputs,
+        )
 
+        self.assertEqual(_RAW_MESH_MAX_QUALITY_PARAMETERS, {})
         self.assertEqual(shape_profile, {
             "source_quality": "max", "octree_resolution": 1300,
             "num_inference_steps": 150, "guidance_scale": 5.0,
             "num_chunks": 80000, "mc_algo": "mc",
+        })
+        self.assertEqual(mini_profile, {
+            "source_quality": "max", "octree_resolution": 768,
+            "num_inference_steps": 20, "guidance_scale": 7.5,
+            "num_chunks": 80000, "low_vram_mode": False, "low_vram": False,
+            "enable_flashvdm": False, "mc_algo": "mc",
         })
         self.assertEqual(triposg_profile, {
             "source_quality": "max", "num_inference_steps": 100,
@@ -377,62 +416,70 @@ class TestNativeRawQualityContracts(unittest.TestCase):
             "dense_octree_depth": 10, "hierarchical_octree_depth": 11,
             "use_flash_decoder": False,
         })
+        self.assertEqual(trellis_profile, {
+            "source_quality": "max", "num_inference_steps": 100,
+            "ss_sampling_steps": 100, "slat_sampling_steps": 100,
+            "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False,
+        })
+        self.assertEqual(trellis2_profile, {
+            "source_quality": "max", "pipeline_type": "1536_cascade",
+            "max_num_tokens": 524288,
+            "sparse_structure_sampler_params": {
+                "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0,
+            },
+            "shape_slat_sampler_params": {
+                "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0,
+            },
+            "tex_slat_sampler_params": {
+                "steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0,
+            },
+            "decimation_target": -1, "remesh": False, "low_vram": False,
+        })
+        self.assertEqual(pixal3d_profile, {
+            "source_quality": "max", "resolution": 2048, "pipeline_type": "1536_cascade",
+            "sampler_overrides": {
+                "sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0},
+                "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0},
+                "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0},
+            },
+            "low_vram": False,
+        })
+        self.assertEqual(unique3d_profile, {
+            "source_quality": "max", "input_processing": True,
+            "do_refine": True, "expansion_weight": 0.1,
+            "init_type": "std", "low_vram": False,
+        })
+        self.assertEqual(taoflowforge_profile, {
+            "source_quality": "max", "fill_holes": True,
+            "offload": "auto", "low_vram": False,
+        })
 
-        cases = {
-            "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {
-                "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5,
-                "num_chunks": 80000, "low_vram_mode": False, "low_vram": False,
-                "enable_flashvdm": False, "mc_algo": "mc",
-            },
-            "unique3d_image_to_raw_mesh": {
-                "input_processing": True, "do_refine": True, "expansion_weight": 0.1,
-                "init_type": "std", "low_vram": False,
-            },
-            "trellis_image_to_raw_mesh": {
-                "num_inference_steps": 100, "ss_sampling_steps": 100,
-                "slat_sampling_steps": 100, "guidance_scale": 7.5,
-                "simplify": 0.0, "low_vram": False,
-            },
-            "trellis2_image_to_raw_mesh": {
-                "pipeline_type": "1536_cascade", "max_num_tokens": 524288,
-                "sparse_structure_sampler_params": {
-                    "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0,
-                },
-                "shape_slat_sampler_params": {
-                    "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0,
-                },
-                "tex_slat_sampler_params": {
-                    "steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0,
-                },
-                "decimation_target": -1, "remesh": False, "low_vram": False,
-            },
-            "pixal3d_image_to_raw_mesh": {
-                "source_quality": "max", "resolution": 2048, "pipeline_type": "1536_cascade",
-                "sampler_overrides": {
-                    "sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0},
-                    "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0},
-                    "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0},
-                },
-                "low_vram": False,
-            },
-        }
-        downstream_controls = {
-            "target_polycount", "auto_optimize", "generateLOD", "lodPreset", "lodCount",
-            "physics_enabled", "physics_config", "texture_enabled", "generate_texture",
-            "texture_resolution", "texture_resolution_preset",
-        }
-        for model_id, expected in cases.items():
+        cases = (
+            "hunyuan3d_shape_v21_image_to_raw_mesh",
+            "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+            "triposg_image_to_raw_mesh",
+            "unique3d_image_to_raw_mesh",
+            "trellis_image_to_raw_mesh",
+            "trellis2_image_to_raw_mesh",
+            "pixal3d_image_to_raw_mesh",
+            "taoflowforge_image_to_raw_mesh",
+        )
+        for model_id in cases:
             with self.subTest(model=model_id):
                 model_inputs = _build_model_inference_inputs({
-                    **expected, "target_polycount": 50000, "auto_optimize": True,
+                    "target_polycount": 50000, "auto_optimize": True,
                     "generateLOD": True, "texture_enabled": True,
                     "texture_resolution": 4096, "seed": 123,
+                    "image_path": "/tmp/source.png",
+                    "num_inference_steps": 1,
+                    "guidance_scale": 99.0,
+                    "octree_resolution": 64,
                 }, model_id=model_id)
-                self.assertEqual(model_inputs["source_quality"], "max")
-                self.assertEqual(model_inputs["seed"], 123)
-                for key, value in expected.items():
-                    self.assertEqual(model_inputs.get(key), value, key)
-                self.assertTrue(downstream_controls.isdisjoint(model_inputs))
+                self.assertEqual(model_inputs, {
+                    "image_path": "/tmp/source.png",
+                    "seed": 123,
+                    "source_quality": "max",
+                })
 
     def test_native_budget_and_remesh_gates(self):
         from postprocess.pipeline import (
@@ -475,7 +522,7 @@ class TestNativeRawQualityContracts(unittest.TestCase):
     def test_native_raw_frontend_defaults_and_preview_route(self):
         builder = (backend_root.parent / "features/workspace/utils/buildGenerationParameters.ts").read_text(encoding="utf-8")
         workspace = (backend_root.parent / "features/workspace/store/WorkspaceContext.tsx").read_text(encoding="utf-8")
-        self.assertIn("target_polycount: settings.autoOptimizeSettings?.targetPolycount ?? 0", builder)
+        self.assertIn("settings.autoOptimizeSettings?.targetPolycount ?? 0", builder)
         self.assertIn("autoOptimizeSettings: { targetPolycount: 0 }", workspace)
         self.assertIn("preferredGenerationPreviewUrl", workspace)
         self.assertIn("result.source_model_url", workspace)
@@ -562,9 +609,6 @@ class TestPostprocessPipelineParity(unittest.TestCase):
         icosphere = trimesh.creation.icosphere(subdivisions=6, radius=1.0)
         face_count = len(icosphere.faces)
         self.assertGreater(face_count, 50000)
-        # Give mesh vertex colors to verify vertex color preservation and avoid redundant auto-uv on huge sphere
-        icosphere.visual.vertex_colors = np.ones((len(icosphere.vertices), 4), dtype=np.uint8) * 128
-        icosphere.visual.vertex_colors[:, 0] = np.linspace(0, 255, len(icosphere.vertices), dtype=np.uint8)
 
         test_dir = backend_root / "outputs" / "test_parity"
         test_dir.mkdir(parents=True, exist_ok=True)
@@ -577,7 +621,7 @@ class TestPostprocessPipelineParity(unittest.TestCase):
             result = run_postprocess_job(
                 job_id=job_id,
                 generation_result={"output_mesh_path": str(temp_mesh)},
-                job_inputs={"auto_optimize": False, "generateLOD": False, "physics_enabled": False},
+                job_inputs={"auto_optimize": False, "auto_uv": False, "generateLOD": False, "physics_enabled": False},
                 job_metadata={"feature": "image_to_raw_mesh"},
             )
 
@@ -617,7 +661,7 @@ class TestSystemViewerRouting(unittest.TestCase):
 
     def test_fbx_download_rejects_unrigged_assets_without_native_fbx(self):
         from fastapi import HTTPException
-        from api.routers import system
+        from api.routers.system import download_job_result
 
         with tempfile.TemporaryDirectory() as temp_dir:
             storage_base = Path(temp_dir)

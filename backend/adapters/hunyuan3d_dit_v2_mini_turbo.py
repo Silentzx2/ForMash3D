@@ -23,6 +23,19 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "octree_resolution": 768,
+    "num_inference_steps": 20,
+    "guidance_scale": 7.5,
+    "num_chunks": 80000,
+    "low_vram_mode": False,
+    "low_vram": False,
+    "enable_flashvdm": False,
+    "mc_algo": "mc",
+}
+
 
 class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -267,6 +280,7 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process image-to-raw-mesh generation using Hunyuan3D-DiT-v2-mini-Turbo."""
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Hunyuan3D-DiT-v2-mini-Turbo requires CUDA; CPU inference is not supported.")
@@ -420,12 +434,14 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "default": 768,
                     "minimum": 64,
                     "maximum": 1024,
+                    "readOnly": True,
                     "required": False,
                 },
                 "num_chunks": {
                     "type": "integer",
                     "description": "Chunk size for point evaluation during marching cubes",
-                    "default": 20000,
+                    "default": 80000,
+                    "readOnly": True,
                     "required": False,
                 },
                 "num_inference_steps": {
@@ -434,12 +450,14 @@ class Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(ImageToMeshModel):
                     "default": 20,
                     "minimum": 1,
                     "maximum": 100,
+                    "readOnly": True,
                     "required": False,
                 },
                 "guidance_scale": {
                     "type": "number",
                     "description": "Guidance scale for generation",
                     "default": 7.5,
+                    "readOnly": True,
                     "required": False,
                 },
                 "low_vram_mode": {

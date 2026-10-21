@@ -200,11 +200,47 @@ Universal motion specifications compatible with `motion/react`:
 
 ### Texture Studio & Generation Panel Components
 - `TexturePanel.tsx`: Atlas resolution presets (1K, 2K, 4K, 8K), automatic engine routing (Paint3D for 1K/2K, Hunyuan3D-Paint for 4K/8K), reference image binding/upload, PBR map inspection. RealESRGAN runs as part of Hunyuan Paint; there is no separate UI toggle.
-- `GeneratePanel.tsx`: Universal Textured Generation toggle for all image-to-3D geometry models, atlas resolution preset selector, VRAM warning for 4K/8K
+- `GeneratePanel.tsx`: Simplified Studio Interface with single Target Polycount / Output Preset card, locked model inference profiles, single postprocessing master switch, and clean Advanced production drawer. Universal Textured Generation toggle for all image-to-3D geometry models, atlas resolution preset selector, VRAM warning for 4K/8K.
 - Source-generation controls output raw geometry; texturing runs as a separate, optional, non-destructive stage preserving `master/source.glb`.
 - `systemStats`: Real-time GPU/VRAM telemetry in texture panel
 - Spot-mask mode draws to a separate UV mask canvas; localized inference remains visibly unavailable until supported by Paint3D/Hunyuan adapter calls.
 - UV Inspector is bound to the loaded viewport mesh's UV attributes; sampled edges are for responsiveness and only computed counts/bounds are shown.
+
+### Simplified Generate Studio Panel & Production Drawer (GeneratePanel.tsx)
+
+The Generate studio interface is organized into a clean beginner-friendly flow and an uncluttered Advanced production drawer:
+
+#### 1. Primary Flow (Beginner-Friendly Main Panel)
+- **Reference Image Intake**: Single drag-and-drop zone, file upload, or bridge pre-load from Board (`useAppStore.pendingBoardImage`).
+- **Model Selector**: Displays registered models with authentic hardware readiness badges (`READY`, `LOW VRAM`, `MISSING DEPS`) and VRAM requirement indicators.
+- **Single Post-Processing Master Switch**: Exactly one master toggle. When active, enables full production finishing. When toggled OFF, fast mode bypasses downstream finishing and returns raw geometry immediately.
+- **Textured Generation Toggle**: Optional post-processing texture stage routing to Paint3D (1K/2K) or Hunyuan3D-Paint (4K/8K).
+- **Single Target Polycount & Output Preset Card**:
+  - Six production output recipes:
+    - `mobile`: Lightweight budget (~15k tris), optimized for mobile games and WebGL.
+    - `game_ready`: Standard game budget (~35k tris), LODs, normal bake, collision hull.
+    - `cinematic`: Studio fidelity budget (~100k tris) for film and high-end rendering.
+    - `animation`: Quad-dominant retopology (~40k quads/tris) with deformation-friendly edge flow.
+    - `3d_print`: Watertight solid mesh with verified printability and boundary hole closure.
+    - `native`: Raw extraction ceiling, preserving full model generator resolution.
+  - Smooth polycount slider (5k–200k tris) with quick-preset chips (15K, 35K, 50K, 100K, Native).
+  - Preset clicks fill recommended defaults non-destructively and **never** trigger automatic generation submission.
+- **Generate Button**: Clear button with loading state, queue position indicator, and disabled state when inputs are incomplete.
+
+#### 2. Advanced Production Drawer (Genuine Production Controls Only)
+- **Candidate Variations (Pick-Best-of-N)**: Multi-variation selector (1 to 4 seeds) with deterministic stepping (`seed + i`) and composite quality scoring (`_score_and_select`) promoting the highest-scoring candidate to `master/source.glb`.
+- **Topology Target**: Triangle decimation vs. Quad-dominant retopology (FastMesh / QuadriFlow).
+- **UV Unwrapping**: Automatic conformal seam placement and atlas chart packing (PartUV / xatlas).
+- **High-to-Low Normal Map Baking**: Ray-cast detail transfer from immutable `master/source.glb` to decimated output mesh.
+- **LOD Generation**: Hierarchical multi-resolution chain (LOD0: 100%, LOD1: 50%, LOD2: 25%, LOD3: 12.5%).
+- **Topology Gate & Targeted Hole Repair**: Pre-repair manifold quality gate and boundary loop hole closure ($\le 50$ vertices).
+- **Physics Colliders**: Watertight CoACD convex hull generation with physics material quick presets (Default, Rubber, Stone, Wood, Ice, Metal).
+
+#### 3. Banned & Removed Controls
+- No inference step sliders, guidance scale inputs, sampler overrides, or octree resolution pickers (locked inside adapter code).
+- No fake Fast/Balanced/High inference quality selector.
+- No duplicate Target Polycount cards or duplicate post-process master switches.
+
 
 ### Generation & Texture Power Tools (Batch 2)
 - `GeneratePanel.tsx` (Pick-Best-of-N Candidate Generation): Multi-variation count selector (1 to 4) stepping seeds deterministically. Interactive Candidate Comparison Grid rendered on completion with individual candidate seed display, 3D viewport previewing (`loadModelInViewer`), and one-click promotion to `master/source.glb` with unselected candidate file garbage collection.

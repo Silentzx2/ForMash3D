@@ -629,7 +629,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 "resolution": {
                     "type": "integer",
                     "description": "Per-view inference resolution; experimental max-detail default is the upstream demo ceiling of 768.",
-                    "default": 1024,
+                    "default": 768,
                     "enum": [512, 768, 1024, 1536],
                     "required": False,
                 },

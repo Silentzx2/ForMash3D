@@ -21,6 +21,44 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "pipeline_type": "1536_cascade",
+    "max_num_tokens": 524288,
+    "sparse_structure_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 10.0,
+        "guidance_rescale": 0.9,
+        "rescale_t": 8.0,
+    },
+    "shape_slat_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 10.0,
+        "guidance_rescale": 0.8,
+        "rescale_t": 8.0,
+    },
+    "tex_slat_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 3.5,
+        "guidance_rescale": 0.5,
+        "rescale_t": 8.0,
+    },
+    "decimation_target": -1,
+    "remesh": False,
+    "low_vram": False,
+}
+
+_LOCKED_PAINTING_INFERENCE_PROFILE = {
+    "tex_slat_sampler_params": {
+        "steps": 100,
+        "guidance_strength": 3.5,
+        "guidance_rescale": 0.5,
+        "rescale_t": 8.0,
+    },
+    "texture_size": 4096,
+}
+
 
 class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -161,6 +199,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
         Returns:
             Dictionary with generated mesh information
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
@@ -207,7 +246,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
             
             logger.info(
                 "Generating high-fidelity untextured TRELLIS.2 mesh (pipeline=%s, max_num_tokens=%s, steps=%s)",
-                pipeline_type, max_num_tokens, default_sampler_params.get("steps", 50),
+                pipeline_type, max_num_tokens, sparse_structure_sampler_params.get("steps", 100),
             )
             
             # Generate untextured raw 3D mesh
@@ -335,6 +374,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "description": "TRELLIS.2 source geometry resolution path; max-fidelity uses the 1536 cascade.",
                     "default": "1536_cascade",
                     "enum": ["512", "1024", "1024_cascade", "1536_cascade"],
+                    "readOnly": True,
                     "required": False
                 },
                 "max_num_tokens": {
@@ -343,6 +383,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "default": 524288,
                     "minimum": 49152,
                     "maximum": 1048576,
+                    "readOnly": True,
                     "required": False
                 },
                 "decimation_target": {
@@ -351,6 +392,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "default": -1,
                     "minimum": -1,
                     "maximum": 10000000,
+                    "readOnly": True,
                     "required": False
                 },
                 "texture_size": {
@@ -364,6 +406,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                     "type": "boolean",
                     "description": "Whether to remesh the output mesh",
                     "default": False,
+                    "readOnly": True,
                     "required": False
                 },
                 "remesh_band": {
@@ -517,6 +560,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         Returns:
             Dictionary with textured mesh information
         """
+        inputs = {**inputs, **_LOCKED_PAINTING_INFERENCE_PROFILE}
         try:
             if self.runner is None:
                 raise ValueError("TRELLIS.2 texturing model is not loaded")

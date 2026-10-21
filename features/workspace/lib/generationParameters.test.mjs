@@ -1,141 +1,239 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGenerationParameters } from '../utils/buildGenerationParameters.ts';
+import { buildGenerationParameters, parseModelParameterOverrides } from '../utils/buildGenerationParameters.ts';
 
-test('buildGenerationParameters applies the Mini Turbo stress-test profile (hyphenated id)', () => {
+// Rule 1: UI-provided quality, meshQuality, requested_quality, num_inference_steps, guidance_scale,
+// octree_resolution, sampler dictionaries and Low-VRAM overrides do not reach model inference.
+test('Rule 1: UI inference-quality and parameter overrides do not reach model_parameters or body', () => {
   const settings = {
-    imageFileId: 'file-test-hunyuan-mini-123',
-    aiModel: 'hunyuan3d-dit-v2-mini-turbo',
-    meshQuality: 'high',
-    generateTexture: false,
-    enablePostprocess: false,
-  };
-  const result = buildGenerationParameters(settings, { raw_mesh: true });
-
-  assert.equal(result.modelParameters.octree_resolution, 768);
-  assert.equal(result.modelParameters.num_inference_steps, 20);
-  assert.equal(result.modelParameters.num_chunks, 80000);
-});
-
-test('buildGenerationParameters applies the Mini Turbo stress-test profile (underscored id)', () => {
-  const settings = {
-    imageFileId: 'file-test-hunyuan-mini-456',
-    aiModel: 'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-    meshQuality: 'high',
-    generateTexture: false,
-    enablePostprocess: false,
-  };
-  const result = buildGenerationParameters(settings, { raw_mesh: true });
-
-  assert.equal(result.modelParameters.octree_resolution, 768);
-  assert.equal(result.modelParameters.num_inference_steps, 20);
-  assert.equal(result.modelParameters.num_chunks, 80000);
-});
-
-test('preset overrides win after the model profile and reach the outgoing request', () => {
-  const settings = {
-    imageFileId: 'file-test-generation-preset',
+    imageFileId: 'file-rule-1',
     aiModel: 'hunyuan3d-shape-v21',
-    meshQuality: 'high',
-    seed: 123,
-    guidanceScale: 7.5,
+    quality: 'high',
+    meshQuality: 'ultra',
+    requested_quality: 'ultra',
+    guidanceScale: 15.0,
     modelParameterOverrides: {
-      seed: 98765,
-      guidance_scale: 8.25,
-      octree_resolution: 1536,
-      num_inference_steps: 177,
-      sampler_overrides: { shape: { steps: 111, guidance_strength: 9.25 } },
+      num_inference_steps: 250,
+      guidance_scale: 12.5,
+      octree_resolution: 2048,
+      low_vram: true,
+      sampler_overrides: { shape: { steps: 88 } },
     },
+    enablePostprocess: false,
+  };
+
+  const result = buildGenerationParameters(settings, { raw_mesh: true });
+
+  assert.equal(result.body.quality, undefined);
+  assert.equal(result.body.requested_quality, undefined);
+  assert.equal(result.body.mesh_style, undefined);
+  assert.equal(result.body.object_type, undefined);
+  assert.equal(result.body.symmetry, undefined);
+
+  assert.equal(result.modelParameters.num_inference_steps, undefined);
+  assert.equal(result.modelParameters.guidance_scale, undefined);
+  assert.equal(result.modelParameters.octree_resolution, undefined);
+  assert.equal(result.modelParameters.low_vram, undefined);
+  assert.equal(result.modelParameters.sampler_overrides, undefined);
+  assert.deepEqual(result.body.model_parameters, {});
+});
+
+// Rule 2: The request sends only supported runtime inputs (including a supported seed) as adapter inputs.
+test('Rule 2: supported runtime seed is sent to model_parameters', () => {
+  const settings = {
+    imageFileId: 'file-rule-2',
+    aiModel: 'trellis_image_to_textured_mesh',
+    seed: 54321,
+    enablePostprocess: true,
+  };
+  const result = buildGenerationParameters(settings);
+  assert.equal(result.body.model_parameters.seed, 54321);
+  assert.equal(result.modelParameters.seed, 54321);
+  assert.deepEqual(Object.keys(result.body.model_parameters), ['seed']);
+});
+
+// Rule 3: candidate_count is bounded by the API-supported range and stays a scheduler control.
+test('Rule 3: candidate_count is clamped to 1-4 and stays top-level on body', () => {
+  const settingsDefault = { imageFileId: 'file-rule-3-def' };
+  const resDefault = buildGenerationParameters(settingsDefault);
+  assert.equal(resDefault.body.candidate_count, 1);
+  assert.equal(resDefault.modelParameters.candidate_count, undefined);
+
+  const settingsFour = { imageFileId: 'file-rule-3-four', candidateCount: 4 };
+  const resFour = buildGenerationParameters(settingsFour);
+  assert.equal(resFour.body.candidate_count, 4);
+  assert.equal(resFour.modelParameters.candidate_count, undefined);
+
+  const settingsClampedHigh = { imageFileId: 'file-rule-3-clamp-high', candidateCount: 99 };
+  assert.equal(buildGenerationParameters(settingsClampedHigh).body.candidate_count, 4);
+
+  const settingsClampedLow = { imageFileId: 'file-rule-3-clamp-low', candidateCount: 0 };
+  assert.equal(buildGenerationParameters(settingsClampedLow).body.candidate_count, 1);
+});
+
+// Rule 4: target_polycount is independent of inference parameters and goes to the production path.
+test('Rule 4: target_polycount is an output production budget, not an inference parameter', () => {
+  const settings = {
+    imageFileId: 'file-rule-4',
+    aiModel: 'hunyuan3d_shape_v21_image_to_raw_mesh',
+    autoOptimizeSettings: { targetPolycount: 35000 },
+    enablePostprocess: true,
   };
   const result = buildGenerationParameters(settings, { raw_mesh: true });
-  assert.equal(result.modelParameters.seed, 98765);
-  assert.equal(result.modelParameters.guidance_scale, 8.25);
-  assert.equal(result.modelParameters.octree_resolution, 1536);
-  assert.equal(result.modelParameters.num_inference_steps, 177);
-  assert.deepEqual(result.body.model_parameters, result.modelParameters);
-  assert.deepEqual(result.body.model_parameters.sampler_overrides, {
-    shape: { steps: 111, guidance_strength: 9.25 },
-  });
+  assert.equal(result.body.target_polycount, 35000);
+  assert.equal(result.modelParameters.target_polycount, undefined);
+  assert.equal(result.modelParameters.faces, undefined);
+  assert.equal(result.modelParameters.decimation_target, undefined);
 });
 
-test('parameter overrides reject invalid roots and unsafe nested keys', () => {
-  assert.throws(() => buildGenerationParameters({
-    imageFileId: 'file-test-invalid-overrides',
-    modelParameterOverrides: ['not', 'an', 'object'],
-  }, { raw_mesh: true }), /safe JSON object/);
-  const unsafe = JSON.parse('{"sampler":{"__proto__":{"polluted":true}}}');
-  assert.throws(() => buildGenerationParameters({
-    imageFileId: 'file-test-unsafe-overrides',
-    modelParameterOverrides: unsafe,
-  }, { raw_mesh: true }), /safe JSON object/);
-});
-
-test('buildGenerationParameters propagates candidate_count (clamped between 1 and 4)', () => {
-  const settingsDefault = {
-    imageFileId: 'file-test-cand-1',
-    meshQuality: 'high',
-    enablePostprocess: false,
-  };
-  const resDefault = buildGenerationParameters(settingsDefault, { raw_mesh: true });
-  assert.equal(resDefault.body.candidate_count, 1);
-
-  const settingsFour = {
-    imageFileId: 'file-test-cand-4',
-    candidateCount: 4,
-    meshQuality: 'high',
-    enablePostprocess: false,
-  };
-  const resFour = buildGenerationParameters(settingsFour, { raw_mesh: true });
-  assert.equal(resFour.body.candidate_count, 4);
-  assert.equal(resFour.modelParameters.candidate_count, 4);
-
-  const settingsClamped = {
-    imageFileId: 'file-test-cand-clamped',
-    candidateCount: 99,
-    meshQuality: 'high',
-    enablePostprocess: false,
-  };
-  const resClamped = buildGenerationParameters(settingsClamped, { raw_mesh: true });
-  assert.equal(resClamped.body.candidate_count, 4);
-});
-
-test('buildGenerationParameters attaches default quality, mesh_style, object_type, and symmetry', () => {
+// Rule 5: A selected intent/preset is sent as the expected backend field without auto-submitting from preset click.
+test('Rule 5: intent field propagates to request body', () => {
   const settings = {
-    imageFileId: 'file-test-defaults',
-    enablePostprocess: false,
+    imageFileId: 'file-rule-5',
+    intent: 'game_ready',
+    autoOptimizeSettings: { targetPolycount: 50000 },
+    enablePostprocess: true,
   };
-  const res = buildGenerationParameters(settings, { raw_mesh: true });
-  assert.equal(res.body.quality, 'balanced');
-  assert.equal(res.body.requested_quality, 'balanced');
-  assert.equal(res.body.mesh_style, 'auto');
-  assert.equal(res.body.object_type, 'general');
-  assert.equal(res.body.symmetry, 'none');
-
-  assert.equal(res.modelParameters.quality, 'balanced');
-  assert.equal(res.modelParameters.requested_quality, 'balanced');
-  assert.equal(res.modelParameters.mesh_style, 'auto');
-  assert.equal(res.modelParameters.object_type, 'general');
-  assert.equal(res.modelParameters.symmetry, 'none');
+  const result = buildGenerationParameters(settings);
+  assert.equal(result.body.intent, 'game_ready');
+  assert.equal(result.body.target_polycount, 50000);
 });
 
-test('buildGenerationParameters attaches explicit quality, mesh_style, object_type, and symmetry', () => {
+// Rule 6: Explicit production choices and defaults have predictable precedence.
+test('Rule 6: explicit production settings take precedence', () => {
   const settings = {
-    imageFileId: 'file-test-explicit',
-    quality: 'high',
-    meshStyle: 'clean',
-    objectType: 'mechanical',
-    symmetry: 'bilateral',
+    imageFileId: 'file-rule-6',
+    intent: 'game_ready',
+    quadTopology: true,
+    topologyMode: 'quad',
+    generateCollision: true,
+    physics: { bodyType: 'dynamic', friction: 0.8 },
+    highResolutionNormalBaking: false,
+    enablePrintabilityCheck: true,
+    enableAutoRepair: true,
+    enableAutoRig: true,
+    autoRigMode: 'skeleton',
+    autoOptimizeSettings: { targetPolycount: 42000 },
+    enablePostprocess: true,
+  };
+  const result = buildGenerationParameters(settings);
+  assert.equal(result.body.topology_mode, 'quad');
+  assert.equal(result.body.quad_topology, true);
+  assert.equal(result.body.physics_enabled, true);
+  assert.deepEqual(result.body.physics_config, { bodyType: 'dynamic', friction: 0.8 });
+  assert.equal(result.body.bake_normal_maps, false);
+  assert.equal(result.body.enable_printability_check, true);
+  assert.equal(result.body.enable_auto_repair, true);
+  assert.equal(result.body.enable_auto_rig, true);
+  assert.equal(result.body.auto_rig_mode, 'skeleton');
+  assert.equal(result.body.target_polycount, 42000);
+});
+
+// Rule 7: Raw/post-processing-off mode does not accidentally invoke texture, LOD, collision, repair, printability, normal baking, or rigging.
+test('Rule 7: post-processing off disables all downstream production stages', () => {
+  const settings = {
+    imageFileId: 'file-rule-7',
+    intent: 'game_ready',
+    generateTexture: true,
+    generateLOD: true,
+    generateCollision: true,
+    enablePrintabilityCheck: true,
+    enableAutoRepair: true,
+    enableAutoRig: true,
+    quadTopology: true,
+    highResolutionNormalBaking: true,
+    autoOptimizeSettings: { targetPolycount: 50000 },
     enablePostprocess: false,
   };
-  const res = buildGenerationParameters(settings, { raw_mesh: true });
-  assert.equal(res.body.quality, 'high');
-  assert.equal(res.body.requested_quality, 'high');
-  assert.equal(res.body.mesh_style, 'clean');
-  assert.equal(res.body.object_type, 'mechanical');
-  assert.equal(res.body.symmetry, 'bilateral');
+  const result = buildGenerationParameters(settings, { raw_mesh: true });
+  assert.equal(result.body.enable_postprocess, false);
+  assert.equal(result.body.target_polycount, 0);
+  assert.equal(result.body.texture_enabled, false);
+  assert.equal(result.body.generate_texture, false);
+  assert.equal(result.body.physics_enabled, false);
+  assert.equal(result.body.physics_config, undefined);
+  assert.equal(result.body.enable_printability_check, false);
+  assert.equal(result.body.enable_auto_repair, false);
+  assert.equal(result.body.enable_auto_rig, false);
+  assert.equal(result.body.bake_normal_maps, false);
+  assert.equal(result.body.quad_topology, false);
+  assert.equal(result.body.intent, undefined);
+  assert.equal(result.isTextured, false);
+});
 
-  assert.equal(res.modelParameters.quality, 'high');
-  assert.equal(res.modelParameters.mesh_style, 'clean');
-  assert.equal(res.modelParameters.object_type, 'mechanical');
-  assert.equal(res.modelParameters.symmetry, 'bilateral');
+// Rule 8: Missing/invalid image input produces a clear failure before submission.
+test('Rule 8: missing image input throws a clear actionable error', () => {
+  assert.throws(
+    () => buildGenerationParameters({}),
+    /No usable image input/
+  );
+  assert.throws(
+    () => buildGenerationParameters({ image: 'not-a-data-uri' }),
+    /No usable image input/
+  );
+});
+
+// Rule 9: Legacy saved presets containing old inference override keys cannot reintroduce those values.
+test('Rule 9: legacy inference keys in preset or paramDefaults are not merged', () => {
+  const legacyPreset = {
+    imageFileId: 'file-rule-9',
+    aiModel: 'hunyuan3d-dit-v2-mini-turbo',
+    modelParameterOverrides: {
+      octree_resolution: 768,
+      num_inference_steps: 20,
+      guidance_scale: 5.0,
+      low_vram: false,
+      mc_algo: 'mc',
+    },
+    enablePostprocess: false,
+  };
+  const legacyDefaults = {
+    octree_resolution: 1300,
+    num_inference_steps: 150,
+    guidance_scale: 7.5,
+  };
+
+  const result = buildGenerationParameters(legacyPreset, { raw_mesh: true }, legacyDefaults);
+  assert.deepEqual(result.body.model_parameters, {});
+  assert.equal(result.modelParameters.octree_resolution, undefined);
+  assert.equal(result.modelParameters.num_inference_steps, undefined);
+});
+
+// Rule 10: Primary Generate, batch, retry and saved-preset call sites produce compatible request shapes.
+test('Rule 10: primary, batch, and retry requests produce compatible endpoint and body contracts', () => {
+  const primarySettings = {
+    imageFileId: 'file-primary',
+    aiModel: 'trellis2_image_to_textured_mesh',
+    seed: 1234,
+    autoOptimizeSettings: { targetPolycount: 50000 },
+    enablePostprocess: true,
+  };
+  const primaryRes = buildGenerationParameters(primarySettings);
+
+  const batchSettings = {
+    imageFileId: 'file-batch',
+    aiModel: 'trellis2_image_to_textured_mesh',
+    seed: 5678,
+    autoOptimizeSettings: { targetPolycount: 50000 },
+    enablePostprocess: true,
+  };
+  const batchRes = buildGenerationParameters(batchSettings);
+
+  assert.equal(primaryRes.endpoint, batchRes.endpoint);
+  assert.equal(typeof primaryRes.body.image_file_id, 'string');
+  assert.equal(typeof batchRes.body.image_file_id, 'string');
+  assert.equal(primaryRes.body.output_format, batchRes.body.output_format);
+  assert.equal(primaryRes.body.model_preference, batchRes.body.model_preference);
+  assert.equal(primaryRes.body.enable_postprocess, batchRes.body.enable_postprocess);
+  assert.equal(primaryRes.body.target_polycount, batchRes.body.target_polycount);
+});
+
+test('parseModelParameterOverrides enforces object safety', () => {
+  assert.deepEqual(parseModelParameterOverrides(undefined), {});
+  assert.deepEqual(parseModelParameterOverrides(null), {});
+  assert.deepEqual(parseModelParameterOverrides({ a: 1 }), { a: 1 });
+  assert.throws(() => parseModelParameterOverrides('string'), /safe JSON object/);
+  assert.throws(() => parseModelParameterOverrides([1, 2]), /safe JSON object/);
+  const unsafe = JSON.parse('{"__proto__":{"polluted":true}}');
+  assert.throws(() => parseModelParameterOverrides(unsafe), /safe JSON object/);
 });

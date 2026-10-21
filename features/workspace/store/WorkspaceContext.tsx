@@ -548,22 +548,14 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const [generationSettings, setGenerationSettings] = useState<GenerationSettings>({
       mode: 'image-to-3d',
       image: null,
-      aiModel: '', meshQuality: 'high', textureQuality: 'high',
-      quality: 'balanced',
-      meshStyle: 'auto',
-      objectType: 'general',
-      symmetry: 'none',
+      aiModel: '',
+      textureQuality: 'high',
       quadTopology: false, topologyMode: 'triangle', seed: 42891, guidanceScale: 7.5, removeBackground: false,
       lowVram: false,
       vramMode: 'auto',
       autoOptimizeSettings: { targetPolycount: 0 },
-      sharpFeaturePreservation: true,
-      angleCreaseThreshold: 45,
       highResolutionNormalBaking: true,
-      textureFidelityPreset: 'high',
       generateTexture: true,
-      enableFlashVDM: false,
-      lowVramMode: 'auto',
       maxNumView: 9,
       resolution: 1024,
       generateCollision: true,
@@ -652,7 +644,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   });
 
    const [modelDetails, setModelDetails] = useState<Record<string, any>>({});
-   const [modelParameterDefaults, setModelParameterDefaults] = useState<Record<string, Record<string, any>>>({});
 
   useEffect(() => {
     getApiClient().getAvailableModels().then(data => {
@@ -663,30 +654,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.warn('Failed to load model details:', err);
     });
   }, []);
-
-  // Fetch parameter defaults for the currently selected model (LOW-001)
-  useEffect(() => {
-    const modelId = generationSettings.aiModel;
-    if (!modelId) return;
-    if (modelParameterDefaults[modelId]) return; // already cached
-
-    let cancelled = false;
-    getApiClient().getModelParameters(modelId).then(data => {
-      if (cancelled) return;
-      const schema = data.schema?.parameters || {};
-      const defaults = Object.fromEntries(
-        Object.entries(schema).map(([name, parameter]) => [name, parameter.default])
-      );
-      setModelParameterDefaults(prev => ({
-        ...prev,
-        [modelId]: defaults,
-      }));
-    }).catch(err => {
-      console.warn(`Failed to load model parameters for ${modelId}:`, err);
-    });
-
-    return () => { cancelled = true; };
-  }, [generationSettings.aiModel, modelParameterDefaults]);
 
   const currentAsset = useMemo(
     () => selectedAssetId ? (assets.find(a => a.id === selectedAssetId) ?? null) : null,
@@ -1559,7 +1526,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
           paint_autochain: selectedCapabilities.paint_autochain === true,
           supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
         },
-        modelParameterDefaults[resolvedModelId] || {},
       );
 
       const res = await fetch(endpoint, {
@@ -1605,7 +1571,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
   }, [
     generationSettings,
     modelDetails,
-    modelParameterDefaults,
     bindBackendJob,
     parseApiError,
     parseApiData,
@@ -1753,7 +1718,6 @@ function dataURLtoFile(dataURL: string, filename: string): File {
           paint_autochain: selectedCapabilities.paint_autochain === true,
           supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
         },
-        modelParameterDefaults[effectiveModelId] || {},
       );
 
       const res = await fetch(endpoint, {
@@ -2161,7 +2125,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            image: null, // We'll use imageFileId instead
            imageFileId: batchItem.imageFileId,
            aiModel: batchItem.aiModel,
-           meshQuality: batchItem.meshQuality ?? 'high',
            textureQuality: (batchItem.textureQuality as any) ?? 'high',
            texture_resolution: batchTexRes,
            textureResolution: batchTexRes,
@@ -2174,8 +2137,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            vramMode: batchItem.vramMode ?? 'auto',
            autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 0 },
            generateTexture: batchItem.generateTexture ?? true,
-           enableFlashVDM: batchItem.enableFlashVDM ?? false,
-           lowVramMode: batchItem.lowVramMode ?? 'auto',
            maxNumView: batchItem.maxNumView ?? 9,
            resolution: batchItem.resolution ?? 1024,
            generateCollision: batchItem.generateCollision ?? true,
@@ -2246,8 +2207,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          
          const { endpoint, body } = buildGenerationParameters(
            effectiveSettings,
-           modelCapabilities,
-           modelParameterDefaults[effectiveSettings.aiModel || ''] || {}
+           modelCapabilities
          );
 
          // Submit the job to the backend
@@ -2297,7 +2257,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
 
       // Show completion toast
       toast.success('Batch processing started', { description: `${queuedItems.length} items submitted for processing.` });
-    }, [modelDetails, modelParameterDefaults, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
+    }, [modelDetails, startTask, bindBackendJob, getApiClient, parseApiError, parseApiData, buildGenerationParameters, toast]);
 
    // Cancel batch processing function
    const cancelBatchProcessing = useCallback(async () => {
@@ -2402,7 +2362,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            startedAt: undefined,
            completedAt: undefined,
            // Clear stored generation settings so they get current values when re-queued
-           meshQuality: undefined,
            textureQuality: undefined,
            quadTopology: undefined,
            topologyMode: undefined,
@@ -2413,8 +2372,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            vramMode: undefined,
            autoOptimizeSettings: undefined,
            generateTexture: undefined,
-           enableFlashVDM: undefined,
-           lowVramMode: undefined,
            maxNumView: undefined,
            resolution: undefined,
            generateCollision: undefined,

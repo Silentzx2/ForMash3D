@@ -24,6 +24,17 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "num_inference_steps": 100,
+    "ss_sampling_steps": 100,
+    "slat_sampling_steps": 100,
+    "guidance_scale": 7.5,
+    "simplify": 0.0,
+    "low_vram": False,
+}
+
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20): TRELLIS stage steps are capped at 50; raw simplification remains 0.0.
 # The adapter currently exposes one shared guidance_scale although upstream separates sparse (7.5) and SLAT (3.0).
 # Ask the user once and obtain explicit confirmation before future changes to these locked presets.
@@ -560,6 +571,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
         Returns:
             Dictionary with generated mesh information
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")
@@ -805,6 +817,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     "default": 100,
                     "minimum": 1,
                     "maximum": 200,
+                    "readOnly": True,
                     "required": False
                 },
                 "slat_sampling_steps": {
@@ -813,6 +826,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     "default": 100,
                     "minimum": 1,
                     "maximum": 200,
+                    "readOnly": True,
                     "required": False
                 },
                 "texture_resolution": {
@@ -828,6 +842,7 @@ class TrellisImageToMeshAdapterCommon(ImageToMeshModel):
                     "default": 0.0,
                     "minimum": 0.0,
                     "maximum": 1.0,
+                    "readOnly": True,
                     "required": False
                 },
                 "texture_bake_mode": {

@@ -224,6 +224,10 @@ The model registry is dynamically configured via `backend/config/models.yaml` an
 
 ### 📐 Single Source of Truth & Generation Planning
 - **Single Source of Truth (`backend/config/quality.yaml`)**: Every tunable threshold, limit, tier, and budget is canonically declared in `quality.yaml` (pipeline tunables) and `models.yaml` (model facts and VRAM reservations). Code reads from these single sources and never defines in-code fallback numeric dicts.
+- **Model-Native Source Fidelity & Adapter-Owned Profiles**: Fixed model-specific inference schedules, step counts, guidance scales, octree resolutions, samplers, and decoders are locked directly inside model adapters (`_LOCKED_INFERENCE_PROFILE`). The UI does not expose unbacked or fake inference quality sliders. The multiprocess scheduler enforces source fidelity and strips any legacy inference overrides before dispatching to adapters, while caller-controlled seed and image identity are preserved.
+- **Source vs. Production Mesh Distinction**:
+  - `master/source.glb` is the immutable raw generative mesh captured at full model-native fidelity and verified with SHA-256 immutability.
+  - Production meshes (`game_ready/`, `lods/`, `collision/`) are downstream derived artifacts produced by post-processing recipes (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`).
 - **Rule-Based Generation Planning (`backend/config/planner_rules.yaml`)**: Deterministically routes requests by `object_type` (`mechanical`, `organic`, `character`, `general`) and `requested_quality` (`fast`, `balanced`, `high`). Execution behavior is governed by explicit config switches under `apply`:
   - `apply.model_choice`: When `false` (default), preserves legacy smart-preset selection while logging `would_have_chosen`. When `true`, adopts planner model routing.
   - `apply.auto_seeds`: When `false` (default), runs single candidate unless requested by user. When `true`, automatically runs multi-seed candidate scoring.
@@ -358,7 +362,7 @@ The single-container RunPod image uses the same repository-root build context: `
 
 The ForMash3D workspace provides a comprehensive suite of creative 3D tools:
 
-- **Generate Studio (`/workspace`)**: Image-to-3D generation with model selector, VRAM estimator, and step configuration.
+- **Generate Studio (`/workspace`)**: Image-to-3D generation with reference image intake, model selector with real-time VRAM estimator & hardware readiness, unified Target Polycount & Output Presets (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), and genuine production post-processing options (candidates 1–4, quad/tri topology, UV unwrapping, normal baking, LODs, repair, physics colliders). Model inference schedules are locked inside model adapters to guarantee maximum source fidelity without fake UI sliders.
 - **Texture Studio (`/workspace/texture`)**: Multi-view PBR texture painting and PBR map inspection/export (Albedo, Normal, Roughness, Metallic, AO). Paint3D handles 1K/2K, while Hunyuan3D-Paint runs its internal RealESRGAN enhancement for 4K/8K; this is automatic, not a separate UI setting.
 - **Retopology & Remesh (`/workspace/remesh`)**: FastMesh quad-dominant retopology with V1K and V4K target presets.
 - **UV Unwrapping (`/workspace/uv`)**: Automated conformal seam placement and atlas chart packing.

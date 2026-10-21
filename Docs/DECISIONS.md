@@ -1280,3 +1280,34 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 - Runtime telemetry prefers effective values reported by the adapter.
 - Other model profiles remain scheduler-owned until later migration batches.
 - Source tests and GPU/checkpoint inference are separate verification gates; this decision does not claim GPU parity.
+
+---
+
+## ADR-057: Adapter Profile Migration Completion and Generate Studio UI Simplification (2026-10-21)
+
+**Context:**
+The generation studio previously exhibited UI bloat and contract drift:
+1. Disconnected inference controls: Fast/Balanced/High quality selectors, step counts, guidance sliders, octree resolution inputs, and Low VRAM toggles were displayed in the UI despite having no verified backend consumer or conflicting with model-intrinsic schedules.
+2. Duplicate controls: The panel displayed duplicate Target Polycount cards and duplicate post-processing master toggles.
+3. Scheduler duplication: The multiprocess scheduler held duplicate numeric profiles (`_RAW_MESH_MAX_QUALITY_PARAMETERS`) across multiple models and aliases, decoupling adapter code from scheduler dispatch.
+4. Auto-submission bug: Clicking Smart Intent buttons previously initiated automatic generation without deliberate user confirmation.
+
+**Decision:**
+1. **Authoritative Adapter-Owned Inference Profiles:**
+   - Model adapters own their fixed inference schedule (`_LOCKED_INFERENCE_PROFILE`).
+   - The multiprocess scheduler filters incoming request overrides (`_ADAPTER_OWNED_INFERENCE_INPUTS` and `_POSTPROCESS_ONLY_INPUTS`) before dispatching to adapters, passing only caller-controlled fields (`image_path`, `seed`, `source_quality="max"`).
+   - Preserves effective runtime values without accidental retuning during migration.
+2. **Simplified Generate Studio UI Layout:**
+   - Single beginner-friendly primary panel: Reference image intake, Model selection with authentic readiness/VRAM indicators, Textured generation toggle, a single **Target Polycount / Output Preset** card, and Generate button.
+   - Clean Advanced production drawer: Genuine production controls only (candidate count 1–4, triangle vs quad topology, UV unwrapping, normal map baking, LODs, topology repair, physics colliders).
+   - Removed unbacked controls: Deleted Fast/Balanced/High inference quality selector, step sliders, guidance inputs, sampler overrides, and duplicate cards/switches.
+3. **Unified Production Output Recipes:**
+   - Six unified production output presets (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`) act as post-processing recipes deriving production assets from the immutable raw master (`master/source.glb`).
+   - Selecting a preset populates recommended production parameters non-destructively and **never** auto-submits generation jobs.
+
+**Consequences:**
+- Eliminates UI-backend contract drift: Every remaining visible control has a verified consumer.
+- Maximum source fidelity: Model generators execute at native high-fidelity schedules without UI degradation.
+- Clean separation of concerns: Model inference produces `master/source.glb`; production recipes derive engine-ready assets (`game_ready/`, `lods/`, `collision/`).
+- Deterministic precedence: Explicit user settings > Output preset recipe defaults > SSOT system defaults.
+

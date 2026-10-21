@@ -103,6 +103,7 @@ _POSTPROCESS_ONLY_INPUTS = frozenset({
     "bake_normal_maps", "bake_high_to_low", "bake_textures",
     "intent", "preprocessing_artifact_id", "enhancement_enabled", "preprocessing_metadata",
     "enable_printability_check", "enable_auto_repair", "enable_auto_rig", "auto_rig_mode",
+    "mesh_style", "requested_quality", "object_type", "symmetry",
 })
 
 # Adapter-owned numerical profiles live in adapter code; these sets hold only IDs and key names.
@@ -110,7 +111,22 @@ _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS = frozenset({
     "hunyuan3d_shape_v21_image_to_raw_mesh",
     "hunyuan3d_shape_v21_image_to_3d",
     "hunyuan3d_shape_v21_image_to_textured_mesh",
+    "hunyuan3dv21_image_to_raw_mesh",
+    "hunyuan3dv21_image_to_3d",
+    "hunyuan3dv21_image_to_textured_mesh",
+    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+    "hunyuan3d_dit_v2_mini_turbo_image_to_3d",
     "triposg_image_to_raw_mesh",
+    "trellis_image_to_raw_mesh",
+    "trellis_image_to_3d",
+    "trellis_image_to_textured_mesh",
+    "trellis2_image_to_raw_mesh",
+    "trellis2_image_to_3d",
+    "trellis2_image_to_textured_mesh",
+    "trellis2_image_mesh_painting",
+    "pixal3d_image_to_raw_mesh",
+    "unique3d_image_to_raw_mesh",
+    "taoflowforge_image_to_raw_mesh",
 })
 _ADAPTER_OWNED_INFERENCE_INPUTS = frozenset({
     "source_quality", "requested_quality", "quality", "meshQuality", "mesh_quality",
@@ -118,29 +134,18 @@ _ADAPTER_OWNED_INFERENCE_INPUTS = frozenset({
     "octree_resolution", "octree_res", "grid_resolution", "num_chunks", "mc_algo",
     "flash_octree_depth", "octree_depth", "dense_octree_depth",
     "hierarchical_octree_depth", "use_flash_decoder", "low_vram", "low_vram_mode",
+    "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
+    "shape_slat_sampler_params", "tex_slat_sampler_params", "sampler_overrides",
+    "resolution", "ss_sampling_steps", "slat_sampling_steps",
+    "input_processing", "do_refine", "expansion_weight", "init_type",
+    "fill_holes", "offload", "enable_flashvdm",
 })
 
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20). Ask the user once and get explicit confirmation
 # before changing any locked profile in a later task. Sources/limits: Docs/EXPERIMENTAL-MODEL-SETTINGS.md.
-# High-fidelity source mesh profiles. Production budgets remain in request_inputs and
-# are applied only to downstream copies by post-processing.
-_RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {
-    "hunyuan3dv21_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_3d": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3dv21_image_to_textured_mesh": {"source_quality": "max", "octree_resolution": 1300, "num_inference_steps": 150, "guidance_scale": 5.0, "num_chunks": 80000},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "hunyuan3d_dit_v2_mini_turbo_image_to_3d": {"source_quality": "max", "octree_resolution": 768, "num_inference_steps": 20, "guidance_scale": 7.5, "num_chunks": 80000, "low_vram_mode": False, "low_vram": False, "enable_flashvdm": False, "mc_algo": "mc"},
-    "pixal3d_image_to_raw_mesh": {"source_quality": "max", "resolution": 2048, "pipeline_type": "1536_cascade", "sampler_overrides": {"sparse_structure": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "texture": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}}, "low_vram": False},
-    "unique3d_image_to_raw_mesh": {"input_processing": True, "do_refine": True, "expansion_weight": 0.1, "init_type": "std", "low_vram": False},
-    "trellis_image_to_raw_mesh": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis_image_to_3d": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis_image_to_textured_mesh": {"num_inference_steps": 100, "ss_sampling_steps": 100, "slat_sampling_steps": 100, "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False},
-    "trellis2_image_to_raw_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_mesh_painting": {"tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "texture_size": 4096},
-    "trellis2_image_to_3d": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "trellis2_image_to_textured_mesh": {"pipeline_type": "1536_cascade", "max_num_tokens": 524288, "sparse_structure_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0}, "shape_slat_sampler_params": {"steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0}, "tex_slat_sampler_params": {"steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0}, "decimation_target": -1, "remesh": False, "low_vram": False},
-    "taoflowforge_image_to_raw_mesh": {"source_quality": "max", "fill_holes": True, "offload": "auto", "low_vram": False},
-}
+# High-fidelity source mesh profiles have all been migrated into adapter-owned _LOCKED_INFERENCE_PROFILE.
+# Production budgets remain in request_inputs and are applied only to downstream copies by post-processing.
+_RAW_MESH_MAX_QUALITY_PARAMETERS: Dict[str, Dict[str, Any]] = {}
 
 
 def _build_model_inference_inputs(

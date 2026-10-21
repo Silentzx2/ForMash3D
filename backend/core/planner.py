@@ -216,52 +216,17 @@ def plan_generation(
     # 3. Assemble candidate chain in priority order
     candidates: List[Dict[str, Any]] = []
 
-    # Check if native topology route requested (clean or mechanical)
-    # TASKS.md: clean/mechanical -> native adapter ONLY if enabled + verified; else dense route with feature-aware retopo
-    if mesh_style == "clean" or object_type == "mechanical":
-        native_cfg = (
-            rules.get("specialized_routes", {})
-            .get("native_clean", {})
-            .get("native_candidate", {})
+    explicit_model = request.get("model_preference") or request.get("model") or request.get("adapter")
+    auto_mode = request.get("auto_mode")
+    if auto_mode is None:
+        auto_mode = (
+            explicit_model is None
+            or str(explicit_model).strip().lower() in ("auto", "default", "none", "")
         )
-        native_adapter = native_cfg.get("adapter", "taoflowforge_image_to_raw_mesh")
-        candidates.append({
-            "adapter": native_adapter,
-            "preset": requested_quality,
-            "num_seeds": quality_seeds,
-            "skip_retopo_allowed": True,
-            "source": "native_clean_route",
-            "retopo_mode": "native",
-        })
+    else:
+        auto_mode = bool(auto_mode)
 
-    # Add dense quality candidates: check object_type_routes first, then fallback to quality_routes
-    dense_candidates = (
-        rules.get("object_type_routes", {})
-        .get(object_type, {})
-        .get(requested_quality, {})
-        .get("candidates", [])
-    )
-    if not dense_candidates:
-        dense_candidates = (
-            rules.get("quality_routes", {})
-            .get(requested_quality, {})
-            .get("candidates", [])
-        )
-
-    for dc in dense_candidates:
-        cand_retopo = dc.get("retopo_mode")
-        if (mesh_style == "clean" or object_type == "mechanical") and not cand_retopo:
-            cand_retopo = "feature_aware"
-        candidates.append({
-            "adapter": dc["adapter"],
-            "preset": dc.get("preset", requested_quality),
-            "num_seeds": dc.get("num_seeds", quality_seeds),
-            "skip_retopo_allowed": dc.get("skip_retopo_allowed", False),
-            "source": f"object_{object_type}_{requested_quality}_route",
-            "retopo_mode": cand_retopo,
-        })
-
-    # Always ensure fallback of last resort is at the tail
+    # Fallback of last resort candidate definition
     fallback_resort = rules.get("fallback_of_last_resort", {
         "adapter": "hunyuan3d_shape_v21_image_to_raw_mesh",
         "preset": "fast",
@@ -277,8 +242,67 @@ def plan_generation(
         "source": "fallback_of_last_resort",
         "retopo_mode": fallback_retopo,
     }
-    if not candidates or candidates[-1]["adapter"] != fallback_resort_cand["adapter"] or candidates[-1]["preset"] != fallback_resort_cand["preset"]:
-        candidates.append(fallback_resort_cand)
+
+    if not auto_mode and explicit_model:
+        explicit_model_str = str(explicit_model).strip()
+        reasons.append(f"Explicit model choice requested: '{explicit_model_str}'")
+        cand_meta = rules.get("adapters", {}).get(explicit_model_str, {})
+        candidates.append({
+            "adapter": explicit_model_str,
+            "preset": requested_quality,
+            "num_seeds": quality_seeds,
+            "skip_retopo_allowed": cand_meta.get("skip_retopo_allowed", False),
+            "source": "explicit_model_choice",
+            "retopo_mode": "feature_aware" if (mesh_style == "clean" or object_type == "mechanical") else "standard",
+        })
+    else:
+        # Check if native topology route requested (clean or mechanical)
+        # TASKS.md: clean/mechanical -> native adapter ONLY if enabled + verified; else dense route with feature-aware retopo
+        if mesh_style == "clean" or object_type == "mechanical":
+            native_cfg = (
+                rules.get("specialized_routes", {})
+                .get("native_clean", {})
+                .get("native_candidate", {})
+            )
+            native_adapter = native_cfg.get("adapter", "taoflowforge_image_to_raw_mesh")
+            candidates.append({
+                "adapter": native_adapter,
+                "preset": requested_quality,
+                "num_seeds": quality_seeds,
+                "skip_retopo_allowed": True,
+                "source": "native_clean_route",
+                "retopo_mode": "native",
+            })
+
+        # Add dense quality candidates: check object_type_routes first, then fallback to quality_routes
+        dense_candidates = (
+            rules.get("object_type_routes", {})
+            .get(object_type, {})
+            .get(requested_quality, {})
+            .get("candidates", [])
+        )
+        if not dense_candidates:
+            dense_candidates = (
+                rules.get("quality_routes", {})
+                .get(requested_quality, {})
+                .get("candidates", [])
+            )
+
+        for dc in dense_candidates:
+            cand_retopo = dc.get("retopo_mode")
+            if (mesh_style == "clean" or object_type == "mechanical") and not cand_retopo:
+                cand_retopo = "feature_aware"
+            candidates.append({
+                "adapter": dc["adapter"],
+                "preset": dc.get("preset", requested_quality),
+                "num_seeds": dc.get("num_seeds", quality_seeds),
+                "skip_retopo_allowed": dc.get("skip_retopo_allowed", False),
+                "source": f"object_{object_type}_{requested_quality}_route",
+                "retopo_mode": cand_retopo,
+            })
+
+        if not candidates or candidates[-1]["adapter"] != fallback_resort_cand["adapter"] or candidates[-1]["preset"] != fallback_resort_cand["preset"]:
+            candidates.append(fallback_resort_cand)
 
     # 4. Evaluate candidates sequentially against runtime capabilities
     installed_adapters = runtime.get("installed_adapters", [])
@@ -356,6 +380,9 @@ def plan_generation(
 
     # 5. If all candidates failed (e.g. no CUDA), recompute whole plan using fallback of last resort
     if selected_candidate is None:
+        if not auto_mode and explicit_model:
+            failure_detail = "; ".join(reasons[-2:]) if len(reasons) >= 2 else (reasons[-1] if reasons else "candidate failed capability checks")
+            raise ValueError(f"Explicit model '{explicit_model}' is unavailable: {failure_detail}")
         selected_candidate = fallback_resort_cand
         selected_idx = len(candidates) - 1
         reasons.append(
@@ -372,9 +399,10 @@ def plan_generation(
         if f_id != selected_candidate["adapter"] and f_id not in fallback_chain:
             fallback_chain.append(f_id)
 
-    last_resort_id = fallback_resort_cand["adapter"]
-    if last_resort_id != selected_candidate["adapter"] and last_resort_id not in fallback_chain:
-        fallback_chain.append(last_resort_id)
+    if auto_mode:
+        last_resort_id = fallback_resort_cand["adapter"]
+        if last_resort_id != selected_candidate["adapter"] and last_resort_id not in fallback_chain:
+            fallback_chain.append(last_resort_id)
 
     # 7. Merge defaults with request overrides for input_prep, uv_backend, bake
     default_input_prep = dict(rules.get("default_input_prep", {

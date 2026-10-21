@@ -428,9 +428,52 @@ Content-Type: application/json
   "image_file_id": "img_abc123",
   "output_format": "glb",
   "model_preference": "hunyuan3d_shape_v21_image_to_raw_mesh",
-  "model_parameters": {}
+  "seed": 42,
+  "candidate_count": 1,
+  "output_preset": "game_ready",
+  "target_polycount": 35000,
+  "quad_topology": false,
+  "bake_normal_maps": true,
+  "generateLOD": true,
+  "enable_auto_repair": true,
+  "physics_collider": false,
+  "texture_enabled": false,
+  "texture_resolution": "2K"
 }
 ```
+
+#### Request Fields Specification
+
+| Field | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `image_file_id` / `image_path` | string | *required* | Uploaded reference image file ID or local path |
+| `model_preference` | string | `"hunyuan3d_shape_v21_image_to_raw_mesh"` | Model ID. Model inference parameters are locked in the adapter |
+| `seed` | integer | `null` (random) | Random seed for reproducible generation |
+| `candidate_count` | integer | `1` | Best-of-N candidate count (1 to 4). Seeds step deterministically |
+| `output_preset` | string | `"game_ready"` | Production recipe: `mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native` |
+| `target_polycount` | integer | `35000` | Target triangle budget (-1 or 0 for native raw budget) |
+| `quad_topology` | boolean | `false` | Enable quad-dominant retopology (FastMesh / QuadriFlow) |
+| `bake_normal_maps` | boolean | `true` | Bake high-frequency detail normal maps from master source |
+| `generateLOD` | boolean | `true` | Generate multi-resolution chain (LOD0 through LOD3) |
+| `enable_auto_repair` | boolean | `true` | Run topology gate and targeted hole repair ($\le 50$ verts) |
+| `physics_collider` | boolean | `false` | Generate watertight CoACD convex hull collision mesh |
+| `texture_enabled` | boolean | `false` | Run post-processing texture stage on generated master |
+| `texture_resolution` | string | `"2K"` | Atlas resolution: `1K`, `2K`, `4K`, `8K` |
+
+#### Preset Precedence Rules
+1. **Explicit API parameters win**: If a field is explicitly provided in the request body (e.g. `target_polycount: 15000`), it overrides the preset default.
+2. **Preset defaults fill omitted fields**: Unspecified fields take defaults from the chosen `output_preset` recipe (`quality.yaml`).
+3. **Explicit false/zero values are respected**: If `generateLOD: false` or `target_polycount: 0` is passed, it is not overwritten by a positive preset default.
+4. **Adapter inference profiles are immutable**: Frontend or request-side inference keys (`num_inference_steps`, `guidance_scale`, `octree_resolution`, `sampler_overrides`, `requested_quality`, `meshQuality`) are stripped by the scheduler before invoking the model adapter. Adapters execute their locked native inference schedule (`_LOCKED_INFERENCE_PROFILE`).
+
+#### Output Semantics & Artifact Tree
+The API returns HTTP 202 with `{"job_id": "...", "status": "queued"}`. When execution completes:
+- `master/source.glb`: Immutable raw mesh with SHA-256 hash in metadata.
+- `game_ready/<name>.glb`: Production engine-ready model satisfying the target budget.
+- `lods/lod[0-3].glb`: Multi-resolution chain (when `generateLOD` is enabled).
+- `collision/collision.glb`: Watertight CoACD collision geometry (when `physics_collider` is enabled).
+- `metadata/asset.json`: Canonical manifest with stage trace and QA scores.
+
 
 ### Image-to-Textured Mesh
 

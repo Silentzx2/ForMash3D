@@ -132,7 +132,9 @@ def test_preprocess_preserves_alpha_and_writes_provenance(tmp_path, monkeypatch)
 
     source = tmp_path / "source.png"
     image = Image.new("RGBA", (320, 240), (20, 30, 40, 0))
-    image.putpixel((100, 100), (200, 100, 50, 255))
+    for x in range(80, 160):
+        for y in range(80, 160):
+            image.putpixel((x, y), (200, 100, 50, 255))
     image.save(source)
 
     monkeypatch.setattr(image_enhancement, "_resolve_input", lambda value: Path(value))

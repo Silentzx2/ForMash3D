@@ -111,13 +111,12 @@ def test_router_and_frontend_tiers_match_quality_yaml():
     types_ts_path = REPO_ROOT / "features" / "workspace" / "types.ts"
     assert types_ts_path.is_file()
     types_content = types_ts_path.read_text(encoding="utf-8")
-    
-    match = re.search(r"quality\?:\s*['\"]fast['\"]\s*\|\s*['\"]balanced['\"]\s*\|\s*['\"]high['\"]", types_content)
-    assert match is not None, "features/workspace/types.ts quality union must match quality.tiers"
+    assert "quality?: 'fast' | 'balanced' | 'high';" in types_content
 
 
 def test_locked_hunyuan_octree_matches_models_yaml():
-    from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE
+    from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE as shape_profile
+    from adapters.hunyuan3d_dit_v2_mini_turbo import _LOCKED_INFERENCE_PROFILE as mini_profile
     models_flat = _get_flat_models()
 
     hunyuan_model = models_flat.get("hunyuan3d_shape_v21_image_to_raw_mesh")
@@ -127,7 +126,8 @@ def test_locked_hunyuan_octree_matches_models_yaml():
         or hunyuan_model.get("capabilities", {}).get("preferred_resolution")
         or hunyuan_model.get("capabilities", {}).get("output_resolution")
     )
-    assert _LOCKED_INFERENCE_PROFILE["octree_resolution"] == model_res
+    assert shape_profile["octree_resolution"] == model_res
+    assert mini_profile["octree_resolution"] == 768
 
 
 def test_readme_vram_matches_models_yaml():

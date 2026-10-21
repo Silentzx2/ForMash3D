@@ -24,7 +24,7 @@ from core.scheduler.job_queue import JobRequest
 from core.config import get_quality_config, validate_quality_tier
 from core.preprocess.image_enhancement import load_preprocessed_artifact, preprocess_image
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
-from core.smart_presets import resolve_intent
+from core.smart_presets import CANONICAL_INTENTS, NATIVE_PRESET, resolve_intent
 from core.utils.file_utils import save_base64_file, save_upload_file
 
 logger = logging.getLogger(__name__)
@@ -71,10 +71,12 @@ def _resolve_target_polycount_precedence(
     nested_target: Optional[int],
     preset_target: Optional[int],
 ) -> Optional[int]:
-    """Resolve a generation budget without allowing a nested default to mask explicit API input."""
-    if top_level_target is not None:
-        return top_level_target if top_level_target > 0 else 0
-    if nested_target is not None and nested_target > 0:
+    """Resolve a generation budget without allowing a default 0 to mask explicit API or preset input.
+    Explicit positive values (> 0) or explicit native sentinel (-1) take highest precedence.
+    """
+    if top_level_target is not None and (top_level_target > 0 or top_level_target == -1):
+        return top_level_target
+    if nested_target is not None and (nested_target > 0 or nested_target == -1):
         return nested_target
     return preset_target
 
@@ -159,10 +161,10 @@ class TextMeshPaintingRequest(BaseModel):
     mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
 
     @field_validator("mesh_style")
     @classmethod
@@ -255,7 +257,7 @@ class ImageToRawMeshRequest(BaseModel):
     model_preference: Optional[str] = Field(
         None, description="Explicit model override; intent presets choose a model when omitted"
     )
-    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
+    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent: 'mobile', 'game_ready', 'cinematic', 'animation', '3d_print', 'native'")
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
     preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
@@ -275,10 +277,24 @@ class ImageToRawMeshRequest(BaseModel):
     candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
+
+    @field_validator("intent")
+    @classmethod
+    def validate_intent(cls, v):
+        if v is None:
+            return None
+        v_str = str(v).strip().lower()
+        if not v_str:
+            return None
+        if v_str not in CANONICAL_INTENTS:
+            raise ValueError(
+                f"Invalid intent '{v}'. Canonical presets are: {', '.join(sorted(CANONICAL_INTENTS))}"
+            )
+        return v_str
 
     @field_validator("mesh_style")
     @classmethod
@@ -378,7 +394,7 @@ class ImageToTexturedMeshRequest(BaseModel):
     model_preference: Optional[str] = Field(
         None, description="Explicit model override; intent presets choose a model when omitted"
     )
-    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent")
+    intent: Optional[str] = Field(None, description="Deterministic smart-generation intent: 'mobile', 'game_ready', 'cinematic', 'animation', '3d_print', 'native'")
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
     preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
@@ -398,10 +414,24 @@ class ImageToTexturedMeshRequest(BaseModel):
     candidate_count: int = Field(1, ge=1, le=int(get_quality_config()["seeds"]["max_candidates"]), description="Candidate variations to generate (1-4, default 1)")
     asset_name: Optional[str] = Field(None, description="Asset base stem name")
     image_name: Optional[str] = Field(None, description="Original image filename")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
+
+    @field_validator("intent")
+    @classmethod
+    def validate_intent(cls, v):
+        if v is None:
+            return None
+        v_str = str(v).strip().lower()
+        if not v_str:
+            return None
+        if v_str not in CANONICAL_INTENTS:
+            raise ValueError(
+                f"Invalid intent '{v}'. Canonical presets are: {', '.join(sorted(CANONICAL_INTENTS))}"
+            )
+        return v_str
 
     @field_validator("mesh_style")
     @classmethod
@@ -510,10 +540,10 @@ class ImageMeshPaintingRequest(BaseModel):
     mask_file_id: Optional[str] = Field(None, description="File ID for spot retexture UV mask image")
     postprocess_mode: Optional[str] = Field("manual_mesh_tool", description="Postprocessing mode: 'manual_mesh_tool' bypasses raw decimation/remeshing pipeline")
     enable_postprocess: bool = Field(False, description="Run production postprocessing pipeline after mesh generation. If False, postprocessing is bypassed.")
-    mesh_style: str = Field("auto", description="Mesh style: 'clean', 'detailed', or 'auto'")
-    requested_quality: Optional[str] = Field(None, description="Requested quality tier: 'fast', 'balanced', or 'high'")
-    object_type: str = Field("general", description="Object type: 'mechanical', 'organic', 'character', or 'general'")
-    symmetry: str = Field("none", description="Symmetry: 'bilateral', 'radial', or 'none'")
+    mesh_style: str = Field("auto", deprecated=True, description="Deprecated mesh style hint. Does not override locked adapter inference profiles.")
+    requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
+    object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
+    symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
 
     @field_validator("mesh_style")
     @classmethod
@@ -1069,6 +1099,16 @@ async def image_to_raw_mesh(
             enable_auto_repair = False
             enable_auto_rig = False
             target_polycount = 0
+        elif mesh_request.intent == "native" or target_polycount == -1:
+            if mesh_request.intent == "native":
+                if mesh_request.texture_enabled is None and mesh_request.generate_texture is None:
+                    texture_enabled = False
+                lod_enabled = False
+                enable_printability = False
+                enable_auto_repair = False
+                enable_auto_rig = False
+                auto_uv = False
+            target_polycount = -1
 
         job_request = JobRequest(
             feature=feature,
@@ -1404,6 +1444,16 @@ async def image_to_textured_mesh(
             enable_auto_repair = False
             enable_auto_rig = False
             target_polycount = 0
+        elif mesh_request.intent == "native" or target_polycount == -1:
+            if mesh_request.intent == "native":
+                if mesh_request.texture_enabled is None and mesh_request.generate_texture is None:
+                    texture_enabled = False
+                lod_enabled = False
+                enable_printability = False
+                enable_auto_repair = False
+                enable_auto_rig = False
+                auto_uv = False
+            target_polycount = -1
 
         job_request = JobRequest(
             feature=feature,

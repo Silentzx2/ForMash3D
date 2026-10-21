@@ -322,6 +322,157 @@ class TestEnablePostprocessToggle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.metadata["postprocess_mode"], "production_mesh")
 
 
+class TestCanonicalPresetsAndOverrides(unittest.IsolatedAsyncioTestCase):
+    def test_canonical_intents_validation(self):
+        from pydantic import ValidationError
+        b64_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        canonical = ["mobile", "game_ready", "cinematic", "animation", "3d_print", "native"]
+        for intent in canonical:
+            req = ImageToRawMeshRequest(image_base64=b64_png, intent=intent)
+            self.assertEqual(req.intent, intent)
+
+        with self.assertRaises(ValidationError):
+            ImageToRawMeshRequest(image_base64=b64_png, intent="invalid_preset_id")
+
+    def test_candidate_count_boundaries(self):
+        from pydantic import ValidationError
+        b64_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        for c in [1, 2, 4]:
+            req = ImageToRawMeshRequest(image_base64=b64_png, candidate_count=c)
+            self.assertEqual(req.candidate_count, c)
+
+        with self.assertRaises(ValidationError):
+            ImageToRawMeshRequest(image_base64=b64_png, candidate_count=0)
+
+        with self.assertRaises(ValidationError):
+            ImageToRawMeshRequest(image_base64=b64_png, candidate_count=5)
+
+    def test_target_polycount_and_fake_fields_isolated_from_inference(self):
+        from core.scheduler.multiprocess_scheduler import _build_model_inference_inputs
+        job_inputs = {
+            "image_path": "/tmp/test.png",
+            "seed": 42,
+            "target_polycount": 50000,
+            "mesh_style": "clean",
+            "requested_quality": "high",
+            "object_type": "mechanical",
+            "symmetry": "radial",
+            "generateLOD": True,
+        }
+        inference_inputs = _build_model_inference_inputs(job_inputs, "hunyuan3d_shape_v21_image_to_raw_mesh")
+        self.assertNotIn("target_polycount", inference_inputs)
+        self.assertNotIn("mesh_style", inference_inputs)
+        self.assertNotIn("requested_quality", inference_inputs)
+        self.assertNotIn("object_type", inference_inputs)
+        self.assertNotIn("symmetry", inference_inputs)
+        self.assertNotIn("generateLOD", inference_inputs)
+        self.assertEqual(inference_inputs.get("image_path"), "/tmp/test.png")
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_native_preset_bypasses_decimation(self, _mock_plan):
+        b64_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        mock_scheduler = MagicMock()
+        mock_scheduler.validate_model_preference.return_value = True
+        scheduled_jobs = []
+
+        async def capture_job(job_request):
+            scheduled_jobs.append(job_request)
+            return "job-native-1"
+
+        mock_scheduler.schedule_job = AsyncMock(side_effect=capture_job)
+        req = ImageToRawMeshRequest(
+            image_base64=b64_png,
+            intent="native",
+        )
+        resp = await generate_mesh_from_image(req, scheduler=mock_scheduler, file_store=MagicMock())
+        self.assertEqual(resp.job_id, "job-native-1")
+        self.assertEqual(len(scheduled_jobs), 1)
+
+        job = scheduled_jobs[0]
+        # Native intent enforces -1 budget to bypass downstream decimation/remesh
+        self.assertEqual(job.inputs["target_polycount"], -1)
+        self.assertEqual(job.metadata["target_polycount"], -1)
+        self.assertFalse(job.inputs["generateLOD"])
+        self.assertFalse(job.inputs["auto_uv"])
+        self.assertFalse(job.inputs["texture_enabled"])
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_explicit_caller_overrides_preset_defaults(self, _mock_plan):
+        b64_png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        mock_scheduler = MagicMock()
+        mock_scheduler.validate_model_preference.return_value = True
+        scheduled_jobs = []
+
+        async def capture_job(job_request):
+            scheduled_jobs.append(job_request)
+            return "job-override-1"
+
+        mock_scheduler.schedule_job = AsyncMock(side_effect=capture_job)
+        # game_ready preset defaults target_polycount to 50000, texture_enabled to False
+        # Explicit caller overrides: target_polycount=120000, texture_enabled=True
+        req = ImageToRawMeshRequest(
+            image_base64=b64_png,
+            intent="game_ready",
+            target_polycount=120000,
+            texture_enabled=True,
+            candidate_count=3,
+        )
+        resp = await generate_mesh_from_image(req, scheduler=mock_scheduler, file_store=MagicMock())
+        self.assertEqual(resp.job_id, "job-override-1")
+        self.assertEqual(len(scheduled_jobs), 1)
+
+        job = scheduled_jobs[0]
+        self.assertEqual(job.inputs["target_polycount"], 120000)
+        self.assertEqual(job.metadata["target_polycount"], 120000)
+        self.assertTrue(job.inputs["texture_enabled"])
+        self.assertTrue(job.metadata["texture_enabled"])
+        self.assertEqual(job.inputs["candidate_count"], 3)
+        self.assertEqual(job.metadata["candidate_count"], 3)
+
+
+class TestPlannerExplicitModelPreservation(unittest.TestCase):
+    def test_planner_preserves_explicit_model(self):
+        from core.planner import plan_generation
+        mock_runtime = {
+            "has_cuda": True,
+            "free_vram_gb": 24.0,
+            "installed_adapters": [
+                "Hunyuan3DShapeV21ImageToRawMeshAdapter",
+                "TripoSGImageToRawMeshAdapter",
+            ],
+            "enabled_adapters": [
+                "hunyuan3d_shape_v21_image_to_raw_mesh",
+                "triposg_image_to_raw_mesh",
+            ],
+            "license_optins": {},
+        }
+        # Explicit model: triposg_image_to_raw_mesh
+        plan = plan_generation({
+            "model_preference": "triposg_image_to_raw_mesh",
+            "requested_quality": "high",
+        }, mock_runtime)
+
+        self.assertEqual(plan["adapter"], "triposg_image_to_raw_mesh")
+        self.assertEqual(plan["would_have_chosen"], "triposg_image_to_raw_mesh")
+
+    def test_planner_rejects_unavailable_explicit_model_when_not_auto(self):
+        from core.planner import plan_generation
+        mock_runtime = {
+            "has_cuda": True,
+            "free_vram_gb": 24.0,
+            "installed_adapters": ["Hunyuan3DShapeV21ImageToRawMeshAdapter"],
+            "enabled_adapters": ["hunyuan3d_shape_v21_image_to_raw_mesh"],
+            "license_optins": {},
+        }
+        # Non-installed model should raise ValueError rather than silently selecting hunyuan3d
+        with self.assertRaises(ValueError) as ctx:
+            plan_generation({
+                "model_preference": "uninstalled_super_model",
+                "auto_mode": False,
+            }, mock_runtime)
+        self.assertIn("Explicit model 'uninstalled_super_model' is unavailable", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
 

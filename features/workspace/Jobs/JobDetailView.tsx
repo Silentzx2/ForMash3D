@@ -204,7 +204,6 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
       setGenerationSettings((prev) => ({
         ...prev,
         aiModel: selectedJob.model_preference || params.aiModel || prev.aiModel,
-        meshQuality: params.quality || params.meshQuality || prev.meshQuality,
         seed: typeof params.seed === 'number' ? params.seed : (Number(params.seed) || prev.seed),
         guidanceScale: typeof params.guidance_scale === 'number' ? params.guidance_scale : prev.guidanceScale,
       }));

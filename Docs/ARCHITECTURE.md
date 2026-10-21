@@ -25,6 +25,30 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 - Normal image-to-3D routes return raw geometry; optional texture presets are handled after master promotion (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K). Legacy textured model IDs resolve to raw-generation aliases.
 - master/source.glb is immutable; retopology, UV, LOD, collision, and bake operations act on derived artifacts.
 
+### End-to-End Pipeline Contract & Responsibility Boundaries
+
+The generative asset pipeline enforces strict separation of concerns across six architectural tiers. No stage may blur or bypass boundary contracts:
+
+```mermaid
+flowchart TD
+    UI["1. Presentation Tier<br/>(GeneratePanel.tsx)"] --> RB["2. Request Builder<br/>(buildGenerationParameters.ts)"]
+    RB --> API["3. API Gateway<br/>(routers/mesh_generation.py)"]
+    API --> SCH["4. Multiprocess Scheduler<br/>(multiprocess_scheduler.py)"]
+    SCH -->|"Image + Seed + max fidelity<br/>(overrides stripped)"| ADP["5. Model Adapter<br/>(adapters/*_adapter.py)"]
+    ADP -->|"Raw Generation<br/>(Immutable master/source.glb)"| PP["6. Production Postprocess<br/>(postprocess/pipeline.py)"]
+    PP --> OUT["Engine-Ready Assets<br/>(game_ready/, lods/, collision/, textures/)"]
+```
+
+| Tier | Component | Primary Responsibilities | Data Handled & Stripped |
+| :--- | :--- | :--- | :--- |
+| **1. UI** | `GeneratePanel.tsx`<br>`GenerationPresetDrawer.tsx` | Clean generation studio. Image intake, model selector with live hardware readiness, single Target Polycount / Output Preset card (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), and an uncluttered Advanced drawer with real production controls (candidates 1–4, quad/tri, UV unwrapping, normal baking, LODs, repair, physics colliders). Presets configure parameters non-destructively; clicking a preset **never** auto-submits. | Emits user settings state. Exposes no fake inference sliders (steps, guidance, octree resolution, sampler overrides). |
+| **2. Request Builder** | `buildGenerationParameters.ts` | Pure client serialization function. Maps output presets and explicit polycount budgets into clean API payloads. Isolates target budgets and postprocessing flags. | Emits `endpoint`, `body`, `modelParameters`. Does not construct or duplicate adapter-owned numeric inference schedules. |
+| **3. API Gateway** | `mesh_generation.py`<br>`smart_generation.py` | Pydantic request validation and job queuing. Accepts production settings (`target_polycount`, `output_preset`, `candidate_count`, `bake_normal_maps`, etc.). Routes to deterministic planner when active. | Enqueues job with request inputs. Strips or ignores legacy/unbacked inference overrides (`requested_quality`, `mesh_style`, `object_type`, `symmetry`). |
+| **4. Scheduler** | `multiprocess_scheduler.py` | VRAM allocation, GPU dispatch locks, Best-of-N multi-seed scheduling (`candidate_count` 1..4), and composite quality scoring (`_score_and_select`). Strips all post-process only fields (`_POSTPROCESS_ONLY_INPUTS`) and adapter-owned inference keys (`_ADAPTER_OWNED_INFERENCE_INPUTS`). | Passes strictly `image_path`, `seed`, `source_quality="max"` to adapter. Retains production budgets (`target_polycount`, `auto_optimize`, etc.) for post-processing. |
+| **5. Model Adapter** | `adapters/*_adapter.py` | Model execution in dedicated worker processes. Owns locked native inference profile (`_LOCKED_INFERENCE_PROFILE`). Produces high-fidelity raw extraction without decimation or quality reduction. | Overwrites request-side inference parameters with locked schedule. Saves immutable raw mesh to `master/source.glb` with SHA-256 hash. |
+| **6. Production Pipeline** | `postprocess/pipeline.py` | Post-generation finishing engine. Reads immutable `master/source.glb` and executes production recipe stages based on selected output preset and advanced flags: Topology Gate $\to$ Hole Repair $\to$ Decimation $\to$ Quad/Tri retopology $\to$ UV unwrapping $\to$ Normal bake $\to$ LODs $\to$ Collision hull $\to$ PBR texture packing. | Produces production derivatives (`game_ready/`, `lods/`, `collision/`, `textures/`, `quality_report.json`). Never mutates `master/source.glb`. |
+
+
 
 ### Hunyuan Runtime Loading & Shared Dependencies
 

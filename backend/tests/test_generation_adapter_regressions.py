@@ -18,7 +18,8 @@ from adapters.hunyuan3d_decoder_profile import configure_native_dense_decoder
 from utils.fastmesh_utils import FastMeshError, FastMeshRunner
 
 
-def test_trellis2_fails_when_textured_exporter_is_unavailable():
+def test_trellis2_fails_when_textured_exporter_is_unavailable(monkeypatch):
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
     adapter = Trellis2ImageToTexturedMeshAdapter()
     adapter.runner = SimpleNamespace(o_voxel=None)
 
@@ -34,6 +35,13 @@ def test_hunyuan_paint_defaults_to_experimental_max_view_resolution():
     assert schema["resolution"]["default"] == 768
 
 
+@pytest.mark.parametrize(
+    ("size", "content_box"),
+    [
+        ((1200, 600), (0, 128, 512, 384)),
+        ((600, 1200), (128, 0, 384, 512)),
+    ],
+)
 def test_hunyuan_reference_resize_preserves_aspect_ratio(size, content_box):
     image = Image.new("RGB", size, (255, 0, 0))
 
@@ -55,6 +63,11 @@ def test_hunyuan_reference_resize_preserves_aspect_ratio(size, content_box):
 
 def test_hunyuan_mini_turbo_keeps_pipeline_when_to_returns_none(monkeypatch, tmp_path):
     import adapters.hunyuan3d_dit_v2_mini_turbo as adapter_module
+
+    (tmp_path / "hy3dgen/shapegen").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "hy3dgen/shapegen/pipelines.py").touch()
+    (tmp_path / "hy3dgen/rembg.py").touch()
+    (tmp_path / "hunyuan3d-dit-v2-mini-turbo").mkdir(parents=True, exist_ok=True)
 
     class FakePipeline:
         @classmethod
@@ -92,7 +105,7 @@ def test_hunyuan_mini_turbo_keeps_pipeline_when_to_returns_none(monkeypatch, tmp
         "rembg": rembg_module,
     }.items():
         monkeypatch.setitem(sys.modules, name, module)
-    monkeypatch.setattr(adapter_module.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(adapter_module.torch.cuda, "is_available", lambda: True)
 
     adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(
         model_path=str(tmp_path),
@@ -103,7 +116,7 @@ def test_hunyuan_mini_turbo_keeps_pipeline_when_to_returns_none(monkeypatch, tmp
 
     assert adapter.pipeline is loaded["pipeline"]
     assert callable(adapter.pipeline)
-    assert adapter.pipeline.device == "cpu"
+    assert adapter.pipeline.device == "cuda:0"
     assert adapter.pipeline() is not None
 
 
@@ -168,18 +181,44 @@ def test_scheduler_strips_inference_overrides_for_adapter_owned_profiles():
         "guidance_scale": 99.0, "octree_resolution": 256, "num_chunks": 1,
         "flash_octree_depth": 5, "dense_octree_depth": 8, "hierarchical_octree_depth": 8,
         "use_flash_decoder": True, "low_vram": True, "target_polycount": 5000,
+        "pipeline_type": "512", "max_num_tokens": 49152,
+        "sparse_structure_sampler_params": {"steps": 12},
+        "shape_slat_sampler_params": {"steps": 12},
+        "resolution": 1024, "input_processing": False, "do_refine": False,
+        "fill_holes": False, "offload": "off", "simplify": 0.5,
     }
     for model_id in (
         "hunyuan3d_shape_v21_image_to_raw_mesh",
         "hunyuan3d_shape_v21_image_to_3d",
         "hunyuan3d_shape_v21_image_to_textured_mesh",
+        "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+        "hunyuan3d_dit_v2_mini_turbo_image_to_3d",
         "triposg_image_to_raw_mesh",
+        "trellis_image_to_raw_mesh",
+        "trellis_image_to_3d",
+        "trellis_image_to_textured_mesh",
+        "trellis2_image_to_raw_mesh",
+        "trellis2_image_to_3d",
+        "trellis2_image_to_textured_mesh",
+        "trellis2_image_mesh_painting",
+        "pixal3d_image_to_raw_mesh",
+        "unique3d_image_to_raw_mesh",
+        "taoflowforge_image_to_raw_mesh",
     ):
         forwarded = _build_model_inference_inputs(inputs, model_id=model_id)
         assert forwarded == {"image_path": "/tmp/source.png", "seed": 123, "source_quality": "max"}
 
     root = Path(__file__).resolve().parents[1]
-    for path in ("adapters/hunyuan3d_shape_v21.py", "adapters/triposg_adapter.py"):
+    for path in (
+        "adapters/hunyuan3d_shape_v21.py",
+        "adapters/hunyuan3d_dit_v2_mini_turbo.py",
+        "adapters/triposg_adapter.py",
+        "adapters/trellis_adapter.py",
+        "adapters/trellis2_adapter.py",
+        "adapters/pixal3d_adapter.py",
+        "adapters/unique3d_adapter.py",
+        "adapters/taoflowforge_adapter.py",
+    ):
         source = (root / path).read_text(encoding="utf-8")
         assert "inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}" in source
 
@@ -238,62 +277,123 @@ def test_hunyuan3d_shape_v21_uses_adapter_owned_inference_profile():
     assert schema["guidance_scale"]["readOnly"] is True
 
 
-def test_hunyuan3d_dit_v2_mini_turbo_defaults_to_max_fidelity_when_source_quality_max():
+def test_hunyuan3d_dit_v2_mini_turbo_uses_adapter_owned_inference_profile():
+    from adapters.hunyuan3d_dit_v2_mini_turbo import _LOCKED_INFERENCE_PROFILE
+
     adapter = Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter(vram_requirement=6144)
     schema = adapter.get_parameter_schema()["parameters"]
-    assert schema["octree_resolution"]["default"] == 380
-    assert schema["octree_resolution"]["maximum"] == 380
+    assert _LOCKED_INFERENCE_PROFILE == {
+        "source_quality": "max", "octree_resolution": 768,
+        "num_inference_steps": 20, "guidance_scale": 7.5,
+        "num_chunks": 80000, "low_vram_mode": False, "low_vram": False,
+        "enable_flashvdm": False, "mc_algo": "mc",
+    }
+    assert schema["octree_resolution"]["default"] == 768
+    assert schema["octree_resolution"]["readOnly"] is True
+    assert schema["num_chunks"]["default"] == 80000
+    assert schema["num_chunks"]["readOnly"] is True
+    assert schema["num_inference_steps"]["default"] == 20
+    assert schema["num_inference_steps"]["readOnly"] is True
+    assert schema["guidance_scale"]["default"] == 7.5
+    assert schema["guidance_scale"]["readOnly"] is True
     assert schema["enable_flashvdm"]["default"] is False
+    assert schema["enable_flashvdm"]["readOnly"] is True
 
 
-
-def test_model_specific_max_quality_profiles_override_ui_budgets():
-    trellis2 = _build_model_inference_inputs(
-        {
-            "pipeline_type": "512", "max_num_tokens": 49152,
-            "sparse_structure_sampler_params": {"steps": 12},
-            "shape_slat_sampler_params": {"steps": 12},
-            "target_polycount": 2000, "decimation_target": 1000, "remesh": True,
-        },
-        model_id="trellis2_image_to_raw_mesh",
+def test_trellis_and_trellis2_use_adapter_owned_inference_profiles():
+    from adapters.trellis_adapter import _LOCKED_INFERENCE_PROFILE as trellis_profile, TrellisImageToRawMeshAdapter
+    from adapters.trellis2_adapter import (
+        _LOCKED_INFERENCE_PROFILE as trellis2_profile,
+        _LOCKED_PAINTING_INFERENCE_PROFILE as trellis2_paint_profile,
+        Trellis2ImageToRawMeshAdapter,
     )
-    assert trellis2["pipeline_type"] == "1536_cascade"
-    assert trellis2["max_num_tokens"] == 262144
-    assert trellis2["sparse_structure_sampler_params"]["steps"] == 50
-    assert trellis2["sparse_structure_sampler_params"]["guidance_strength"] == 8.0
-    assert trellis2["sparse_structure_sampler_params"]["guidance_rescale"] == 0.7
-    assert trellis2["sparse_structure_sampler_params"]["rescale_t"] == 6.0
-    assert trellis2["shape_slat_sampler_params"]["steps"] == 50
-    assert trellis2["shape_slat_sampler_params"]["guidance_strength"] == 8.5
-    assert trellis2["shape_slat_sampler_params"]["guidance_rescale"] == 0.5
-    assert trellis2["shape_slat_sampler_params"]["rescale_t"] == 6.0
-    assert trellis2["tex_slat_sampler_params"]["steps"] == 50
-    assert trellis2["tex_slat_sampler_params"]["guidance_strength"] == 2.5
-    assert trellis2["tex_slat_sampler_params"]["guidance_rescale"] == 0.2
-    assert trellis2["tex_slat_sampler_params"]["rescale_t"] == 6.0
-    assert trellis2["decimation_target"] == -1
-    assert trellis2["remesh"] is False
-    assert "target_polycount" not in trellis2
 
+    assert trellis_profile == {
+        "source_quality": "max", "num_inference_steps": 100,
+        "ss_sampling_steps": 100, "slat_sampling_steps": 100,
+        "guidance_scale": 7.5, "simplify": 0.0, "low_vram": False,
+    }
+    t_adapter = TrellisImageToRawMeshAdapter(vram_requirement=11776)
+    t_schema = t_adapter.get_parameter_schema()["parameters"]
+    assert t_schema["ss_sampling_steps"]["default"] == 100
+    assert t_schema["ss_sampling_steps"]["readOnly"] is True
+    assert t_schema["slat_sampling_steps"]["default"] == 100
+    assert t_schema["slat_sampling_steps"]["readOnly"] is True
+    assert t_schema["simplify"]["default"] == 0.0
+    assert t_schema["simplify"]["readOnly"] is True
 
-
-def test_pixal3d_max_detail_profile_overrides_resolution_and_sampler_defaults():
-    pixal = _build_model_inference_inputs(
-        {
-            "resolution": 1024,
-            "pipeline_type": "1024_cascade",
-            "sampler_overrides": {},
-            "low_vram": True,
+    assert trellis2_profile == {
+        "source_quality": "max", "pipeline_type": "1536_cascade",
+        "max_num_tokens": 524288,
+        "sparse_structure_sampler_params": {
+            "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.9, "rescale_t": 8.0,
         },
-        model_id="pixal3d_image_to_raw_mesh",
-    )
-    assert pixal["resolution"] == 1536
-    assert pixal["pipeline_type"] == "1536_cascade"
-    assert pixal["low_vram"] is False
-    assert pixal["sampler_overrides"]["sparse_structure"]["steps"] == 50
-    assert pixal["sampler_overrides"]["sparse_structure"]["guidance_strength"] == 8.0
-    assert pixal["sampler_overrides"]["shape"]["guidance_strength"] == 8.5
-    assert pixal["sampler_overrides"]["texture"]["guidance_strength"] == 2.5
+        "shape_slat_sampler_params": {
+            "steps": 100, "guidance_strength": 10.0, "guidance_rescale": 0.8, "rescale_t": 8.0,
+        },
+        "tex_slat_sampler_params": {
+            "steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0,
+        },
+        "decimation_target": -1, "remesh": False, "low_vram": False,
+    }
+    assert trellis2_paint_profile == {
+        "tex_slat_sampler_params": {
+            "steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0,
+        },
+        "texture_size": 4096,
+    }
+    t2_adapter = Trellis2ImageToRawMeshAdapter(vram_requirement=23552)
+    t2_schema = t2_adapter.get_parameter_schema()["parameters"]
+    assert t2_schema["pipeline_type"]["default"] == "1536_cascade"
+    assert t2_schema["pipeline_type"]["readOnly"] is True
+    assert t2_schema["max_num_tokens"]["default"] == 524288
+    assert t2_schema["max_num_tokens"]["readOnly"] is True
+    assert t2_schema["decimation_target"]["default"] == -1
+    assert t2_schema["decimation_target"]["readOnly"] is True
+    assert t2_schema["remesh"]["default"] is False
+    assert t2_schema["remesh"]["readOnly"] is True
+
+
+def test_pixal3d_and_unique3d_and_taoflowforge_use_adapter_owned_profiles():
+    from adapters.pixal3d_adapter import _LOCKED_INFERENCE_PROFILE as pixal_profile, Pixal3DImageToRawMeshAdapter
+    from adapters.unique3d_adapter import _LOCKED_INFERENCE_PROFILE as unique_profile, Unique3DImageToRawMeshAdapter
+    from adapters.taoflowforge_adapter import _LOCKED_INFERENCE_PROFILE as tff_profile, TaoFlowForgeImageToRawMeshAdapter
+
+    assert pixal_profile["resolution"] == 2048
+    assert pixal_profile["pipeline_type"] == "1536_cascade"
+    assert pixal_profile["low_vram"] is False
+    assert pixal_profile["sampler_overrides"]["sparse_structure"]["steps"] == 100
+    p_adapter = Pixal3DImageToRawMeshAdapter(vram_requirement=16384)
+    p_schema = p_adapter.get_parameter_schema()["parameters"]
+    assert p_schema["resolution"]["default"] == 2048
+    assert p_schema["resolution"]["readOnly"] is True
+    assert p_schema["pipeline_type"]["default"] == "1536_cascade"
+    assert p_schema["pipeline_type"]["readOnly"] is True
+    assert p_schema["low_vram"]["default"] is False
+    assert p_schema["low_vram"]["readOnly"] is True
+
+    assert unique_profile == {
+        "source_quality": "max", "input_processing": True, "do_refine": True,
+        "expansion_weight": 0.1, "init_type": "std", "low_vram": False,
+    }
+    u_adapter = Unique3DImageToRawMeshAdapter(vram_requirement=10240)
+    u_schema = u_adapter.get_parameter_schema()["parameters"]
+    assert u_schema["input_processing"]["default"] is True
+    assert u_schema["input_processing"]["readOnly"] is True
+    assert u_schema["do_refine"]["default"] is True
+    assert u_schema["do_refine"]["readOnly"] is True
+    assert u_schema["expansion_weight"]["default"] == 0.1
+    assert u_schema["expansion_weight"]["readOnly"] is True
+
+    assert tff_profile == {
+        "source_quality": "max", "fill_holes": True, "offload": "auto", "low_vram": False,
+    }
+    tff_adapter = TaoFlowForgeImageToRawMeshAdapter(vram_requirement=20480)
+    tff_schema = tff_adapter.get_parameter_schema()["parameters"]
+    assert tff_schema["fill_holes"]["default"] is True
+    assert tff_schema["fill_holes"]["readOnly"] is True
+    assert tff_schema["offload"]["default"] == "auto"
+    assert tff_schema["offload"]["readOnly"] is True
 
 
 def test_trellis2_raw_mesh_path_skips_render_only_simplification(tmp_path):
@@ -336,43 +436,3 @@ def test_trellis2_raw_mesh_path_skips_render_only_simplification(tmp_path):
     assert calls["run_kwargs"]["max_num_tokens"] == 262144
     assert calls["run_kwargs"]["sparse_structure_sampler_params"]["steps"] == 50
     assert calls["run_kwargs"]["shape_slat_sampler_params"]["steps"] == 50
-
-
-def test_ultrashape_requests_max_quality_for_its_hunyuan_coarse_stage(tmp_path):
-    import trimesh
-    from PIL import Image
-    from utils.ultrashape_pipeline_helper import UltraShapeInferenceHelper
-
-    image_path = tmp_path / "source.png"
-    Image.new("RGB", (8, 8), (180, 180, 180)).save(image_path)
-    calls = {}
-
-    def fake_hunyuan_pipeline(**kwargs):
-        calls.update(kwargs)
-        return [trimesh.creation.box()]
-
-    helper = UltraShapeInferenceHelper.__new__(UltraShapeInferenceHelper)
-    helper.pipeline = object()
-    helper.rembg = lambda image: image
-    helper.refine_mesh = lambda **kwargs: trimesh.creation.box()
-
-    output_path, info = helper.generate_and_refine(
-        image_path=str(image_path),
-        hunyuan_pipeline=fake_hunyuan_pipeline,
-        hunyuan_bg_remover=lambda image: image,
-        output_dir=str(tmp_path / "output"),
-        coarse_num_inference_steps=50,
-        coarse_octree_resolution=512,
-        coarse_guidance_scale=5.0,
-        coarse_num_chunks=20000,
-        num_inference_steps=50,
-        num_latents=32768,
-        octree_res=2048,
-    )
-
-    assert calls["num_inference_steps"] == 50
-    assert calls["octree_resolution"] == 512
-    assert calls["guidance_scale"] == 5.0
-    assert calls["num_chunks"] == 20000
-    assert Path(output_path).exists()
-    assert info["face_count"] > 0

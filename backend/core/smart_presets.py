@@ -12,6 +12,32 @@ import yaml
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "smart_presets.yaml"
 
+CANONICAL_INTENTS = frozenset({"mobile", "game_ready", "cinematic", "animation", "3d_print", "native"})
+
+NATIVE_PRESET: Dict[str, Any] = {
+    "label": "Native / Raw",
+    "target_polycount": -1,
+    "texture_resolution": 0,
+    "generate_lod": False,
+    "lod_preset": "high",
+    "lod_count": 0,
+    "collision": False,
+    "production_qa": False,
+    "auto_uv": False,
+    "enable_auto_rig": False,
+    "enable_printability_check": False,
+    "enable_auto_repair": False,
+    "preferred_features": ["image_to_raw_mesh", "image_to_textured_mesh"],
+    "model_priority": [
+        "hunyuan3d_shape_v21_image_to_raw_mesh",
+        "unique3d_image_to_raw_mesh",
+        "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+        "triposg_image_to_raw_mesh",
+        "trellis2_image_to_textured_mesh",
+        "trellis_image_to_textured_mesh",
+    ],
+}
+
 def load_smart_presets() -> Dict[str, Any]:
     data = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not isinstance(data.get("intents"), dict):
@@ -88,8 +114,12 @@ def resolve_intent(
 ) -> Dict[str, Any]:
     data = load_smart_presets()
     preset = data["intents"].get(intent)
+    if not preset and intent == "native":
+        preset = dict(NATIVE_PRESET)
     if not preset:
-        raise ValueError(f"Unknown intent preset: {intent}")
+        raise ValueError(
+            f"Unknown intent preset: {intent}. Canonical presets are: {', '.join(sorted(CANONICAL_INTENTS))}"
+        )
 
     configs = _configs(settings)
     profile = get_gpu_memory_profile()

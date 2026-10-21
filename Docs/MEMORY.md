@@ -1,3 +1,27 @@
+## 2026-10-21 — Generate Studio Refactor: Locked Adapter Profiles, UI Simplification & Pipeline Contract
+
+- **Adapter-Owned Inference Authority**: Model-specific inference schedules, step counts, guidance scales, octree resolutions, samplers, and decoders are locked directly into adapter implementations (`_LOCKED_INFERENCE_PROFILE`). The multiprocess scheduler filters incoming overrides (`_ADAPTER_OWNED_INFERENCE_INPUTS`, `_POSTPROCESS_ONLY_INPUTS`) and delivers clean inputs (`image_path`, `seed`, `source_quality="max"`).
+- **Simplified Generate Studio UI (`GeneratePanel.tsx`)**:
+  - Removed disconnected/fake inference sliders (Fast/Balanced/High quality selectors, step counts, guidance sliders, octree resolution inputs, Low VRAM switches).
+  - Single primary flow: Reference image intake, Model selection with authentic readiness/VRAM indicators, Textured generation toggle, and a single **Target Polycount / Output Preset** card.
+  - Eliminated duplicate polycount sliders and duplicate post-processing master switches. Exactly one master switch controls downstream postprocessing.
+  - Non-destructive preset selection: Clicking an output preset populates recommended defaults and **never** auto-submits.
+- **Clean Advanced Production Drawer**: Contains genuine production finishing controls only:
+  - Multi-seed Candidate generation (1 to 4 variations with deterministic seed stepping and composite scoring).
+  - Triangle vs Quad-dominant retopology (FastMesh / QuadriFlow).
+  - UV Unwrapping (PartUV / xatlas).
+  - High-to-low normal map baking from immutable master mesh (`master/source.glb`).
+  - Hierarchical LOD generation (LOD0 to LOD3).
+  - Topology Gate and targeted boundary loop repair ($\le 50$ vertices).
+  - Watertight CoACD convex hull generation with physics material quick presets (Default, Rubber, Stone, Wood, Ice, Metal).
+- **Unified Production Presets as Output Recipes**:
+  - Six recipes: `mobile` (~15k tris), `game_ready` (~35k tris), `cinematic` (~100k tris), `animation` (~40k quads/tris), `3d_print` (watertight solid), `native` (raw extraction ceiling).
+  - Post-processing pipeline consumes production recipe flags and preserves SHA-256 byte-level immutability of `master/source.glb`.
+- **Contract Specification**: Authored `Docs/GENERATION-UI-CONTRACT.md` establishing explicit data flow and invariants across UI $\to$ Request Builder $\to$ API $\to$ Scheduler $\to$ Adapter $\to$ Postprocess Pipeline.
+- **Decision Records**: Documented ADR-056 and ADR-057 in `Docs/DECISIONS.md`.
+
+---
+
 ## 2026-10-20 — Generate Refactor Batch 1: Adapter-Owned Inference Profiles
 
 - Moved the effective `dev` scheduler profile into `_LOCKED_INFERENCE_PROFILE` for Hunyuan3D-Shape-v2.1 and TripoSG without changing numerical values.

@@ -469,22 +469,16 @@ export interface GenerationSettings {
   image: string | null;
   imageFileId?: string | null;
   aiModel: string;
-  meshQuality: 'low' | 'medium' | 'high' | 'ultra';
   textureQuality: 'low' | 'medium' | 'high' | '8k';
   quadTopology: boolean;
   topologyMode?: 'triangle' | 'quad' | 'adaptive';
   seed: number;
   guidanceScale: number;
-  /** User/model preset parameters merged after the existing model profile. */
-  modelParameterOverrides?: Record<string, unknown>;
   removeBackground: boolean;
   lowVram?: boolean;
   vramMode?: 'auto' | 'normal' | 'low';
   autoOptimizeSettings: AutoOptimizeSettings;
-  sharpFeaturePreservation?: boolean;
-  angleCreaseThreshold?: number;
   highResolutionNormalBaking?: boolean;
-  textureFidelityPreset?: 'ultra' | 'high' | 'balanced' | 'compressed';
   generateTexture?: boolean;
   texture_enabled?: boolean;
   textureEnabled?: boolean;
@@ -500,10 +494,7 @@ export interface GenerationSettings {
   generatePBR?: boolean;
   prompt?: string;
   imageName?: string;
-
   negativePrompt?: string;
-  enableFlashVDM?: boolean;
-  lowVramMode?: 'auto' | 'normal' | 'low';
   maxNumView?: number;
   resolution?: number;
   paintResolution?: 512 | 768;
@@ -519,13 +510,8 @@ export interface GenerationSettings {
   autoRigMode?: string;
   enablePostprocess?: boolean;
   candidateCount?: number;
+  /** @deprecated Removed from generation UI. Kept for API type backward-compatibility. */
   quality?: 'fast' | 'balanced' | 'high';
-  requested_quality?: 'fast' | 'balanced' | 'high';
-  meshStyle?: 'auto' | 'clean' | 'detailed';
-  mesh_style?: 'auto' | 'clean' | 'detailed';
-  objectType?: 'general' | 'mechanical' | 'organic' | 'character';
-  object_type?: 'general' | 'mechanical' | 'organic' | 'character';
-  symmetry?: 'none' | 'bilateral' | 'radial';
 }
 
 
