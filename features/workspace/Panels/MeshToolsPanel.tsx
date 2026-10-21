@@ -189,7 +189,7 @@ export const MeshToolsPanel: React.FC = () => {
         simplify: DEFAULT_SIMPLIFY_OPTIONS,
         fileName: sourceName,
         onProgress: updateProgress as any,
-      });
+      } as any);
       const lod = lods.find((item: any) => item.level === 1 && item.blob instanceof Blob && item.blob.size > 0);
       if (!lod) throw new Error('The backend did not return the derived LOD mesh.');
       const outputName = `${safeStem(currentAsset?.name || sourceName)}_lod1.glb`;
