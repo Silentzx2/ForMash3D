@@ -124,6 +124,7 @@ export function buildGenerationParameters(
     image_name: cleanStem,
     output_format: 'glb',
     model_preference: settings.aiModel || undefined,
+    auto_mode: false,
     intent: enablePostprocess ? settings.intent : undefined,
     preprocessing_artifact_id: settings.preprocessingArtifactId || undefined,
     preprocessing_review_override: Boolean(settings.preprocessingReviewOverride),
