@@ -82,6 +82,7 @@ export const MeshToolsPanel: React.FC = () => {
     setMessage('');
     setError('');
     setInspection(null);
+    setLastResult(null);
     try {
       const input = await readSource();
       const result = await transform(input, sourceName, (event) => {
@@ -133,7 +134,7 @@ export const MeshToolsPanel: React.FC = () => {
     { label: 'Inspect mesh', description: 'Check topology, UVs, pivots and game-ready budgets.', action: () => void runInspection() },
     { label: 'Optimize', description: 'Reduce geometry while preserving the source asset.', action: () => void runTransform('Optimize', 'optimized', (mesh, fileName, onProgress) => optimizeMesh(mesh, { options: DEFAULT_SIMPLIFY_OPTIONS, fileName, onProgress })) },
     { label: 'Auto UV', description: 'Generate UV coordinates for the selected mesh.', action: () => void runTransform('Auto UV', 'uv', (mesh, fileName, onProgress) => autoUv(mesh, { options: DEFAULT_AUTO_UV_OPTIONS, fileName, onProgress })) },
-    { label: 'Auto retopology', description: 'Rebuild topology using the backend retopology pipeline.', action: () => void runTransform('Auto retopology', 'retopologized', (mesh, fileName, onProgress) => autoRetopo(mesh, { fileName, onProgress })) },
+    { label: 'Auto retopology', description: 'Rebuild topology using the backend retopology pipeline.', action: () => void runTransform('Auto retopology', 'retopologized', (mesh, fileName, onProgress) => autoRetopo(mesh, { fileName, onProgress: onProgress as any })) },
     { label: 'Repair mesh', description: 'Attempt backend topology and non-manifold repair.', action: () => void runTransform('Repair', 'repaired', (mesh, fileName, onProgress) => repairMesh(mesh, { fileName, onProgress })) },
   ];
 
@@ -170,10 +171,10 @@ export const MeshToolsPanel: React.FC = () => {
               disabled={!canRun || running !== null}
               className="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 font-bold text-[hsl(var(--primary-foreground))] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {running === button.label || (running && button.label === 'Inspect mesh' && running === 'Inspect')
+              {running === button.label || (button.label === 'Inspect mesh' && running === 'Inspect') || (button.label === 'Repair mesh' && running === 'Repair')
                 ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                 : button.label === 'Inspect mesh' ? <FileSearch className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />}
-              {running === 'Inspect' && button.label === 'Inspect mesh' ? 'Inspecting…' : running === button.label ? 'Working…' : button.label}
+              {running === 'Inspect' && button.label === 'Inspect mesh' ? 'Inspecting…' : (running === button.label || (running === 'Repair' && button.label === 'Repair mesh')) ? 'Working…' : button.label}
             </button>
           </div>
         ))}

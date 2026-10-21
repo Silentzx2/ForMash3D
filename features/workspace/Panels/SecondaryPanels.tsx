@@ -3,7 +3,7 @@ import { ToolType } from '../types';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { HexagonIcon, LayersIcon, MaximizeIcon, PaletteIcon } from '@hugeicons/core-free-icons';
+import { LayersIcon, MaximizeIcon, PaletteIcon } from '@hugeicons/core-free-icons';
 export const SecondaryPanel: React.FC<{ tool: ToolType }> = ({ tool }) => {
   if (tool === 'upscale') {
     return (
