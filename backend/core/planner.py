@@ -15,12 +15,39 @@ logger = logging.getLogger(__name__)
 
 # Default mapping between adapter ID and adapter class name
 DEFAULT_ADAPTER_CLASS_MAP = {
+    # Shape & Raw Mesh
     "hunyuan3d_shape_v21_image_to_raw_mesh": "Hunyuan3DShapeV21ImageToRawMeshAdapter",
+    "hunyuan3d_shape_v21_image_to_mesh": "Hunyuan3DShapeV21ImageToMeshAdapter",
+    "hunyuan3d_shape_v21_image_to_textured_mesh": "Hunyuan3DShapeV21ImageToTexturedMeshAdapter",
     "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh": "Hunyuan3DDiTV2MiniTurboImageToRawMeshAdapter",
+    "hunyuan3d_adapter_v21_image_to_raw_mesh": "Hunyuan3DV21ImageToRawMeshAdapter",
+    "hunyuan3d_adapter_v21_image_to_textured_mesh": "Hunyuan3DV21ImageToTexturedMeshAdapter",
     "trellis2_image_to_raw_mesh": "Trellis2ImageToRawMeshAdapter",
+    "trellis2_image_to_textured_mesh": "Trellis2ImageToTexturedMeshAdapter",
+    "trellis2_image_to_3d": "Trellis2ImageToMeshAdapter",
     "trellis_image_to_raw_mesh": "TrellisImageToRawMeshAdapter",
+    "trellis_image_to_textured_mesh": "TrellisImageToTexturedMeshAdapter",
+    "trellis_image_to_3d": "TrellisImageToMeshAdapterCommon",
     "triposg_image_to_raw_mesh": "TripoSGImageToRawMeshAdapter",
+    "unique3d_image_to_raw_mesh": "Unique3DImageToRawMeshAdapter",
+    "pixal3d_image_to_raw_mesh": "Pixal3DImageToRawMeshAdapter",
+    "pixal3d_image_to_3d": "Pixal3DImageToRawMeshAdapter",
     "taoflowforge_image_to_raw_mesh": "TaoFlowForgeImageToRawMeshAdapter",
+    # Painting
+    "hunyuan3d_paint_v21_image_mesh_painting": "Hunyuan3DPaintV21ImageMeshPaintingAdapter",
+    "trellis_image_mesh_painting": "TrellisImageMeshPaintingAdapter",
+    "trellis2_image_mesh_painting": "Trellis2ImageMeshPaintingAdapter",
+    "trellis_text_mesh_painting": "TrellisTextMeshPaintingAdapter",
+    "paint3d": "Paint3DAdapter",
+    # Auto-Rig
+    "unirig_auto_rig": "UniRigAdapter",
+    # Retopology
+    "fastmesh_v1k_retopology": "FastMeshRetopologyAdapter",
+    "fastmesh_v4k_retopology": "FastMeshRetopologyAdapter",
+    # UV
+    "partuv_uv_unwrapping": "PartUVUnwrappingAdapter",
+    # Motion
+    "ardy_motion_generation": "ArdyMotionGenerationAdapter",
 }
 
 _RULES_CACHE: Optional[Dict[str, Any]] = None
@@ -99,6 +126,12 @@ def _is_adapter_registered(
     mapped_class = DEFAULT_ADAPTER_CLASS_MAP.get(adapter_id)
     if mapped_class and mapped_class in installed:
         return True
+    # Normalized convention fallback
+    norm_id = adapter_id.replace("_", "").lower()
+    for item in installed:
+        norm_item = item.replace("_", "").lower()
+        if norm_item == norm_id or norm_item == f"{norm_id}adapter" or norm_id == f"{norm_item}adapter":
+            return True
     return False
 
 

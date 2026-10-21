@@ -639,16 +639,16 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
                   </div>
 
                   <div className="flex items-center gap-3 p-2.5 rounded-lg bg-[hsl(var(--surface-0))] border border-white/[0.04]">
-                    <div className="w-12 h-12 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.06] flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <div className="relative w-12 h-12 rounded-lg bg-[hsl(var(--surface-2))] border border-white/[0.06] flex items-center justify-center overflow-hidden flex-shrink-0">
+                      <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-zinc-500" />
                       <img
                         src={`/api/v1/system/jobs/${selectedJob.id}/input`}
                         alt="Input"
-                        className="w-full h-full object-cover"
+                        className="absolute inset-0 w-full h-full object-cover"
                         onError={(e) => {
                           (e.target as HTMLElement).style.display = 'none';
                         }}
                       />
-                      <HugeiconsIcon icon={Box} size={16} className="w-5 h-5 text-zinc-500" />
                     </div>
                     <div className="min-w-0 flex-1 text-xs">
                       <div className="font-bold text-white truncate">Input Reference</div>

@@ -1725,7 +1725,7 @@ def run_postprocess_job(
         "adapter": plan_dict.get("adapter"),
         "preset": plan_dict.get("preset"),
         "num_seeds": plan_dict.get("num_seeds"),
-        "fallback_chain": plan_dict.get("fallback_chain"),
+        "fallback_chain": plan_dict.get("fallback_chain") or job_inputs.get("fallback_chain") or job_metadata.get("fallback_chain") or [],
         "reasons": plan_dict.get("reasons", []),
         "warnings": plan_dict.get("warnings", []),
         "would_have_chosen": plan_dict.get("would_have_chosen"),

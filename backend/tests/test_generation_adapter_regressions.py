@@ -184,7 +184,7 @@ def test_scheduler_strips_inference_overrides_for_adapter_owned_profiles():
         "pipeline_type": "512", "max_num_tokens": 49152,
         "sparse_structure_sampler_params": {"steps": 12},
         "shape_slat_sampler_params": {"steps": 12},
-        "resolution": 1024, "input_processing": False, "do_refine": False,
+        "resolution": 1024, "max_num_view": 2, "input_processing": False, "do_refine": False,
         "fill_holes": False, "offload": "off", "simplify": 0.5,
     }
     for model_id in (
@@ -197,13 +197,17 @@ def test_scheduler_strips_inference_overrides_for_adapter_owned_profiles():
         "trellis_image_to_raw_mesh",
         "trellis_image_to_3d",
         "trellis_image_to_textured_mesh",
+        "trellis_image_mesh_painting",
+        "trellis_text_mesh_painting",
         "trellis2_image_to_raw_mesh",
         "trellis2_image_to_3d",
         "trellis2_image_to_textured_mesh",
         "trellis2_image_mesh_painting",
         "pixal3d_image_to_raw_mesh",
+        "pixal3d_image_to_3d",
         "unique3d_image_to_raw_mesh",
         "taoflowforge_image_to_raw_mesh",
+        "hunyuan3d_paint_v21_image_mesh_painting",
     ):
         forwarded = _build_model_inference_inputs(inputs, model_id=model_id)
         assert forwarded == {"image_path": "/tmp/source.png", "seed": 123, "source_quality": "max"}
@@ -212,6 +216,8 @@ def test_scheduler_strips_inference_overrides_for_adapter_owned_profiles():
     for path in (
         "adapters/hunyuan3d_shape_v21.py",
         "adapters/hunyuan3d_dit_v2_mini_turbo.py",
+        "adapters/hunyuan3d_paint_v21.py",
+        "adapters/hunyuan3d_adapter_v21.py",
         "adapters/triposg_adapter.py",
         "adapters/trellis_adapter.py",
         "adapters/trellis2_adapter.py",

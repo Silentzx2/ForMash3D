@@ -8,6 +8,7 @@ export function useSSE<T>(url: string, fallbackPollMs = 30000) {
   const esRef = useRef<EventSource | null>(null);
   const retryRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reconnectAttemptsRef = useRef(0);
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     // Clean up any existing connection before creating a new one
@@ -33,9 +34,11 @@ export function useSSE<T>(url: string, fallbackPollMs = 30000) {
       // Exponential backoff: 1s, 2s, 4s, 8s, max 30s
       reconnectAttemptsRef.current++;
       const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current - 1), 30000);
-      retryRef.current = setTimeout(connect, delay);
+      retryRef.current = setTimeout(() => connectRef.current(), delay);
     };
   }, [url]);
+
+  connectRef.current = connect;
 
   useEffect(() => {
     connect();

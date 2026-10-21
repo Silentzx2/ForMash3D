@@ -22,6 +22,12 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "max_num_view": 9,
+    "resolution": 768,
+}
+
 
 def _format_background_remover_import_error(error: BaseException) -> ImportError:
     """Build an actionable diagnostic for BackgroundRemover import-time failures."""
@@ -424,6 +430,7 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process mesh painting using Hunyuan3D-Paint-v2-1."""
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         cancel_checker = inputs.get("cancel_checker")
         temp_mesh_dir = None
         try:
@@ -621,16 +628,18 @@ class Hunyuan3DPaintV21ImageMeshPaintingAdapter(ImageToMeshModel):
                 "max_num_view": {
                     "type": "integer",
                     "description": "Experimental max-detail default follows the upstream demo's supported 6-9 view range; ask before changing the locked profile.",
-                    "default": 9,
+                    "default": _LOCKED_INFERENCE_PROFILE["max_num_view"],
                     "minimum": 6,
                     "maximum": 12,
+                    "readOnly": True,
                     "required": False,
                 },
                 "resolution": {
                     "type": "integer",
                     "description": "Per-view inference resolution; experimental max-detail default is the upstream demo ceiling of 768.",
-                    "default": 768,
+                    "default": _LOCKED_INFERENCE_PROFILE["resolution"],
                     "enum": [512, 768, 1024, 1536],
+                    "readOnly": True,
                     "required": False,
                 },
             },

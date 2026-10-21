@@ -25,6 +25,12 @@ logger = logging.getLogger(__name__)
 
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20): Hunyuan3D-2.1 uses up to 100 UI-supported steps and upstream default guidance 5.0.
 # Ask the user once and obtain explicit confirmation before future changes to these locked settings.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max",
+    "octree_resolution": 512,
+    "num_inference_steps": 100,
+    "guidance_scale": 5.0,
+}
 
 
 class Hunyuan3DV21ImageToMeshAdapterCommon(ImageToMeshModel):
@@ -412,6 +418,7 @@ class Hunyuan3DV21ImageToRawMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommon):
         """
         Process image-to-raw-mesh generation using Hunyuan3D 2.1.
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             # Validate inputs
             if "image_path" not in inputs:
@@ -543,6 +550,7 @@ class Hunyuan3DV21ImageToTexturedMeshAdapter(Hunyuan3DV21ImageToMeshAdapterCommo
         """
         Process image-to-textured-mesh generation using Hunyuan3D 2.1.
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if self.bg_remover is None:
                 raise ValueError("Background remover is not loaded")

@@ -176,6 +176,7 @@ class TrellisTextConditionedMeshAdapterCommon(TextToMeshModel):
         Returns:
             Dictionary with generated mesh information
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("TRELLIS requires CUDA; CPU inference is not supported.")

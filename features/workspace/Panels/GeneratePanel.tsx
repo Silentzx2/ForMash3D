@@ -596,7 +596,21 @@ export const GeneratePanel: React.FC = () => {
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
-  const [isAdvancedAccordionOpen, setIsAdvancedAccordionOpen] = useState(false);
+
+  // Close model dropdown when clicking outside
+  useEffect(() => {
+    if (!modelDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (modelDropdownRef.current && !modelDropdownRef.current.contains(target)) {
+        const trigger = document.getElementById('btn-select-ai-model');
+        if (trigger && trigger.contains(target)) return;
+        setModelDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [modelDropdownOpen]);
   const getStatusInfo = () => {
     const selected = providersList.find(m => m.id === generationSettings.aiModel);
     if (!selected) {
