@@ -1,5 +1,8 @@
 # ForMash3D — Generate Panel Refactor & Sub-Agent Enforcement Spec
 
+
+> **Canonical consolidated plan:** [MASTER_AUDIT_AND_REPAIR_PLAN.md](MASTER_AUDIT_AND_REPAIR_PLAN.md) combines the earlier Generate UI / adapter-locked-inference specification with the current seed, post-processing, holes, mesh-fidelity, UV/PBR, physics/collision, route/mount, regression and documentation tasks. Follow its batch order and stop after each batch until the user explicitly says “proceed”. The legacy material below is preserved for detailed file/call-site requirements; historical PASS labels must be re-verified against current dev.
+
 **Purpose:** Mandatory implementation specification for cleaning the Generate panel, removing fake/duplicate controls, making adapter-owned inference settings authoritative, wiring production presets end-to-end, synchronizing docs/tests, and pushing verified changes to `dev`.
 
 **Repository:** `Silentzx2/ForMash3D`  
