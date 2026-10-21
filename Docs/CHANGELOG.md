@@ -3,6 +3,7 @@
 - Fixed the missing asset preview. The postprocess preview stage renders a 512px PNG in an isolated Blender subprocess and unconditionally enabled Cycles denoising; a Blender build without OpenImageDenoise (the `bpy` wheel used here) aborts the whole render with "Error: Build without OpenImageDenoiser", so the stage was skipped and the job shipped without `previews/thumbnail.png` and `previews/preview.jpg`.
 - The worker now reads the Blender build flag and the Cycles denoiser enum before rendering, renders without denoising at a higher sample count when no denoiser exists, and retries without denoising if the render still fails. A missing preview remains a warning, never a failed job.
 - Added `backend/tests/test_thumbnail_denoise_fallback.py` (5 tests) to the Backend Runtime Contract CI job.
+- Fixed the physics stage report: the collision statistics are published as `parts`/`faces` by the collision service, but the pipeline still read the stale `hull_count`/`total_triangles` keys, so every run reported "Convex Hulls: N/A" and "Collision Triangles: N/A" despite a valid proxy. The pipeline now uses the canonical keys, its convex-hull fallback publishes the same keys, and the report shows the real body mass instead of a center-of-mass value the metadata never contained (`backend/tests/test_collision_stats_contract.py`).
 
 ## Runtime telemetry truthfulness: planned seeds vs executed seeds (2026-10-21)
 
