@@ -41,5 +41,8 @@ jobs:
       - name: TypeScript type-check
         run: bun run test
 
+      - name: Run generation request contract tests
+        run: bun test features/workspace/lib/generationParameters.test.mjs
+
       - name: Build production application
         run: bun run build
