@@ -420,3 +420,166 @@ def test_all_object_types_and_quality_tiers(obj_type, quality):
     assert plan["retopo_mode"] == expected_retopo
     assert "retopo" in plan
     assert plan["retopo"]["mode"] == expected_retopo
+
+
+# =====================================================================
+# 4. Wiring, Preservation, and Auto-Mode Tests
+# =====================================================================
+
+def test_plan_generation_textured_mesh_adapter():
+    """Verify plan_generation recognizes textured mesh adapters when requested explicitly."""
+    runtime = {
+        "has_cuda": True,
+        "free_vram_gb": 24.0,
+        "installed_adapters": [
+            "TrellisImageToTexturedMeshAdapter",
+            "Trellis2ImageToTexturedMeshAdapter",
+        ],
+        "enabled_adapters": [
+            "trellis_image_to_textured_mesh",
+            "trellis2_image_to_textured_mesh",
+        ],
+        "license_optins": {},
+    }
+    plan = plan_generation(
+        {
+            "model_preference": "trellis_image_to_textured_mesh",
+            "auto_mode": False,
+        },
+        runtime,
+    )
+    assert plan["adapter"] == "trellis_image_to_textured_mesh"
+    assert plan["would_have_chosen"] == "trellis_image_to_textured_mesh"
+
+
+@pytest.mark.anyio
+async def test_planner_wiring_preserves_explicit_model_when_auto_disabled():
+    """Verify endpoint preserves explicit model preference when auto_mode=False."""
+    captured_job: JobRequest | None = None
+
+    class MockScheduler:
+        def validate_model_preference(self, model_id, feature):
+            return True
+
+        def get_available_models(self, feature):
+            return {feature: ["triposg_image_to_raw_mesh", "trellis2_image_to_raw_mesh"]}
+
+        async def schedule_job(self, job_req: JobRequest) -> str:
+            nonlocal captured_job
+            captured_job = job_req
+            return "job-explicit-1"
+
+    req = ImageToRawMeshRequest(
+        image_base64=TINY_PNG_B64,
+        model_preference="triposg_image_to_raw_mesh",
+        auto_mode=False,
+    )
+
+    with patch("core.runtime_probe.probe_runtime", return_value=_get_mock_runtime()):
+        resp = await image_to_raw_mesh(req, scheduler=MockScheduler(), file_store=None)
+
+    assert resp.job_id == "job-explicit-1"
+    assert captured_job is not None
+    assert captured_job.model_preference == "triposg_image_to_raw_mesh"
+    assert captured_job.metadata["plan"]["adapter"] == "triposg_image_to_raw_mesh"
+    assert "fallback_chain" in captured_job.metadata
+
+
+@pytest.mark.anyio
+async def test_planner_wiring_auto_mode_uses_would_have_chosen():
+    """Verify endpoint uses would_have_chosen when auto_mode=True."""
+    captured_job: JobRequest | None = None
+
+    class MockScheduler:
+        def validate_model_preference(self, model_id, feature):
+            return True
+
+        def get_available_models(self, feature):
+            return {feature: ["trellis2_image_to_raw_mesh", "hunyuan3d_shape_v21_image_to_raw_mesh"]}
+
+        async def schedule_job(self, job_req: JobRequest) -> str:
+            nonlocal captured_job
+            captured_job = job_req
+            return "job-auto-1"
+
+    req = ImageToRawMeshRequest(
+        image_base64=TINY_PNG_B64,
+        auto_mode=True,
+        requested_quality="balanced",
+        object_type="general",
+    )
+
+    with patch("core.runtime_probe.probe_runtime", return_value=_get_mock_runtime()):
+        resp = await image_to_raw_mesh(req, scheduler=MockScheduler(), file_store=None)
+
+    assert resp.job_id == "job-auto-1"
+    assert captured_job is not None
+    # balanced + general routes to trellis2_image_to_raw_mesh
+    assert captured_job.model_preference == "trellis2_image_to_raw_mesh"
+    assert captured_job.metadata["chosen_model"] == "trellis2_image_to_raw_mesh"
+    assert captured_job.metadata["planner_applied"] is True
+    assert captured_job.inputs["fallback_chain"] == captured_job.metadata["fallback_chain"]
+
+
+@pytest.mark.anyio
+async def test_planner_wiring_input_prep_flags_passed():
+    """Verify request-level input_prep overrides are passed into plan and metadata."""
+    captured_job: JobRequest | None = None
+
+    class MockScheduler:
+        def validate_model_preference(self, model_id, feature):
+            return True
+
+        def get_available_models(self, feature):
+            return {feature: ["trellis2_image_to_raw_mesh"]}
+
+        async def schedule_job(self, job_req: JobRequest) -> str:
+            nonlocal captured_job
+            captured_job = job_req
+            return "job-prep-1"
+
+    req = ImageToRawMeshRequest(
+        image_base64=TINY_PNG_B64,
+        input_prep={
+            "remove_background": False,
+            "tight_crop": False,
+        },
+    )
+
+    with patch("core.runtime_probe.probe_runtime", return_value=_get_mock_runtime()):
+        resp = await image_to_raw_mesh(req, scheduler=MockScheduler(), file_store=None)
+
+    assert resp.job_id == "job-prep-1"
+    assert captured_job is not None
+    prep = captured_job.metadata["plan"]["input_prep"]
+    assert prep["remove_background"] is False
+    assert prep["tight_crop"] is False
+
+
+@pytest.mark.anyio
+async def test_planner_wiring_rejects_unavailable_explicit_model():
+    """Verify endpoint returns 400 when explicit model is unavailable and auto_mode=False."""
+    class MockScheduler:
+        def validate_model_preference(self, model_id, feature):
+            return True
+
+        def get_available_models(self, feature):
+            return {feature: ["hunyuan3d_shape_v21_image_to_raw_mesh"]}
+
+        async def schedule_job(self, job_req: JobRequest) -> str:
+            return "should-not-reach"
+
+    req = ImageToRawMeshRequest(
+        image_base64=TINY_PNG_B64,
+        model_preference="completely_missing_model",
+        auto_mode=False,
+    )
+
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc_info:
+        with patch("core.runtime_probe.probe_runtime", return_value=_get_mock_runtime()):
+            await image_to_raw_mesh(req, scheduler=MockScheduler(), file_store=None)
+
+    assert exc_info.value.status_code == 400
+    assert "unavailable" in exc_info.value.detail.lower()
+
