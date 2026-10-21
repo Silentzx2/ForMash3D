@@ -2118,7 +2118,7 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            textureResolution: batchTexRes,
            quadTopology: batchItem.quadTopology ?? false,
            topologyMode: batchItem.topologyMode ?? 'triangle',
-seed: batchItem.seed ?? 42891,
+            seed: batchItem.seed ?? 42891,
             removeBackground: batchItem.removeBackground ?? true,
             autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 0 },
             generateTexture: batchItem.generateTexture ?? true,
@@ -2170,7 +2170,7 @@ seed: batchItem.seed ?? 42891,
          let effectiveSettings = batchSettings;
          if (batchSettings.intent) {
            try {
-const resolved = await getApiClient().resolveSmartIntent(
+              const resolved = await getApiClient().resolveSmartIntent(
                 batchSettings.intent,
                 batchSettings.aiModel || undefined,
               );
@@ -2187,7 +2187,7 @@ const resolved = await getApiClient().resolveSmartIntent(
            }
          }
 
-// Batch and single submissions use the same manifest-declared model capabilities.
+          // Batch and single submissions use the same manifest-declared model capabilities.
           const effectiveModelId = effectiveSettings.aiModel || '';
           const selectedCapabilities = modelDetails[effectiveModelId]?.capabilities || {};
           const modelCapabilities = resolveGenerationModelCapabilities(effectiveModelId, selectedCapabilities);
