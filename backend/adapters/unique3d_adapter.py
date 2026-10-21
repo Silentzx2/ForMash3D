@@ -29,7 +29,11 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 logger = logging.getLogger(__name__)
 
-# Same effective values as dev scheduler; numerical settings are locked here.
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", input_processing=true, do_refine=true, expansion_weight=0.1, init_type="std", low_vram=false)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Unique3D adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Unique3D".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "input_processing": True,

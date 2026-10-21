@@ -26,7 +26,11 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-# Same effective values as dev scheduler; numerical settings are locked here.
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", fill_holes=true, offload="auto", low_vram=false)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TaoFlowForge adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "UniRig".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "fill_holes": True,
