@@ -26,7 +26,7 @@ from starlette.background import BackgroundTask
 
 from api.dependencies import get_current_settings, get_scheduler, verify_api_key
 from core.scheduler.multiprocess_scheduler import MultiprocessModelScheduler
-from core.utils.artifact_utils import first_result_path, resolve_declared_artifact
+from core.utils.artifact_utils import first_result_path, resolve_declared_artifact, resolve_manifest_path
 from core.utils.file_utils import encode_file_to_base64, get_file_size_mb, get_storage_base_dir
 
 DEFAULT_MESH_THUMBNAIL_SVG = (
@@ -310,22 +310,7 @@ async def get_model_parameters(
 
 
 def _resolve_manifest_path(model_path: Optional[str]) -> Optional[Path]:
-    if not model_path:
-        return None
-    path = Path(model_path).expanduser()
-    if path.is_absolute():
-        return path if path.exists() else None
-
-    repo_root = Path(__file__).resolve().parents[3]
-    
-    candidates = [
-        repo_root / path,
-        repo_root / "backend" / path,
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate.resolve()
-    return None
+    return resolve_manifest_path(model_path)
 
 
 def _is_model_weights_available(model_config: Any) -> bool:

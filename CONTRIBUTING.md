@@ -73,11 +73,13 @@ bun run lint
 bun run build
 
 # Backend runtime contracts - lightweight, no heavy runtime dependencies.
-# This is exactly what the Backend Runtime Contract CI workflow runs.
+# The Backend Runtime Contract CI workflow runs the contract subset; the
+# manifest path resolution regression is verified with the same command.
 PYTHONPATH=backend python -m pytest -q \
   backend/tests/test_generation_dependency_contract.py \
   backend/tests/test_runtime_source_contracts.py \
   backend/tests/test_resource_planner.py \
+  backend/tests/test_manifest_path_resolution.py \
   backend/thirdparty/tests/test_runtime_path_utils.py
 
 # Verify clean compilation across all Python modules

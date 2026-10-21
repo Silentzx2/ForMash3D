@@ -1697,15 +1697,22 @@ function dataURLtoFile(dataURL: string, filename: string): File {
       let effectiveSettings = generationSettings;
       let effectiveModelId = modelId;
       if (generationSettings.intent) {
-        const resolved = await getApiClient().resolveSmartIntent(
-          generationSettings.intent,
-          generationSettings.aiModel || undefined,
-        );
-        effectiveModelId = resolved.model_id;
-        effectiveSettings = {
-          ...generationSettings,
-          aiModel: effectiveModelId,
-        };
+        // The intent resolve is advisory: the backend re-resolves the intent and
+        // owns model readiness and resource admission, so a resolve failure must
+        // not block generation. Keep the user's explicit model in that case.
+        try {
+          const resolved = await getApiClient().resolveSmartIntent(
+            generationSettings.intent,
+            generationSettings.aiModel || undefined,
+          );
+          effectiveModelId = resolved.model_id;
+          effectiveSettings = {
+            ...generationSettings,
+            aiModel: effectiveModelId,
+          };
+        } catch (intentError) {
+          console.warn('Failed to resolve smart intent, using the selected model directly:', intentError);
+        }
       }
 
       // Route from the selected model's declared capabilities instead of forcing raw-mesh output.

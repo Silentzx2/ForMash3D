@@ -402,7 +402,7 @@ DELETE /api/v1/file-upload/{file_id}
 ### Smart Generation
 `POST /api/v1/smart-generation/generation` accepts an image input, one of the six canonical intent IDs (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), an optional explicit model override, preprocessing/auto-rig/printability controls, and safe preset overrides. It resolves a ready image-capable model deterministically, submits through the existing image raw/textured generation scheduler path, and returns `job_id`, selected model, applied preset, candidate order, and effective configuration.
 
-`GET /api/v1/smart-generation/presets` returns the versioned YAML preset definitions. `POST /api/v1/smart-generation/resolve` returns the deterministic model-selection decision without submitting a job.
+`GET /api/v1/smart-generation/presets` returns the versioned YAML preset definitions. `POST /api/v1/smart-generation/resolve` returns the deterministic model-selection decision without submitting a job. It answers `400` with an actionable `detail` when the intent is unknown, when an explicit model is not registered or is incompatible with the intent, when that model's weights are missing, or when it does not fit the currently free VRAM. The endpoint is a report, not a gate: a client may submit generation without it, because the generation endpoints re-resolve the intent and the scheduler owns model readiness and resource admission (ADR-094).
 
 ## Mesh Generation APIs
 
