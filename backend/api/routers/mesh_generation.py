@@ -1277,7 +1277,19 @@ async def image_to_textured_mesh(
     tracked_temp_dirs: List[str] = []
     try:
         user_id = getattr(current_user, "user_id", None)
-        # Early planner invocation to obtain would_have_chosen and input_prep flags
+        # Determine auto_mode policy:
+        # If auto_mode is explicitly set, follow it.
+        # Otherwise, if caller specified an explicit model_preference (not "auto"/"default"/None), auto_mode is disabled.
+        # Otherwise, follow planner apply configuration (model_choice).
+        from core.planner import plan_generation, get_planner_apply_config
+        apply_cfg = get_planner_apply_config()
+        if mesh_request.auto_mode is not None:
+            is_auto = bool(mesh_request.auto_mode)
+        elif mesh_request.model_preference and str(mesh_request.model_preference).strip().lower() not in ("auto", "default", "none", ""):
+            is_auto = False
+        else:
+            is_auto = bool(apply_cfg.get("model_choice", False))
+
         req_qual = getattr(mesh_request, "requested_quality", None) or getattr(mesh_request, "quality_mode", None) or "balanced"
         planner_req = {
             "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
@@ -1286,9 +1298,11 @@ async def image_to_textured_mesh(
             "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
             "target_polycount": getattr(mesh_request, "target_polycount", None),
             "input_type": "image",
+            "model_preference": mesh_request.model_preference,
+            "auto_mode": is_auto,
+            "input_prep": mesh_request.input_prep,
         }
         from core.runtime_probe import probe_runtime
-        from core.planner import plan_generation, get_planner_apply_config
         try:
             runtime_facts = probe_runtime()
         except Exception as e:
@@ -1302,20 +1316,30 @@ async def image_to_textured_mesh(
         generation_plan = plan_generation(planner_req, runtime_facts)
         would_have_chosen = generation_plan.get("would_have_chosen") or generation_plan.get("adapter")
         logger.info("Planner would_have_chosen: %s, reasons: %s", would_have_chosen, generation_plan.get("reasons"))
-        apply_cfg = get_planner_apply_config()
 
-        if mesh_request.model_preference:
+        if not is_auto and mesh_request.model_preference:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
                 default_model="trellis_image_to_textured_mesh",
                 default_feature="image_to_textured_mesh",
                 scheduler=scheduler,
             )
-        elif apply_cfg.get("model_choice", False) and would_have_chosen:
-            model_id = would_have_chosen
-            feature = "image_to_textured_mesh"
-            preset = {}
-            preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
+        elif is_auto and would_have_chosen:
+            if mesh_request.intent:
+                _, feature, preset, preset_metadata = await _resolve_generation_plan(
+                    mesh_request,
+                    default_model=would_have_chosen,
+                    default_feature="image_to_textured_mesh",
+                    scheduler=scheduler,
+                )
+                model_id = would_have_chosen
+                preset_metadata["chosen_model"] = model_id
+                preset_metadata["planner_applied"] = True
+            else:
+                model_id = would_have_chosen
+                feature = "image_to_textured_mesh"
+                preset = {}
+                preset_metadata = {"applied_preset": preset, "chosen_model": model_id, "planner_applied": True}
         else:
             model_id, feature, preset, preset_metadata = await _resolve_generation_plan(
                 mesh_request,
@@ -1564,6 +1588,7 @@ async def image_to_textured_mesh(
                 "object_type": getattr(mesh_request, "object_type", "general") or "general",
                 "symmetry": getattr(mesh_request, "symmetry", "none") or "none",
                 "plan": generation_plan,
+                "fallback_chain": generation_plan.get("fallback_chain", []),
                 **preset_metadata,
                 "preprocessing": preprocessing_metadata,
                 "preprocessing_review_override": mesh_request.preprocessing_review_override,
@@ -1597,6 +1622,11 @@ async def image_to_textured_mesh(
         for td in tracked_temp_dirs:
             shutil.rmtree(td, ignore_errors=True)
         raise
+    except ValueError as e:
+        for td in tracked_temp_dirs:
+            shutil.rmtree(td, ignore_errors=True)
+        logger.warning(f"Validation error in image_to_textured_mesh: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         for td in tracked_temp_dirs:
             shutil.rmtree(td, ignore_errors=True)

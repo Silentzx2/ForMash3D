@@ -28,11 +28,16 @@ def test_trellis2_fails_when_textured_exporter_is_unavailable(monkeypatch):
 
 
 def test_hunyuan_paint_defaults_to_experimental_max_view_resolution():
+    from adapters.hunyuan3d_paint_v21 import _LOCKED_INFERENCE_PROFILE
+
+    assert _LOCKED_INFERENCE_PROFILE == {"max_num_view": 9, "resolution": 768}
     adapter = Hunyuan3DPaintV21ImageMeshPaintingAdapter(vram_requirement=12000)
     schema = adapter.get_parameter_schema()["parameters"]
     assert schema["max_num_view"]["default"] == 9
     assert schema["max_num_view"]["maximum"] == 12
+    assert schema["max_num_view"]["readOnly"] is True
     assert schema["resolution"]["default"] == 768
+    assert schema["resolution"]["readOnly"] is True
 
 
 @pytest.mark.parametrize(
