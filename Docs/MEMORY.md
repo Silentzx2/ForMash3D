@@ -7,7 +7,7 @@
 - **Preset SSOT**: the panel derives the chip summary and recipe values from the backend catalogue instead of a second hardcoded copy. The offline fallback moved to `constants/smartPresetFallback.json` and is guarded by `backend/tests/test_smart_preset_parity.py`. The mobile preset's atlas size was corrected from 512 (rejected by the API) to 1024.
 - **Dead control removed**: the Live execution panel's "Enable Low VRAM Mode (<8GB) & Retry" button could not change anything in the request, so it was deleted.
 - **Verification**: `bun test` 41/41 pass, `npx tsc --noEmit` clean, `npx eslint` clean on the changed files, `backend/tests/test_preset_alignment_and_persistence.py` 24/24 pass, `backend/tests/test_smart_preset_parity.py` passes, and the CI backend contract subset passes (56 tests). The heavy backend modules and GPU inference are **NOT RUN** in this environment (missing `torch`/`trimesh`/`skimage`, no GPU); the 53 import failures are identical before and after this change.
-- **Commit**: `537d8b49` pushed to `origin/dev`. The `upstream/dev` push is blocked by GitHub permissions (`remote: Permission to Silentzx2/ForMash3D.git denied to tanushreesindur0-rgb`, HTTP 403) and needs an upstream merge request.
+- **Commit**: `537d8b49` + `47251a8a` pushed to `origin/dev` and `upstream/dev`. The first upstream push failed with `remote: Permission to Silentzx2/ForMash3D.git denied` because the sandbox codespace credential helper (`/.codespaces/bin/gitcredential_github.sh`) is not authorized for that repository; `git -c credential.helper= push` with an explicit credential succeeds. No token was written to the repository, the git config, or disk.
 
 ---
 

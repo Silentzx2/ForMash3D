@@ -503,7 +503,7 @@ All documentation targets have been synchronized to reflect the actual architect
    - The panel hardcoded a second copy of the preset budgets and the mobile preset declared an atlas size the API rejects.
    - Fixed: the panel derives the chip summary from the backend catalogue, the offline fallback table is `constants/smartPresetFallback.json` (parity-tested by `backend/tests/test_smart_preset_parity.py`), and the mobile atlas size is 1024.
 
-- [x] Changes have been committed and pushed to `dev`, or an exact documented GitHub permission/branch-protection blocker is reported. Commit `537d8b49` is pushed to `origin/dev` (`tanushreesindur0-rgb/ForMash3D`). Pushing to `upstream/dev` (`Silentzx2/ForMash3D`) is blocked by GitHub permissions: `remote: Permission to Silentzx2/ForMash3D.git denied to tanushreesindur0-rgb` (HTTP 403). The branch is ready for an upstream merge request; no code is missing.
+- [x] Changes have been committed and pushed to `dev`. Commits `537d8b49` and `47251a8a` are pushed to `origin/dev` (`tanushreesindur0-rgb/ForMash3D`) and to `upstream/dev` (`Silentzx2/ForMash3D`); the upstream push required an explicit credential because the sandbox codespace credential helper is not authorized for that repository.
 - [x] The final response distinguishes verified tests from checks not run and includes the commit/PR reference where applicable.
 
 **Do not declare success if any required gate was silently skipped.** If a gate cannot be completed, state the blocker, complete the remaining work, and leave the task explicitly partially verified rather than inventing a pass.
