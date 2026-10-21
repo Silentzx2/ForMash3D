@@ -1,5 +1,12 @@
 # Changelog — ForMash3D
 
+## Runtime telemetry truthfulness: planned seeds vs executed seeds (2026-10-21)
+
+- The runtime log no longer announces a seed count that no execution honors. The planner's `num_seeds` is a plan value, executed only when `planner_rules.yaml` sets `apply.auto_seeds: true` (it is off), so a request with one candidate ran one inference while the log said "3 seeds" — for every model adapter. `backend/core/planner.py::resolve_seed_plan` is now the single seed policy: the user's `candidate_count` wins, `apply.auto_seeds` decides whether the planned count runs, and `quality.yaml` `seeds.max_candidates` caps the result (ADR-095).
+- The worker reports what actually runs: `[RUNTIME PARAMETERS]` carries `candidate_count`, `planned_candidate_count`, `auto_seeds_enabled` and `seed_schedule`, a `[SEED PLAN]` line states the decision, and the start box shows the candidate count and the seed schedule instead of the base seed alone. The planner reason line reads "3 planned seeds, 1 executed because auto_seeds is disabled".
+- Adapter-owned inference values are reported after inference: the start box names the source, and a new `[EFFECTIVE PARAMETERS]` line logs the steps, guidance, seed and texture resolution the adapter actually used (TRELLIS: 50/50 steps, sparse CFG 7.5, SLAT CFG 3.0). No locked adapter profile was changed.
+- Removed the duplicated `apply:` block in `backend/config/planner_rules.yaml`; the effective values are unchanged. Added `backend/tests/test_seed_plan_resolution.py` (7 tests) to the Backend Runtime Contract CI job.
+
 ## Intent resolution fix for mesh generation (2026-10-21)
 
 - Fixed `HTTP 400` on `POST /api/v1/smart-generation/resolve`, which failed mesh generation whenever an output preset was selected. Manifest model paths (for example `backend/pretrained/TRELLIS`) were resolved against the wrong roots, so every model looked uninstalled to the intent resolver: the API and scheduler processes do not run from the repository root (Docker supervisord uses `/app/backend`, `backend/scripts/run_server.sh` changes into `backend/`). A single repository-root-relative resolver (`core/utils/artifact_utils.py::resolve_manifest_path`) now backs both the resolver and the model-readiness badge, so the two can no longer disagree (ADR-094).
@@ -18,10 +25,3 @@
 - Replaced the boolean-default masking of preset-owned options with a tri-state request contract (`texture_resolution`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `generate_lod`, `lod_preset`, `lod_count`): explicit request value > intent preset > backend default, with `target_polycount` keeping its numeric presence contract.
 - Made the backend preset catalogue the single source of truth for the panel: preset chip summaries and recipe values now come from `backend/config/smart_presets.yaml`, the offline fallback table is `constants/smartPresetFallback.json` guarded by a parity test, the mobile atlas size was corrected to a value the API accepts, and the dead "Enable Low VRAM Mode and retry" action was removed.
 - Added regression coverage for the new contract: 12 frontend request-builder rules, 10 backend precedence tests, and the frontend/backend preset parity test; synchronized the architecture, design, PRD, API, security, and experiment documentation with the verified implementation.
-
-## 4C: Documentation and repository cleanup (2026-10-20)
-
-- Restored `Docs/EXPERIMENTAL-MODEL-SETTINGS.md` and added ADR-085 (Targeted hole repair), ADR-086 (Memory-safe decimation), and ADR-087 (UV backend auto-resolver) to `Docs/DECISIONS.md`.
-- Removed tracked binaries in `deliverables/`, added `deliverables/` to `.gitignore`, and condensed changelog to exactly 3 entries.
-- Replaced `Docs/TASKS.md` with verified status register; synchronized `Docs/MEMORY.md`, `Docs/ARCHITECTURE.md` (SSOT Configuration Map), and `README.md`.
-- Added `pytest.importorskip("xatlas")` test guards for clean execution in environments where C-extensions are omitted.

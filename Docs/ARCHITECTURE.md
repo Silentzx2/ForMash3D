@@ -181,6 +181,10 @@ flowchart TD
 ### Deterministic Planner v1 & Model Capability Contracts (Task 3B)
 - `backend/config/planner_rules.yaml` & `backend/core/planner.py`: Configures benchmark-driven rules per object type (`mechanical`, `organic`, `character`, `general`) and quality tier (`fast`, `balanced`, `high`). Dynamically selects adapter, preset, seed count, feature-aware retopology mode, and UV backend. Full plan recomputed on any fallback.
 
+### Seed Plan and Runtime Telemetry Contract
+- The planner's `num_seeds` is a **plan value**, not an execution count. It is only executed when `planner_rules.yaml` sets `apply.auto_seeds: true`; the user's `candidate_count` always wins, and the candidate count is capped by `quality.yaml` `seeds.max_candidates`. `backend/core/planner.py::resolve_seed_plan` is the single place that resolves this into the candidate count and the exact seed schedule (`base_seed + index * seed_step`, with the requested seed as the base).
+- The worker reports what actually runs: `[RUNTIME PARAMETERS]` carries `candidate_count`, `planned_candidate_count`, `auto_seeds_enabled` and `seed_schedule`, `[SEED PLAN]` repeats the decision in one line, and the start box shows the candidate count and the seed schedule instead of the base seed alone. Adapter-owned inference values (steps, guidance) are reported after inference as `[EFFECTIVE PARAMETERS]` from the adapter's own `generation_info`, because the adapter profile is clamped inside the adapter (for example TRELLIS caps its stage steps at 50).
+
 ### Final Parity Benchmark & Competitive Scorecard (Task 3D)
 - `scripts/run_final_parity_benchmark.py`: Evaluates canonical test shapes (cube, sphere, cylinder, mechanical prop) comparing raw baseline vs postprocessed meshes across triangle count, hole count, non-manifold edges, feature-edge retention, UV utilization, and PBR validation.
 - Output artifacts: `Docs/baseline_vs_now_benchmark.json` and `parity_scorecard.json` containing authoritative competitive comparisons across ForMash3D, Tripo, Meshy, and Hyper3D.

@@ -247,10 +247,3 @@ default_bake:
   normal_from_master: true
   convention: "opengl"
   bake_ao: false
-
-
-# Planner recommendations are observational until measured benchmark evidence justifies changes.
-apply:
-  model_choice: false
-  auto_seeds: false
-  input_prep: true

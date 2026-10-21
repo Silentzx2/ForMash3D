@@ -845,6 +845,24 @@ def _process_job_in_worker(
         # Section 26: Exact runtime parameter logging
         request_inputs = job_request.inputs or {}
         model_inputs = _build_model_inference_inputs(request_inputs, model_id=model_id)
+
+        # Effective seed plan. The planner's num_seeds is a plan value, so the
+        # runtime log reports the candidates and the exact seeds that run.
+        from core.config import get_quality_config
+        from core.planner import get_planner_apply_config, resolve_seed_plan
+        seeds_cfg = get_quality_config()["seeds"]
+        seed_plan = resolve_seed_plan(
+            request_inputs,
+            model_inputs,
+            seeds_cfg=seeds_cfg,
+            apply_cfg=get_planner_apply_config(),
+        )
+        total_seeds_to_run = int(seed_plan["candidate_count"])
+        base_seed = int(seed_plan["base_seed"])
+        seed_step = int(seed_plan["seed_step"])
+        early_stop_score = float(seeds_cfg["early_stop_score"])
+        seed_schedule = list(seed_plan["seed_schedule"])
+
         runtime_log = {
             "model": model_id,
             "model_version": getattr(loaded_model, "version", "1.0"),
@@ -862,7 +880,11 @@ def _process_job_in_worker(
                     "grid_resolution", "adapter_owned" if str(model_id).lower() in _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS else "not_supported"))),
             ),
             "effective_geometry_resolution": "reported_after_decode_if_supported",
-            "actual_seed": model_inputs.get("seed", "not_supported"),
+            "actual_seed": seed_schedule[0] if seed_schedule else "not_supported",
+            "candidate_count": total_seeds_to_run,
+            "planned_candidate_count": int(seed_plan["planned_candidate_count"]),
+            "auto_seeds_enabled": bool(seed_plan["auto_seeds_enabled"]),
+            "seed_schedule": seed_schedule,
             "actual_dtype": str(getattr(loaded_model, "dtype", None) or model_inputs.get("dtype") or "adapter_default"),
             "actual_device": (
                 "cpu" if cpu_only else str(
@@ -878,6 +900,14 @@ def _process_job_in_worker(
             "actual_decimation_target": model_inputs.get("decimation_target", "not_supported"),
         }
         logger.info(f"[RUNTIME PARAMETERS] job_id={job_id} params={json.dumps(runtime_log, default=str)}")
+        logger.info(
+            "[SEED PLAN] job_id=%s candidates=%s planned=%s auto_seeds=%s seeds=%s",
+            job_id,
+            total_seeds_to_run,
+            seed_plan["planned_candidate_count"],
+            seed_plan["auto_seeds_enabled"],
+            seed_schedule,
+        )
 
         # Format a clean, human-readable start box with REAL runtime values
         input_desc = "None"
@@ -899,10 +929,15 @@ def _process_job_in_worker(
                     ("Feature Type", job_request.feature),
                     ("Device", "CPU-only (GPU intentionally unused)" if cpu_only else f"{runtime_log['actual_device']} ({get_gpu_memory_summary(gpu_id)})"),
                     ("Input Source", input_desc),
-                    ("Steps / Guidance", f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"),
+                    ("Steps / Guidance", (
+                        f"Steps={runtime_log['actual_inference_steps']} | CFG={runtime_log['actual_guidance']}"
+                        if runtime_log["actual_inference_steps"] != "adapter_owned"
+                        else "adapter-owned (effective values reported after inference)"
+                    )),
                     ("Requested Resolution / Grid", f"{runtime_log['requested_resolution_parameter']} / {runtime_log['requested_extraction_resolution']}"),
                     ("Effective Geometry Resolution", runtime_log["effective_geometry_resolution"]),
-                    ("Seed", runtime_log["actual_seed"]),
+                    ("Candidates", str(total_seeds_to_run)),
+                    ("Seed" if len(seed_schedule) <= 1 else "Seeds", ", ".join(str(seed) for seed in seed_schedule)),
                     ("Quality Contract", runtime_log["source_quality_contract"]),
                     ("Downstream Budget", runtime_log["postprocess_target_polycount"]),
                 ],
@@ -912,25 +947,6 @@ def _process_job_in_worker(
         # Reset after model load so these peaks cover this inference call, not model initialization.
         _reset_cuda_peak_memory_stats(resource_plan, gpu_id)
         inference_start_time = time.time()
-
-        from core.config import get_quality_config
-        from core.planner import get_planner_apply_config
-        seeds_cfg = get_quality_config()["seeds"]
-        apply_cfg = get_planner_apply_config()
-
-        user_candidate_count = int(request_inputs.get("candidate_count") or 1)
-        plan_dict = request_inputs.get("plan") or {}
-        plan_num_seeds = int(plan_dict.get("num_seeds") or 1)
-
-        mode_a = user_candidate_count > 1
-        mode_b = (user_candidate_count == 1) and bool(apply_cfg.get("auto_seeds", False)) and (plan_num_seeds > 1)
-
-        total_seeds_to_run = user_candidate_count if mode_a else (plan_num_seeds if mode_b else 1)
-        max_cands = int(seeds_cfg["max_candidates"])
-        total_seeds_to_run = min(max(total_seeds_to_run, 1), max_cands)
-        base_seed = int(model_inputs.get("seed") or seeds_cfg["base_seed"])
-        seed_step = int(seeds_cfg["seed_step"])
-        early_stop_score = float(seeds_cfg["early_stop_score"])
 
         if total_seeds_to_run > 1:
             candidates_list = []
@@ -993,7 +1009,7 @@ def _process_job_in_worker(
                 result["candidates"] = candidates_list
                 result["seed_scores"] = [c.get("score", 0.0) for c in candidates_list]
                 result["selected_candidate_id"] = best_idx
-                if mode_b:
+                if seed_plan["auto_candidates"]:
                     for i, c in enumerate(candidates_list):
                         if i != best_idx and c.get("mesh_path") and os.path.isfile(c["mesh_path"]):
                             try:
@@ -1003,6 +1019,24 @@ def _process_job_in_worker(
         else:
             with torch.no_grad():
                 result = loaded_model.process(model_inputs)
+
+        effective_info = result.get("generation_info") if isinstance(result, dict) else None
+        if isinstance(effective_info, dict):
+            logger.info(
+                "[EFFECTIVE PARAMETERS] job_id=%s model=%s params=%s",
+                job_id,
+                model_id,
+                json.dumps(
+                    {
+                        key: effective_info.get(key)
+                        for key in (
+                            "num_inference_steps", "ss_sampling_steps", "slat_sampling_steps",
+                            "guidance_scale", "slat_cfg_strength", "seed", "texture_resolution",
+                        )
+                    },
+                    default=str,
+                ),
+            )
 
         inference_seconds = time.time() - inference_start_time
         if isinstance(result, dict) and result.get("success", True):

@@ -79,6 +79,7 @@ PYTHONPATH=backend python -m pytest -q \
   backend/tests/test_runtime_source_contracts.py \
   backend/tests/test_resource_planner.py \
   backend/tests/test_manifest_path_resolution.py \
+  backend/tests/test_seed_plan_resolution.py \
   backend/thirdparty/tests/test_runtime_path_utils.py
 
 # Verify clean compilation across all Python modules

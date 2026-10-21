@@ -1354,3 +1354,22 @@ Mesh generation failed with `HTTP 400` on `POST /api/v1/smart-generation/resolve
 - The intent flow works again in every deployment layout, and the UI readiness badge and the resolver can no longer contradict each other.
 - Generation is no longer blocked by a pre-flight lookup; a genuinely unusable model fails in the scheduler with a job-level diagnostic instead of a submit-time HTTP error.
 - Verification: `backend/tests/test_manifest_path_resolution.py` covers the CWD-independent resolution, the shared-resolver wiring, and the readiness contract, and it runs in the Backend Runtime Contract CI job.
+## ADR-095: The Planned Seed Count Is Not the Executed Seed Count (2026-10-21)
+
+**Context:**
+The runtime log announced a seed count that no execution honored, for every model adapter:
+
+1. **The plan and the execution disagreed.** The planner selects `num_seeds` from `planner_rules.yaml` (the `high` tier carries `num_seeds: 3`), and the planner reason line printed it as "3 seeds". The scheduler executes the plan's count only when `apply.auto_seeds` is enabled, and `planner_rules.yaml` keeps that switch off, so a request with one candidate ran exactly one inference. The log therefore announced three seeds, then executed one, and the start box reported only the base seed without any candidate count — which reads as the seed and the parameters changing mid-run.
+2. **The runtime parameters were markers, not values.** The start box printed `Steps=adapter_owned | CFG=adapter_owned` and `Requested Resolution / Grid: not_supported / adapter_owned` for every adapter-owned model, while the adapter knew and reported the values it actually used (TRELLIS: 50 sparse steps, 50 SLAT steps, sparse CFG 7.5, SLAT CFG 3.0, texture resolution 2048) in its own `generation_info`.
+3. **The planner rules file declared `apply:` twice.** The trailing duplicate block was silently discarded by the YAML loader, so the effective `apply` values came from the first block and any future edit of the trailing block would have had no effect.
+
+**Decision:**
+1. **One seed policy, one place.** `backend/core/planner.py::resolve_seed_plan` resolves the request, the plan and the configuration into the effective candidate count and the exact seed schedule. The user's `candidate_count` wins, `apply.auto_seeds` decides whether the planned count is executed, and `quality.yaml` `seeds.max_candidates` caps the result.
+2. **The runtime log states what runs.** `[RUNTIME PARAMETERS]` carries `candidate_count`, `planned_candidate_count`, `auto_seeds_enabled` and `seed_schedule`; `[SEED PLAN]` prints the decision in one line; the start box shows the candidate count and the seed schedule. The planner reason line states the planned count and that one candidate is executed while `auto_seeds` is disabled.
+3. **Adapter-owned values are reported after inference.** The start box names the source ("adapter-owned (effective values reported after inference)") and the worker logs `[EFFECTIVE PARAMETERS]` from the adapter's own `generation_info`, so the reported steps, guidance and seed are the ones that ran. No locked adapter profile is changed by this decision.
+4. **One `apply:` block.** The duplicated `apply:` block in `backend/config/planner_rules.yaml` is removed; the values are unchanged.
+
+**Consequences:**
+- The log can no longer imply that three seeds ran when one did, and the reported seed schedule matches the executed candidates for every adapter.
+- The effective inference values of every adapter are visible without reading the adapter source.
+- Verification: `backend/tests/test_seed_plan_resolution.py` covers the seed policy matrix (user count wins, `auto_seeds` off/on, cap, user seed as base, default configuration) and runs in the Backend Runtime Contract CI job.
