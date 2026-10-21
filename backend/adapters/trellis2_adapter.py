@@ -8,6 +8,7 @@ This adapter integrates TRELLIS.2 into our mesh generation framework.
 import logging
 import os
 import uuid
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -30,6 +31,7 @@ _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "pipeline_type": "1536_cascade",
     "max_num_tokens": 524288,
+    "texture_size": 4096,
     "sparse_structure_sampler_params": {
         "steps": 100,
         "guidance_strength": 10.0,
@@ -208,7 +210,7 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
         Returns:
             Dictionary with generated mesh information
         """
-        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
+        inputs = {**inputs, **deepcopy(_LOCKED_INFERENCE_PROFILE)}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("TRELLIS.2 requires CUDA; CPU inference is not supported.")
@@ -406,9 +408,10 @@ class Trellis2ImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "texture_size": {
                     "type": "integer",
-                    "description": "Output texture resolution (width and height)",
-                    "default": 8192,
+                    "description": "Locked model-side texture size; production atlas resolution is configured separately.",
+                    "default": _LOCKED_INFERENCE_PROFILE["texture_size"],
                     "enum": [1024, 2048, 4096, 8192, 16384],
+                    "readOnly": True,
                     "required": False
                 },
                 "remesh": {
@@ -569,7 +572,7 @@ class Trellis2ImageMeshPaintingAdapter(ImageToMeshModel):
         Returns:
             Dictionary with textured mesh information
         """
-        inputs = {**inputs, **_LOCKED_PAINTING_INFERENCE_PROFILE}
+        inputs = {**inputs, **deepcopy(_LOCKED_PAINTING_INFERENCE_PROFILE)}
         try:
             if self.runner is None:
                 raise ValueError("TRELLIS.2 texturing model is not loaded")

@@ -135,13 +135,13 @@ _ADAPTER_OWNED_INFERENCE_PROFILE_MODEL_IDS = frozenset({
 })
 _ADAPTER_OWNED_INFERENCE_INPUTS = frozenset({
     "source_quality", "requested_quality", "quality", "meshQuality", "mesh_quality",
-    "num_inference_steps", "num_steps", "guidance_scale",
+    "num_inference_steps", "num_steps", "steps", "guidance_scale",
     "octree_resolution", "octree_res", "grid_resolution", "num_chunks", "mc_algo",
     "flash_octree_depth", "octree_depth", "dense_octree_depth",
     "hierarchical_octree_depth", "use_flash_decoder", "low_vram", "low_vram_mode",
     "pipeline_type", "max_num_tokens", "sparse_structure_sampler_params",
     "shape_slat_sampler_params", "tex_slat_sampler_params", "sampler_overrides",
-    "resolution", "max_num_view", "ss_sampling_steps", "slat_sampling_steps",
+    "resolution", "texture_size", "max_num_view", "ss_sampling_steps", "slat_sampling_steps",
     "input_processing", "do_refine", "expansion_weight", "init_type",
     "fill_holes", "offload", "enable_flashvdm",
 })

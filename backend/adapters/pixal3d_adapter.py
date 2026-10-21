@@ -11,6 +11,7 @@ import math
 import os
 import sys
 import uuid
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -528,7 +529,7 @@ class Pixal3DImageToRawMeshAdapter(ImageToMeshModel):
         Returns:
             Dictionary with generation results
         """
-        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
+        inputs = {**inputs, **deepcopy(_LOCKED_INFERENCE_PROFILE)}
         try:
             if not torch.cuda.is_available():
                 raise RuntimeError("Pixal3D requires CUDA; CPU fallback is not supported")

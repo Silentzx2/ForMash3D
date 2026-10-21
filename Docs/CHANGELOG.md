@@ -1,3 +1,9 @@
+## Adapter-owned inference lock: alias filtering and request isolation (2026-10-21)
+
+- Locked TRELLIS.2's model-side `texture_size` at the documented 4096 value and marked it read-only in the adapter schema; production atlas resolution remains a separate post-processing option.
+- Hardened the scheduler firewall against the alternate top-level `steps` control and `texture_size`; nested Pixal3D and TRELLIS.2 sampler profiles are copied per request.
+- Updated regression contracts for attempted request overrides, profile ownership and schema parity. No other numerical profiles were retuned; GPU inference requires deployment-hardware verification.
+
 ## Headless preview render: denoiser fallback (2026-10-21)
 
 - Fixed the missing asset preview. The postprocess preview stage renders a 512px PNG in an isolated Blender subprocess and unconditionally enabled Cycles denoising; a Blender build without OpenImageDenoise (the `bpy` wheel used here) aborts the whole render with "Error: Build without OpenImageDenoiser", so the stage was skipped and the job shipped without `previews/thumbnail.png` and `previews/preview.jpg`.

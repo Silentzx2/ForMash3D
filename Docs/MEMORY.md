@@ -1,3 +1,12 @@
+## 2026-10-21 — Adapter-Owned Inference Lock: Alias Filtering and Request Isolation
+
+- **Adapter audit**: confirmed the active max-detail profiles stay in the model adapters; the numerical profiles were not retuned in this pass. TRELLIS.2's documented/runtime model-side texture default was 4096 while its schema advertised an editable 8192, which could diverge when schema values were serialized. The adapter now locks `texture_size=4096` and marks that model-side value read-only; production atlas resolution remains separate.
+- **Overwrite-path hardening**: the scheduler now strips the alternate top-level `steps` control and `texture_size` from adapter-owned model requests, alongside the existing step/guidance/resolution/sampler keys.
+- **Request isolation**: Pixal3D and TRELLIS.2 deep-copy nested profile dictionaries per request, preventing downstream in-place mutation from carrying into later jobs.
+- **Verification**: regression contracts were updated. GPU inference was not run in this editing pass; CI status must be checked after the push.
+
+---
+
 ## 2026-10-21 — Headless Preview Render: Denoiser Fallback
 
 - **Root cause of the missing preview**: `backend/postprocess/tools/thumbnail_worker.py` renders the 512px preview in an isolated Blender subprocess and set `scene.cycles.use_denoising = True` unconditionally. The Blender build in this deployment (the `bpy` wheel) has no OpenImageDenoise, so Cycles aborted the whole render with "Error: Build without OpenImageDenoiser"; the postprocess stage logged "Preview generation skipped" and the job completed at 98% without `previews/thumbnail.png` and `previews/preview.jpg`.

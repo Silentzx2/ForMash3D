@@ -187,6 +187,7 @@ def test_scheduler_strips_inference_overrides_for_adapter_owned_profiles():
         "flash_octree_depth": 5, "dense_octree_depth": 8, "hierarchical_octree_depth": 8,
         "use_flash_decoder": True, "low_vram": True, "target_polycount": 5000,
         "pipeline_type": "512", "max_num_tokens": 49152,
+        "steps": 7, "texture_size": 16384,
         "sparse_structure_sampler_params": {"steps": 12},
         "shape_slat_sampler_params": {"steps": 12},
         "resolution": 1024, "max_num_view": 2, "input_processing": False, "do_refine": False,
@@ -231,7 +232,12 @@ def test_scheduler_strips_inference_overrides_for_adapter_owned_profiles():
         "adapters/taoflowforge_adapter.py",
     ):
         source = (root / path).read_text(encoding="utf-8")
-        assert "inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}" in source
+        assert (
+            "inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}" in source
+            or "inputs = {**inputs, **deepcopy(_LOCKED_INFERENCE_PROFILE)}" in source
+        )
+        if path in ("adapters/pixal3d_adapter.py", "adapters/trellis2_adapter.py"):
+            assert "deepcopy(_LOCKED_INFERENCE_PROFILE)" in source
 
 
 def test_triposg_locked_depth_does_not_auto_downgrade_from_vram_estimate():
@@ -346,6 +352,7 @@ def test_trellis_and_trellis2_use_adapter_owned_inference_profiles():
             "steps": 100, "guidance_strength": 3.5, "guidance_rescale": 0.5, "rescale_t": 8.0,
         },
         "decimation_target": -1, "remesh": False, "low_vram": False,
+        "texture_size": 4096,
     }
     assert trellis2_paint_profile == {
         "tex_slat_sampler_params": {
