@@ -2568,7 +2568,14 @@ def run_postprocess_job(
                     collision_payload = collision_payload.encode("utf-8")
                 collision_path = collision_dir / "collision.glb"
                 collision_path.write_bytes(collision_payload)
-                collision_stats = {"hull_count": 1, "fallback": True, "total_triangles": len(getattr(hull, "faces", []))}
+                collision_stats = {
+                    "method": "convex_hull",
+                    "parts": 1,
+                    "faces": int(len(getattr(hull, "faces", []))),
+                    "vertices": int(len(getattr(hull, "vertices", []))),
+                    "source_faces": int(len(game_ready_mesh.faces)),
+                    "fallback": True,
+                }
                 physics_metadata = build_physics_metadata(game_ready_mesh, physics_config, collision_stats)
                 _write_json(metadata_dir / "physics.json", physics_metadata)
             except Exception as inner_exc:
@@ -2584,10 +2591,10 @@ def run_postprocess_job(
                 "POSTPROCESS: STAGE 8/8 - PHYSICS & COLLISION PROXY",
                 [
                     ("Quality Preset", collision_quality),
-                    ("Convex Hulls", collision_stats.get("hull_count", "N/A") if collision_stats else "N/A"),
-                    ("Collision Triangles", collision_stats.get("total_triangles", "N/A") if collision_stats else "N/A"),
+                    ("Convex Hulls", collision_stats.get("parts", "N/A") if collision_stats else "N/A"),
+                    ("Collision Triangles", collision_stats.get("faces", "N/A") if collision_stats else "N/A"),
                     ("Proxy File", f"{collision_path} ({format_bytes(collision_path.stat().st_size)})"),
-                    ("Center of Mass", physics_metadata.get("center_of_mass", "N/A") if physics_metadata else "N/A"),
+                    ("Body Mass", physics_metadata.get("body", {}).get("mass_kg", "N/A") if physics_metadata else "N/A"),
                     ("Stage Elapsed", f"{collision_duration:.2f}s"),
                 ],
             )

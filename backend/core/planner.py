@@ -490,9 +490,16 @@ def plan_generation(
     if target_polycount is not None:
         retopo_dict["target_polycount"] = target_polycount
 
+    planned_seeds = int(selected_candidate["num_seeds"])
+    auto_seeds = bool((rules.get("apply") or {}).get("auto_seeds", False))
+    seed_note = (
+        f"{planned_seeds} seeds"
+        if auto_seeds
+        else f"{planned_seeds} planned seeds, 1 executed because auto_seeds is disabled"
+    )
     reasons.append(
         f"Selected adapter '{selected_candidate['adapter']}' with preset '{selected_candidate['preset']}' "
-        f"({selected_candidate['num_seeds']} seeds) for quality='{requested_quality}', "
+        f"({seed_note}) for quality='{requested_quality}', "
         f"mesh_style='{mesh_style}', object_type='{object_type}', retopo_mode='{retopo_mode}'."
     )
 
@@ -518,3 +525,51 @@ def get_planner_apply_config() -> Dict[str, bool]:
     """Return feature switches controlling planner application."""
     rules = _load_default_rules()
     return dict(rules.get("apply", {"model_choice": False, "auto_seeds": False, "input_prep": True}))
+
+
+def resolve_seed_plan(
+    request_inputs: Optional[Dict[str, Any]] = None,
+    model_inputs: Optional[Dict[str, Any]] = None,
+    seeds_cfg: Optional[Dict[str, Any]] = None,
+    apply_cfg: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Return the candidate and seed plan that will actually execute.
+
+    The planner's ``num_seeds`` is a plan value: it is only executed when
+    ``apply.auto_seeds`` is enabled. The user's candidate count always wins, and
+    the returned schedule lists the exact seeds that run.
+    """
+    request_inputs = request_inputs or {}
+    model_inputs = model_inputs or {}
+    seeds_cfg = dict(seeds_cfg or {})
+    apply_cfg = dict(apply_cfg if apply_cfg is not None else get_planner_apply_config())
+
+    user_candidate_count = max(1, int(request_inputs.get("candidate_count") or 1))
+    plan_num_seeds = max(1, int((request_inputs.get("plan") or {}).get("num_seeds") or 1))
+    auto_seeds = bool(apply_cfg.get("auto_seeds", False))
+
+    if user_candidate_count > 1:
+        candidate_count = user_candidate_count
+        auto_candidates = False
+    elif auto_seeds and plan_num_seeds > 1:
+        candidate_count = plan_num_seeds
+        auto_candidates = True
+    else:
+        candidate_count = 1
+        auto_candidates = False
+
+    max_candidates = int(seeds_cfg.get("max_candidates") or 4)
+    candidate_count = min(max(candidate_count, 1), max_candidates)
+
+    base_seed = int(model_inputs.get("seed") or seeds_cfg.get("base_seed") or 0)
+    seed_step = int(seeds_cfg.get("seed_step") or 0)
+    return {
+        "candidate_count": candidate_count,
+        "user_candidate_count": user_candidate_count,
+        "planned_candidate_count": plan_num_seeds,
+        "auto_seeds_enabled": auto_seeds,
+        "auto_candidates": auto_candidates,
+        "base_seed": base_seed,
+        "seed_step": seed_step,
+        "seed_schedule": [base_seed + (index * seed_step) for index in range(candidate_count)],
+    }
