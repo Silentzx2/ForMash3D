@@ -1,6 +1,17 @@
 ## Route/page/function mount fixes — 2026-10-21 follow-up
 
 - Added `/workspace/tools` to the route contract, navigation, tool route map and `WorkspaceShell` render switch.
+- Wired active backend mesh operations for inspection, optimization, auto-UV, retopology, repair, collision geometry, one derived LOD, FBX conversion, albedo flattening and high-to-low texture-map baking. Mesh transformations download separate GLB/FBX files; generated maps download as PNG. Source assets are never overwritten.
+- Routed the legacy `/workspace/pbr` path to the real Mesh Tools panel and removed `/workspace/upscale`, which only presented disabled controls and has no 3D-upscale backend.
+- Removed duplicate, unreachable Segment/Remesh/Edit panel branches and deleted the obsolete `SecondaryPanels` component.
+- Removed the unused `ApiClient.generateSmartGeneration()` wrapper; the active Generate intent flow continues to use preset and intent-resolution endpoints.
+- Documented the legacy React-Router feature pages that still require deliberate migration instead of claiming they are mounted.
+
+---
+
+## Route/page/function mount fixes — 2026-10-21 follow-up
+
+- Added `/workspace/tools` to the route contract, navigation, tool route map and `WorkspaceShell` render switch.
 - Wired the new Mesh Tools panel to the existing backend-backed mesh inspection, optimization, auto-UV, auto-retopology and repair helpers. Derived mesh outputs download as new GLBs and never overwrite the selected source asset.
 - Removed duplicate, unreachable Segment/Remesh/Edit panel branches from `SecondaryPanel`; their dedicated panels were already mounted in `WorkspaceShell`.
 - Removed the unused `ApiClient.generateSmartGeneration()` wrapper; the active Generate intent flow continues to use the preset and intent-resolution endpoints.

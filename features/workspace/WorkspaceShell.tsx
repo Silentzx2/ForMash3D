@@ -34,9 +34,6 @@ const RemeshPanel = dynamic(() => import('./Panels/RemeshPanel').then(mod => mod
   ssr: false,
   loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
 });
-const SecondaryPanel = dynamic(() => import('./Panels/SecondaryPanels').then(mod => mod.SecondaryPanel), {
-  ssr: false,
-});
 const UVUnwrapPanel = dynamic(() => import('./Panels/UVUnwrapPanel').then(mod => mod.UVUnwrapPanel), {
   ssr: false,
   loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
@@ -110,8 +107,7 @@ const ROUTE_SEGMENT_TO_TOOL: Record<string, ToolType> = {
   'uv': 'uv',
   'segment': 'segment',
   'edit': 'edit',
-  'upscale': 'upscale',
-  'pbr': 'pbr',
+  'pbr': 'tools',
   'animation': 'animation',
   'animate': 'animation',
   'rigging': 'rigging',
@@ -353,7 +349,7 @@ export const WorkspaceShell: React.FC = () => {
       case 'animation': return <AnimationLeftPanel />;
       case 'rigging': return <RiggingLeftPanel />;
       case 'tools': return <MeshToolsPanel />;
-      case 'upscale': case 'pbr': return <SecondaryPanel tool={activeTool} />;
+      case 'pbr': return <MeshToolsPanel />;
       default: return <GeneratePanel />;
     }
   };

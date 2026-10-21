@@ -6,7 +6,7 @@ export { LeftNavigation } from './Navigation/LeftNavigation';
 export { GeneratePanel } from './Panels/GeneratePanel';
     export { TexturePanel } from './Panels/TexturePanel';
 export { RemeshPanel } from './Panels/RemeshPanel';
-export { SecondaryPanel } from './Panels/SecondaryPanels';
+export { MeshToolsPanel } from './Panels/MeshToolsPanel';
 export { RightAssetsPanel } from './RightPanel/RightAssetsPanel';
 export { RightPropertyPanel } from './RightPanel/RightPropertyPanel';
 export { RightPromptPanel } from './RightPanel/RightPromptPanel';

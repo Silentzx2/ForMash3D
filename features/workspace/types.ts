@@ -11,7 +11,6 @@ export type ToolType =
   | 'texture'
   | 'edit'
   | 'uv'
-  | 'upscale'
   | 'pbr'
   | 'environment'
   | 'animation'

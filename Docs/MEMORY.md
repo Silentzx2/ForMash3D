@@ -1,5 +1,16 @@
 ## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
 
+- Added `/workspace/tools` as a visible, allow-listed workspace panel and routed `/workspace/pbr` into that functional tool suite.
+- Connected inspect, optimize, auto-UV, auto-retopology, repair, collision, LOD 1, FBX conversion, albedo flattening and high-to-low texture-map baking to existing backend helpers. Output meshes/maps download as separate GLB/FBX/PNG files without overwriting source assets.
+- Removed the unavailable `/workspace/upscale` route, duplicate Segment/Remesh/Edit panel branches and the obsolete `SecondaryPanels` component.
+- Deleted the unused smart-generation client wrapper while preserving active smart preset and intent resolution calls.
+- Added regression coverage asserting that the unsupported upscale route is rejected and the Mesh Tools route remains available.
+- Explicit migration backlog remains: legacy image-editor, board, graph and wiki pages depend on missing legacy providers/React Router and are not treated as mounted Next.js routes.
+
+---
+
+## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
+
 - Added a real `/workspace/tools` panel to the Next.js route allow-list, workspace navigation, route map and panel renderer.
 - Connected inspect, optimize, auto-UV, auto-retopology and topology-repair actions to the existing FastAPI mesh-tools API; transformed outputs download as separate GLBs and do not overwrite the input asset.
 - Removed unreachable duplicate Segment/Remesh/Edit UI branches from `SecondaryPanel` and deleted the unused smart-generation client wrapper.
