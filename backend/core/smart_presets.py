@@ -9,6 +9,11 @@ except ImportError:
     torch = None
 import yaml
 
+try:
+    from backend.core.utils.artifact_utils import resolve_manifest_path
+except ImportError:
+    from core.utils.artifact_utils import resolve_manifest_path
+
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "smart_presets.yaml"
 
@@ -68,18 +73,8 @@ def get_available_vram_mb() -> Optional[int]:
 def _model_ready(config: Any) -> bool:
     if not getattr(config, "enabled", True):
         return False
-    model_path = getattr(config, "model_path", None)
-    if not model_path:
-        return False
-    path = Path(str(model_path)).expanduser()
-    if not path.is_absolute():
-        candidates = [
-            Path.cwd() / path,
-            Path(__file__).resolve().parents[1] / path,
-            Path(__file__).resolve().parents[2] / str(model_path).replace("backend/", "", 1),
-        ]
-        path = next((candidate for candidate in candidates if candidate.exists()), path)
-    if not path.exists():
+    path = resolve_manifest_path(getattr(config, "model_path", None))
+    if path is None:
         return False
     if path.is_file():
         return path.stat().st_size > 0

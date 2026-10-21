@@ -40,6 +40,7 @@ flowchart TD
 4. **Single Source of Truth (SSOT)**: Output preset recipes live in `backend/config/smart_presets.yaml`; production thresholds, crease angles, hole thresholds, and baking margins live in `backend/config/quality.yaml`. Model VRAM reservations and hardware facts are defined in `backend/config/models.yaml`.
 5. **Raw Master Immutability**: The initial generator output is saved to `master/source.glb` and protected by SHA-256 byte-level verification. All downstream decimation, retopology, unwrapping, baking, and LODs produce separate derived artifacts.
 6. **One production option, one owner**: Every production option is resolved exactly once, at the API gateway, from a single tri-state contract (see §5).
+7. **The intent → model resolve is advisory**: `POST /api/v1/smart-generation/resolve` reports which model an intent maps to; it is not a gate. Model readiness and resource admission belong to the scheduler, so a failed resolve must not block a submission — the client keeps the user's explicit model and the backend re-resolves the intent (ADR-094).
 
 ---
 

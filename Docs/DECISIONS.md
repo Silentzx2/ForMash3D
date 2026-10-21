@@ -1337,3 +1337,20 @@ The Generate panel owned production controls (LOD chain, collision, printability
 - Verification: `backend/tests/test_preset_alignment_and_persistence.py` covers the precedence matrix, `backend/tests/test_smart_preset_parity.py` covers the fallback/preset parity, and `features/workspace/lib/generationParameters.test.mjs` covers the request serialization.
 
 
+## ADR-094: Repository-Root Model Path Resolution and Advisory Intent Resolution (2026-10-21)
+
+**Context:**
+Mesh generation failed with `HTTP 400` on `POST /api/v1/smart-generation/resolve` whenever an output preset (intent) was selected:
+
+1. **Model paths were resolved against the wrong roots.** `core/smart_presets.py::_model_ready` built its candidate list from `Path.cwd() / model_path`, `backend / model_path`, and `<repo-root> / model_path.replace("backend/", "")`. Neither the API process (Docker supervisord runs it from `/app/backend`) nor `backend/scripts/run_server.sh` (which changes into `backend/`) starts from the repository root, so a manifest path such as `backend/pretrained/TRELLIS` resolved to `backend/backend/pretrained/...` or `<repo-root>/pretrained/...` — never to the real directory. Every model therefore looked "not installed", `resolve_intent` raised `ValueError`, and the endpoint answered 400. The readiness badge in the UI stayed green because `api/routers/system.py` resolved the same manifest path against the repository root correctly: two implementations of one lookup disagreed.
+2. **The client treated an advisory lookup as a gate.** The Generate action awaited the intent resolve and aborted the whole submission when it failed, while the queue and batch paths already continued with the user's explicit model. Readiness and resource admission belong to the scheduler (ADR-045, ADR-046), so a pre-flight lookup must not decide whether a job may start.
+
+**Decision:**
+1. **One manifest path resolver.** `core/utils/artifact_utils.py::resolve_manifest_path` resolves a manifest path against the repository root (`<repo>/<path>`, `<repo>/backend/<path>`) and the current working directory, and returns the first existing location. Both `core/smart_presets.py::_model_ready` and `api/routers/system.py::_resolve_manifest_path` use it, so readiness and model listing can no longer disagree. `core/utils/__init__.py` exposes its helpers lazily so a light submodule import does not require the optional upload/image dependencies.
+2. **Intent resolution is advisory.** `POST /api/v1/smart-generation/resolve` still reports the deterministic intent → model decision, but a client may submit generation without it: the backend re-resolves the intent, and the scheduler owns model readiness and resource admission. The Generate action now logs a resolve failure and continues with the user's explicit model, exactly like the queue and batch paths.
+3. **The endpoint keeps its honest failures.** An unknown intent, an unregistered or incompatible model, a model whose weights are missing, and an explicit model that cannot fit the current free VRAM still answer 400 with an actionable message; only the client-side gate on that answer is removed.
+
+**Consequences:**
+- The intent flow works again in every deployment layout, and the UI readiness badge and the resolver can no longer contradict each other.
+- Generation is no longer blocked by a pre-flight lookup; a genuinely unusable model fails in the scheduler with a job-level diagnostic instead of a submit-time HTTP error.
+- Verification: `backend/tests/test_manifest_path_resolution.py` covers the CWD-independent resolution, the shared-resolver wiring, and the readiness contract, and it runs in the Backend Runtime Contract CI job.

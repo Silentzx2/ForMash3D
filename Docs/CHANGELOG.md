@@ -1,5 +1,12 @@
 # Changelog — ForMash3D
 
+## Intent resolution fix for mesh generation (2026-10-21)
+
+- Fixed `HTTP 400` on `POST /api/v1/smart-generation/resolve`, which failed mesh generation whenever an output preset was selected. Manifest model paths (for example `backend/pretrained/TRELLIS`) were resolved against the wrong roots, so every model looked uninstalled to the intent resolver: the API and scheduler processes do not run from the repository root (Docker supervisord uses `/app/backend`, `backend/scripts/run_server.sh` changes into `backend/`). A single repository-root-relative resolver (`core/utils/artifact_utils.py::resolve_manifest_path`) now backs both the resolver and the model-readiness badge, so the two can no longer disagree (ADR-094).
+- Made the intent → model resolve advisory in the Generate action: a resolve failure is logged and generation continues with the user's explicit model, matching the queue and batch paths. Readiness and resource admission stay with the scheduler (ADR-045, ADR-046); the endpoint still answers 400 with an actionable message for an unknown intent, an unregistered or incompatible model, missing weights, or a model that cannot fit the current free VRAM.
+- `core/utils/__init__.py` now exposes its helpers lazily, so importing a light submodule no longer requires the optional `aiofiles`/`Pillow` upload dependencies.
+- Added `backend/tests/test_manifest_path_resolution.py` (6 tests) covering the CWD-independent path resolution, the shared-resolver wiring, and the readiness contract, and included it in the Backend Runtime Contract CI job.
+
 ## Generate UI simplification and adapter-owned inference profiles (2026-10-21)
 
 - Locked model-specific inference schedules, step counts, guidance scales, octree resolutions, and samplers into model adapters (`_LOCKED_INFERENCE_PROFILE`), removing fake UI sliders and duplicate scheduler profile tables (ADR-056, ADR-057).
@@ -18,10 +25,3 @@
 - Removed tracked binaries in `deliverables/`, added `deliverables/` to `.gitignore`, and condensed changelog to exactly 3 entries.
 - Replaced `Docs/TASKS.md` with verified status register; synchronized `Docs/MEMORY.md`, `Docs/ARCHITECTURE.md` (SSOT Configuration Map), and `README.md`.
 - Added `pytest.importorskip("xatlas")` test guards for clean execution in environments where C-extensions are omitted.
-
-## 4B: Parity scorecard truth and benchmark tooling (2026-10-20)
-
-- Rewrote `parity_scorecard.json` and generator `backend/core/quality/parity_scorecard.py` to enforce strict source attribution; competitor cells without user-supplied GLBs are `null`, and qualitative marketing claims were removed.
-- Extended `scripts/run_final_parity_benchmark.py` with real image benchmark CLI (`--images`, `--api`, `--tiers`, `--dry-run`, `--competitor-dir`), outputting `Docs/benchmark_real.json` and generating `Docs/hunyuan_smoothness_report.md` on real GPU runs.
-- Labeled synthetic benchmark `Docs/baseline_vs_now_benchmark.json` as `"kind": "synthetic_smoke_test"`.
-- Corrected `Docs/taoflowforge_spike_report.md` status to "NOT EVALUATED — needs GPU + 30 GB disk" with an explicit user evaluation checklist.

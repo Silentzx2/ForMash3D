@@ -654,6 +654,9 @@ user_auth_enabled: false
 ### models.yaml (`backend/config/models.yaml`)
 Each feature maps model IDs to configurations with `vram_requirement`, `supported_inputs`, `supported_outputs`, `model_path`, `enabled`, and `max_workers`.
 
+### Model Path Resolution
+`model_path` values are written relative to the repository root (for example `backend/pretrained/TRELLIS`). They are resolved by exactly one helper, `core/utils/artifact_utils.py::resolve_manifest_path`, which tries `<repo-root>/<path>`, `<repo-root>/backend/<path>`, and the current working directory, and returns the first existing location. The lookup is therefore independent of the process working directory — the API and scheduler run from `backend/` in Docker supervisord and in `backend/scripts/run_server.sh`. Both the model readiness check (`core/smart_presets.py::_model_ready`) and the model listing endpoint (`api/routers/system.py::_resolve_manifest_path`) use it, so the readiness badge in the UI and the intent resolver can no longer disagree about whether a model is installed.
+
 ---
 
 ## 11. Verification & Self-Checks
