@@ -205,7 +205,6 @@ export const JobDetailView: React.FC<JobDetailViewProps> = ({ jobId: propJobId, 
         ...prev,
         aiModel: selectedJob.model_preference || params.aiModel || prev.aiModel,
         seed: typeof params.seed === 'number' ? params.seed : (Number(params.seed) || prev.seed),
-        guidanceScale: typeof params.guidance_scale === 'number' ? params.guidance_scale : prev.guidanceScale,
       }));
     } else if (targetTool === 'remesh') {
       setRemeshSettings((prev) => ({
