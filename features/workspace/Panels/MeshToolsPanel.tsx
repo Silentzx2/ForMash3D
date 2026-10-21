@@ -132,7 +132,7 @@ export const MeshToolsPanel: React.FC = () => {
 
   const buttons: Array<{ label: string; description: string; action: () => void }> = [
     { label: 'Inspect mesh', description: 'Check topology, UVs, pivots and game-ready budgets.', action: () => void runInspection() },
-    { label: 'Optimize', description: 'Reduce geometry while preserving the source asset.', action: () => void runTransform('Optimize', 'optimized', (mesh, fileName, onProgress) => optimizeMesh(mesh, { options: DEFAULT_SIMPLIFY_OPTIONS, fileName, onProgress })) },
+    { label: 'Optimize', description: 'Reduce geometry while preserving the source asset.', action: () => void runTransform('Optimize', 'optimized', (mesh, fileName, onProgress) => optimizeMesh(mesh, { options: DEFAULT_SIMPLIFY_OPTIONS, fileName, onProgress: onProgress as any })) },
     { label: 'Auto UV', description: 'Generate UV coordinates for the selected mesh.', action: () => void runTransform('Auto UV', 'uv', (mesh, fileName, onProgress) => autoUv(mesh, { options: DEFAULT_AUTO_UV_OPTIONS, fileName, onProgress })) },
     { label: 'Auto retopology', description: 'Rebuild topology using the backend retopology pipeline.', action: () => void runTransform('Auto retopology', 'retopologized', (mesh, fileName, onProgress) => autoRetopo(mesh, { fileName, onProgress: onProgress as any })) },
     { label: 'Repair mesh', description: 'Attempt backend topology and non-manifold repair.', action: () => void runTransform('Repair', 'repaired', (mesh, fileName, onProgress) => repairMesh(mesh, { fileName, onProgress })) },
