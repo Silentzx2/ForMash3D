@@ -33,7 +33,7 @@ This audit proves source-level wiring, not live deployment availability. The bac
 
 ## Confirmed issues and changes
 
-1. **Unknown workspace paths fell back to Generate.** The catch-all page always rendered `WorkspaceShell`; the shell maps unknown tool segments to `model`. Added a shared route allow-list and `notFound()` handling. Known tool aliases and main-view aliases remain supported; `/workspace/jobs/{id}` remains valid.
+1. **Unknown workspace paths fell back to Generate.** The catch-all page always rendered `WorkspaceShell`; the shell maps unknown tool segments to `model`. Added a shared route allow-list and `notFound()` handling. Known tool aliases and main-view aliases remain supported; UUID job deep links `/workspace/{tool}/{job_id}` and `/workspace/jobs/{id}` remain valid.
 2. **Single-worker router parity was incomplete.** `main_singleworker.py` did not import or mount `users.router`, unlike production `main_multiworker.py`. Mounted `/api/v1/users` in both entrypoints and added a backend source-contract test.
 3. **Orphaned part-completion client method.** `ApiClient.partCompletion()` called `/api/v1/mesh-generation/part-completion`, but the active mesh-generation router has no such route and the method had no caller. Removed the phantom method and its request type rather than leaving a guaranteed 404 path.
 4. **Generic workflow queue stub.** `WorkspaceContext.queueWorkflow` unconditionally threw “not supported”, and no caller was found. Removed it from the context contract and exposed action object; dedicated generation and batch endpoints remain.
@@ -43,7 +43,7 @@ This audit proves source-level wiring, not live deployment availability. The bac
 
 - Production `main_multiworker` mounts system, database, users, file upload, mesh generation, image enhancement, smart generation, mesh editing, mesh tools, auto-rigging, mesh segmentation, mesh retopology, UV unwrapping and motion generation.
 - `main_singleworker` now mounts the same router families.
-- Workspace route segments are explicitly tested against the route allow-list; invalid names and malformed nested paths are rejected rather than silently opening Generate.
+- Workspace route segments are explicitly tested against the route allow-list; invalid names and malformed nested paths are rejected rather than silently opening Generate; UUID job deep links are explicitly preserved.
 - Home links to Generate, Remesh, Texture, UV, Rigging, Animation, Segment, Outputs, Dashboard and System were checked against page aliases or workspace route mappings.
 - Several route files are aliases, not separate feature implementations. Their shared shell is intentional and should not be counted as duplicate dead pages.
 

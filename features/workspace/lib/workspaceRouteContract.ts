@@ -7,15 +7,22 @@ const WORKSPACE_VIEW_SEGMENTS = new Set([
   'overview', 'dashboard', 'assets', 'outputs', 'system', 'jobs', 'models',
 ]);
 
+const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Validate the path handled by app/workspace/[...tool].
- * Jobs may have one additional path segment for a job detail URL.
+ * Deep links may append one UUID job ID to a valid tool or use /jobs/{id}.
  */
 export function isKnownWorkspaceRoute(segments: readonly string[]): boolean {
   if (segments.length === 0) return false;
   const [first, ...rest] = segments;
+
   if (first === 'jobs') {
-    return rest.length <= 1 && rest.every((segment) => segment.length > 0);
+    return rest.length === 0 || (rest.length === 1 && JOB_ID_PATTERN.test(rest[0]));
+  }
+
+  if (rest.length === 1 && WORKSPACE_TOOL_SEGMENTS.has(first)) {
+    return JOB_ID_PATTERN.test(rest[0]);
   }
   if (rest.length !== 0) return false;
   return WORKSPACE_TOOL_SEGMENTS.has(first) || WORKSPACE_VIEW_SEGMENTS.has(first);
