@@ -207,3 +207,54 @@ def test_execute_uv_unwrap_partuv_fallback_on_failure():
     assert hasattr(unwrapped.visual, "uv")
     assert np.all(unwrapped.visual.uv >= 0.0)
     assert np.all(unwrapped.visual.uv <= 1.0)
+
+
+def test_resolve_uv_backend_ministudio_and_blender_smart():
+    """Verify routing for ministudio and blender_smart backends."""
+    backend, reason = resolve_uv_backend(50000, requested_backend="ministudio")
+    assert backend == "ministudio"
+    assert "ministudio" in reason
+
+    backend, reason = resolve_uv_backend(50000, requested_backend="autouv")
+    assert backend == "ministudio"
+
+    backend, reason = resolve_uv_backend(50000, requested_backend="blender_smart")
+    assert backend == "blender_smart"
+    assert "blender_smart" in reason
+
+
+def test_execute_uv_unwrap_ministudio():
+    """Test execute_uv_unwrap with ministudio backend."""
+    mesh = trimesh.creation.box()
+    unwrapped, meta = execute_uv_unwrap(mesh, backend="ministudio")
+    assert meta["resolved_backend"] == "ministudio"
+    assert meta["backend_used"] in ("ministudio", "xatlas")
+    assert meta["success"] is True
+    assert hasattr(unwrapped.visual, "uv")
+    assert len(unwrapped.visual.uv) > 0
+
+
+def test_execute_uv_unwrap_massive_mesh_safe():
+    """Test execute_uv_unwrap on massive mesh (>50k triangles) without segfaulting."""
+    pytest.importorskip("xatlas")
+    # 81,920 faces previously triggered a C++ SIGSEGV in xatlas
+    mesh = trimesh.creation.icosphere(subdivisions=6)
+    assert len(mesh.faces) == 81920
+
+    unwrapped, meta = execute_uv_unwrap(
+        mesh,
+        backend="xatlas",
+        runtime={"xatlas_max_safe_triangles": 50000},
+    )
+
+    assert meta["success"] is True
+    assert meta["backend_used"] == "xatlas"
+    assert len(unwrapped.faces) == 81920
+    assert len(unwrapped.vertices) == len(mesh.vertices)
+    assert hasattr(unwrapped.visual, "uv")
+    uvs = unwrapped.visual.uv
+    assert uvs is not None
+    assert len(uvs) == len(mesh.vertices)
+    assert np.all(uvs >= 0.0)
+    assert np.all(uvs <= 1.0)
+

@@ -147,7 +147,7 @@ def test_standalone_unirig_output_written_to_canonical_workspace(monkeypatch, tm
     assert not shared_rigged_dir.exists()
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_generated_asset_auto_rig_preserves_native_fbx(monkeypatch, tmp_path):
     """RIG-11: Parent generated auto-rig child workflow preserves native FBX alongside GLB preview."""
     if not hasattr(sys.modules.get("core.scheduler.multiprocess_scheduler"), "get_storage_base_dir"):
@@ -233,7 +233,7 @@ async def test_generated_asset_auto_rig_preserves_native_fbx(monkeypatch, tmp_pa
     assert "rigged" in manifest_data["artifacts"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_unified_download_resolver_direct_and_generated(monkeypatch, tmp_path):
     """RIG-12: Unified artifact manifest resolver for direct and generated rig jobs."""
     from api.routers import system
@@ -363,7 +363,7 @@ async def test_unified_download_resolver_direct_and_generated(monkeypatch, tmp_p
     assert exc.value.status_code == 400
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_asset_08_resolve_input_reference_preserves_query_params(monkeypatch, tmp_path):
     """ASSET-08: Preserve artifact_format query param in system download and job resolvers."""
     from api.routers import file_upload
@@ -461,7 +461,7 @@ def test_asset_09_manual_mesh_tools_preserve_immutable_master_and_source_format(
     assert _sha256_file(source_obj) == source_hash
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_auto_rig_download_returns_rigged_glb_even_with_game_ready(monkeypatch, tmp_path):
     """RIG-13: Direct auto_rig jobs download rigged.glb rather than unrigged game_ready mesh."""
     from api.routers import system

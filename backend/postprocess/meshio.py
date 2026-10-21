@@ -7,7 +7,11 @@ handlers and services stay format-agnostic.
 from __future__ import annotations
 
 import io
+import os
+import shutil
+import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 import numpy as np
 import trimesh
@@ -15,7 +19,7 @@ import trimesh
 from .schemas import MeshStats
 
 # Extensions we know how to load on input.
-SUPPORTED_INPUT_EXTS = {".glb", ".gltf", ".obj", ".ply", ".stl"}
+SUPPORTED_INPUT_EXTS = {".glb", ".gltf", ".obj", ".ply", ".stl", ".usdz", ".fbx"}
 
 
 def load_mesh(data: bytes | str | Path, filename: str | None = None) -> trimesh.Trimesh:
@@ -129,6 +133,7 @@ def scene_to_mesh(scene: trimesh.Scene) -> trimesh.Trimesh:
         raise ValueError("The scene contains no geometry.")
     if not all(isinstance(geometry, trimesh.Trimesh) for geometry in scene.geometry.values()):
         raise ValueError("The scene contains non-mesh geometry that cannot be flattened.")
+    dumped = None
     try:
         if hasattr(scene, "to_geometry"):
             dumped = scene.to_geometry()
@@ -140,17 +145,91 @@ def scene_to_mesh(scene: trimesh.Scene) -> trimesh.Trimesh:
         except Exception as exc:
             raise ValueError("Unable to flatten scene geometry with node transforms.") from exc
     except Exception as exc:
-        raise ValueError("Unable to flatten scene geometry with node transforms.") from exc
+        try:
+            dumped = trimesh.util.concatenate(scene.dump())
+        except Exception:
+            raise ValueError("Unable to flatten scene geometry with node transforms.") from exc
+
+    if isinstance(dumped, (list, tuple)):
+        dumped = trimesh.util.concatenate(dumped)
+    elif isinstance(dumped, dict):
+        dumped = trimesh.util.concatenate(list(dumped.values()))
+
+    if not isinstance(dumped, trimesh.Trimesh):
+        try:
+            dumped = trimesh.util.concatenate(scene.dump())
+        except Exception as exc:
+            raise ValueError("The scene did not resolve to triangle mesh geometry.") from exc
+
     if not isinstance(dumped, trimesh.Trimesh):
         raise ValueError("The scene did not resolve to triangle mesh geometry.")
     return dumped
 
 
 def export_mesh(mesh: trimesh.Trimesh, fmt: str = "glb") -> bytes:
-    """Serialize a mesh to bytes in the requested format (default GLB)."""
+    """Serialize a mesh to bytes in the requested format (default GLB).
+    
+    Supports GLB, OBJ, FBX, and USDZ.
+    """
     fmt = (fmt or "glb").lstrip(".").lower()
+
+    if fmt == "fbx":
+        try:
+            from .services.convert_fbx import run_convert_fbx
+            from .schemas import ConvertOptions
+            glb_bytes = export_mesh(mesh, fmt="glb")
+            fbx_bytes, _ = run_convert_fbx(glb_bytes, ConvertOptions(preset="generic"))
+            return fbx_bytes
+        except Exception as exc:
+            raise RuntimeError(f"FBX export failed: {exc}") from exc
+
+    if fmt == "usdz":
+        try:
+            from .config import WORK_DIR, blender_runtime_available, blender_worker_argv
+            if not blender_runtime_available():
+                raise RuntimeError("USDZ export requires Blender runtime (BLENDER_EXECUTABLE or bpy module).")
+
+            import subprocess
+            job_dir = WORK_DIR / f"usdz-{uuid4().hex}"
+            job_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                in_glb = job_dir / "input.glb"
+                out_usdz = job_dir / "output.usdz"
+                in_glb.write_bytes(export_mesh(mesh, fmt="glb"))
+                script = job_dir / "export_usdz.py"
+                script.write_text(
+                    f'import bpy\n'
+                    f'bpy.ops.wm.read_factory_settings(use_empty=True)\n'
+                    f'bpy.ops.import_scene.gltf(filepath=r"{in_glb}")\n'
+                    f'bpy.ops.wm.usd_export(filepath=r"{out_usdz}")\n',
+                    encoding="utf-8",
+                )
+                cmd = blender_worker_argv(script, [])
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if proc.returncode != 0 or not out_usdz.exists():
+                    raise RuntimeError(f"Blender USDZ conversion failed: {proc.stderr or proc.stdout}")
+                return out_usdz.read_bytes()
+            finally:
+                shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception as exc:
+            raise RuntimeError(f"USDZ export failed: {exc}") from exc
+
     exported = mesh.export(file_type=fmt)
-    return exported if isinstance(exported, (bytes, bytearray)) else str(exported).encode("utf-8")
+    if isinstance(exported, (bytes, bytearray)):
+        return bytes(exported)
+    if isinstance(exported, str):
+        return exported.encode("utf-8")
+    if isinstance(exported, dict):
+        key = next((k for k in exported if str(k).lower().endswith(f".{fmt}")), None)
+        if key is None and exported:
+            key = next(iter(exported))
+        data = exported.get(key) if key is not None else None
+        if isinstance(data, (bytes, bytearray)):
+            return bytes(data)
+        if isinstance(data, str):
+            return data.encode("utf-8")
+
+    raise RuntimeError(f"Unable to export {fmt} from mesh.")
 
 
 def mesh_stats(mesh: trimesh.Trimesh) -> MeshStats:

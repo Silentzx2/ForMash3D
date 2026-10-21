@@ -81,15 +81,20 @@ def bake_high_to_low_pure_python(
     _progress = progress or (lambda *_: None)
     _progress("load", 0.05, "Loading low and high meshes…")
 
+    try:
+        from postprocess.meshio import scene_to_mesh
+    except ImportError:
+        from backend.postprocess.meshio import scene_to_mesh
+
     low_loaded = trimesh.load(io.BytesIO(low_glb), file_type="glb", process=False)
     if isinstance(low_loaded, trimesh.Scene):
-        low_mesh = trimesh.util.concatenate(tuple(low_loaded.geometry.values()))
+        low_mesh = scene_to_mesh(low_loaded)
     else:
         low_mesh = low_loaded
 
     high_loaded = trimesh.load(io.BytesIO(high_glb), file_type="glb", process=False)
     if isinstance(high_loaded, trimesh.Scene):
-        high_mesh = trimesh.util.concatenate(tuple(high_loaded.geometry.values()))
+        high_mesh = scene_to_mesh(high_loaded)
     else:
         high_mesh = high_loaded
 

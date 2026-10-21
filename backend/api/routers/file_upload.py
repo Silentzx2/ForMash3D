@@ -452,7 +452,7 @@ async def get_file_path_impl(
 
 
 _JOB_ARTIFACT_FORMATS = {
-    "master", "glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj",
+    "master", "glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj", "usdz",
     "lod0", "lod1", "lod2", "lod3", "textured", "rigged", "rigged_fbx", "derived", "collision",
     "thumbnail", "qa_report", "job_json", "asset_json", "physics_json",
     "texture_base_color", "texture_normal", "texture_ao", "texture_roughness",
@@ -563,7 +563,7 @@ def _artifact_path(workspace: Path, artifact_format: str, job_id: str) -> Option
         candidates = [workspace / "master" / "source.glb"]
         if (workspace / "master").is_dir():
             candidates.extend(sorted((workspace / "master").glob("source.*")))
-    elif selector in {"glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj"}:
+    elif selector in {"glb", "gltf", "fbx", "obj", "stl", "ply", "quad_obj", "usdz"}:
         extension = "obj" if selector == "quad_obj" else selector
         stems = list(dict.fromkeys(stem for stem in (asset_name, workspace.name) if stem))
         candidates = [workspace / "game_ready" / f"{stem}.{extension}" for stem in stems]
@@ -628,7 +628,7 @@ def _resolve_job_artifact(job_id: str, file_path: Path, artifact_format: str) ->
         return _artifact_path(workspace, artifact_format, clean_id)
 
     selector = (artifact_format or "").strip().lower()
-    expected_suffix = {"glb": ".glb", "gltf": ".gltf", "fbx": ".fbx", "obj": ".obj", "stl": ".stl", "ply": ".ply"}.get(selector)
+    expected_suffix = {"glb": ".glb", "gltf": ".gltf", "fbx": ".fbx", "obj": ".obj", "stl": ".stl", "ply": ".ply", "usdz": ".usdz"}.get(selector)
     models_root = (get_storage_base_dir() / "models").resolve()
     if expected_suffix and file_path.suffix.lower() == expected_suffix:
         try:

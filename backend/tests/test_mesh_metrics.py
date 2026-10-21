@@ -287,3 +287,70 @@ def test_scene_to_mesh_fallback_when_to_geometry_missing():
     assert isinstance(flattened, trimesh.Trimesh)
     assert len(flattened.faces) == 12
     assert len(flattened.vertices) == 8
+
+
+def test_scene_to_mesh_transforms_and_vertex_colors_and_textures():
+    """Verify scene_to_mesh flattens transforms, preserves vertex colors and textures."""
+    from postprocess.meshio import scene_to_mesh
+    from PIL import Image
+
+    s = trimesh.Scene()
+    m1 = trimesh.creation.box()
+    m1.visual.vertex_colors = np.array([[255, 0, 0, 255]] * len(m1.vertices), dtype=np.uint8)
+
+    m2 = trimesh.creation.box()
+    uv2 = np.random.rand(len(m2.vertices), 2)
+    img2 = Image.new("RGB", (32, 32), color="blue")
+    m2.visual = trimesh.visual.TextureVisuals(uv=uv2, image=img2)
+
+    T1 = trimesh.transformations.translation_matrix([2, 0, 0])
+    T2 = trimesh.transformations.translation_matrix([-2, 0, 0])
+    s.add_geometry(m1, transform=T1)
+    s.add_geometry(m2, transform=T2)
+
+    flat = scene_to_mesh(s)
+    assert isinstance(flat, trimesh.Trimesh)
+    assert len(flat.vertices) == 16
+    assert len(flat.faces) == 24
+    # Bounds must reflect transforms [-2, 0, 0] and [+2, 0, 0]
+    assert np.isclose(flat.bounds[0][0], -2.5)
+    assert np.isclose(flat.bounds[1][0], 2.5)
+
+
+def test_export_mesh_glb_obj_fbx_usdz():
+    """Verify export_mesh contracts for GLB, OBJ, FBX, and USDZ."""
+    from postprocess.meshio import export_mesh
+
+    mesh = trimesh.creation.box()
+    glb_bytes = export_mesh(mesh, fmt="glb")
+    assert isinstance(glb_bytes, bytes)
+    assert glb_bytes.startswith(b"glTF")
+
+    obj_bytes = export_mesh(mesh, fmt="obj")
+    assert isinstance(obj_bytes, bytes)
+    assert b"v " in obj_bytes
+    assert b"f " in obj_bytes
+    assert not obj_bytes.startswith(b"{")  # Must never be stringified dict
+
+    # Test dict payload handling in OBJ export
+    class MockObjDictMesh(trimesh.Trimesh):
+        def export(self, file_type="obj", **kwargs):
+            return {"model.obj": "v 1 2 3\nf 1 1 1\n", "model.mtl": "newmtl test\n"}
+
+    mock_mesh = MockObjDictMesh()
+    mock_bytes = export_mesh(mock_mesh, fmt="obj")
+    assert mock_bytes.startswith(b"v 1 2 3")
+
+    # FBX and USDZ without Blender raise descriptive RuntimeError rather than unhandled crash
+    try:
+        fbx_bytes = export_mesh(mesh, fmt="fbx")
+        assert isinstance(fbx_bytes, bytes)
+    except RuntimeError as e:
+        assert "FBX" in str(e) or "Blender" in str(e)
+
+    try:
+        usdz_bytes = export_mesh(mesh, fmt="usdz")
+        assert isinstance(usdz_bytes, bytes)
+    except RuntimeError as e:
+        assert "USDZ" in str(e) or "Blender" in str(e)
+
