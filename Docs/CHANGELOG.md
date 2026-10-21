@@ -1,5 +1,13 @@
 ## Route/page/function mount fixes — 2026-10-21 follow-up
 
+- Fixed the tool-context help API's missing-data failure: added the six Markdown files expected by the active contextual-help mappings (mesh generation, texturing, Auto UV, auto-retopology, auto-rigging, segmentation).
+- Added frontend CI contract coverage to assert every active contextual-help ID maps to a non-empty article.
+- Previous route/wiring fixes in this pass added the `/workspace/tools` backend-backed panel, routed `/workspace/pbr` into the real tool suite, removed disabled `/workspace/upscale`, deleted unreachable secondary panels and removed the unused smart-generation client wrapper.
+
+---
+
+## Route/page/function mount fixes — 2026-10-21 follow-up
+
 - Added `/workspace/tools` to the route contract, navigation, tool route map and `WorkspaceShell` render switch.
 - Wired active backend mesh operations for inspection, optimization, auto-UV, retopology, repair, collision geometry, one derived LOD, FBX conversion, albedo flattening and high-to-low texture-map baking. Mesh transformations download separate GLB/FBX files; generated maps download as PNG. Source assets are never overwritten.
 - Routed the legacy `/workspace/pbr` path to the real Mesh Tools panel and removed `/workspace/upscale`, which only presented disabled controls and has no 3D-upscale backend.

@@ -1,5 +1,14 @@
 ## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
 
+- Tool-context help buttons now have real Markdown backing files for all six active article IDs; frontend CI guards against missing or empty articles.
+- `/workspace/tools` is a real visible workspace panel for backend-backed inspect, optimize, Auto UV, auto-retopology, repair, collision, LOD 1, FBX conversion, albedo flattening and high-to-low texture bake operations.
+- `/workspace/pbr` aliases the functional Mesh Tools panel. The unsupported `/workspace/upscale` route and obsolete disabled secondary panel were removed.
+- Explicit migration backlog remains: legacy image-editor, board, graph and full wiki pages rely on missing React Router/project-provider integrations and are not reported as mounted.
+
+---
+
+## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
+
 - Added `/workspace/tools` as a visible, allow-listed workspace panel and routed `/workspace/pbr` into that functional tool suite.
 - Connected inspect, optimize, auto-UV, auto-retopology, repair, collision, LOD 1, FBX conversion, albedo flattening and high-to-low texture-map baking to existing backend helpers. Output meshes/maps download as separate GLB/FBX/PNG files without overwriting source assets.
 - Removed the unavailable `/workspace/upscale` route, duplicate Segment/Remesh/Edit panel branches and the obsolete `SecondaryPanels` component.

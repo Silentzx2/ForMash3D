@@ -31,7 +31,7 @@ This audit proves source-level wiring, not live deployment availability. The bac
 ### Next.js route handlers
 
 - `/api/v1/[...path]` — runtime proxy to FastAPI.
-- `/api/wiki/[id]` — local wiki article file handler.
+- `/api/wiki/[id]` — local wiki article file handler, now backed by the article files required by the mounted tool-help buttons.
 - `/static/[...path]` — static artifact proxy with local storage fallback.
 
 ## Confirmed issues and changes
@@ -42,6 +42,7 @@ This audit proves source-level wiring, not live deployment availability. The bac
 4. **Generic workflow queue stub.** `WorkspaceContext.queueWorkflow` unconditionally threw “not supported”, and no caller was found. Removed it from the context contract and exposed action object; dedicated generation and batch endpoints remain.
 5. **Mesh tools were backend-mounted but lacked a reachable workspace entry point.** Added `/workspace/tools` and wired its existing API helpers for `inspect`, `optimize`, `auto-uv`, `auto-retopo`, `repair`, `collision`, `lods`, `convert`, `flatten` and high-to-low `bake`. Derived meshes are downloaded as GLB/FBX; texture maps are downloaded as PNG; input assets are never overwritten. `/workspace/pbr` now aliases this real panel.
 6. **Duplicate and placeholder secondary panels.** Deleted the unreachable Segment/Remesh/Edit branches rather than keeping duplicate UI. Removed the unsupported 3D-upscale route from the allow-list so it returns 404 instead of presenting non-functional disabled controls; it can be restored when a real backend capability is available.
+7. **Contextual help API returned 404 for every mapped tool article.** The API route read `features/wiki/content/content/{id}.md`, but the whole article directory was absent from the branch. Added real source-grounded help articles for the six active help IDs (mesh generation, texturing, Auto UV, auto-retopology, auto-rigging and segmentation), plus a CI test that verifies each mapped article exists and is non-empty.
 
 ## Route mapping verification
 
@@ -55,7 +56,7 @@ This audit proves source-level wiring, not live deployment availability. The bac
 
 ## Other unimplemented/conditional paths found
 
-- The legacy `features/image-editor`, `features/board`, `features/graph`, and `features/wiki` page modules are still not mounted by the Next.js App Router. They depend on React Router and legacy project/notification/settings contexts that are not present in the current tree, so they need a deliberate migration rather than being falsely reported as working routes.
+- The legacy `features/image-editor`, `features/board`, `features/graph`, and full `features/wiki/pages/WikiPage.jsx` page modules are still not mounted by the Next.js App Router. They depend on React Router and legacy project/notification/settings contexts that are not present in the current tree, so they need deliberate migration rather than being falsely reported as working routes. The smaller tool-context help drawer is mounted in current panels and now has real article content.
 - A dedicated neural 3D-upscale model/API is still not implemented. Its old route and button placeholders were removed rather than presented as working.
 - The motion inspector states that JSON-to-BVH conversion is not implemented and disables the action unless a real BVH artifact exists.
 - Jiggle/deformation remains capability-gated; physics preparation produces collision geometry and metadata, not an interactive deformation stage.
