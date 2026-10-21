@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 # EXPERIMENTAL_MAX_DETAIL snapshot (2026-10-20): Hunyuan3D-2.1 uses up to 100 UI-supported steps and upstream default guidance 5.0.
 # Ask the user once and obtain explicit confirmation before future changes to these locked settings.
+# LOCKED / ACTIVE: values used by inference (legacy Hunyuan3D-2.1 aliases).
+# BASELINE: previous effective runtime values (source_quality="max", octree_resolution=512, num_inference_steps=100, guidance_scale=5.0)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Hunyuan3D 2.1 legacy adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Legacy Hunyuan3D-2.1 aliases".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "octree_resolution": 512,

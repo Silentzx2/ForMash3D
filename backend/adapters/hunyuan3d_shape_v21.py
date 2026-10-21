@@ -24,7 +24,11 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-# Same effective values as dev scheduler; numerical settings are locked here.
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", octree_resolution=1300, num_inference_steps=150, guidance_scale=5.0, num_chunks=80000, mc_algo="mc")
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Hunyuan3D-Shape-v2-1 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Hunyuan3D-Shape-v2.1".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max", "octree_resolution": 1300,
     "num_inference_steps": 150, "guidance_scale": 5.0,

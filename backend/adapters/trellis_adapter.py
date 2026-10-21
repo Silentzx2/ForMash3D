@@ -24,7 +24,11 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-# Same effective values as dev scheduler; numerical settings are locked here.
+# LOCKED / ACTIVE: values used by inference (raw + painting feature paths).
+# BASELINE: previous effective runtime values (source_quality="max", num_inference_steps=100, ss_sampling_steps=100, slat_sampling_steps=100, guidance_scale=7.5, simplify=0.0, low_vram=false)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TRELLIS adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS (image/text geometry and supported painting paths)".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "num_inference_steps": 100,

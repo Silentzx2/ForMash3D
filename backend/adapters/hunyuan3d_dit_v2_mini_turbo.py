@@ -23,7 +23,11 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-# Same effective values as dev scheduler; numerical settings are locked here.
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", octree_resolution=768, num_inference_steps=20, guidance_scale=7.5, num_chunks=80000, low_vram_mode=false, low_vram=false, enable_flashvdm=false, mc_algo="mc")
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: Hunyuan3D-DiT-v2-mini-Turbo adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "Hunyuan3D-DiT-v2-Mini-Turbo".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "octree_resolution": 768,

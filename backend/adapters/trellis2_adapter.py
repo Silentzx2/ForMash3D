@@ -21,7 +21,11 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
-# Same effective values as dev scheduler; numerical settings are locked here.
+# LOCKED / ACTIVE: values used by inference.
+# BASELINE: previous effective runtime values (source_quality="max", pipeline_type="1536_cascade", max_num_tokens=524288, sampler params: sparse/100/10.0/0.9/8.0, shape/100/10.0/0.8/8.0, texture/100/3.5/0.5/8.0, decimation_target=-1, remesh=false, low_vram=false)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TRELLIS.2 adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS.2 (raw/image geometry aliases)".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_INFERENCE_PROFILE = {
     "source_quality": "max",
     "pipeline_type": "1536_cascade",
@@ -49,6 +53,11 @@ _LOCKED_INFERENCE_PROFILE = {
     "low_vram": False,
 }
 
+# LOCKED / ACTIVE: values used by inference (painting path only).
+# BASELINE: previous effective runtime values (tex_slat_sampler_params: steps=100, guidance_strength=3.5, guidance_rescale=0.5, rescale_t=8.0, texture_size=4096)
+# EXPERIMENTAL: selected experimental values, snapshot (2026-10-20) for stress-test; use only for benchmarking.
+# SUPPORTED BY: TRELLIS.2 painting adapter, EXPERIMENTAL-MODEL-SETTINGS.md section "TRELLIS.2 (raw/image geometry aliases)".
+# ROLLBACK: previous effective values; scheduler strips frontend overrides before adapter applies lock.
 _LOCKED_PAINTING_INFERENCE_PROFILE = {
     "tex_slat_sampler_params": {
         "steps": 100,
