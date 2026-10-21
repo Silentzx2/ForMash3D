@@ -28,7 +28,7 @@ jobs:
           cache: pip
 
       - name: Install lightweight test dependencies
-        run: python -m pip install --upgrade pytest packaging
+        run: python -m pip install --upgrade pytest packaging pyyaml
 
       - name: Compile backend Python sources
         run: python -m compileall -q backend
