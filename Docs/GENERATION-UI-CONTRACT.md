@@ -1,6 +1,6 @@
 # Generation UI End-to-End Contract Specification
 
-> **Contract Version**: 1.1.1  
+> **Contract Version**: 1.1.2  
 > **Status**: APPROVED & ACTIVE  
 > **Date**: October 21, 2026  
 > **Reference**: ADR-056, ADR-057, ADR-093, `Docs/ARCHITECTURE.md`, `Docs/TASKS.md`
@@ -85,6 +85,7 @@ The Generate panel is divided into a clean primary workflow and an advanced prod
 - Validates request payloads against Pydantic schemas (`ImageToRawMeshRequest`, `ImageToTexturedMeshRequest`).
 - Stores validated inputs into the job record and enqueues to `JobQueue`.
 - Resolves every production option with the tri-state contract: explicit request value → intent preset (`backend/config/smart_presets.yaml`) → backend default (see §5).
+- Validates `topology_mode` (`triangle` / `quad`), `lod_preset` (`mobile` / `low` / `medium` / `high` / `cinematic`) and `auto_rig_mode` (`full` / `skeleton` / `skin`) at the API boundary; the client builder also normalizes stale persisted values.
 - Ignores the legacy `model_parameters` production keys `generateLOD`, `lodPreset`, `lodCount`: they are popped and never reach the job inputs.
 - Accepts the deprecated fields `requested_quality`, `mesh_style`, `object_type`, `symmetry` for planner routing only; they can never mutate model inference.
 

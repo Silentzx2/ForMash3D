@@ -471,7 +471,7 @@ export interface GenerationSettings {
   aiModel: string;
   textureQuality: 'low' | 'medium' | 'high' | '8k';
   quadTopology: boolean;
-  topologyMode?: 'triangle' | 'quad' | 'adaptive';
+  topologyMode?: 'triangle' | 'quad';
   seed: number;
   removeBackground: boolean;
   autoOptimizeSettings: AutoOptimizeSettings;
@@ -484,7 +484,7 @@ export interface GenerationSettings {
   gameReady?: boolean;
   targetPlatform?: 'generic' | 'mobile' | 'low' | 'medium' | 'high' | 'cinematic';
   generateLOD?: boolean;
-  lodPreset?: 'mobile' | 'low' | 'medium' | 'high' | 'custom';
+  lodPreset?: 'mobile' | 'low' | 'medium' | 'high' | 'cinematic';
   lodCount?: number;
   generateCollision?: boolean;
   physics?: PhysicsSettings;
@@ -502,7 +502,7 @@ export interface GenerationSettings {
   enablePrintabilityCheck?: boolean;
   enableAutoRepair?: boolean;
   enableAutoRig?: boolean;
-  autoRigMode?: string;
+  autoRigMode?: 'full' | 'skeleton' | 'skin';
   enablePostprocess?: boolean;
   candidateCount?: number;
 }

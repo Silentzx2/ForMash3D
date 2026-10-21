@@ -1,3 +1,12 @@
+## 2026-10-21 — Batch 5/6: Advanced Production Control Audit
+
+- **Enum contract:** generation request construction now normalizes persisted topology, LOD preset and auto-rig values to supported options. Topology mode and the legacy quad boolean are emitted consistently.
+- **Backend validation:** raw and textured image-to-mesh request schemas validate topology, LOD preset and auto-rig mode instead of allowing unknown strings to silently drift into the pipeline.
+- **Control truthfulness:** added `Docs/GENERATION-CONTROL-AUDIT.md` with the request field and backend consumer for each advanced control, explicit runtime-dependency caveats, and the two known non-active paths (deformation/jiggle and the generic workflow queue stub).
+- **Verification limit:** GPU model inference, mesh-quality A/B, Blender bake/retopology and UniRig runtime execution were not run as part of this pass; final CI state is recorded after push.
+
+---
+
 ## 2026-10-21 — Batch 3/4 Follow-up: Request Contract & Generate UI
 
 - **Request path consistency:** Direct, queued and batch generation use the same model-choice preference and manifest-capability helpers. Intent resolution can supply a model only for auto-model requests; it cannot silently change a manual model selection.

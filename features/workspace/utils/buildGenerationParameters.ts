@@ -138,7 +138,22 @@ export function buildGenerationParameters(
   // LOD production options. The post-processing pipeline builds at most 4 levels
   // (LOD0-LOD3), so the request is clamped to the levels the consumer supports.
   const lodEnabled = enablePostprocess && settings.generateLOD !== false;
-  const lodPreset = settings.lodPreset || 'high';
+  // Treat imported/legacy values as untrusted; the backend supports named LOD profiles only.
+  const lodPreset = ['mobile', 'low', 'medium', 'high', 'cinematic'].includes(settings.lodPreset ?? '')
+    ? settings.lodPreset!
+    : 'high';
+
+  // Keep topology as one canonical choice. Legacy boolean state is only a fallback.
+  const requestedTopologyMode = settings.topologyMode;
+  const topologyMode: 'triangle' | 'quad' =
+    requestedTopologyMode === 'quad' ? 'quad'
+      : requestedTopologyMode === 'triangle' ? 'triangle'
+        : settings.quadTopology ? 'quad' : 'triangle';
+
+  // Auto-rig accepts only the three modes exposed by the backend contract.
+  const autoRigMode = settings.autoRigMode === 'skeleton' || settings.autoRigMode === 'skin'
+    ? settings.autoRigMode
+    : 'full';
   const lodCount = Math.max(2, Math.min(4, Math.floor(Number(settings.lodCount) || 4)));
 
   const endpoint = '/api/v1/mesh-generation/image-to-raw-mesh';
@@ -159,7 +174,7 @@ export function buildGenerationParameters(
     enable_printability_check: enablePostprocess && Boolean(settings.enablePrintabilityCheck),
     enable_auto_repair: enablePostprocess && Boolean(settings.enableAutoRepair),
     enable_auto_rig: enablePostprocess && Boolean(settings.enableAutoRig),
-    auto_rig_mode: settings.autoRigMode || 'full',
+    auto_rig_mode: autoRigMode,
     enable_postprocess: enablePostprocess,
     target_polycount: targetPolycount,
     generate_lod: lodEnabled,
@@ -168,8 +183,8 @@ export function buildGenerationParameters(
     model_parameters: modelParameters,
     physics_enabled: enablePostprocess && Boolean(settings.generateCollision),
     physics_config: (enablePostprocess && Boolean(settings.generateCollision)) ? settings.physics : undefined,
-    topology_mode: enablePostprocess ? (settings.topologyMode || (settings.quadTopology ? 'quad' : 'triangle')) : 'triangle',
-    quad_topology: enablePostprocess && Boolean(settings.quadTopology || settings.topologyMode === 'quad'),
+    topology_mode: enablePostprocess ? topologyMode : 'triangle',
+    quad_topology: enablePostprocess && topologyMode === 'quad',
     bake_normal_maps: enablePostprocess && (settings.highResolutionNormalBaking ?? true),
     texture_enabled: textureEnabled,
     generate_texture: textureEnabled,

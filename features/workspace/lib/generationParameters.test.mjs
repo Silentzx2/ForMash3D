@@ -272,6 +272,49 @@ test('Rule 11: LOD options reach the request body and are clamped to the support
   assert.equal(raw.body.lod_count, undefined);
 });
 
+test('unsupported or contradictory persisted production values are normalized before submission', () => {
+  const stale = buildGenerationParameters({
+    imageFileId: 'file-stale-controls',
+    topologyMode: 'adaptive',
+    quadTopology: false,
+    lodPreset: 'custom',
+    autoRigMode: 'humanoid',
+    generateLOD: true,
+    enableAutoRig: true,
+    enablePostprocess: true,
+  });
+
+  assert.equal(stale.body.topology_mode, 'triangle');
+  assert.equal(stale.body.quad_topology, false);
+  assert.equal(stale.body.lod_preset, 'high');
+  assert.equal(stale.body.auto_rig_mode, 'full');
+
+  // A recognized topology mode is authoritative over a stale legacy boolean.
+  const triangleWins = buildGenerationParameters({
+    imageFileId: 'file-triangle-wins',
+    topologyMode: 'triangle',
+    quadTopology: true,
+    enablePostprocess: true,
+  });
+  assert.equal(triangleWins.body.topology_mode, 'triangle');
+  assert.equal(triangleWins.body.quad_topology, false);
+
+  const valid = buildGenerationParameters({
+    imageFileId: 'file-supported-controls',
+    topologyMode: 'quad',
+    quadTopology: true,
+    lodPreset: 'mobile',
+    autoRigMode: 'skin',
+    generateLOD: true,
+    enableAutoRig: true,
+    enablePostprocess: true,
+  });
+  assert.equal(valid.body.topology_mode, 'quad');
+  assert.equal(valid.body.quad_topology, true);
+  assert.equal(valid.body.lod_preset, 'mobile');
+  assert.equal(valid.body.auto_rig_mode, 'skin');
+});
+
 test('explicit model selection wins over a preset resolver suggestion; auto mode may use the suggestion', () => {
   assert.equal(resolveGenerationModelChoice('triposg_image_to_raw_mesh', 'hunyuan3d_shape_v21_image_to_raw_mesh'), 'triposg_image_to_raw_mesh');
   assert.equal(resolveGenerationModelChoice('', 'trellis2_image_to_textured_mesh'), 'trellis2_image_to_textured_mesh');

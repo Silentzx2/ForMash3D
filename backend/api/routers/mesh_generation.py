@@ -312,6 +312,36 @@ class ImageToRawMeshRequest(BaseModel):
     object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
     symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
 
+    @field_validator("auto_rig_mode")
+    @classmethod
+    def validate_auto_rig_mode(cls, value):
+        normalized = str(value or "full").strip().lower()
+        if normalized not in {"full", "skeleton", "skin"}:
+            raise ValueError("Invalid auto_rig_mode. Must be one of: 'full', 'skeleton', 'skin'")
+        return normalized
+
+    @field_validator("topology_mode")
+    @classmethod
+    def validate_topology_mode(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"triangle", "quad"}:
+            raise ValueError("Invalid topology_mode. Must be one of: 'triangle', 'quad'")
+        return normalized
+
+    @field_validator("lod_preset")
+    @classmethod
+    def validate_lod_preset(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"mobile", "low", "medium", "high", "cinematic"}:
+            raise ValueError(
+                "Invalid lod_preset. Must be one of: 'mobile', 'low', 'medium', 'high', 'cinematic'"
+            )
+        return normalized
+
     @field_validator("intent")
     @classmethod
     def validate_intent(cls, v):
@@ -459,6 +489,36 @@ class ImageToTexturedMeshRequest(BaseModel):
     requested_quality: Optional[str] = Field(None, deprecated=True, description="Deprecated requested quality tier. Does not override locked adapter inference profiles.")
     object_type: str = Field("general", deprecated=True, description="Deprecated object type. Does not override locked adapter inference profiles.")
     symmetry: str = Field("none", deprecated=True, description="Deprecated symmetry setting. Does not override locked adapter inference profiles.")
+
+    @field_validator("auto_rig_mode")
+    @classmethod
+    def validate_auto_rig_mode(cls, value):
+        normalized = str(value or "full").strip().lower()
+        if normalized not in {"full", "skeleton", "skin"}:
+            raise ValueError("Invalid auto_rig_mode. Must be one of: 'full', 'skeleton', 'skin'")
+        return normalized
+
+    @field_validator("topology_mode")
+    @classmethod
+    def validate_topology_mode(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"triangle", "quad"}:
+            raise ValueError("Invalid topology_mode. Must be one of: 'triangle', 'quad'")
+        return normalized
+
+    @field_validator("lod_preset")
+    @classmethod
+    def validate_lod_preset(cls, value):
+        if value is None:
+            return value
+        normalized = str(value).strip().lower()
+        if normalized not in {"mobile", "low", "medium", "high", "cinematic"}:
+            raise ValueError(
+                "Invalid lod_preset. Must be one of: 'mobile', 'low', 'medium', 'high', 'cinematic'"
+            )
+        return normalized
 
     @field_validator("intent")
     @classmethod

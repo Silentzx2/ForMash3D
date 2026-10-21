@@ -1,3 +1,13 @@
+## Advanced production control validation (2026-10-21)
+
+- Hardened the generation request builder against stale/legacy production-setting values: unsupported topology values fall back to a valid tri/quad choice, unsupported LOD presets fall back to High, and unsupported auto-rig modes fall back to Full.
+- Made triangle/quad request fields consistent from one canonical topology selection.
+- Added matching API validators for topology, LOD preset and auto-rig mode on raw and textured image-to-mesh requests.
+- Added generation contract tests and `Docs/GENERATION-CONTROL-AUDIT.md`, which distinguishes backend-wired controls from capability-gated or unsupported paths.
+- CI validates request construction, types/build and backend source contracts. GPU inference, Blender bake/retopology and UniRig runtime execution were not performed in this pass.
+
+---
+
 ## Generation request paths & Generate UI cleanup (2026-10-21)
 
 - Primary Generate, background queue and batch image-to-3D submission now share model-choice and capability resolvers. Intent resolution is advisory: a manually selected model is never silently replaced by a preset suggestion.
