@@ -271,13 +271,10 @@ interface DiscoveredModel {
   installed: boolean;
   status: string;
   vram_required_mb: number;
-  low_vram_supported: boolean;
-  low_vram_required_mb?: number;
   supports_texture: boolean;
   supports: { texture_generation: boolean };
   shape_vram_mb: number;
   texture_vram_mb: number;
-  supports_flashvdm?: boolean;
   capabilities?: Record<string, any>;
 }
 
@@ -313,9 +310,6 @@ function formatGenerateModel(
   const def = getModelDefinition(id);
   const isTextured = def?.supportsTexture ?? id.includes('textured');
   const vram = detail?.vram_requirement ?? def?.vramMb ?? 11776;
-  const isTrellis = id.includes('trellis');
-  const isHunyuan = id.includes('hunyuan');
-  const supportsFlashVDM = def?.supportsFlashVDM ?? id.includes('dit_v2_mini_turbo');
 
   let cleanLabel = def?.name || id;
   if (id === 'trellis_image_to_textured_mesh') cleanLabel = 'TRELLIS (PBR Textured Mesh)';
@@ -332,13 +326,10 @@ function formatGenerateModel(
     installed: isAvailable,
     status: detail?.status || (isAvailable ? 'ready' : 'uninstalled'),
     vram_required_mb: vram,
-    low_vram_supported: def?.lowVramSupported ?? (isTrellis || isHunyuan),
-    low_vram_required_mb: def?.lowVramMb ?? ((isTrellis || isHunyuan) ? 6144 : undefined),
     supports_texture: detail?.capabilities?.texture_generation ?? isTextured,
     supports: { texture_generation: detail?.capabilities?.texture_generation ?? isTextured },
     shape_vram_mb: Math.round(vram * 0.6),
     texture_vram_mb: vram,
-    supports_flashvdm: supportsFlashVDM,
     capabilities: detail?.capabilities || {},
   };
 }
@@ -798,14 +789,6 @@ export const GeneratePanel: React.FC = () => {
   const handleImageTo3DTabClick = () => {
     setGenerationSettings(prev => ({ ...prev, mode: 'image-to-3d' }));
     navigateToTool('model');
-  };
-
-  const handleModelSelect = (model: any) => {
-    setGenerationSettings(prev => ({
-      ...prev,
-      aiModel: model.id,
-      lowVram: model.low_vram_supported ? prev.lowVram : false,
-    }));
   };
 
   const SAMPLE_PRESETS = [
@@ -1437,7 +1420,7 @@ export const GeneratePanel: React.FC = () => {
 
             </div>
 
-            {/* AI 3D Model Engine Selector (Clean Dropdown + Low VRAM & Texture Toggles) */}
+            {/* AI 3D Model Engine Selector + Textured Output Controls */}
             <div className="rounded-xl border border-white/[0.1] bg-[hsl(var(--surface-0))] p-2.5 space-y-2 relative">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] text-zinc-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
@@ -1651,12 +1634,19 @@ export const GeneratePanel: React.FC = () => {
                         <button
                           key={size}
                           type="button"
-                          onClick={() => setGenerationSettings(prev => ({
-                            ...prev,
-                            texture_resolution: size,
-                            textureResolution: size,
-                            textureQuality: size === '1K' ? 'low' : size === '2K' ? 'high' : size === '4K' ? 'high' : '8k',
-                          }))}
+                          onClick={() => setGenerationSettings(prev => {
+                            const currentSize = prev.texture_resolution || prev.textureResolution ||
+                              (prev.textureQuality === 'low' || prev.textureQuality === 'medium' ? '1K' :
+                                prev.textureQuality === '8k' ? '8K' : '2K');
+                            return {
+                              ...prev,
+                              // A manual atlas change creates a custom recipe instead of leaving a stale preset selected.
+                              intent: currentSize === size ? prev.intent : undefined,
+                              texture_resolution: size,
+                              textureResolution: size,
+                              textureQuality: size === '1K' ? 'low' : size === '2K' ? 'high' : size === '4K' ? 'high' : '8k',
+                            };
+                          })}
                           className={`py-1.5 rounded-lg text-xs font-mono font-bold transition-all text-center cursor-pointer ${
                             isSelected
                               ? 'bg-primary text-black font-black shadow-sm'
@@ -1704,10 +1694,20 @@ export const GeneratePanel: React.FC = () => {
                   role="switch"
                   aria-label="Toggle post-processing"
                   aria-checked={generationSettings.enablePostprocess !== false}
-                  onClick={() => setGenerationSettings(prev => ({
-                    ...prev,
-                    enablePostprocess: prev.enablePostprocess === false ? true : false,
-                  }))}
+                  onClick={() => setGenerationSettings(prev => {
+                    const enabling = prev.enablePostprocess === false;
+                    const target = prev.autoOptimizeSettings?.targetPolycount ?? 0;
+                    return {
+                      ...prev,
+                      enablePostprocess: enabling,
+                      // Native/Raw is target=0 plus processing off. Re-enabling the pipeline
+                      // must restore a visible production target.
+                      ...(enabling && target <= 0 ? {
+                        intent: undefined,
+                        autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: 50000 },
+                      } : {}),
+                    };
+                  })}
                   className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${generationSettings.enablePostprocess !== false ? 'bg-primary' : 'bg-zinc-700'}`}
                 >
                   <span

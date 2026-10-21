@@ -1,3 +1,13 @@
+## 2026-10-21 — Batch 3/4 Follow-up: Request Contract & Generate UI
+
+- **Request path consistency:** Direct, queued and batch generation use the same model-choice preference and manifest-capability helpers. Intent resolution can supply a model only for auto-model requests; it cannot silently change a manual model selection.
+- **Batch fidelity:** Enqueued items retain production atlas resolution, target budget, candidate count, LOD options, normal baking, QA/repair, rigging and physics choices. Generic guidance, Low-VRAM and model-resolution values are removed from generation-only state and are not built into model requests.
+- **Preset truthfulness:** A changed atlas size deactivates a conflicting intent. Re-enabling post-processing after Native/Raw restores the existing 50K output-budget default rather than leaving the panel in a contradictory state.
+- **Legacy recipes:** Old inference override keys are filtered on import/save; supported adapter input parameters remain limited to the seed in the request builder.
+- **Verification boundary:** GPU inference and mesh-quality benchmarking were not run as part of this batch.
+
+---
+
 ## 2026-10-21 — Adapter-Owned Inference Lock: Alias Filtering and Request Isolation
 
 - **Adapter audit**: confirmed the active max-detail profiles stay in the model adapters; the numerical profiles were not retuned in this pass. TRELLIS.2's documented/runtime model-side texture default was 4096 while its schema advertised an editable 8192, which could diverge when schema values were serialized. The adapter now locks `texture_size=4096` and marks that model-side value read-only; production atlas resolution remains separate.

@@ -10,7 +10,10 @@ const EXPORT_FORMAT = 'formash3d-generation-presets';
 const OMIT_FROM_PRESET = new Set([
   'image', 'imageFileId', 'imageName', 'preprocessingArtifactId',
   'preprocessingPreviewUrl', 'preprocessingMetadata', 'modelParameterOverrides',
-  'modelParameters',
+  'modelParameters', 'model_parameters', 'quality', 'meshQuality', 'requested_quality',
+  'guidanceScale', 'guidance_scale', 'num_inference_steps', 'octree_resolution',
+  'sampler_overrides', 'samplerOverrides', 'lowVram', 'vramMode',
+  'maxNumView', 'resolution',
 ]);
 
 type PresetSettings = Omit<Partial<GenerationSettings>,

@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildGenerationParameters, parseModelParameterOverrides } from '../utils/buildGenerationParameters.ts';
+import {
+  buildGenerationParameters,
+  parseModelParameterOverrides,
+  resolveGenerationModelCapabilities,
+  resolveGenerationModelChoice,
+} from '../utils/buildGenerationParameters.ts';
 
 // Rule 1: UI-provided quality, meshQuality, requested_quality, num_inference_steps, guidance_scale,
 // octree_resolution, sampler dictionaries and Low-VRAM overrides do not reach model inference.
@@ -174,7 +179,7 @@ test('Rule 8: missing image input throws a clear actionable error', () => {
 });
 
 // Rule 9: Legacy saved presets containing old inference override keys cannot reintroduce those values.
-test('Rule 9: legacy inference keys in preset or paramDefaults are not merged', () => {
+test('Rule 9: legacy inference override keys in saved presets are not merged', () => {
   const legacyPreset = {
     imageFileId: 'file-rule-9',
     aiModel: 'hunyuan3d-dit-v2-mini-turbo',
@@ -187,13 +192,7 @@ test('Rule 9: legacy inference keys in preset or paramDefaults are not merged', 
     },
     enablePostprocess: false,
   };
-  const legacyDefaults = {
-    octree_resolution: 1300,
-    num_inference_steps: 150,
-    guidance_scale: 7.5,
-  };
-
-  const result = buildGenerationParameters(legacyPreset, { raw_mesh: true }, legacyDefaults);
+  const result = buildGenerationParameters(legacyPreset, { raw_mesh: true });
   assert.deepEqual(result.body.model_parameters, {});
   assert.equal(result.modelParameters.octree_resolution, undefined);
   assert.equal(result.modelParameters.num_inference_steps, undefined);
@@ -271,6 +270,32 @@ test('Rule 11: LOD options reach the request body and are clamped to the support
   assert.equal(raw.body.generate_lod, false);
   assert.equal(raw.body.lod_preset, undefined);
   assert.equal(raw.body.lod_count, undefined);
+});
+
+test('explicit model selection wins over a preset resolver suggestion; auto mode may use the suggestion', () => {
+  assert.equal(resolveGenerationModelChoice('triposg_image_to_raw_mesh', 'hunyuan3d_shape_v21_image_to_raw_mesh'), 'triposg_image_to_raw_mesh');
+  assert.equal(resolveGenerationModelChoice('', 'trellis2_image_to_textured_mesh'), 'trellis2_image_to_textured_mesh');
+  assert.equal(resolveGenerationModelChoice(undefined, undefined), '');
+});
+
+test('model capabilities are derived from manifest metadata for generation paths', () => {
+  assert.deepEqual(resolveGenerationModelCapabilities('triposg_image_to_raw_mesh'), {
+    raw_mesh: true, paint_autochain: false, supports_texture: false,
+  });
+  assert.deepEqual(resolveGenerationModelCapabilities('trellis2_image_to_textured_mesh', {
+    raw_mesh: false, paint_autochain: true, texture_generation: true,
+  }), {
+    raw_mesh: false, paint_autochain: true, supports_texture: true,
+  });
+  assert.deepEqual(resolveGenerationModelCapabilities('example', { texture_generation: false }), {
+    raw_mesh: false, paint_autochain: false, supports_texture: false,
+  });
+});
+
+test('candidate count remains bounded when a malformed non-finite value is supplied', () => {
+  assert.equal(buildGenerationParameters({
+    imageFileId: 'file-invalid-count', candidateCount: Number.NaN,
+  }).body.candidate_count, 1);
 });
 
 test('parseModelParameterOverrides enforces object safety', () => {

@@ -473,10 +473,7 @@ export interface GenerationSettings {
   quadTopology: boolean;
   topologyMode?: 'triangle' | 'quad' | 'adaptive';
   seed: number;
-  guidanceScale: number;
   removeBackground: boolean;
-  lowVram?: boolean;
-  vramMode?: 'auto' | 'normal' | 'low';
   autoOptimizeSettings: AutoOptimizeSettings;
   highResolutionNormalBaking?: boolean;
   generateTexture?: boolean;
@@ -495,8 +492,6 @@ export interface GenerationSettings {
   prompt?: string;
   imageName?: string;
   negativePrompt?: string;
-  maxNumView?: number;
-  resolution?: number;
   paintResolution?: 512 | 768;
   intent?: string;
   preprocessingArtifactId?: string | null;
@@ -510,8 +505,6 @@ export interface GenerationSettings {
   autoRigMode?: string;
   enablePostprocess?: boolean;
   candidateCount?: number;
-  /** @deprecated Removed from generation UI. Kept for API type backward-compatibility. */
-  quality?: 'fast' | 'balanced' | 'high';
 }
 
 

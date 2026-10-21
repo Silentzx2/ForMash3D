@@ -1,6 +1,6 @@
 # Generation UI End-to-End Contract Specification
 
-> **Contract Version**: 1.1.0  
+> **Contract Version**: 1.1.1  
 > **Status**: APPROVED & ACTIVE  
 > **Date**: October 21, 2026  
 > **Reference**: ADR-056, ADR-057, ADR-093, `Docs/ARCHITECTURE.md`, `Docs/TASKS.md`
@@ -197,3 +197,11 @@ When constructing and executing a generation request, configuration values are r
 5. **Legacy production keys are ignored, not honoured**: `model_parameters.generateLOD`, `model_parameters.lodPreset`, and `model_parameters.lodCount` are popped and discarded so they can never leak into the job inputs or override the intent preset.
 6. **Preset selection is non-destructive**: clicking a preset chip updates the UI state fields only. It never initiates network requests or job submissions.
 7. **Adapter profiles are immutable**: regardless of any request body inputs, adapter-owned inference profiles (`_LOCKED_INFERENCE_PROFILE`) overwrite all incoming inference parameters.
+
+## 10. Batch 3/4 Request-Path Invariants (2026-10-21)
+
+- A non-empty user-selected model is authoritative. Intent resolution is advisory and may supply a model only for auto-model requests; capability incompatibility should be reported by the backend, not hidden by a silent UI swap.
+- Direct, queued and batch submissions use the same model-capability resolver. Capabilities come from selected-model manifest metadata, with the model ID as a raw-mesh fallback when metadata is unavailable.
+- Batch snapshots retain the atlas resolution and production settings selected when the item was enqueued, including candidate count, LOD, normal baking, QA/repair, rigging and physics. Inference steps, guidance, sampler overrides, extraction resolution and Low-VRAM are not generation controls.
+- Legacy output recipes may contain removed inference keys; import filters those keys. Preset clicks configure the job and do not submit it.
+- Manual atlas changes clear conflicting preset intent. Re-enabling post-processing from Native/Raw also restores a visible production budget.

@@ -26,7 +26,11 @@ import { prefetchGLB } from '../lib/glbCache';
 import { shadingModeToPreset, presetToShadingMode } from '@/lib/storeAdapter';
 import { diagnoseJobError } from '@/lib/jobDiagnostics';
 import { useRouter, usePathname } from 'next/navigation';
-import { buildGenerationParameters } from '../utils/buildGenerationParameters';
+import {
+  buildGenerationParameters,
+  resolveGenerationModelCapabilities,
+  resolveGenerationModelChoice,
+} from '../utils/buildGenerationParameters';
 import { taskPersistence } from '@/services/taskPersistence';
 
 interface ComparisonGroup {
@@ -550,14 +554,10 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       image: null,
       aiModel: '',
       textureQuality: 'high',
-      quadTopology: false, topologyMode: 'triangle', seed: 42891, guidanceScale: 7.5, removeBackground: false,
-      lowVram: false,
-      vramMode: 'auto',
+      quadTopology: false, topologyMode: 'triangle', seed: 42891, removeBackground: false,
       autoOptimizeSettings: { targetPolycount: 0 },
       highResolutionNormalBaking: true,
       generateTexture: true,
-      maxNumView: 9,
-      resolution: 1024,
       generateCollision: true,
       generateLOD: false,
       lodPreset: "high",
@@ -668,16 +668,6 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     activeToolRef.current = activeTool;
     systemStatsStatusRef.current = systemStats.status;
   }, [selectedAssetId, currentAsset, mainNav, activeTool, systemStats.status]);
-
-  useEffect(() => {
-    try {
-      const savedLowVram = localStorage.getItem('lowVramMode');
-      if (savedLowVram !== null) {
-        const isLow = JSON.parse(savedLowVram);
-        setGenerationSettings(prev => ({ ...prev, lowVram: isLow }));
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   // Hydrate job from URL /workspace/[tool]/[job_id] if present so failed or running status is never lost
   useEffect(() => {
@@ -1507,26 +1497,21 @@ function dataURLtoFile(dataURL: string, filename: string): File {
             effective.intent,
             effective.aiModel || undefined,
           );
-          resolvedModelId = resolved.model_id;
-          finalSettings = {
-            ...finalSettings,
-            aiModel: resolvedModelId,
-          };
+          resolvedModelId = resolveGenerationModelChoice(effective.aiModel, resolved.model_id);
+          if (!effective.aiModel) {
+            finalSettings = {
+              ...finalSettings,
+              aiModel: resolvedModelId,
+            };
+          }
         } catch {
           // fallback
         }
       }
 
       const selectedCapabilities = modelDetails[resolvedModelId]?.capabilities || {};
-      const isRawModel = selectedCapabilities.raw_mesh === true || resolvedModelId.endsWith('_image_to_raw_mesh');
-      const { endpoint, body } = buildGenerationParameters(
-        finalSettings,
-        {
-          raw_mesh: isRawModel,
-          paint_autochain: selectedCapabilities.paint_autochain === true,
-          supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
-        },
-      );
+      const modelCapabilities = resolveGenerationModelCapabilities(resolvedModelId, selectedCapabilities);
+      const { endpoint, body } = buildGenerationParameters(finalSettings, modelCapabilities);
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -1705,11 +1690,13 @@ function dataURLtoFile(dataURL: string, filename: string): File {
             generationSettings.intent,
             generationSettings.aiModel || undefined,
           );
-          effectiveModelId = resolved.model_id;
-          effectiveSettings = {
-            ...generationSettings,
-            aiModel: effectiveModelId,
-          };
+          effectiveModelId = resolveGenerationModelChoice(modelId, resolved.model_id);
+          if (!modelId) {
+            effectiveSettings = {
+              ...generationSettings,
+              aiModel: effectiveModelId,
+            };
+          }
         } catch (intentError) {
           console.warn('Failed to resolve smart intent, using the selected model directly:', intentError);
         }
@@ -1717,15 +1704,8 @@ function dataURLtoFile(dataURL: string, filename: string): File {
 
       // Route from the selected model's declared capabilities instead of forcing raw-mesh output.
       const selectedCapabilities = modelDetails[effectiveModelId]?.capabilities || {};
-      const isRawModel = selectedCapabilities.raw_mesh === true || effectiveModelId.endsWith('_image_to_raw_mesh');
-      const { endpoint, body } = buildGenerationParameters(
-        effectiveSettings,
-        {
-          raw_mesh: isRawModel,
-          paint_autochain: selectedCapabilities.paint_autochain === true,
-          supports_texture: selectedCapabilities.texture_generation ?? !isRawModel,
-        },
-      );
+      const modelCapabilities = resolveGenerationModelCapabilities(effectiveModelId, selectedCapabilities);
+      const { endpoint, body } = buildGenerationParameters(effectiveSettings, modelCapabilities);
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -2125,7 +2105,8 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          // Create a temporary GenerationSettings object from the batch item
          const batchTexQuality = batchItem.textureQuality as string | undefined;
          const batchTexRes: '1K' | '2K' | '4K' | '8K' =
-           (batchItem as any).texture_resolution ??
+           batchItem.texture_resolution ??
+           batchItem.textureResolution ??
            (batchTexQuality === '8k' ? '8K' : batchTexQuality === 'ultra' ? '4K' : batchTexQuality === 'high' ? '2K' : '1K');
          const batchSettings: GenerationSettings = {
            mode: 'image-to-3d',
@@ -2137,27 +2118,28 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            textureResolution: batchTexRes,
            quadTopology: batchItem.quadTopology ?? false,
            topologyMode: batchItem.topologyMode ?? 'triangle',
-           seed: batchItem.seed ?? 42891,
-           guidanceScale: batchItem.guidanceScale ?? 7.5,
-           removeBackground: batchItem.removeBackground ?? true,
-           lowVram: batchItem.lowVram ?? false,
-           vramMode: batchItem.vramMode ?? 'auto',
-           autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 0 },
-           generateTexture: batchItem.generateTexture ?? true,
-           maxNumView: batchItem.maxNumView ?? 9,
-           resolution: batchItem.resolution ?? 1024,
-           generateCollision: batchItem.generateCollision ?? true,
-           intent: batchItem.intent,
-           preprocessingArtifactId: batchItem.preprocessingArtifactId,
-           preprocessingPreviewUrl: null,
-           preprocessingMetadata: batchItem.preprocessingMetadata,
-           enhancementEnabled: false,
-           enablePrintabilityCheck: false,
-           enableAutoRepair: false,
-           enableAutoRig: false,
-           autoRigMode: 'full',
-           enablePostprocess: batchItem.enablePostprocess ?? true,
-           physics: {
+seed: batchItem.seed ?? 42891,
+            removeBackground: batchItem.removeBackground ?? true,
+            autoOptimizeSettings: batchItem.autoOptimizeSettings ?? { targetPolycount: 0 },
+            generateTexture: batchItem.generateTexture ?? true,
+            highResolutionNormalBaking: batchItem.highResolutionNormalBaking ?? true,
+            generateLOD: batchItem.generateLOD ?? false,
+            lodPreset: batchItem.lodPreset ?? 'high',
+            lodCount: batchItem.lodCount ?? 4,
+            candidateCount: batchItem.candidateCount ?? 1,
+            generateCollision: batchItem.generateCollision ?? true,
+            intent: batchItem.intent,
+            preprocessingArtifactId: batchItem.preprocessingArtifactId,
+            preprocessingReviewOverride: batchItem.preprocessingReviewOverride ?? false,
+            preprocessingPreviewUrl: null,
+            preprocessingMetadata: batchItem.preprocessingMetadata,
+            enhancementEnabled: batchItem.enhancementEnabled ?? false,
+            enablePrintabilityCheck: batchItem.enablePrintabilityCheck ?? false,
+            enableAutoRepair: batchItem.enableAutoRepair ?? false,
+            enableAutoRig: batchItem.enableAutoRig ?? false,
+            autoRigMode: batchItem.autoRigMode ?? 'full',
+            enablePostprocess: batchItem.enablePostprocess ?? true,
+            physics: batchItem.physics ?? {
              bodyType: 'auto',
              massMode: 'auto',
              massKg: 1,
@@ -2188,34 +2170,28 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
          let effectiveSettings = batchSettings;
          if (batchSettings.intent) {
            try {
-             const resolved = await getApiClient().resolveSmartIntent(
-               batchSettings.intent,
-               batchSettings.aiModel || undefined,
-             );
-             effectiveSettings = {
-               ...batchSettings,
-               aiModel: resolved.model_id,
-             };
+const resolved = await getApiClient().resolveSmartIntent(
+                batchSettings.intent,
+                batchSettings.aiModel || undefined,
+              );
+              const effectiveModelId = resolveGenerationModelChoice(batchSettings.aiModel, resolved.model_id);
+              if (!batchSettings.aiModel) {
+                effectiveSettings = {
+                  ...batchSettings,
+                  aiModel: effectiveModelId,
+                };
+              }
            } catch (intentError) {
              console.warn('Failed to resolve smart intent, using model directly:', intentError);
              // Continue with original settings
            }
          }
 
-         // Build generation parameters using the existing function
-         const modelCapabilities = {
-           raw_mesh: false, // Default, would need to be looked up from model details
-           paint_autochain: false,
-           supports_texture: true
-         };
-         
-         // In a real implementation, we would look up the actual model capabilities from modelDetails
-         // For now, we'll use defaults and let buildGenerationParameters handle routing
-         
-         const { endpoint, body } = buildGenerationParameters(
-           effectiveSettings,
-           modelCapabilities
-         );
+// Batch and single submissions use the same manifest-declared model capabilities.
+          const effectiveModelId = effectiveSettings.aiModel || '';
+          const selectedCapabilities = modelDetails[effectiveModelId]?.capabilities || {};
+          const modelCapabilities = resolveGenerationModelCapabilities(effectiveModelId, selectedCapabilities);
+          const { endpoint, body } = buildGenerationParameters(effectiveSettings, modelCapabilities);
 
          // Submit the job to the backend
          const res = await fetch(endpoint, {
@@ -2373,14 +2349,19 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
            quadTopology: undefined,
            topologyMode: undefined,
            seed: undefined,
-           guidanceScale: undefined,
            removeBackground: undefined,
-           lowVram: undefined,
-           vramMode: undefined,
            autoOptimizeSettings: undefined,
            generateTexture: undefined,
-           maxNumView: undefined,
-           resolution: undefined,
+           texture_resolution: undefined,
+           textureResolution: undefined,
+           highResolutionNormalBaking: undefined,
+           generateLOD: undefined,
+           lodPreset: undefined,
+           lodCount: undefined,
+           candidateCount: undefined,
+           physics: undefined,
+           preprocessingReviewOverride: undefined,
+           enhancementEnabled: undefined,
            generateCollision: undefined,
            enablePrintabilityCheck: undefined,
            enableAutoRepair: undefined,

@@ -1,3 +1,13 @@
+## Generation request paths & Generate UI cleanup (2026-10-21)
+
+- Primary Generate, background queue and batch image-to-3D submission now share model-choice and capability resolvers. Intent resolution is advisory: a manually selected model is never silently replaced by a preset suggestion.
+- Batch queue snapshots preserve the selected atlas size, target budget, candidate count, LOD, topology, normal baking, QA/repair, rigging and physics settings. Generation-only guidance, Low-VRAM and model-resolution state are removed from request construction.
+- A manual atlas-size change deactivates conflicting output intent. Re-enabling post-processing from Native/Raw restores a visible production budget so panel state and request semantics stay aligned.
+- Legacy saved output recipes safely discard removed inference keys. Adapter-owned numerical profiles are unchanged.
+- GPU inference and mesh-quality benchmarking were not run for this source-contract cleanup; automated checks must be read from the implementation commit's CI runs.
+
+---
+
 ## Adapter-owned inference lock: alias filtering and request isolation (2026-10-21)
 
 - Locked TRELLIS.2's model-side `texture_size` at the documented 4096 value and marked it read-only in the adapter schema; production atlas resolution remains a separate post-processing option.

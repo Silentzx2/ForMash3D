@@ -83,26 +83,30 @@ export interface BatchQueueItem {
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;
-  // Generation settings that were current when the item was added to the queue
+  // Output and production settings captured when the item is enqueued.
   textureQuality?: GenerationSettings['textureQuality'];
+  texture_resolution?: GenerationSettings['texture_resolution'];
+  textureResolution?: GenerationSettings['textureResolution'];
   quadTopology?: GenerationSettings['quadTopology'];
   topologyMode?: GenerationSettings['topologyMode'];
   seed?: GenerationSettings['seed'];
-  guidanceScale?: GenerationSettings['guidanceScale'];
   removeBackground?: GenerationSettings['removeBackground'];
-  lowVram?: GenerationSettings['lowVram'];
-  vramMode?: GenerationSettings['vramMode'];
   autoOptimizeSettings?: GenerationSettings['autoOptimizeSettings'];
   generateTexture?: GenerationSettings['generateTexture'];
-  maxNumView?: GenerationSettings['maxNumView'];
-  resolution?: GenerationSettings['resolution'];
+  highResolutionNormalBaking?: GenerationSettings['highResolutionNormalBaking'];
+  generateLOD?: GenerationSettings['generateLOD'];
+  lodPreset?: GenerationSettings['lodPreset'];
+  lodCount?: GenerationSettings['lodCount'];
+  candidateCount?: GenerationSettings['candidateCount'];
   generateCollision?: GenerationSettings['generateCollision'];
+  physics?: GenerationSettings['physics'];
   enablePrintabilityCheck?: GenerationSettings['enablePrintabilityCheck'];
   enableAutoRepair?: GenerationSettings['enableAutoRepair'];
   enableAutoRig?: GenerationSettings['enableAutoRig'];
   autoRigMode?: GenerationSettings['autoRigMode'];
   enablePostprocess?: GenerationSettings['enablePostprocess'];
   preprocessingPreviewUrl?: string | null;
+  preprocessingReviewOverride?: GenerationSettings['preprocessingReviewOverride'];
   enhancementEnabled?: GenerationSettings['enhancementEnabled'];
 }
 

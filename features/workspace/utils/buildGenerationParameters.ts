@@ -46,10 +46,36 @@ export function parseModelParameterOverrides(value: unknown): Record<string, unk
   return { ...(value as Record<string, unknown>) };
 }
 
+/**
+ * Keep the user's explicit model authoritative. Intent resolution may suggest a
+ * fallback only when the request does not already name a model.
+ */
+export function resolveGenerationModelChoice(
+  explicitModelId: string | null | undefined,
+  presetModelId: string | null | undefined,
+): string {
+  if (typeof explicitModelId === 'string' && explicitModelId.trim()) return explicitModelId;
+  if (typeof presetModelId === 'string' && presetModelId.trim()) return presetModelId;
+  return '';
+}
+
+/** Derive routing capabilities from selected-model manifest metadata. */
+export function resolveGenerationModelCapabilities(
+  modelId: string,
+  declaredCapabilities: Record<string, unknown> = {},
+): ModelCapabilities {
+  const rawMesh = declaredCapabilities.raw_mesh === true || modelId.endsWith('_image_to_raw_mesh');
+  const textureCapability = declaredCapabilities.texture_generation;
+  return {
+    raw_mesh: rawMesh,
+    paint_autochain: declaredCapabilities.paint_autochain === true,
+    supports_texture: typeof textureCapability === 'boolean' ? textureCapability : !rawMesh,
+  };
+}
+
 export function buildGenerationParameters(
   settings: GenerationSettings,
-  modelCapabilities: ModelCapabilities = {},
-  _paramDefaults: Record<string, any> = {}
+  modelCapabilities: ModelCapabilities = {}
 ): BuildParamsResult {
   const isRawModel = modelCapabilities.raw_mesh === true;
   const isPaintModel = modelCapabilities.paint_autochain === true;
@@ -104,8 +130,9 @@ export function buildGenerationParameters(
     .replace(/[^A-Za-z0-9._-]+/g, '_')
     .replace(/^_+|_+$/g, '') || 'asset';
 
-  const candidateCount = settings.candidateCount
-    ? Math.max(1, Math.min(4, Math.floor(Number(settings.candidateCount))))
+  const requestedCandidateCount = Number(settings.candidateCount ?? 1);
+  const candidateCount = Number.isFinite(requestedCandidateCount)
+    ? Math.max(1, Math.min(4, Math.floor(requestedCandidateCount)))
     : 1;
 
   // LOD production options. The post-processing pipeline builds at most 4 levels
