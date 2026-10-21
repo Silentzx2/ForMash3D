@@ -24,6 +24,13 @@ from core.utils.mesh_utils import MeshProcessor
 
 logger = logging.getLogger(__name__)
 
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max", "octree_resolution": 1300,
+    "num_inference_steps": 150, "guidance_scale": 5.0,
+    "num_chunks": 80000, "mc_algo": "mc",
+}
+
 
 class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
     """
@@ -278,6 +285,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
 
     def _process_request(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
         """Process image-to-raw-mesh generation using Hunyuan3D-Shape-v2-1."""
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             if "image_path" not in inputs:
                 raise ValueError("image_path is required")
@@ -354,7 +362,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                 num_inference_steps=num_steps,
                 guidance_scale=guidance_scale,
                 num_chunks=num_chunks,
-                mc_algo="mc",
+                mc_algo=inputs["mc_algo"],
                 generator=generator,
             )[0]
 
@@ -384,7 +392,7 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
                     "effective_geometry_resolution_status": "upstream exposes configured octree_resolution, not scalar achieved resolution",
                     "geometry_resolution_source": "verified VanillaVolumeDecoder + MCSurfaceExtractor; mc_algo=mc",
                     "voxel_size": 2.02 / octree_res,
-                    "mc_algo": "mc",
+                    "mc_algo": inputs["mc_algo"],
                     "mesh_operations": [],
                     "octree_resolution": octree_res,
                     "num_chunks": num_chunks,
@@ -421,30 +429,34 @@ class Hunyuan3DShapeV21ImageToRawMeshAdapter(ImageToMeshModel):
             "parameters": {
                 "octree_resolution": {
                     "type": "integer",
-                    "description": "EXPERIMENTAL: octree 1300 exceeds UI max 512; severe VRAM/OOM risk.",
-                    "default": 1300,
+                    "description": "Locked adapter-owned extraction resolution; edit only after profile review.",
+                    "default": _LOCKED_INFERENCE_PROFILE["octree_resolution"],
                     "minimum": 64,
                     "maximum": 2048,
+                    "readOnly": True,
                     "required": False,
                 },
                 "num_chunks": {
                     "type": "integer",
-                    "description": "Chunk size for point evaluation during marching cubes",
-                    "default": 20000,
+                    "description": "Locked adapter-owned chunk size for marching-cubes evaluation.",
+                    "default": _LOCKED_INFERENCE_PROFILE["num_chunks"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Experimental max-detail source profile: upstream UI permits up to 100 steps; ask the user before changing the locked setting.",
-                    "default": 150,
+                    "description": "Locked adapter-owned inference step count; edit only after profile review.",
+                    "default": _LOCKED_INFERENCE_PROFILE["num_inference_steps"],
                     "minimum": 1,
                     "maximum": 200,
+                    "readOnly": True,
                     "required": False,
                 },
                 "guidance_scale": {
                     "type": "number",
-                    "description": "Guidance scale for the experimental max-detail profile; 5.0 matches the upstream UI default.",
-                    "default": 5.0,
+                    "description": "Locked adapter-owned guidance scale; edit only after profile review.",
+                    "default": _LOCKED_INFERENCE_PROFILE["guidance_scale"],
+                    "readOnly": True,
                     "required": False,
                 },
                 "seed": {

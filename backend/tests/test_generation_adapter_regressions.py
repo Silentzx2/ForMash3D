@@ -147,28 +147,50 @@ def test_centralized_texture_settings_do_not_reach_geometry_adapters():
     }
 
 
-def test_triposg_preserves_full_inference_steps_and_octree_depth():
+def test_triposg_schema_uses_adapter_owned_inference_profile():
     adapter = TripoSGImageToRawMeshAdapter(vram_requirement=8192)
     schema = adapter.get_parameter_schema()["parameters"]
-    assert schema["num_inference_steps"]["default"] == 50
-    assert schema["faces"]["default"] == -1
+    assert schema["num_inference_steps"]["default"] == 100
+    assert schema["num_inference_steps"]["readOnly"] is True
+    assert schema["guidance_scale"]["default"] == 9.0
+    assert schema["guidance_scale"]["readOnly"] is True
+    assert "faces" not in schema
     assert schema["use_flash_decoder"]["default"] is False
-    assert schema["dense_octree_depth"]["default"] == 9
-    assert schema["hierarchical_octree_depth"]["default"] == 10
+    assert schema["dense_octree_depth"]["default"] == 10
+    assert schema["hierarchical_octree_depth"]["default"] == 11
 
 
-def test_triposg_depth10_requires_sufficient_gpu_memory():
-    depth, reason = _resolve_hierarchical_octree_depth(
-        10, 8, "cuda:0", free_memory_bytes=26 * 1024**3, total_memory_bytes=40 * 1024**3,
-    )
-    assert depth == 10
-    assert reason is None
+def test_scheduler_strips_inference_overrides_for_adapter_owned_profiles():
+    inputs = {
+        "image_path": "/tmp/source.png", "seed": 123,
+        "source_quality": "low", "requested_quality": "fast", "quality": "fast",
+        "meshQuality": "low", "num_inference_steps": 1, "num_steps": 2,
+        "guidance_scale": 99.0, "octree_resolution": 256, "num_chunks": 1,
+        "flash_octree_depth": 5, "dense_octree_depth": 8, "hierarchical_octree_depth": 8,
+        "use_flash_decoder": True, "low_vram": True, "target_polycount": 5000,
+    }
+    for model_id in (
+        "hunyuan3d_shape_v21_image_to_raw_mesh",
+        "hunyuan3d_shape_v21_image_to_3d",
+        "hunyuan3d_shape_v21_image_to_textured_mesh",
+        "triposg_image_to_raw_mesh",
+    ):
+        forwarded = _build_model_inference_inputs(inputs, model_id=model_id)
+        assert forwarded == {"image_path": "/tmp/source.png", "seed": 123, "source_quality": "max"}
 
-    depth, reason = _resolve_hierarchical_octree_depth(
-        10, 8, "cuda:0", free_memory_bytes=20 * 1024**3, total_memory_bytes=24 * 1024**3,
-    )
-    assert depth == 9
-    assert "conservative" in reason
+    root = Path(__file__).resolve().parents[1]
+    for path in ("adapters/hunyuan3d_shape_v21.py", "adapters/triposg_adapter.py"):
+        source = (root / path).read_text(encoding="utf-8")
+        assert "inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}" in source
+
+
+def test_triposg_locked_depth_does_not_auto_downgrade_from_vram_estimate():
+    for free_gib, total_gib in ((26, 40), (20, 24)):
+        depth, reason = _resolve_hierarchical_octree_depth(
+            11, 10, "cuda:0", free_memory_bytes=free_gib * 1024**3, total_memory_bytes=total_gib * 1024**3,
+        )
+        assert depth == 11
+        assert reason is None
 
 
 
@@ -196,11 +218,24 @@ def test_hunyuan_native_decoder_profile_resets_volume_and_surface_extractors():
         "surface_extractor": "MCSurfaceExtractor",
     }
 
-def test_hunyuan3d_shape_v21_defaults_to_max_fidelity_when_source_quality_max():
+def test_hunyuan3d_shape_v21_uses_adapter_owned_inference_profile():
+    from adapters.hunyuan3d_shape_v21 import _LOCKED_INFERENCE_PROFILE
+
     adapter = Hunyuan3DShapeV21ImageToRawMeshAdapter(vram_requirement=10240)
     schema = adapter.get_parameter_schema()["parameters"]
-    assert schema["octree_resolution"]["default"] == 512
-    assert schema["octree_resolution"]["maximum"] == 512
+    assert _LOCKED_INFERENCE_PROFILE == {
+        "source_quality": "max", "octree_resolution": 1300,
+        "num_inference_steps": 150, "guidance_scale": 5.0,
+        "num_chunks": 80000, "mc_algo": "mc",
+    }
+    assert schema["octree_resolution"]["default"] == 1300
+    assert schema["octree_resolution"]["maximum"] == 2048
+    assert schema["octree_resolution"]["readOnly"] is True
+    assert schema["num_chunks"]["default"] == 80000
+    assert schema["num_chunks"]["readOnly"] is True
+    assert schema["num_inference_steps"]["default"] == 150
+    assert schema["num_inference_steps"]["readOnly"] is True
+    assert schema["guidance_scale"]["readOnly"] is True
 
 
 def test_hunyuan3d_dit_v2_mini_turbo_defaults_to_max_fidelity_when_source_quality_max():

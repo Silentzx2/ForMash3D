@@ -24,13 +24,13 @@ from core.utils.mesh_utils import MeshProcessor
 logger = logging.getLogger(__name__)
 
 TRIPOSG_MAX_HIERARCHICAL_DEPTH = 11
-TRIPOSG_DEPTH10_MIN_FREE_BYTES = 24 * 1024**3
-TRIPOSG_DEPTH10_MIN_TOTAL_BYTES = 32 * 1024**3
-
-# Minimum VRAM for depth 9 (512^3 grid)
-TRIPOSG_DEPTH9_MIN_FREE_BYTES = 12 * 1024**3
-TRIPOSG_DEPTH9_MIN_TOTAL_BYTES = 16 * 1024**3
-
+# Same effective values as dev scheduler; numerical settings are locked here.
+_LOCKED_INFERENCE_PROFILE = {
+    "source_quality": "max", "num_inference_steps": 100,
+    "guidance_scale": 9.0, "flash_octree_depth": 10,
+    "dense_octree_depth": 10, "hierarchical_octree_depth": 11,
+    "use_flash_decoder": False,
+}
 
 def _resolve_hierarchical_octree_depth(
     requested_depth: int,
@@ -52,9 +52,8 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
     Produces high-fidelity GLB/OBJ meshes with optional scribble+prompt support.
     """
 
-    # EXPERIMENTAL_MAX_DETAIL (2026-10-20): use depth 9 dense + depth 10 hierarchical extraction,
-    # 50 steps, CFG 7.0 and no Flash decoder. Depth 10 remains subject to the existing VRAM gate.
-    # Ask the user once and require explicit confirmation before changing this locked profile.
+    # EXPERIMENTAL_MAX_DETAIL (2026-10-20): depth 10 dense + depth 11 hierarchical extraction,
+    # 100 steps, CFG 9.0 and no Flash decoder. Ask before changing the locked profile.
     FEATURE_TYPE = "image_to_raw_mesh"
     MODEL_ID = "triposg_image_to_raw_mesh"
 
@@ -268,12 +267,12 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             - prompt: Optional text prompt (used for scribble mode)
             - is_scribble: Optional bool for scribble+prompt generation
             - seed: Optional int (default: 42)
-            - num_inference_steps: Optional int (default: 50)
-            - guidance_scale: Optional float (default: 7.0)
-            - faces: Optional int for post-processing decimation (-1 for no reduction)
-            - auto_optimize: Optional bool; when false, preserve the model-native mesh without decimation
             - output_format: 'glb' or 'obj' (default: 'glb')
+
+        Numerical inference settings are adapter-owned. Production budgets belong
+        to downstream post-processing, not this adapter.
         """
+        inputs = {**inputs, **_LOCKED_INFERENCE_PROFILE}
         try:
             self.status = ModelStatus.PROCESSING
             self._ensure_triposg_in_path()
@@ -298,8 +297,6 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
             seed = int(inputs.get("seed", 42))
             steps = int(inputs.get("num_inference_steps", 100))
             guidance = float(inputs.get("guidance_scale", 9.0))
-            faces = int(inputs.get("target_polycount", inputs.get("faces", -1)))
-            auto_optimize = bool(inputs.get("auto_optimize", False))
             is_scribble = bool(inputs.get("is_scribble", False))
             prompt = str(inputs.get("prompt", "")).strip()
             octree_depth = int(inputs.get("flash_octree_depth", inputs.get("octree_depth", 9)))
@@ -370,7 +367,7 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                     dense_octree_depth=dense_octree_depth,
                     hierarchical_octree_depth=hierarchical_octree_depth,
                 ).samples[0]
-                # hierarchical extraction with depth 10 (1024^3) preserves fine details
+                # hierarchical extraction with depth 11 (2048-wide grid) preserves fine details
                 # standard marching_cubes (method="lewiner") is used, not DMC which can smooth
                 mesh = trimesh.Trimesh(outputs[0].astype(np.float32), np.ascontiguousarray(outputs[1]), process=False)
 
@@ -465,24 +462,20 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "num_inference_steps": {
                     "type": "integer",
-                    "description": "Number of denoising inference steps",
-                    "default":  100,
+                    "description": "Locked adapter-owned inference step count.",
+                    "default": _LOCKED_INFERENCE_PROFILE["num_inference_steps"],
                     "minimum": 10,
-                    "maximum":  200,
+                    "maximum": 200,
+                    "readOnly": True,
                     "required": False,
                 },
                 "guidance_scale": {
                     "type": "number",
-                    "description": "Classifier-free guidance scale",
-                    "default":  9.0,
+                    "description": "Locked adapter-owned guidance scale.",
+                    "default": _LOCKED_INFERENCE_PROFILE["guidance_scale"],
                     "minimum": 1.0,
                     "maximum": 20.0,
-                    "required": False,
-                },
-                "faces": {
-                    "type": "integer",
-                    "description": "Target face count for decimation (-1 for no reduction)",
-                    "default": -1,
+                    "readOnly": True,
                     "required": False,
                 },
                 "is_scribble": {
@@ -493,15 +486,15 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "use_flash_decoder": {
                     "type": "boolean",
-                    "description": "Maximum-fidelity source profile uses dense/hierarchical extraction.",
-                    "default": False,
+                    "description": "Locked adapter-owned profile disables Flash extraction.",
+                    "default": _LOCKED_INFERENCE_PROFILE["use_flash_decoder"],
                     "readOnly": True,
                     "required": False,
                 },
                 "dense_octree_depth": {
                     "type": "integer",
-                    "description": "EXPERIMENTAL_MAX_DETAIL coarse grid depth (9); user confirmation is required before changing the locked profile.",
-                    "default":  10,
+                    "description": "Locked adapter-owned dense extraction depth.",
+                    "default": _LOCKED_INFERENCE_PROFILE["dense_octree_depth"],
                     "minimum": 8,
                     "maximum":  10,
                     "readOnly": True,
@@ -509,8 +502,8 @@ class TripoSGImageToRawMeshAdapter(ImageToMeshModel):
                 },
                 "hierarchical_octree_depth": {
                     "type": "integer",
-                    "description": "EXPERIMENTAL_MAX_DETAIL target depth 10; the runtime may lower effective depth under its existing VRAM gate. Ask before profile changes.",
-                    "default":  11,
+                    "description": "Locked adapter-owned hierarchical extraction depth.",
+                    "default": _LOCKED_INFERENCE_PROFILE["hierarchical_octree_depth"],
                     "minimum": 8,
                     "maximum":  11,
                     "readOnly": True,

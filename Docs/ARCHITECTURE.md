@@ -16,9 +16,10 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 - **Scheduler & CPU Concurrency**: VRAM-aware scheduler with GPU monitoring, model-input sanitization, dual-store job synchronization (Redis + SQLite), and multi-core CPU concurrency allocating all available cores (`nproc=8`, `OMP_NUM_THREADS=8`) across scheduler workers, marching cubes, and postprocessing.
 
 ### Model-Native Source Fidelity Contract
-- Each generation model keeps its own tuned inference schedule; the frontend does not use a project-wide step count.
-- Hunyuan3D-Shape-v2.1 and Mini Turbo stay within the upstream-supported 512-cell grid and explicitly configure/verify VanillaVolumeDecoder + MCSurfaceExtractor (mc_algo='mc'). Shape uses guidance 7.5 and its 50-step schedule; Mini keeps its trained 5-step sampler. The effective dense grid contains 513 sample points per axis.
-- TripoSG uses dense-seed + hierarchical extraction rather than GPU-capability-selected Flash extraction. The target depth is 10 (1024-wide final grid) only when at least 24 GiB VRAM is free on a GPU with at least 32 GiB total; otherwise extraction safely falls back to depth 9 (512-wide). Extra sampling can preserve only details present in the learned field.
+- Fixed model-specific inference profiles belong to adapters; the scheduler removes request overrides for migrated adapters instead of holding duplicate numeric profiles. Seed and image identity remain caller-controlled.
+- Hunyuan3D-Shape-v2.1 locks the effective dev scheduler values in its adapter: octree resolution 1300, 150 steps, guidance 5.0, 80,000 chunks, and the native dense decoder with marching cubes. These are preserved runtime values, not a claim of GPU or quality validation; the resolution carries OOM risk.
+- TripoSG locks the effective dev scheduler values in its adapter: 100 steps, guidance 9.0, dense depth 10, hierarchical depth 11, and no Flash decoder. Its current depth resolver does not automatically downgrade from supplied VRAM estimates. GPU quality/VRAM benchmarking has not been performed for these settings.
+- Hunyuan3D-DiT Mini Turbo and other not-yet-migrated model profiles remain scheduler-owned until later migration batches; their runtime values must not be retuned as a side effect.
 - The scheduler strips downstream-only target/decimation/remesh controls before adapter inference.
 - Raw extraction ceilings remain model-specific; only explicit hardware safety guards may lower them.
 - Normal image-to-3D routes return raw geometry; optional texture presets are handled after master promotion (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K). Legacy textured model IDs resolve to raw-generation aliases.

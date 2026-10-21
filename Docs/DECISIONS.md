@@ -1264,3 +1264,19 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 **Consequences:** Provides automated, resource-safe UV atlas unwrapping optimized for both high-poly raw geometry and low-poly game-ready LODs.
 
 
+
+
+---
+
+## ADR-056: Adapter-Owned Image-to-3D Inference Profiles
+
+**Decision:** Fixed model-specific inference values are authoritative in adapter code. The scheduler may filter incoming overrides, but must not maintain duplicate numeric profiles for migrated adapters.
+
+**Initial scope:** Hunyuan3D-Shape-v2.1 image geometry and TripoSG image geometry. Values match the effective `dev` scheduler settings inspected on 2026-10-20; this refactor does not retune them.
+
+**Consequences:**
+- Adapters overwrite request-side inference parameters with their locked profile while retaining caller-controlled image identity and seed.
+- The scheduler strips matching overrides and keeps production budgets downstream.
+- Runtime telemetry prefers effective values reported by the adapter.
+- Other model profiles remain scheduler-owned until later migration batches.
+- Source tests and GPU/checkpoint inference are separate verification gates; this decision does not claim GPU parity.
