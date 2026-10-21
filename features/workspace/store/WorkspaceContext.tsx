@@ -130,7 +130,6 @@ interface WorkspaceContextType {
   runUVUnwrapGeneration: (customSettings?: { distortionThreshold?: number; packMethod?: string; outputFormat?: string; saveIndividualParts?: boolean; modelParameters?: Record<string, any> }) => Promise<void>;
   runSegmentation: (customSettings?: { numParts?: number; method?: string; hierarchical?: boolean; outputFormat?: string; modelParameters?: Record<string, any>; modelPreference?: string } | number) => Promise<void>;
   runMeshEditing: (customSettings?: { sourcePrompt?: string; targetPrompt?: string; resolution?: number; bbox?: any; outputFormat?: string; mode?: 'text' | 'image'; targetImageFileId?: string; targetImageBase64?: string; strength?: number }) => Promise<void>;
-  queueWorkflow: (workflow: Record<string, unknown>, type: ActiveTask['type'], title: string) => Promise<void>;
   processBatchQueue: () => Promise<void>;
   cancelBatchProcessing: () => Promise<void>;
   retryFailedBatchItems: () => Promise<void>;
@@ -2061,19 +2060,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
     }
   }, [currentAsset, startTask]);
 
-   const queueWorkflow = useCallback(async (workflow: Record<string, unknown>, type: ActiveTask['type'], title: string) => {
-     startTask(type, title);
-     try {
-       // ponytail: the current 3DAIGC-API backend does not expose a generic
-       // workflow queue endpoint. Surface the limitation honestly instead of
-       // silently falling back to the obsolete /api/v1/generation route.
-       throw new Error('Workflow queueing is not supported by the current backend. Use the dedicated generation endpoints instead.');
-     } catch (e) {
-       setExecutionStep(e instanceof Error ? e.message : 'Workflow failed');
-       setActiveTask(prev => prev ? { ...prev, status: 'failed', currentStep: 'Submission failed' } : null);
-     }
-   }, [startTask]);
-
    // Batch processing function
     const processBatchQueue = useCallback(async () => {
       const appStore = useAppStore.getState();
@@ -2526,7 +2512,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       runRemeshGeneration, runTextureGeneration,
       runUVUnwrapGeneration, runSegmentation,
       runMeshEditing,
-      queueWorkflow,
       processBatchQueue,
       cancelBatchProcessing,
       retryFailedBatchItems,
@@ -2534,7 +2519,6 @@ function resolveMeshReference(asset?: ModelAsset | null): { mesh_file_id?: strin
       runRemeshGeneration, runTextureGeneration,
       runUVUnwrapGeneration, runSegmentation,
       runMeshEditing,
-      queueWorkflow,
       processBatchQueue,
       cancelBatchProcessing,
       retryFailedBatchItems]);

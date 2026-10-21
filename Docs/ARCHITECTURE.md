@@ -1,10 +1,12 @@
 # Architecture — ForMash 3D
 
 > **Architecture Version**: 0.1.0 (FastAPI + Next.js 16)
-> **Last Verified**: October 19, 2026
+> **Last Verified**: October 21, 2026
 > **Target Environments**: Linux (Ubuntu 20.04/22.04/24.04), Cloud GPU / Local Workstations
 
 ---
+
+> Route and mount inventory: see `Docs/ROUTE-MOUNT-AUDIT.md` for current Next.js page aliases, workspace route validation and FastAPI router parity.
 
 ## 1. Architectural Mission & Overview
 

@@ -202,3 +202,14 @@ def test_bvh_action_only_enables_for_real_bvh_artifacts():
     assert "Motion JSON-to-BVH conversion is not implemented" in inspector
     assert "Generating BVH MoCap Stream" not in inspector
 
+
+
+def test_users_router_is_mounted_in_both_fastapi_entrypoints():
+    multiworker = (ROOT / "backend" / "api" / "main_multiworker.py").read_text(encoding="utf-8")
+    singleworker = (ROOT / "backend" / "api" / "main_singleworker.py").read_text(encoding="utf-8")
+
+    expected_mount = 'app.include_router(users.router, prefix="/api/v1/users", tags=["Users"])'
+    assert expected_mount in multiworker
+    assert expected_mount in singleworker
+    assert "    users," in multiworker
+    assert "    users," in singleworker

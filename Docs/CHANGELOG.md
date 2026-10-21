@@ -1,3 +1,13 @@
+## Route/page/function mount audit (2026-10-21)
+
+- Added explicit validation for the Next.js workspace catch-all route so unknown tool paths return 404 instead of silently rendering Generate.
+- Mounted the users router in the single-worker FastAPI entrypoint to keep route coverage aligned with the production multi-worker entrypoint.
+- Removed the unused `partCompletion()` client method and request type because its target endpoint is absent from the backend; removed the uncalled generic `queueWorkflow` stub that always failed.
+- Added route-contract and router-parity regression tests and documented the source-level inventory in `Docs/ROUTE-MOUNT-AUDIT.md`.
+- Live deployment smoke tests and GPU inference were not performed by this source audit.
+
+---
+
 ## Advanced production control validation (2026-10-21)
 
 - Hardened the generation request builder against stale/legacy production-setting values: unsupported topology values fall back to a valid tri/quad choice, unsupported LOD presets fall back to High, and unsupported auto-rig modes fall back to Full.

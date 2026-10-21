@@ -32,7 +32,6 @@ import {
   ImageToMeshRequest,
   ImageToTexturedMeshRequest,
   MeshPaintingRequest,
-  PartCompletionRequest,
   MeshSegmentationRequest,
   AutoRiggingRequest,
   MeshRetopologyRequest,
@@ -587,14 +586,6 @@ class ApiClient {
   async imageMeshPainting(request: MeshPaintingRequest): Promise<BaseApiResponse> {
     const response = await this.client.post<BaseApiResponse>(
       '/api/v1/mesh-generation/image-mesh-painting',
-      request
-    );
-    return response.data;
-  }
-
-  async partCompletion(request: PartCompletionRequest): Promise<BaseApiResponse> {
-    const response = await this.client.post<BaseApiResponse>(
-      '/api/v1/mesh-generation/part-completion',
       request
     );
     return response.data;

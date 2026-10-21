@@ -1,3 +1,14 @@
+## 2026-10-21 — Route / Page / Function Mount Audit
+
+- **Inventory:** 9 Next.js page files, 3 Next route handlers, 14 FastAPI router modules and 113 decorator-defined API handlers found by static source inventory.
+- **Workspace route safety:** catch-all tool routes now use an explicit allow-list and return Next.js 404 for unknown or malformed paths; known tool/view aliases and job detail routes remain valid.
+- **Router parity:** single-worker FastAPI entrypoint now imports and mounts `users.router`, matching the production multi-worker entrypoint.
+- **Dead/unsupported client paths:** removed uncalled `ApiClient.partCompletion()` (no backend route exists) and its request type; removed the uncalled generic `queueWorkflow` stub that always threw.
+- **Audit report:** `Docs/ROUTE-MOUNT-AUDIT.md` lists page routes, API router coverage, unreferenced wrappers and verification limits.
+- **Verification boundary:** source contract tests and frontend CI are required; deployed HTTP smoke tests and GPU inference are not implied by source-level checks.
+
+---
+
 ## 2026-10-21 — Batch 5/6: Advanced Production Control Audit
 
 - **Enum contract:** generation request construction now normalizes persisted topology, LOD preset and auto-rig values to supported options. Topology mode and the legacy quad boolean are emitted consistently.

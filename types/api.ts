@@ -363,14 +363,6 @@ export interface MeshPaintingRequest {
   model_parameters?: Record<string, any>;
 }
 
-export interface PartCompletionRequest {
-  mesh_path?: string;
-  mesh_base64?: string;
-  mesh_file_id?: string; // preferred method
-  output_format: OutputFormat;
-  model_preference?: string;
-  model_parameters?: Record<string, any>;
-}
 
 // Mesh Segmentation Types - UPDATED
 export interface MeshSegmentationRequest {
