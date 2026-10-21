@@ -1,595 +1,244 @@
-# ForMash3D — Generate Panel Refactor & Sub-Agent Enforcement Spec
+# ForMash3D — Dev Codebase Cleanup & Wiring Tasks
 
+Repository: Silentzx2/ForMash3D
+Target branch: dev
+Scope: backend, core, quality, API, model adapters, post-processing, frontend/features, shared components, configuration, tests, scripts, tooling, deployment, assets, plugins, and documentation.
 
-> **Canonical consolidated plan:** [MASTER_AUDIT_AND_REPAIR_PLAN.md](MASTER_AUDIT_AND_REPAIR_PLAN.md) combines the earlier Generate UI / adapter-locked-inference specification with the current seed, post-processing, holes, mesh-fidelity, UV/PBR, physics/collision, route/mount, regression and documentation tasks. Follow its batch order and stop after each batch until the user explicitly says “proceed”. The legacy material below is preserved for detailed file/call-site requirements; historical PASS labels must be re-verified against current dev.
+This file replaces the former task index with an actionable cleanup/wiring plan. The previous file is preserved in Docs/TASKS_BEFORE_CODEBASE_CLEANUP_2026-10-21.md. The consolidated repair context remains in Docs/MASTER_AUDIT_AND_REPAIR_PLAN.md.
 
-**Purpose:** Mandatory implementation specification for cleaning the Generate panel, removing fake/duplicate controls, making adapter-owned inference settings authoritative, wiring production presets end-to-end, synchronizing docs/tests, and pushing verified changes to `dev`.
+## Rules before changing code
 
-**Repository:** `Silentzx2/ForMash3D`  
-**Target branch:** `dev`  
-**Primary reference:** current `dev` HEAD. Re-fetch and inspect it before editing; line numbers and existing implementation may have changed.
+- Do not delete a file only because a simple text search did not find an import. Check dynamic imports, reflection, registries, CLI entry points, Next.js conventions, plugin loading, tests, deployment scripts, and the backend/thirdparty Git submodule.
+- Every removal must include the file's reverse-dependency check, its replacement/consumer decision, and tests proving that no supported workflow regressed.
+- Every visible control and every API field must either reach a real downstream consumer or be removed/deprecated at the boundary. No fake success, mock capability claims, or fields that are accepted but ignored without explanation.
+- Keep one source of truth for each model registry, production preset, quality threshold, and runtime artifact/hash contract.
+- Do not retune model inference numbers during cleanup. Adapter-owned runtime profiles are out of scope unless a separate measured regression justifies a change.
+- Preserve raw/native mesh output, immutable master/source.glb lineage, user-selected models, and current artifact contracts.
+- Treat all findings below as static-audit candidates until the relevant checks are run on the latest dev HEAD. No source-code deletion or runtime test success is implied by this plan.
 
-> **MANDATORY EXECUTION DIRECTIVE**  
-> This is an implementation task, not a request for advice. Do not stop after analysis, a plan, a diff proposal, or a report. Inspect the live repository, implement the changes, run applicable checks, update documentation, review the final diff, and push to `dev` if repository permissions and branch rules permit. Never claim that tests, builds, or a push succeeded unless their results prove it.
+## P0 — Fix confirmed wiring problems first
 
----
+### P0-1. Repair the graph helper import boundary
 
-## 0. Non-negotiable product decisions
+File: features/graph/utils/graphHelpers.js
 
-1. **Inference settings live in model adapters.** The owner will tune model-specific steps, guidance, samplers, decoder/extraction resolution, pipeline mode, and model-specific inference flags directly in adapter code. Do not expose duplicate UI controls for them.
-2. **Do not retune numerical profiles during this cleanup.** When relocating profile ownership, preserve the *effective values currently used at runtime* for each model and feature path. Resolve scheduler-vs-adapter disagreements by tracing the actual execution path and existing tests—not by guessing.
-3. **A visible control must have a real consumer.** Every remaining button/toggle/slider must affect the actual API request and a verified backend consumer, or it must be removed/disabled and clearly labelled as unavailable.
-4. **The beginner flow must be simple.** The main panel should focus on image input, model choice/status, genuine texture-output choice, one output-preset/target-polycount section, and Generate. Do not expose inference jargon.
-5. **Smart preset logic must be consolidated—not lost.** Move genuinely useful Smart Intent behaviour into the Target Polycount/Output Preset flow and backend preset/planner. Delete redundant Smart UI and dead code only after migrating useful behaviour.
-6. **Selecting a preset never starts generation.** It configures the job. The user must deliberately press Generate.
-7. **No duplicate Target Polycount or Post-Processing master switch.** One source of truth per setting.
-8. **Docs, tests, and implementation must agree.** Do not mark tasks complete or report success if relevant checks have not been run.
+- [ ] Replace the duplicated implementation with a compatibility re-export from features/utils/graphHelpers.js. The root helper is the canonical implementation.
+- [ ] The current copied file uses relative imports such as ./workflowFileInputs and ./ids, but those sibling files are absent from features/graph/utils in the tracked tree. The duplicate therefore points at missing modules.
+- [ ] Keep the nested path as a re-export shim because GraphPage imports through that path; do not remove the path before updating all imports.
+- [ ] Confirm root utility exports cover every symbol imported by GraphPage and graph node components.
+- [ ] Run the frontend typecheck, lint, and production build; add a small route/import contract test if the build does not cover this import boundary.
 
----
+### P0-2. Make the quality gate outcome real and observable
 
-## 1. Mandatory sub-agent orchestration
+Files: backend/core/quality/evaluation.py, backend/core/quality/metrics.py, backend/postprocess/pipeline.py, backend/core/scheduler/multiprocess_scheduler.py
 
-The coordinating agent MUST delegate parallel work when sub-agents are supported. If sub-agents are unavailable in the environment, explicitly execute the same workstreams sequentially; do not falsely claim delegation.
+- [ ] Trace the production quality report from master mesh comparison to the final result/status. pipeline.py calls compare_meshes and quality_gate; verify whether a failed gate changes the result, blocks an unsafe promotion, or is merely recorded as metadata.
+- [ ] Define and test the actual policy for pass, warning, fail, skipped, and missing metrics. Do not silently turn missing metrics into a pass.
+- [ ] Ensure the quality decision applies to derived output only and never mutates master/source.glb.
+- [ ] Reuse quality.yaml thresholds; do not add another hard-coded threshold table.
+- [ ] Keep diagnostics honest: a diagnostic comparison without ground truth must not be described as competitive parity or proof of visual superiority.
 
-### Agent A — Frontend/UI ownership
+### P0-3. Verify the graph/UI integration and test coverage
 
-**Own these areas:**
-- `features/workspace/Panels/GeneratePanel.tsx`
-- `features/workspace/Modals/GenerationPresetDrawer.tsx`
-- `features/workspace/types.ts`
-- frontend call sites/state in `features/workspace/store/WorkspaceContext.tsx`
-- frontend request-builder tests
+- [ ] Run a full frontend typecheck, ESLint, and production build against dev after P0-1.
+- [ ] Check actual route mounts and navigation entry points before deleting pages/panels. Keep Next.js conventional files such as app/icon.svg and app/apple-icon.png unless metadata and public references prove they are redundant.
+- [ ] Keep root/shared UI components until a complete import graph and build prove they are unused; tiny files are not automatically dead code.
+- [ ] Add any missing lightweight import/route contracts to CI so future dangling relative imports fail before merge.
 
-**Deliverables:** simplified panel, one target/preset section, clean Advanced section, no exposed inference controls or dead state, preset selection does not auto-submit, and a summary of remaining visible controls with their API field names.
+## P1 — Remove high-confidence dead-code candidates after the mandatory reference check
 
-### Agent B — Backend/API/adapter ownership
+Before deleting each item, search all tracked source plus the initialized submodule for imports, dynamic paths, symbol references, tests, and docs. Exclude the definition itself from the usage count. If a reference exists, migrate it first and leave a compatibility shim when external imports may be supported.
 
-**Own these areas:**
-- `backend/api/routers/mesh_generation.py`
-- Smart preset/planner modules and their configuration
-- `backend/core/scheduler/multiprocess_scheduler.py`
-- all adapters affected by the current scheduler-owned inference profile table
-- relevant backend tests
+### P1-1. Frontend utilities with an apparently unused duplicate copy
 
-**Deliverables:** traceable API-to-consumer wiring, adapter-owned locked inference profiles, valid preset precedence, rejection/ignoring of unsupported frontend inference overrides, and regression tests.
+- [ ] Remove features/hooks/useImageEditorHistory.js if latest-dev reverse-reference scanning confirms there are no callers. The active Image Editor page imports features/image-editor/hooks/useImageEditorHistory.js.
+- [ ] Remove features/image-editor/hooks/usePasteImageFiles.js if no caller exists. The shared features/hooks/usePasteImageFiles.js is used by features/graph/pages/GraphPage.jsx and must be retained.
+- [ ] Remove features/utils/shadowRemoverGPU.js if no caller exists. features/image-editor/pages/ImageEditorPage.jsx uses features/image-editor/utils/shadowRemoverGPU.js.
+- [ ] Remove features/mesh-extras/ids.js if no caller exists. Keep features/utils/ids.js, which is used by shared graph/kanban/mesh-texturing helpers.
+- [ ] Remove features/mesh-extras/meshFlatten.js if no caller exists. The current export dialog imports the canonical features/utils/meshFlatten.js implementation.
+- [ ] Remove features/mesh-extras/meshExport.js and features/mesh-extras/meshTools.js if they have no callers. They are shallow re-export wrappers; preserve the canonical features/utils/meshExport.js and features/utils/meshTools.js used by current panels.
+- [ ] Decide the ZIP utility explicitly: features/utils/zipArchive.js and features/mesh-extras/zipArchive.js have identical implementations, and no in-tree createZip call was found in this audit. If ZIP download is not a product requirement, remove both. If ZIP batch export is required, keep one canonical implementation under features/utils, wire it to an actual user action, test it, and make the other path a compatibility re-export or remove it.
+- [ ] Do not remove features/hooks/usePasteImageFiles.js, features/image-editor/hooks/useImageEditorHistory.js, features/image-editor/utils/shadowRemoverGPU.js, or features/utils/ids.js merely because they have duplicate-looking counterparts. Their known consumers must continue to work.
 
-### Agent C — Tests/docs/quality audit
+### P1-2. Consolidate exact duplicate shared utilities without breaking import paths
 
-**Own these areas:**
-- audit the existing test layout and documented commands
-- `README.md`, `RULES.md`, and relevant `Docs/*.md`
-- test execution/reporting and final changed-file coverage matrix
+- [ ] Convert features/graph/utils/graphHelpers.js into the re-export shim described in P0-1.
+- [ ] Consolidate the identical features/utils/imageEditorCanvas.js and features/image-editor/utils/imageEditorCanvas.js implementations. Keep the root shared implementation as canonical if its exported API covers both callers; make the Image Editor path a re-export shim because ImageEditorPage imports it.
+- [ ] Consolidate the identical features/utils/seamlessTexture.js and features/image-editor/utils/seamlessTexture.js implementations. Keep both import paths operational because different Image Editor components currently resolve the two paths.
+- [ ] Review repeated helpers in features/mesh-extras and features/utils. Prefer a single implementation with small path-compatibility exports rather than duplicated business logic.
+- [ ] Preserve features/board/config.js, features/graph/config.js, features/image-editor/config.js, features/mesh-extras/config.js, and features/wiki/config.js while their feature modules rely on those path shims. Remove a shim only after updating and testing its callers.
+- [ ] Do not collapse app/apple-icon.png with public/icons/icon-180.png or app/icon.svg with public/icons/icon.svg based only on identical bytes. Verify framework conventions, metadata, and external/public URL consumers first.
 
-**Deliverables:** docs synced to the final implementation, test plan/results, a list of claims that are proven vs. not runtime-verified, and a check for leftover references to removed controls.
+### P1-3. Backend placeholder and wrapper candidates
 
-### Coordinator / integrator — mandatory duties
+- [ ] Review backend/core/preprocess/hi3dgen_bridging.py. No in-repository caller was found, and its function is a passthrough placeholder. Remove it if no vendor, script, or supported external import requires it; otherwise wire it into one canonical provider interface and add real contract tests.
+- [ ] Review the separate _hi3dgen_normal_bridging implementation in backend/core/preprocess/image_enhancement.py. It explicitly labels itself as a mock and returns provider hi3dgen_mock. Keep the experimental profile only if its mock nature is clearly exposed and it cannot be mistaken for real normal conditioning. Otherwise disable the profile or replace the mock with a verified real provider. Do not claim actual geometry-quality improvement from the edge-filter blend.
+- [ ] Review backend/postprocess/services/rigging.py. No internal caller for run_rigging_export/is_rigging_available was found. Choose one canonical route: wire the facade into the current auto-rigging/export flow if it adds needed behavior, or remove the unused facade after checking external imports. Keep backend/api/routers/auto_rigging.py and backend/postprocess/services/convert_fbx.py as long as their actual API/pipeline paths remain active.
+- [ ] Review backend/postprocess/services/baking.py. It only re-exports from .bake and no internal caller was found. Remove this compatibility alias if vendor/submodule/external compatibility checks confirm it is unnecessary. Keep backend/postprocess/services/bake.py; backend/postprocess/pipeline.py imports and invokes run_bake.
+- [ ] Search all package-qualified and dynamically assembled imports before removing compatibility aliases. Record the search result in the commit.
 
-- Inspect the current `dev` HEAD and existing branch state first.
-- Give agents disjoint write ownership. Do not allow two agents to independently overwrite the same file.
-- Require evidence from each agent: modified paths, exact consumer path, test names/commands, actual results, and unresolved issues.
-- Integrate and review the combined diff. Do not accept “looks wired” or “should work” without tracing the value to a consumer.
-- Run a repository-wide search for removed names, stale imports, unused types, stale comments, request aliases, and duplicate UI sections.
-- Do not let an agent push independently. The coordinator performs the final commit and push after verification.
-- If a sub-agent is unavailable, do that workstream yourself. A blocked sub-agent is not permission to omit the work.
+### P1-4. Consolidate duplicate SHA-256 logic; do not weaken master immutability
 
----
+Locations to review: backend/core/quality/metrics.py, backend/core/utils/artifact_utils.py, backend/postprocess/pipeline.py, backend/core/scheduler/multiprocess_scheduler.py.
 
-## 2. Frontend files: precise removal/migration instructions
+- [ ] Select one canonical streaming SHA-256 implementation and route runtime callers to it where import layering permits.
+- [ ] Keep compatibility exports for sha256_file where tests or callers use the current public import.
+- [ ] Decide whether audit_master_immutability should become the production helper used by the post-process/master lifecycle or remain a test utility. Do not remove it just because current tests are its obvious caller.
+- [ ] Remove backend/core/utils/artifact_utils.py's duplicate sha256_file definition only after all callers are migrated and tests prove the exported hash contract is preserved. Keep artifact_utils.py itself: resolve_manifest_path is used to align model-readiness and smart-preset path resolution.
+- [ ] Test source/master hashes before and after post-processing, cancellation, failure, retries, export, and auto-rigging. Master bytes must remain unchanged.
 
-### A. `features/workspace/Panels/GeneratePanel.tsx`
+## P1 — Wire real behavior end-to-end or remove dead controls/fields
 
-Inspect the current equivalents of the following symbols/sections before editing; do not rely on line numbers from a previous checkout:
+### P1-5. Generation UI, request builder, API, scheduler, and presets
 
-- `MeshQualityPreset`
-- `MESH_QUALITY_OPTIONS`
-- the `Job Generation Settings: Quality, Mesh Style & Advanced Options` section
-- Smart Intent / intent buttons and their handler (previously `applyIntentPreset`)
-- `T-06: Candidate Variations (Pick-Best-of-N)`
-- `Post-Processing Pipeline Master Toggle`
-- `Unified Production Target & Polycount Budget`
-- `Object Type & Symmetry`
-- `Streamlined Mesh Settings Card (Target Polycount + Triangle / Quad Topology ONLY)`
-- `Engine Feature Toggles: PBR Texture & Low VRAM`
-- FlashVDM and Low VRAM UI controls
-- Advanced crease threshold, texture-fidelity, and model-quality controls
+Files to trace: features/workspace/Panels/GeneratePanel.tsx, features/workspace/Modals/GenerationPresetDrawer.tsx, features/workspace/types.ts, features/workspace/store/WorkspaceContext.tsx, features/workspace/utils/buildGenerationParameters.ts, backend/api/routers/mesh_generation.py, backend/api/routers/smart_generation.py, backend/core/smart_presets.py, backend/core/planner.py, backend/core/scheduler/multiprocess_scheduler.py.
 
-#### Remove from the user-facing generation UI
-
-- The Fast/Balanced/High inference-quality selector and any separate Low/Medium/High/Ultra control that changes or claims to change model inference quality.
-- Duplicate target-polycount inputs/cards. Keep exactly one user-facing target/polycount control in the main panel.
-- Duplicate post-processing master switches. Keep exactly one master switch; every dependent production control must respect it.
-- Mesh-style, object-type, and symmetry settings if no verified generation/post-process consumer exists. Do not retain them just because request fields exist.
-- Low VRAM, FlashVDM, inference-step, guidance, extraction-resolution, sampler, crease-threshold, or texture-fidelity controls when they bypass the adapter-owned profile or have no supported end-to-end implementation.
-- Any state, constants, imports, helper functions, labels, explanatory text, or event handlers made unused by those removals.
-
-#### Move/retain in the simplified main panel
-
-- Image upload/selection, genuine generation preview/manual-edit flow, model selection and honest availability/loading status.
-- Textured Generation and texture-atlas selection **only after** proving they reach the proper texture-generation or post-processing consumer for each supported model path. Preserve compatibility differences between raw-mesh models and models that natively produce textured geometry.
-- One compact **Target Polycount / Output Preset** card.
-- Generate and genuine queue behaviour (for example Queue Next), with clear disabled/loading/error states.
-
-#### Consolidate presets inside the Target Polycount card
-
-Use the existing backend preset IDs/configuration if supported, such as:
-
-- `mobile`
-- `game_ready`
-- `cinematic`
-- `animation`
-- `3d_print`
-- `native` / raw geometry
-
-Keep the existing canonical IDs if the backend uses different names; do not invent IDs without updating both sides.
-
-The card should show a compact preset grid plus one optional polycount control. Show the effective target value. The native/raw selection must actually remove downstream budget/production overrides and request a raw/native path; it must not merely change its selected styling.
-
-On selecting a production preset:
-
-1. Resolve/validate its backend intent using the existing API/preset definitions.
-2. Set or submit only the production choices the preset actually owns: target budget, texture defaults, LOD, UV, collision/physics, QA, repair, and rigging as applicable.
-3. Preserve the user's explicit model choice. Do not silently swap the selected model without a clear product rule and visible explanation. If a preset needs a capability the selected model lacks, show a clear incompatibility/error or use backend auto-selection only when the model is explicitly in auto mode.
-4. Do not automatically call `generate3DModel`, `queueGenerationJob`, or another submission handler from a preset click.
-5. Let the user press Generate to submit.
-6. A manual polycount or manual texture-atlas change must clear/deactivate the incompatible preset intent, or explicitly update the preset state so the UI and request cannot disagree.
-7. Ensure selecting Native/Raw disables or clears incompatible texture, LOD, collision, QA, repair, rigging, and target-budget options.
-
-Do not duplicate an existing working backend recipe table in the UI as a second source of truth. If preset details already come from the API, render those values. If a fallback is necessary, keep it minimal, documented, and covered by a parity test against backend presets.
-
-#### Advanced Generation — keep only proven production settings
-
-Move only genuine production features into Advanced, and make their relationship to the master post-processing toggle obvious. Candidate options to audit include:
-
-- Candidate variations (1–4), if candidate scheduling, seed stepping, result tracking and candidate selection work end-to-end.
-- Triangle / quad topology, only if the actual retopology/geometry pipeline consumes it.
-- UV processing, if there is a real consumer.
-- Normal-map baking, if it reaches a real bake step.
-- Printability checks, auto-repair, auto-rig, and physics/collision setup when each has a real backend consumer.
-- LOD creation, LOD preset and LOD count if they reach the production pipeline.
-
-Avoid a complicated wall of fields. Use plain names and short explanations. Put highly technical options in a separate professional/experimental tool if they are genuinely useful but do not belong in a beginner generation workflow.
-
-For each retained UI control, record this chain in the change summary:
-
-`UI state → request builder field → API schema/handler → scheduler/post-process consumer → observable result/artifact/diagnostic`.
-
-If a link is missing, either implement and test the link or remove the control. Do not fake a successful state.
-
-### B. `features/workspace/Modals/GenerationPresetDrawer.tsx`
-
-Audit this drawer for the model parameter schema editor and the following kinds of UI:
-
-- inference steps
-- guidance scale
-- model-specific inference parameter fields
-- advanced model-parameter JSON
-- save/load/import/export of model-inference overrides
-
-Remove inference parameter editing from the ordinary Generate workflow. If the drawer remains useful, turn it into a simple output-recipe manager (output settings and seed/reproducibility only), or remove it from the Generate workflow if it is not used and has no clear product value.
-
-Legacy saved JSON compatibility rules:
-
-- Do not crash when importing an older preset that includes `modelParameters` or `modelParameterOverrides`.
-- Safely ignore legacy inference override values; never merge them into the generation request.
-- Do not silently corrupt valid output-preset data while dropping inference-only fields.
-- Keep import-size, validation, and storage-error handling if the drawer remains.
-
-Remove unused imports/state/hooks/schema requests after removing the editors. Do not leave hidden controls or dead handlers behind.
-
-### C. `features/workspace/types.ts`
-
-Remove generation-only fields that no longer have a legitimate consumer, after searching all references:
-
-- `quality` / `requested_quality`
-- `meshStyle` / `mesh_style`
-- `objectType` / `object_type`
-- generation `symmetry`
-- `modelParameterOverrides`
-- `sharpFeaturePreservation`
-- `angleCreaseThreshold`
-- `textureFidelityPreset`
-
-Keep similarly named settings used by other tools (for example sculpt symmetry or texture-tool Low VRAM) if they are independent, active features. This is not a repository-wide blind string deletion; scope changes to the generation flow being refactored.
-
-### D. `features/workspace/store/WorkspaceContext.tsx`
-
-Inspect every call site of `buildGenerationParameters`, not just the main Generate button. The code has previously used model-parameter defaults/schema state in the normal generation and batch-generation paths.
-
-- Remove the generation-only model-parameter defaults fetch/cache/state if it exists solely to populate the deleted inference UI or inject inference overrides.
-- Remove the corresponding builder arguments and stale `useEffect`/`useCallback` dependencies.
-- Update primary generation, batch generation, retry/re-run, comparison, and saved-preset paths so they all use the same adapter-owned inference contract.
-- Ensure that image/file IDs, approved preprocessing artifact IDs, candidate count, target output budget, texture flags and production options are not accidentally lost.
-- Do not alter unrelated model tools or other features using the same context.
-- Type-check every call site after editing.
-
----
-
-## 3. Request builder — mandatory audit and simplification
-
-**File:** `features/workspace/utils/buildGenerationParameters.ts`
-
-Treat this file as a high-risk integration boundary. Audit the existing function and every caller before changing it.
-
-### Required responsibility
-
-The builder serializes user-approved generation/output intent. It must not maintain or merge a second model inference profile.
-
-Keep fields that are proven necessary, typically:
-
-- image identity (`image_file_id` or validated image payload)
-- explicit model preference, when selected
-- seed, if supported by the adapter contract
-- candidate count as a scheduler-level control, not a model sampler override
-- target polycount as a downstream production budget
-- texture-generation settings and resolution when supported by the API/pipeline
-- post-processing enable/disable
-- LOD/UV/topology/QA/repair/rigging/physics settings when proven to have real consumers
-- approved preprocessing artifact and explicit review override
-- asset/input names and output format
-
-### Remove from inference request construction
-
-- Frontend quality tiers and aliases used to manipulate inference quality
-- Generic model parameter defaults merged with user overrides
-- `modelParameterOverrides` as an inference override mechanism
-- arbitrary UI sampler/resolution/step/guidance/Low-VRAM fields
-- model-style/object-type/symmetry fields without real consumers
-- stale aliases and duplicate fields that cause different parts of the backend to read different values
-
-Keep `parseModelParameterOverrides` only if there is a legitimate compatibility/validation use elsewhere. It must not be used to sneak removed model parameters into image-to-3D inference.
-
-### Builder contract tests
-
-Add/repair tests in `features/workspace/lib/generationParameters.test.mjs` (or the repository's current corresponding test file) covering at least:
-
-1. UI-provided `quality`, `meshQuality`, `requested_quality`, `num_inference_steps`, `guidance_scale`, `octree_resolution`, sampler dictionaries and Low-VRAM overrides do not reach model inference.
-2. The request sends only supported runtime inputs (including a supported seed) as adapter inputs.
-3. `candidate_count` is bounded by the API-supported range and stays a scheduler control.
-4. `target_polycount` is independent of inference parameters and goes to the production path.
-5. A selected intent/preset is sent as the expected backend field without auto-submitting from the preset click.
-6. Explicit production choices and defaults have predictable precedence.
-7. Raw/post-processing-off mode does not accidentally invoke texture, LOD, collision, repair, printability, normal baking, or rigging.
-8. Missing/invalid image input produces a clear failure before submission.
-9. Legacy saved presets containing old inference override keys cannot reintroduce those values.
-10. Primary Generate, batch, retry and saved-preset call sites produce compatible request shapes.
-
-Avoid broad `any` casts to silence failures. Fix type errors at the boundary.
-
----
-
-## 4. Backend API, Smart preset and planner wiring
-
-Inspect the live versions of:
-
-- `backend/api/routers/mesh_generation.py`
-- the Smart preset/intent resolver and preset configuration
-- `backend/core/planner.py` and associated planner rules, where applicable
-- `backend/core/scheduler/multiprocess_scheduler.py`
-- `backend/postprocess/pipeline.py` and any downstream retopology/UV/texture/LOD/QA/physics modules
-
-### A. Prove the consumer chain
-
-For every retained field, trace it from API schema to the actual consumer. A field being present in a Pydantic schema or metadata dictionary is not proof that it works.
-
-Specifically audit:
-
-- `intent` / Smart preset ID
-- `model_preference`
-- `target_polycount`
-- `candidate_count`
-- texture enabled/resolution and normal-map baking
-- `enable_postprocess`
-- LOD and UV options
-- triangle/quad topology
-- printability, repair, rigging and physics
-- any old `requested_quality`, `mesh_style`, `object_type`, or `symmetry` fields
-
-### B. Preset/default precedence
-
-Implement a deterministic contract:
-
-1. The backend resolves a recognized intent using its canonical preset definition.
-2. The preset supplies defaults for production choices not explicitly supplied by the caller.
-3. Explicit, supported Advanced settings override the preset values.
-4. A manual target or texture change must not leave a contradictory active intent in the request.
-5. If the selected model is explicit, respect it or return a clear capability error; do not silently replace it with a preset recommendation.
-6. If model selection is intentionally automatic, the backend may choose a compatible model from preset/capability rules.
-7. Selecting Native/Raw means no downstream production budget or output stages are accidentally applied.
-
-Beware of boolean defaults. A plain `False` default can make it impossible to distinguish “the user explicitly turned this off” from “the caller omitted the field, so use the preset default.” Use an appropriate explicit tri-state/field-presence contract where necessary, and test it. Do not convert a preset's `true` to `false` merely because the UI's generic state was initialized to false.
-
-### C. Remove fake request fields
-
-Delete unused API request fields and validators for `requested_quality`, `mesh_style`, `object_type`, and `symmetry` only after a repository-wide search proves they have no supported non-generation consumers. If internal planner fields remain useful, keep them internal and derive them server-side rather than pretending the UI directly controls them.
-
-Keep backwards compatibility for external clients where required, but do not let removed fields override locked inference values. If a deprecated field is retained temporarily, explicitly ignore it or return a documented validation/deprecation behaviour; add a regression test.
-
-### D. Candidate variations
-
-Verify that candidate count causes actual scheduler jobs/seed variations, that candidates are tracked, and that preview/promote endpoints receive working IDs. If ranking/scoring is not genuinely performed, do not claim “AI best-of-N scoring”; either wire real ranking or label it accurately as “generate N variations”.
-
-### E. Raw output budget isolation
-
-A target polygon/triangle count is an output-production budget. Confirm it affects only the downstream production derivative and does not reduce the raw source mesh inference profile. Keep a regression test that would fail if target-polycount leaks into adapter inference.
-
----
-
-## 5. Adapter inference profile migration — do not miss models
-
-Inspect the current scheduler table, previously named `_RAW_MESH_MAX_QUALITY_PARAMETERS`, and every entry in it. It has previously included multiple aliases/feature paths for Hunyuan3D Shape, Hunyuan3D DiT Mini Turbo, TripoSG, Pixal3D, Unique3D, TRELLIS, TRELLIS.2 and TaoFlowForge.
-
-Do not remove the scheduler table until every profile entry has been accounted for.
-
-For every entry, produce a temporary mapping during implementation:
-
-| Model/feature ID | Current effective runtime values | Current adapter defaults/call arguments | New adapter-owned source | Test proving parity |
-|---|---|---|---|---|
-| Each current table entry | Explicit values | Actual call-site values | Specific adapter method | Named regression test |
-
-The mapping must include aliases and raw/textured/painting differences. One adapter class can contain separate methods and model IDs; do not assume all operations share the same profile.
-
-### Required method
-
-1. Read the scheduler's current effective profile.
-2. Follow `_build_model_inference_inputs` and the worker path to the actual adapter invocation.
-3. Check the adapter schema defaults and actual `_process_request` reads/call arguments; schemas may not match the effective forced profile.
-4. Move only the intended fixed inference values to the adapter implementation or a single adapter-owned constant used only by that adapter.
-5. Remove the scheduler's duplicate numerical profile for that entry.
-6. Make the scheduler filter production/planner controls and reject/ignore UI inference overrides without overwriting adapter-owned constants.
-7. Assert the adapter is called with the intended locked values. Keep profile values stable in this refactor.
-8. Run relevant tests for each affected adapter and compare the old effective profile against the new adapter call.
-
-**Important known audit targets from an earlier inspection (re-verify on current HEAD):**
-
-- `backend/core/scheduler/multiprocess_scheduler.py`: scheduler-owned profile table and `_build_model_inference_inputs`.
-- `backend/adapters/hunyuan3d_shape_v21.py`: earlier scheduler profile forced a different `num_chunks` than the adapter fallback.
-- `backend/adapters/triposg_adapter.py`: earlier scheduler profile and adapter fallback differed for decoder-depth inputs.
-- `backend/adapters/pixal3d_adapter.py`: earlier scheduler profile overrode resolution, sampler dictionary, and low-VRAM state.
-- `backend/adapters/trellis2_adapter.py`: earlier scheduler profile overrode token budget and stage sampler dictionaries.
-- `backend/adapters/trellis_adapter.py`, Hunyuan DiT/Shape, Unique3D and TaoFlowForge: inspect every corresponding entry and call path, not just the examples above.
-
-These are audit leads, not permission to assume the current values. Verify the checked-out code and tests first.
-
-### Scheduler filtering
-
-The scheduler must continue to pass legitimate shared inputs such as image paths, a supported seed, output format and any explicitly approved runtime fields. It must keep target polycount, texture requests, candidate scheduling, QA, LOD and other downstream options separated from model inference. Avoid a blanket “allow only seed and image” rewrite unless every adapter's legitimate contract has been proven; image-to-3D and mesh-painting feature paths may differ.
-
----
-
-## 6. Keep Advanced settings real and beginner-friendly
-
-The Advanced section should contain only meaningful production options that are not needed on every basic generation job.
-
-For every retained option, define:
-
-- visible label and default
-- enabled/disabled condition
-- exact request field
-- API field and default semantics
-- downstream consumer
-- expected artifact/result/diagnostic
-- automated test
-
-Audit whether the backend truly supports the setting in the currently selected mode. Examples:
-
-- “Quads” must execute a real quad-dominant retopology step—not just toggle `quad_topology` in JSON.
-- “Bake normal maps” must reach a real normal-map baking stage—not merely set a metadata flag.
-- “Physics Ready” must produce/attach appropriate physics/collision data—not just label the asset.
-- “Auto-Rig” must invoke the supported rigging stage and surface an actual result or actionable failure.
-- “Printability” and “Auto-Repair” must call the intended QA/repair stages with distinct check-only vs mutation semantics.
-- “LOD” must result in the expected LOD artifacts and not merely store LOD settings in metadata.
-- “Textured Generation” must trigger a supported texture path and produce a textured asset or clearly report unsupported capability.
-
-If a control is only partially supported, either complete its wiring and test it or remove it from this panel. Do not paper over missing implementation with a disabled visual that looks interactive.
-
-Keep UI copy concise. Avoid exposing sampler keys, octree depths, arbitrary JSON, model schema fields, or other implementation details in the normal Generate flow.
-
----
-
-## 7. Test and verification requirements
-
-Discover the repo's actual scripts and environment first. Do not invent package scripts or Python commands. Use the actual `package.json`, lockfile, `pyproject.toml`, `pytest.ini`, and existing CI workflow.
-
-### Frontend
-
-- Run the repository's applicable TypeScript/type check.
-- Run relevant unit tests for the request builder and Generate panel if present.
-- Run the frontend production build if dependencies/environment permit.
-- Verify no broken JSX/TSX, stale imports, unused references, accidental duplicate controls, or invalid settings types.
-- Verify Smart preset clicks do not submit generation jobs.
-- Verify at runtime or component tests that a preset's visible selected state matches the serialized request.
-
-### Backend
-
-- Run focused API/request-schema, planner, scheduler and adapter regression tests.
-- Run the broader documented backend test suite if practical.
-- Assert that incoming inference override values cannot beat adapter constants.
-- Assert effective profile parity for all migrated scheduler table entries/aliases.
-- Assert target polycount does not reach adapter inference and does reach the downstream production budget.
-- Assert omitted preset fields receive the intended defaults and explicit false/zero values still override preset defaults where the UI supports them.
-- Assert unsupported model/preset combinations fail clearly rather than silently routing or pretending success.
-
-### Static search/acceptance checks
-
-Search for remaining generation references to:
-
-- `MESH_QUALITY_OPTIONS`
-- `requested_quality`
-- `mesh_style`
-- `object_type`
-- generation `symmetry`
-- `modelParameterOverrides`
-- `num_inference_steps` and `guidance_scale` in user-facing generation controls
-- duplicate Target Polycount labels/sections
-- duplicate post-processing master toggles
-- stale imports/hooks for deleted UI controls
-- scheduler `_RAW_MESH_MAX_QUALITY_PARAMETERS` after migration
-
-Some terms may legitimately remain in adapters, internal diagnostics, schemas needed for external APIs, tests, docs, sculpt tools, or other non-generation workflows. Audit each match by context; do not blindly delete unrelated uses.
-
-### Report verification accurately
-
-Classify each check as `PASS`, `FAIL`, or `NOT RUN`, and state why. If no GPU/model weights are available, mark real inference/quality benchmarking as `NOT RUN`; do not infer it from unit tests.
-
----
-
-## 8. Documentation synchronization — mandatory
-
-All documentation targets have been synchronized to reflect the actual architecture and contracts:
-
-- `README.md` — Updated user-facing generation options (clean studio, output recipes `mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), and clarified the immutable `master/source.glb` vs derived production mesh distinction.
-- `RULES.md` — Codified the adapter-owned inference contract, the "no control without a verified consumer" rule, and mandatory honest test/verification classification.
-- `Docs/ARCHITECTURE.md` — Documented the 6-tier pipeline responsibility boundaries (Presentation UI $\to$ Request Builder $\to$ API Gateway $\to$ Multiprocess Scheduler $\to$ Model Adapters $\to$ Production Pipeline) with Mermaid workflow and exact data flow boundaries.
-- `Docs/DESIGN.md` — Documented the simplified Generate studio panel layout (primary image + model + recipe flow) and the clean Advanced production drawer (candidate count 1–4, quad/tri, UV, normal baking, LODs, repair, physics colliders).
-- `Docs/api-documentation.md` — Documented actual supported request fields, preset precedence rules, stripped/ignored inference override fields, and production artifact trees.
-- `Docs/DECISIONS.md` — Recorded ADR-056 (initial adapter-owned profiles) and ADR-057 (adapter profile migration completion and Generate studio UI simplification).
-- `Docs/CHANGELOG.md` — Documented the implementation summary under the 3-entry changelog window.
-- `Docs/TASKS.md` — Status and checklist updated with verified evidence and accurate test classifications.
-- `Docs/MEMORY.md` — Added comprehensive handoff note capturing verified contracts, UI changes, and invariants.
-- `Docs/GENERATION-UI-CONTRACT.md` — Canonical specification detailing the end-to-end contract from UI to production pipeline.
-
----
-
-## 9. Git workflow and push requirements
-
-1. Fetch/inspect the latest `dev` branch head before editing.
-2. Confirm there are no unreviewed user changes to overwrite. Never force-reset, force-push, or rewrite shared history as a shortcut.
-3. Implement changes in a branch/worktree or on the task branch according to the available environment.
-4. Review the final diff and confirm only relevant files changed.
-5. Run tests/checks and document any unavailable checks honestly.
-6. Commit with a descriptive message such as `refactor: simplify generation UI and lock adapter inference profiles`.
-7. Push to `dev` only if the repository access and branch rules permit it. Use non-force push. If direct push is rejected, open a PR or report the exact permission/branch-protection blocker; do not claim it was pushed.
-8. Report commit SHA, branch, changed files, test results, and remaining risks.
-
----
-
-## 10. Definition of Done & Quality Audit Verification Matrix
-
-### Verification Status by Gate
-
-| Gate | Requirement | Verification Method | Result | Evidence / Notes |
-| :--- | :--- | :--- | :--- | :--- |
-| **G-01** | Generate panel has one Target Polycount / Output Preset card and no duplicate target UI | Code Audit (`GeneratePanel.tsx`) | **PASS** | One output-preset card with the six canonical chips and a single 5K–200K polycount slider. |
-| **G-02** | Inference-quality selector and unbacked inference toggles removed from UI | Static Grep & Code Audit | **PASS** | `MESH_QUALITY_OPTIONS` and `applyModelSpecificQuality` are gone; no inference controls remain in the panel. |
-| **G-03** | Presets consolidated as production recipes; no auto-submit on preset click | Code Audit (`selectOutputPreset`) | **PASS** | `selectOutputPreset` only updates settings state; the only `pendingGenerateRef` write is the explicit Generate action. |
-| **G-04** | Explicit model choice and explicit Advanced settings have deterministic precedence | Test Suite (`test_preset_alignment_and_persistence.py`, `generationParameters.test.mjs`) | **PASS** | Explicit request value > intent preset > backend default, with a tri-state request contract (ADR-093). |
-| **G-05** | Request builder no longer duplicates adapter-owned numeric inference profiles | Static Grep & Code Audit | **PASS** | The builder forwards `seed` only; no numeric inference schedule is present in the frontend. |
-| **G-06** | Former scheduler-profile entries audited and migrated | Adapter & Scheduler Audit | **PASS** | Hunyuan3D-DiT-v2-mini-turbo, Trellis, Trellis2, Pixal3D, Unique3D, TaoFlowForge, Hunyuan3D-Shape-v2.1, and TripoSG fully migrated to adapter-owned locked inference profiles. All entries removed from `_RAW_MESH_MAX_QUALITY_PARAMETERS`. |
-| **G-07** | Real production controls wired end-to-end; no mock controls | Pipeline & Router Audit | **PASS** | Candidates 1-4 (`_score_and_select`), Quad retopo, PartUV, normal baking, LODs, repair, CoACD verified in pipeline. The LOD controls were found **disconnected** (the builder never serialized them) and are now wired: `generate_lod` / `lod_preset` / `lod_count` request fields feed the pipeline's LOD stage. The dead "Enable Low VRAM Mode and retry" action was removed. |
-| **G-08** | All generation pathways (main, batch, re-run, preset) follow same contract | Contract Audit | **PASS** | Canonical contract defined in `Docs/GENERATION-UI-CONTRACT.md`. |
-| **G-09** | Frontend regression tests cover removed override paths and candidate controls | Node Test Runner (`bun test`) | **PASS** | `bun test` ran 41 tests across 7 files, 41 passed, 0 failed; `features/workspace/lib/generationParameters.test.mjs` covers 12 rules including the LOD request contract. |
-| **G-10** | Backend regression tests cover adapter contracts | Pytest | **PARTIAL / NOT RUN (GPU + heavy deps)** | `backend/tests/test_preset_alignment_and_persistence.py` (24 tests) and `backend/tests/test_smart_preset_parity.py` pass, and the CI contract subset passes (56 tests). The remaining backend modules need `torch`, `trimesh`, `skimage`, `psutil` and a GPU; in this environment 53 tests fail on missing imports both before and after this change (unchanged baseline). GPU inference tests `NOT RUN` (no GPU). |
-| **G-11** | Documentation synchronized without contradictions | Full Doc Sync Audit | **PASS** | `README.md`, `RULES.md`, `CONTRIBUTING.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, `Docs/PRD.md`, `Docs/SYSTEM-BLUEPRINT.md`, `Docs/api-documentation.md`, `Docs/DECISIONS.md`, `Docs/CHANGELOG.md`, `Docs/MEMORY.md`, `Docs/GENERATION-UI-CONTRACT.md`, `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`, `Docs/quad_topology_evaluation.md`, `Docs/taoflowforge_spike_report.md`, `Docs/SECURITY.md` updated. |
-| **G-12** | TypeScript and syntax checks clean | TypeScript Compiler (`tsc`) | **PASS** | `npx tsc --noEmit` completed with 0 errors; `npx eslint` on the changed files reports 0 errors. |
-| **G-13** | Review final diff and clean commit history | Git Status & Diff Audit | **PASS** | Only documented and authorized files modified; no destructive alterations. |
-
----
-
-## 11. Static Acceptance Search Findings
-
-1. `MESH_QUALITY_OPTIONS`:
-   - Absent from the repository. The Generate panel exposes no inference-quality selector.
-2. `requested_quality` / `meshQuality`:
-   - Still present in the router schemas (`mesh_generation.py`) as deprecated fields, and stripped by the scheduler in `_ADAPTER_OWNED_INFERENCE_INPUTS`.
-   - The scheduler properly strips these from reaching adapter-owned models; the API only uses them for planner routing.
-3. `modelParameterOverrides`:
-   - Handled cleanly in `buildGenerationParameters.ts` and `GenerationPresetDrawer.tsx` with finite JSON validation and prototype pollution guards.
-4. Auto-submit on Preset Click:
-   - Absent. `selectOutputPreset` only updates the settings state; the only `pendingGenerateRef` write belongs to the explicit Generate action.
-5. LOD controls (new finding, 2026-10-21):
-   - The Advanced drawer exposed an LOD toggle, ratio preset, and level count that the request builder never serialized, so the user's LOD choice was discarded before reaching the pipeline.
-   - Fixed by ADR-093: `generate_lod` / `lod_preset` / `lod_count` are first-class request fields, the level count is clamped to the four levels the pipeline can build, and the legacy `model_parameters` LOD keys are explicitly ignored.
-6. Boolean-default masking (new finding, 2026-10-21):
-   - `enable_auto_repair`, `enable_printability_check`, `enable_auto_rig`, `physics_enabled`, and `texture_resolution` were resolved with `request_value or preset_value`, so an explicit `false` could not disable a preset-enabled stage, and the preset's atlas size could never apply.
-   - Fixed by ADR-093: those fields are tri-state (`None` = not supplied) and resolved as explicit value > intent preset > backend default.
-7. Preset budget duplication (new finding, 2026-10-21):
-   - The panel hardcoded a second copy of the preset budgets and the mobile preset declared an atlas size the API rejects.
-   - Fixed: the panel derives the chip summary from the backend catalogue, the offline fallback table is `constants/smartPresetFallback.json` (parity-tested by `backend/tests/test_smart_preset_parity.py`), and the mobile atlas size is 1024.
-
-- [x] Changes have been committed and pushed to `dev`. Commits `537d8b49` and `47251a8a` are pushed to `origin/dev` (`tanushreesindur0-rgb/ForMash3D`) and to `upstream/dev` (`Silentzx2/ForMash3D`); the upstream push required an explicit credential because the sandbox codespace credential helper is not authorized for that repository.
-- [x] The final response distinguishes verified tests from checks not run and includes the commit/PR reference where applicable.
-
-**Do not declare success if any required gate was silently skipped.** If a gate cannot be completed, state the blocker, complete the remaining work, and leave the task explicitly partially verified rather than inventing a pass.
-
-
----
-
-## 12. Deferred P0 Task Plan — Postprocess Mesh Integrity, Hole Repair & Physics
-
-**Status: TODO — investigation only. Do not implement fixes until the user explicitly says to proceed.**  
-**Current verification status: source audit only; runtime reproduction and all tests are NOT RUN in this task.**  
-**Execution rule: after authorization, complete one batch only, report evidence and stop. Do not begin the next batch until the user explicitly says proceed.**
-
-### Reported failure to reproduce
-
-- Model-generation output may already contain many visible/open holes.
-- The generated mesh reportedly becomes substantially worse after production post-processing, potentially appearing nearly destroyed.
-- Determine the exact first stage where holes remain, new holes appear, surface details disappear, the silhouette changes, or topology degrades.
-- Determine whether the visible asset is the actual game-ready render mesh or an incorrect preview/download of the physics collision proxy.
-- Preserve the immutable master/source.glb; never overwrite it to hide a bad derivative.
-
-### Source-audit leads — hypotheses to verify, not runtime-confirmed diagnoses
-
-1. **A failed topology gate does not guarantee full repair.** In backend/postprocess/pipeline.py, full_repair reaches structural run_repair(...) only when _should_run_structural_repair(...) accepts the auto-repair flag. Otherwise the pipeline can continue with a copy of the defective source. Establish the intended product contract for explicit Auto-Repair OFF and make the resulting state honest (repaired, deliberately preserved with a warning, or degraded/failing); never silently claim that a rejected mesh was fixed.
-2. **The configured hole-perimeter limit may not be enforced by the production call.** backend/config/quality.yaml defines holes.max_hole_perimeter, and repair_holes_targeted(...) accepts max_hole_perimeter, but the call in pipeline.py supplies only max_hole_vertices. Trace the call chain and config source of truth; do not hardcode a second numeric threshold.
-3. **Hole-fill triangulation needs adversarial geometry coverage.** backend/postprocess/services/hole_repair.py uses a fan-style triangulation for larger loops. Verify concave, highly non-planar, skinny, self-intersecting/ambiguous and large-perimeter loops. Do not assume a closed boundary means the fill is geometrically valid.
-4. **The current optimization guard is too narrow to prove surface fidelity.** _quality_guard(...) checks finite vertices, face count, bounding-box drift and vertex growth. It is applied after optimization, not as a general acceptance gate after topology repair, AutoRetopo or the high/ultra feature-remesh path. Reuse backend/core/quality/evaluation.py (compare_meshes, quality_gate) and existing mesh metrics where practical, and verify whether final source-to-derivative checks reject or merely report damage.
-5. **Retopology/remesh can be a destructive stage.** Trace the actual calls and options into backend/postprocess/services/autoretopo/, especially shell reconstruction, smoothing, projection and decimation. Compare stage outputs with their immediate inputs and the immutable master instead of diagnosing from the final file only.
-6. **Physics/collision appears to produce a separate artifact.** The production pipeline loads the game-ready render mesh, passes it into run_collision(...), and writes collision.glb plus physics metadata. Verify artifact routing end-to-end: physics processing must not replace the render asset, and preview/download must not mistake the collision proxy for the model. Also verify the physics flag defaults when request fields are absent.
-7. **Existing unit tests are not a substitute for reproducing this report.** Mesh-metric and topology-gate tests use synthetic fixtures, while the full postprocess runtime test is opt-in. Review their actual coverage and record real generated-model checks as NOT RUN until executed with suitable assets/dependencies.
-
-### Batch 1 — Reproduce and pinpoint the first destructive stage
-
-**Scope:** instrumentation/reproduction plan and minimal diagnostic harness only; no speculative quality retuning.
-
-- Use the same immutable raw source for every comparison. Record model ID, input hash, seed, requested target polycount, output preset/quality mode, topology mode, auto-repair, texture/UV/bake, LOD and physics flags.
-- Record per-stage mesh counts and topology metrics: vertices, faces, boundary edges/loops and loop sizes, watertightness, non-manifold edges/vertices, degenerate faces, connected components/floater ratio, normals, bounds and volume where meaningful.
-- Compare master/source.glb against the post-repair, retopo, feature-remesh, optimize/decimate, UV, textured and final game-ready meshes. Reuse existing quality_trace and quality metrics before adding instrumentation.
-- Save stage summaries/hashes and enough diagnostics to identify the first stage that introduces or preserves damage. Do not use the collision proxy as the render-mesh comparison target.
-- Reproduce with post-process ON/OFF and the relevant combinations of target polycount, Auto-Repair, quad retopology, texture/UV and physics. Keep all other inputs fixed during each A/B comparison.
-- **Batch 1 acceptance:** identify a reproducible stage/path for holes and quality loss, or document exactly why reproduction is blocked. No cause may be labelled confirmed without evidence.
-
-**Stop after Batch 1** and report findings, files/metrics inspected, PASS/FAIL/NOT RUN status and the proposed smallest root-cause fix. Wait for the user's explicit proceed before Batch 2.
-
-### Batch 2 — Hole detection, repair routing and safe fill
-
-- Trace topology metrics -> gate decision -> minimal repair/full repair -> downstream remesh, including the behavior when Auto-Repair is explicitly disabled.
-- Make configured hole thresholds flow from backend/config/quality.yaml to every relevant consumer; remove/avoid duplicated numeric defaults only after auditing all callers.
-- Pass and test the perimeter limit if the audit confirms it is intended to constrain production hole filling.
-- Add tests for one hole, many holes, concave loops, non-planar loops, loops above the vertex/perimeter threshold, non-manifold input, disconnected floaters and UV/native-texture preservation.
-- Verify holes_filled, holes_remaining, boundary-edge counts and actual mesh validity agree. If a hole cannot safely be filled, retain the evidence and report a degraded result rather than adding a damaging cap.
-- Preserve original geometry wherever repair is unnecessary. Any structural rebuild must be an explicit, measured decision, not a blanket operation.
-
-### Batch 3 — Retopology, remesh, decimation and geometry-fidelity guards
-
-- Trace every mutating operation in backend/postprocess/pipeline.py and backend/postprocess/services/autoretopo/, including voxel/shell reconstruction, Taubin smoothing, projection, isotropic remesh and decimation.
-- Compare each candidate against its immediate input and canonical source using existing compare_meshes(...) / quality_gate(...) where appropriate, plus topology checks. Confirm whether these checks currently reject a result or only populate metadata.
-- Add an acceptance/revert policy for a stage only after selecting defensible, scale-normalized thresholds and covering clean and defective fixtures. Store thresholds in the canonical quality configuration, not new scattered literals.
-- Ensure no post-process stage is allowed to erase critical silhouette/detail or materially degrade topology while still reporting success. Record intentional target-polycount loss separately from unintended surface drift.
-- Validate that UV seam splitting, normals, native materials and PBR data remain consistent and are not misdiagnosed as geometry changes.
-
-### Batch 4 — Physics/collision isolation and artifact correctness
-
-- Confirm physics_enabled tri-state/default behavior from UI request builder through API, scheduler and pipeline; omitted and explicit false must have documented, deterministic semantics.
-- Verify collision decomposition (fast / balanced / precise) and convex-hull fallback consume the finalized render mesh but write only physics artifacts and metadata.
-- Compare render game_ready/*.glb hashes and geometry metrics for physics ON vs OFF with every other setting fixed. They must not change solely because collision generation was requested.
-- Verify viewer, preview, download URLs and manifest entries use the render asset for normal model display and use collision.glb only for explicit physics/collision inspection.
-- Test collision failure/fallback separately from render-mesh success; physics failure must not corrupt or replace the render mesh.
-
-### Batch 5 — Regression tests, actual-model validation and docs
-
-- Review and extend existing coverage before adding helpers: backend/tests/test_mesh_metrics.py, backend/tests/test_topology_gate.py, backend/tests/test_hole_repair_and_seeds.py, backend/tests/test_postprocess_e2e.py, and the existing post-process quality tests.
-- Include synthetic regression fixtures and at least one representative real model output when it is available. Test raw/native passthrough, a modest target reduction, a low target reduction, defective topology, Auto-Repair OFF/ON, quad remesh, UV/texturing and physics ON/OFF.
-- Run the applicable test commands and report each as PASS, FAIL or NOT RUN with exact dependency/GPU/fixture blockers. Do not claim visual or model-level quality passed based on unit tests alone.
-- Sync Docs/ARCHITECTURE.md, Docs/DECISIONS.md, Docs/MEMORY.md, Docs/TASKS.md, and user-facing post-process/physics docs to the verified behavior. Update backend/tests/test_config_ssot.py coverage if canonical config changes.
-- Review the final diff; do not push implementation fixes until the user has approved each batch and the required verification is complete.
-
-### Deferred task acceptance criteria
-
-- The original master/source.glb remains immutable and independently downloadable.
-- Every stage reports its mesh input/output and enough quality evidence to locate regressions.
-- Open holes are either safely repaired or explicitly reported; they are not silently hidden behind a successful status.
-- The final render mesh passes topology and surface-fidelity checks appropriate to its selected output mode, or is honestly marked degraded.
-- Physics/collision artifacts remain separate from the render mesh and do not degrade it.
-- Batch boundaries are strict: one authorized batch per user proceed; stop and report after each batch.
-
+- [ ] For every visible control, document UI state → request-builder field → API schema/handler → scheduler/post-process consumer → observable artifact/diagnostic.
+- [ ] Remove controls, stale state, constants, and handlers that have no real consumer. A request field existing in Pydantic is not evidence of implementation.
+- [ ] Keep adapter-specific steps, guidance, sampler, decoder/extraction resolution, and inference flags inside the adapter-owned locked profile. Do not restore a second frontend/scheduler profile table.
+- [ ] Remove inference-only modelParameterOverrides from the normal request path. Safely accept old saved preset files where required, but ignore legacy inference overrides and test that they never reach an adapter.
+- [ ] Keep only the canonical production preset source. Align mobile, game_ready, cinematic, animation, 3d_print and native/raw identifiers across backend presets and the frontend fallback; the native sentinel is not automatically a YAML preset entry.
+- [ ] Preserve explicit request value > intent preset > backend default precedence for supported production options. Omitted tri-state values must remain distinguishable from explicit false.
+- [ ] Verify target_polycount, texture_resolution, candidate_count, enable_postprocess, generate_lod/lod_preset/lod_count, UV, topology, printability, repair, rigging, physics/collision, and preprocessing artifact/review fields individually.
+- [ ] Ensure Native/Raw actually avoids incompatible downstream production operations and budget overrides; it must not merely change the selected card styling.
+- [ ] Ensure selecting a preset never submits a generation job. Generation must remain a deliberate user action.
+- [ ] Preserve user model choice. A preset may not silently replace an explicitly selected model.
+- [ ] Reconcile candidate_count, planned seed count, auto-seeds feature flags, best-candidate scoring, and the runtime telemetry. Logs and UI must report what actually executes, not just a plan value.
+- [ ] For deprecated fields such as requested_quality, mesh_style, object_type, and symmetry, either prove a supported consumer or remove them from the normal generation surface while keeping only intentional backwards-compatibility handling.
+- [ ] Update request-builder, preset-parity, API lifecycle, adapter regression, and seed-plan tests after every field/control migration.
+
+### P1-6. Model registry, adapters, and runtime entry points
+
+- [ ] Keep backend/core/scheduler/model_factory.py and backend/adapters/__init__.py registry entries aligned with backend/config/models.yaml, enabled model IDs, legacy aliases, and the model manifests. These registries use dynamic imports and cannot be audited by static import count alone.
+- [ ] Do not delete legacy Hunyuan/TRELLIS aliases or adapter modules until current config, persisted jobs/assets, tests, and public API compatibility have been checked and a migration is documented.
+- [ ] Keep backend/api/main_multiworker.py and backend/scripts/scheduler_service.py: Docker/Supervisor starts this multi-worker API plus a separate scheduler service.
+- [ ] Keep backend/api/main_singleworker.py as the documented alternate deployment until product docs and deployment requirements explicitly retire single-worker mode.
+- [ ] Keep Dockerfile, Dockerfile.runpod, docker-compose.yml, supervisord.conf, backend/scripts/run_server.sh, backend/scripts/install.sh, and model download/setup scripts while their respective deployment paths exist. Review drift between deployment variants rather than deleting one because it looks similar.
+- [ ] Check backend/core/runtime_probe.py, backend/core/config.py, backend/core/smart_presets.py, backend/core/planner.py, scheduler factories, resource planner, Redis queue and database managers as runtime-connected infrastructure before any removal.
+
+### P1-7. Third-party proxy and compatibility modules — submodule scan required
+
+Files requiring explicit review include backend/utils/image_super_utils.py, multiview_utils.py, pipeline_utils.py, simplify_mesh_utils.py, uvwrap_utils.py, torchvision_fix.py, dinov3_vit.py, flex_gemm_fallback.py, fastmesh_utils.py, partuv_utils.py, trellis2_utils.py, and unirig_utils.py.
+
+- [ ] Initialize and scan the recursive submodule at backend/thirdparty (repository Silentzx2/ForMash3D-ThirdParty) before deciding these files are unused.
+- [ ] Trace package imports, sys.path changes, lazy imports, importlib, and model-specific paths in the Hunyuan/TRELLIS/PartUV/UniRig code.
+- [ ] Keep the proxy modules needed to prevent vendor package shadowing or preserve upstream import paths. Remove only wrappers proven unused after the submodule and runtime startup paths are checked.
+- [ ] Do not merge model-specific compatibility implementations into a global helper if doing so changes package resolution or makes one model select another model's vendored utility.
+
+## P1 — Core backend and quality system: keep, wire, then optimize
+
+### P1-8. Quality code that must be retained
+
+The following code is not a deletion target based on this audit:
+
+- backend/core/quality/metrics.py: mesh topology/geometry metrics and sha256_file are used by scheduler quality/candidate paths; tests cover mesh metrics and master immutability.
+- backend/core/scheduler/seed_scorer.py: score_seed_candidate and select_best_candidate are imported by the multi-process scheduler for multi-candidate scoring.
+- backend/core/quality/evaluation.py: compare_meshes and quality_gate are connected to post-process evaluation; compare_model_runs and render_multi_view support benchmark tooling; compare_render_directories has test coverage.
+- backend/core/quality/parity_scorecard.py and root parity_scorecard.json: scorecard schema/source-attribution contracts are checked by tests and the module has an explicit CLI entry point.
+- backend/config/quality.yaml: canonical quality/seed/hole-repair/decimation/bake/UV thresholds are loaded and validated by backend/core/config.py.
+- backend/core/utils/artifact_utils.py: resolve_manifest_path is used to keep readiness and smart-preset path resolution consistent.
+- backend/core/preprocess/image_enhancement.py: active preprocessing path that creates approved artifacts; the separate hi3dgen mock must be treated honestly.
+- backend/core/mesh_processor.py, backend/postprocess/pipeline.py, backend/postprocess/services/gate.py, hole_repair.py, memory_safe_decimate.py, uv_backend_resolver.py, pbr_validator.py, bake.py, collision.py, repair.py, simplify.py, auto_uv.py and auto_retopo.py: retain while the production pipeline and API endpoints call these services.
+
+Tasks:
+
+- [ ] Audit every metric and gate output: identify which ones block, warn, or report only. Wire missing critical production checks; explicitly label optional diagnostics and benchmark-only helpers.
+- [ ] Verify the multi-candidate path calls the scorer only when candidates actually exist and that selected output metadata is persisted correctly.
+- [ ] Verify quality.yaml is the sole authoritative thresholds file. Remove duplicate hard-coded threshold values only after tests prove the central config supplies them.
+- [ ] Decide whether compare_render_directories should remain a developer/test helper or be wired into the A/B benchmark command. Do not add a production dependency on headless rendering solely to eliminate an unused-reference warning.
+- [ ] Keep parity scorecard values source-attributed measured values or null; no invented competitor metrics.
+- [ ] Add CPU-only CI tests for the quality contracts where dependencies are available, separately from GPU/checkpoint runtime smoke tests.
+- [ ] Keep backend/core/animation/ardy_converter.py: it is called by the ARDY adapter and the integration verification script.
+- [ ] Keep backend/core/utils/mesh_utils.py while adapters import its MeshProcessor and shared mesh operations.
+
+### P1-9. API routers and backend services
+
+- [ ] Confirm every router in backend/api/routers/__init__.py is mounted by both intended app entry points and its UI/API client callers still exist.
+- [ ] Keep routes used by services/apiClient.ts, features/workspace/lib/api.ts and the Next runtime proxy app/api/v1/[...path]/route.ts.
+- [ ] For each endpoint, decide whether it is part of the supported product, maintenance/admin surface, or compatibility-only. Remove a route only with the frontend/client/docs/tests migrated.
+- [ ] Audit file upload IDs, path validation, auth, rate limiting, cancellation, polling/SSE, job cleanup and download artifact routes as contracts—not merely references.
+- [ ] Remove stale endpoint wrappers only after tracing client aliases and saved URLs; update route-contract tests in the same change.
+- [ ] Check whether backend/postprocess/services/rigging.py and baking.py add any real behavior beyond existing route/pipeline services; follow P1-3.
+
+## P2 — Repository-wide duplicate, stale-code, and dependency pass
+
+### P2-1. Import graph and dead-code proof
+
+- [ ] Build a report of tracked source files and exportable symbols by reverse references. Treat Python dynamic imports, React lazy imports, config-selected components, and string-selected model IDs separately.
+- [ ] Search for unused exports, unused imports, unreferenced functions/classes, stale constants, duplicate utilities, unreachable branches, dead feature flags, unconsumed configuration keys, and obsolete request aliases.
+- [ ] For JavaScript/TypeScript, combine imports with Next routes, dynamic imports, JSX references, CSS imports, tests, and package exports. Do not count public assets only by source imports.
+- [ ] For Python, combine AST/import analysis with string-based registries, module __getattr__, importlib, command-line entry points, worker subprocess scripts and submodule imports.
+- [ ] For YAML/JSON/env configuration, map every key to the loader and consumer. Remove a key only after proving no reflective lookup, environment override, alternate deployment, or test contract uses it.
+- [ ] For scripts/tools, trace package scripts, CI jobs, Docker/Supervisor commands, documentation commands, release/packaging workflows and external plugin calls before removal.
+- [ ] For files with no internal callers but clear operator/benchmark use, classify them as developer tooling, not dead code. Keep a short README or package-script entry for intentionally supported tools.
+
+### P2-2. Dependency and packaging hygiene
+
+- [ ] Audit package.json and bun.lock dependencies against imports, Next build plugins, postinstall scripts, dynamic imports and optional tooling. Do not remove a package used only by a rare feature without exercising that feature.
+- [ ] Audit backend/requirements.txt and backend/requirements-test.txt against runtime imports, subprocess workers, optional model adapters and deployment/install scripts. Shared baseline dependencies must remain consistent with adapter dependency contracts.
+- [ ] Verify tools/check-generated-db.mjs, check-packaged-modules.mjs, check-unity-plugin.mjs, gen-db-names.mjs, gen-pg-schema.mjs, migrate-sqlite-to-postgres.mjs, pack-unity-plugin.mjs and view-asset-e2e.mjs are connected to a workflow or explicitly document them as manual tools.
+- [ ] Audit plugins/unreal, plugins/unity, assets, tools/meshoptimizer and public files with the corresponding build/packaging workflows before considering any binary or data removal.
+- [ ] Treat the Git submodule as a separately versioned dependency; do not duplicate vendor code into this repository as a cleanup shortcut.
+- [ ] Compare Dockerfile and Dockerfile.runpod dependency/runtime contracts. Consolidate shared fragments only if both targets retain their GPU, model-download and deployment requirements.
+
+### P2-3. Tests, CI, and truthful status reporting
+
+- [ ] Run backend Python source compilation and all applicable lightweight CPU-only tests.
+- [ ] Run backend runtime-contract, security-boundary, file-upload, quality, model-registry, API lifecycle, resource planner, preset parity, seed-plan, UV resolver, PBR, and post-process regression tests as their dependencies permit.
+- [ ] Run frontend TypeScript checking, ESLint, workspace/route/request-builder tests, and production build.
+- [ ] Update .github/workflows/backend-runtime-ci.yml and frontend-ci.yml only after determining which extra tests are deterministic and CPU-only. Do not put checkpoint/GPU inference tests in a lightweight CI job that cannot support them.
+- [ ] Keep a separate explicitly labelled GPU/model smoke-test matrix for installed checkpoints, actual inference, actual peak VRAM, UV/PBR output, and preview rendering. Do not claim CPU contract CI proves these things.
+- [ ] Report every check as PASS, FAIL, BLOCKED, or NOT RUN with the actual command and relevant output. Do not mark a task complete from static inspection alone.
+- [ ] Add regression tests for every deleted symbol/path where there was a previously supported import or endpoint.
+
+## P2 — Directories and files to preserve unless an explicit migration proves otherwise
+
+- backend/adapters: registry/dynamic loading and model-specific inference contracts.
+- backend/core/auth, config, models, preprocess, quality, scheduler, utils: core runtime, validated config and service contracts.
+- backend/postprocess: pipeline, schemas, geometry operations, workers, licensing/attribution, and output artifact production.
+- backend/tests and frontend *.test.mjs files: executable contracts and regression evidence; low reference counts do not make tests dead.
+- app, features, components, hooks, lib, services, stores, types: routes, user flows, shared state, API contracts and utility surfaces; audit by dependency graph.
+- constants, backend/config, .env.example, package.json, bun.lock, requirements files: configuration/dependency sources that must stay synchronized with loaders and tests.
+- scripts, tools, Dockerfiles, docker-compose.yml, supervisord.conf, .github/workflows: deployment, packaging, developer operations and CI entry points.
+- Docs, README.md, RULES.md, CONTRIBUTING.md, LICENSE, CITATION.cff: policy, design, user/setup instructions, third-party obligations and public project metadata.
+- public, assets, plugins, native tools and backend/thirdparty: assets, plugin packages, binaries, vendored runtime code and separately versioned dependencies. Inspect packaging/use before deleting.
+- features/workspace/lib/uploadProgress.ts, uploadResponse.ts, workspaceRouteContract.ts and the respective tests: these small modules are used by workspace upload and route contracts.
+- constants/smartPresetFallback.json and constants/smartPresets.ts: preserve frontend offline fallback/parity with backend production presets.
+- app/api/v1/[...path]/route.ts and app/static/[...path]/route.ts: preserve runtime proxy/static path behavior unless routes are replaced with tested equivalents.
+
+## Required execution order
+
+1. [ ] Update/confirm dev HEAD and clean working tree; initialize the recursive submodule.
+2. [ ] Fix P0 graph import boundary and prove frontend build.
+3. [ ] Add or update reverse-reference inventory and classify each candidate as REMOVE, WIRE, CONSOLIDATE, KEEP, or DEFER.
+4. [ ] Remove only the P1 high-confidence candidates in a small isolated commit after their reference checks; no mass deletion.
+5. [ ] Consolidate duplicate utilities via re-export shims where current paths are active.
+6. [ ] Wire quality gates, generation controls, request fields, presets, artifact hashes and service wrappers to real consumers; delete controls/aliases that cannot be supported.
+7. [ ] Run backend and frontend tests, plus the correct smoke tests for any affected route/model/post-process path.
+8. [ ] Update docs and CI, scan for removed names and stale imports, review the complete diff.
+9. [ ] Commit the task implementation with the exact tests/results in the message or report. Do not claim push or runtime success unless the tool output confirms it.
+
+## Verification commands
+
+Run from the current repository checkout; adapt environment activation and available dependencies to the deployment image.
+
+    git status --short
+    git rev-parse HEAD
+    git submodule update --init --recursive
+    git grep -n -E 'hi3dgen_bridging|run_rigging_export|is_rigging_available|createZip|useImageEditorHistory|usePasteImageFiles|shadowRemoverGPU|mesh-extras/meshFlatten|mesh-extras/meshExport|mesh-extras/meshTools' -- .
+    cd backend && python -m compileall -q .
+    cd .. && bun run test
+    bun run lint
+    bun run build
+
+A successful grep is not by itself proof of use or lack of use: inspect import direction, definition-only matches, config-driven paths, submodule/vendor imports, and the resulting build/test output.
+
+## Definition of done
+
+- [ ] Every removal has a confirmed no-consumer result, replacement decision, and passing regression/build tests.
+- [ ] Every retained feature control has a proven path to a real consumer or is explicitly labelled experimental/unavailable.
+- [ ] The graph relative-import issue is fixed, and frontend typecheck/build proves it.
+- [ ] Quality/seed/master hash contracts remain active, honest, config-backed, and regression-tested.
+- [ ] Model adapters, dynamic registries, runtime proxies, API routes, tests, third-party assets and deployment entry points were not accidentally deleted.
+- [ ] The repository can identify REMOVE, WIRE, CONSOLIDATE, KEEP and DEFER decisions for each candidate; unresolved vendor/external compatibility questions remain marked DEFER.
+- [ ] Final report distinguishes static findings, passing tests, blocked tests, and GPU/runtime behavior that was not tested.
