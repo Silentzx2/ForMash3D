@@ -26,10 +26,11 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 ## Core Features
 
 ### 1. Neural Shape Generation
-- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, TRELLIS, TRELLIS.2, TripoSG, Pixal3D
+- **Image-to-3D**: Generate raw untextured meshes from reference images using Hunyuan3D-Shape-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, TRELLIS, TRELLIS.2, TripoSG, Unique3D, Pixal3D
 - **Raw Geometry Output**: Normal shape generation produces raw geometry only, preserving clean topology without model-level texture baking or auto-chaining.
 - **Low-VRAM Path**: Hunyuan3D-DiT-v2-mini-Turbo for 6GB GPUs
 - **Official-Parity Inference**: Each model uses its own upstream/tuned inference schedule and supported raw extraction ceiling; a generic 75-step contract is not used.
+- **Adapter-Owned Inference Profiles**: The locked schedules live in the adapters, and the UI exposes no step, guidance, sampler, or octree controls. Current profiles: Hunyuan3D-Shape-v2.1 (octree 1300, 150 steps, guidance 5.0), Hunyuan3D-DiT-v2-mini-Turbo (octree 768, 20 steps, guidance 7.5), TripoSG (100 steps, guidance 9.0, dense depth 10, hierarchical depth 11), TRELLIS (100 steps, guidance 7.5), TRELLIS.2 (1536_cascade, 524288 tokens), Pixal3D (1536_cascade, resolution 2048), TaoFlowForge (fill_holes, offload auto; not currently enabled in the registry), Unique3D (input_processing, do_refine, expansion_weight 0.1).
 - **Immutable Source Fidelity**: Raw model-native geometry is captured before production polycount/LOD optimization; hardware safety guards may reduce density only when required for safe VRAM execution.
 - **Central Source-Fidelity Firewall**: The scheduler removes production-only target, decimation, remesh, LOD, physics, and paint orchestration controls before model inference.
 
@@ -42,18 +43,19 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 - **Non-Destructive Texture Export**: Raw master geometry is preserved untouched (`master/source.glb`); textured models are exported separately (`textures/<name>_textured.glb`), allowing independent texture retries.
 
 ### 3. Post-Processing Pipeline
-- **Mesh Decimation**: meshoptimizer SIMD decimation to target polycounts
+- **Mesh Decimation**: PyMeshLab quadric-edge-collapse decimation to target polycounts (fast_simplification fallback), building every LOD from the original mesh
 - **UV Unwrapping**: xatlas conformal UV unwrapping
 - **High-to-Low Detail Baking**: Enabled by default where the production path supports it, projecting source detail into normal/AO maps on derived game-ready UVs; the immutable source checkpoint is never mutated.
 - **Safe Component Guard**: Preserve anatomical features (≥0.5% vertices or ≥15 verts)
 
 ### 4. Multi-Tier LOD Generation
-- LOD0 (100%), LOD1 (50%), LOD2 (25%), LOD3 (12.5%)
+- LOD0–LOD3 at most, with the level count selectable as 2, 3 or 4 levels
 - UV and material preservation across LOD levels
-- Platform-specific triangle budgets (Mobile ≤18K, Low ≤28K, Medium ≤45K, High ≤85K, Cinematic ≤180K)
+- Ratio presets drive the cascade: mobile (100/35/12/5%), low (100/50/20/8%), medium (100/50/25/12.5%), high (100/60/30/15%), cinematic (100/75/50/25%)
+- The per-job triangle budget comes from the target polycount chosen in the Generate panel's Target & Output Preset card
 
 ### 5. Physics Colliders
-- Convex hull collision geometry via Trimesh
+- Convex hull collision geometry via Trimesh, with optional CoACD multi-part convex decomposition
 - Watertight mesh validation
 
 ### 6. Objective QA Diagnostic Engine
@@ -66,7 +68,7 @@ Create a centralized, local AI 3D asset factory that takes a reference image and
 ### 7. Modular Game-Ready Export
 - One-click download of structured ZIP packages
 - Formats: GLB, OBJ, STL, FBX
-- Organized: Source/, GameReady/, LODs/, Collision/, QA/
+- Organized: master/, game_ready/, lods/, collision/, textures/, previews/, metadata/
 
 ### 8. Animation & Rigging
 - **UniRig**: Automated bipedal skeletal armature generation
@@ -129,6 +131,8 @@ A user should be able to:
 | High | ≤ 85,000 | ~50,000 | 1–4 |
 | Cinematic | ≤ 180,000 | ~100,000 | 1–5 |
 
+These rows are the reference targets used to choose a target polycount in the Generate panel's Target & Output Preset card. The backend enforces one budget per job — the requested target polycount — and scores the result against it in the QA polycount category.
+
 ## Technology Stack
 
 - **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS v4, Three.js, React Three Fiber
@@ -156,7 +160,7 @@ flowchart TB
     end
 
     subgraph Gateway["FastAPI Gateway :7842"]
-        ROUTERS["API Routers<br/>system · file-upload<br/>mesh-generation · mesh-editing<br/>motion-generation · auto-rigging<br/>mesh-segmentation · mesh-retopology<br/>mesh-uv-unwrapping · users"]:::gateway
+        ROUTERS["API Routers<br/>system · file-upload<br/>mesh-generation · mesh-editing<br/>motion-generation · auto-rigging<br/>mesh-segmentation · mesh-retopology<br/>mesh-uv-unwrapping · smart-generation · users"]:::gateway
         SCHED["VRAM-Aware Scheduler"]:::gateway
     end
 
@@ -168,8 +172,12 @@ flowchart TB
 
     subgraph Adapters["Model Adapters"]
         TRELLIS["TRELLIS<br/>FlexiCubes PBR"]:::adapters
+        TRELLIS2["TRELLIS.2<br/>Cascade Image-to-3D"]:::adapters
         HUNY["Hunyuan3D<br/>Shape + Paint"]:::adapters
         TRIPO["TripoSG<br/>High-Fidelity Image-to-Mesh"]:::adapters
+        UNIQ["Unique3D<br/>Multi-View Diffusion"]:::adapters
+        PIXAL["Pixal3D<br/>Pixel-Aligned Projection"]:::adapters
+        P3D["Paint3D<br/>Coarse-to-Fine Texture"]:::adapters
         ARDY["ARDY<br/>Motion AI"]:::adapters
         UR["UniRig<br/>Auto-Rigging"]:::adapters
         FM["FastMesh<br/>Retopology"]:::adapters
@@ -205,7 +213,7 @@ sequenceDiagram
     participant Adapter as Model Adapter
     participant Storage as backend/storage/
 
-    User->>Frontend: Select image + Platform budget
+    User->>Frontend: Select image + output preset
     Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
@@ -237,7 +245,7 @@ flowchart TD
     IN --> PRE["Stage 1: Preprocessing<br/>Aspect ratio preservation<br/>Background removal (RemBG)<br/>Silhouette extraction"]:::stage
     PRE --> INF["Stage 2: Provider Inference<br/>TRELLIS · Hunyuan3D"]:::stage
     INF --> RAW_OUT[("source.glb<br/>Untouched Master")]:::data
-    INF --> PROCESS["Stage 3: Post-Processing<br/>meshoptimizer Decimation<br/>xatlas UV Unwrapping<br/>Texture Projection Baking"]:::stage
+    INF --> PROCESS["Stage 3: Post-Processing<br/>PyMeshLab Decimation<br/>xatlas UV Unwrapping<br/>Texture Projection Baking"]:::stage
     PROCESS --> G1{"Safe Component Guard<br/>Islands ≥ 0.5% vertices or ≥ 15 verts?"}:::guard
     G1 -->|Yes| KEEP["Preserve Ears, Horns, Tails, Claws"]
     G1 -->|No| PRUNE["Purge Floating Disconnected Noise"]
@@ -254,10 +262,12 @@ flowchart TD
 |---|---|---|---|
 | TRELLIS | 11.5 GB | High quality | ~60 seconds |
 | TRELLIS.2 | 23 GB | Highest quality | ~60 seconds |
-| Hunyuan3D-Shape-v2-1 | 10 GB (shape) / 29 GB (shape+texture) | High quality | ~90 seconds |
-| Hunyuan3D-Paint-v2-1 | No verified hard minimum; 12 GB configured scheduler reservation (actual peak can exceed it) | PBR texture with RealESRGAN x4+ | ~120 seconds |
+| Hunyuan3D-Shape-v2-1 | 10 GB (shape stage) | High quality | ~90 seconds |
+| Hunyuan3D-Paint-v2-1 | 12 GB separately configured scheduler reservation (no verified hard minimum; actual peak can exceed it) | PBR texture with RealESRGAN x4+ | ~120 seconds |
 | Hunyuan3D-DiT-v2-mini-Turbo | ~6 GB | Low-resource shape | ~30 seconds |
 | TripoSG | 8 GB | High-fidelity image/scribble | ~10-20 seconds |
+| Unique3D | 10 GB | High-fidelity multi-view reconstruction | Not benchmarked (balanced latency class) |
+| Pixal3D | 18 GB (10 GB in low-VRAM mode) | Pixel-aligned projection geometry | Not benchmarked (quality latency class) |
 | ARDY | CPU-only; no GPU VRAM reservation | Motion AI & Animation; CPU/RAM-bound | Host-dependent; slower than GPU inference |
 | UniRig | 9 GB | Auto-rigging | ~20 seconds |
 | FastMesh-V1K | 16 GB | Retopology | ~30 seconds |
@@ -362,8 +372,8 @@ uvicorn api.main_multiworker:app --workers 4 --port 7842
 
 - [ ] Cloudflare tunneling for remote access
 - [ ] Automated test suite (backend e2e tests)
-- [ ] DCC Bridge (Blender, Unreal, Unity, Maya)
-- [ ] Advanced animation studio with timeline
+- [x] DCC Bridge (Blender, Unreal, Unity, Maya)
+- [x] Advanced animation studio with timeline
 - [ ] Model-specific fine-tuning UI
 - [ ] Batch generation queue management
 - [ ] Collaborative workspace features
@@ -392,10 +402,10 @@ Generation Preview is optional. The approved artifact is content-addressed and r
 Printability QA is deterministic topology inspection in the shared production post-process path. Auto-repair is explicit. A failed final check is surfaced as a degraded result. In the `3d_print` smart preset, `target_polycount: 0` ensures complete passthrough without decimation artifacts, preserving strict watertight manifold geometry for physical slicing.
 
 ### Quad Retopology & Polygonal Export
-Supports quad-dominant retopology via AutoRetopo / QuadriFlow, exporting standard Wavefront OBJ format with 4-vertex polygonal faces (`f v1 v2 v3 v4`). When quad-dominant topology is requested and generated, the postprocessing optimization stage automatically preserves quad topology without destructive triangle decimation.
+Supports quad-dominant retopology via the AutoRetopo quad conversion in the production pipeline, exporting standard Wavefront OBJ format with 4-vertex polygonal faces (`f v1 v2 v3 v4`). When quad-dominant topology is requested and generated, the postprocessing optimization stage automatically preserves quad topology without destructive triangle decimation.
 
 ### Auto-Rigging
 One canonical enable_auto_rig flag runs UniRig after the final production mesh. The immutable source/master is never replaced by the rigged derivative. A rigged artifact is not reported ready until the child job has produced a durable output.
 
 ### Smart Intent
-Five built-in intent presets (`game_ready`, `cinematic`, `animation`, `3d_print`, `mobile`) are backend-owned and deterministic. Explicit top-level budget inputs take precedence over nested defaults and presets (`_resolve_target_polycount_precedence`). Explicit model selection remains an override; the scheduler remains the final concurrency and VRAM authority.
+Five built-in intent presets (`game_ready`, `cinematic`, `animation`, `3d_print`, `mobile`) are backend-owned and deterministic in `backend/config/smart_presets.yaml`: game_ready 50K tris / 1K atlas with collision, cinematic 200K / 2K, animation 30K / 1K with auto-rig, 3d_print raw with printability check and auto-repair, mobile 20K / 1K. The Generate panel exposes these five plus a `Native` chip that bypasses post-processing and returns the raw generative mesh, and it mirrors the backend catalogue through a minimal offline fallback table in `constants/smartPresetFallback.json` guarded by `backend/tests/test_smart_preset_parity.py`. Explicit top-level budget inputs take precedence over nested defaults and presets (`_resolve_target_polycount_precedence`). Explicit model selection remains an override; the scheduler remains the final concurrency and VRAM authority.

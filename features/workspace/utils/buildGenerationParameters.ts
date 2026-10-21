@@ -108,6 +108,12 @@ export function buildGenerationParameters(
     ? Math.max(1, Math.min(4, Math.floor(Number(settings.candidateCount))))
     : 1;
 
+  // LOD production options. The post-processing pipeline builds at most 4 levels
+  // (LOD0-LOD3), so the request is clamped to the levels the consumer supports.
+  const lodEnabled = enablePostprocess && settings.generateLOD !== false;
+  const lodPreset = settings.lodPreset || 'high';
+  const lodCount = Math.max(2, Math.min(4, Math.floor(Number(settings.lodCount) || 4)));
+
   const endpoint = '/api/v1/mesh-generation/image-to-raw-mesh';
   const targetPolycount = enablePostprocess ? (settings.autoOptimizeSettings?.targetPolycount ?? 0) : 0;
 
@@ -128,6 +134,9 @@ export function buildGenerationParameters(
     auto_rig_mode: settings.autoRigMode || 'full',
     enable_postprocess: enablePostprocess,
     target_polycount: targetPolycount,
+    generate_lod: lodEnabled,
+    lod_preset: lodEnabled ? lodPreset : undefined,
+    lod_count: lodEnabled ? lodCount : undefined,
     model_parameters: modelParameters,
     physics_enabled: enablePostprocess && Boolean(settings.generateCollision),
     physics_config: (enablePostprocess && Boolean(settings.generateCollision)) ? settings.physics : undefined,

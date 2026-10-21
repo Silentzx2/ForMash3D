@@ -82,7 +82,7 @@ intents:
   mobile:
     label: Mobile
     target_polycount: 20000
-    texture_resolution: 512
+    texture_resolution: 1024
     generate_lod: true
     lod_preset: mobile
     lod_count: 4

@@ -9,6 +9,7 @@ import { requireUploadFileId } from '../lib/uploadResponse';
 import { SimpleTooltip } from '@/components/ui/simple-tooltip';
 import { ShimmerButton } from '@/components/ui/shimmer-button';
 import { getModelDefinition, isMeshGenerationModel } from '@/constants/models';
+import { SMART_PRESET_FALLBACK } from '@/constants/smartPresets';
 import { useRouter } from 'next/navigation';
 
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -280,115 +281,28 @@ interface DiscoveredModel {
   capabilities?: Record<string, any>;
 }
 
-const SMART_PRESET_FALLBACK: Record<string, any> = {
-  game_ready: {
-    label: 'Game Ready',
-    target_polycount: 50000,
-    texture_resolution: 1024,
-    generate_lod: true,
-    lod_preset: 'high',
-    lod_count: 4,
-    collision: true,
-    production_qa: true,
-    auto_uv: true,
-    enable_auto_rig: false,
-    enable_printability_check: false,
-    enable_auto_repair: false,
-    preferred_features: ['image_to_textured_mesh', 'image_to_raw_mesh'],
-    model_priority: [
-      'trellis2_image_to_textured_mesh',
-      'trellis_image_to_textured_mesh',
-      'unique3d_image_to_raw_mesh',
-      'hunyuan3d_shape_v21_image_to_raw_mesh',
-      'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposg_image_to_raw_mesh',
-    ],
-  },
-  cinematic: {
-    label: 'Cinematic',
-    target_polycount: 200000,
-    texture_resolution: 2048,
-    generate_lod: true,
-    lod_preset: 'high',
-    lod_count: 4,
-    collision: false,
-    production_qa: true,
-    auto_uv: true,
-    enable_auto_rig: false,
-    enable_printability_check: false,
-    enable_auto_repair: false,
-    preferred_features: ['image_to_textured_mesh', 'image_to_raw_mesh'],
-    model_priority: [
-      'trellis2_image_to_textured_mesh',
-      'trellis_image_to_textured_mesh',
-      'unique3d_image_to_raw_mesh',
-      'hunyuan3d_shape_v21_image_to_raw_mesh',
-      'triposg_image_to_raw_mesh',
-    ],
-  },
-  animation: {
-    label: 'Animation',
-    target_polycount: 30000,
-    texture_resolution: 1024,
-    generate_lod: true,
-    lod_preset: 'high',
-    lod_count: 4,
-    collision: false,
-    production_qa: true,
-    auto_uv: true,
-    enable_auto_rig: true,
-    enable_printability_check: false,
-    enable_auto_repair: false,
-    preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
-    model_priority: [
-      'unique3d_image_to_raw_mesh',
-      'hunyuan3d_shape_v21_image_to_raw_mesh',
-      'trellis2_image_to_textured_mesh',
-      'trellis_image_to_textured_mesh',
-      'triposg_image_to_raw_mesh',
-    ],
-  },
-  '3d_print': {
-    label: '3D Print',
-    target_polycount: 0,
-    texture_resolution: 0,
-    generate_lod: false,
-    lod_preset: 'high',
-    lod_count: 0,
-    collision: false,
-    production_qa: true,
-    auto_uv: false,
-    enable_auto_rig: false,
-    enable_printability_check: true,
-    enable_auto_repair: true,
-    preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
-    model_priority: [
-      'unique3d_image_to_raw_mesh',
-      'hunyuan3d_shape_v21_image_to_raw_mesh',
-      'triposg_image_to_raw_mesh',
-    ],
-  },
-  mobile: {
-    label: 'Mobile',
-    target_polycount: 20000,
-    texture_resolution: 512,
-    generate_lod: true,
-    lod_preset: 'mobile',
-    lod_count: 4,
-    collision: false,
-    production_qa: true,
-    auto_uv: true,
-    enable_auto_rig: false,
-    enable_printability_check: false,
-    enable_auto_repair: false,
-    preferred_features: ['image_to_raw_mesh', 'image_to_textured_mesh'],
-    model_priority: [
-      'unique3d_image_to_raw_mesh',
-      'hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh',
-      'triposg_image_to_raw_mesh',
-      'hunyuan3d_shape_v21_image_to_raw_mesh',
-    ],
-  },
+/** Map a backend texture-atlas size to the UI atlas token; null means "no texture stage". */
+const textureResolutionPreset = (size: number): '1K' | '2K' | '4K' | '8K' | null => {
+  if (size >= 8192) return '8K';
+  if (size >= 4096) return '4K';
+  if (size >= 2048) return '2K';
+  if (size >= 1024) return '1K';
+  return null;
+};
+
+/** Summarize a backend output preset for the compact preset chip. */
+const formatPresetSummary = (preset: Record<string, any> | undefined): string => {
+  if (!preset) return 'Raw geometry';
+  const target = Number(preset.target_polycount ?? 0);
+  const atlas = textureResolutionPreset(Number(preset.texture_resolution ?? 0));
+  const parts: string[] = [target > 0 ? `${Math.round(target / 1000)}K` : 'Raw'];
+  if (atlas) parts.push(`${atlas} PBR`);
+  if (preset.generate_lod) parts.push('LOD');
+  if (preset.collision) parts.push('Col');
+  if (preset.enable_auto_rig) parts.push('Rig');
+  if (preset.enable_printability_check) parts.push('QA');
+  if (preset.enable_auto_repair) parts.push('Repair');
+  return parts.join(' · ');
 };
 
 function formatGenerateModel(
@@ -935,50 +849,30 @@ export const GeneratePanel: React.FC = () => {
       return;
     }
 
-    const presetData = smartPresets[presetId];
-
-    if (presetId === '3d_print') {
-      setGenerationSettings(prev => ({
-        ...prev,
-        intent: '3d_print',
-        enablePostprocess: true,
-        generateTexture: false,
-        texture_enabled: false,
-        generateLOD: false,
-        generateCollision: false,
-        enablePrintabilityCheck: true,
-        enableAutoRepair: true,
-        enableAutoRig: false,
-        autoOptimizeSettings: { ...prev.autoOptimizeSettings, targetPolycount: 0 },
-      }));
-      return;
-    }
-
-    const targetPoly = presetData?.target_polycount !== undefined
-      ? Number(presetData.target_polycount)
-      : presetId === 'cinematic' ? 200000 : presetId === 'animation' ? 30000 : presetId === 'mobile' ? 20000 : 50000;
-
-    const texResPreset: '1K' | '2K' | '4K' = presetId === 'cinematic' ? '2K' : '1K';
+    // The backend preset definition is the single source of truth for the recipe.
+    const presetData = smartPresets[presetId] ?? SMART_PRESET_FALLBACK[presetId] ?? {};
+    const texResPreset = textureResolutionPreset(Number(presetData.texture_resolution ?? 0));
+    const lodEnabled = presetData.generate_lod !== false;
 
     setGenerationSettings(prev => ({
       ...prev,
       intent: presetId,
       enablePostprocess: true,
-      generateTexture: true,
-      texture_enabled: true,
-      texture_resolution: texResPreset,
-      textureResolution: texResPreset,
-      textureQuality: presetId === 'cinematic' ? 'high' : 'medium',
-      generateLOD: true,
-      lodPreset: (presetData?.lod_preset || (presetId === 'mobile' ? 'mobile' : 'high')) as any,
-      lodCount: Number(presetData?.lod_count || 4),
-      generateCollision: presetId === 'game_ready',
-      enablePrintabilityCheck: false,
-      enableAutoRepair: false,
-      enableAutoRig: presetId === 'animation',
+      generateTexture: texResPreset !== null,
+      texture_enabled: texResPreset !== null,
+      texture_resolution: texResPreset ?? undefined,
+      textureResolution: texResPreset ?? undefined,
+      textureQuality: texResPreset === '1K' ? 'medium' : 'high',
+      generateLOD: lodEnabled,
+      lodPreset: (presetData.lod_preset ?? 'high') as GenerationSettings['lodPreset'],
+      lodCount: Math.max(2, Math.min(4, Number(presetData.lod_count ?? 4) || 4)),
+      generateCollision: presetData.collision === true,
+      enablePrintabilityCheck: presetData.enable_printability_check === true,
+      enableAutoRepair: presetData.enable_auto_repair === true,
+      enableAutoRig: presetData.enable_auto_rig === true,
       autoOptimizeSettings: {
         ...prev.autoOptimizeSettings,
-        targetPolycount: targetPoly,
+        targetPolycount: Number(presetData.target_polycount ?? 0),
       },
     }));
   };
@@ -1864,13 +1758,17 @@ export const GeneratePanel: React.FC = () => {
               {/* Canonical 6 Presets */}
               <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { id: 'mobile', label: 'Mobile', desc: '20K · 1K PBR · LOD' },
-                  { id: 'game_ready', label: 'Game Ready', desc: '50K · 1K PBR · Col' },
-                  { id: 'cinematic', label: 'Cinematic', desc: '200K · 2K PBR' },
-                  { id: 'animation', label: 'Animation', desc: '30K · 1K PBR · Rig' },
-                  { id: '3d_print', label: '3D Print', desc: 'Raw · QA Repair' },
-                  { id: 'native', label: 'Native', desc: 'Raw geometry' },
-                ].map(({ id, label, desc }) => {
+                  { id: 'mobile', label: 'Mobile' },
+                  { id: 'game_ready', label: 'Game Ready' },
+                  { id: 'cinematic', label: 'Cinematic' },
+                  { id: 'animation', label: 'Animation' },
+                  { id: '3d_print', label: '3D Print' },
+                  { id: 'native', label: 'Native' },
+                ].map(({ id, label }) => {
+                  const presetData = smartPresets[id] ?? SMART_PRESET_FALLBACK[id];
+                  const desc = id === 'native'
+                    ? 'Raw geometry'
+                    : formatPresetSummary(presetData);
                   const isSelected = id === 'native'
                     ? (isPostprocessOff || ((generationSettings.autoOptimizeSettings?.targetPolycount ?? 0) <= 0 && !generationSettings.intent))
                     : generationSettings.intent === id;
@@ -2198,8 +2096,6 @@ export const GeneratePanel: React.FC = () => {
                       <option value={2}>2 Levels (LOD0-1)</option>
                       <option value={3}>3 Levels (LOD0-2)</option>
                       <option value={4}>4 Levels (LOD0-3)</option>
-                      <option value={5}>5 Levels (LOD0-4)</option>
-                      <option value={6}>6 Levels (LOD0-5)</option>
                     </select>
                   </label>
                 </div>

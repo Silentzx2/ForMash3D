@@ -1,3 +1,15 @@
+## 2026-10-21 — Production Option Contract: LOD Wiring, Tri-State Precedence & Preset SSOT
+
+- **LOD controls are now wired end-to-end**: the Advanced drawer exposed an LOD toggle, ratio preset, and level count that the request builder never serialized, so the choice was discarded before reaching the pipeline. `generate_lod`, `lod_preset`, and `lod_count` are now first-class request fields consumed by the LOD stage (`job_inputs["generateLOD"] / "lodPreset" / "lodCount"`). The level count is limited to 2–4 levels because the pipeline builds at most LOD0–LOD3.
+- **Tri-state production options (ADR-093)**: `texture_resolution`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `generate_lod`, `lod_preset`, and `lod_count` are `Optional[...] = None` on both generation request schemas. Resolution is explicit request value → intent preset (`backend/config/smart_presets.yaml`) → backend default, so an explicit `false` always wins and an omitted field still lets the preset supply its default.
+- **`target_polycount` keeps its numeric presence contract**: a value `> 0` or the `-1` native sentinel wins; `0` means "no explicit budget" and falls back to the intent preset. Native/Raw is expressed with `intent=native` or `enable_postprocess=false`.
+- **Legacy channel closed**: `model_parameters.generateLOD` / `lodPreset` / `lodCount` are popped and discarded, so they can neither leak into the job inputs nor override the preset. `model_parameters` now carries only `seed`.
+- **Preset SSOT**: the panel derives the chip summary and recipe values from the backend catalogue instead of a second hardcoded copy. The offline fallback moved to `constants/smartPresetFallback.json` and is guarded by `backend/tests/test_smart_preset_parity.py`. The mobile preset's atlas size was corrected from 512 (rejected by the API) to 1024.
+- **Dead control removed**: the Live execution panel's "Enable Low VRAM Mode (<8GB) & Retry" button could not change anything in the request, so it was deleted.
+- **Verification**: `bun test` 41/41 pass, `npx tsc --noEmit` clean, `npx eslint` clean on the changed files, `backend/tests/test_preset_alignment_and_persistence.py` 24/24 pass, `backend/tests/test_smart_preset_parity.py` passes, and the CI backend contract subset passes (56 tests). The heavy backend modules and GPU inference are **NOT RUN** in this environment (missing `torch`/`trimesh`/`skimage`, no GPU); the 53 import failures are identical before and after this change.
+
+---
+
 ## 2026-10-21 — Generate Studio Refactor: Locked Adapter Profiles, UI Simplification & Pipeline Contract
 
 - **Adapter-Owned Inference Authority**: Model-specific inference schedules, step counts, guidance scales, octree resolutions, samplers, and decoders are locked directly into adapter implementations (`_LOCKED_INFERENCE_PROFILE`). The multiprocess scheduler filters incoming overrides (`_ADAPTER_OWNED_INFERENCE_INPUTS`, `_POSTPROCESS_ONLY_INPUTS`) and delivers clean inputs (`image_path`, `seed`, `source_quality="max"`).
@@ -8,14 +20,14 @@
   - Non-destructive preset selection: Clicking an output preset populates recommended defaults and **never** auto-submits.
 - **Clean Advanced Production Drawer**: Contains genuine production finishing controls only:
   - Multi-seed Candidate generation (1 to 4 variations with deterministic seed stepping and composite scoring).
-  - Triangle vs Quad-dominant retopology (FastMesh / QuadriFlow).
-  - UV Unwrapping (PartUV / xatlas).
+  - Triangle vs quad-dominant retopology (AutoRetopo quad conversion).
+  - Automatic UV unwrapping (PartUV / xatlas) with no user-facing toggle.
   - High-to-low normal map baking from immutable master mesh (`master/source.glb`).
-  - Hierarchical LOD generation (LOD0 to LOD3).
-  - Topology Gate and targeted boundary loop repair ($\le 50$ vertices).
-  - Watertight CoACD convex hull generation with physics material quick presets (Default, Rubber, Stone, Wood, Ice, Metal).
+  - Hierarchical LOD generation (toggle, ratio preset, 2–4 levels).
+  - Production QA toggles: printability check, auto-repair, auto-rig with mode selector.
+  - Physics preparation with collision hull generation and material quick presets.
 - **Unified Production Presets as Output Recipes**:
-  - Six recipes: `mobile` (~15k tris), `game_ready` (~35k tris), `cinematic` (~100k tris), `animation` (~40k quads/tris), `3d_print` (watertight solid), `native` (raw extraction ceiling).
+  - Six recipes defined by `backend/config/smart_presets.yaml`: `mobile` (20K, 1K), `game_ready` (50K, 1K, collision), `cinematic` (200K, 2K), `animation` (30K, 1K, auto-rig), `3d_print` (full resolution, printability + auto-repair), `native` (raw extraction, no post-processing).
   - Post-processing pipeline consumes production recipe flags and preserves SHA-256 byte-level immutability of `master/source.glb`.
 - **Contract Specification**: Authored `Docs/GENERATION-UI-CONTRACT.md` establishing explicit data flow and invariants across UI $\to$ Request Builder $\to$ API $\to$ Scheduler $\to$ Adapter $\to$ Postprocess Pipeline.
 - **Decision Records**: Documented ADR-056 and ADR-057 in `Docs/DECISIONS.md`.

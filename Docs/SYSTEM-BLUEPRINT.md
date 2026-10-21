@@ -30,18 +30,37 @@ ForMash 3D is an end-to-end generative 3D reconstruction and asset optimization 
 ### Core Stack
 - **Frontend**: Next.js 16 (React 19, TypeScript, Three.js, React Three Fiber, Tailwind CSS)
 - **API Gateway**: FastAPI (Python 3.10, Conda env `3daigc-api`, Pydantic V2, AsyncIO)
-- **Model Adapters**: Python adapters for TRELLIS, Hunyuan3D-2.1, PartUV, UniRig, FastMesh, TripoSG, ARDY and Pixal3D
+- **Model Adapters**: Python adapters for TRELLIS, TRELLIS.2, Hunyuan3D-2.1 (Shape/Paint/Mini Turbo), Paint3D, PartUV, UniRig, FastMesh, TripoSG, Unique3D, ARDY, Pixal3D and TaoFlowForge
 - **Scheduler**: VRAM-aware multiprocess scheduler with GPU monitoring
 - **Queue/Broker**: Redis 7 (optional, multi-worker mode only)
 - **File Storage**: Local filesystem + Redis FileStore (multi-worker mode)
 
 ### Model-Native Source Fidelity Contract
-1. Frontend sends model-specific inference schedules rather than a global step count.
-2. Scheduler removes post-process-only target, extraction/decimation/remesh, LOD, physics, and paint controls before model inference.
-3. Adapter extraction uses the highest supported source density, with only hardware safety guards allowed to reduce it.
+1. The frontend sends no model-specific inference schedule; numeric inference profiles (steps, guidance, octree/depth resolution, samplers) are owned by each adapter's `_LOCKED_INFERENCE_PROFILE`. Only the seed and the image identity stay caller-controlled.
+2. Scheduler removes post-process-only target, extraction/decimation/remesh, LOD, physics, and paint controls before model inference, and also strips adapter-owned inference keys.
+3. Adapter extraction uses the highest supported source density, with only hardware safety guards allowed to reduce it. Locked adapter profiles: Hunyuan3D-Shape-v2.1 (octree 1300, 150 steps, guidance 5.0, 80,000 chunks), Hunyuan3D-DiT-v2-mini-Turbo (octree 768, 20 steps, guidance 7.5, 80,000 chunks), TripoSG (100 steps, guidance 9.0, dense depth 10, hierarchical depth 11), TRELLIS (100 sparse/slat steps, guidance 7.5, `simplify=0.0`), TRELLIS.2 (`1536_cascade`, 524,288 max tokens), Pixal3D (`1536_cascade`, resolution 2048), Unique3D (`input_processing=true`, `do_refine=true`, `expansion_weight=0.1`), TaoFlowForge (`fill_holes=true`, `offload="auto"`).
 4. Source texture profiles are fixed at TRELLIS 2048 and TRELLIS.2 4096 for maximum source fidelity.
 5. master/source.glb is immutable; derived retopo, UV, LOD, collision, and bake artifacts cannot rewrite it.
 
+
+### Intent Preset Contract
+
+Intent presets (`backend/config/smart_presets.yaml`, version 1) define the default production budget for a generation request:
+
+| Intent | Target polycount | Atlas | LOD | Collision | Auto-rig | Printability | Auto-repair |
+|---|---:|---:|---|---|---|---|---|
+| `mobile` | 20,000 | 1024 | on (`mobile` preset, 4 levels) | off | off | off | off |
+| `game_ready` | 50,000 | 1024 | on (`high` preset, 4 levels) | on | off | off | off |
+| `cinematic` | 200,000 | 2048 | on (`high` preset, 4 levels) | off | off | off | off |
+| `animation` | 30,000 | 1024 | on (`high` preset, 4 levels) | off | on | off | off |
+| `3d_print` | 0 (native passthrough) | 0 (none) | off | off | off | on | on |
+| `native` | -1 (backend-only sentinel) | 0 | off | off | off | off | off |
+
+- `native` is a backend sentinel (`backend/core/smart_presets.py`), not a YAML preset entry. The workspace's Native card reaches the same Native/Raw outcome by setting `enable_postprocess=false`.
+- Production-option precedence is explicit request value > intent preset > backend default.
+- `texture_resolution`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `generate_lod`, `lod_preset` and `lod_count` are tri-state request fields; omitting them lets the intent preset supply the value.
+- `target_polycount`: an explicit value > 0 or the `-1` native sentinel wins, `0` means "no explicit budget" and falls back to the intent preset. Native/Raw output is requested with `intent=native` or `enable_postprocess=false`.
+- The request builder posts to `/api/v1/mesh-generation/image-to-raw-mesh` and sends only `seed` inside `model_parameters`; there is no `output_preset`, `auto_optimize` or `physics_collider` request field.
 
 ### Shared Model Runtime Dependency Contract
 
@@ -99,7 +118,7 @@ graph TD
     subgraph PostProcess["⚙️ Production Post-Processing"]
         direction TB
         CHECK["master/source.glb<br/>Immutable Master Checkpoint"]:::green
-        FINISH["Repair • Retopo • UV<br/>Optional high-to-low Bake • LOD0-LOD3 • CoACD"]:::green
+        FINISH["Repair • Retopo • Optimize • UV • Bake<br/>Texture • Game-Ready • LOD0-LOD3 • CoACD"]:::green
     end
 
     subgraph Storage["📦 Persistent Storage & Export"]
@@ -136,7 +155,7 @@ sequenceDiagram
     participant Adapter as Model Adapter
     participant Storage as backend/storage/
 
-    User->>Frontend: Select image + Platform budget
+    User->>Frontend: Select image + intent preset / polycount budget
     Frontend->>API: POST /api/v1/mesh-generation/image-to-raw-mesh
     API->>SCHED: Submit job (VRAM-aware)
     SCHED->>Adapter: Run inference (TRELLIS/Hunyuan3D/etc.)
@@ -224,8 +243,8 @@ flowchart TD
 | **Pydantic Serialization** | `FastAPI native response_model` | 10-20x faster JSON |
 | **GZip Compression** | `GZipMiddleware(minimum_size=1000)` | 75-85% response size reduction |
 | **Native Dense Decoder Enforcement** | `configure_native_dense_decoder()` forces `VanillaVolumeDecoder + MCSurfaceExtractor` with `mc_algo="mc"`, disables FlashVDM | Eliminates detail smoothing/loss in Hunyuan3D raw geometry |
-| **Official Mini Turbo Resolution** | `octree_resolution=380` (not 512 - exceeds trained range) | Prevents artifacts and quality degradation in Mini Turbo |
-| **TripoSG Max Hierarchical Depth** | `dense_octree_depth=9`, `hierarchical_octree_depth=10` (1024³ grid) with VRAM-gated fallback (10→9→8) | Preserves fine details in TripoSG raw extraction |
+| **Official Mini Turbo Resolution** | `octree_resolution=768` (adapter-locked `_LOCKED_INFERENCE_PROFILE`) | Locks Mini Turbo geometry sampling to the adapter-owned profile |
+| **TripoSG Max Hierarchical Depth** | `dense_octree_depth=10`, `hierarchical_octree_depth=11` (adapter-locked; no automatic VRAM downgrade) | Preserves fine details in TripoSG raw extraction |
 
 ### 4.3 VRAM Requirements by Model
 
@@ -259,23 +278,29 @@ Generated assets are packaged for delivery via the API. The following formats ar
 | **STL** | 3D Printing, CAD | Pure Surface Geometry |
 | **PLY** | Point Clouds, MeshLab | Vertex Coordinates & Colors |
 
-Production ZIP bundles:
+Production ZIP bundles mirror the canonical asset workspace (the archive is built from the workspace root, so the real folder names are preserved):
 ```
 Project_Export_<job_id>.zip
-├── Source/
-│   └── source.glb              # Original byte-for-byte neural output
-├── GameReady/
-│   └── game_ready.glb          # Engine-compliant decimated mesh
-├── LODs/
-│   ├── lod0.glb                # 100% triangles (Master baseline)
-│   ├── lod1.glb                # 50% triangles (Mid distance)
-│   ├── lod2.glb                # 25% triangles (Long distance)
-│   └── lod3.glb                # 12.5% triangles (Proxy geometry)
-├── Collision/
-│   └── collision.glb           # Watertight physics convex hull
-└── QA/
-    └── quality_report.json     # Topology validation score (0-100)
+├── master/
+│   └── source.glb             # Original byte-for-byte neural output
+├── game_ready/
+│   └── <asset>_<job_id>.glb    # Engine-compliant decimated mesh
+├── lods/
+│   ├── lod0.glb               # 100% of the game-ready triangles
+│   ├── lod1.glb               # LOD ratio preset (e.g. 60% for 'high')
+│   ├── lod2.glb               # LOD ratio preset (e.g. 30% for 'high')
+│   └── lod3.glb               # LOD ratio preset (e.g. 15% for 'high')
+├── collision/
+│   └── collision.glb          # Watertight physics convex hull
+├── textures/                  # Textured GLB and packed maps (when the texture stage ran)
+├── previews/                  # Asset preview images
+└── metadata/
+    ├── quality_report.json    # Topology validation score (0-100)
+    ├── asset.json             # Canonical asset manifest
+    └── physics.json           # Physics configuration (when requested)
 ```
+
+LOD ratios come from the `lod_preset` table — `mobile` [1.0, 0.35, 0.12, 0.05], `low` [1.0, 0.5, 0.2, 0.08], `medium` [1.0, 0.5, 0.25, 0.125], `high` [1.0, 0.6, 0.3, 0.15], `cinematic` [1.0, 0.75, 0.5, 0.25]. At most four levels are produced (LOD0-LOD3) and `lod_count` is clamped to 1-4; there is no fixed 100/50/25/12.5 default.
 
 > **Note**: Asset delivery uses GET /api/v1/system/jobs/{job_id}/download?artifact_format=.... ZIP archives are generated on demand from the canonical asset workspace.
 
@@ -338,7 +363,7 @@ bun run build
 ## Production Asset Lifecycle & Two-Way PostProcess Pipeline
 
 ForMash3D executes post-processing via two complementary pathways:
-1. **Automatic Chaining:** Generation -> maximum-fidelity model output -> immutable `master/source.glb` -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> conditional retopo -> downstream target polycount -> Auto UV -> LOD cascade -> collision hulls -> game-ready formats) -> production completion -> `WorkspaceContext.tsx` artifacts.
+1. **Automatic Chaining:** Generation -> maximum-fidelity model output -> immutable `master/source.glb` -> automatic trigger in `multiprocess_scheduler.py` via `run_postprocess_job` (repair -> conditional retopo -> downstream target polycount -> Auto UV -> bake -> optional texture stage -> game-ready formats -> LOD cascade -> collision hulls -> QA) -> production completion -> `WorkspaceContext.tsx` artifacts.
 2. **Manual On-Demand PostProcess: Users can select any workspace model or upload an external mesh (`.glb`, `.obj`, `.stl`, `.ply`) inside `RemeshPanel.tsx`, `UVUnwrapPanel.tsx`, or `MeshSegmentPanel.tsx` to execute discrete operations on demand via REST API (`/api/v1/mesh-retopology/*`, `/api/v1/mesh-uv-unwrapping/*`, `/api/v1/mesh-segmentation/*`).
 The post-processing stage runs in `asyncio.to_thread` so CPU/GPU mesh operations do not block FastAPI's event loop.
 
@@ -408,7 +433,7 @@ The Next.js 16 Presentation Layer runs a persistent, non-destructive 3D workspac
 
 ### Postprocessing Pipeline Hardening
 - **Quad OBJ Polygonal Export**: `_export_quad_obj` serializes genuine 4-vertex polygonal faces (`f v/vt/vn ...`), with automatic decimation passthrough when quad retopology is requested.
-- **Smart Preset Budget Precedence**: `_resolve_target_polycount_precedence` guarantees explicit top-level targets take priority over nested parameters and smart presets, while preserving explicit `0` as an intentional Native/Raw pass-through.
+- **Smart Preset Budget Precedence**: `_resolve_target_polycount_precedence` gives explicit top-level request budgets (a positive value or the `-1` native sentinel) priority over nested parameters and smart presets, while `_resolve_preset_option` resolves every other production option as explicit request value > intent preset > backend default. A request value of `0` means "no explicit budget" and falls back to the intent preset; Native/Raw output is requested with `intent=native` or `enable_postprocess=false`.
 - **Headless Blender Execution**: `blender_worker_argv` and `blender_expr_argv` prefer `BLENDER_EXECUTABLE` on `PATH` with automatic fallback to `sys.executable` via the embedded `bpy` Python wheel.
 - **Dynamic Canonical Storage**: `get_storage_base_dir()` dynamically resolves `STORAGE_LOCAL_PATH` relative to project root or defaults to `backend/storage`, preventing directory nesting bugs.
 - **Watertight 3D Print Preservation**: AutoRetopo shell reconstruction respects existing watertightness without voxel-rounding distortion, and `3d_print` presets set `target_polycount: 0` for 100% native resolution passthrough.

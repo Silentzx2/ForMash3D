@@ -200,7 +200,7 @@ Universal motion specifications compatible with `motion/react`:
 
 ### Texture Studio & Generation Panel Components
 - `TexturePanel.tsx`: Atlas resolution presets (1K, 2K, 4K, 8K), automatic engine routing (Paint3D for 1K/2K, Hunyuan3D-Paint for 4K/8K), reference image binding/upload, PBR map inspection. RealESRGAN runs as part of Hunyuan Paint; there is no separate UI toggle.
-- `GeneratePanel.tsx`: Simplified Studio Interface with single Target Polycount / Output Preset card, locked model inference profiles, single postprocessing master switch, and clean Advanced production drawer. Universal Textured Generation toggle for all image-to-3D geometry models, atlas resolution preset selector, VRAM warning for 4K/8K.
+- `GeneratePanel.tsx`: Simplified Studio Interface with single Target Polycount / Output Preset card (six canonical preset chips derived from the backend catalogue), locked model inference profiles, single postprocessing master switch, and clean Advanced production drawer. Universal Textured Generation toggle for all image-to-3D geometry models, atlas resolution preset selector, VRAM warning for 4K/8K.
 - Source-generation controls output raw geometry; texturing runs as a separate, optional, non-destructive stage preserving `master/source.glb`.
 - `systemStats`: Real-time GPU/VRAM telemetry in texture panel
 - Spot-mask mode draws to a separate UV mask canvas; localized inference remains visibly unavailable until supported by Paint3D/Hunyuan adapter calls.
@@ -212,34 +212,45 @@ The Generate studio interface is organized into a clean beginner-friendly flow a
 
 #### 1. Primary Flow (Beginner-Friendly Main Panel)
 - **Reference Image Intake**: Single drag-and-drop zone, file upload, or bridge pre-load from Board (`useAppStore.pendingBoardImage`).
-- **Model Selector**: Displays registered models with authentic hardware readiness badges (`READY`, `LOW VRAM`, `MISSING DEPS`) and VRAM requirement indicators.
+- **AI 3D Engine Selector**: Dropdown over the discovered model registry. Every row shows the model label, its VRAM requirement (`NGB VRAM`, or `Standard` when the model declares none) and a capability badge (`PBR Texture` or `Raw Mesh`). Models that are not ready carry an extra `GPU Req` (CUDA unavailable) or `Weights Missing` flag.
 - **Single Post-Processing Master Switch**: Exactly one master toggle. When active, enables full production finishing. When toggled OFF, fast mode bypasses downstream finishing and returns raw geometry immediately.
-- **Textured Generation Toggle**: Optional post-processing texture stage routing to Paint3D (1K/2K) or Hunyuan3D-Paint (4K/8K).
+- **Textured Generation Toggle**: Switches the optional texture stage on/off and shows the current atlas size. It is blocked (labelled `BLOCKED`) while post-processing is OFF, because texture baking and UV unwrapping are post-processing stages.
 - **Single Target Polycount & Output Preset Card**:
-  - Six production output recipes:
-    - `mobile`: Lightweight budget (~15k tris), optimized for mobile games and WebGL.
-    - `game_ready`: Standard game budget (~35k tris), LODs, normal bake, collision hull.
-    - `cinematic`: Studio fidelity budget (~100k tris) for film and high-end rendering.
-    - `animation`: Quad-dominant retopology (~40k quads/tris) with deformation-friendly edge flow.
-    - `3d_print`: Watertight solid mesh with verified printability and boundary hole closure.
-    - `native`: Raw extraction ceiling, preserving full model generator resolution.
-  - Smooth polycount slider (5k–200k tris) with quick-preset chips (15K, 35K, 50K, 100K, Native).
+  - Six production output recipes, defined by `backend/config/smart_presets.yaml`:
+    - `mobile`: 20K triangles, 1K atlas, mobile LOD ratios.
+    - `game_ready`: 50K triangles, 1K atlas, LOD chain, collision hull.
+    - `cinematic`: 200K triangles, 2K atlas, LOD chain.
+    - `animation`: 30K triangles, 1K atlas, LOD chain, auto-rig.
+    - `3d_print`: raw mesh (no decimation), printability check, auto-repair.
+    - `native`: raw generative mesh with post-processing bypassed.
+  - Each chip's summary line is derived from the backend preset data (for example `50K · 1K PBR · LOD · Col`), not hardcoded in the UI.
+  - Smooth polycount slider (5K–200K tris) for fine-tuning the budget; moving the slider clears the active preset. Chips other than `Native` are blocked while post-processing is OFF.
   - Preset clicks fill recommended defaults non-destructively and **never** trigger automatic generation submission.
-- **Generate Button**: Clear button with loading state, queue position indicator, and disabled state when inputs are incomplete.
+- **Generate Button**: Shimmer action button with a live step label and progress bar, plus a `Queue Next` action that submits the job to the background queue. Missing or unapproved inputs are surfaced as an inline notice rather than a disabled control.
 
 #### 2. Advanced Production Drawer (Genuine Production Controls Only)
-- **Candidate Variations (Pick-Best-of-N)**: Multi-variation selector (1 to 4 seeds) with deterministic stepping (`seed + i`) and composite quality scoring (`_score_and_select`) promoting the highest-scoring candidate to `master/source.glb`.
-- **Topology Target**: Triangle decimation vs. Quad-dominant retopology (FastMesh / QuadriFlow).
-- **UV Unwrapping**: Automatic conformal seam placement and atlas chart packing (PartUV / xatlas).
-- **High-to-Low Normal Map Baking**: Ray-cast detail transfer from immutable `master/source.glb` to decimated output mesh.
-- **LOD Generation**: Hierarchical multi-resolution chain (LOD0: 100%, LOD1: 50%, LOD2: 25%, LOD3: 12.5%).
-- **Topology Gate & Targeted Hole Repair**: Pre-repair manifold quality gate and boundary loop hole closure ($\le 50$ vertices).
-- **Physics Colliders**: Watertight CoACD convex hull generation with physics material quick presets (Default, Rubber, Stone, Wood, Ice, Metal).
+- **Candidate Variations (Pick-Best-of-N)**: Multi-variation selector (1 to 4 seeds) with deterministic stepping (`base_seed + i × seed_step`) and composite quality scoring (`_score_and_select`) promoting the highest-scoring candidate to `master/source.glb`; the completed-asset card also allows manual promotion of any variation.
+- **Topology Target**: Triangle decimation vs. quad-dominant retopology (AutoRetopo quad conversion).
+- **Automatic UV Unwrapping**: Conformal seam placement and atlas chart packing (xatlas / PartUV) run inside the production pipeline. There is no user-facing UV-unwrapping toggle.
+- **High-to-Low Normal Map Baking**: `Bake Normal Maps` toggle for ray-cast detail transfer from immutable `master/source.glb` to the decimated output mesh.
+- **LOD Generation**: On/off toggle plus a ratio preset (mobile / low / medium / high) and a level count of 2, 3 or 4 levels — the pipeline supports at most LOD0–LOD3. Ratios come from the backend preset table (for example `high` = 100% / 60% / 30% / 15%, `medium` = 100% / 50% / 25% / 12.5%).
+- **Topology Gate & Targeted Hole Repair**: The topology gate always runs as part of the production pipeline; the `Auto-Repair` toggle only decides whether the repair step may mutate the mesh (targeted boundary loop hole closure, ≤50 vertices).
+- **Physics Preparation**: Collision toggle plus body behaviour, collision quality, density, mass and material quick presets (Default, Rubber, Stone, Wood, Ice, Metal), backed by convex hull generation (Trimesh) with optional CoACD multi-part decomposition.
 
 #### 3. Banned & Removed Controls
 - No inference step sliders, guidance scale inputs, sampler overrides, or octree resolution pickers (locked inside adapter code).
 - No fake Fast/Balanced/High inference quality selector.
 - No duplicate Target Polycount cards or duplicate post-process master switches.
+- No separate UV-unwrapping toggle — unwrapping is automatic and gated by the production pipeline.
+- No separate "Topology Gate" toggle — the gate always runs and the `Auto-Repair` toggle only controls whether repair may mutate the mesh.
+- No Low VRAM toggles in the generation flow — adapter-owned profiles own the inference schedule.
+- No "Max Detail" experiment toggle in the panel.
+
+#### 4. Request Contract (`features/workspace/utils/buildGenerationParameters.ts`)
+
+The panel builds the body for `POST /api/v1/mesh-generation/image-to-raw-mesh` from: `image_file_id` | `image_base64`, `candidate_count`, `asset_name`, `image_name`, `output_format`, `model_preference`, `intent`, `preprocessing_artifact_id`, `preprocessing_review_override`, `enhancement_enabled`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `auto_rig_mode`, `enable_postprocess`, `target_polycount`, `generate_lod`, `lod_preset`, `lod_count`, `model_parameters` (seed only), `physics_enabled`, `physics_config`, `topology_mode`, `quad_topology`, `bake_normal_maps`, `texture_enabled`, `generate_texture`, `texture_resolution`, `texture_resolution_preset`.
+
+There is no `output_preset` body field and no `auto_optimize` field. The output preset reaches the backend through `intent`, and the preset-derived budgets are expanded into the explicit fields above. The minimal offline fallback table in `constants/smartPresetFallback.json` is guarded by `backend/tests/test_smart_preset_parity.py`, so the panel and `backend/config/smart_presets.yaml` cannot drift apart silently.
 
 
 ### Generation & Texture Power Tools (Batch 2)
@@ -496,6 +507,8 @@ The live execution panel is a telemetry surface, not a simulated progress animat
 
 Jobs & Execution follows the same rule: active jobs refresh frequently, idle history refreshes less often, and no UI fallback invents a non-zero progress percentage.
 
+The live execution panel no longer offers an "Enable Low VRAM Mode (<8GB) & Retry" action. That button could not change anything in the submitted request — adapter-owned profiles own the inference schedule — so it was removed rather than left as a dead control.
+
 Job Clone & Edit (`JobDetailView.tsx`) allows users to clone completed or historical jobs and re-run them with modified parameters. Clicking "Clone & Edit" reads the job's original parameter payload, navigates to the relevant studio tool panel (`model`, `remesh`, `texture`, `uv`, etc.), pre-populates parameter inputs, and maintains source asset lineage without mutating the historical job or its artifacts.
 
 ## Workspace Data Integrity
@@ -555,19 +568,23 @@ Frontend rules:
 - Use the returned `schema.parameters` for defaults, constraints, and validation.
 - Treat the backend schema as the source of truth; do not duplicate parameter definitions in TypeScript.
 - When the schema is unavailable, disable dependent controls rather than guessing defaults.
+- The Generate panel exposes no schema-driven inference controls: the reported schedules are adapter-owned and read-only, and only the seed is forwarded as a runtime model parameter.
 
 ## Generation Quality Presets — 2026-10-04
 
-Quality presets in the Generate panel are UI convenience shortcuts. The actual inference schedule remains model-specific and is resolved at submission time from the model parameter contract or the backend `/system/models/{model_id}/parameters` endpoint.
+Output presets in the Generate panel are UI convenience shortcuts. The actual inference schedule remains model-specific and is owned by the adapter; it is resolved at submission time and reported through the backend `/system/models/{model_id}/parameters` endpoint.
 
-Current model-specific inference defaults:
-- Hunyuan3D-Shape-v2-1: 50 steps, guidance 5.0
-- Hunyuan3D-DiT-v2-mini-Turbo: 5 steps, guidance 5.0
-- TripoSG: 50 steps, guidance 7.0
-- TRELLIS image: 12 steps, guidance 7.5
-- TRELLIS text: 25 steps, guidance 7.5
+Current adapter-owned inference profiles:
+- Hunyuan3D-Shape-v2.1: octree 1300, 150 steps, guidance 5.0
+- Hunyuan3D-DiT-v2-mini-Turbo: octree 768, 20 steps, guidance 7.5
+- TripoSG: 100 steps, guidance 9.0, dense octree depth 10, hierarchical octree depth 11
+- TRELLIS: 100 steps, guidance 7.5
+- TRELLIS.2: 1536_cascade pipeline, 524288 max tokens
+- Pixal3D: 1536_cascade pipeline, resolution 2048
+- TaoFlowForge: `fill_holes` enabled, offload `auto`
+- Unique3D: `input_processing` and `do_refine` enabled, expansion weight 0.1
 
-The visible quality selector (`Mobile / Game / Studio / Cinematic / Native`) maps to production post-processing budgets, not inference schedules. `Native / Raw` preserves the model-native source density and skips downstream polycount reduction.
+The visible output preset chips (`Mobile / Game Ready / Cinematic / Animation / 3D Print / Native`) map to production post-processing budgets, not inference schedules. `Native` preserves the model-native source density and skips downstream polycount reduction.
 
 ## Resource-Aware Generation UX — 2026-10-08
 
@@ -579,16 +596,16 @@ The workspace receives the normalized runtime capability contract. Model-specifi
 The Generate panel exposes Original versus Generation Preview, approval/reuse, regeneration, manual editor navigation, and a disable path. Changing the source invalidates the previous preprocessing artifact.
 
 ### Smart Intent
-Compact controls expose Game Ready, Cinematic, Animation, 3D Print, and Mobile. With a ready uploaded image, selecting an intent applies the backend preset, resolves the actual chosen model, shows the selection rationale, and triggers the normal generation lifecycle. The UI does not reimplement resource admission.
+Compact controls expose Game Ready, Cinematic, Animation, 3D Print, and Mobile, plus a `Native` chip that bypasses post-processing and returns the raw generative mesh. Selecting an intent fills the panel's settings from the backend preset catalogue without submitting a job; at submission time the backend resolves the actual chosen model for that intent and the normal generation lifecycle runs. The UI does not reimplement resource admission.
 
 ### Production QA
 Printability, Auto-Repair, and Auto-Rig are explicit controls. All execute through the existing scheduler/post-process lifecycle and expose degraded failure state rather than false success.
 
 ## High-Fidelity Generation UX Contract — 2026-10-08
 
-The generation experience exposes model capability state, quality mode, polycount, texture quality, progress/fallback state and high-fidelity vs optimized output variants without exposing controls unsupported by the selected model.
+The generation experience exposes model capability state, output preset, polycount, texture quality, progress/fallback state and high-fidelity vs optimized output variants without exposing controls unsupported by the selected model.
 
-Quality mode must never silently downgrade the immutable master. A requested polycount applies to derivative generation, not to the master.
+An output preset must never silently downgrade the immutable master. A requested polycount applies to derivative generation, not to the master.
 
 ## UI/UX Pro Max Studio Interface & Navigation Unification — 2026-10-13
 
@@ -684,12 +701,12 @@ Quality mode must never silently downgrade the immutable master. A requested pol
 - **Responsive Layout**: Designed mobile-first, maintaining optimal hierarchy and touch targets from 375px mobile screens up to 4K ultra-wide monitors.
 
 
-## Generation Experiment Lab
+## Generation Output Recipes
 
-Workspace Settings → AI Inference → Generation Experiment Lab is a native disclosure drawer inside the existing Settings modal. It reuses workspace generation settings, getModelParameters(), queueGenerationJob(), and buildGenerationParameters() rather than adding another inference or persistence service.
+Workspace Settings → AI Inference → Generation Output Recipes is a native disclosure drawer inside the existing Settings modal (`features/workspace/Modals/GenerationPresetDrawer.tsx`). It reuses the workspace generation settings and `queueGenerationJob()` rather than adding another inference or persistence service.
 
-- Presets persist in browser localStorage under ai3d:generation:presets:v1; profiles can be saved, updated, deleted, imported, and exported individually or as a library.
-- Controls expose seed, guidance scale, schema-declared inference steps, and active-model primitive parameters. Nested/experimental fields remain editable in advanced JSON.
-- Explicit parameter overrides merge after model-specific defaults. Schema min/max values are guidance only; values are not silently clamped.
+- Presets persist in browser localStorage under `ai3d:generation:presets:v1`; profiles can be saved, updated, deleted, imported, and exported individually or as a library.
+- Controls expose the seed and a revision / experiment ID. There are no guidance-scale, inference-step, sampler, or primitive-parameter controls: those schedules are adapter-owned and are not editable from the UI.
+- Saved recipes restore the panel's generation settings (model, polycount, LOD, texture, QA and physics options) on top of the model-specific defaults.
 - Revision/experiment ID is metadata, not an inference argument. Presets omit image bytes, upload IDs, and preprocessing artifacts, so loading a preset keeps the current image.
 - UI uses existing surface tokens and native browser controls; no new dependency is introduced.

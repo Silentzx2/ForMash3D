@@ -539,7 +539,7 @@ GPU generation publishes the raw artifact first. Production post-processing runs
 - Quality reports record source hash, repair/retopo/optimization state, texture status, and per-LOD UV/material integrity.
 - Frontend settings are only exposed when a real backend contract exists; unsupported detail/UV toggles are removed rather than represented as functional controls.
 
-## ADR-035: Fixed FastMesh Variant Contract
+## ADR-089: Fixed FastMesh Variant Contract
 
 **Decision**: FastMesh retopology is exposed as its actual fixed V1K/V4K variant contract. The frontend must not present an arbitrary vertex/triangle budget for a model whose runner emits only the selected variant size.
 
@@ -657,14 +657,14 @@ Aggregate VRAM is not treated as automatic model parallelism. A model must decla
 
 The first valid generated mesh remains the fidelity source. Retopology, decimation, UV, baking and LOD are derivative operations and may never overwrite the master.
 
-## ADR-056 — Shared Model Capability Contract
+## ADR-090 — Shared Model Capability Contract
 
 **Date:** 2026-10-08  
 **Status:** Accepted
 
 Normalize every model manifest into one machine-readable capability contract at configuration load time. Explicit model metadata wins; only facts derivable from the existing manifest are defaulted. This keeps routing, readiness, preprocessing profiles, resource planning and UI capability state on one source of truth.
 
-## ADR-057 — Quality Gates Are Part of Production Status
+## ADR-091 — Quality Gates Are Part of Production Status
 
 **Date:** 2026-10-08  
 **Status:** Accepted
@@ -1031,7 +1031,7 @@ Generated meshes from Hunyuan3D-Shape-v2.1, Hunyuan3D-DiT-v2-mini-Turbo, and Tri
 
 **Consequences:** Output detail may improve where the model's learned field contains recoverable high-frequency geometry, but single-image models cannot guarantee arbitrary microdetail. Depth 10 costs materially more memory and latency; CUDA A/B generation and raw-mesh visual inspection remain required before claiming measured quality improvement.
 
-## ADR-056: Keep the Unique3D Gradio Demo Out of the Shared Backend Runtime
+## ADR-088: Keep the Unique3D Gradio Demo Out of the Shared Backend Runtime
 
 **Decision**: The ForMash3D Unique3D adapter imports the inference pipeline components directly and does not install or initialize the upstream Gradio demo wrapper in the shared backend environment.
 
@@ -1175,7 +1175,7 @@ A comprehensive audit of the 3D generation and post-processing pipeline identifi
 **Consequences:** Pre-Ampere devices avoid the known unsupported FlashAttention call and use the existing eager attention implementation. This trades potential throughput and VRAM efficiency for compatibility; GPU-backed UniRig inference remains the required runtime validation.
 
 
-## ADR-011: Fail-Closed Multi-GPU Placement
+## ADR-092: Fail-Closed Multi-GPU Placement
 
 **Decision**: Aggregate VRAM is a scheduling input only when the selected model adapter applies a real multi-GPU placement strategy. Use live physical free memory as a lower bound on scheduler-reported availability. If the adapter cannot place the model on at least two selected GPUs, fail with a diagnostic instead of pretending the plan succeeded.
 
@@ -1310,4 +1310,30 @@ The generation studio previously exhibited UI bloat and contract drift:
 - Maximum source fidelity: Model generators execute at native high-fidelity schedules without UI degradation.
 - Clean separation of concerns: Model inference produces `master/source.glb`; production recipes derive engine-ready assets (`game_ready/`, `lods/`, `collision/`).
 - Deterministic precedence: Explicit user settings > Output preset recipe defaults > SSOT system defaults.
+
+---
+
+## ADR-093: Single-Resolution Production Options with a Tri-State Request Contract (2026-10-21)
+
+**Context:**
+The Generate panel owned production controls (LOD chain, collision, printability check, auto-repair, auto-rig, texture atlas) that never reached the backend, and the API resolved the remaining production options with a plain boolean default:
+
+1. **Disconnected LOD controls:** the UI exposed an LOD toggle, a ratio preset, and a level count, but the request builder never serialized them. The pipeline consumer (`job_inputs["generateLOD"]`, `lodPreset`, `lodCount`) could only be reached through the preset path, so the user's LOD choice was silently discarded.
+2. **Boolean-default masking:** `enable_auto_repair`, `enable_printability_check`, `enable_auto_rig`, and `physics_enabled` were plain `bool = False` fields resolved with `request_value or preset_value`. A user who explicitly turned a preset-enabled stage off still got the preset's `true`.
+3. **Unreachable preset budgets:** `texture_resolution` had a non-null schema default, so the intent preset's atlas size could never apply.
+4. **Two competing channels:** production options were carried inside `model_parameters` (a channel meant for adapter inputs) and the camelCase `generateLOD` / `lodPreset` / `lodCount` keys had to be popped again in the router.
+
+**Decision:**
+1. **One resolution point, one channel.** Production options travel as first-class request fields (`generate_lod`, `lod_preset`, `lod_count`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `texture_resolution`). The legacy `model_parameters` production keys are explicitly ignored (popped and discarded) and never reach the job inputs.
+2. **Tri-state request contract.** Every preset-owned production field is `Optional[...] = None`. Resolution is: explicit request value → intent preset (`backend/config/smart_presets.yaml`) → backend default. `None` means "not supplied", so a preset can fill its own default while an explicit `false` always wins.
+3. **Numeric presence contract for the triangle budget.** `target_polycount` greater than 0, or the `-1` native sentinel, wins; `0` means "no explicit budget" and falls back to the intent preset. Native/Raw geometry is expressed with `intent=native` (-1) or `enable_postprocess=false`. The preset catalogue therefore keeps its budgets authoritative for an untouched slider.
+4. **The panel mirrors the backend catalogue.** The Generate panel applies the preset values it receives from `GET /api/v1/smart-generation/presets`; a minimal offline fallback table (`constants/smartPresetFallback.json`) is guarded by `backend/tests/test_smart_preset_parity.py`. The UI never hardcodes a second copy of a preset budget.
+5. **Controls state only what the consumer supports.** The LOD level count is limited to the four levels the pipeline can build (LOD0–LOD3), and the dead "Enable Low VRAM Mode and retry" action was removed because adapter-owned profiles own the inference schedule.
+
+**Consequences:**
+- Every visible production control has a verified consumer, and the request can no longer contradict the panel.
+- Preset defaults still apply to clients that omit a field, while explicit user choices always win.
+- The `model_parameters` channel is again reserved for adapter inputs (`seed` only).
+- Verification: `backend/tests/test_preset_alignment_and_persistence.py` covers the precedence matrix, `backend/tests/test_smart_preset_parity.py` covers the fallback/preset parity, and `features/workspace/lib/generationParameters.test.mjs` covers the request serialization.
+
 

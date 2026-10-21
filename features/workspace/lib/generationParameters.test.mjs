@@ -228,6 +228,51 @@ test('Rule 10: primary, batch, and retry requests produce compatible endpoint an
   assert.equal(primaryRes.body.target_polycount, batchRes.body.target_polycount);
 });
 
+// Rule 11: The LOD controls reach the request as production options and stay within the levels
+// the post-processing pipeline can build (LOD0-LOD3).
+test('Rule 11: LOD options reach the request body and are clamped to the supported level count', () => {
+  const enabled = buildGenerationParameters({
+    imageFileId: 'file-rule-11-on',
+    generateLOD: true,
+    lodPreset: 'mobile',
+    lodCount: 3,
+    enablePostprocess: true,
+  });
+  assert.equal(enabled.body.generate_lod, true);
+  assert.equal(enabled.body.lod_preset, 'mobile');
+  assert.equal(enabled.body.lod_count, 3);
+  assert.equal(enabled.modelParameters.generateLOD, undefined);
+
+  const disabled = buildGenerationParameters({
+    imageFileId: 'file-rule-11-off',
+    generateLOD: false,
+    lodPreset: 'mobile',
+    lodCount: 4,
+    enablePostprocess: true,
+  });
+  assert.equal(disabled.body.generate_lod, false);
+  assert.equal(disabled.body.lod_preset, undefined);
+  assert.equal(disabled.body.lod_count, undefined);
+
+  const clamped = buildGenerationParameters({
+    imageFileId: 'file-rule-11-clamp',
+    generateLOD: true,
+    lodCount: 6,
+    enablePostprocess: true,
+  });
+  assert.equal(clamped.body.lod_count, 4);
+
+  const raw = buildGenerationParameters({
+    imageFileId: 'file-rule-11-raw',
+    generateLOD: true,
+    lodCount: 4,
+    enablePostprocess: false,
+  }, { raw_mesh: true });
+  assert.equal(raw.body.generate_lod, false);
+  assert.equal(raw.body.lod_preset, undefined);
+  assert.equal(raw.body.lod_count, undefined);
+});
+
 test('parseModelParameterOverrides enforces object safety', () => {
   assert.deepEqual(parseModelParameterOverrides(undefined), {});
   assert.deepEqual(parseModelParameterOverrides(null), {});

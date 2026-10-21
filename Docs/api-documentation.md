@@ -35,6 +35,7 @@ The ForMash 3D REST API follows RESTful conventions and returns JSON responses. 
 
 ```json
 {
+  "api_version": "1",
   "job_id": "gen_abc123",
   "status": "queued",
   "message": "Generation job queued"
@@ -51,6 +52,8 @@ The ForMash 3D REST API follows RESTful conventions and returns JSON responses. 
 }
 ```
 
+This shape is returned by the custom exception handlers (`BaseAPIException`, `ValueError`, 404 and 500). Plain FastAPI `HTTPException` responses use the standard `{"detail": "..."}` body.
+
 ### HTTP Status Codes
 
 | Code | Meaning | Usage |
@@ -62,6 +65,7 @@ The ForMash 3D REST API follows RESTful conventions and returns JSON responses. 
 | `401` | Unauthorized | Authentication required |
 | `403` | Forbidden | Insufficient permissions |
 | `404` | Not Found | Resource doesn't exist |
+| `409` | Conflict | Preprocessing artifact is not approved (or is flagged and no review override was supplied) |
 | `422` | Validation Error | Invalid request body |
 | `429` | Too Many Requests | Rate limit exceeded |
 | `500` | Internal Server Error | Server-side error |
@@ -123,8 +127,9 @@ GET /api/v1/system/info
     "memory_available": 16000000000
   },
   "application": {
-    "version": "0.1.0",
-    "environment": "development"
+    "version": "1.0.0",
+    "environment": "development",
+    "debug": false
   }
 }
 ```
@@ -141,7 +146,13 @@ GET /api/v1/system/auth-status
   "user_auth_enabled": false,
   "api_key_required": false,
   "mode": "simple",
-  "description": "Simple mode - All clients can see all jobs"
+  "description": "Simple mode - All clients can see all jobs",
+  "features": {
+    "job_isolation": false,
+    "user_management": false,
+    "role_based_access": false
+  },
+  "timestamp": "2026-09-21T00:00:00Z"
 }
 ```
 
@@ -389,7 +400,7 @@ DELETE /api/v1/file-upload/{file_id}
 ## Smart Generation APIs
 
 ### Smart Generation
-`POST /api/v1/smart-generation/generation` accepts an image input, one of the five built-in intent IDs, an optional explicit model override, preprocessing/auto-rig/printability controls, and safe preset overrides. It resolves a ready image-capable model deterministically, submits through the existing image raw/textured generation scheduler path, and returns `job_id`, selected model, applied preset, candidate order, and effective configuration.
+`POST /api/v1/smart-generation/generation` accepts an image input, one of the six canonical intent IDs (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), an optional explicit model override, preprocessing/auto-rig/printability controls, and safe preset overrides. It resolves a ready image-capable model deterministically, submits through the existing image raw/textured generation scheduler path, and returns `job_id`, selected model, applied preset, candidate order, and effective configuration.
 
 `GET /api/v1/smart-generation/presets` returns the versioned YAML preset definitions. `POST /api/v1/smart-generation/resolve` returns the deterministic model-selection decision without submitting a job.
 
@@ -410,6 +421,7 @@ Content-Type: application/json
 **Response (202):**
 ```json
 {
+  "api_version": "1",
   "job_id": "gen_abc123",
   "status": "queued",
   "message": "Generation job queued"
@@ -428,50 +440,95 @@ Content-Type: application/json
   "image_file_id": "img_abc123",
   "output_format": "glb",
   "model_preference": "hunyuan3d_shape_v21_image_to_raw_mesh",
-  "seed": 42,
   "candidate_count": 1,
-  "output_preset": "game_ready",
+  "intent": "game_ready",
+  "enable_postprocess": true,
   "target_polycount": 35000,
+  "topology_mode": "triangle",
   "quad_topology": false,
   "bake_normal_maps": true,
-  "generateLOD": true,
+  "generate_lod": true,
+  "lod_preset": "high",
+  "lod_count": 4,
   "enable_auto_repair": true,
-  "physics_collider": false,
+  "physics_enabled": false,
   "texture_enabled": false,
-  "texture_resolution": "2K"
+  "model_parameters": { "seed": 42 }
 }
 ```
+
+`texture_resolution` is only sent when the texture stage is enabled; it is a numeric atlas size (1024/2048/4096/8192).
 
 #### Request Fields Specification
 
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `image_file_id` / `image_path` | string | *required* | Uploaded reference image file ID or local path |
-| `model_preference` | string | `"hunyuan3d_shape_v21_image_to_raw_mesh"` | Model ID. Model inference parameters are locked in the adapter |
-| `seed` | integer | `null` (random) | Random seed for reproducible generation |
-| `candidate_count` | integer | `1` | Best-of-N candidate count (1 to 4). Seeds step deterministically |
-| `output_preset` | string | `"game_ready"` | Production recipe: `mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native` |
-| `target_polycount` | integer | `35000` | Target triangle budget (-1 or 0 for native raw budget) |
-| `quad_topology` | boolean | `false` | Enable quad-dominant retopology (FastMesh / QuadriFlow) |
-| `bake_normal_maps` | boolean | `true` | Bake high-frequency detail normal maps from master source |
-| `generateLOD` | boolean | `true` | Generate multi-resolution chain (LOD0 through LOD3) |
-| `enable_auto_repair` | boolean | `true` | Run topology gate and targeted hole repair ($\le 50$ verts) |
-| `physics_collider` | boolean | `false` | Generate watertight CoACD convex hull collision mesh |
-| `texture_enabled` | boolean | `false` | Run post-processing texture stage on generated master |
-| `texture_resolution` | string | `"2K"` | Atlas resolution: `1K`, `2K`, `4K`, `8K` |
+| `image_file_id` / `image_base64` / `image_path` | string | *required (exactly one)* | Uploaded reference image file ID, data URI, or local path |
+| `asset_name` | string | `null` | Asset base stem name |
+| `image_name` | string | `null` | Original image filename |
+| `output_format` | string | `"glb"` | Only `glb` is accepted |
+| `model_preference` | string | `null` | Explicit model override; the intent preset chooses a model when omitted |
+| `auto_mode` | boolean | `null` | Enable smart auto-selection of the generation model. `false` with an explicit `model_preference` pins that model |
+| `intent` | string | `null` | Smart-generation intent: `mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native` |
+| `candidate_count` | integer | `1` | Candidate variations to generate (1 to 4). Seeds step deterministically |
+| `model_parameters` | object | `null` | Model-specific parameters. Only `seed` is forwarded to the adapter |
+| `target_polycount` | integer | `null` | Target triangle budget. See the precedence rules below for `> 0`, `0` and `-1` |
+| `enable_postprocess` | boolean | `true` | Run the production post-processing pipeline. `false` bypasses it and yields the raw/native output |
+| `texture_enabled` / `generate_texture` | boolean | `null` | Run the post-processing texture stage on the generated master |
+| `texture_resolution` | integer | `null` | Texture atlas size (1024/2048/4096/8192). The named presets `1K`/`2K`/`4K`/`8K` are normalized to those sizes |
+| `bake_normal_maps` | boolean | `true` | Bake high-frequency detail normal maps from the master source |
+| `topology_mode` | string | `"triangle"` | `triangle` or `quad` |
+| `quad_topology` | boolean | `false` | Request quad-dominant topology |
+| `generate_lod` | boolean | `null` | Build the multi-resolution chain (LOD0 through LOD3) |
+| `lod_preset` | string | `null` | LOD ratio preset: `mobile`, `low`, `medium`, `high` or `cinematic` |
+| `lod_count` | integer | `null` | Number of LOD levels to build (0 to 4); `0` disables the LOD chain |
+| `physics_enabled` | boolean | `null` | Request physics-ready post-processing (watertight CoACD convex hull collision mesh) |
+| `physics_config` | object | `null` | Provider-neutral physics controller values |
+| `enable_printability_check` | boolean | `null` | Run the final printability QA |
+| `enable_auto_repair` | boolean | `null` | Allow the shared repair stage to mutate the mesh for printability |
+| `enable_auto_rig` | boolean | `null` | Run UniRig after production processing |
+| `auto_rig_mode` | string | `"full"` | UniRig mode: `full`, `skeleton`, or `skin` |
+| `preprocessing_artifact_id` | string | `null` | Approved preprocessing artifact ID |
+| `preprocessing_review_override` | boolean | `false` | Explicitly allow a `needs_review` preview after review |
+| `enhancement_enabled` | boolean | `false` | Use the approved preprocessing artifact |
+| `quality_mode` | string | `"high"` | Target quality budget (`fast`, `balanced`, `high`; other values fall back to `balanced` for planner routing) |
+| `input_prep` | object | `null` | Input image preparation overrides (background removal, crop, resize, upscale) |
+| `mesh_style`, `requested_quality`, `object_type`, `symmetry` | string | *deprecated* | Accepted for planner routing only; never used for inference |
+
+There is no `output_preset`, `auto_optimize` or `physics_collider` request field, and no camelCase `generateLOD` / `lodPreset` / `lodCount` request field.
 
 #### Preset Precedence Rules
-1. **Explicit API parameters win**: If a field is explicitly provided in the request body (e.g. `target_polycount: 15000`), it overrides the preset default.
-2. **Preset defaults fill omitted fields**: Unspecified fields take defaults from the chosen `output_preset` recipe (`quality.yaml`).
-3. **Explicit false/zero values are respected**: If `generateLOD: false` or `target_polycount: 0` is passed, it is not overwritten by a positive preset default.
-4. **Adapter inference profiles are immutable**: Frontend or request-side inference keys (`num_inference_steps`, `guidance_scale`, `octree_resolution`, `sampler_overrides`, `requested_quality`, `meshQuality`) are stripped by the scheduler before invoking the model adapter. Adapters execute their locked native inference schedule (`_LOCKED_INFERENCE_PROFILE`).
+Per production option the resolution order is: **explicit request value > intent preset > backend default**.
+
+1. **Explicit request value wins**: If a field is provided in the request body (e.g. `target_polycount: 15000`), it overrides the preset default.
+2. **Intent preset fills omitted fields**: Unspecified fields take their default from the matching intent preset in `backend/config/smart_presets.yaml`.
+3. **Backend default is the last fallback**: When neither the request nor the intent preset supplies a value, the backend default applies.
+4. **Tri-state (optional) fields**: `texture_resolution`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `generate_lod`, `lod_preset` and `lod_count` default to "not supplied". Omitting them lets the intent preset provide the default; supplying an explicit value (including `false` or `0`) always wins.
+5. **`target_polycount`**: an explicit value greater than `0` wins, and the `-1` native sentinel also wins. `0` means "no explicit budget" and falls back to the intent preset. The Native/Raw output is expressed with `intent: native` or `enable_postprocess: false`.
+6. **Legacy `model_parameters` keys are ignored**: `generateLOD`, `lodPreset` and `lodCount` are popped from `model_parameters` and never reach job inputs.
+7. **Deprecated routing fields**: `requested_quality`, `mesh_style`, `object_type` and `symmetry` are still accepted, but they are used only for planner routing and never for inference. The scheduler strips them from adapter inputs.
+8. **Adapter inference profiles are immutable**: Frontend or request-side inference keys (`num_inference_steps`, `guidance_scale`, `octree_resolution`, `sampler_overrides`, `requested_quality`, `meshQuality`) are stripped by the scheduler before invoking the model adapter. Adapters execute their locked native inference schedule (`_LOCKED_INFERENCE_PROFILE`).
+
+#### Intent Presets (`backend/config/smart_presets.yaml`, version 1)
+
+| Intent | `target_polycount` | `texture_resolution` | LOD | Other |
+|---|---|---|---|---|
+| `mobile` | 20000 | 1024 | `mobile` preset, 4 levels | — |
+| `game_ready` | 50000 | 1024 | `high` preset, 4 levels | collision on |
+| `cinematic` | 200000 | 2048 | `high` preset, 4 levels | — |
+| `animation` | 30000 | 1024 | `high` preset, 4 levels | auto-rig on |
+| `3d_print` | 0 (no explicit budget) | 0 (no atlas) | LOD off | printability check + auto-repair on |
+| `native` | `-1` (backend-only sentinel) | 0 (no atlas) | LOD off | raw/native output |
+
+#### LOD Behaviour
+The pipeline builds at most 4 levels (LOD0-LOD3) and clamps `lod_count` to 1-4. The `lod_preset` ratio presets are `mobile` `[1.0, 0.35, 0.12, 0.05]`, `low` `[1.0, 0.5, 0.2, 0.08]`, `medium` `[1.0, 0.5, 0.25, 0.125]`, `high` `[1.0, 0.6, 0.3, 0.15]` and `cinematic` `[1.0, 0.75, 0.5, 0.25]`.
 
 #### Output Semantics & Artifact Tree
-The API returns HTTP 202 with `{"job_id": "...", "status": "queued"}`. When execution completes:
+The API returns HTTP 202 with `{"api_version": "1", "job_id": "...", "status": "queued"}`. When execution completes:
 - `master/source.glb`: Immutable raw mesh with SHA-256 hash in metadata.
 - `game_ready/<name>.glb`: Production engine-ready model satisfying the target budget.
-- `lods/lod[0-3].glb`: Multi-resolution chain (when `generateLOD` is enabled).
-- `collision/collision.glb`: Watertight CoACD collision geometry (when `physics_collider` is enabled).
+- `lods/lod[0-3].glb`: Multi-resolution chain (when `generate_lod` is enabled).
+- `collision/collision.glb`: Watertight CoACD collision geometry (when `physics_enabled` is enabled).
 - `metadata/asset.json`: Canonical manifest with stage trace and QA scores.
 
 
@@ -517,28 +574,28 @@ Content-Type: application/json
 {
   "mesh_file_id": "mesh_abc123",
   "image_file_id": "img_abc123",
+  "texture_resolution": 4096,
   "model_preference": "hunyuan3d_paint_v21_image_mesh_painting",
-  "model_parameters": {
-    "resolution": 512,
-    "max_num_view": 6,
-    "generate_pbr": true
-  }
+  "model_parameters": {}
 }
 ```
 
-### Image-to-Textured Mesh
+`texture_resolution` selects the final atlas size (1024/2048/4096/8192); 1K/2K routes to Paint3D and 4K/8K to Hunyuan3D-Paint v2.1. Adapter-owned inference keys such as `resolution` or `max_num_view` are stripped by the scheduler before the adapter runs.
+
+### Textured Generation Flow
 
 Normal image-to-3D generation always submits the selected geometry model to `image-to-raw-mesh`. When Textured Generation is enabled, centralized post-processing receives the raw mesh, original reference-image file reference, and requested atlas preset: 1K/2K uses Paint3D; 4K/8K uses Hunyuan3D-Paint v2.1 with its internal RealESRGAN path enabled. The API accepts named presets (`"1K"`, `"2K"`, `"4K"`, `"8K"`) or numeric dimensions (1024/2048/4096/8192). The stage inspects the embedded base-colour texture in the exported GLB and reports success only when its observed square dimensions match the requested target. If texturing fails or the atlas cannot be verified, the immutable raw master is preserved and the texture-stage result reports failure. The legacy `image-to-textured-mesh` path remains for API compatibility; legacy geometry IDs resolve to raw-only aliases rather than re-enabling model-native texture generation.
 
 ### Get Job Status
 
 ```http
-GET /api/v1/mesh-generation/status/{job_id}
+GET /api/v1/system/jobs/{job_id}
 ```
 
 **Response:**
 ```json
 {
+  "api_version": "1",
   "job_id": "gen_abc123",
   "status": "processing",
   "stage": "inference",
@@ -554,37 +611,66 @@ GET /api/v1/mesh-generation/status/{job_id}
 POST /api/v1/mesh-generation/cancel/{job_id}
 ```
 
+`POST /api/v1/system/jobs/{job_id}/cancel` is the equivalent system-scoped route.
+
 ### Available Models
 
 ```http
-GET /api/v1/mesh-generation/models
+GET /api/v1/system/models
 ```
 
 **Response:**
 ```json
 {
-  "image_to_raw_mesh": ["hunyuan3d_shape_v21_image_to_raw_mesh", "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh", "triposg_image_to_raw_mesh", "unique3d_image_to_raw_mesh"],
-  "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
-  "text_mesh_painting": ["trellis_text_mesh_painting"],
-  "image_mesh_painting": ["trellis_image_mesh_painting", "trellis2_image_mesh_painting", "hunyuan3d_paint_v21_image_mesh_painting"],
-  "mesh_segmentation": [],
-  "auto_rig": ["unirig_auto_rig"],
-  "motion_generation": ["ardy_motion_generation"],
-  "mesh_retopology": ["fastmesh_v1k_retopology", "fastmesh_v4k_retopology"],
-  "uv_unwrapping": ["partuv_uv_unwrapping"]
+  "api_version": "1",
+  "available_models": {
+    "text_mesh_painting": ["trellis_text_mesh_painting"],
+    "image_to_raw_mesh": [
+      "hunyuan3d_shape_v21_image_to_raw_mesh",
+      "hunyuan3d_dit_v2_mini_turbo_image_to_raw_mesh",
+      "triposg_image_to_raw_mesh",
+      "unique3d_image_to_raw_mesh",
+      "pixal3d_image_to_raw_mesh",
+      "pixal3d_image_to_3d",
+      "trellis_image_to_3d",
+      "trellis_image_to_raw_mesh",
+      "trellis2_image_to_3d",
+      "trellis2_image_to_raw_mesh"
+    ],
+    "image_to_textured_mesh": ["trellis_image_to_textured_mesh", "trellis2_image_to_textured_mesh"],
+    "image_mesh_painting": [
+      "trellis_image_mesh_painting",
+      "trellis2_image_mesh_painting",
+      "hunyuan3d_paint_v21_image_mesh_painting",
+      "paint3d"
+    ],
+    "mesh_segmentation": [],
+    "auto_rig": ["unirig_auto_rig"],
+    "motion_generation": ["ardy_motion_generation"],
+    "mesh_retopology": ["fastmesh_v1k_retopology", "fastmesh_v4k_retopology"],
+    "uv_unwrapping": ["partuv_uv_unwrapping"]
+  },
+  "weights_status": { "...": true },
+  "model_details": { "...": {} },
+  "total_features": 9,
+  "total_models": 22
 }
 ```
+
+Only models with `enabled: true` in `backend/config/models.yaml` are listed; `taoflowforge_image_to_raw_mesh` is registered but disabled. `GET /api/v1/system/models?feature=<feature>` narrows the response to one feature, and `GET /api/v1/system/features` lists the supported features with their model counts.
 
 ### Production generation controls
 
 The image-to-raw and image-to-textured generation contracts accept the same production controls used by the workspace:
 
-- `quality`: `low`, `medium`, `high`, or `ultra`.
+- `quality_mode`: the target quality budget (`fast`, `balanced`, `high`). A `cinematic` intent or a resolved target of at least 150,000 triangles raises the resolved quality to `ultra`.
 - `target_polycount`: a downstream derivative budget; the immutable high-fidelity master is never reduced to satisfy it.
-- `texture_resolution`: production atlas/bake resolution. Model-native source texture settings remain separate from this downstream target.
-- `generateLOD`, `lodPreset`, `lodCount`: derivative LOD controls.
+- `texture_resolution`: production atlas/bake resolution as a numeric atlas size (1024/2048/4096/8192). Model-native source texture settings remain separate from this downstream target.
+- `generate_lod`, `lod_preset`, `lod_count`: derivative LOD controls. At most 4 levels (LOD0-LOD3) are built and `lod_count` is clamped to 1-4.
 - `preprocessing_artifact_id` and `enhancement_enabled`: model-aware preprocessing provenance. Only validated artifacts are approved; failed artifacts are rejected. `preprocessing_review_override: true` explicitly allows a `needs_review` preview and is recorded in job provenance. It cannot override a failed preprocessing status.
 - `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `auto_rig_mode`, and provider-neutral `physics_config`.
+
+`texture_resolution`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `generate_lod`, `lod_preset` and `lod_count` are tri-state: omit them to let the intent preset supply the default.
 
 Completed jobs expose production metadata through `GET /api/v1/system/jobs/{job_id}`, including `source_model_url`, `high_fidelity_url`, `game_ready_url`, `production_status`, `degraded_reasons`, `quality_mode`, `target_polycount`, `texture_resolution`, `master_to_derivative`, `quality_trace`, `lod_validation`, and artifact status.
 
@@ -618,7 +704,7 @@ The dedicated Zero123++ generation and multi-view reconstruction endpoints have 
 ### Model Parameters Schema
 
 ```http
-GET /api/v1/mesh-generation/models/{model_id}/parameters
+GET /api/v1/system/models/{model_id}/parameters
 ```
 
 ---
@@ -630,7 +716,9 @@ GET /api/v1/mesh-generation/models/{model_id}/parameters
 Edit an existing mesh using a text prompt.
 
 ```http
-POST /api/v1/mesh-editing/text-edit
+POST /api/v1/mesh-editing/text-mesh-editing
+```
+
 ---
 
 ## Auto Rigging APIs
@@ -645,17 +733,20 @@ Content-Type: application/json
 
 {
   "mesh_file_id": "mesh_abc123",
-  "rig_mode": "biped",
+  "rig_mode": "full",
   "output_format": "fbx",
   "model_preference": "unirig_auto_rig"
 }
 ```
 
+`rig_mode` accepts `skeleton`, `skin` or `full` and defaults to `skeleton`; `output_format` accepts `fbx` or `glb` and defaults to `fbx`.
+
 **Response:**
 ```json
 {
   "job_id": "rig_abc123",
-  "status": "queued"
+  "status": "queued",
+  "message": "Auto-rigging job queued successfully"
 }
 ```
 
@@ -675,12 +766,10 @@ Content-Type: application/json
   "prompt": "Character walks forward and waves with the right hand",
   "duration": 4.0,
   "seed": 42,
-  "output_format": "json",
-  "model_preference": "ardy_motion_generation",
-  "model_parameters": {
-    "checkpoint": "ardy_lite",
-    "post_process": true
-  }
+  "checkpoint": "ARDY-Core-RP-20FPS-Horizon40",
+  "post_process": true,
+  "target_skeleton": "core",
+  "model_preference": "ardy_motion_generation"
 }
 ```
 
@@ -704,8 +793,25 @@ GET /api/v1/motion-generation/checkpoints
 **Response:**
 ```json
 {
-  "checkpoints": ["ardy_full", "ardy_lite"],
-  "default": "ardy_lite"
+  "checkpoints": [
+    "ARDY-Core-RP-20FPS-Horizon40",
+    "ARDY-Core-RP-20FPS-Horizon8",
+    "ARDY-G1-RP-25FPS-Horizon52",
+    "ARDY-G1-RP-25FPS-Horizon8",
+    "ardy_lite",
+    "ardy_full"
+  ],
+  "default": "ARDY-Core-RP-20FPS-Horizon40",
+  "checkpoint_details": [
+    {
+      "id": "ARDY-Core-RP-20FPS-Horizon40",
+      "nickname": "core40",
+      "skeleton": "core",
+      "fps": 20,
+      "horizon": 40,
+      "description": "Core human skeleton, 20 FPS, 40-step horizon (recommended for standard characters)"
+    }
+  ]
 }
 ```
 
@@ -771,15 +877,17 @@ For generation jobs, `target_polycount` is **never an inference-quality control*
 Unwrap a mesh's UV coordinates.
 
 ```http
-POST /api/v1/mesh-uv-unwrapping
+POST /api/v1/mesh-uv-unwrapping/unwrap-mesh
 Content-Type: application/json
 
 {
   "mesh_file_id": "mesh_abc123",
   "model_preference": "partuv_uv_unwrapping",
-  "pack_method": "default"
+  "pack_method": "blender"
 }
 ```
+
+`pack_method` accepts `blender`, `uvpackmaster` or `none` and defaults to `blender`; `distortion_threshold` defaults to `1.25`.
 
 ---
 
@@ -833,10 +941,19 @@ Authorization: Bearer <token>
 | `MODEL_NOT_FOUND` | Model preference is not available for the feature |
 | `MODEL_NOT_READY` | Model is not installed or weights are missing |
 | `INSUFFICIENT_VRAM` | Not enough VRAM for the requested generation |
-| `FILE_NOT_FOUND` | Uploaded file ID does not exist or has expired |
-| `INVALID_FORMAT` | Output format is not supported |
-| `RATE_LIMITED` | Too many requests within the rate limit window |
-| `AUTH_REQUIRED` | Authentication is required but not provided |
+| `MODEL_LOAD_ERROR` | The model failed to load |
+| `PROCESSING_ERROR` | The model failed while processing the request |
+| `FILE_UPLOAD_ERROR` | An uploaded file could not be stored |
+| `VALIDATION_ERROR` | A request field failed validation |
+| `INVALID_VALUE` | An unsupported value was supplied |
+| `CONFIG_ERROR` | The runtime configuration is invalid |
+| `JOB_TIMEOUT` | A job exceeded its timeout |
+| `CUDA_OOM` | The GPU ran out of memory during the job |
+| `INPUT_NOT_FOUND` | The referenced input file could not be found |
+| `JOB_CANCELLED` | The job was cancelled |
+| `JOB_FAILED` | Any other job failure |
+| `NOT_FOUND` | The requested resource does not exist |
+| `INTERNAL_ERROR` | Unhandled server-side error |
 
 ---
 

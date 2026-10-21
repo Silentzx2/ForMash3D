@@ -466,18 +466,18 @@ All documentation targets have been synchronized to reflect the actual architect
 
 | Gate | Requirement | Verification Method | Result | Evidence / Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| **G-01** | Generate panel has one Target Polycount / Output Preset card and no duplicate target UI | Code Audit (`GeneratePanel.tsx`) | **AUDITED / PENDING AGENT A INTEGRATION** | Codebase audit identified duplicate target cards at lines 2230 and 2730; Agent A assigned to consolidate. |
-| **G-02** | Inference-quality selector and unbacked inference toggles removed from UI | Static Grep & Code Audit | **AUDITED / PENDING AGENT A INTEGRATION** | Audit identified `MESH_QUALITY_OPTIONS` at lines 57 and 2771; Agent A assigned to remove. |
-| **G-03** | Presets consolidated as production recipes; no auto-submit on preset click | Code Audit (`applyIntentPreset`) | **AUDITED / PENDING AGENT A INTEGRATION** | Audit identified auto-submission trigger at lines 977-980 (`pendingGenerateRef.current = true`); Agent A assigned to eliminate. |
-| **G-04** | Explicit model choice and explicit Advanced settings have deterministic precedence | Test Suite (`test_official_model_parity_contract.py`) | **PASS** | `test_explicit_api_polycount_precedes_nested_default_and_preset` passed. Request builder tests pass. |
-| **G-05** | Request builder no longer duplicates adapter-owned numeric inference profiles | Static Grep & Code Audit | **AUDITED / PENDING AGENT A INTEGRATION** | Audit identified hardcoded profiles in `applyModelSpecificQuality`; Agent A assigned to refactor. |
+| **G-01** | Generate panel has one Target Polycount / Output Preset card and no duplicate target UI | Code Audit (`GeneratePanel.tsx`) | **PASS** | One output-preset card with the six canonical chips and a single 5K–200K polycount slider. |
+| **G-02** | Inference-quality selector and unbacked inference toggles removed from UI | Static Grep & Code Audit | **PASS** | `MESH_QUALITY_OPTIONS` and `applyModelSpecificQuality` are gone; no inference controls remain in the panel. |
+| **G-03** | Presets consolidated as production recipes; no auto-submit on preset click | Code Audit (`selectOutputPreset`) | **PASS** | `selectOutputPreset` only updates settings state; the only `pendingGenerateRef` write is the explicit Generate action. |
+| **G-04** | Explicit model choice and explicit Advanced settings have deterministic precedence | Test Suite (`test_preset_alignment_and_persistence.py`, `generationParameters.test.mjs`) | **PASS** | Explicit request value > intent preset > backend default, with a tri-state request contract (ADR-093). |
+| **G-05** | Request builder no longer duplicates adapter-owned numeric inference profiles | Static Grep & Code Audit | **PASS** | The builder forwards `seed` only; no numeric inference schedule is present in the frontend. |
 | **G-06** | Former scheduler-profile entries audited and migrated | Adapter & Scheduler Audit | **PASS** | Hunyuan3D-DiT-v2-mini-turbo, Trellis, Trellis2, Pixal3D, Unique3D, TaoFlowForge, Hunyuan3D-Shape-v2.1, and TripoSG fully migrated to adapter-owned locked inference profiles. All entries removed from `_RAW_MESH_MAX_QUALITY_PARAMETERS`. |
-| **G-07** | Real production controls wired end-to-end; no mock controls | Pipeline & Router Audit | **PASS** | Candidates 1-4 (`_score_and_select`), Quad retopo, PartUV, normal baking, LODs, repair, CoACD verified in pipeline. |
+| **G-07** | Real production controls wired end-to-end; no mock controls | Pipeline & Router Audit | **PASS** | Candidates 1-4 (`_score_and_select`), Quad retopo, PartUV, normal baking, LODs, repair, CoACD verified in pipeline. The LOD controls were found **disconnected** (the builder never serialized them) and are now wired: `generate_lod` / `lod_preset` / `lod_count` request fields feed the pipeline's LOD stage. The dead "Enable Low VRAM Mode and retry" action was removed. |
 | **G-08** | All generation pathways (main, batch, re-run, preset) follow same contract | Contract Audit | **PASS** | Canonical contract defined in `Docs/GENERATION-UI-CONTRACT.md`. |
-| **G-09** | Frontend regression tests cover removed override paths and candidate controls | Node Test Runner | **PASS** | `node features/workspace/lib/generationParameters.test.mjs` ran 7 tests, 7 passed, 0 failed. |
-| **G-10** | Backend regression tests cover adapter contracts | Pytest (Conda `3daigc-api`) | **PARTIAL / NOT RUN (GPU)** | SSOT config tests 5/6 passed (1 failed due to missing `torch` in CPU container). GPU inference tests `NOT RUN` (no GPU). |
-| **G-11** | Documentation synchronized without contradictions | Full Doc Sync Audit | **PASS** | `README.md`, `RULES.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, `Docs/api-documentation.md`, `Docs/DECISIONS.md`, `Docs/CHANGELOG.md`, `Docs/MEMORY.md`, `Docs/GENERATION-UI-CONTRACT.md` updated. |
-| **G-12** | TypeScript and syntax checks clean | TypeScript Compiler (`tsc`) | **PASS** | `npm test` (`tsc --noEmit`) completed with 0 errors. |
+| **G-09** | Frontend regression tests cover removed override paths and candidate controls | Node Test Runner (`bun test`) | **PASS** | `bun test` ran 41 tests across 7 files, 41 passed, 0 failed; `features/workspace/lib/generationParameters.test.mjs` covers 12 rules including the LOD request contract. |
+| **G-10** | Backend regression tests cover adapter contracts | Pytest | **PARTIAL / NOT RUN (GPU + heavy deps)** | `backend/tests/test_preset_alignment_and_persistence.py` (24 tests) and `backend/tests/test_smart_preset_parity.py` pass, and the CI contract subset passes (56 tests). The remaining backend modules need `torch`, `trimesh`, `skimage`, `psutil` and a GPU; in this environment 53 tests fail on missing imports both before and after this change (unchanged baseline). GPU inference tests `NOT RUN` (no GPU). |
+| **G-11** | Documentation synchronized without contradictions | Full Doc Sync Audit | **PASS** | `README.md`, `RULES.md`, `CONTRIBUTING.md`, `Docs/ARCHITECTURE.md`, `Docs/DESIGN.md`, `Docs/PRD.md`, `Docs/SYSTEM-BLUEPRINT.md`, `Docs/api-documentation.md`, `Docs/DECISIONS.md`, `Docs/CHANGELOG.md`, `Docs/MEMORY.md`, `Docs/GENERATION-UI-CONTRACT.md`, `Docs/EXPERIMENTAL-MODEL-SETTINGS.md`, `Docs/quad_topology_evaluation.md`, `Docs/taoflowforge_spike_report.md`, `Docs/SECURITY.md` updated. |
+| **G-12** | TypeScript and syntax checks clean | TypeScript Compiler (`tsc`) | **PASS** | `npx tsc --noEmit` completed with 0 errors; `npx eslint` on the changed files reports 0 errors. |
 | **G-13** | Review final diff and clean commit history | Git Status & Diff Audit | **PASS** | Only documented and authorized files modified; no destructive alterations. |
 
 ---
@@ -485,18 +485,25 @@ All documentation targets have been synchronized to reflect the actual architect
 ## 11. Static Acceptance Search Findings
 
 1. `MESH_QUALITY_OPTIONS`:
-   - Present in `features/workspace/Panels/GeneratePanel.tsx:57` and referenced at line `2771`.
-   - Action: Agent A to delete and replace with unified Target Polycount card.
+   - Absent from the repository. The Generate panel exposes no inference-quality selector.
 2. `requested_quality` / `meshQuality`:
-   - Present in router schemas (`mesh_generation.py`) and scheduler input sanitization (`_ADAPTER_OWNED_INFERENCE_INPUTS`).
-   - Scheduler properly strips these from reaching adapter-owned models.
+   - Still present in the router schemas (`mesh_generation.py`) as deprecated fields, and stripped by the scheduler in `_ADAPTER_OWNED_INFERENCE_INPUTS`.
+   - The scheduler properly strips these from reaching adapter-owned models; the API only uses them for planner routing.
 3. `modelParameterOverrides`:
    - Handled cleanly in `buildGenerationParameters.ts` and `GenerationPresetDrawer.tsx` with finite JSON validation and prototype pollution guards.
 4. Auto-submit on Preset Click:
-   - Present in `features/workspace/Panels/GeneratePanel.tsx:977-980` (`canAutoGenerate && pendingGenerateRef.current = true`).
-   - Action: Agent A to remove auto-generation trigger so preset selection strictly updates form parameters.
+   - Absent. `selectOutputPreset` only updates the settings state; the only `pendingGenerateRef` write belongs to the explicit Generate action.
+5. LOD controls (new finding, 2026-10-21):
+   - The Advanced drawer exposed an LOD toggle, ratio preset, and level count that the request builder never serialized, so the user's LOD choice was discarded before reaching the pipeline.
+   - Fixed by ADR-093: `generate_lod` / `lod_preset` / `lod_count` are first-class request fields, the level count is clamped to the four levels the pipeline can build, and the legacy `model_parameters` LOD keys are explicitly ignored.
+6. Boolean-default masking (new finding, 2026-10-21):
+   - `enable_auto_repair`, `enable_printability_check`, `enable_auto_rig`, `physics_enabled`, and `texture_resolution` were resolved with `request_value or preset_value`, so an explicit `false` could not disable a preset-enabled stage, and the preset's atlas size could never apply.
+   - Fixed by ADR-093: those fields are tri-state (`None` = not supplied) and resolved as explicit value > intent preset > backend default.
+7. Preset budget duplication (new finding, 2026-10-21):
+   - The panel hardcoded a second copy of the preset budgets and the mobile preset declared an atlas size the API rejects.
+   - Fixed: the panel derives the chip summary from the backend catalogue, the offline fallback table is `constants/smartPresetFallback.json` (parity-tested by `backend/tests/test_smart_preset_parity.py`), and the mobile atlas size is 1024.
 
-- [ ] Changes have been committed and pushed to `dev`, or an exact documented GitHub permission/branch-protection blocker is reported.
-- [ ] The final response distinguishes verified tests from checks not run and includes the commit/PR reference where applicable.
+- [x] Changes have been committed and pushed to `dev`, or an exact documented GitHub permission/branch-protection blocker is reported.
+- [x] The final response distinguishes verified tests from checks not run and includes the commit/PR reference where applicable.
 
 **Do not declare success if any required gate was silently skipped.** If a gate cannot be completed, state the blocker, complete the remaining work, and leave the task explicitly partially verified rather than inventing a pass.

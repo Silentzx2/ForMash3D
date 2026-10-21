@@ -21,7 +21,7 @@ Rules:
 - No abstractions that weren't explicitly requested.
 - No new dependency if it can be avoided.
 - Before introducing any new function, method, API call, utility, component, service, dependency, or duplicate logic, the agent MUST first question whether it is genuinely necessary: Can an existing implementation, function, abstraction, API, or workflow be reused, extended, refactored, or improved instead? The agent must inspect and evaluate existing code before creating anything new, prefer reuse and simplification over duplication, and only introduce a new implementation when there is a clear technical justification. After making the decision, proceed with the most maintainable and minimal solution.
-- Single source of truth: every tunable value (threshold, limit, tier, default, budget, id list) has exactly ONE definition: `backend/config/quality.yaml` for quality/pipeline values, `backend/config/models.yaml` for model facts, `constants/` only for UI-only values. Code reads it and never restates it: no in-code numeric default dicts, no duplicate literals, no hand-copied numbers in docs or the frontend. Before adding a value, grep for it and reuse the existing key. Values that look equal but mean different things get different descriptive key names. A missing key must fail loudly at load. After any config change run `backend/tests/test_config_ssot.py`.
+- Single source of truth: every tunable value (threshold, limit, tier, default, budget, id list) has exactly ONE definition: `backend/config/quality.yaml` for quality/pipeline values, `backend/config/models.yaml` for model facts, `backend/config/smart_presets.yaml` for output preset recipes, `constants/` only for UI-only values. Code reads it and never restates it: no in-code numeric default dicts, no duplicate literals, no hand-copied numbers in docs or the frontend. Before adding a value, grep for it and reuse the existing key. Values that look equal but mean different things get different descriptive key names. A missing key must fail loudly at load. After any config change run `backend/tests/test_config_ssot.py`. A frontend may mirror a backend definition only when the mirror is minimal, documented, and covered by a parity test against the backend definition (`constants/smartPresetFallback.json` ⇄ `backend/config/smart_presets.yaml`).
 - Before fixing any bug, the agent MUST first investigate and identify the actual root cause instead of immediately applying a workaround or rewriting code. It must inspect the relevant code, execution flow, dependencies, logs, errors, and existing implementation, then ask: “Why is this happening?”, “Is the current behavior caused by an existing bug, incorrect assumption, configuration issue, integration issue, or duplicated logic?”, and “Can the existing implementation be corrected or improved instead of introducing a new workaround?” Only after establishing the root cause should the agent implement the smallest correct fix, then verify that the fix resolves the original issue without introducing regressions or unnecessary changes.
 - No boilerplate nobody asked for.
 - Deletion over addition. Boring over clever. Fewest files possible.
@@ -38,7 +38,7 @@ Rules:
 
 
 ### Documentation
-- All docs are in `Docs/` directory
+- All project documentation lives in `Docs/`; `README.md`, `CONTRIBUTING.md`, and `RULES.md` stay at the repository root
 - After completing every task or meaningful change, always review and update ALL relevant .md documentation files to accurately reflect the project's current state; never leave documentation outdated or inconsistent with the actual codebase
 - If any doc feels old or inaccurate, update it immediately before proceeding
 - `Docs/PRD.md` — Product requirements
@@ -51,5 +51,7 @@ Rules:
 - `Docs/SECURITY.md` — Security requirements
 - `Docs/CHANGELOG.md` — Version history (keep only last 3 changes)
 - `Docs/SYSTEM-BLUEPRINT.md` — Complete system blueprint
+- `Docs/GENERATION-UI-CONTRACT.md` — Generation UI ⇄ request ⇄ pipeline contract
+- `Docs/api-documentation.md` — HTTP API reference
 - `README.md` — Project overview (always kept current)
 

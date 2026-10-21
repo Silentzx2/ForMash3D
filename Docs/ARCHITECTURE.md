@@ -12,18 +12,39 @@ ForMash 3D is an end-to-end generative 3D asset pipeline. The system is architec
 
 - **Presentation Layer**: Next.js 16 frontend with interactive Three.js 3D viewport, studio workspace tooling, persistent asset thumbnailing/previews, real-time hardware telemetry HUD, viewport background job capsule, and model management.
 - **API Gateway**: FastAPI backend (Python 3.10, Conda env `3daigc-api`) with VRAM-aware multiprocess scheduler, request validation, rate limiting, dual-store job synchronization (Redis + SQLite), and authorized artifact delivery.
-- **Model Adapters**: Python adapters for each AI model (TRELLIS, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, Paint3D, PartUV, UniRig, TripoSG, ARDY, FastMesh, Pixal3D). Normal image-to-3D requests produce raw geometry; the scheduler runs an optional centralized texture stage after the raw master checkpoint is secured. Paint3D is used for 1K/2K, and Hunyuan3D-Paint for 4K/8K with its internal RealESRGAN step enabled automatically.
+- **Model Adapters**: Python adapters for each AI model (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, Paint3D, PartUV, UniRig, TripoSG, ARDY, FastMesh, Unique3D, Pixal3D, TaoFlowForge). Normal image-to-3D requests produce raw geometry; the scheduler runs an optional centralized texture stage after the raw master checkpoint is secured. Paint3D is used for 1K/2K, and Hunyuan3D-Paint for 4K/8K with its internal RealESRGAN step enabled automatically.
 - **Scheduler & CPU Concurrency**: VRAM-aware scheduler with GPU monitoring, model-input sanitization, dual-store job synchronization (Redis + SQLite), and multi-core CPU concurrency allocating all available cores (`nproc=8`, `OMP_NUM_THREADS=8`) across scheduler workers, marching cubes, and postprocessing.
 
 ### Model-Native Source Fidelity Contract
 - Fixed model-specific inference profiles belong to adapters; the scheduler removes request overrides for migrated adapters instead of holding duplicate numeric profiles. Seed and image identity remain caller-controlled.
 - Hunyuan3D-Shape-v2.1 locks the effective dev scheduler values in its adapter: octree resolution 1300, 150 steps, guidance 5.0, 80,000 chunks, and the native dense decoder with marching cubes. These are preserved runtime values, not a claim of GPU or quality validation; the resolution carries OOM risk.
 - TripoSG locks the effective dev scheduler values in its adapter: 100 steps, guidance 9.0, dense depth 10, hierarchical depth 11, and no Flash decoder. Its current depth resolver does not automatically downgrade from supplied VRAM estimates. GPU quality/VRAM benchmarking has not been performed for these settings.
-- Hunyuan3D-DiT Mini Turbo and other not-yet-migrated model profiles remain scheduler-owned until later migration batches; their runtime values must not be retuned as a side effect.
+- Hunyuan3D-DiT-v2-mini-Turbo is adapter-owned like the other migrated profiles: its adapter locks octree resolution 768, 20 steps, guidance 7.5 and 80,000 chunks. These runtime values must not be retuned as a side effect.
+- TRELLIS locks 100 sparse/slat sampling steps, guidance 7.5 and `simplify=0.0` in its adapter; TRELLIS.2 locks the `1536_cascade` pipeline with a 524,288 max-token budget.
+- Pixal3D locks the `1536_cascade` pipeline at resolution 2048; Unique3D locks `input_processing=true`, `do_refine=true` and `expansion_weight=0.1`; TaoFlowForge locks `fill_holes=true` and `offload="auto"` for progressive native mesh generation.
 - The scheduler strips downstream-only target/decimation/remesh controls before adapter inference.
 - Raw extraction ceilings remain model-specific; only explicit hardware safety guards may lower them.
 - Normal image-to-3D routes return raw geometry; optional texture presets are handled after master promotion (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K). Legacy textured model IDs resolve to raw-generation aliases.
 - master/source.glb is immutable; retopology, UV, LOD, collision, and bake operations act on derived artifacts.
+
+### Intent Preset Production Budgets
+
+Intent presets live in `backend/config/smart_presets.yaml` (version 1) and define the default production budget of a request:
+
+| Intent | Target polycount | Atlas | LOD | Collision | Auto-rig | Printability | Auto-repair |
+|---|---:|---:|---|---|---|---|---|
+| `mobile` | 20,000 | 1024 | on (`mobile` preset, 4 levels) | off | off | off | off |
+| `game_ready` | 50,000 | 1024 | on (`high` preset, 4 levels) | on | off | off | off |
+| `cinematic` | 200,000 | 2048 | on (`high` preset, 4 levels) | off | off | off | off |
+| `animation` | 30,000 | 1024 | on (`high` preset, 4 levels) | off | on | off | off |
+| `3d_print` | 0 (native passthrough) | 0 (none) | off | off | off | on | on |
+| `native` | -1 (backend-only sentinel) | 0 | off | off | off | off | off |
+
+- `native` is a backend sentinel (`backend/core/smart_presets.py`), not a YAML preset entry. The workspace's Native card reaches the same Native/Raw outcome by setting `enable_postprocess=false`.
+- Production-option precedence is explicit request value > intent preset > backend default (`_resolve_preset_option`).
+- `texture_resolution`, `enable_printability_check`, `enable_auto_repair`, `enable_auto_rig`, `physics_enabled`, `generate_lod`, `lod_preset` and `lod_count` are tri-state request fields: omitting them lets the intent preset supply the value.
+- `target_polycount` follows its own rule: an explicit value > 0 or the `-1` native sentinel wins, `0` means "no explicit budget" and falls back to the intent preset. Native/Raw output is requested with `intent=native` or `enable_postprocess=false`.
+- The request builder sends only `seed` inside `model_parameters`; legacy `generateLOD` / `lodPreset` / `lodCount` keys are ignored and never reach job inputs.
 
 ### End-to-End Pipeline Contract & Responsibility Boundaries
 
@@ -41,12 +62,12 @@ flowchart TD
 
 | Tier | Component | Primary Responsibilities | Data Handled & Stripped |
 | :--- | :--- | :--- | :--- |
-| **1. UI** | `GeneratePanel.tsx`<br>`GenerationPresetDrawer.tsx` | Clean generation studio. Image intake, model selector with live hardware readiness, single Target Polycount / Output Preset card (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), and an uncluttered Advanced drawer with real production controls (candidates 1–4, quad/tri, UV unwrapping, normal baking, LODs, repair, physics colliders). Presets configure parameters non-destructively; clicking a preset **never** auto-submits. | Emits user settings state. Exposes no fake inference sliders (steps, guidance, octree resolution, sampler overrides). |
-| **2. Request Builder** | `buildGenerationParameters.ts` | Pure client serialization function. Maps output presets and explicit polycount budgets into clean API payloads. Isolates target budgets and postprocessing flags. | Emits `endpoint`, `body`, `modelParameters`. Does not construct or duplicate adapter-owned numeric inference schedules. |
-| **3. API Gateway** | `mesh_generation.py`<br>`smart_generation.py` | Pydantic request validation and job queuing. Accepts production settings (`target_polycount`, `output_preset`, `candidate_count`, `bake_normal_maps`, etc.). Routes to deterministic planner when active. | Enqueues job with request inputs. Strips or ignores legacy/unbacked inference overrides (`requested_quality`, `mesh_style`, `object_type`, `symmetry`). |
-| **4. Scheduler** | `multiprocess_scheduler.py` | VRAM allocation, GPU dispatch locks, Best-of-N multi-seed scheduling (`candidate_count` 1..4), and composite quality scoring (`_score_and_select`). Strips all post-process only fields (`_POSTPROCESS_ONLY_INPUTS`) and adapter-owned inference keys (`_ADAPTER_OWNED_INFERENCE_INPUTS`). | Passes strictly `image_path`, `seed`, `source_quality="max"` to adapter. Retains production budgets (`target_polycount`, `auto_optimize`, etc.) for post-processing. |
+| **1. UI** | `GeneratePanel.tsx`<br>`GenerationPresetDrawer.tsx` | Clean generation studio. Image intake, model selector with live hardware readiness, single Target Polycount / intent-preset card (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`, `native`), and an uncluttered Advanced drawer with real production controls (candidates 1–4, quad/tri, normal baking, LOD levels, repair, physics colliders). Presets configure parameters non-destructively; clicking a preset **never** auto-submits. | Emits user settings state. Exposes no fake inference sliders (steps, guidance, octree resolution, sampler overrides). |
+| **2. Request Builder** | `buildGenerationParameters.ts` | Pure client serialization function. Maps intent presets and explicit polycount budgets into clean API payloads for `POST /api/v1/mesh-generation/image-to-raw-mesh`. Isolates target budgets and postprocessing flags; `model_parameters` carries only `seed`. | Emits `endpoint`, `body`, `modelParameters`. Does not construct or duplicate adapter-owned numeric inference schedules. |
+| **3. API Gateway** | `mesh_generation.py`<br>`smart_generation.py` | Pydantic request validation and job queuing. Accepts production settings (`intent`, `target_polycount`, `candidate_count`, `generate_lod`, `lod_preset`, `lod_count`, `physics_enabled`, `bake_normal_maps`, `enable_postprocess`, etc.) and resolves each production option as explicit request value > intent preset (`backend/config/smart_presets.yaml`) > backend default. Routes to deterministic planner when active. | Enqueues job with request inputs. Legacy inference-style fields (`requested_quality`, `mesh_style`, `object_type`, `symmetry`) are accepted for planner routing only and never reach adapter inference; legacy `model_parameters` keys (`generateLOD`, `lodPreset`, `lodCount`) are popped and ignored. |
+| **4. Scheduler** | `multiprocess_scheduler.py` | VRAM allocation, GPU dispatch locks, Best-of-N multi-seed scheduling (`candidate_count` 1..4), and composite quality scoring (`_score_and_select`). Strips all post-process only fields (`_POSTPROCESS_ONLY_INPUTS`) and adapter-owned inference keys (`_ADAPTER_OWNED_INFERENCE_INPUTS`). | Passes `image_path`, `seed`, `source_quality="max"` plus adapter-owned inputs to the adapter. Retains production budgets (`target_polycount`, `generateLOD`, `lodPreset`, `lodCount`, `physics_enabled`, texture options) for post-processing. |
 | **5. Model Adapter** | `adapters/*_adapter.py` | Model execution in dedicated worker processes. Owns locked native inference profile (`_LOCKED_INFERENCE_PROFILE`). Produces high-fidelity raw extraction without decimation or quality reduction. | Overwrites request-side inference parameters with locked schedule. Saves immutable raw mesh to `master/source.glb` with SHA-256 hash. |
-| **6. Production Pipeline** | `postprocess/pipeline.py` | Post-generation finishing engine. Reads immutable `master/source.glb` and executes production recipe stages based on selected output preset and advanced flags: Topology Gate $\to$ Hole Repair $\to$ Decimation $\to$ Quad/Tri retopology $\to$ UV unwrapping $\to$ Normal bake $\to$ LODs $\to$ Collision hull $\to$ PBR texture packing. | Produces production derivatives (`game_ready/`, `lods/`, `collision/`, `textures/`, `quality_report.json`). Never mutates `master/source.glb`. |
+| **6. Production Pipeline** | `postprocess/pipeline.py` | Post-generation finishing engine. Reads immutable `master/source.glb` and executes production recipe stages based on the selected intent preset and advanced flags: Topology Gate $\to$ Hole Repair $\to$ Quad/Tri retopology $\to$ Decimation $\to$ UV unwrapping $\to$ Normal bake $\to$ Texture stage $\to$ Game-ready export $\to$ LODs $\to$ Collision hull $\to$ Preview/QA. | Produces production derivatives (`game_ready/`, `lods/`, `collision/`, `textures/`, `quality_report.json`). Never mutates `master/source.glb`. |
 
 
 
@@ -128,33 +149,30 @@ flowchart TD
 - `backend/core/quality/parity_scorecard.py`: Competitive benchmarking scorecard generator producing `parity_scorecard.json` across rows (`sharpness`, `topology_cleanliness`, `uv_quality`, `texture_quality`, `speed`, `failure_rate`) and columns (`ForMash3D`, `Tripo`, `Meshy`, `Hyper3D`).
 
 ### Input Image Prep Module (Task 1B)
-- `backend/core/preprocess/image_prep.py`: Pure Pillow / NumPy preprocessing for 3D generation intake without mutating source images or disk files.
-  - `prepare_input_image(image_input, prep_flags=None, target_size=(1024, 1024)) -> Image.Image`:
-    - `remove_background`: strips uniform backdrops via corner color-distance thresholding or cleans noisy alpha.
-    - `tight_crop`: centers subject bounding box with configurable margin percentage (default 10%).
-    - `target_size`: scales subject preserving aspect ratio and centers onto transparent canvas letterbox.
-    - `upscale_if_small`: resamples with high-fidelity LANCZOS if min dimension is below threshold (e.g. 256).
-  - `validate_image_aspect_and_occupancy(image: Image.Image) -> dict`: Computes foreground occupancy ratio, aspect ratio, bounding box occupancy, border coverage, and individual edge contact flags.
+- `backend/core/preprocess/image_enhancement.py`: Pillow/RealESRGAN preprocessing for 3D generation intake without mutating the source image; it writes an approved preprocessing artifact instead.
+  - `preprocess_image(source_path, *, profile="default", remove_background=True, auto_crop=True, upscale=True, sharpen=False)`: removes the background, crops to the subject, optionally upscales low-resolution inputs, and returns the preview/approved paths plus metadata (mask occupancy, crop bounds, border coverage, connected components, resize survival, approval status).
+  - `load_preprocessed_artifact(artifact_id, variant="approved", *, allow_review=False)`: resolves an approved artifact by ID; a non-approved artifact is rejected unless an explicit review override is supplied.
 
-### Hunyuan Presets, Targeted Hole Repair & Best-of-N Seed Scorer (Tasks 1C & 1D)
-- `backend/config/hunyuan_presets.yaml`: Configures fast/balanced/high generation presets (octree resolution, steps, guidance, VRAM budgets) and targeted hole repair limits (`max_hole_vertices: 50`, `max_hole_perimeter: 0.5`).
+### Intent Presets, Targeted Hole Repair & Best-of-N Seed Scorer (Tasks 1C & 1D)
+- `backend/config/smart_presets.yaml`: Configures the production intent presets (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`; `native` is a backend-only sentinel) with their target polycounts, atlas sizes and LOD/collision/rig/printability/repair flags. Model inference schedules (octree resolution, steps, guidance, VRAM budgets) are no longer configured here; they belong to each adapter's `_LOCKED_INFERENCE_PROFILE`.
+- `backend/config/quality.yaml`: Owns the targeted hole repair limits (`holes.max_hole_vertices: 50`, `holes.max_hole_perimeter: 0.5`).
 - `backend/postprocess/services/hole_repair.py`: `repair_holes_targeted` inspects boundary loops using directed edge traversal and fills loops `<= max_hole_vertices` with boundary fans, preserving non-hole geometry completely untouched.
-- `backend/core/scheduler/seed_scorer.py`: `score_seed_candidate` and `select_best_candidate` compute weighted composite quality scores using fixed reference ranges from `seed_scoring.yaml`, supporting early termination (`score >= 0.85`) and tie-breaking by feature edge retention.
+- `backend/core/scheduler/seed_scorer.py`: `score_seed_candidate` and `select_best_candidate` compute weighted composite quality scores using the fixed reference ranges from `quality.yaml` (`seeds.*`), supporting early termination (`score >= 0.85`) and tie-breaking by feature edge retention.
 
 ### Topology Gate & Repair Routing (Task 2A)
-- `backend/config/gate_thresholds.yaml`: Declares thresholds for non-manifold edges (0), non-manifold vertices (0), holes (0), floater ratio (0.005), degenerate faces (0), and aspect ratios (p1 >= 0.05, p5 >= 0.10).
+- `backend/config/quality.yaml`: Declares the topology gate thresholds for non-manifold edges (0), non-manifold vertices (0), holes (0), floater ratio (0.005), degenerate faces (0), and aspect ratios (p1 >= 0.05, p5 >= 0.10).
 - `backend/postprocess/services/gate.py`: `evaluate_topology_gate(mesh, plan=None, strict=False)` inspects geometry without mutating inputs; returns repair decision (`skip_repair`, `minimal_repair`, `full_repair`) and `skip_retopo` flag adhering to `plan.skip_retopo_allowed`.
 
 ### Memory-Safe Staged Decimation & Feature Retention (Task 2B)
-- `backend/config/decimation_config.yaml`: Sets `memory_safe_threshold_triangles: 2000000`, `crease_angle_deg: 35.0`, `max_deviation_deg: 45.0`, `max_ram_fraction: 0.80`.
+- `backend/config/quality.yaml`: Sets `decimation.memory_safe_threshold_triangles: 2000000`, `decimation.max_deviation_deg: 45.0`, `decimation.max_ram_fraction: 0.80`, with the 35.0° crease angle inherited from `shared.feature_edge_angle_deg`.
 - `backend/postprocess/services/memory_safe_decimate.py`: `memory_safe_decimate(mesh, target_faces, ...)` operates strictly on copies. Under 2M triangles, uses QEM feature-preserving decimation protecting crease planes and boundaries. Over 2M triangles, engages staged 50% reduction chunks with psutil RAM monitoring and aggressive garbage collection.
 
 ### Tangent Normal Detail Bake & PBR Asset Validation (Task 2C)
-- `backend/config/bake_config.yaml`: Configures tangent-space OpenGL (Y+) normal baking, cage/ray distances, atlas resolution, and minimum UV utilization (60%).
+- `backend/config/quality.yaml`: Configures tangent-space OpenGL (Y+) normal baking (`bake.*`), cage/ray distances, atlas resolution, and minimum UV utilization (60%).
 - `backend/postprocess/services/pbr_validator.py`: `validate_pbr_asset` validates game-ready GLB assets across non-degenerate textures, packed roughness (G) / metallic (B) channels, OpenGL Y+ normal convention, strictly in-bounds [0, 1] UVs, and atlas space utilization.
 
 ### UV Backend Resolver & Unwrap Driver (Task 2D)
-- `backend/config/uv_config.yaml`: Configures PartUV triangle threshold (500k), VRAM requirements (7.0 GB), default backend (`auto`), and fallback backend (`xatlas`).
+- `backend/config/quality.yaml`: Configures the PartUV triangle threshold (500k), VRAM requirements (7.0 GB), default backend (`auto`), and fallback backend (`xatlas`).
 - `backend/postprocess/services/uv_backend_resolver.py`: Single source of truth resolving between GPU PartUV (for meshes >= 500k tris when CUDA/VRAM permit) and CPU/GPU xatlas; `execute_uv_unwrap` produces unwrapped non-overlapping UVs without mutating source geometry.
 
 ### Postprocess Pipeline Orchestrator Integration (Task 2E)
@@ -292,8 +310,8 @@ The Admin Logs tab treats `logs/master.log` as the canonical source and streams 
 | **GPU Monitor** | `backend/core/scheduler/gpu_monitor.py` | Real-time VRAM and temperature polling |
 | **Job Queue** | `backend/core/scheduler/job_queue.py` | Job request models and types |
 | **Redis Job Queue** | `backend/core/scheduler/redis_job_queue.py` | Redis-backed distributed job queue with dual Redis/SQLite atomic deletion synchronization |
-| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartUV, UniRig, TripoSG, ARDY, FastMesh, **Unique3D**, **Paint3D**, Pixal3D). Normal image-to-3D geometry models output untextured raw geometry only, routed through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). TripoSG uses its upstream Y-up extraction orientation without an extra rotation. |
-| **Raw Geometry Fidelity Contracts** | `backend/adapters/hunyuan3d_decoder_profile.py` | Enforces native dense extraction for Hunyuan3D models: `VanillaVolumeDecoder` + `MCSurfaceExtractor` with `mc_algo="mc"`. Fails fast if VAE doesn't switch from FlashVDM. Mini Turbo uses official `octree_resolution=380`. TripoSG uses `dense_octree_depth=9`, `hierarchical_octree_depth=10` (1024³ grid) with memory-gated fallback (10→9→8). |
+| **Model Adapters** | `backend/adapters/` | Python inference adapters (TRELLIS, TRELLIS.2, Hunyuan3D-Shape-v2-1, Hunyuan3D-Paint-v2-1, Hunyuan3D-DiT-v2-mini-Turbo, PartUV, UniRig, TripoSG, ARDY, FastMesh, **Unique3D**, **Paint3D**, Pixal3D, TaoFlowForge). Normal image-to-3D geometry models output untextured raw geometry only, routed through `OutputPathGenerator` into canonical storage (`backend/storage/models/meshes/`). TripoSG uses its upstream Y-up extraction orientation without an extra rotation. |
+| **Raw Geometry Fidelity Contracts** | `backend/adapters/hunyuan3d_decoder_profile.py` | Enforces native dense extraction for Hunyuan3D models: `VanillaVolumeDecoder` + `MCSurfaceExtractor` with `mc_algo="mc"`. Fails fast if VAE doesn't switch from FlashVDM. Mini Turbo locks `octree_resolution=768`. TripoSG locks `dense_octree_depth=10` and `hierarchical_octree_depth=11`; its depth resolver does not downgrade from supplied VRAM estimates. |
 | **Texture Synthesis Pipeline** | `backend/adapters/hunyuan3d_paint_v21.py` & `backend/adapters/paint3d_adapter.py` | Centralized texture adapters (Paint3D for 1K/2K, Hunyuan3D-Paint for 4K/8K) operating downstream on post-processed raw mesh geometry. RealESRGAN x4+ super-resolution and DifferentiableRenderer for PBR validation. |
 
 ### 2.4 Storage Layer
@@ -333,8 +351,8 @@ Prebuilt wheels are cached at `backend/thirdparty/wheels/` (inside the main ForM
 | **Code-Splitting** | Frontend | `next/dynamic` with skeleton fallbacks | Reduced initial bundle size |
 | **Font Optimization** | Frontend | `next/font/google` with `display: 'swap'` | Eliminates CLS and render blocking |
 | **Native Dense Decoder Enforcement** | Backend | `configure_native_dense_decoder()` forces `VanillaVolumeDecoder + MCSurfaceExtractor` with `mc_algo="mc"`, disables FlashVDM | Eliminates detail smoothing/loss in Hunyuan3D raw geometry |
-| **Official Mini Turbo Resolution** | Backend | `octree_resolution=380` (not 512 - exceeds trained range) | Prevents artifacts and quality degradation in Mini Turbo |
-| **TripoSG Max Hierarchical Depth** | Backend | `dense_octree_depth=9`, `hierarchical_octree_depth=10` (1024³ grid) with VRAM-gated fallback | Preserves fine details in TripoSG raw extraction |
+| **Official Mini Turbo Resolution** | Backend | `octree_resolution=768` (adapter-locked `_LOCKED_INFERENCE_PROFILE`) | Locks Mini Turbo geometry sampling to the adapter-owned profile |
+| **TripoSG Max Hierarchical Depth** | Backend | `dense_octree_depth=10`, `hierarchical_octree_depth=11` (adapter-locked; no automatic VRAM downgrade) | Preserves fine details in TripoSG raw extraction |
 
 ---
 
@@ -463,7 +481,7 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 - Docker Compose and `manager.sh docker-run` mount root `logs/` into `/app/logs`; Supervisor forwards Redis, scheduler, API and frontend output to the same append target.
 - The Admin Logs API and UI read only `master.log`. Clearing logs truncates the active file in place rather than unlinking it.
 - A remote Redis instance cannot write into the application host's local file; its server-side logs remain on the Redis host.
-- The /api/v1/system/logs/stream endpoint reads tail output in chunks and splits LF and carriage-return delimiters, so sampling/progress updates do not wait for a newline. Initial replay is bounded to 1–3,000 lines.
+- The /api/v1/system/logs/stream endpoint streams the complete master.log from byte 0 and then follows every appended write, emitting file-identity plus byte-offset event IDs. Chunks are forwarded without line parsing, so partial lines, CR/CRLF control characters and Unicode survive intact, and there is no line-count replay bound.
 - The Next.js SSE proxy sets X-Accel-Buffering: no and forwards upstream chunks directly. The Admin Logs tab batches live entries per animation frame, bounds pending/display history, and follows the latest line without repeated smooth-scroll animations.
 
 ### 6.4 Shutdown (`scripts/stop.sh`)
@@ -503,18 +521,18 @@ The only retained project runtime log is the repository-root `logs/master.log`. 
 - `POST /api/v1/mesh-generation/image-to-textured-mesh`: Backward-compatible endpoint; legacy textured geometry IDs map to their raw aliases, with optional centralized texturing controlled by the request.
 - Central texture routing: 1K/2K → Paint3D; 4K/8K → Hunyuan3D-Paint v2.1. Texture output is stored separately from the raw master; its exported atlas is validated against the requested square dimension.
 - `POST /api/v1/mesh-generation/image-mesh-painting`: Paint an existing mesh directly (Texture Studio/manual workflow).
-- `GET /api/v1/mesh-generation/status/{job_id}`: Real-time generation job status.
+- `GET /api/v1/system/jobs/{job_id}`: Real-time generation job status.
 - `GET /api/v1/system/jobs/{job_id}/download?artifact_format=<format>`: Deliver canonical master, game-ready, LOD, collision, texture, preview, QA, or ZIP artifacts.
 - `GET /api/v1/system/jobs/{job_id}/candidates/{candidate_id}/download`: Download candidate mesh variation.
 - `GET /api/v1/system/jobs/{job_id}/candidates/{candidate_id}/thumbnail`: Download candidate variation thumbnail.
 - `POST /api/v1/system/jobs/{job_id}/candidates/{candidate_id}/select`: Promote chosen candidate to `master/source.glb` and garbage-collect unselected candidate files.
 
 ### Mesh Editing, Rigging, Segmentation, Retopology, UV
-- `POST /api/v1/mesh-editing/text-edit`: Edit mesh with text prompt.
-- `POST /api/v1/mesh-editing/image-edit`: Edit mesh with image reference.
+- `POST /api/v1/mesh-editing/text-mesh-editing`: Edit mesh with text prompt.
+- `POST /api/v1/mesh-editing/image-mesh-editing`: Edit mesh with image reference.
 - `POST /api/v1/auto-rigging/generate-rig`: Generate skeletal rig with UniRig.
 - `POST /api/v1/mesh-segmentation/segment-mesh`: Decompose mesh into parts.
-- `POST /api/v1/mesh-retopology/retopology-mesh`: Retopologize dense mesh.
+- `POST /api/v1/mesh-retopology/retopologize-mesh`: Retopologize dense mesh.
 - `POST /api/v1/mesh-uv-unwrapping/unwrap-mesh`: Generate UV atlas.
 
 ### Motion Generation
@@ -540,7 +558,9 @@ The active catalog is sourced from `backend/config/models.yaml`. Text-conditione
 | FastMesh | `fastmesh_v1k_retopology`; `fastmesh_v4k_retopology` | Mesh Retopology | ~16–24.5 GB |
 | PartUV | `partuv_uv_unwrapping` | UV Unwrapping | ~7 GB |
 | ARDY | `ardy_motion_generation` | Text → Motion | CPU-only; no GPU VRAM reservation |
-|| Unique3D | `unique3d_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB ||
+| Unique3D | `unique3d_image_to_raw_mesh` | Image → Raw Mesh | ~10 GB |
+| Pixal3D | `pixal3d_image_to_raw_mesh`; `pixal3d_image_to_3d` | Image → Raw Mesh (O-Voxel) | ~18 GB |
+| TaoFlowForge | `taoflowforge_image_to_raw_mesh` | Image → Raw Mesh (progressive native mesh) | ~20 GB; registered but disabled by default |
 
 ## 8.1 Raw Generation Fidelity / Official Parity Contract
 
@@ -578,12 +598,13 @@ backend/thirdparty/
 ├── hunyuan3d-dit-v2-mini-turbo/  # Hunyuan3D-DiT-v2-mini-Turbo (0.6B)
 ├── TRELLIS/
 ├── TRELLIS.2/
+├── Paint3D/
 ├── PartUV/
+├── Pixal3D/
 ├── FastMesh/
 ├── UniRig/
-├── TripoSR/  # Legacy vendored source; inactive integration (manual cleanup deferred)
 ├── TripoSG/
-├── TripoSF/  # Legacy vendored source; inactive integration (manual cleanup deferred)
+├── Taobao3D/        # TaoFlowForge (Alibaba Taobao3D) - progressive native mesh generation
 ├── ardy/
 ├── Unique3D/          # Unique3D (AiuniAI/Unique3D) - single-image to 3D
 └── wheels/
@@ -609,6 +630,7 @@ Every tunable parameter has exactly one canonical definition:
 | **Quality Badge** | `backend/config/quality.yaml` | `quality.badge.*` | `sharp_min_score` (0.85), `clean_min_score` (0.0). |
 | **Production Limits** | `backend/config/quality.yaml` | `quality.limits.*` | `max_production_faces` (2M), `memory_safe_dispatch_triangles` (2M), `uv_scan_max_faces` (60k). |
 | **Model Facts & VRAM** | `backend/config/models.yaml` | `models.yaml: <feature>.<id>.*` | Upstream repo, revision, checkpoint license, VRAM requirement (MB), `capabilities.native_topology`, `preferred_resolution`. |
+| **Intent Presets** | `backend/config/smart_presets.yaml` | `smart_presets.yaml: intents.*` | Production budgets per intent (`mobile`, `game_ready`, `cinematic`, `animation`, `3d_print`) and the backend-only `native` sentinel; each intent supplies the default for the tri-state production options. |
 | **Planner Routing Policy**| `backend/config/planner_rules.yaml`| `planner_rules.yaml: routes.*, apply.*` | Routing decisions per object type and tier; execution toggles (`apply.model_choice`, `apply.auto_seeds`, `apply.input_prep`). |
 
 ### system.yaml (`backend/config/system.yaml`)
@@ -693,16 +715,17 @@ bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 
 The production post-processing engine lives under `backend/postprocess/`. Successful mesh-generation jobs run this engine before the job is marked completed.
 
-Pipeline: MODEL INFERENCE -> immutable `master/source.glb` (SHA-256 pre-verification) -> working copy -> **Topology Gate** (14 geometric/topological metrics) -> **Targeted Hole Repair** (directed boundary loop triangulation) -> **Memory-Safe Decimation** (feature-preserving QEM & psutil RAM guard) -> **UV Backend Resolver** (PartUV GPU / xatlas CPU driver) -> **Detail Normal Bake & PBR Validation** (OpenGL Y+ convention, packed RMA) -> GAME READY (GLB + Quad OBJ) -> LOD Cascades (LOD0-LOD3 via meshopt) -> CoACD Convex Physics Colliders -> QA Diagnostic Engine (0-100 score).
+Pipeline: MODEL INFERENCE -> immutable `master/source.glb` (SHA-256 pre-verification) -> working copy -> **Topology Gate** (14 geometric/topological metrics) -> **Targeted Hole Repair** (directed boundary loop triangulation) -> **Quad/Tri Retopology** -> **Memory-Safe Decimation** (feature-preserving QEM & psutil RAM guard) -> **UV Backend Resolver** (PartUV GPU / xatlas CPU driver) -> **Detail Normal Bake & PBR Validation** (OpenGL Y+ convention, packed RMA) -> **Centralized Texture Stage** (Paint3D 1K/2K, Hunyuan3D-Paint 4K/8K) -> GAME READY (GLB + Quad OBJ) -> LOD Cascades (LOD0-LOD3 via meshopt) -> CoACD Convex Physics Colliders -> Preview -> QA Diagnostic Engine (0-100 score).
 
 #### Post-Processing Pipeline Components:
-- **Topology Gate (`backend/postprocess/services/gate.py`)**: Evaluates mesh manifoldness, boundary loops, floater components, degenerate faces, and aspect ratios against `gate_thresholds.yaml`. When topology is clean, repairs are bypassed (`skip_repair`, `skip_retopo=True`). If only small boundary loops exist (<= 50 vertices), routes to `minimal_repair`. Non-manifold or heavily defective geometry routes to `full_repair`.
+- **Topology Gate (`backend/postprocess/services/gate.py`)**: Evaluates mesh manifoldness, boundary loops, floater components, degenerate faces, and aspect ratios against the canonical `quality.yaml` gate thresholds. When topology is clean, repairs are bypassed (`skip_repair`, `skip_retopo=True`). If only small boundary loops exist (<= 50 vertices), routes to `minimal_repair`. Non-manifold or heavily defective geometry routes to `full_repair`.
 - **Targeted Hole Repair (`backend/postprocess/services/hole_repair.py`)**: Triangulates small boundary loops using directed edge traversal and fan triangulation. Fixes open generation seams without smoothing uncorrupted surface geometry or changing edge sharpness.
 - **Memory-Safe Decimation (`backend/postprocess/services/memory_safe_decimate.py`)**: Preserves crease angles (>35°) and boundary edges. For meshes over 2M triangles, engages staged 50% chunked decimation with dynamic psutil RAM tracking (80% headroom cap) and aggressive garbage collection to prevent out-of-memory crashes.
 - **UV Backend Resolver (`backend/postprocess/services/uv_backend_resolver.py`)**: Centralized single source of truth for UV unwrapping. High-poly models (>=500k triangles) automatically route to GPU PartUV if CUDA and >=7.0 GB VRAM are available (after generative model memory is released); otherwise seamlessly routes to high-throughput CPU/GPU xatlas with 0% overlap and strict [0, 1] bounds.
-- **Normal Detail Bake & PBR Validation (`backend/postprocess/services/pbr_validator.py`)**: Bakes tangent-space normal maps from high-poly master source to game-ready mesh using the OpenGL convention (Y+). Validates that all 5 PBR channels exist and are non-degenerate, roughness/metallic are correctly packed into G/B channels, normals decoded to (0, 0, 1) on flat faces, and UV atlas space utilization meets minimum thresholds (>=60%).
+- **Normal Detail Bake & PBR Validation (`backend/postprocess/services/pbr_validator.py`)**: Bakes tangent-space normal maps from high-poly master source to game-ready mesh using the OpenGL convention (Y+). Angle-weighted normals are recomputed with a 35° crease angle. Validates that all 5 PBR channels exist and are non-degenerate, roughness/metallic are correctly packed into G/B channels, normals decoded to (0, 0, 1) on flat faces, and UV atlas space utilization meets minimum thresholds (>=60%).
 - **Polygonal Quad Export**: `_export_quad_obj` serializes genuine 4-vertex polygonal faces (`f v/vt/vn ...`). When quad-dominant topology is requested and generated, the optimization stage automatically passes geometry through without destructive triangle decimation.
-- **Budget Precedence & Native Retention**: `_resolve_target_polycount_precedence` guarantees explicit top-level targets take priority over nested defaults and presets, while treating `0` as an intentional request for Native/Raw model output without decimation.
+- **Budget Precedence & Native Retention**: `_resolve_target_polycount_precedence` and `_resolve_preset_option` resolve each production option as explicit request value > intent preset > backend default. An explicit positive `target_polycount` (or the `-1` native sentinel) wins, while `0` means "no explicit budget" and falls back to the intent preset. Native/Raw output is requested with `intent=native` (target `-1`) or `enable_postprocess=false`, and the pipeline then runs without decimation.
+- **LOD Cascades**: `postprocess/pipeline.py` builds at most 4 levels (LOD0-LOD3) from the `lod_preset` ratio table — `mobile` [1.0, 0.35, 0.12, 0.05], `low` [1.0, 0.5, 0.2, 0.08], `medium` [1.0, 0.5, 0.25, 0.125], `high` [1.0, 0.6, 0.3, 0.15], `cinematic` [1.0, 0.75, 0.5, 0.25]. `lod_count` is clamped to 1-4 and the LOD chain is skipped entirely when `generate_lod` is false.
 - **Headless Blender Worker Invocation**: `blender_worker_argv` and `blender_expr_argv` in `backend/postprocess/config.py` resolve the headless Blender execution path: using `BLENDER_EXECUTABLE` on `PATH` if present, or falling back seamlessly to running scripts under `sys.executable` via the embedded `bpy` Python wheel.
 - **Dynamic Canonical Storage Resolution**: `get_storage_base_dir()` in `backend/core/utils/file_utils.py` dynamically resolves `STORAGE_LOCAL_PATH` relative to project root or defaults to `backend/storage`, preventing directory nesting bugs across artifact delivery and storage mounts.
 - **Watertight 3D Print Preservation**: For 3D printing and closed meshes, AutoRetopo shell reconstruction respects existing watertightness (`watertight=not bool(repaired_topology.get("watertight", False))`) to preserve sharp features without voxel-rounding distortion; `3d_print` presets set `target_polycount: 0` to ensure 100% native resolution passthrough without decimation.
@@ -771,7 +794,7 @@ The normal production pipeline applies a shared geometry-fidelity guard after op
 Phase 1 extends the existing Image → 3D lifecycle; it does not introduce a parallel generation pipeline.
 
 - SG-06 uses a content-hashed preprocessing artifact with source/approved hashes, optional RMBG, subject framing, low-resolution enhancement, and explicit fallback metadata.
-- SG-02.2 uses one YAML source of truth for Game Ready, Cinematic, Animation, 3D Print, and Mobile. Capability/readiness/VRAM admission is followed by deterministic quality-aware ranking using requested quality, polycount, texture needs, latency and multi-GPU capability; the scheduler remains the final resource authority.
+- SG-02.2 uses one YAML source of truth for Game Ready, Cinematic, Animation, 3D Print, and Mobile (`backend/config/smart_presets.yaml`); Native/Raw is a backend-only sentinel. Capability/readiness/VRAM admission is followed by deterministic quality-aware ranking using requested quality, polycount, texture needs, latency and multi-GPU capability; the scheduler remains the final resource authority.
 - SG-07 runs printability QA and optional repair inside run_postprocess_job(), alongside the existing repair/UV/optimization lifecycle.
 - SG-08 schedules the existing UniRig adapter only after the durable production mesh exists. The rigged GLB is stored under the same asset root and failures are explicit/degraded.
 - Enhancement, intent, QA, and rigging provenance travel through normal job/result metadata so history and artifact delivery retain the decision trail.
@@ -791,7 +814,7 @@ Hi3DGen normal bridging remains evaluation-gated because the repository currentl
 
 The shared image-to-3D contract distinguishes the adapter's raw output from production derivatives:
 
-- An explicit top-level target-polycount wins over nested model parameters and presets; `0` means Native/Raw.
+- An explicit positive top-level target-polycount (or the `-1` native sentinel) wins over nested model parameters and presets; `0` means "no explicit budget" and falls back to the intent preset. Native/Raw is requested with `intent=native` or `enable_postprocess=false`.
 - Native/Raw cannot auto-optimize or invoke adaptive shell remesh. Production budget optimization/remesh requires a positive target, and the workspace default does not create LODs from a raw request unless explicitly enabled.
 - `master/source.glb` remains the canonical immutable model-native artifact. Quality metadata records the adapter output SHA-256 and master SHA-256, marks whether they match, and fails the pipeline if the canonical master changes during downstream processing.
 - Schema-v2 `raw_geometry_telemetry` persists source/reference-image identity and dimensions, adapter/checkpoint, effective inference parameters, inference wall time, CUDA per-device peak allocation/reservation when available, extraction-resolution status and downgrade warnings, native geometry counts, and recorded mesh operations. Requested settings are never relabeled as achieved resolution.
@@ -841,10 +864,11 @@ The Next.js 16 Presentation Layer unifies all creation, editing, retopology, rig
   - When quad retopology succeeds (`is_quad_requested and retopo_stats.get("status") == "completed"`), the decimation stage automatically preserves the quad-dominant topology (`Passthrough: Quad-dominant topology preserved from retopology pass`), preventing destructive conversion back to triangles.
 - **Smart Preset Budget Precedence Resolution (`backend/api/routers/mesh_generation.py`)**:
   - Implements `_resolve_target_polycount_precedence(top_level_target, nested_target, preset_target)`:
-    - Explicit top-level request budgets take highest priority.
+    - Explicit top-level request budgets above zero (or the `-1` native sentinel) take highest priority.
     - Nested model parameter budgets take secondary priority.
     - Smart preset target budgets serve as default fallback.
-  - Prevents nested parameter defaults of `0` from wiping out configured budgets, while preserving explicit `0` as an intentional request for Native/Raw model output without decimation.
+  - Implements `_resolve_preset_option(explicit, preset, preset_key, default)` for every other production option (tri-state request fields): explicit request value > intent preset > backend default. Omitted fields therefore inherit the intent preset instead of being masked by an unset UI value.
+  - A request value of `0` means "no explicit budget" and falls back to the intent preset; Native/Raw output is requested with `intent=native` (target `-1`) or `enable_postprocess=false`.
 - **Headless Blender Worker Invocation Path (`backend/postprocess/config.py`)**:
   - Implements `blender_worker_argv()` and `blender_expr_argv()` with dual-path runtime resolution:
     1. If `BLENDER_EXECUTABLE` is found on system `PATH`, executes `[BLENDER_EXECUTABLE, "--background", "--python", ...]`.

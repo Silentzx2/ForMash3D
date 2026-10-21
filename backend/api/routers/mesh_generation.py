@@ -81,6 +81,25 @@ def _resolve_target_polycount_precedence(
     return preset_target
 
 
+def _resolve_preset_option(
+    explicit: Any,
+    preset: Dict[str, Any],
+    preset_key: str,
+    default: Any,
+) -> Any:
+    """Resolve one production option: explicit request value > intent preset > backend default.
+
+    `explicit` is None when the caller omitted the field. That tri-state contract is
+    what lets an intent preset supply its own default without an unset UI value
+    silently overriding it, while an explicit request value always wins.
+    """
+    if explicit is not None:
+        return explicit
+    if preset_key in preset:
+        return preset[preset_key]
+    return default
+
+
 def _clean_paint_parameters(parameters: Optional[dict]) -> Dict[str, Any]:
     """Keep direct paint jobs from re-triggering centralized texture generation."""
     obsolete = {
@@ -245,8 +264,8 @@ class ImageToRawMeshRequest(BaseModel):
     image_file_id: Optional[str] = Field(
         None, description="File ID from upload endpoint"
     )
-    texture_resolution: int = Field(
-        2048, description="Optional texture-atlas preset or size"
+    texture_resolution: Optional[int] = Field(
+        None, description="Optional texture-atlas preset or size; omitted values fall back to the intent preset"
     )
     bake_normal_maps: bool = Field(True, description="Bake high-to-low detail maps when supported")
     texture_enabled: Optional[bool] = None
@@ -269,15 +288,18 @@ class ImageToRawMeshRequest(BaseModel):
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
     preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
-    enable_printability_check: bool = Field(False, description="Run final printability QA")
-    enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
-    enable_auto_rig: bool = Field(False, description="Run UniRig after production processing")
+    enable_printability_check: Optional[bool] = Field(None, description="Run final printability QA; omitted values fall back to the intent preset")
+    enable_auto_repair: Optional[bool] = Field(None, description="Allow the shared repair stage to mutate the mesh for printability; omitted values fall back to the intent preset")
+    enable_auto_rig: Optional[bool] = Field(None, description="Run UniRig after production processing; omitted values fall back to the intent preset")
     auto_rig_mode: str = Field("full", description="UniRig mode: full, skeleton, or skin")
+    generate_lod: Optional[bool] = Field(None, description="Build the LOD hierarchy; omitted values fall back to the intent preset")
+    lod_preset: Optional[str] = Field(None, description="LOD ratio preset: 'mobile', 'low', 'medium', 'high' or 'cinematic'")
+    lod_count: Optional[int] = Field(None, ge=0, le=4, description="Number of LOD levels to generate (0-4); 0 disables the LOD chain")
     model_parameters: Optional[dict] = Field(
         None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_enabled: Optional[bool] = Field(None, description="Request physics-ready post-processing; omitted values fall back to the intent preset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
@@ -414,15 +436,18 @@ class ImageToTexturedMeshRequest(BaseModel):
     preprocessing_artifact_id: Optional[str] = Field(None, description="Approved preprocessing artifact ID")
     preprocessing_review_override: bool = Field(False, description="Explicitly allow a flagged preprocessing preview after review")
     enhancement_enabled: bool = Field(False, description="Use the approved preprocessing artifact")
-    enable_printability_check: bool = Field(False, description="Run final printability QA")
-    enable_auto_repair: bool = Field(False, description="Allow the shared repair stage to mutate the mesh for printability")
-    enable_auto_rig: bool = Field(False, description="Run UniRig after production processing")
+    enable_printability_check: Optional[bool] = Field(None, description="Run final printability QA; omitted values fall back to the intent preset")
+    enable_auto_repair: Optional[bool] = Field(None, description="Allow the shared repair stage to mutate the mesh for printability; omitted values fall back to the intent preset")
+    enable_auto_rig: Optional[bool] = Field(None, description="Run UniRig after production processing; omitted values fall back to the intent preset")
     auto_rig_mode: str = Field("full", description="UniRig mode: full, skeleton, or skin")
+    generate_lod: Optional[bool] = Field(None, description="Build the LOD hierarchy; omitted values fall back to the intent preset")
+    lod_preset: Optional[str] = Field(None, description="LOD ratio preset: 'mobile', 'low', 'medium', 'high' or 'cinematic'")
+    lod_count: Optional[int] = Field(None, ge=0, le=4, description="Number of LOD levels to generate (0-4); 0 disables the LOD chain")
     model_parameters: Optional[dict] = Field(
         None,
         description="Model-specific parameters (query /system/models/{model_id}/parameters for schema)"
     )
-    physics_enabled: bool = Field(False, description="Request physics-ready post-processing for this generated asset")
+    physics_enabled: Optional[bool] = Field(None, description="Request physics-ready post-processing; omitted values fall back to the intent preset")
     physics_config: Optional[dict] = Field(None, description="Provider-neutral physics controller values")
     topology_mode: Optional[str] = Field("triangle", description="Topology mode: 'triangle' or 'quad'")
     quad_topology: bool = Field(False, description="Request quad-dominant topology")
@@ -1077,24 +1102,14 @@ async def image_to_raw_mesh(
             nested_target_polycount,
             preset.get("target_polycount"),
         )
-        # Intent presets take precedence over frontend default autoOptimizeSettings (e.g. generateLOD: true, lodPreset: 'high', lodCount: 4)
-        if "generate_lod" in preset:
-            lod_enabled = bool(preset["generate_lod"])
-            params.pop("generateLOD", None)
-        else:
-            lod_enabled = bool(params.pop("generateLOD", True))
-
-        if "lod_preset" in preset:
-            lod_preset = str(preset["lod_preset"])
-            params.pop("lodPreset", None)
-        else:
-            lod_preset = str(params.pop("lodPreset", "high"))
-
-        if "lod_count" in preset:
-            lod_count = int(preset["lod_count"])
-            params.pop("lodCount", None)
-        else:
-            lod_count = int(params.pop("lodCount", 4))
+        # Production options: explicit request value > intent preset > backend default.
+        # Legacy `model_parameters` production keys are ignored and never reach job inputs.
+        params.pop("generateLOD", None)
+        params.pop("lodPreset", None)
+        params.pop("lodCount", None)
+        lod_enabled = bool(_resolve_preset_option(mesh_request.generate_lod, preset, "generate_lod", True))
+        lod_preset = str(_resolve_preset_option(mesh_request.lod_preset, preset, "lod_preset", "high"))
+        lod_count = int(_resolve_preset_option(mesh_request.lod_count, preset, "lod_count", 4))
 
         if "auto_uv" in preset:
             auto_uv = bool(preset["auto_uv"])
@@ -1113,23 +1128,21 @@ async def image_to_raw_mesh(
             quality = str(params.pop("quality", mesh_request.quality_mode or "high"))
         params.pop("quality", None)
 
+        params.pop("enable_printability_check", None)
+        params.pop("enable_auto_repair", None)
+        params.pop("enable_auto_rig", None)
         enable_printability = bool(
-            params.pop(
-                "enable_printability_check",
-                mesh_request.enable_printability_check or preset.get("enable_printability_check", False),
-            )
+            _resolve_preset_option(mesh_request.enable_printability_check, preset, "enable_printability_check", False)
         )
         enable_auto_repair = bool(
-            params.pop(
-                "enable_auto_repair",
-                mesh_request.enable_auto_repair or preset.get("enable_auto_repair", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_repair, preset, "enable_auto_repair", False)
         )
         enable_auto_rig = bool(
-            params.pop(
-                "enable_auto_rig",
-                mesh_request.enable_auto_rig or preset.get("enable_auto_rig", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_rig, preset, "enable_auto_rig", False)
+        )
+        physics_enabled = bool(_resolve_preset_option(mesh_request.physics_enabled, preset, "collision", False))
+        texture_resolution = int(
+            _resolve_preset_option(mesh_request.texture_resolution, preset, "texture_resolution", 2048)
         )
 
         if not mesh_request.enable_postprocess:
@@ -1158,7 +1171,7 @@ async def image_to_raw_mesh(
                 "image_path": image_file_path,
                 "reference_image_path": original_image_path,
                 "output_format": mesh_request.output_format,
-                "texture_resolution": mesh_request.texture_resolution,
+                "texture_resolution": texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "intent": mesh_request.intent,
@@ -1178,7 +1191,7 @@ async def image_to_raw_mesh(
                 "lodCount": lod_count,
                 "auto_uv": auto_uv,
                 "quality": quality,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "enable_printability_check": enable_printability,
                 "enable_auto_repair": enable_auto_repair,
@@ -1199,11 +1212,11 @@ async def image_to_raw_mesh(
                 "postprocess_mode": "production_mesh" if mesh_request.enable_postprocess else "none",
                 "enable_postprocess": mesh_request.enable_postprocess,
                 "feature_type": feature,
-                "texture_resolution": mesh_request.texture_resolution,
+                "texture_resolution": texture_resolution,
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "reference_image_path": original_image_path,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
                 "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",
@@ -1435,24 +1448,14 @@ async def image_to_textured_mesh(
             nested_target_polycount,
             preset.get("target_polycount"),
         )
-        # Intent presets take precedence over frontend default autoOptimizeSettings (e.g. generateLOD: true, lodPreset: 'high', lodCount: 4)
-        if "generate_lod" in preset:
-            lod_enabled = bool(preset["generate_lod"])
-            params.pop("generateLOD", None)
-        else:
-            lod_enabled = bool(params.pop("generateLOD", True))
-
-        if "lod_preset" in preset:
-            lod_preset = str(preset["lod_preset"])
-            params.pop("lodPreset", None)
-        else:
-            lod_preset = str(params.pop("lodPreset", "high"))
-
-        if "lod_count" in preset:
-            lod_count = int(preset["lod_count"])
-            params.pop("lodCount", None)
-        else:
-            lod_count = int(params.pop("lodCount", 4))
+        # Production options: explicit request value > intent preset > backend default.
+        # Legacy `model_parameters` production keys are ignored and never reach job inputs.
+        params.pop("generateLOD", None)
+        params.pop("lodPreset", None)
+        params.pop("lodCount", None)
+        lod_enabled = bool(_resolve_preset_option(mesh_request.generate_lod, preset, "generate_lod", True))
+        lod_preset = str(_resolve_preset_option(mesh_request.lod_preset, preset, "lod_preset", "high"))
+        lod_count = int(_resolve_preset_option(mesh_request.lod_count, preset, "lod_count", 4))
 
         if "auto_uv" in preset:
             auto_uv = bool(preset["auto_uv"])
@@ -1483,29 +1486,26 @@ async def image_to_textured_mesh(
             next((bool(value) for value in nested_texture_flags if value is not None), True),
         )
         texture_resolution = int(
-            mesh_request.texture_resolution
-            or source_texture_resolution
-            or preset.get("texture_resolution")
-            or 2048
-        )
-        enable_printability = bool(
-            params.pop(
-                "enable_printability_check",
-                mesh_request.enable_printability_check or preset.get("enable_printability_check", False),
+            _resolve_preset_option(
+                mesh_request.texture_resolution,
+                preset,
+                "texture_resolution",
+                source_texture_resolution or 2048,
             )
+        )
+        params.pop("enable_printability_check", None)
+        params.pop("enable_auto_repair", None)
+        params.pop("enable_auto_rig", None)
+        enable_printability = bool(
+            _resolve_preset_option(mesh_request.enable_printability_check, preset, "enable_printability_check", False)
         )
         enable_auto_repair = bool(
-            params.pop(
-                "enable_auto_repair",
-                mesh_request.enable_auto_repair or preset.get("enable_auto_repair", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_repair, preset, "enable_auto_repair", False)
         )
         enable_auto_rig = bool(
-            params.pop(
-                "enable_auto_rig",
-                mesh_request.enable_auto_rig or preset.get("enable_auto_rig", False),
-            )
+            _resolve_preset_option(mesh_request.enable_auto_rig, preset, "enable_auto_rig", False)
         )
+        physics_enabled = bool(_resolve_preset_option(mesh_request.physics_enabled, preset, "collision", False))
 
         if not mesh_request.enable_postprocess:
             texture_enabled = False
@@ -1555,7 +1555,7 @@ async def image_to_textured_mesh(
                 "lodCount": lod_count,
                 "auto_uv": auto_uv,
                 "quality": quality,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "enable_printability_check": enable_printability,
                 "enable_auto_repair": enable_auto_repair,
@@ -1580,7 +1580,7 @@ async def image_to_textured_mesh(
                 "bake_normal_maps": mesh_request.bake_normal_maps,
                 "texture_enabled": texture_enabled,
                 "reference_image_path": original_image_path,
-                "physics_enabled": mesh_request.physics_enabled or preset.get("collision", False),
+                "physics_enabled": physics_enabled,
                 "physics_config": mesh_request.physics_config,
                 "intent": mesh_request.intent,
                 "mesh_style": getattr(mesh_request, "mesh_style", "auto") or "auto",

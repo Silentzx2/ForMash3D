@@ -111,12 +111,6 @@ def _build_smart_request(request: SmartGenerationRequest, resolved: Dict[str, An
         }
         and value is not None
     }
-    model_parameters.update({
-        "target_polycount": target_polycount,
-        "generateLOD": generate_lod,
-        "lodPreset": lod_preset,
-        "lodCount": lod_count,
-    })
 
     common = {
         "image_path": request.image_path,
@@ -138,6 +132,10 @@ def _build_smart_request(request: SmartGenerationRequest, resolved: Dict[str, An
         "quad_topology": bool(request.quad_topology or request.topology_mode == "quad"),
         "asset_name": request.asset_name,
         "image_name": request.image_name,
+        "target_polycount": target_polycount,
+        "generate_lod": generate_lod,
+        "lod_preset": lod_preset,
+        "lod_count": lod_count,
     }
 
     if resolved["feature"] == "image_to_textured_mesh":

@@ -61,15 +61,42 @@ The maintained Wheels release is used for compatible prebuilt Python wheels; the
 Run checks relevant to your change:
 
 ```bash
-bun run test
+# Frontend type-check (same command as `bun run test` and the Frontend CI job)
+npx tsc --noEmit
+
+# Frontend unit tests (node:test files under features/workspace/lib/*.test.mjs
+# and app/api/v1/[...path]/route.test.mjs)
+bun test
+
+# Frontend lint and production build
 bun run lint
 bun run build
+
+# Backend runtime contracts - lightweight, no heavy runtime dependencies.
+# This is exactly what the Backend Runtime Contract CI workflow runs.
+PYTHONPATH=backend python -m pytest -q \
+  backend/tests/test_generation_dependency_contract.py \
+  backend/tests/test_runtime_source_contracts.py \
+  backend/tests/test_resource_planner.py \
+  backend/thirdparty/tests/test_runtime_path_utils.py
+
+# Verify clean compilation across all Python modules
 python3 -m compileall -q backend/
-python3 scripts/verify_contracts.py
-bash -n backend/scripts/*.sh scripts/*.sh
+
+# Verify shell script syntax
+bash -n manager.sh backend/scripts/*.sh scripts/*.sh
 ```
 
-GPU/model inference and full production post-processing require an appropriate NVIDIA environment. Static checks do not replace GPU validation. The repository currently has no GitHub Actions workflow under `.github/workflows/`, so local verification is the authoritative pre-push check.
+The full backend test suite (`PYTHONPATH=backend pytest backend/tests/`) additionally needs the heavy runtime dependencies (`torch`, `trimesh`, `skimage`, ...); it is not part of CI. `python3 scripts/verify_contracts.py` and GPU/model inference validation require the full `3daigc-api` environment on an appropriate NVIDIA host. Static checks do not replace GPU validation.
+
+### Continuous integration
+
+Two GitHub Actions workflows live under `.github/workflows/`:
+
+- **Backend Runtime Contract CI** (`.github/workflows/backend-runtime-ci.yml`): compiles the backend sources, checks `backend/scripts/download_models.sh` shell syntax, and runs the four backend contract test modules listed above on Python 3.10.
+- **Frontend CI** (`.github/workflows/frontend-ci.yml`): installs dependencies with Bun, runs the TypeScript type-check (`bun run test`) and the production build (`bun run build`).
+
+The backend workflow runs on pushes and pull requests targeting `main` and `dev`; the frontend workflow runs on pushes to `dev` and on pull requests targeting `dev` or `main`. Local verification should mirror the CI commands before opening a pull request.
 
 ## Pull requests
 

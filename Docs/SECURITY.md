@@ -1,7 +1,7 @@
 # 🔒 Security Policy — ForMash 3D
 
 > **Version**: 0.1.0
-> **Last Updated**: September 2026
+> **Last Updated**: October 2026
 > **Status**: Active development
 
 The ForMash 3D project takes the security and safety of developers and users seriously. As an early experimental, pre-alpha project that incorporates local AI model runners, file processors, and system execution scripts, security vigilance is essential.
@@ -63,37 +63,38 @@ Always inspect shell scripts (such as `scripts/setup.sh` and `backend/scripts/in
 - All secrets are excluded via `.gitignore`
 
 ### 4. Network Exposure
-ForMash 3D's FastAPI backend and Next.js frontend are designed by default for local development (`localhost`). If exposing instances to public networks:
-- Place them behind a secure reverse proxy (e.g., NGINX/Caddy) with HTTPS and authentication enabled
-- Enable CORS restrictions with `CORS_ORIGINS` in `.env`
-- Use `P3D_USER_AUTH_ENABLED=true` for Redis-based authentication
-- Enable rate limiting via `rate_limit_per_minute` in `system.yaml`
+The FastAPI backend **binds to all interfaces by default** (`--host 0.0.0.0` in `backend/scripts/run_server.sh` via `P3D_HOST`, and in the container's `supervisord.conf`), and the Next.js frontend is served on port 3000. The system is intended for local or trusted-network use; if an instance is reachable beyond the host:
+- Place it behind a secure reverse proxy (e.g., NGINX/Caddy) with HTTPS and authentication enabled, and bind the API to a private interface if it should not be directly reachable
+- Restrict CORS by editing `security.cors_origins` in `backend/config/system.yaml` (the shipped default is `["*"]`, i.e. all origins are accepted; there is **no** `CORS_ORIGINS` environment variable). The value is read into `settings.security.cors_origins` and applied by `configure_cors()` in `backend/api/main_singleworker.py` and `backend/api/main_multiworker.py`
+- Use `P3D_USER_AUTH_ENABLED=true` for Redis-backed user authentication (tokens are validated against the Redis store by `backend/core/auth/`). Note that enabling user auth also forces `security.api_key_required = true` (`backend/core/config.py`), and the `verify_api_key` dependency only checks that a `Bearer` token is present — it does not validate the token value, so it is not a substitute for the real token check
+- **There is no application-level rate limiting.** `check_rate_limit()` in `backend/api/dependencies.py` is a placeholder that always returns `True`, and `security.rate_limit_per_minute` is not enforced anywhere in the codebase. Rate limiting must be provided by the reverse proxy
+- In `production` mode the backend also adds `TrustedHostMiddleware` with `allowed_hosts=["*"]`; narrow this if you expose the service publicly
 
 ### 5. Dependency Security
 - Third-party source code is in `backend/thirdparty/` — do not modify upstream code unless necessary
 - All upstream attributions and licenses are preserved
 - Wheels are in `backend/thirdparty/wheels/` (excluded via `.gitignore`)
 - Run `pip audit` regularly to check for vulnerable dependencies
-- All 94 bare `except:` clauses in upstream third-party code should not be modified
+- All 90 bare `except:` clauses in upstream third-party code should not be modified
 
 ### 6. GPU & VRAM Security
 - `VRAM_SAFETY_MARGIN_MB=1024` keeps 1GB free margin to prevent OOM
 - `AUTO_UNLOAD_AFTER_JOB=true` frees VRAM between jobs
-- GPU mutual exclusion prevents concurrent inference
+- GPU memory is reserved per device through the scheduler's resource planner, and per-worker locks prevent the same worker from running two jobs at once; the manifest also caps `max_workers: 1` per model
 - `MAX_VRAM_MB=0` enables auto-detection
 - Hunyuan3D-Paint-v2-1 uses a 12GB configured scheduler reservation, not a guaranteed peak-memory minimum; chunked raster intermediates reduce temporary allocations, but requests still require live VRAM admission and target-GPU validation
 
 ### 7. Data Privacy
-- All processing runs locally; no data is sent to cloud services
+- All generation and post-processing runs locally; no user data is sent to cloud services (model weights are downloaded from Hugging Face / ModelScope, but no asset or input is uploaded)
 - Generated assets are stored in `backend/storage/` on the local filesystem
-- No telemetry or analytics are collected by default
+- No third-party telemetry or analytics are collected; the only telemetry is local generation diagnostics written to the local log
 - User-uploaded images are stored in `backend/storage/uploads/`
 
 ### 8. Container Security
 - Use Docker for isolated environments
-- The `backend/Dockerfile` builds the complete backend environment
-- Ensure `backend/Dockerfile` includes Paint DifferentiableRenderer build step
-- Use non-root user in production containers
+- The repository ships a single all-in-one `Dockerfile` at the repository root (CUDA 12.4, conda env `3daigc-api`, Blender, Redis, backend on port 7842, frontend on port 3000 under Supervisor). There is no separate `backend/Dockerfile`
+- The Hunyuan3D-Paint DifferentiableRenderer native module is built by `backend/scripts/install.sh` (invoked from `scripts/setup.sh`, which the root `Dockerfile` runs); the image build fails loudly if the module cannot be built
+- The shipped `Dockerfile` does not set a `USER`, so the container runs as root — add a non-root user for production deployments
 - Scan images for vulnerabilities regularly
 
 ---
@@ -102,9 +103,10 @@ ForMash 3D's FastAPI backend and Next.js frontend are designed by default for lo
 
 | Risk | Mitigation | Status |
 |---|---|---|
-| Third-party code vulnerabilities | Do not modify upstream code | ⚠️ 94 bare `except:` clauses in third-party |
-| GPU OOM crashes | VRAM safety buffer + mutual exclusion | ✅ Mitigated |
-| Unauthorized network access | Localhost by default + CORS | ✅ Mitigated |
+| Third-party code vulnerabilities | Do not modify upstream code | ⚠️ 90 bare `except:` clauses in third-party |
+| GPU OOM crashes | VRAM safety buffer + per-GPU reservation | ✅ Mitigated |
+| Unauthorized network access | API binds `0.0.0.0` by default + CORS | ⚠️ Restrict `security.cors_origins` in `backend/config/system.yaml` and firewall the port |
+| Brute-force / abuse | — | ⚠️ No application-level rate limiting (`check_rate_limit()` is a placeholder); use a reverse proxy |
 | Secret exposure | `.env` excluded from git | ✅ Mitigated |
 | Script execution risks | Inspect before running | ⚠️ User responsibility |
 | No GPU runtime testing | All functionality unverified without GPU | ⚠️ Requires GPU |
@@ -125,7 +127,7 @@ The immutable master/source.glb is never overwritten by post-processing.
 
 ## Review Audit Hardening — Input Boundaries
 
-Server filesystem paths supplied by generation APIs are no longer treated as arbitrary host paths. resolve_server_file_path() accepts only configured roots (outputs/ and uploads/ by default), with explicit ALLOWED_INPUT_ROOTS / ALLOW_LOCAL_SERVER_PATH_INPUTS overrides for self-hosted deployments that need wider access.
+Server filesystem paths supplied by generation APIs are no longer treated as arbitrary host paths. resolve_server_file_path() (backend/core/utils/file_utils.py) accepts only configured roots — the `outputs/`, `uploads/` and backend `storage/` roots by default, overridable with the `ALLOWED_INPUT_ROOTS` environment variable, or `ALLOW_LOCAL_SERVER_PATH_INPUTS` for self-hosted deployments that need wider access. A small set of protected system paths (`/proc`, `/sys`, `/dev`, `/etc/shadow`, `/etc/passwd`) is always rejected.
 
 Multipart uploads enforce the byte limit while streaming rather than after the full file has been written. Mesh segmentation base64 input is capped at 200 MiB decoded; the shared validator checks encoded length and projected decoded size before allocating the decoded byte buffer, then validates the decoded result. Textual `.gltf` uploads are single-file only: every buffer must use an embedded data URI, and images must use an embedded data URI or a valid embedded buffer view. Relative, remote, and missing dependencies are rejected; clients never fetch or guess sidecars.
 
@@ -146,7 +148,7 @@ Artifact naming uses UUIDs for mesh, segmentation, and rigged outputs to reduce 
 
 Uploaded assets are retained until explicitly deleted. Mesh uploads keep their original bytes and extension at `models/meshes/upload_<file-id>/master/source.<ext>`; the adjacent asset manifest records the exact source path, byte length, SHA-256, original filename, and format. Both manifest creation and file-store registration must succeed before an upload is reported as successful. The manifest is the durable record; Redis or the single-worker in-memory store is an index/cache. Exact UUID manifests restore metadata, file listing, counts, and download resolution after restart, while legacy lookup remains limited to the prior exact UUID filename layout.
 
-Multipart limits are 50 MiB for images and 200 MiB for meshes (the API also reports exact byte counts). Mesh validation separately caps vertices and faces at 210,000 each; these limits are returned by the supported-formats endpoint. Geometry parsing runs in an AnyIO worker thread with at most two concurrent parsers, preserves cancellation cleanup, and rejects non-finite or empty geometry. `.gltf` is a supported single-file format only when buffers and images are embedded as data URIs; external, relative, and remote dependencies are rejected rather than fetched or guessed. Deletion removes only the registered source, its manifest, and the matching thumbnail after validating their storage paths; retries are idempotent and generated job workspaces are not deleted through the upload endpoint.
+Multipart limits are 50 MiB for images and 200 MiB for meshes (the API also reports exact byte counts). Mesh validation separately caps vertices and faces at 10,000,000 each by default (`MAX_MESH_VERTICES` / `MAX_MESH_FACES` in `backend/core/utils/file_utils.py`, overridable via the `FORMASH_MAX_MESH_VERTICES` / `FORMASH_MAX_MESH_FACES` environment variables); these limits are returned by the supported-formats endpoint. Geometry parsing runs in an AnyIO worker thread with at most two concurrent parsers, preserves cancellation cleanup, and rejects non-finite or empty geometry. `.gltf` is a supported single-file format only when buffers and images are embedded as data URIs; external, relative, and remote dependencies are rejected rather than fetched or guessed. Deletion removes only the registered source, its manifest, and the matching thumbnail after validating their storage paths; retries are idempotent and generated job workspaces are not deleted through the upload endpoint.
 
 ## Resource and Model Integrity — 2026-10-08
 

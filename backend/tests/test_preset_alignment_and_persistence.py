@@ -322,6 +322,105 @@ class TestEnablePostprocessToggle(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job.metadata["postprocess_mode"], "production_mesh")
 
 
+class TestExplicitProductionOptions(unittest.IsolatedAsyncioTestCase):
+    """Explicit request values win; omitted values fall back to the intent preset."""
+
+    B64_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+    async def _schedule(self, **request_kwargs):
+        mock_scheduler = MagicMock()
+        mock_scheduler.validate_model_preference.return_value = True
+        mock_scheduler.model_registry = {}
+        scheduled_jobs = []
+
+        async def capture_job(job_request):
+            scheduled_jobs.append(job_request)
+            return "job-explicit-789"
+
+        mock_scheduler.schedule_job = AsyncMock(side_effect=capture_job)
+
+        req = ImageToRawMeshRequest(image_base64=self.B64_PNG, **request_kwargs)
+        resp = await generate_mesh_from_image(req, scheduler=mock_scheduler, file_store=MagicMock())
+        self.assertEqual(resp.job_id, "job-explicit-789")
+        self.assertEqual(len(scheduled_jobs), 1)
+        return scheduled_jobs[0]
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_explicit_lod_options_override_intent_preset(self, _mock_plan):
+        job = await self._schedule(
+            intent="game_ready",
+            generate_lod=False,
+            lod_preset="mobile",
+            lod_count=2,
+        )
+        self.assertFalse(job.inputs["generateLOD"])
+        self.assertEqual(job.inputs["lodPreset"], "mobile")
+        self.assertEqual(job.inputs["lodCount"], 2)
+        self.assertFalse(job.metadata["generateLOD"])
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_omitted_lod_options_use_intent_preset(self, _mock_plan):
+        job = await self._schedule(intent="mobile")
+        self.assertTrue(job.inputs["generateLOD"])
+        self.assertEqual(job.inputs["lodPreset"], "mobile")
+        self.assertEqual(job.inputs["lodCount"], 4)
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_explicit_false_flags_override_preset_true(self, _mock_plan):
+        job = await self._schedule(
+            intent="3d_print",
+            enable_printability_check=False,
+            enable_auto_repair=False,
+            enable_auto_rig=False,
+        )
+        self.assertFalse(job.inputs["enable_printability_check"])
+        self.assertFalse(job.inputs["enable_auto_repair"])
+        self.assertFalse(job.inputs["enable_auto_rig"])
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_preset_flags_apply_when_omitted(self, _mock_plan):
+        job = await self._schedule(intent="3d_print")
+        self.assertTrue(job.inputs["enable_printability_check"])
+        self.assertTrue(job.inputs["enable_auto_repair"])
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_explicit_physics_false_overrides_preset_collision(self, _mock_plan):
+        job = await self._schedule(intent="game_ready", physics_enabled=False)
+        self.assertFalse(job.inputs["physics_enabled"])
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_preset_collision_applies_when_omitted(self, _mock_plan):
+        job = await self._schedule(intent="game_ready")
+        self.assertTrue(job.inputs["physics_enabled"])
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_legacy_model_parameter_lod_keys_are_ignored(self, _mock_plan):
+        job = await self._schedule(
+            intent="mobile",
+            model_parameters={"generateLOD": False, "lodPreset": "low", "lodCount": 2},
+        )
+        # The intent preset supplies the LOD recipe; legacy keys never reach the job.
+        self.assertTrue(job.inputs["generateLOD"])
+        self.assertEqual(job.inputs["lodPreset"], "mobile")
+        self.assertEqual(job.inputs["lodCount"], 4)
+        self.assertNotIn("generateLOD", job.inputs.get("model_parameters", {}))
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_preset_texture_resolution_applies_when_omitted(self, _mock_plan):
+        job = await self._schedule(intent="game_ready")
+        self.assertEqual(job.inputs["texture_resolution"], 1024)
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_explicit_texture_resolution_overrides_preset(self, _mock_plan):
+        job = await self._schedule(intent="game_ready", texture_resolution=4096)
+        self.assertEqual(job.inputs["texture_resolution"], 4096)
+
+    @patch("api.routers.mesh_generation._resolve_generation_plan", side_effect=mock_resolve_generation_plan)
+    async def test_default_texture_resolution_without_preset(self, _mock_plan):
+        job = await self._schedule()
+        self.assertEqual(job.inputs["texture_resolution"], 2048)
+
+
 class TestCanonicalPresetsAndOverrides(unittest.IsolatedAsyncioTestCase):
     def test_canonical_intents_validation(self):
         from pydantic import ValidationError
