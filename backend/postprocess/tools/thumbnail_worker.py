@@ -31,6 +31,8 @@ SENTINEL = "GENSTUDIO_EVT "  # keep in sync with app/services/mesh_thumbnail.py
 
 RESOLUTION = 512
 SAMPLES = 24
+# Without a denoiser the frame is noisier, so the fallback raises the sample count.
+SAMPLES_WITHOUT_DENOISER = 64
 CAMERA_FOV_DEG = 35.0
 # Camera direction (Blender is Z-up; the glTF importer puts model front toward
 # -Y). A 3/4 view from front-right-above, matching the client's angle.
@@ -87,6 +89,24 @@ def _add_sun(name, direction, energy):
     return obj
 
 
+def _denoiser_available(build_options, denoiser_identifiers) -> bool:
+    """Return True when this Blender build can denoise a Cycles frame.
+
+    The bpy wheel and some distribution builds ship without OpenImageDenoise,
+    and Cycles then aborts the whole render with
+    "Error: Build without OpenImageDenoiser". The build flag is authoritative
+    when it exists; otherwise the denoiser enum of the Cycles settings is
+    inspected, and an unknown build is assumed to denoise (the caller retries
+    without denoising if the render still fails).
+    """
+    for attribute in ("openimagedenoise", "openimagedenoise_oidn", "oidn"):
+        if build_options is not None and hasattr(build_options, attribute):
+            return bool(getattr(build_options, attribute))
+    if denoiser_identifiers:
+        return bool({"OPENIMAGEDENOISE", "OPTIX"} & set(denoiser_identifiers))
+    return True
+
+
 def render(input_path: str, output_path: str) -> None:
     import bpy
     from mathutils import Vector
@@ -137,8 +157,15 @@ def render(input_path: str, output_path: str) -> None:
     progress("render", 0.6, "Rendering thumbnail…")
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
-    scene.cycles.samples = SAMPLES
-    scene.cycles.use_denoising = True
+    denoiser_prop = scene.cycles.bl_rna.properties.get("denoiser")
+    denoiser_identifiers = [item.identifier for item in denoiser_prop.enum_items] if denoiser_prop else []
+    if _denoiser_available(getattr(bpy.app, "build_options", None), denoiser_identifiers):
+        scene.cycles.use_denoising = True
+        scene.cycles.samples = SAMPLES
+    else:
+        scene.cycles.use_denoising = False
+        scene.cycles.samples = SAMPLES_WITHOUT_DENOISER
+        progress("render", 0.6, "No denoiser in this Blender build, rendering without it…")
     scene.render.resolution_x = RESOLUTION
     scene.render.resolution_y = RESOLUTION
     scene.render.resolution_percentage = 100
@@ -156,7 +183,17 @@ def render(input_path: str, output_path: str) -> None:
         scene.view_settings.view_transform = "Standard"
     except TypeError:  # build may name it differently — non-fatal
         pass
-    bpy.ops.render.render(write_still=True)
+    try:
+        bpy.ops.render.render(write_still=True)
+    except RuntimeError as exc:
+        if not scene.cycles.use_denoising or "denois" not in str(exc).lower():
+            raise
+        # A Blender build without OpenImageDenoise fails here: render again
+        # without denoising instead of losing the whole preview.
+        progress("render", 0.6, "Denoiser unavailable, rendering without denoising…")
+        scene.cycles.use_denoising = False
+        scene.cycles.samples = SAMPLES_WITHOUT_DENOISER
+        bpy.ops.render.render(write_still=True)
 
 
 def main() -> None:

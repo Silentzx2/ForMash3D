@@ -178,6 +178,9 @@ flowchart TD
 ### Postprocess Pipeline Orchestrator Integration (Task 2E)
 - `backend/postprocess/pipeline.py`: Connects Topology Gate, targeted hole repair, memory-safe decimation, UV unwrapping, and PBR validation into `run_postprocess_job` while strictly enforcing master immutability (`master/source.glb` SHA-256 verified identical before and after postprocessing).
 
+### Headless Preview Render Contract
+- `backend/postprocess/tools/thumbnail_worker.py` renders the asset preview in an isolated Blender subprocess (Cycles on the CPU, 512px, transparent film). The denoiser is **optional**: the bpy wheel and some distribution builds ship without OpenImageDenoise, and Cycles then aborts the render with "Error: Build without OpenImageDenoiser". The worker reads the build flag and the Cycles denoiser enum before rendering, falls back to no denoising with a higher sample count, and retries without denoising if the render still fails. A missing preview is a warning, never a failed job.
+
 ### Deterministic Planner v1 & Model Capability Contracts (Task 3B)
 - `backend/config/planner_rules.yaml` & `backend/core/planner.py`: Configures benchmark-driven rules per object type (`mechanical`, `organic`, `character`, `general`) and quality tier (`fast`, `balanced`, `high`). Dynamically selects adapter, preset, seed count, feature-aware retopology mode, and UV backend. Full plan recomputed on any fallback.
 

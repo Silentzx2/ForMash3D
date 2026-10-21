@@ -1,3 +1,11 @@
+## 2026-10-21 — Headless Preview Render: Denoiser Fallback
+
+- **Root cause of the missing preview**: `backend/postprocess/tools/thumbnail_worker.py` renders the 512px preview in an isolated Blender subprocess and set `scene.cycles.use_denoising = True` unconditionally. The Blender build in this deployment (the `bpy` wheel) has no OpenImageDenoise, so Cycles aborted the whole render with "Error: Build without OpenImageDenoiser"; the postprocess stage logged "Preview generation skipped" and the job completed at 98% without `previews/thumbnail.png` and `previews/preview.jpg`.
+- **Fix**: the worker now inspects the Blender build options and the Cycles `denoiser` enum before rendering. When no denoiser exists it renders without denoising at a higher sample count (64 instead of 24), and if the render still fails with a denoiser error it retries once without denoising. No other stage used Cycles denoising, so the change is confined to the preview worker; a missing preview stays a warning and never fails the job.
+- **Verification**: `backend/tests/test_thumbnail_denoise_fallback.py` (5 tests) covers the build-flag path, the denoiser-enum fallback and the unknown-build case. The Blender render itself is **NOT RUN** in this environment (no `bpy`), so the preview must be confirmed on the deployment host.
+
+---
+
 ## 2026-10-21 — Runtime Telemetry Truthfulness: Planned Seeds vs Executed Seeds
 
 - **Root cause of the confusing runtime parameters**: the planner's `num_seeds` is a plan value. The planner reason line printed it as "3 seeds" (the `high` tier in `backend/config/planner_rules.yaml`), but the scheduler only executes the planned count when `apply.auto_seeds` is enabled, and that switch is off. A request with one candidate therefore ran exactly one inference while the log announced three, and the start box reported only the base seed with no candidate count — which reads as the seed and the parameters changing mid-run, for every model adapter.
