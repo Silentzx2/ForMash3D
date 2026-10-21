@@ -1,3 +1,13 @@
+## Route/page/function mount fixes — 2026-10-21 follow-up
+
+- Added `/workspace/tools` to the route contract, navigation, tool route map and `WorkspaceShell` render switch.
+- Wired the new Mesh Tools panel to the existing backend-backed mesh inspection, optimization, auto-UV, auto-retopology and repair helpers. Derived mesh outputs download as new GLBs and never overwrite the selected source asset.
+- Removed duplicate, unreachable Segment/Remesh/Edit panel branches from `SecondaryPanel`; their dedicated panels were already mounted in `WorkspaceShell`.
+- Removed the unused `ApiClient.generateSmartGeneration()` wrapper; the active Generate intent flow continues to use the preset and intent-resolution endpoints.
+- Documented the legacy React-Router feature pages that still require migration instead of claiming they are mounted.
+
+---
+
 ## Route/page/function mount audit (2026-10-21)
 
 - Added explicit validation for the Next.js workspace catch-all route so unknown tool paths return 404 instead of silently rendering Generate.

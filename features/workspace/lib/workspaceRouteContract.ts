@@ -1,6 +1,6 @@
 const WORKSPACE_TOOL_SEGMENTS = new Set([
   'generate', 'model', '3d-gen', 'remesh', 'texture', 'textures', 'uv',
-  'segment', 'edit', 'upscale', 'pbr', 'animation', 'animate', 'rigging',
+  'segment', 'edit', 'upscale', 'pbr', 'animation', 'animate', 'rigging', 'tools',
 ]);
 
 const WORKSPACE_VIEW_SEGMENTS = new Set([

@@ -49,6 +49,10 @@ const MeshEditPanel = dynamic(() => import('./Panels/MeshEditPanel').then(mod =>
   ssr: false,
   loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
 });
+const MeshToolsPanel = dynamic(() => import('./Panels/MeshToolsPanel').then(mod => mod.MeshToolsPanel), {
+  ssr: false,
+  loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
+});
 const JobDetailView = dynamic(() => import('./Jobs/JobDetailView').then(mod => mod.JobDetailView), {
   ssr: false,
   loading: () => <div className="w-full h-full animate-pulse bg-[hsl(var(--surface-0))]" />,
@@ -111,6 +115,7 @@ const ROUTE_SEGMENT_TO_TOOL: Record<string, ToolType> = {
   'animation': 'animation',
   'animate': 'animation',
   'rigging': 'rigging',
+  'tools': 'tools',
 };
 
 export const WorkspaceShell: React.FC = () => {
@@ -347,6 +352,7 @@ export const WorkspaceShell: React.FC = () => {
       case 'edit': return <MeshEditPanel />;
       case 'animation': return <AnimationLeftPanel />;
       case 'rigging': return <RiggingLeftPanel />;
+      case 'tools': return <MeshToolsPanel />;
       case 'upscale': case 'pbr': return <SecondaryPanel tool={activeTool} />;
       default: return <GeneratePanel />;
     }

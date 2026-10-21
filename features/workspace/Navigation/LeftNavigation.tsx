@@ -7,7 +7,7 @@ import { motion, LayoutGroup } from 'motion/react';
 
 
 import { HugeiconsIcon } from '@hugeicons/react';
-import { BoneIcon, Box, CircleDashedIcon, FilmIcon, FolderOpenIcon, GridIcon, LayersIcon, LayoutDashboardIcon, ListOrderedIcon, ScissorsIcon, SparklesIcon, ScrollTextIcon, SettingsIcon } from '@hugeicons/core-free-icons';
+import { BoneIcon, Box, CircleDashedIcon, FilmIcon, FolderOpenIcon, GridIcon, HexagonIcon, LayersIcon, LayoutDashboardIcon, ListOrderedIcon, ScissorsIcon, SparklesIcon, ScrollTextIcon, SettingsIcon } from '@hugeicons/core-free-icons';
 interface LeftNavigationProps {
   /** When true, renders as a wide drawer with full labels instead of icon rail */
   isMobileDrawer?: boolean;
@@ -137,6 +137,15 @@ export const LeftNavigation: React.FC<LeftNavigationProps> = ({ isMobileDrawer =
       icon: (props: any) => <HugeiconsIcon icon={BoneIcon} size={16} {...props} />,
       active: isActive('rigging'),
       onClick: () => handleToolClick('rigging'),
+    },
+    {
+      id: 'tool-btn-mesh-tools',
+      label: 'Mesh Tools',
+      tooltip: 'Optimize, repair, unwrap and inspect a selected mesh',
+      shortcut: '',
+      icon: (props: any) => <HugeiconsIcon icon={HexagonIcon} size={16} {...props} />,
+      active: isActive('tools'),
+      onClick: () => handleToolClick('tools'),
     },
   ];
 

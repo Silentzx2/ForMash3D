@@ -7,7 +7,7 @@ const jobId = '00000000-0000-4000-8000-000000000001';
 test('workspace tool routes are explicitly allow-listed', () => {
   for (const tool of [
     'generate', 'model', '3d-gen', 'remesh', 'texture', 'textures', 'uv',
-    'segment', 'edit', 'upscale', 'pbr', 'animation', 'animate', 'rigging',
+    'segment', 'edit', 'upscale', 'pbr', 'animation', 'animate', 'rigging', 'tools',
   ]) {
     assert.equal(isKnownWorkspaceRoute([tool]), true, `expected /workspace/${tool} to be mounted`);
     assert.equal(isKnownWorkspaceRoute([tool, jobId]), true, `expected deep-linked /workspace/${tool}/${jobId} to be mounted`);

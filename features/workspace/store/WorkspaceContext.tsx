@@ -144,6 +144,7 @@ interface WorkspaceContextType {
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
 const TOOL_TO_ROUTE: Record<ToolType, string> = {
+  tools: '/workspace/tools',
   model: '/workspace/generate',
   remesh: '/workspace/remesh',
   texture: '/workspace/texture',

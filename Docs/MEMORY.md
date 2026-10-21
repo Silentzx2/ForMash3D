@@ -1,3 +1,13 @@
+## 2026-10-21 — Route / Page / Function Mount Fix Follow-up
+
+- Added a real `/workspace/tools` panel to the Next.js route allow-list, workspace navigation, route map and panel renderer.
+- Connected inspect, optimize, auto-UV, auto-retopology and topology-repair actions to the existing FastAPI mesh-tools API; transformed outputs download as separate GLBs and do not overwrite the input asset.
+- Removed unreachable duplicate Segment/Remesh/Edit UI branches from `SecondaryPanel` and deleted the unused smart-generation client wrapper.
+- Regression coverage now asserts that `/workspace/tools` is an allowed tool route.
+- Explicit migration backlog remains: legacy image-editor, board, graph and wiki pages depend on missing legacy providers/React Router and are not treated as mounted Next.js routes.
+
+---
+
 ## 2026-10-21 — Route / Page / Function Mount Audit
 
 - **Inventory:** 9 Next.js page files, 3 Next route handlers, 14 FastAPI router modules and 113 decorator-defined API handlers found by static source inventory.

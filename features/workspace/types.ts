@@ -4,6 +4,7 @@ import { validate3DFile } from './lib/fileValidation';
 import { requireUploadFileId } from './lib/uploadResponse';
 
 export type ToolType =
+  | 'tools'
   | 'model'
   | 'segment'
   | 'remesh'
